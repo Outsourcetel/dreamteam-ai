@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import {
+  fetchTenants, fetchKnowledgeArticles, fetchConversations,
+  fetchDashboardStats, fetchMyProfile,
+  DBTenant, DBKnowledgeArticle, DBConversation
+} from './lib/api';
 
 // ============================================================
 // TYPES - 3-LAYER ARCHITECTURE
@@ -4747,11 +4752,28 @@ const KnowledgeHubPage = ({
   user,
   tenant,
   subPage,
+    dbArticles = [],
 }: {
   user?: AuthUser;
   tenant?: Tenant;
   subPage: TenantPage;
+  dbArticles?: DBKnowledgeArticle[];
 }) => {
+  // Use real DB articles when available, fallback to mock
+  const allKnowledgeItems = dbArticles.length > 0
+    ? dbArticles.map(a => ({
+        id: a.id, title: a.title, type: 'article' as const,
+        audience: a.audience, tags: a.tags || [], subTags: [],
+        summary: a.summary || '', author: '', version: '1.0',
+        createdAt: a.created_at, updatedAt: a.updated_at,
+        freshnessScore: a.freshness_score, viewCount: a.view_count,
+        helpfulRating: a.helpful_count, embedStatus: 'embedded' as const,
+        chunkCount: 0, status: a.status as any, category: a.category || '',
+        productId: '', moduleId: '', sectionId: '', subSectionId: '',
+        qualityScore: a.quality_score, body: a.body,
+      }))
+    : mockKnowledgeItems;
+
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [searchQ, setSearchQ] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<null | {
@@ -10971,6 +10993,17 @@ function App() {
   } | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  // ── Supabase real data ───────────────────────────────
+  const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
+  const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
+  const [dbConversations, setDbConversations] = useState<DBConversation[]>([]);
+  const [dbStats, setDbStats] = useState<{
+    totalConversations: number; openConversations: number; resolvedConversations: number;
+    totalArticles: number; publishedArticles: number; pendingApprovals: number; autoResolved: number;
+    channelBreakdown: { chat: number; email: number; phone: number };
+    sentimentBreakdown: { positive: number; neutral: number; negative: number };
+  } | null>(null);
+
   const isDTUser =
     authedUser &&
     ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(
@@ -11052,7 +11085,7 @@ function App() {
       case 'hub_ingestion':
       case 'hub_training':
       case 'hub_analytics':
-        return <KnowledgeHubPage {...commonProps} subPage={currentPage} />;
+        return <KnowledgeHubPage dbArticles={dbArticles} {...commonProps} subPage={currentPage} />;
       case 'portal_overview':
       case 'portal_conversations':
       case 'portal_actions':
@@ -11064,6 +11097,38 @@ function App() {
         return <DashboardPage {...commonProps} />;
     }
   };
+
+
+  // ── Load Supabase data on login ─────────────────────
+  useEffect(() => {
+    if (!authedUser) {
+      setDbTenants([]); setDbArticles([]); setDbConversations([]); setDbStats(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await fetchMyProfile();
+        if (cancelled) return;
+        const tid = (profile?.tenant_id ?? authedUser.tenantId) as string | undefined;
+        if (profile?.layer === 'platform') {
+          const t = await fetchTenants();
+          if (!cancelled) setDbTenants(t);
+        }
+        if (tid) {
+          const [a, c, s] = await Promise.all([
+            fetchKnowledgeArticles(tid),
+            fetchConversations(tid),
+            fetchDashboardStats(tid),
+          ]);
+          if (!cancelled) { setDbArticles(a); setDbConversations(c); setDbStats(s); }
+        }
+      } catch(e) { console.error('[DT] data load:', e); }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authedUser?.id]);
+
 
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden">
