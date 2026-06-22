@@ -10766,31 +10766,30 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
+    setError('');
+    setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPassword,
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      if (error) {
-        setLoginError(error.message);
-      } else if (data.user) {
-        setCurrentUser({
-          id: data.user.id,
-          name: data.user.user_metadata?.full_name || data.user.email || 'User',
-          email: data.user.email || '',
-          role: (data.user.user_metadata?.role || 'tenant_admin') as any,
-          tenantId: data.user.user_metadata?.tenant_id || null,
-          avatar: data.user.user_metadata?.avatar || '',
-          layer: (data.user.user_metadata?.layer || 'tenant') as any,
+      if (authError) {
+        setError(authError.message);
+      } else if (authData.user) {
+        onLogin({
+          id: authData.user.id,
+          name: authData.user.user_metadata?.full_name || authData.user.email || 'User',
+          email: authData.user.email || '',
+          role: (authData.user.user_metadata?.role || 'tenant_admin') as any,
+          tenantId: authData.user.user_metadata?.tenant_id || null,
+          avatar: authData.user.user_metadata?.avatar || '',
+          layer: (authData.user.user_metadata?.layer || 'tenant') as any,
         });
-        setIsAuthenticated(true);
       }
     } catch (err: any) {
-      setLoginError(err.message || 'Login failed');
+      setError(err.message || 'Login failed. Please try again.');
     } finally {
-      setLoginLoading(false);
+      setLoading(false);
     }
   };
 
