@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabase';
 
 // ============================================================
 // TYPES - 3-LAYER ARCHITECTURE
@@ -10763,17 +10764,34 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
     { group: 'Other Tenants', users: [mockUsers[8], mockUsers[9]] },
   ];
 
-  const handleLogin = () => {
-    if (!email || !password) {
-      setError('Please enter your email and password');
-      return;
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: loginPassword,
+      });
+      if (error) {
+        setLoginError(error.message);
+      } else if (data.user) {
+        setCurrentUser({
+          id: data.user.id,
+          name: data.user.user_metadata?.full_name || data.user.email || 'User',
+          email: data.user.email || '',
+          role: (data.user.user_metadata?.role || 'tenant_admin') as any,
+          tenantId: data.user.user_metadata?.tenant_id || null,
+          avatar: data.user.user_metadata?.avatar || '',
+          layer: (data.user.user_metadata?.layer || 'tenant') as any,
+        });
+        setIsAuthenticated(true);
+      }
+    } catch (err: any) {
+      setLoginError(err.message || 'Login failed');
+    } finally {
+      setLoginLoading(false);
     }
-    setLoading(true);
-    setError('');
-    setTimeout(() => {
-      setLoading(false);
-      setError('Invalid credentials. Use a demo account below.');
-    }, 800);
   };
 
   return (
