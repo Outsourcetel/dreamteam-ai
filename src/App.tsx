@@ -595,64 +595,64 @@ const Sidebar = ({
         {isDT ? (
           <>
             <Section title="Platform">
-              <NavItem id="platform_home" label="Overview" icon="â" />
-              <NavItem id="platform_tenants" label="Tenants" icon="â" />
+              <NavItem id="platform_home" label="Overview" icon="Ã¢ÂÂ" />
+              <NavItem id="platform_tenants" label="Tenants" icon="Ã¢ÂÂ" />
               <NavItem
                 id="platform_remote_access"
                 label="Remote Access"
-                icon="â"
+                icon="Ã¢ÂÂ"
               />
-              <NavItem id="platform_health" label="System Health" icon="â" />
-              <NavItem id="platform_revenue" label="Revenue" icon="â" />
+              <NavItem id="platform_health" label="System Health" icon="Ã¢ÂÂ" />
+              <NavItem id="platform_revenue" label="Revenue" icon="Ã¢ÂÂ" />
             </Section>
           </>
         ) : (
           <>
             <Section title="Workspace">
-              <NavItem id="dashboard" label="Dashboard" icon="â" />
-              <NavItem id="agents" label="AI Agents" icon="â¡" />
-              <NavItem id="swarm" label="Swarm Monitor" icon="â¬¡" />
-              <NavItem id="insight" label="Insight Engine" icon="â" />
+              <NavItem id="dashboard" label="Dashboard" icon="Ã¢ÂÂ" />
+              <NavItem id="agents" label="AI Agents" icon="Ã¢ÂÂ¡" />
+              <NavItem id="swarm" label="Swarm Monitor" icon="Ã¢Â¬Â¡" />
+              <NavItem id="insight" label="Insight Engine" icon="Ã¢ÂÂ" />
             </Section>
             <Section title="Knowledge Hub">
-              <NavItem id="hub_overview" label="Overview" icon="â" />
-              <NavItem id="hub_articles" label="Articles and Docs" icon="â" />
-              <NavItem id="hub_ingestion" label="Ingestion Pipeline" icon="â¬" />
-              <NavItem id="hub_training" label="Team Training" icon="â¬¡" />
-              <NavItem id="hub_analytics" label="KB Analytics" icon="â»" />
+              <NavItem id="hub_overview" label="Overview" icon="Ã¢ÂÂ" />
+              <NavItem id="hub_articles" label="Articles and Docs" icon="Ã¢ÂÂ" />
+              <NavItem id="hub_ingestion" label="Ingestion Pipeline" icon="Ã¢Â¬Â" />
+              <NavItem id="hub_training" label="Team Training" icon="Ã¢Â¬Â¡" />
+              <NavItem id="hub_analytics" label="KB Analytics" icon="Ã¢ÂÂ»" />
             </Section>
             <Section title="Customer Portal">
-              <NavItem id="portal_overview" label="Overview" icon="â" />
+              <NavItem id="portal_overview" label="Overview" icon="Ã¢ÂÂ" />
               <NavItem
                 id="portal_conversations"
                 label="Conversations"
-                icon="â"
+                icon="Ã¢ÂÂ"
               />
-              <NavItem id="portal_actions" label="Agent Actions" icon="â" />
-              <NavItem id="portal_approvals" label="Approvals" icon="â" />
-              <NavItem id="portal_tickets" label="Tickets" icon="â" />
-              <NavItem id="portal_settings" label="Portal Settings" icon="â" />
+              <NavItem id="portal_actions" label="Agent Actions" icon="Ã¢ÂÂ" />
+              <NavItem id="portal_approvals" label="Approvals" icon="Ã¢ÂÂ" />
+              <NavItem id="portal_tickets" label="Tickets" icon="Ã¢ÂÂ" />
+              <NavItem id="portal_settings" label="Portal Settings" icon="Ã¢ÂÂ" />
             </Section>
             <Section title="Knowledge &amp; Data">
-              <NavItem id="knowledge_data" label="Overview" icon="â" />
+              <NavItem id="knowledge_data" label="Overview" icon="Ã¢ÂÂ" />
               <NavItem
                 id="knowledge_taxonomy"
                 label="Taxonomy Browser"
-                icon="â"
+                icon="Ã¢ÂÂ"
               />
               <NavItem
                 id="knowledge_connectors"
                 label="Data Connectors"
-                icon="â"
+                icon="Ã¢ÂÂ"
               />
-              <NavItem id="knowledge_files" label="Imported Files" icon="â¤" />
+              <NavItem id="knowledge_files" label="Imported Files" icon="Ã¢ÂÂ¤" />
             </Section>
             {isOwnerOrAdmin && (
               <Section title="Admin">
-                <NavItem id="connectors" label="Data Connectors" icon="â" />
-                <NavItem id="integrations" label="Integrations" icon="â¬¡" />
-                <NavItem id="security" label="Security and RBAC" icon="â " />
-                <NavItem id="settings" label="Settings" icon="â" />
+                <NavItem id="connectors" label="Data Connectors" icon="Ã¢ÂÂ" />
+                <NavItem id="integrations" label="Integrations" icon="Ã¢Â¬Â¡" />
+                <NavItem id="security" label="Security and RBAC" icon="Ã¢ÂÂ " />
+                <NavItem id="settings" label="Settings" icon="Ã¢ÂÂ" />
               </Section>
             )}
           </>
@@ -688,6 +688,14 @@ const Sidebar = ({
           >
             {user.avatar || user.name[0]}
           </div>
+        )}
+        {!collapsed && onLogout && (
+          <button
+            onClick={onLogout}
+            className="w-full mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          >
+            <span>Sign Out</span>
+          </button>
         )}
         {!collapsed && onLogout && (
           <button
@@ -736,7 +744,7 @@ const DashboardPage = ({
       label: 'Active AI Agents',
       value: '8',
       sub: '2 pending config',
-      icon: 'â¡',
+      icon: 'Ã¢ÂÂ¡',
       color: 'indigo',
       trend: '+2 this week',
       sparkData: [4, 5, 5, 6, 7, 7, 8],
@@ -744,8 +752,8 @@ const DashboardPage = ({
     {
       label: 'Conversations Today',
       value: dbStats ? dbStats.totalConversations.toLocaleString() : '1,284',
-      sub: dbStats ? `${dbStats.openConversations} open · ${dbStats.resolvedConversations} resolved` : 'Customers plus Staff',
-      icon: 'â',
+      sub: dbStats ? `${dbStats.openConversations} open Â· ${dbStats.resolvedConversations} resolved` : 'Customers plus Staff',
+      icon: 'Ã¢ÂÂ',
       color: 'blue',
       trend: '+18%',
       sparkData: [800, 950, 1050, 920, 1100, 1200, 1284],
@@ -754,7 +762,7 @@ const DashboardPage = ({
       label: 'Actions Completed',
       value: '342',
       sub: 'Agent-executed tasks',
-      icon: 'â',
+      icon: 'Ã¢ÂÂ',
       color: 'emerald',
       trend: '+34%',
       sparkData: [180, 220, 260, 200, 290, 310, 342],
@@ -763,7 +771,7 @@ const DashboardPage = ({
       label: 'Pending Approvals',
       value: dbStats ? String(dbStats.pendingApprovals) : '12',
       sub: dbStats ? (dbStats.pendingApprovals > 0 ? `${dbStats.pendingApprovals} require human review` : 'All caught up!') : 'Require human review',
-      icon: 'â ',
+      icon: 'Ã¢ÂÂ ',
       color: 'amber',
       trend: '3 urgent',
       sparkData: [5, 8, 12, 9, 11, 10, 12],
@@ -771,8 +779,8 @@ const DashboardPage = ({
     {
       label: 'KB Articles',
       value: dbStats ? dbStats.totalArticles.toLocaleString() : '2,847',
-      sub: dbStats ? `${dbStats.publishedArticles} published · ${dbStats.totalArticles - dbStats.publishedArticles} drafts` : '94% coverage score',
-      icon: 'â',
+      sub: dbStats ? `${dbStats.publishedArticles} published Â· ${dbStats.totalArticles - dbStats.publishedArticles} drafts` : '94% coverage score',
+      icon: 'Ã¢ÂÂ',
       color: 'purple',
       trend: '+127 this month',
       sparkData: [2100, 2300, 2450, 2600, 2700, 2790, 2847],
@@ -781,7 +789,7 @@ const DashboardPage = ({
       label: 'Avg Resolution Time',
       value: '1m 24s',
       sub: 'Down from 4m 12s',
-      icon: 'â',
+      icon: 'Ã¢ÂÂ',
       color: 'emerald',
       trend: '-66%',
       sparkData: [252, 210, 190, 170, 155, 140, 84],
@@ -790,7 +798,7 @@ const DashboardPage = ({
       label: 'Customer Satisfaction',
       value: '94.2%',
       sub: 'Based on 1,140 ratings',
-      icon: 'â',
+      icon: 'Ã¢ÂÂ',
       color: 'amber',
       trend: '+2.1%',
       sparkData: [88, 90, 91, 92, 93, 93.5, 94.2],
@@ -802,7 +810,7 @@ const DashboardPage = ({
         'of ' +
         ((tenant?.tokenLimit || 5000000) / 1000000).toFixed(0) +
         'M limit',
-      icon: 'â',
+      icon: 'Ã¢ÂÂ',
       color: 'blue',
       trend: '48% used',
       sparkData: [300, 600, 900, 1200, 1600, 2000, 2400],
@@ -834,7 +842,7 @@ const DashboardPage = ({
     {
       time: '18m ago',
       agent: 'Support Agent',
-      action: 'Escalated ticket T-9921 â confidence below threshold',
+      action: 'Escalated ticket T-9921 Ã¢ÂÂ confidence below threshold',
       type: 'escalated',
       icon: '!',
     },
@@ -848,7 +856,7 @@ const DashboardPage = ({
     {
       time: '31m ago',
       agent: 'Compliance Agent',
-      action: 'Flagged policy update in Q3 handbook â KB refresh triggered',
+      action: 'Flagged policy update in Q3 handbook Ã¢ÂÂ KB refresh triggered',
       type: 'flagged',
       icon: 'f',
     },
@@ -949,7 +957,7 @@ const DashboardPage = ({
             )}
           </div>
           <p className="text-slate-400 text-sm mt-1">
-            Welcome back â here is what your AI workforce is doing right now
+            Welcome back Ã¢ÂÂ here is what your AI workforce is doing right now
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1012,7 +1020,7 @@ const DashboardPage = ({
                     {a.name}
                   </div>
                   <div className="text-xs text-slate-500">
-                    {a.tasks} tasks Â· {a.accuracy}% acc
+                    {a.tasks} tasks ÃÂ· {a.accuracy}% acc
                   </div>
                 </div>
                 <div
@@ -1684,7 +1692,7 @@ const mockKnowledgeItems: KnowledgeItem[] = [
   },
   {
     id: 'ki6',
-    title: 'Release Notes v4.2 â Agent Enhancements',
+    title: 'Release Notes v4.2 Ã¢ÂÂ Agent Enhancements',
     type: 'release_note',
     audience: 'Both',
     productId: 'p1',
@@ -1740,7 +1748,7 @@ const mockKnowledgeItems: KnowledgeItem[] = [
     tags: ['security'],
     subTags: ['rbac', 'permissions'],
     summary:
-      'Complete reference for all 8 RBAC roles across DT Platform and Tenant tiers â what each role can access, configure, and execute.',
+      'Complete reference for all 8 RBAC roles across DT Platform and Tenant tiers Ã¢ÂÂ what each role can access, configure, and execute.',
     author: 'Alex Rivera',
     version: '2.0',
     createdAt: '2025-07-01',
@@ -1799,7 +1807,7 @@ const mockKnowledgeItems: KnowledgeItem[] = [
   },
   {
     id: 'ki11',
-    title: 'Plan Upgrade Guide â Enterprise Features',
+    title: 'Plan Upgrade Guide Ã¢ÂÂ Enterprise Features',
     type: 'article',
     audience: 'Customer',
     productId: 'p1',
@@ -3089,7 +3097,7 @@ const defaultAgents: AgentDef[] = [
     id: 'a4',
     name: 'Account Agent',
     description:
-      'Handles account management requests â password resets, profile updates, access management, and 2FA. Operates with conservative confidence thresholds.',
+      'Handles account management requests Ã¢ÂÂ password resets, profile updates, access management, and 2FA. Operates with conservative confidence thresholds.',
     icon: 'A',
     category: 'Customer',
     status: 'active',
@@ -3592,7 +3600,7 @@ const AgentWorkforcePage = ({
         <div>
           <h1 className="text-2xl font-bold text-white">AI Agents</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Configure agents that assist customers and internal staff â with
+            Configure agents that assist customers and internal staff Ã¢ÂÂ with
             full audit and approval controls
           </p>
         </div>
@@ -3607,7 +3615,7 @@ const AgentWorkforcePage = ({
       {/* Agentic Pipeline Banner */}
       <div className="mb-6 bg-slate-900 border border-slate-800 rounded-xl p-4">
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-          How Agents Work â Agentic Pipeline
+          How Agents Work Ã¢ÂÂ Agentic Pipeline
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
@@ -3667,25 +3675,25 @@ const AgentWorkforcePage = ({
         <StatCard
           label="Total Agents"
           value={String(agents.length)}
-          icon="â¡"
+          icon="Ã¢ÂÂ¡"
           color="blue"
         />
         <StatCard
           label="Active"
           value={String(agents.filter((a) => a.status === 'active').length)}
-          icon="â"
+          icon="Ã¢ÂÂ"
           color="emerald"
         />
         <StatCard
           label="Customer Agents"
           value={String(agents.filter((a) => a.category === 'Customer').length)}
-          icon="â"
+          icon="Ã¢ÂÂ"
           color="purple"
         />
         <StatCard
           label="Internal Agents"
           value={String(agents.filter((a) => a.category === 'Internal').length)}
-          icon="â"
+          icon="Ã¢ÂÂ"
           color="amber"
         />
       </div>
@@ -4112,7 +4120,7 @@ const AgentWorkforcePage = ({
                     className="accent-indigo-500"
                   />
                   <span className="text-slate-300 text-sm">
-                    Enable RAG â inject retrieved KB context before reasoning
+                    Enable RAG Ã¢ÂÂ inject retrieved KB context before reasoning
                   </span>
                 </label>
                 {selectedAgent.modelConfig.ragEnabled && (
@@ -4152,7 +4160,7 @@ const AgentWorkforcePage = ({
             <div className="space-y-3">
               <div className="text-xs text-slate-400 mb-3">
                 The pipeline defines how this agent processes each incoming
-                request â from retrieval through reasoning to response. Drag to
+                request Ã¢ÂÂ from retrieval through reasoning to response. Drag to
                 reorder stages.
               </div>
               {selectedAgent.pipeline.map((stage, idx) => {
@@ -4327,8 +4335,8 @@ const AgentWorkforcePage = ({
           {configTab === 'actions' && (
             <div className="space-y-4">
               <div className="text-xs text-slate-400 mb-3">
-                Define what this agent is permitted to do â read-only queries,
-                write actions, or financial transactions â and whether each
+                Define what this agent is permitted to do Ã¢ÂÂ read-only queries,
+                write actions, or financial transactions Ã¢ÂÂ and whether each
                 requires human approval.
               </div>
               <div className="space-y-2">
@@ -4427,7 +4435,7 @@ const AgentWorkforcePage = ({
                 RAG pipeline.
               </div>
 
-              {/* Knowledge Sources â taxonomy picker */}
+              {/* Knowledge Sources Ã¢ÂÂ taxonomy picker */}
               <div className="bg-slate-800 rounded-lg p-4">
                 <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide">
                   Knowledge Sources (KB Articles)
@@ -4487,7 +4495,7 @@ const AgentWorkforcePage = ({
                 </div>
               </div>
 
-              {/* Data Connectors â field-level scope */}
+              {/* Data Connectors Ã¢ÂÂ field-level scope */}
               <div className="bg-slate-800 rounded-lg p-4">
                 <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide">
                   Data Connector Bindings
@@ -4582,7 +4590,7 @@ const AgentWorkforcePage = ({
                         )}
                         {!isBound && (
                           <div className="ml-8 text-xs text-slate-600 mt-0.5">
-                            {dc.objects.length} objects available â enable to
+                            {dc.objects.length} objects available Ã¢ÂÂ enable to
                             configure field permissions
                           </div>
                         )}
@@ -4701,21 +4709,21 @@ const AgentWorkforcePage = ({
                       source: 'KB Article',
                       title: 'How to Request a Refund',
                       breadcrumb:
-                        'DreamTeam Platform âº Billing âº Invoices & Payments âº Refund Policy',
+                        'DreamTeam Platform Ã¢ÂÂº Billing Ã¢ÂÂº Invoices & Payments Ã¢ÂÂº Refund Policy',
                       score: 0.94,
                     },
                     {
                       source: 'Stripe Billing',
                       title: 'Invoice #inv_2026_0621',
                       breadcrumb:
-                        'Customer âº Invoice âº amount, status, lineItems',
+                        'Customer Ã¢ÂÂº Invoice Ã¢ÂÂº amount, status, lineItems',
                       score: 0.88,
                     },
                     {
                       source: 'Imported File',
                       title: 'Product_Pricing_Sheet_Q2_2026.xlsx',
                       breadcrumb:
-                        'DreamTeam Platform âº Billing & Subscriptions',
+                        'DreamTeam Platform Ã¢ÂÂº Billing & Subscriptions',
                       score: 0.72,
                     },
                   ].map((r, i) => (
@@ -5044,7 +5052,7 @@ const KnowledgeHubPage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Knowledge Hub</h1>
           <p className="text-slate-400 text-sm mt-1">
-            AI-powered knowledge for customers and internal staff â one source
+            AI-powered knowledge for customers and internal staff Ã¢ÂÂ one source
             of truth, served intelligently
           </p>
         </div>
@@ -5052,28 +5060,28 @@ const KnowledgeHubPage = ({
           <StatCard
             label="Total Articles"
             value="2,847"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="indigo"
             trend="+127 this month"
           />
           <StatCard
             label="Sources Syncing"
             value="6"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
             trend="All healthy"
           />
           <StatCard
             label="Queries Answered"
             value="12,481"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
             trend="+18% this week"
           />
           <StatCard
             label="Coverage Score"
             value="94%"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="amber"
             trend="+2% vs last month"
           />
@@ -5665,7 +5673,7 @@ const KnowledgeHubPage = ({
               Ingestion Pipeline
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Connect data sources â content is automatically chunked, embedded,
+              Connect data sources Ã¢ÂÂ content is automatically chunked, embedded,
               and indexed into the KB
             </p>
           </div>
@@ -5725,11 +5733,11 @@ const KnowledgeHubPage = ({
           </h2>
           <div className="space-y-2">
             {[
-              'Zendesk: 42 new tickets ingested and embedded â 2 min ago',
-              'Confluence: 8 pages updated, KB refresh triggered â 12 min ago',
-              'Google Drive: Policy doc v3.2 detected, diff processed â 1 hr ago',
-              'PDF Upload: Q3 Training Manual fully indexed 124 chunks â 3 hr ago',
-              'GitHub: 3 README files changed, embeddings updated â 1 day ago',
+              'Zendesk: 42 new tickets ingested and embedded Ã¢ÂÂ 2 min ago',
+              'Confluence: 8 pages updated, KB refresh triggered Ã¢ÂÂ 12 min ago',
+              'Google Drive: Policy doc v3.2 detected, diff processed Ã¢ÂÂ 1 hr ago',
+              'PDF Upload: Q3 Training Manual fully indexed 124 chunks Ã¢ÂÂ 3 hr ago',
+              'GitHub: 3 README files changed, embeddings updated Ã¢ÂÂ 1 day ago',
             ].map((log, i) => (
               <div key={i} className="flex items-start gap-3 text-xs">
                 <span className="text-emerald-400 mt-0.5">v</span>
@@ -5748,7 +5756,7 @@ const KnowledgeHubPage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Team Training</h1>
           <p className="text-slate-400 text-sm mt-1">
-            AI-powered training modules built from your knowledge base â track
+            AI-powered training modules built from your knowledge base Ã¢ÂÂ track
             staff completion
           </p>
         </div>
@@ -5803,28 +5811,28 @@ const KnowledgeHubPage = ({
           <StatCard
             label="Total Queries"
             value="12,481"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="indigo"
             trend="+18%"
           />
           <StatCard
             label="Self-Served"
             value="89%"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
             trend="No human needed"
           />
           <StatCard
             label="Escalation Rate"
             value="11%"
-            icon="â "
+            icon="Ã¢ÂÂ "
             color="amber"
             trend="-3% this month"
           />
           <StatCard
             label="Avg Confidence"
             value="87%"
-            icon="â¡"
+            icon="Ã¢ÂÂ¡"
             color="blue"
             trend="+5% this month"
           />
@@ -5918,6 +5926,7 @@ const CustomerPortalPage = ({
   tenant?: Tenant;
   subPage: TenantPage;
 }) => {
+  const dbConvIdRef = React.useRef<string | null>(null);
   const dbConvIdRef = React.useRef<string | null>(null);
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [chatInput, setChatInput] = useState('');
@@ -6032,7 +6041,7 @@ const CustomerPortalPage = ({
           {
             title: 'How to Request a Refund',
             breadcrumb:
-              'DreamTeam Platform âº Billing âº Invoices âº Refund Policy',
+              'DreamTeam Platform Ã¢ÂÂº Billing Ã¢ÂÂº Invoices Ã¢ÂÂº Refund Policy',
             connector: null,
             score: 0.94,
             fresh: 98,
@@ -6040,7 +6049,7 @@ const CustomerPortalPage = ({
           {
             title: 'Understanding Your Invoice',
             breadcrumb:
-              'DreamTeam Platform âº Billing âº Invoices âº Invoice Downloads',
+              'DreamTeam Platform Ã¢ÂÂº Billing Ã¢ÂÂº Invoices Ã¢ÂÂº Invoice Downloads',
             connector: null,
             score: 0.88,
             fresh: 95,
@@ -6048,7 +6057,7 @@ const CustomerPortalPage = ({
           {
             title: 'Invoice #inv_2026_0621',
             breadcrumb:
-              'Stripe Billing âº Invoice âº amount, status, periodStart, lineItems',
+              'Stripe Billing Ã¢ÂÂº Invoice Ã¢ÂÂº amount, status, periodStart, lineItems',
             connector: 'Stripe Billing',
             score: 0.91,
             fresh: 100,
@@ -6059,7 +6068,7 @@ const CustomerPortalPage = ({
           {
             title: 'Setting Up Two-Factor Authentication',
             breadcrumb:
-              'Customer Portal âº Self-Service âº Password & Security âº 2FA',
+              'Customer Portal Ã¢ÂÂº Self-Service Ã¢ÂÂº Password & Security Ã¢ÂÂº 2FA',
             connector: null,
             score: 0.96,
             fresh: 99,
@@ -6067,14 +6076,14 @@ const CustomerPortalPage = ({
           {
             title: 'RBAC Roles and Permissions Reference',
             breadcrumb:
-              'DreamTeam Platform âº Getting Started âº Onboarding âº Workspace Config',
+              'DreamTeam Platform Ã¢ÂÂº Getting Started Ã¢ÂÂº Onboarding Ã¢ÂÂº Workspace Config',
             connector: null,
             score: 0.81,
             fresh: 96,
           },
           {
             title: 'Contact #c_00128',
-            breadcrumb: 'Salesforce CRM âº Contact âº id, email, lastActivity',
+            breadcrumb: 'Salesforce CRM Ã¢ÂÂº Contact Ã¢ÂÂº id, email, lastActivity',
             connector: 'Salesforce CRM',
             score: 0.77,
             fresh: 100,
@@ -6084,7 +6093,7 @@ const CustomerPortalPage = ({
           {
             title: 'Agent Pipeline Design Best Practices',
             breadcrumb:
-              'DreamTeam Platform âº Agent Management âº Configuration âº Pipeline Design',
+              'DreamTeam Platform Ã¢ÂÂº Agent Management Ã¢ÂÂº Configuration Ã¢ÂÂº Pipeline Design',
             connector: null,
             score: 0.89,
             fresh: 100,
@@ -6092,14 +6101,14 @@ const CustomerPortalPage = ({
           {
             title: 'Release Notes v4.2',
             breadcrumb:
-              'DreamTeam Platform âº Agent Management âº Configuration âº LLM Model Selection',
+              'DreamTeam Platform Ã¢ÂÂº Agent Management Ã¢ÂÂº Configuration Ã¢ÂÂº LLM Model Selection',
             connector: null,
             score: 0.83,
             fresh: 100,
           },
           {
             title: 'API_Reference_v4.2.md',
-            breadcrumb: 'Imported File âº Integrations & APIs âº API Reference',
+            breadcrumb: 'Imported File Ã¢ÂÂº Integrations & APIs Ã¢ÂÂº API Reference',
             connector: 'Google Drive / Files',
             score: 0.74,
             fresh: 95,
@@ -6113,7 +6122,7 @@ const CustomerPortalPage = ({
             ? {
                 ...s,
                 status: 'done',
-                detail: 'Routed to ' + chosenAgent + ' â confidence 97%',
+                detail: 'Routed to ' + chosenAgent + ' Ã¢ÂÂ confidence 97%',
                 confidence: 97,
                 duration: 120,
               }
@@ -6133,7 +6142,7 @@ const CustomerPortalPage = ({
                 detail:
                   'Retrieved ' +
                   kbChunks.length +
-                  ' sources â ' +
+                  ' sources Ã¢ÂÂ ' +
                   kbChunks
                     .map(
                       (c) =>
@@ -6557,7 +6566,7 @@ const CustomerPortalPage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
           <p className="text-slate-400 text-sm mt-1">
-            AI agents serve your customers 24/7 â answering questions, resolving
+            AI agents serve your customers 24/7 Ã¢ÂÂ answering questions, resolving
             issues, and taking action on their behalf
           </p>
         </div>
@@ -6565,27 +6574,27 @@ const CustomerPortalPage = ({
           <StatCard
             label="Conversations Today"
             value="1,284"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
             trend="+18%"
           />
           <StatCard
             label="Self-Served"
             value="89%"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
             trend="No human needed"
           />
           <StatCard
             label="Pending Approvals"
             value="12"
-            icon="â "
+            icon="Ã¢ÂÂ "
             color="amber"
             trend="3 urgent"
           />
           <StatCard
             label="Avg Response Time"
-            icon="â"
+            icon="Ã¢ÂÂ"
             value="< 2s"
             color="indigo"
             trend="AI-instant"
@@ -6666,7 +6675,7 @@ const CustomerPortalPage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Conversations</h1>
             <p className="text-slate-400 text-sm mt-1">
-              AI-handled customer conversations â live and historical
+              AI-handled customer conversations Ã¢ÂÂ live and historical
             </p>
           </div>
           <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
@@ -6711,7 +6720,7 @@ const CustomerPortalPage = ({
               <div className="text-right flex-shrink-0">
                 <div className="text-xs text-slate-500">{conv.agent}</div>
                 <div className="text-xs text-slate-600 mt-0.5">
-                  {conv.messages} msgs Â· {conv.time}
+                  {conv.messages} msgs ÃÂ· {conv.time}
                 </div>
               </div>
             </div>
@@ -6737,7 +6746,7 @@ const CustomerPortalPage = ({
           {traceVisible && traceSteps.length > 0 && (
             <div className="mb-4 bg-slate-950 border border-slate-700 rounded-xl p-3">
               <div className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">
-                Agent Pipeline â {agentUsed}
+                Agent Pipeline Ã¢ÂÂ {agentUsed}
               </div>
               <div className="space-y-1.5">
                 {traceSteps.map((step, idx) => {
@@ -6888,7 +6897,7 @@ const CustomerPortalPage = ({
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Ask anything â billing, access, product..."
+              placeholder="Ask anything Ã¢ÂÂ billing, access, product..."
               className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
             <button
@@ -6910,7 +6919,7 @@ const CustomerPortalPage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Agent Actions</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Configure what actions agents can perform on behalf of customers â
+            Configure what actions agents can perform on behalf of customers Ã¢ÂÂ
             with confidence gates and approval flows
           </p>
         </div>
@@ -6963,7 +6972,7 @@ const CustomerPortalPage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Approvals Queue</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Human-in-the-loop â review agent actions that exceed confidence or
+              Human-in-the-loop Ã¢ÂÂ review agent actions that exceed confidence or
               risk thresholds
             </p>
           </div>
@@ -6988,12 +6997,12 @@ const CustomerPortalPage = ({
                   </div>
                   <div className="text-xs text-slate-400">
                     Customer:{' '}
-                    <span className="text-white">{item.customer}</span> Â·{' '}
+                    <span className="text-white">{item.customer}</span> ÃÂ·{' '}
                     {item.email}
                   </div>
                   <div className="text-xs text-slate-400 mt-0.5">
                     Requested by:{' '}
-                    <span className="text-white">{item.agent}</span> Â·{' '}
+                    <span className="text-white">{item.agent}</span> ÃÂ·{' '}
                     {item.requestedAt}
                   </div>
                 </div>
@@ -7035,7 +7044,7 @@ const CustomerPortalPage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Support Tickets</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Escalated issues requiring human review â AI continues to assist
+              Escalated issues requiring human review Ã¢ÂÂ AI continues to assist
               in context
             </p>
           </div>
@@ -7379,7 +7388,7 @@ const InsightEnginePage = ({
                   {m.provider}
                 </div>
                 <div className="text-xs text-slate-600 mt-1">
-                  {m.tokens} Â· {m.best}
+                  {m.tokens} ÃÂ· {m.best}
                 </div>
               </div>
             ))}
@@ -7504,28 +7513,28 @@ const InsightEnginePage = ({
             <StatCard
               label="Tokens This Month"
               value="2.4M"
-              icon="â¡"
+              icon="Ã¢ÂÂ¡"
               color="blue"
               trend="48% of limit"
             />
             <StatCard
               label="Queries Run"
               value="847"
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="indigo"
               trend="+12% this week"
             />
             <StatCard
               label="Avg Tokens Per Query"
               value="2,840"
-              icon="â¡"
+              icon="Ã¢ÂÂ¡"
               color="emerald"
               trend=""
             />
             <StatCard
               label="Cost Est MTD"
               value="$24.80"
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="amber"
               trend="On track"
             />
@@ -7689,7 +7698,7 @@ const SwarmPage = ({ tenant }: { tenant?: Tenant }) => {
     'Support Agent resolved ticket T-9921',
     'Billing Agent queued credit approval for $350',
     'HR Agent answered benefits query for 3 staff',
-    'Compliance Agent flagged policy change â KB refresh triggered',
+    'Compliance Agent flagged policy change Ã¢ÂÂ KB refresh triggered',
     'Onboarding Agent sent Day-1 pack to new hire Sarah M.',
     'Sales Agent qualified lead from web chat and pushed to CRM',
     'IT Helpdesk resolved 4 password reset requests',
@@ -7851,7 +7860,7 @@ const SecurityPage = ({
       time: '10:38 AM',
       user: 'Support Agent',
       action:
-        'Attempted password reset for customer James Liu â awaiting approval',
+        'Attempted password reset for customer James Liu Ã¢ÂÂ awaiting approval',
       type: 'agent_action',
       severity: 'warn',
     },
@@ -7957,25 +7966,25 @@ const SecurityPage = ({
             <StatCard
               label="Team Members"
               value={String(teamMembers.length)}
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="blue"
             />
             <StatCard
               label="Active Sessions"
               value="3"
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="emerald"
             />
             <StatCard
               label="Audit Events Today"
               value="47"
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="indigo"
             />
             <StatCard
               label="Compliance Score"
               value="98%"
-              icon="â"
+              icon="Ã¢ÂÂ"
               color="amber"
               trend="Enterprise grade"
             />
@@ -8171,13 +8180,13 @@ const SecurityPage = ({
             {
               name: 'HIPAA',
               status: 'available',
-              desc: 'Healthcare data protection â available for healthcare tenants',
+              desc: 'Healthcare data protection Ã¢ÂÂ available for healthcare tenants',
               cert: 'BAA available on request',
             },
             {
               name: 'PCI DSS',
               status: 'partial',
-              desc: 'Payment card industry compliance â Level 2 SAQ-D',
+              desc: 'Payment card industry compliance Ã¢ÂÂ Level 2 SAQ-D',
               cert: 'Renewal in progress',
             },
             {
@@ -8569,7 +8578,7 @@ const KnowledgeDataPage = ({
     const sub = sec?.subSections.find((ss) => ss.id === item.subSectionId);
     return [prod?.label, mod?.label, sec?.label, sub?.label]
       .filter(Boolean)
-      .join(' âº ');
+      .join(' Ã¢ÂÂº ');
   };
 
   const typeColors: Record<string, string> = {
@@ -8628,7 +8637,7 @@ const KnowledgeDataPage = ({
             Knowledge &amp; Data
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Centralised knowledge taxonomy, connector registry, and file store â
+            Centralised knowledge taxonomy, connector registry, and file store Ã¢ÂÂ
             powering every agent's RAG pipeline
           </p>
         </div>
@@ -8636,25 +8645,25 @@ const KnowledgeDataPage = ({
           <StatCard
             label="Knowledge Articles"
             value={String(mockKnowledgeItems.length)}
-            icon="â¡"
+            icon="Ã¢ÂÂ¡"
             color="indigo"
           />
           <StatCard
             label="Vector Chunks Indexed"
             value={String(totalChunks.toLocaleString())}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
           />
           <StatCard
             label="Data Connectors"
             value={String(connectedDCs) + '/' + registeredConnectors.length}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
           />
           <StatCard
             label="Imported Files"
             value={String(mockImportedFiles.length)}
-            icon="â¤"
+            icon="Ã¢ÂÂ¤"
             color="purple"
           />
         </div>
@@ -9098,7 +9107,7 @@ const KnowledgeDataPage = ({
               Data Connector Registry
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Field-level permissions for every connector bound to an agent â
+              Field-level permissions for every connector bound to an agent Ã¢ÂÂ
               the source of truth for what agents can read and write
             </p>
           </div>
@@ -9160,9 +9169,9 @@ const KnowledgeDataPage = ({
                       </span>
                     </div>
                     <div className="text-xs text-slate-500">
-                      Synced {dc.lastSync} Â· {dc.syncFrequency} Â·{' '}
-                      {dc.recordCount.toLocaleString()} records Â·{' '}
-                      {dc.objects.length} objects Â· {boundAgents} agent
+                      Synced {dc.lastSync} ÃÂ· {dc.syncFrequency} ÃÂ·{' '}
+                      {dc.recordCount.toLocaleString()} records ÃÂ·{' '}
+                      {dc.objects.length} objects ÃÂ· {boundAgents} agent
                       {boundAgents !== 1 ? 's' : ''} bound
                     </div>
                   </div>
@@ -9314,7 +9323,7 @@ const KnowledgeDataPage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Imported Files</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Files uploaded or synced from storage connectors â parsed,
+              Files uploaded or synced from storage connectors Ã¢ÂÂ parsed,
               chunked, and indexed into the knowledge vector store
             </p>
           </div>
@@ -9329,7 +9338,7 @@ const KnowledgeDataPage = ({
           <StatCard
             label="Total Files"
             value={String(mockImportedFiles.length)}
-            icon="â¤"
+            icon="Ã¢ÂÂ¤"
             color="indigo"
           />
           <StatCard
@@ -9337,7 +9346,7 @@ const KnowledgeDataPage = ({
             value={String(
               mockImportedFiles.filter((f) => f.status === 'indexed').length
             )}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
           />
           <StatCard
@@ -9345,7 +9354,7 @@ const KnowledgeDataPage = ({
             value={String(
               mockImportedFiles.filter((f) => f.status === 'processing').length
             )}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="yellow"
           />
           <StatCard
@@ -9353,7 +9362,7 @@ const KnowledgeDataPage = ({
             value={String(
               mockImportedFiles.reduce((s, f) => s + f.chunkCount, 0)
             )}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
           />
         </div>
@@ -9410,7 +9419,7 @@ const KnowledgeDataPage = ({
                             {file.name}
                           </div>
                           <div className="text-slate-600 text-xs">
-                            {file.size} Â· {file.uploadedBy}
+                            {file.size} ÃÂ· {file.uploadedBy}
                           </div>
                         </div>
                       </div>
@@ -9548,7 +9557,7 @@ const DataConnectorsPage = ({
         <div>
           <h1 className="text-2xl font-bold text-white">Data Connectors</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Connect databases and data warehouses â agents can query and act on
+            Connect databases and data warehouses Ã¢ÂÂ agents can query and act on
             live data
           </p>
         </div>
@@ -9835,7 +9844,7 @@ const PlatformConsolePage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Platform Overview</h1>
           <p className="text-slate-400 text-sm mt-1">
-            DreamTeam AI â Master control centre for all tenants and system
+            DreamTeam AI Ã¢ÂÂ Master control centre for all tenants and system
             health
           </p>
         </div>
@@ -9843,28 +9852,28 @@ const PlatformConsolePage = ({
           <StatCard
             label="Active Tenants"
             value={String(activeTenants)}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="indigo"
             trend={'of ' + mockTenants.length + ' total'}
           />
           <StatCard
             label="Total AI Agents"
             value={String(totalAgents)}
-            icon="â¡"
+            icon="Ã¢ÂÂ¡"
             color="emerald"
             trend="Across all tenants"
           />
           <StatCard
             label="Platform Users"
             value={String(totalUsers)}
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
             trend="All tenants"
           />
           <StatCard
             label="Monthly Tokens"
             value={(totalTokens / 1000000).toFixed(1) + 'M'}
-            icon="â¡"
+            icon="Ã¢ÂÂ¡"
             color="amber"
             trend="Platform-wide"
           />
@@ -9882,12 +9891,12 @@ const PlatformConsolePage = ({
               },
               {
                 event:
-                  'Hooli Technologies exceeded 80% token limit â warning sent',
+                  'Hooli Technologies exceeded 80% token limit Ã¢ÂÂ warning sent',
                 time: '4 hr ago',
                 type: 'warn',
               },
               {
-                event: 'Pied Piper account suspended â payment failure',
+                event: 'Pied Piper account suspended Ã¢ÂÂ payment failure',
                 time: '1 day ago',
                 type: 'error',
               },
@@ -9939,7 +9948,7 @@ const PlatformConsolePage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Tenant Management</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Manage all client workspaces â view, configure, and support
+              Manage all client workspaces Ã¢ÂÂ view, configure, and support
               tenants
             </p>
           </div>
@@ -10062,7 +10071,7 @@ const PlatformConsolePage = ({
         </div>
         {selectedTenant && (
           <Modal
-            title={selectedTenant.name + ' â Detail'}
+            title={selectedTenant.name + ' Ã¢ÂÂ Detail'}
             onClose={() => setSelectedTenant(null)}
           >
             <div className="space-y-4">
@@ -10133,7 +10142,7 @@ const PlatformConsolePage = ({
                 </div>
                 <div className="flex justify-between">
                   <span>Audit logged</span>
-                  <span className="text-white">Yes â visible to tenant</span>
+                  <span className="text-white">Yes Ã¢ÂÂ visible to tenant</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Session timeout</span>
@@ -10166,28 +10175,28 @@ const PlatformConsolePage = ({
           <StatCard
             label="Platform Uptime"
             value="99.97%"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
             trend="30-day SLA"
           />
           <StatCard
             label="Avg API Latency"
             value="84ms"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
             trend="-12ms vs last week"
           />
           <StatCard
             label="Active Incidents"
             value="0"
-            icon="â "
+            icon="Ã¢ÂÂ "
             color="emerald"
             trend="All clear"
           />
           <StatCard
             label="Error Rate"
             value="0.03%"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="amber"
             trend="Within SLA"
           />
@@ -10216,7 +10225,7 @@ const PlatformConsolePage = ({
                     {svc.name}
                   </div>
                   <div className="text-xs text-slate-500">
-                    {svc.latency} Â· {svc.uptime} uptime
+                    {svc.latency} ÃÂ· {svc.uptime} uptime
                   </div>
                 </div>
               </div>
@@ -10241,28 +10250,28 @@ const PlatformConsolePage = ({
           <StatCard
             label="MRR"
             value="$28,450"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="emerald"
             trend="+12% MoM"
           />
           <StatCard
             label="ARR"
             value="$341,400"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="indigo"
             trend="On track"
           />
           <StatCard
             label="Active Subscriptions"
             value="5"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="blue"
             trend="1 suspended"
           />
           <StatCard
             label="Avg Revenue/Tenant"
             value="$5,690"
-            icon="â"
+            icon="Ã¢ÂÂ"
             color="amber"
             trend="Growing"
           />
@@ -10481,7 +10490,7 @@ const OnboardingWizard = ({
                 Set Up Your Workspace
               </h2>
               <p className="text-slate-400 text-sm">
-                Customise your branded AI platform â your customers and staff
+                Customise your branded AI platform Ã¢ÂÂ your customers and staff
                 will see this
               </p>
             </div>
@@ -10593,7 +10602,7 @@ const OnboardingWizard = ({
                 Build Your Knowledge Base
               </h2>
               <p className="text-slate-400 text-sm">
-                Upload documents or write articles â the AI uses this to answer
+                Upload documents or write articles Ã¢ÂÂ the AI uses this to answer
                 queries
               </p>
             </div>
@@ -10641,7 +10650,7 @@ const OnboardingWizard = ({
                 Activate AI Agents
               </h2>
               <p className="text-slate-400 text-sm">
-                Choose which agents to deploy â each serves customers or staff
+                Choose which agents to deploy Ã¢ÂÂ each serves customers or staff
               </p>
             </div>
             <div className="space-y-3">
@@ -10901,7 +10910,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
           </h1>
           <p className="text-indigo-200 text-sm leading-relaxed mb-8">
             Knowledge base and configurable AI agents that serve your customers
-            and internal staff equally â with full audit trails and
+            and internal staff equally Ã¢ÂÂ with full audit trails and
             human-in-the-loop controls.
           </p>
           <div className="space-y-4">
@@ -10994,7 +11003,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
           </div>
           <div className="border-t border-slate-800 pt-5">
             <p className="text-xs text-slate-500 mb-3">
-              Demo accounts â click to log in instantly:
+              Demo accounts Ã¢ÂÂ click to log in instantly:
             </p>
             <div className="space-y-4">
               {demoAccounts.map((group, gi) => (
@@ -11047,7 +11056,7 @@ function App() {
   } | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // ââ Supabase real data âââââââââââââââââââââââââââââââ
+  // Ã¢ÂÂÃ¢ÂÂ Supabase real data Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
   const [dbConversations, setDbConversations] = useState<DBConversation[]>([]);
@@ -11092,6 +11101,16 @@ function App() {
   const handleSetPage = (p: Page) => {
     if (!authedUser) return;
     if (canAccessPage(authedUser.role, p)) setCurrentPage(p);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setAuthedUser(null as any);
+    setCurrentPage('dashboard');
+    setDbTenants([]);
+    setDbArticles([]);
+    setDbConversations([]);
+    setDbStats(null);
   };
 
   const handleLogout = async () => {
@@ -11163,21 +11182,21 @@ function App() {
   };
 
 
-  // ââ Load Supabase data on login âââââââââââââââââââââ
+  // Ã¢ÂÂÃ¢ÂÂ Load Supabase data on login Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
   useEffect(() => {
+    let _cleanup = false;
     if (!authedUser) {
       setDbTenants([]); setDbArticles([]); setDbConversations([]); setDbStats(null);
-      return;
+      return () => { _cleanup = true; };
     }
-    let cancelled = false;
     (async () => {
       try {
         const profile = await fetchMyProfile();
-        if (cancelled) return;
+        if (_cleanup) return;
         const tid = (profile?.tenant_id ?? authedUser.tenantId) as string | undefined;
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
-          if (!cancelled) setDbTenants(t);
+          if (!_cleanup) setDbTenants(t);
         }
         if (tid) {
           const [a, c, s] = await Promise.all([
@@ -11185,11 +11204,11 @@ function App() {
             fetchConversations(tid),
             fetchDashboardStats(tid),
           ]);
-          if (!cancelled) { setDbArticles(a); setDbConversations(c); setDbStats(s); }
+          if (!_cleanup) { setDbArticles(a); setDbConversations(c); setDbStats(s); }
         }
       } catch(e) { console.error('[DT] data load:', e); }
     })();
-    return () => { cancelled = true; };
+    return () => { _cleanup = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authedUser?.id]);
 
