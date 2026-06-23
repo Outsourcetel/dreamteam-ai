@@ -1,7 +1,7 @@
 import { supabase } from '../supabase';
 
 // =====================================================
-// TYPES — mirror the Supabase schema
+// TYPES â mirror the Supabase schema
 // =====================================================
 export interface DBTenant {
   id: string;
@@ -300,3 +300,6 @@ export const fetchDashboardStats = async (tenantId: string) => {
     },
   };
 };
+
+// Alias
+export const createMessage = addMessage;
