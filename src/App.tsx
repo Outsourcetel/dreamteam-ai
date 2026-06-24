@@ -9822,21 +9822,43 @@ const PlatformConsolePage = ({
   page,
   setPage,
   user,
+  dbTenants,
 }: {
   page: PlatformPage;
   setPage: (p: Page) => void;
   user: AuthUser;
+  dbTenants?: Tenant[];
 }) => {
+  // Use real DB tenants when available, fall back to mock data otherwise
+  const tenants: Tenant[] = (dbTenants && dbTenants.length > 0)
+    ? dbTenants.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        logo: t.logo_url || undefined,
+        primaryColor: (t.settings && t.settings.primaryColor) || t.accent_color || '#6366f1',
+        accentColor: t.accent_color || undefined,
+        plan: t.plan,
+        status: t.status,
+        agentsActive: (t.settings && t.settings.agentsActive) ?? 0,
+        usersCount: (t.settings && t.settings.usersCount) ?? 0,
+        monthlyTokens: (t.settings && t.settings.monthlyTokens) ?? 0,
+        tokenLimit: (t.settings && t.settings.tokenLimit) ?? 1000000,
+        createdAt: (t.created_at || '').split('T')[0],
+        industry: t.industry || '—',
+        contactEmail: (t.settings && t.settings.contactEmail) || '',
+      }))
+    : mockTenants;
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [godModeTarget, setGodModeTarget] = useState<Tenant | null>(null);
 
   if (page === 'platform_home') {
-    const totalTokens = mockTenants.reduce((s, t) => s + t.monthlyTokens, 0);
-    const activeTenants = mockTenants.filter(
+    const totalTokens = tenants.reduce((s, t) => s + t.monthlyTokens, 0);
+    const activeTenants = tenants.filter(
       (t) => t.status === 'active'
     ).length;
-    const totalAgents = mockTenants.reduce((s, t) => s + t.agentsActive, 0);
-    const totalUsers = mockTenants.reduce((s, t) => s + t.usersCount, 0);
+    const totalAgents = tenants.reduce((s, t) => s + t.agentsActive, 0);
+    const totalUsers = tenants.reduce((s, t) => s + t.usersCount, 0);
 
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -9853,7 +9875,7 @@ const PlatformConsolePage = ({
             value={String(activeTenants)}
             icon="◈"
             color="indigo"
-            trend={'of ' + mockTenants.length + ' total'}
+            trend={'of ' + tenants.length + ' total'}
           />
           <StatCard
             label="Total AI Agents"
@@ -9978,7 +10000,7 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {mockTenants.map((t) => (
+              {tenants.map((t) => (
                 <tr
                   key={t.id}
                   className="hover:bg-slate-800/30 cursor-pointer transition-all"
@@ -10296,7 +10318,7 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {mockTenants.map((t) => {
+              {tenants.map((t) => {
                 const rev =
                   t.plan === 'enterprise'
                     ? 1499
@@ -10375,7 +10397,7 @@ const PlatformConsolePage = ({
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mockTenants
+          {tenants
             .filter((t) => t.status === 'active')
             .map((t) => (
               <div
@@ -11157,6 +11179,7 @@ function App() {
           page={currentPage as PlatformPage}
           setPage={handleSetPage}
           user={authedUser}
+          dbTenants={dbTenants}
         />
       );
     switch (currentPage) {
