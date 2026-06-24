@@ -484,7 +484,14 @@ const Sidebar = ({
     label: string;
     icon: string;
   }) => {
-    const active = page === id;
+    const groupOf = (p: string): string => {
+      if (p === 'hub_overview' || p.startsWith('hub_') || p.startsWith('knowledge_')) return 'knowledge';
+      if (p === 'portal_overview' || p.startsWith('portal_')) return 'portal';
+      if (p === 'agents' || p === 'swarm') return 'agents';
+      if (p === 'security' || p === 'integrations' || p === 'connectors' || p === 'settings') return 'admin';
+      return p;
+    };
+    const active = groupOf(page) === groupOf(id);
     return (
       <button
         onClick={() => setPage(id)}
@@ -607,55 +614,20 @@ const Sidebar = ({
             </Section>
           </>
         ) : (
-          <>
-            <Section title="Workspace">
-              <NavItem id="dashboard" label="Dashboard" icon="⌘" />
-              <NavItem id="agents" label="AI Agents" icon="⚡" />
-              <NavItem id="swarm" label="Swarm Monitor" icon="⬡" />
-              <NavItem id="insight" label="Insight Engine" icon="⚛" />
+        <>
+          <Section title="Workspace">
+            <NavItem id="dashboard" label="Dashboard" icon="⌘" />
+            <NavItem id="agents" label="AI Agents" icon="⚡" />
+            <NavItem id="hub_overview" label="Knowledge Hub" icon="◈" />
+            <NavItem id="portal_overview" label="Customer Portal" icon="◎" />
+            <NavItem id="insight" label="Insight Engine" icon="⚛" />
+          </Section>
+          {isOwnerOrAdmin && (
+            <Section title="Administration">
+              <NavItem id="security" label="Admin" icon="⚠" />
             </Section>
-            <Section title="Knowledge Hub">
-              <NavItem id="hub_overview" label="Overview" icon="◈" />
-              <NavItem id="hub_articles" label="Articles and Docs" icon="✎" />
-              <NavItem id="hub_ingestion" label="Ingestion Pipeline" icon="⬇" />
-              <NavItem id="hub_training" label="Team Training" icon="⬡" />
-              <NavItem id="hub_analytics" label="KB Analytics" icon="◻" />
-            </Section>
-            <Section title="Customer Portal">
-              <NavItem id="portal_overview" label="Overview" icon="◈" />
-              <NavItem
-                id="portal_conversations"
-                label="Conversations"
-                icon="✉"
-              />
-              <NavItem id="portal_actions" label="Agent Actions" icon="⚙" />
-              <NavItem id="portal_approvals" label="Approvals" icon="☑" />
-              <NavItem id="portal_tickets" label="Tickets" icon="◈" />
-              <NavItem id="portal_settings" label="Portal Settings" icon="⚙" />
-            </Section>
-            <Section title="Knowledge &amp; Data">
-              <NavItem id="knowledge_data" label="Overview" icon="◈" />
-              <NavItem
-                id="knowledge_taxonomy"
-                label="Taxonomy Browser"
-                icon="⊞"
-              />
-              <NavItem
-                id="knowledge_connectors"
-                label="Data Connectors"
-                icon="⇄"
-              />
-              <NavItem id="knowledge_files" label="Imported Files" icon="▤" />
-            </Section>
-            {isOwnerOrAdmin && (
-              <Section title="Admin">
-                <NavItem id="connectors" label="Data Connectors" icon="⇄" />
-                <NavItem id="integrations" label="Integrations" icon="⬡" />
-                <NavItem id="security" label="Security and RBAC" icon="⚠" />
-                <NavItem id="settings" label="Settings" icon="⚙" />
-              </Section>
-            )}
-          </>
+          )}
+        </>
         )}
       </nav>
 
@@ -713,6 +685,69 @@ const Sidebar = ({
 // ============================================================
 // DASHBOARD PAGE
 // ============================================================
+// ============================================================
+// SHARED IN-PAGE TAB BAR (Security-style sub-section bar)
+// ============================================================
+
+const PageTabs = ({
+  tabs,
+  page,
+  setPage,
+  accentColor,
+}: {
+  tabs: { id: Page; label: string }[];
+  page: Page;
+  setPage: (p: Page) => void;
+  accentColor?: string;
+}) => (
+  <div className="flex flex-wrap gap-1 bg-slate-800 rounded-xl p-1 mb-6 w-fit">
+    {tabs.map((t) => (
+      <button
+        key={t.id}
+        onClick={() => setPage(t.id)}
+        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+          page === t.id ? 'text-white' : 'text-slate-400 hover:text-white'
+        }`}
+        style={page === t.id ? { backgroundColor: accentColor || '#6366f1' } : {}}
+      >
+        {t.label}
+      </button>
+    ))}
+  </div>
+);
+
+const HUB_TABS: { id: Page; label: string }[] = [
+  { id: 'hub_overview', label: 'Overview' },
+  { id: 'hub_articles', label: 'Articles' },
+  { id: 'knowledge_taxonomy', label: 'Taxonomy' },
+  { id: 'hub_ingestion', label: 'Ingestion' },
+  { id: 'knowledge_connectors', label: 'Connectors' },
+  { id: 'knowledge_files', label: 'Files' },
+  { id: 'hub_training', label: 'Training' },
+  { id: 'hub_analytics', label: 'Analytics' },
+];
+
+const PORTAL_TABS: { id: Page; label: string }[] = [
+  { id: 'portal_overview', label: 'Overview' },
+  { id: 'portal_conversations', label: 'Conversations' },
+  { id: 'portal_actions', label: 'Agent Actions' },
+  { id: 'portal_approvals', label: 'Approvals' },
+  { id: 'portal_tickets', label: 'Tickets' },
+  { id: 'portal_settings', label: 'Settings' },
+];
+
+const AGENT_TABS: { id: Page; label: string }[] = [
+  { id: 'agents', label: 'AI Agents' },
+  { id: 'swarm', label: 'Swarm Monitor' },
+];
+
+const ADMIN_TABS: { id: Page; label: string }[] = [
+  { id: 'security', label: 'Security & RBAC' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'connectors', label: 'Data Connectors' },
+  { id: 'settings', label: 'Settings' },
+];
+
 
 const DashboardPage = ({
   user,
@@ -3546,9 +3581,13 @@ const defaultAgents: AgentDef[] = [
 const AgentWorkforcePage = ({
   user,
   tenant,
+  page,
+  setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
+  page: Page;
+  setPage: (p: Page) => void;
 }) => {
   const [agents, setAgents] = useState<AgentDef[]>(defaultAgents);
   const [filter, setFilter] = useState<'all' | 'active' | 'idle' | 'disabled'>(
@@ -3588,6 +3627,7 @@ const AgentWorkforcePage = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={AGENT_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">AI Agents</h1>
@@ -4779,11 +4819,13 @@ const KnowledgeHubPage = ({
   tenant,
   subPage,
     dbArticles = [],
+    setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
   subPage: TenantPage;
   dbArticles?: DBKnowledgeArticle[];
+  setPage: (p: Page) => void;
 }) => {
   // Use real DB articles when available, fallback to mock
   const allKnowledgeItems = dbArticles.length > 0
@@ -5041,6 +5083,7 @@ const KnowledgeHubPage = ({
   if (subPage === 'hub_overview') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Knowledge Hub</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -5195,6 +5238,7 @@ const KnowledgeHubPage = ({
     const [filterAudience, setFilterAudience] = React.useState<string>('all');
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Knowledge Base</h1>
@@ -5659,6 +5703,7 @@ const KnowledgeHubPage = ({
   if (subPage === 'hub_ingestion') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">
@@ -5745,6 +5790,7 @@ const KnowledgeHubPage = ({
   if (subPage === 'hub_training') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Team Training</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -5792,6 +5838,7 @@ const KnowledgeHubPage = ({
   if (subPage === 'hub_analytics') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">KB Analytics</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -5913,10 +5960,12 @@ const CustomerPortalPage = ({
   user,
   tenant,
   subPage,
+  setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
   subPage: TenantPage;
+  setPage: (p: Page) => void;
 }) => {
   const dbConvIdRef = React.useRef<string | null>(null);
   const accentColor = tenant?.primaryColor || '#6366f1';
@@ -6554,6 +6603,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_overview') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -6662,6 +6712,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_conversations') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Conversations</h1>
@@ -6907,6 +6958,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_actions') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Agent Actions</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -6959,6 +7011,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_approvals') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Approvals Queue</h1>
@@ -7031,6 +7084,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_tickets') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Support Tickets</h1>
@@ -7117,6 +7171,7 @@ const CustomerPortalPage = ({
   if (subPage === 'portal_settings') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Portal Settings</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -7603,7 +7658,7 @@ const InsightEnginePage = ({
 // SWARM MONITOR PAGE
 // ============================================================
 
-const SwarmPage = ({ tenant }: { tenant?: Tenant }) => {
+const SwarmPage = ({ tenant, page, setPage }: { tenant?: Tenant; page?: Page; setPage?: (p: Page) => void }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [tick, setTick] = useState(0);
 
@@ -7707,6 +7762,7 @@ const SwarmPage = ({ tenant }: { tenant?: Tenant }) => {
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={AGENT_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Swarm Monitor</h1>
@@ -7830,9 +7886,13 @@ const SwarmPage = ({ tenant }: { tenant?: Tenant }) => {
 const SecurityPage = ({
   user,
   tenant,
+  page,
+  setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
+  page: Page;
+  setPage: (p: Page) => void;
 }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [activeTab, setActiveTab] = useState<
@@ -7926,6 +7986,7 @@ const SecurityPage = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Security and RBAC</h1>
@@ -8234,9 +8295,13 @@ const SecurityPage = ({
 const IntegrationsPage = ({
   user,
   tenant,
+  page,
+  setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
+  page: Page;
+  setPage: (p: Page) => void;
 }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [search, setSearch] = useState('');
@@ -8378,6 +8443,7 @@ const IntegrationsPage = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Integrations</h1>
@@ -8623,6 +8689,7 @@ const KnowledgeDataPage = ({
     ).length;
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={page} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">
             Knowledge &amp; Data
@@ -8800,7 +8867,9 @@ const KnowledgeDataPage = ({
   // ---- TAXONOMY BROWSER ----
   if (subPage === 'taxonomy') {
     return (
-      <div className="flex-1 overflow-hidden bg-slate-950 flex">
+      <div className="flex-1 overflow-hidden bg-slate-950 flex flex-col">
+        <div className="px-6 pt-6"><PageTabs tabs={HUB_TABS} page={page} setPage={setPage} accentColor={accentColor} /></div>
+        <div className="flex-1 flex overflow-hidden">
         {/* Taxonomy tree sidebar */}
         <div className="w-72 flex-shrink-0 border-r border-slate-800 overflow-y-auto p-4">
           <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
@@ -9065,6 +9134,7 @@ const KnowledgeDataPage = ({
             )}
           </div>
         </div>
+        </div>
       </div>
     );
   }
@@ -9092,6 +9162,7 @@ const KnowledgeDataPage = ({
 
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={page} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">
@@ -9310,6 +9381,7 @@ const KnowledgeDataPage = ({
     };
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={HUB_TABS} page={page} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Imported Files</h1>
@@ -9485,9 +9557,13 @@ const KnowledgeDataPage = ({
 const DataConnectorsPage = ({
   user,
   tenant,
+  page,
+  setPage,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
+  page: Page;
+  setPage: (p: Page) => void;
 }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
 
@@ -9544,6 +9620,7 @@ const DataConnectorsPage = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Data Connectors</h1>
@@ -9607,7 +9684,9 @@ const DataConnectorsPage = ({
 const SettingsPage = ({
   user,
   tenant,
-}: { user?: AuthUser; tenant?: Tenant } = {}) => {
+  page,
+  setPage,
+}: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [activeTab, setActiveTab] = useState<
     'general' | 'tokens' | 'billing' | 'team' | 'security'
@@ -9615,6 +9694,7 @@ const SettingsPage = ({
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-slate-400 text-sm mt-1">
