@@ -697,14 +697,6 @@ const Sidebar = ({
             <span>Sign Out</span>
           </button>
         )}
-        {!collapsed && onLogout && (
-          <button
-            onClick={onLogout}
-            className="w-full mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-          >
-            <span>Sign Out</span>
-          </button>
-        )}
         {collapsed && (
           <button
             onClick={() => setCollapsed(false)}
