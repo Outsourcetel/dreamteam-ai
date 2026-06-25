@@ -586,7 +586,7 @@ const Sidebar = ({
           <div className="flex items-center gap-2">
             <span className="text-amber-400 text-sm">!</span>
             <span className="text-xs text-amber-300 font-medium">
-              God Mode Active
+              Support Access Active
             </span>
           </div>
           <button
@@ -980,6 +980,11 @@ const DashboardPage = ({
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                 Live DB
+              </span>
+            )}
+            {!dbStats && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">
+                Demo data
               </span>
             )}
           </div>
@@ -8441,43 +8446,47 @@ const SecurityPage = ({
       )}
 
       {activeTab === 'compliance' && (
+        <>
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4 text-xs text-amber-300">
+          Note: DreamTeam AI does not currently hold any of the certifications below. These represent compliance goals on our roadmap, not attained or audited certifications.
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
             {
               name: 'SOC 2 Type II',
-              status: 'certified',
-              desc: 'Annually audited. Last audit: Sept 2024',
-              cert: 'Valid until Sept 2025',
+              status: 'roadmap',
+              desc: 'Not yet certified. Controls being designed.',
+              cert: 'No audit completed',
             },
             {
               name: 'GDPR',
-              status: 'certified',
-              desc: 'Full compliance with EU data protection regulation',
-              cert: 'Data Processing Agreement available',
+              status: 'roadmap',
+              desc: 'Alignment in progress. Not independently verified.',
+              cert: 'DPA not yet available',
             },
             {
               name: 'ISO 27001',
-              status: 'certified',
-              desc: 'Information security management systems',
-              cert: 'Certificate ID: ISO-DT-2024-001',
+              status: 'roadmap',
+              desc: 'Not yet certified.',
+              cert: 'No certificate issued',
             },
             {
               name: 'HIPAA',
-              status: 'available',
-              desc: 'Healthcare data protection — available for healthcare tenants',
-              cert: 'BAA available on request',
+              status: 'roadmap',
+              desc: 'Not supported yet. Planned for healthcare tenants.',
+              cert: 'No BAA available',
             },
             {
               name: 'PCI DSS',
-              status: 'partial',
-              desc: 'Payment card industry compliance — Level 2 SAQ-D',
-              cert: 'Renewal in progress',
+              status: 'roadmap',
+              desc: 'Not yet assessed.',
+              cert: 'No SAQ completed',
             },
             {
               name: 'CCPA',
-              status: 'certified',
-              desc: 'California Consumer Privacy Act compliance',
-              cert: 'Privacy policy updated Jan 2025',
+              status: 'roadmap',
+              desc: 'Alignment in progress. Not independently verified.',
+              cert: 'Not yet attested',
             },
           ].map((c, i) => (
             <div
@@ -8494,18 +8503,10 @@ const SecurityPage = ({
                   </div>
                   <Badge
                     label={
-                      c.status === 'certified'
-                        ? 'Certified'
-                        : c.status === 'available'
-                        ? 'Available'
-                        : 'In Progress'
+                      'On roadmap'
                     }
                     color={
-                      c.status === 'certified'
-                        ? 'green'
-                        : c.status === 'available'
-                        ? 'blue'
-                        : 'yellow'
+                      'slate'
                     }
                   />
                 </div>
@@ -8515,6 +8516,7 @@ const SecurityPage = ({
             </div>
           ))}
         </div>
+        </>
       )}
         {activeTab === 'approvals' && (
           <div>
@@ -8752,6 +8754,9 @@ const IntegrationsPage = ({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Integrations</h1>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 mt-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">
+            Demo data — connection states are illustrative
+          </span>
           <p className="text-slate-400 text-sm mt-1">
             Connect your tools to extend agent capabilities and data access
           </p>
@@ -10458,7 +10463,7 @@ const PlatformConsolePage = ({
                         onClick={() => setGodModeTarget(t)}
                         className="text-xs px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg transition-all"
                       >
-                        God Mode
+                        Support Access
                       </button>
                     </div>
                   </td>
@@ -10507,7 +10512,7 @@ const PlatformConsolePage = ({
                   }}
                   className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-all"
                 >
-                  Enter God Mode
+                  Start Support Session
                 </button>
                 <button className="px-4 py-2.5 text-sm text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-all">
                   Suspend
@@ -10518,13 +10523,13 @@ const PlatformConsolePage = ({
         )}
         {godModeTarget && (
           <Modal
-            title={'God Mode: ' + godModeTarget.name}
+            title={'Support Access: ' + godModeTarget.name}
             onClose={() => setGodModeTarget(null)}
           >
             <div className="space-y-4">
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
                 <p className="text-sm text-amber-300 font-medium mb-1">
-                  God Mode Remote Access
+                  Support Access — Remote Session
                 </p>
                 <p className="text-xs text-amber-400/70">
                   You are about to enter this tenant workspace with full access.
@@ -10756,7 +10761,7 @@ const PlatformConsolePage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Remote Access</h1>
           <p className="text-slate-400 text-sm mt-1">
-            God Mode sessions and remote access to tenant workspaces
+            Support Access sessions and remote access to tenant workspaces
           </p>
         </div>
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
@@ -10764,11 +10769,11 @@ const PlatformConsolePage = ({
             <span className="text-amber-400 text-lg">!</span>
             <div>
               <div className="text-sm font-medium text-amber-300">
-                God Mode Access
+                Support Access
               </div>
               <div className="text-xs text-amber-400/70">
                 All remote sessions are fully logged and visible to tenant
-                owners. Only authorised DT staff can initiate God Mode.
+                owners. Only authorised DT staff can initiate a Support Access session.
               </div>
             </div>
           </div>
@@ -10812,14 +10817,14 @@ const PlatformConsolePage = ({
                   onClick={() => setGodModeTarget(t)}
                   className="w-full py-2 text-sm font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all"
                 >
-                  Enter God Mode
+                  Start Support Session
                 </button>
               </div>
             ))}
         </div>
         {godModeTarget && (
           <Modal
-            title={'God Mode: ' + godModeTarget.name}
+            title={'Support Access: ' + godModeTarget.name}
             onClose={() => setGodModeTarget(null)}
           >
             <div className="space-y-4">
@@ -11341,7 +11346,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
           </div>
         </div>
         <div className="relative text-xs text-indigo-400">
-          2026 DreamTeam AI. Enterprise Grade. SOC 2 Type II
+          © 2026 DreamTeam AI · Built for enterprise-grade security · Demo environment
         </div>
       </div>
 
@@ -11667,7 +11672,7 @@ function App() {
             <div className="flex items-center gap-2">
               <span className="text-amber-400 text-sm">!</span>
               <span className="text-xs text-amber-300">
-                God Mode active viewing {godModeSession.tenant.name} as{' '}
+                Support Access — viewing {godModeSession.tenant.name} as{' '}
                 {godModeSession.operator.name}
               </span>
             </div>
@@ -11675,7 +11680,7 @@ function App() {
               onClick={() => setGodModeSession(null)}
               className="text-xs text-amber-500 hover:text-amber-300 underline transition-all"
             >
-              Exit God Mode
+              Exit Support Session
             </button>
           </div>
         )}
