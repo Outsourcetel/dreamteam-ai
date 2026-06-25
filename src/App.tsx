@@ -6382,7 +6382,7 @@ const CustomerPortalPage = ({
     }
   };
 
-  const pendingApprovals = [
+  const [pendingApprovals, setPendingApprovals] = useState([
     {
       id: 'ap1',
       customer: 'Emily Carter',
@@ -6423,7 +6423,38 @@ const CustomerPortalPage = ({
       confidence: 99,
       risk: 'low',
     },
-  ];
+  ]);
+
+  // Human-in-the-loop decision state + audit trail
+  const [decisionLog, setDecisionLog] = useState([]);
+  const [decidingId, setDecidingId] = useState(null);
+  const [decisionToast, setDecisionToast] = useState(null);
+  const handleDecision = async (item, decision) => {
+    setDecidingId(item.id);
+    const decidedAt = new Date();
+    const deciderName = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'You';
+    // Best-effort audit write; never blocks the UI if the table/session is unavailable
+    try {
+      await supabase.from('agent_actions').insert({
+        action: item.action,
+        agent: item.agent,
+        customer: item.customer,
+        confidence: item.confidence,
+        risk: item.risk,
+        status: decision,
+        decided_by: deciderName,
+        decided_at: decidedAt.toISOString(),
+      });
+    } catch (e) { /* audit table optional in demo */ }
+    setPendingApprovals((prev) => prev.filter((x) => x.id !== item.id));
+    setDecisionLog((prev) => [
+      { ...item, decision, deciderName, decidedAtLabel: decidedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+      ...prev,
+    ]);
+    setDecidingId(null);
+    setDecisionToast({ decision, action: item.action });
+    setTimeout(() => setDecisionToast(null), 3200);
+  };
 
   const riskColors: Record<string, string> = {
     low: 'green',
@@ -7063,20 +7094,63 @@ const CustomerPortalPage = ({
                   style={{ width: item.confidence + '%' }}
                 />
               </div>
-              <div className="flex gap-3">
-                <button className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-emerald-600 hover:bg-emerald-500 transition-all">
-                  v Approve
+                <div className="flex gap-3">
+                <button
+                  onClick={() => handleDecision(item, 'approved')}
+                  disabled={decidingId === item.id}
+                  className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                >
+                  {decidingId === item.id ? 'Working...' : '\u2713 Approve'}
                 </button>
-                <button className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-red-600/50 hover:bg-red-600/70 transition-all">
-                  x Reject
+                <button
+                  onClick={() => handleDecision(item, 'rejected')}
+                  disabled={decidingId === item.id}
+                  className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-red-600/50 hover:bg-red-600/70 disabled:opacity-50 transition-all"
+                >
+                  {decidingId === item.id ? 'Working...' : '\u2715 Reject'}
                 </button>
                 <button className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-all">
                   View Context
                 </button>
-              </div>
+                </div>
             </div>
           ))}
         </div>
+        {pendingApprovals.length === 0 && (
+          <div className="text-center py-12 bg-slate-900 border border-slate-800 rounded-xl">
+            <div className="text-3xl mb-2">{'\u2713'}</div>
+            <p className="text-white font-semibold">Queue clear</p>
+            <p className="text-slate-400 text-sm mt-1">All agent actions have been reviewed. New items appear here when agents hit a confidence or risk threshold.</p>
+          </div>
+        )}
+        {decisionLog.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-semibold text-slate-300 mb-3">Recent decisions</h2>
+            <div className="space-y-2">
+              {decisionLog.map((d, idx) => (
+                <div key={d.id + '-' + idx} className="flex items-center justify-between bg-slate-900/60 border border-slate-800 rounded-lg px-4 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={'text-xs font-semibold px-2 py-0.5 rounded-full ' + (d.decision === 'approved' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400')}
+                    >
+                      {d.decision === 'approved' ? 'Approved' : 'Rejected'}
+                    </span>
+                    <span className="text-sm text-white truncate">{d.action}</span>
+                    <span className="text-xs text-slate-500 truncate">{d.customer}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 whitespace-nowrap ml-3">{d.deciderName} · {d.decidedAtLabel}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {decisionToast && (
+          <div
+            className={'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ' + (decisionToast.decision === 'approved' ? 'bg-emerald-600' : 'bg-red-600')}
+          >
+            {(decisionToast.decision === 'approved' ? 'Approved: ' : 'Rejected: ') + decisionToast.action}
+          </div>
+        )}
       </div>
     );
   }
