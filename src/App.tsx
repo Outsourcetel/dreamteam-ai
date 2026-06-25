@@ -4856,6 +4856,14 @@ const KnowledgeHubPage = ({
     updated: string;
     content: string;
   }>(null);
+  const [showCreateModal, setShowCreateModal] = React.useState(false);
+  const [createType, setCreateType] = React.useState<
+  'write' | 'upload' | 'url' | 'template' | null
+  >(null);
+  const [newTitle, setNewTitle] = React.useState('');
+  const [newBody, setNewBody] = React.useState('');
+  const [filterStatus, setFilterStatus] = React.useState<string>('all');
+  const [filterAudience, setFilterAudience] = React.useState<string>('all');
 
   const articles = [
     {
@@ -5228,14 +5236,6 @@ const KnowledgeHubPage = ({
       { topic: 'Bulk Data Export Guide', activeCases: 28, articles: 1 },
       { topic: 'Webhook Configuration', activeCases: 19, articles: 0 },
     ];
-    const [showCreateModal, setShowCreateModal] = React.useState(false);
-    const [createType, setCreateType] = React.useState<
-      'write' | 'upload' | 'url' | 'template' | null
-    >(null);
-    const [newTitle, setNewTitle] = React.useState('');
-    const [newBody, setNewBody] = React.useState('');
-    const [filterStatus, setFilterStatus] = React.useState<string>('all');
-    const [filterAudience, setFilterAudience] = React.useState<string>('all');
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
