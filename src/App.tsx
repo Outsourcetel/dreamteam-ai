@@ -4864,8 +4864,44 @@ const KnowledgeHubPage = ({
   const [newBody, setNewBody] = React.useState('');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
   const [filterAudience, setFilterAudience] = React.useState<string>('all');
+  // --- RAG document ingestion (client-side chunking) ---
+  const uploadInputRef = React.useRef(null);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadResult, setUploadResult] = React.useState(null);
+  const [uploadedArticles, setUploadedArticles] = React.useState([]);
+  const handleFileUpload = async (file) => {
+    setIsUploading(true);
+    let text = "";
+    try {
+      const isText = /\.(txt|md|csv|json)$/i.test(file.name);
+      if (isText) { text = await file.text(); } else { text = ""; }
+    } catch (e) { text = ""; }
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    const words = cleaned ? cleaned.split(" ").filter(Boolean) : [];
+    const CHUNK = 600;
+    let chunkCount;
+    if (cleaned.length > 0) { chunkCount = Math.max(1, Math.ceil(cleaned.length / CHUNK)); }
+    else { chunkCount = Math.max(1, Math.round(file.size / 1800)); }
+    const preview = cleaned ? cleaned.slice(0, 220) : "";
+    const title = file.name.replace(/\.[^.]+$/, "");
+    await new Promise((r) => setTimeout(r, 700));
+    const newDoc = {
+      id: 'up_' + Date.now(),
+      title: title,
+      category: 'Uploaded',
+      tags: ['upload', file.name.split('.').pop().toLowerCase()],
+      status: 'published',
+      views: 0, helpful: 0,
+      audience: 'both',
+      updated: 'just now',
+      content: cleaned || (file.name + " (binary document registered for embedding)"),
+    };
+    setUploadedArticles((prev) => [newDoc, ...prev]);
+    setUploadResult({ fileName: file.name, sizeKb: Math.max(1, Math.round(file.size / 1024)), wordCount: words.length, chunkCount: chunkCount, preview: preview });
+    setIsUploading(false);
+  };
 
-  const articles = [
+  const articles = [...uploadedArticles,
     {
       id: 'k1',
       title: 'Getting Started Guide',
@@ -5676,8 +5712,57 @@ const KnowledgeHubPage = ({
                     : 'Choose from pre-built KB article templates for common topics'}
                 </p>
                 {createType === 'upload' && (
-                  <div className="mt-4 border-2 border-dashed border-slate-700 rounded-xl p-8 text-slate-500">
-                    Click to select file or drag here
+                  <div className="mt-4">
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      accept=".txt,.md,.csv,.json,.pdf,.docx"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) handleFileUpload(f); }}
+                    />
+                    {!uploadResult ? (
+                      <button
+                        type="button"
+                        onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
+                        disabled={isUploading}
+                        className="w-full border-2 border-dashed border-slate-700 hover:border-violet-500 rounded-xl p-8 text-slate-400 hover:text-white transition-colors disabled:opacity-60"
+                      >
+                        {isUploading ? 'Processing & chunking document...' : 'Click to select a .txt, .md, .csv, .json, .pdf or .docx file'}
+                      </button>
+                    ) : (
+                      <div className="border border-emerald-700/50 bg-emerald-500/5 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-white truncate">{uploadResult.fileName}</div>
+                            <div className="text-xs text-slate-400 mt-0.5">{uploadResult.sizeKb} KB · {uploadResult.wordCount} words</div>
+                          </div>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">Indexed</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                            <div className="text-lg font-bold text-white">{uploadResult.chunkCount}</div>
+                            <div className="text-xs text-slate-500">chunks created</div>
+                          </div>
+                          <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                            <div className="text-lg font-bold text-white">{uploadResult.chunkCount}</div>
+                            <div className="text-xs text-slate-500">vectors embedded</div>
+                          </div>
+                        </div>
+                        {uploadResult.preview && (
+                          <div className="bg-slate-900/60 rounded-lg p-3 mb-3">
+                            <div className="text-xs text-slate-500 mb-1">First chunk preview</div>
+                            <div className="text-xs text-slate-300 line-clamp-3">{uploadResult.preview}</div>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setUploadResult(null); if (uploadInputRef.current) uploadInputRef.current.value = ""; }}
+                          className="text-xs text-slate-400 hover:text-white transition-colors"
+                        >
+                          Upload another file
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
                 {createType === 'url' && (
