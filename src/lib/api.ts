@@ -363,18 +363,31 @@ export const draftAgentAction = async (
   audience: 'customer' | 'internal' = 'customer'
 ): Promise<AgentDraft> => {
   const APPROVAL_THRESHOLD = 0.55; // below => route to human approval
-  const articles = (await fetchKnowledgeArticles(tenantId)).filter(
-    (a) => a.status === 'published' && (a.audience === audience || a.audience === 'both')
-  );
-  const qTokens = tokenize(query);
-  const ranked = articles
-    .map((a) => ({ a, score: scoreArticle(qTokens, a) }))
-    .filter((r) => r.score > 0)
-    .sort((x, y) => y.score - x.score)
-    .slice(0, 3);
+  // Retrieval: zero-cost Postgres full-text search (tenant-isolated RPC).
+  // The search_knowledge RPC enforces tenant_id + published status + audience
+  // server-side and ranks via ts_rank over a weighted tsvector (title>summary/tags>body).
+  const { data: rpcRows, error: searchErr } = await supabase.rpc('search_knowledge', {
+    p_tenant_id: tenantId,
+    p_query: query,
+    p_audience: audience,
+    p_limit: 3,
+  })
+  if (searchErr) console.error('search_knowledge:', searchErr.message)
+  const qTokens = tokenize(query)
+  // Map RPC rows to the article shape, then derive a calibrated 0..1 confidence
+  // from token overlap (the ts_rank ordering decides WHICH articles surface).
+  const ranked = (rpcRows || []).map((r: any) => ({
+    a: { id: r.id, title: r.title, summary: r.summary, body: r.body,
+         audience: r.audience, tags: r.tags } as Partial<DBKnowledgeArticle> as DBKnowledgeArticle,
+    score: scoreArticle(qTokens, { title: r.title, body: r.body, tags: r.tags } as DBKnowledgeArticle),
+    rank: Number(r.rank) || 0,
+  }))
+  // Keep RPC (ts_rank) order; if token scoring found nothing, fall back to ts_rank.
+  const anyTokenMatch = ranked.some((r) => r.score > 0)
 
-  const top = ranked[0];
-  const confidence = top ? Math.round(top.score * 100) / 100 : 0;
+  const top = ranked[0]
+  const confidence = top ? (anyTokenMatch ? Math.round(top.score * 100) / 100
+                                          : Math.min(1, Math.round(top.rank * 100) / 100)) : 0
   const sources = ranked.map((r) => ({ id: r.a.id, title: r.a.title }));
 
   let answer: string;
