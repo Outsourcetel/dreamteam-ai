@@ -11513,7 +11513,7 @@ function App() {
           const t = await fetchTenants();
           if (!_cleanup) setDbTenants(t);
         }
-        if (tid) {
+        if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
           const [a, c, s] = await Promise.all([
             fetchKnowledgeArticles(tid),
             fetchConversations(tid),
