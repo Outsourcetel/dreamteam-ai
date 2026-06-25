@@ -6517,20 +6517,21 @@ const CustomerPortalPage = ({
   const handleDecision = async (item, decision) => {
     setDecidingId(item.id);
     const decidedAt = new Date();
-    const deciderName = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'You';
-    // Best-effort audit write; never blocks the UI if the table/session is unavailable
+    const deciderName = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : ((user && user.name) ? user.name : 'You');
+    const isRealRow = typeof item.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(item.id);
+    // Persist decision to the real agent_actions row when it exists; never block the UI
     try {
-      await supabase.from('agent_actions').insert({
-        action: item.action,
-        agent: item.agent,
-        customer: item.customer,
-        confidence: item.confidence,
-        risk: item.risk,
-        status: decision,
-        decided_by: deciderName,
-        decided_at: decidedAt.toISOString(),
-      });
-    } catch (e) { /* audit table optional in demo */ }
+      const { data: au } = await supabase.auth.getUser();
+      const approverId = au && au.user ? au.user.id : null;
+      if (isRealRow) {
+        await supabase.from('agent_actions').update({
+          status: decision === 'approve' ? 'approved' : 'rejected',
+          approved_by: approverId,
+          approved_at: decidedAt.toISOString(),
+          requires_approval: false
+        }).eq('id', item.id);
+      }
+    } catch (e) { /* audit/persistence optional in demo */ }
     setPendingApprovals((prev) => prev.filter((x) => x.id !== item.id));
     setDecisionLog((prev) => [
       { ...item, decision, deciderName, decidedAtLabel: decidedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
@@ -6540,6 +6541,37 @@ const CustomerPortalPage = ({
     setDecisionToast({ decision, action: item.action });
     setTimeout(() => setDecisionToast(null), 3200);
   };
+  // Load real pending approvals from agent_actions; keep demo set as graceful fallback
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('agent_actions')
+          .select('id, agent_name, action_type, description, confidence_score, payload, created_at')
+          .eq('requires_approval', true)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        if (cancelled || error || !data || data.length === 0) return;
+        const mapped = data.map((r) => {
+          const p = r.payload || {};
+          return {
+            id: r.id,
+            customer: p.customer || p.customer_name || 'Customer',
+            email: p.email || p.customer_email || '',
+            action: r.description || r.action_type || 'Pending action',
+            agent: r.agent_name || 'Agent',
+            requestedAt: r.created_at ? new Date(r.created_at).toLocaleString() : 'just now',
+            confidence: r.confidence_score != null ? Math.round(Number(r.confidence_score) * (Number(r.confidence_score) <= 1 ? 100 : 1)) : 90,
+            risk: p.risk || 'medium',
+          };
+        });
+        setPendingApprovals(mapped);
+      } catch (e) { /* offline/demo: keep seeded queue */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
 
   const riskColors: Record<string, string> = {
     low: 'green',
