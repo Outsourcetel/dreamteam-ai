@@ -390,7 +390,7 @@ export const draftAgentAction = async (
   const requiresApproval = confidence < APPROVAL_THRESHOLD;
   const agentName =
     audience === 'customer' ? 'Support Agent' : 'Internal Assist Agent';
-  const actionType = requiresApproval ? 'draft_reply' : 'auto_reply';
+  const actionType = requiresApproval ? 'draft' : 'send';
   const description =
     (top ? `Drafted reply citing "${top.a.title}"` : 'No KB match found') +
     ` (confidence ${Math.round(confidence * 100)}%)`;
