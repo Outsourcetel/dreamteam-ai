@@ -11460,6 +11460,44 @@ function App() {
   } | null>(null);
 
 
+    // Step 2: restore a real Supabase session on load so refresh keeps the user logged in (RLS-aware)
+    useEffect(() => {
+      let active = true;
+      const buildFromProfile = (sessionUser, profile) => {
+        const layer = profile && profile.layer ? profile.layer : 'tenant';
+        const role = (profile && profile.role) ? profile.role : (sessionUser.user_metadata && sessionUser.user_metadata.role) || 'tenant_user';
+        const au = {
+          id: sessionUser.id,
+          name: (profile && profile.full_name) || (sessionUser.user_metadata && sessionUser.user_metadata.full_name) || sessionUser.email || 'User',
+          email: sessionUser.email || '',
+          role: role,
+          tenantId: (profile && profile.tenant_id) || (sessionUser.user_metadata && sessionUser.user_metadata.tenant_id) || undefined,
+          avatar: (profile && profile.avatar) || undefined,
+        };
+        setAuthedUser(au);
+        const isPlatform = ['dt_super_admin','dt_god_access','dt_support','dt_billing'].includes(au.role) || layer === 'platform';
+        setCurrentPage(isPlatform ? 'platform_home' : 'dashboard');
+        if (!isPlatform) {
+          try { if (!(au.id && localStorage.getItem('dt_onboarded_' + au.id))) setShowOnboarding(true); } catch (e) {}
+        }
+      };
+      (async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          const sess = data && data.session;
+          if (!active || !sess || !sess.user) return;
+          const profile = await fetchMyProfile();
+          if (!active) return;
+          buildFromProfile(sess.user, profile);
+        } catch (e) { /* no session: stay on login */ }
+      })();
+      const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') { setAuthedUser(null); setCurrentPage('dashboard'); }
+      });
+      return () => { active = false; if (sub && sub.subscription) sub.subscription.unsubscribe(); };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
   useEffect(() => {
     let _cleanup = false;
     void (async () => {
@@ -11515,7 +11553,7 @@ function App() {
       setCurrentPage('platform_home');
     } else {
       setCurrentPage('dashboard');
-      setShowOnboarding(true);
+        try { if (!(u && u.id && localStorage.getItem('dt_onboarded_' + u.id))) setShowOnboarding(true); } catch (e) { setShowOnboarding(true); }
     }
   };
 
@@ -11601,7 +11639,7 @@ function App() {
     <div className="flex h-screen bg-slate-950 overflow-hidden">
       {showOnboarding && isTenantUser && (
         <OnboardingWizard
-          onComplete={() => setShowOnboarding(false)}
+          onComplete={() => { try { if (authedUser && authedUser.id) localStorage.setItem('dt_onboarded_' + authedUser.id, '1'); } catch (e) {} setShowOnboarding(false); }}
           tenant={currentTenant}
           user={authedUser}
         />
