@@ -7970,7 +7970,7 @@ const SecurityPage = ({
 }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'rbac' | 'audit' | 'compliance'
+    'overview' | 'rbac' | 'audit' | 'compliance' | 'approvals'
   >('overview');
 
   const auditLogs = [
@@ -8058,6 +8058,41 @@ const SecurityPage = ({
     error: 'text-red-400',
   };
 
+  // Admin-side human-in-the-loop: agent action approval queue + audit trail
+  const [adminPending, setAdminPending] = useState([
+    { id: 'aa1', action: 'Reset 2FA and send recovery codes', agent: 'Security Agent', tenant: 'Globex Corp', confidence: 88, risk: 'high', requestedAt: '12 min ago' },
+    { id: 'aa2', action: 'Issue $500 service credit', agent: 'Billing Agent', tenant: 'Acme Corp', confidence: 91, risk: 'medium', requestedAt: '40 min ago' },
+    { id: 'aa3', action: 'Delete inactive user account', agent: 'Account Agent', tenant: 'Initech', confidence: 96, risk: 'high', requestedAt: '1 hr ago' },
+  ]);
+  const [adminDecisionLog, setAdminDecisionLog] = useState([]);
+  const [adminDecidingId, setAdminDecidingId] = useState(null);
+  const [adminToast, setAdminToast] = useState(null);
+  const handleAdminDecision = async (item, decision) => {
+    setAdminDecidingId(item.id);
+    const decidedAt = new Date();
+    const deciderName = (user && user.name) ? user.name : 'Admin';
+    try {
+      await supabase.from('agent_actions').insert({
+        action: item.action,
+        agent: item.agent,
+        tenant: item.tenant,
+        confidence: item.confidence,
+        risk: item.risk,
+        status: decision,
+        decided_by: deciderName,
+        decided_at: decidedAt.toISOString(),
+      });
+    } catch (e) { /* audit table optional in demo */ }
+    setAdminPending((prev) => prev.filter((x) => x.id !== item.id));
+    setAdminDecisionLog((prev) => [
+      { ...item, decision, deciderName, decidedAtLabel: decidedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+      ...prev,
+    ]);
+    setAdminDecidingId(null);
+    setAdminToast({ decision, action: item.action });
+    setTimeout(() => setAdminToast(null), 3200);
+  };
+
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
@@ -8069,7 +8104,7 @@ const SecurityPage = ({
           </p>
         </div>
         <div className="flex gap-1 bg-slate-800 rounded-xl p-1">
-          {(['overview', 'rbac', 'audit', 'compliance'] as const).map((t) => (
+          {(['overview', 'rbac', 'approvals', 'audit', 'compliance'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setActiveTab(t)}
@@ -8358,6 +8393,79 @@ const SecurityPage = ({
           ))}
         </div>
       )}
+        {activeTab === 'approvals' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white">Agent Action Approvals</h2>
+                <p className="text-xs text-slate-400 mt-1">Platform-level review of agent actions that exceeded confidence or risk thresholds</p>
+              </div>
+              <Badge label={adminPending.length + ' pending'} color="amber" />
+            </div>
+            {adminPending.length === 0 ? (
+              <div className="text-center py-12 bg-slate-900 border border-slate-800 rounded-xl">
+                <div className="text-3xl mb-2">{'\u2713'}</div>
+                <p className="text-white font-semibold">All clear</p>
+                <p className="text-slate-400 text-sm mt-1">No agent actions are awaiting review.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {adminPending.map((item) => (
+                  <div key={item.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold text-white">{item.action}</span>
+                          <Badge label={item.risk + ' risk'} color={item.risk === 'high' ? 'red' : item.risk === 'medium' ? 'yellow' : 'green'} />
+                        </div>
+                        <div className="text-xs text-slate-400">{item.agent} · requested by {item.tenant} · {item.requestedAt}</div>
+                      </div>
+                      <div className="text-right ml-3">
+                        <div className="text-sm font-bold text-emerald-400">{item.confidence}%</div>
+                        <div className="text-xs text-slate-500">confidence</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-3">
+                      <button
+                        onClick={() => handleAdminDecision(item, 'approved')}
+                        disabled={adminDecidingId === item.id}
+                        className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 transition-all"
+                      >
+                        {adminDecidingId === item.id ? 'Working...' : '\u2713 Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleAdminDecision(item, 'rejected')}
+                        disabled={adminDecidingId === item.id}
+                        className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-red-600/50 hover:bg-red-600/70 disabled:opacity-50 transition-all"
+                      >
+                        {adminDecidingId === item.id ? 'Working...' : '\u2715 Reject'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {adminDecisionLog.length > 0 && (
+              <div className="mt-8">
+                <h2 className="text-sm font-semibold text-slate-300 mb-3">Recent decisions</h2>
+                <div className="space-y-2">
+                  {adminDecisionLog.map((d, idx) => (
+                    <div key={d.id + '-' + idx} className="flex items-center justify-between bg-slate-900/60 border border-slate-800 rounded-lg px-4 py-2.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={'text-xs font-semibold px-2 py-0.5 rounded-full ' + (d.decision === 'approved' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400')}>
+                          {d.decision === 'approved' ? 'Approved' : 'Rejected'}
+                        </span>
+                        <span className="text-sm text-white truncate">{d.action}</span>
+                        <span className="text-xs text-slate-500 truncate">{d.tenant}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 whitespace-nowrap ml-3">{d.deciderName} · {d.decidedAtLabel}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
     </div>
   );
 };
