@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import {
   fetchTenants, fetchKnowledgeArticles, fetchConversations,
   fetchDashboardStats, fetchMyProfile,
-  createConversation, createMessage,
+  createConversation, createMessage, runAgentLoop,
   DBTenant, DBKnowledgeArticle, DBConversation
 } from './lib/api';
 
@@ -6408,19 +6408,7 @@ const CustomerPortalPage = ({
         : isSecurity
         ? ['Send Verification Code', 'Reset via Email', 'Contact Security Team']
         : ['Show Setup Guide', 'Email Step-by-Step Guide', 'Book a Demo'];
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'agent' as const,
-          text: chosenResp,
-          time: new Date().toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          confidence: isBilling ? 94 : isSecurity ? 88 : 91,
-          actions,
-        },
-      ]);
+      // (final agent message is now pushed by sendMessage via the real agent loop)
     }, 4200);
   };
 
@@ -6439,31 +6427,49 @@ const CustomerPortalPage = ({
     setChatInput('');
     setTyping(true);
     runAgentPipeline(msgText);
-    if (tenant?.id) {
+    if (tenant?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant.id)) {
+      // Real end-to-end agent loop: KB retrieval + confidence + approval gate, persisted.
       (async () => {
         try {
-          let convId = dbConvIdRef.current;
-          if (!convId) {
-            const conv = await createConversation({
-              tenant_id: tenant.id,
-              channel: 'chat',
-              subject: msgText.substring(0, 80),
-              customer_name: user?.name,
-              customer_email: user?.email,
-            });
-            if (conv) { convId = conv.id; dbConvIdRef.current = conv.id; }
-          }
-          if (convId) {
-            await createMessage({
-              conversation_id: convId,
-              tenant_id: tenant.id,
-              role: 'user',
-              content: msgText,
-              requires_approval: false,
-            });
-          }
-        } catch(e) { console.error('[DT] persist msg:', e); }
+          const { action, draft } = await runAgentLoop(tenant.id, msgText, {
+            customerName: user?.name,
+            audience: 'customer',
+          });
+          if (action) dbConvIdRef.current = action.conversation_id || dbConvIdRef.current;
+          const confPct = Math.round(draft.confidence * 100);
+          const reply = draft.requiresApproval
+            ? draft.answer + '\n\n⚠️ Below the confidence threshold (' + confPct + '%) — sent to a human teammate for approval before delivery.'
+            : draft.answer;
+          setTimeout(() => {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'agent' as const,
+                text: reply,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                confidence: confPct,
+                actions: draft.sources.map((s) => 'Source: ' + s.title),
+              },
+            ]);
+            setTyping(false);
+          }, 4300);
+        } catch (e) { console.error('[DT] agent loop:', e); setTyping(false); }
       })();
+    } else {
+      // Demo tenant (no real UUID): simulated reply for the trace demo.
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'agent' as const,
+            text: 'I found relevant information in the knowledge base and drafted a response. (Demo mode — sign in to a live workspace to persist this conversation and run the real approval loop.)',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            confidence: 91,
+            actions: ['Show Setup Guide', 'Email Step-by-Step Guide', 'Book a Demo'],
+          },
+        ]);
+        setTyping(false);
+      }, 4300);
     }
   };
 
