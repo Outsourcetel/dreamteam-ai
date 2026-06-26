@@ -11969,6 +11969,7 @@ function App() {
       case 'portal_approvals':
       case 'portal_tickets':
       case 'portal_settings':
+      case 'portal_escalations':
         return <CustomerPortalPage {...commonProps} subPage={currentPage} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
