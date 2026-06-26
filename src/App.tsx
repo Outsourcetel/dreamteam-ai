@@ -40,6 +40,7 @@ type TenantPage =
   | 'portal_actions'
   | 'portal_approvals'
   | 'portal_tickets'
+  | 'portal_escalations'
   | 'portal_settings'
   | 'knowledge_data'
   | 'knowledge_taxonomy'
@@ -736,6 +737,7 @@ const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'portal_actions', label: 'Agent Actions' },
   { id: 'portal_approvals', label: 'Approvals' },
   { id: 'portal_tickets', label: 'Tickets' },
+  { id: 'portal_escalations', label: 'Escalations' },
   { id: 'portal_settings', label: 'Settings' },
 ];
 
@@ -6114,6 +6116,40 @@ const CustomerPortalPage = ({
   const [pEscalating, setPEscalating] = useState(false);
   const [pLastResult, setPLastResult] = useState<any>(null);
 
+  // ----- human escalation inbox state -----
+  const eList = React.useState<any[]>([]);
+  const eItems = eList[0]; const setEItems = eList[1];
+  const eActive = React.useState<any>(null);
+  const eSel = eActive[0]; const setESel = eActive[1];
+  const eReplyS = React.useState('');
+  const eReply = eReplyS[0]; const setEReply = eReplyS[1];
+  const eBusyS = React.useState(false);
+  const eBusy = eBusyS[0]; const setEBusy = eBusyS[1];
+  const eLoadEsc = React.useCallback(async () => {
+    if (!pLive || !pTenantId) return;
+    const open = await api.fetchEscalations(pTenantId, 'open');
+    const assigned = await api.fetchEscalations(pTenantId, 'assigned');
+    setEItems([...(open || []), ...(assigned || [])]);
+  }, [pLive, pTenantId]);
+  React.useEffect(() => {
+    if (pLive && subPage === 'portal_escalations') eLoadEsc();
+  }, [pLive, subPage, eLoadEsc]);
+  const eClaim = async (row: any) => {
+    if (!row || !pTenantId) return;
+    setEBusy(true);
+    const me = ((user as any) && ((user as any).id || (user as any).userId)) || null;
+    const r = await api.claimEscalation(row.id, me);
+    if (r.ok) { await eLoadEsc(); setESel({ ...row, status: 'assigned', assigned_to: me }); }
+    setEBusy(false);
+  };
+  const eResolve = async (row: any) => {
+    if (!row || !pTenantId || !eReply.trim()) return;
+    setEBusy(true);
+    const me = ((user as any) && ((user as any).id || (user as any).userId)) || null;
+    const r = await api.resolveEscalation({ escalationId: row.id, tenantId: pTenantId, conversationId: row.conversation_id || null, reply: eReply, resolvedBy: me });
+    if (r.ok) { setEReply(''); setESel(null); await eLoadEsc(); }
+    setEBusy(false);
+  };
   const pLoadConvos = React.useCallback(async () => {
     if (!pLive || !pTenantId) return;
     const cs = await api.fetchConversations(pTenantId);
@@ -7179,6 +7215,72 @@ const CustomerPortalPage = ({
     );
   }
 
+  if (subPage === 'portal_escalations') {
+    const eTone = (v: any) => v === 'failed' ? "bg-rose-500/15 text-rose-300 border-rose-500/30" : v === 'review' ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-slate-700/40 text-slate-300 border-slate-600/40";
+    const eReasonLabel = (r: any) => r === 'low_confidence' ? 'Low confidence' : r === 'no_answer' ? 'No answer found' : r === 'audit_failed' ? 'Audit failed' : r === 'customer_request' ? 'Customer requested human' : (r || 'Escalated');
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Escalation Inbox</h1>
+            <p className="text-slate-400 text-sm mt-1">Questions the AI handed off to a human — claim one, reply, and resolve it back to the customer.</p>
+          </div>
+          <button onClick={() => eLoadEsc()} className="px-3 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>Refresh</button>
+        </div>
+        {!pLive ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6">
+            <p className="text-amber-300 font-medium">Demo account</p>
+            <p className="mt-2 text-sm text-slate-300 max-w-2xl">The escalation inbox runs on real, tenant-isolated data. Sign in with a provisioned tenant account to claim escalations raised by the AI, post a human reply into the conversation, and resolve it.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-1">
+              <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Open & assigned ({eItems.length})</p>
+              <div className="space-y-1 max-h-[65vh] overflow-y-auto">
+                {eItems.length === 0 ? (
+                  <p className="text-sm text-slate-600">Nothing in the queue — the AI is handling everything.</p>
+                ) : eItems.map((row: any) => (
+                  <button key={row.id} onClick={() => { setESel(row); setEReply(''); }} className={"w-full text-left px-3 py-2 rounded-lg border text-sm transition " + (eSel && eSel.id === row.id ? "border-indigo-500/60 bg-indigo-500/10" : "border-slate-800 hover:border-slate-700 bg-slate-900/40")}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-slate-200">{row.question || 'Escalated question'}</span>
+                      <span className={"text-[10px] px-1.5 py-0.5 rounded border " + (row.status === 'assigned' ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-rose-500/15 text-rose-300 border-rose-500/30")}>{row.status}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{eReasonLabel(row.reason)}{typeof row.confidence === 'number' ? " · conf " + Math.round(row.confidence * 100) + "%" : ""}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="lg:col-span-2">
+              {!eSel ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-slate-500 text-sm">Select an escalation to review and respond.</div>
+              ) : (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <span className={"text-[11px] px-2 py-0.5 rounded border " + eTone(eSel.audit_verdict)}>{eReasonLabel(eSel.reason)}</span>
+                    <span className="text-xs text-slate-500">{eSel.status === 'assigned' ? 'Claimed' : 'Unclaimed'}</span>
+                  </div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Customer asked</p>
+                  <p className="text-slate-100 mt-1 mb-4">{eSel.question || '—'}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">AI draft answer{typeof eSel.confidence === 'number' ? " (" + Math.round(eSel.confidence * 100) + "% confidence)" : ""}</p>
+                  <div className="mt-1 mb-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-300 whitespace-pre-wrap">{eSel.draft_answer || 'No answer was produced — the AI could not find a confident match.'}</div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Your reply to the customer</p>
+                  <textarea value={eReply} onChange={(e) => setEReply((e.target as any).value)} rows={4} placeholder="Write the human answer that will be posted into the conversation..." className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500" />
+                  <div className="flex items-center gap-2 mt-3">
+                    {eSel.status !== 'assigned' && (
+                      <button disabled={eBusy} onClick={() => eClaim(eSel)} className="px-3 py-2 text-sm rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 disabled:opacity-50">Claim</button>
+                    )}
+                    <button disabled={eBusy || !eReply.trim()} onClick={() => eResolve(eSel)} className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>{eBusy ? 'Working...' : 'Send reply & resolve'}</button>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-2">Resolving posts your reply into the conversation and marks both the escalation and the conversation as resolved. The AI never auto-sends a human reply.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
   if (subPage === 'portal_tickets') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">

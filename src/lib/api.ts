@@ -780,3 +780,53 @@ export const fetchEscalations = async (tenantId: string, status?: string): Promi
   if (error) { console.error('fetchEscalations:', error.message); return []; }
   return (data as PortalEscalation[]) || [];
 };
+
+
+// ----- human escalation inbox: claim + resolve (staff-facing, RLS-gated) -----
+export const claimEscalation = async (
+  escalationId: string,
+  assignedTo: string,
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('escalations')
+    .update({ status: 'assigned', assigned_to: assignedTo })
+    .eq('id', escalationId)
+    .eq('status', 'open');
+  if (error) { console.error('claimEscalation', error.message); return { ok: false, error: error.message }; }
+  return { ok: true };
+};
+
+// Resolve an escalation: post the human reply into the conversation as an agent message,
+// flip the escalation to resolved and re-open/resolve the linked conversation.
+export const resolveEscalation = async (args: {
+  escalationId: string;
+  tenantId: string;
+  conversationId: string | null;
+  reply: string;
+  resolvedBy: string;
+}): Promise<{ ok: boolean; error?: string }> => {
+  const reply = (args.reply || '').trim();
+  if (!reply) return { ok: false, error: 'Reply is empty' };
+  // 1) post the human answer into the conversation thread
+  if (args.conversationId) {
+    const msg = await addMessage({
+      conversation_id: args.conversationId,
+      tenant_id: args.tenantId,
+      role: 'agent',
+      content: reply,
+      requires_approval: false,
+    } as Omit<DBMessage, 'id' | 'created_at'>);
+    if (!msg) return { ok: false, error: 'Could not post reply' };
+  }
+  // 2) mark escalation resolved
+  const { error: e1 } = await supabase
+    .from('escalations')
+    .update({ status: 'resolved', assigned_to: args.resolvedBy, resolved_at: new Date().toISOString() })
+    .eq('id', args.escalationId);
+  if (e1) { console.error('resolveEscalation', e1.message); return { ok: false, error: e1.message }; }
+  // 3) resolve the linked conversation
+  if (args.conversationId) {
+    await supabase.from('conversations').update({ status: 'resolved', resolution_type: 'human' }).eq('id', args.conversationId);
+  }
+  return { ok: true };
+};
