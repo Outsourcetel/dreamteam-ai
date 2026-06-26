@@ -623,7 +623,7 @@ const Sidebar = ({
             <NavItem id="hub_overview" label="Knowledge Hub" icon="◈" />
             <NavItem id="portal_overview" label="Customer Portal" icon="◎" />
             <NavItem id="insight" label="Insight Engine" icon="⚛" />
-            <NavItem id="finance" label="Finance Control Tower" icon="\u26C1" />
+            <NavItem id="finance" label="Finance Control Tower" icon="🏦" />
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">
