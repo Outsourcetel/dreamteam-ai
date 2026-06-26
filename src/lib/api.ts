@@ -611,3 +611,65 @@ export const resolveException = async (
   if (error) { console.error('resolveException:', error.message); return { ok: false, error: error.message } }
   return { ok: true, evidenceId: data as string }
 }
+
+/* ===================== DOCUMENT INGESTION ===================== */
+export interface FinanceDocument {
+  id: string; doc_type: string; filename: string; status: string;
+  row_count: number; ingested_count: number; parse_summary: string | null; created_at: string;
+}
+
+export const FIN_DOC_TYPES: { value: string; label: string; hint: string }[] = [
+  { value: 'bank_statement', label: 'Bank statement', hint: 'date, description, amount, [category], [ref]' },
+  { value: 'ar_aging', label: 'AR aging (invoices)', hint: 'invoice_number, issue_date, due_date, amount, [amount_paid], [status]' },
+  { value: 'ap_aging', label: 'AP aging (bills)', hint: 'bill_number, issue_date, due_date, amount, [amount_paid], [has_receipt]' },
+  { value: 'stripe_export', label: 'Stripe / processor payout', hint: 'date, amount, [ref]' },
+  { value: 'general_ledger', label: 'General ledger', hint: 'date, account_code, memo, debit, credit' },
+  { value: 'payroll_summary', label: 'Payroll summary', hint: 'date, amount, [memo]' },
+  { value: 'invoice_pdf', label: 'Invoice / receipt PDF', hint: 'stored for manual review (no auto-extraction)' },
+];
+
+/* Zero-cost in-browser CSV parser: returns array of row objects keyed by header. */
+export const parseCsvClientSide = (text: string): Record<string, string>[] => {
+  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+  const splitRow = (row: string): string[] => {
+    const out: string[] = []; let cur = ''; let q = false;
+    for (let i = 0; i < row.length; i++) {
+      const c = row[i];
+      if (c === '"') { if (q && row[i + 1] === '"') { cur += '"'; i++; } else { q = !q; } }
+      else if (c === ',' && !q) { out.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    out.push(cur); return out;
+  };
+  const headers = splitRow(lines[0]).map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitRow(lines[i]);
+    const obj: Record<string, string> = {};
+    headers.forEach((h, idx) => { obj[h] = (cells[idx] || '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+};
+
+export const fetchDocuments = async (tenantId: string, workspaceId: string): Promise<FinanceDocument[]> => {
+  const { data, error } = await supabase.from('fin_documents').select('*')
+    .eq('tenant_id', tenantId).eq('workspace_id', workspaceId).order('created_at', { ascending: false });
+  if (error) { console.error('fetchDocuments:', error.message); return []; }
+  return (data as FinanceDocument[]) || [];
+};
+
+/* Normalizes parsed rows into finance objects server-side (tenant-guarded SECURITY DEFINER RPC). */
+export const ingestDocument = async (
+  tenantId: string, workspaceId: string, docType: string, filename: string,
+  rows: Record<string, string>[], uploadedBy: string | null
+): Promise<{ ok: boolean; documentId?: string; ingested?: number; total?: number; status?: string; error?: string }> => {
+  const { data, error } = await supabase.rpc('ingest_document', {
+    p_tenant_id: tenantId, p_workspace_id: workspaceId, p_doc_type: docType,
+    p_filename: filename, p_rows: rows, p_uploaded_by: uploadedBy,
+  });
+  if (error) { console.error('ingestDocument:', error.message); return { ok: false, error: error.message }; }
+  const d = (data || {}) as any;
+  return { ok: true, documentId: d.document_id, ingested: d.ingested, total: d.total, status: d.status };
+};

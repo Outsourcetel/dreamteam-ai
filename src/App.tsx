@@ -11484,6 +11484,16 @@ function FinanceControlTowerPage(props: any) {
   const [treatment, setTreatment] = React.useState<string>('');
   const [tab, setTab] = React.useState<string>('dashboard');
   const [toast, setToast] = React.useState<string>('');
+  const [docs, setDocs] = React.useState<any[]>([]);
+  const [docType, setDocType] = React.useState<string>('bank_statement');
+  const [parsedRows, setParsedRows] = React.useState<Record<string, string>[]>([]);
+  const [fileName, setFileName] = React.useState<string>('');
+  const [ingesting, setIngesting] = React.useState<boolean>(false);
+  React.useEffect(() => {
+    if (tab === 'upload' && workspace && tenantId) {
+      api.fetchDocuments(tenantId, workspace.id).then((d) => setDocs(d as any));
+    }
+  }, [tab, workspace, tenantId]);
 
   const reload = React.useCallback(async (wsId: string) => {
     if (!tenantId) return;
@@ -11581,7 +11591,7 @@ function FinanceControlTowerPage(props: any) {
         <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{toast}</div>
       )}
       <div className="mt-5 flex gap-1 border-b border-slate-800">
-        {[['dashboard','Dashboard'],['exceptions','Exceptions ('+openExc.length+')'],['tasks','Close tasks'],['audit','Audit evidence']].map(([id,label]) => (
+        {[['dashboard','Dashboard'],['exceptions','Exceptions ('+openExc.length+')'],['tasks','Close tasks'],['audit','Audit evidence'],['upload','Upload & connect']].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ' + (tab===id ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}</button>
         ))}
@@ -11677,6 +11687,68 @@ function FinanceControlTowerPage(props: any) {
           ))}
         </div>
       )}
+        {tab === 'upload' && (
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+                <p className="text-sm font-medium text-slate-200">Upload &amp; connect a source</p>
+                <p className="mt-1 text-xs text-slate-500">CSV is parsed in your browser (zero data leaves until you ingest). PDFs are stored for manual review.</p>
+                <label className="mt-4 block text-xs text-slate-400">Source type</label>
+                <select value={docType} onChange={(e) => { setDocType(e.target.value); setParsedRows([]); setFileName(''); }}
+                  className="mt-1 w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200">
+                  {api.FIN_DOC_TYPES.map((d) => (<option key={d.value} value={d.value}>{d.label}</option>))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-500">Expected columns: {(api.FIN_DOC_TYPES.find((d) => d.value === docType) || {}).hint}</p>
+                <label className="mt-4 block text-xs text-slate-400">File</label>
+                <input type="file" accept=".csv,.pdf" onChange={(e) => {
+                  const f = e.target.files && e.target.files[0]; if (!f) return;
+                  setFileName(f.name);
+                  if (docType === 'invoice_pdf' || f.name.toLowerCase().endsWith('.pdf')) { setParsedRows([]); return; }
+                  const rd = new FileReader();
+                  rd.onload = () => { try { setParsedRows(api.parseCsvClientSide(String(rd.result || ''))); } catch (err) { setParsedRows([]); } };
+                  rd.readAsText(f);
+                }} className="mt-1 w-full text-xs text-slate-300" />
+                <button disabled={!workspace || !fileName || ingesting} onClick={async () => {
+                  if (!workspace || !tenantId) return; setIngesting(true);
+                  const res = await api.ingestDocument(tenantId, workspace.id, docType, fileName, parsedRows, (user && user.id) || null);
+                  setIngesting(false);
+                  if (res.ok) {
+                    setToast(res.status === 'needs_review' ? 'PDF stored for manual review.' : ('Ingested ' + (res.ingested || 0) + ' of ' + (res.total || 0) + ' rows. Run reconciliation to detect exceptions.'));
+                    setParsedRows([]); setFileName('');
+                    const d = await api.fetchDocuments(tenantId, workspace.id); setDocs(d as any);
+                  } else { setToast('Ingest failed: ' + (res.error || 'unknown')); }
+                  setTimeout(() => setToast(''), 5000);
+                }} className="mt-4 w-full rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                  style={{ backgroundColor: accent }}>
+                  {ingesting ? 'Ingesting\u2026' : 'Normalize & ingest'}
+                </button>
+              </div>
+              {parsedRows.length > 0 && (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                  <p className="text-xs text-slate-400">Preview \u2014 {parsedRows.length} rows parsed</p>
+                  <div className="mt-2 max-h-48 overflow-auto text-[11px] text-slate-300">
+                    {parsedRows.slice(0, 8).map((r, i) => (
+                      <div key={i} className="border-b border-slate-800 py-1">{Object.keys(r).map((k) => k + '=' + r[k]).join('  \u00b7  ')}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="lg:col-span-3 space-y-2">
+              <p className="text-sm font-medium text-slate-200">Uploaded documents</p>
+              {docs.length === 0 && (<div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 text-sm text-slate-500">No documents ingested yet.</div>)}
+              {docs.map((d) => (
+                <div key={d.id} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-200">{d.filename}</span>
+                    <span className={'text-xs px-2 py-0.5 rounded ' + (d.status === 'ingested' ? 'bg-emerald-500/15 text-emerald-300' : d.status === 'needs_review' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-700 text-slate-300')}>{d.status}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500">{d.doc_type} \u00b7 {d.parse_summary || (d.row_count + ' rows')}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
