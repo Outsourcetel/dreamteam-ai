@@ -6,6 +6,7 @@ import {
   createConversation, createMessage, runAgentLoop,
   DBTenant, DBKnowledgeArticle, DBConversation
 } from './lib/api';
+import * as api from './lib/api';
 
 // ============================================================
 // TYPES - 3-LAYER ARCHITECTURE
@@ -21,6 +22,7 @@ type PlatformPage =
 
 type TenantPage =
   | 'dashboard'
+  | 'finance'
   | 'agents'
   | 'swarm'
   | 'insight'
@@ -621,6 +623,7 @@ const Sidebar = ({
             <NavItem id="hub_overview" label="Knowledge Hub" icon="◈" />
             <NavItem id="portal_overview" label="Customer Portal" icon="◎" />
             <NavItem id="insight" label="Insight Engine" icon="⚛" />
+            <NavItem id="finance" label="Finance Control Tower" icon="\u26C1" />
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">
@@ -11449,6 +11452,269 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
 // MAIN APP
 // ============================================================
 
+// ============================================================
+// FINANCE OPERATIONS CONTROL TOWER  (Month-End Close + Reconciliation Agent)
+// ============================================================
+const FIN_EXC_META: Record<string, { label: string; tone: string }> = {
+  unmatched_bank_txn: { label: 'Unmatched bank txn', tone: 'rose' },
+  duplicate_invoice: { label: 'Duplicate bill/invoice', tone: 'rose' },
+  missing_receipt: { label: 'Missing receipt', tone: 'amber' },
+  unusual_spend: { label: 'Unusual spend', tone: 'rose' },
+  late_customer_payment: { label: 'Late customer payment', tone: 'amber' },
+  uncategorized_txn: { label: 'Uncategorized txn', tone: 'sky' },
+  revenue_payment_mismatch: { label: 'Revenue/payment mismatch', tone: 'violet' },
+};
+const finMoney = (n: number | null | undefined) =>
+  (n == null ? 0 : n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+function FinanceControlTowerPage(props: any) {
+  const { user, tenant, accentColor } = props;
+  const tenantId: string | null = user?.tenantId || tenant?.id || null;
+  const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  const live = isUuid(tenantId);
+
+  const [workspace, setWorkspace] = React.useState<any>(null);
+  const [metrics, setMetrics] = React.useState<any>(null);
+  const [exceptions, setExceptions] = React.useState<any[]>([]);
+  const [tasks, setTasks] = React.useState<any[]>([]);
+  const [evidence, setEvidence] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState<boolean>(true);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [selected, setSelected] = React.useState<any>(null);
+  const [treatment, setTreatment] = React.useState<string>('');
+  const [tab, setTab] = React.useState<string>('dashboard');
+  const [toast, setToast] = React.useState<string>('');
+
+  const reload = React.useCallback(async (wsId: string) => {
+    if (!tenantId) return;
+    const [m, ex, tk, ev] = await Promise.all([
+      api.fetchFinanceMetrics(tenantId, wsId),
+      api.fetchExceptions(tenantId, wsId),
+      api.fetchCloseTasks(tenantId, wsId),
+      api.fetchAuditEvidence(tenantId, wsId),
+    ]);
+    setMetrics(m); setExceptions(ex); setTasks(tk as any[]); setEvidence(ev as any[]);
+  }, [tenantId]);
+
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      if (!live || !tenantId) { setLoading(false); return; }
+      const ws = await api.fetchFinanceWorkspaces(tenantId);
+      if (!active) return;
+      const w = ws[0] || null;
+      setWorkspace(w);
+      if (w) await reload(w.id);
+      if (active) setLoading(false);
+    })();
+    return () => { active = false; };
+  }, [tenantId, live, reload]);
+
+  const handleDetect = async () => {
+    if (!workspace || !tenantId) return;
+    setBusy('detect');
+    const n = await api.runExceptionDetection(tenantId, workspace.id);
+    await reload(workspace.id);
+    setBusy(null);
+    setToast('Reconciliation run complete \u2014 ' + n + ' open exceptions.');
+    setTimeout(() => setToast(''), 4000);
+  };
+
+  const handleDecision = async (decision: 'approved' | 'rejected') => {
+    if (!selected || !tenantId) return;
+    const treat = treatment.trim() || (decision === 'approved'
+      ? (selected.proposed_action || 'Approved as proposed')
+      : 'Rejected \u2014 no action taken');
+    setBusy(selected.id);
+    const res = await api.resolveException(selected.id, decision, treat, user?.id || '', user?.name || 'Reviewer');
+    setBusy(null);
+    if (res.ok) {
+      setToast('Decision recorded \u2014 audit evidence #' + (res.evidenceId || '').slice(0, 8));
+      setSelected(null); setTreatment('');
+      await reload(workspace.id);
+    } else {
+      setToast('Could not record decision: ' + (res.error || 'unknown error'));
+    }
+    setTimeout(() => setToast(''), 4000);
+  };
+
+  // ---------- DEMO FALLBACK (no real tenant logged in) ----------
+  if (!live) {
+    return (
+      <div className="p-8 text-slate-300">
+        <FinHeader accentColor={accentColor} />
+        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-6">
+          <p className="text-amber-300 font-medium">Demo account</p>
+          <p className="mt-2 text-sm text-slate-300 max-w-2xl">
+            The Finance Control Tower runs on live, tenant-isolated finance data. Sign in with a
+            provisioned tenant account to load the seeded demo company (October 2026 close) with real
+            general ledger, bank, AP/AR, payroll and Stripe data plus AI-detected reconciliation exceptions.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return <div className="p-8 text-slate-400">Loading finance workspace\u2026</div>;
+  }
+  if (!workspace) {
+    return (
+      <div className="p-8 text-slate-300">
+        <FinHeader accentColor={accentColor} />
+        <div className="mt-6 rounded-xl border border-slate-700 bg-slate-900/60 p-6">
+          <p className="text-slate-200 font-medium">No close workspace yet</p>
+          <p className="mt-2 text-sm text-slate-400">Create a monthly close workspace to begin.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const openExc = exceptions.filter((e) => e.status === 'open');
+  const accent = accentColor || '#6366f1';
+
+  return (
+    <div className="p-6 md:p-8">
+      <FinHeader accentColor={accent} workspace={workspace} onDetect={handleDetect} busy={busy === 'detect'} />
+      {toast && (
+        <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{toast}</div>
+      )}
+      <div className="mt-5 flex gap-1 border-b border-slate-800">
+        {[['dashboard','Dashboard'],['exceptions','Exceptions ('+openExc.length+')'],['tasks','Close tasks'],['audit','Audit evidence']].map(([id,label]) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ' + (tab===id ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'dashboard' && metrics && (
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <FinStat label="Close progress" value={metrics.closeProgress + '%'} sub={metrics.tasksDone + ' of ' + metrics.tasksTotal + ' tasks'} bar={metrics.closeProgress} />
+          <FinStat label="Unresolved exceptions" value={String(metrics.openExceptions)} sub={metrics.resolvedExceptions + ' resolved'} tone={metrics.openExceptions ? 'rose' : 'emerald'} />
+          <FinStat label="Cash position" value={finMoney(metrics.cashPosition)} sub="Operating bank (period)" />
+          <FinStat label="Audit evidence" value={metrics.evidenceCompleteness + '%'} sub="Decisions documented" bar={metrics.evidenceCompleteness} />
+          <FinStat label="AR overdue" value={finMoney(metrics.arOverdue)} sub="Outstanding receivables" tone={metrics.arOverdue ? 'amber' : 'emerald'} />
+          <FinStat label="AP due" value={finMoney(metrics.apDue)} sub="Payables outstanding" tone={metrics.apDue ? 'amber' : 'emerald'} />
+          <FinStat label="Unmatched bank lines" value={String(metrics.unmatched)} sub="Need reconciliation" tone={metrics.unmatched ? 'rose' : 'emerald'} />
+          <FinStat label="Total exceptions" value={String(metrics.totalExceptions)} sub="Detected this close" />
+        </div>
+      )}
+
+      {tab === 'exceptions' && (
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-5 gap-5">
+          <div className="lg:col-span-3 space-y-3">
+            {openExc.length === 0 && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-6 text-emerald-300 text-sm">All exceptions resolved. Close is clean.</div>}
+            {openExc.map((e) => {
+              const meta = FIN_EXC_META[e.exception_type] || { label: e.exception_type, tone: 'slate' };
+              return (
+                <button key={e.id} onClick={() => { setSelected(e); setTreatment(''); }}
+                  className={'w-full text-left rounded-xl border p-4 transition ' + (selected && selected.id===e.id ? 'border-indigo-400 bg-slate-800/70' : 'border-slate-800 bg-slate-900/50 hover:border-slate-600')}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={'text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-' + meta.tone + '-500/15 text-' + meta.tone + '-300'}>{meta.label}</span>
+                    <span className="text-xs text-slate-500">conf {(e.confidence*100).toFixed(0)}%{e.is_risky ? ' \u00b7 risky' : ''}</span>
+                  </div>
+                  <p className="mt-2 text-sm font-medium text-slate-100">{e.title}</p>
+                  {e.amount != null && <p className="text-xs text-slate-400 mt-1">{finMoney(e.amount)}</p>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="lg:col-span-2">
+            {!selected && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-sm text-slate-400">Select an exception to review the AI proposal and approve or reject.</div>}
+            {selected && (
+              <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+                <p className="text-sm font-semibold text-white">{selected.title}</p>
+                {selected.is_risky && <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">Risky \u2014 never auto-executed</span>}
+                <div className="mt-3 text-xs text-slate-400">Detail</div>
+                <p className="text-sm text-slate-200">{selected.detail}</p>
+                <div className="mt-3 text-xs text-slate-400">AI reasoning ({(selected.confidence*100).toFixed(0)}% confidence)</div>
+                <p className="text-sm text-slate-300">{selected.ai_reasoning}</p>
+                <div className="mt-3 text-xs text-slate-400">Proposed action</div>
+                <p className="text-sm text-indigo-200">{selected.proposed_action}</p>
+                <div className="mt-4 text-xs text-slate-400">Final treatment (logged to audit)</div>
+                <textarea value={treatment} onChange={(ev) => setTreatment((ev.target as HTMLTextAreaElement).value)} rows={3}
+                  placeholder={selected.proposed_action || 'Describe the treatment\u2026'}
+                  className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-400" />
+                <div className="mt-4 flex gap-2">
+                  <button disabled={busy===selected.id} onClick={() => handleDecision('approved')}
+                    className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-900 text-sm font-semibold py-2">Approve</button>
+                  <button disabled={busy===selected.id} onClick={() => handleDecision('rejected')}
+                    className="flex-1 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-100 text-sm font-semibold py-2">Reject</button>
+                </div>
+                <p className="mt-3 text-[11px] text-slate-500">Approver: {user?.name || 'Reviewer'} \u00b7 decision is timestamped and immutable.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'tasks' && (
+        <div className="mt-6 space-y-2">
+          {tasks.map((t) => (
+            <div key={t.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3">
+              <div>
+                <p className="text-sm text-slate-100">{t.title}</p>
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">{t.category}</p>
+              </div>
+              <span className={'text-xs px-2 py-1 rounded ' + (t.status==='done' ? 'bg-emerald-500/15 text-emerald-300' : t.status==='in_progress' ? 'bg-sky-500/15 text-sky-300' : t.status==='blocked' ? 'bg-rose-500/15 text-rose-300' : 'bg-slate-700/50 text-slate-300')}>{t.status.replace('_',' ')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'audit' && (
+        <div className="mt-6 space-y-2">
+          {evidence.length === 0 && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-sm text-slate-400">No decisions recorded yet. Approve or reject an exception to create audit evidence.</div>}
+          {evidence.map((a) => (
+            <div key={a.id} className="rounded-lg border border-slate-800 bg-slate-900/50 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <span className={'text-xs px-2 py-0.5 rounded ' + (a.action==='approved' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300')}>{a.action}</span>
+                <span className="text-[11px] text-slate-500">{new Date(a.created_at).toLocaleString()}</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-200">{a.final_treatment}</p>
+              <p className="mt-1 text-[11px] text-slate-500">Evidence: {a.source_evidence} \u00b7 approver {a.approver_name} \u00b7 conf {a.confidence != null ? (a.confidence*100).toFixed(0)+'%' : 'n/a'}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FinHeader(props: any) {
+  const { workspace, onDetect, busy } = props;
+  return (
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <p className="text-[11px] uppercase tracking-widest text-indigo-300">Finance Operations Control Tower</p>
+        <h1 className="text-2xl font-bold text-white">Month-End Close &amp; Reconciliation</h1>
+        {workspace && <p className="text-sm text-slate-400 mt-1">{workspace.name} \u00b7 {workspace.period_start} \u2192 {workspace.period_end} \u00b7 {workspace.status}</p>}
+      </div>
+      {onDetect && (
+        <button onClick={onDetect} disabled={busy}
+          className="rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2">{busy ? 'Running reconciliation\u2026' : 'Run reconciliation'}</button>
+      )}
+    </div>
+  );
+}
+
+function FinStat(props: any) {
+  const { label, value, sub, bar, tone } = props;
+  const toneCls = tone === 'rose' ? 'text-rose-300' : tone === 'amber' ? 'text-amber-300' : tone === 'emerald' ? 'text-emerald-300' : 'text-white';
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={'mt-1 text-2xl font-bold ' + toneCls}>{value}</p>
+      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      {bar != null && (
+        <div className="mt-3 h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+          <div className="h-full rounded-full bg-indigo-400" style={{ width: Math.min(100, bar) + '%' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [authedUser, setAuthedUser] = useState<AuthUser | null>(null);
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -11637,6 +11903,8 @@ function App() {
       case 'portal_tickets':
       case 'portal_settings':
         return <CustomerPortalPage {...commonProps} subPage={currentPage} />;
+      case 'finance':
+        return <FinanceControlTowerPage {...commonProps} />;
       default:
         return <DashboardPage {...commonProps} />;
     }

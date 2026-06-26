@@ -517,3 +517,97 @@ export const rejectAgentAction = async (
   if (error) { console.error('rejectAgentAction:', error.message); return false; }
   return true;
 };
+
+
+// ============================================================
+// FINANCE OPERATIONS CONTROL TOWER (Month-End Close + Reconciliation)
+// All sensitive mutations go through SECURITY DEFINER RPCs (server-side).
+// ============================================================
+export interface FinanceWorkspace {
+  id: string; name: string; period_start: string; period_end: string;
+  status: string; currency: string
+}
+export interface FinanceException {
+  id: string; workspace_id: string; exception_type: string; severity: string;
+  title: string; detail: string | null; amount: number | null;
+  ai_reasoning: string | null; confidence: number; proposed_action: string | null;
+  is_risky: boolean; status: string; final_treatment: string | null;
+  resolved_at: string | null; created_at: string
+}
+
+export const fetchFinanceWorkspaces = async (tenantId: string): Promise<FinanceWorkspace[]> => {
+  const { data, error } = await supabase.from('close_workspaces')
+    .select('*').eq('tenant_id', tenantId).order('period_end', { ascending: false })
+  if (error) { console.error('fetchFinanceWorkspaces:', error.message); return [] }
+  return (data || []) as FinanceWorkspace[]
+}
+
+export const fetchExceptions = async (tenantId: string, workspaceId: string): Promise<FinanceException[]> => {
+  const { data, error } = await supabase.from('exceptions')
+    .select('*').eq('tenant_id', tenantId).eq('workspace_id', workspaceId)
+    .order('severity', { ascending: false }).order('confidence', { ascending: false })
+  if (error) { console.error('fetchExceptions:', error.message); return [] }
+  return (data || []) as FinanceException[]
+}
+
+export const fetchCloseTasks = async (tenantId: string, workspaceId: string) => {
+  const { data, error } = await supabase.from('close_tasks')
+    .select('*').eq('tenant_id', tenantId).eq('workspace_id', workspaceId)
+    .order('sort_order', { ascending: true })
+  if (error) { console.error('fetchCloseTasks:', error.message); return [] }
+  return data || []
+}
+
+export const fetchAuditEvidence = async (tenantId: string, workspaceId: string) => {
+  const { data, error } = await supabase.from('audit_evidence')
+    .select('*').eq('tenant_id', tenantId).eq('workspace_id', workspaceId)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('fetchAuditEvidence:', error.message); return [] }
+  return data || []
+}
+
+// Dashboard metrics derived from the finance objects.
+export const fetchFinanceMetrics = async (tenantId: string, workspaceId: string) => {
+  const [inv, bills, bank, tasks, exc] = await Promise.all([
+    supabase.from('invoices').select('amount,amount_paid,status,due_date').eq('tenant_id', tenantId).eq('workspace_id', workspaceId),
+    supabase.from('bills').select('amount,amount_paid,status,due_date').eq('tenant_id', tenantId).eq('workspace_id', workspaceId),
+    supabase.from('bank_transactions').select('amount,is_matched').eq('tenant_id', tenantId).eq('workspace_id', workspaceId),
+    supabase.from('close_tasks').select('status').eq('tenant_id', tenantId).eq('workspace_id', workspaceId),
+    supabase.from('exceptions').select('status,severity').eq('tenant_id', tenantId).eq('workspace_id', workspaceId),
+  ])
+  const invoices = inv.data || []; const billRows = bills.data || []; const bankRows = bank.data || []
+  const taskRows = tasks.data || []; const excRows = exc.data || []
+  const num = (v: any) => Number(v) || 0
+  const arOverdue = invoices.filter((i: any) => i.status === 'overdue' || (i.status !== 'paid' && i.due_date)).reduce((s: number, i: any) => s + (num(i.amount) - num(i.amount_paid)), 0)
+  const apDue = billRows.filter((b: any) => b.status !== 'paid' && b.status !== 'void').reduce((s: number, b: any) => s + (num(b.amount) - num(b.amount_paid)), 0)
+  const cashPosition = bankRows.reduce((s: number, t: any) => s + num(t.amount), 0)
+  const unmatched = bankRows.filter((t: any) => !t.is_matched).length
+  const tasksDone = taskRows.filter((t: any) => t.status === 'done').length
+  const closeProgress = taskRows.length ? Math.round((tasksDone / taskRows.length) * 100) : 0
+  const openExceptions = excRows.filter((e: any) => e.status === 'open').length
+  const resolvedExceptions = excRows.filter((e: any) => e.status !== 'open').length
+  const totalExceptions = excRows.length
+  const evidenceCompleteness = totalExceptions ? Math.round((resolvedExceptions / totalExceptions) * 100) : 100
+  return { arOverdue, apDue, cashPosition, unmatched, closeProgress, tasksDone, tasksTotal: taskRows.length,
+    openExceptions, resolvedExceptions, totalExceptions, evidenceCompleteness }
+}
+
+// Run the rule-based exception engine (server-side RPC).
+export const runExceptionDetection = async (tenantId: string, workspaceId: string): Promise<number> => {
+  const { data, error } = await supabase.rpc('detect_exceptions', { p_tenant_id: tenantId, p_workspace_id: workspaceId })
+  if (error) { console.error('runExceptionDetection:', error.message); return 0 }
+  return Number(data) || 0
+}
+
+// Human approves/rejects a proposed action -> writes immutable audit evidence (server-side RPC).
+export const resolveException = async (
+  exceptionId: string, decision: 'approved' | 'rejected', finalTreatment: string,
+  approver: string, approverName: string
+): Promise<{ ok: boolean; evidenceId?: string; error?: string }> => {
+  const { data, error } = await supabase.rpc('resolve_exception', {
+    p_exception_id: exceptionId, p_decision: decision, p_final_treatment: finalTreatment,
+    p_approver: approver, p_approver_name: approverName,
+  })
+  if (error) { console.error('resolveException:', error.message); return { ok: false, error: error.message } }
+  return { ok: true, evidenceId: data as string }
+}
