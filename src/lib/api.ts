@@ -673,3 +673,110 @@ export const ingestDocument = async (
   const d = (data || {}) as any;
   return { ok: true, documentId: d.document_id, ingested: d.ingested, total: d.total, status: d.status };
 };
+
+/* ===================== CUSTOMER PORTAL: ANSWER + AUDIT + ESCALATION ===================== */
+export interface PortalSource { id: string; title: string; }
+export interface PortalTurnResult {
+  conversationId: string | null;
+  answer: string;
+  confidence: number;            // 0..1
+  sources: PortalSource[];
+  agentName: string;
+  auditVerdict: 'passed' | 'review' | 'failed';
+  auditNote: string;
+  escalated: boolean;
+  escalationId: string | null;
+  escalationReason: string | null;
+}
+
+/* Bot audit review: a second-pass validator that runs BEFORE the answer is shown to the
+   customer. It checks that the drafted answer is grounded (has sources), confident enough,
+   and not the no-answer fallback. Deterministic + zero-cost; swap for an LLM critic later. */
+export const auditAnswer = (draft: AgentDraft): { verdict: 'passed' | 'review' | 'failed'; note: string; reason: string | null } => {
+  const noAnswer = /could not find a confident answer/i.test(draft.answer || '');
+  if (noAnswer || (draft.sources || []).length === 0) {
+    return { verdict: 'failed', note: 'No grounded source found in the knowledge base; answer is not supported.', reason: 'no_answer' };
+  }
+  if (draft.confidence < 0.55) {
+    return { verdict: 'failed', note: 'Confidence ' + Math.round(draft.confidence * 100) + '% is below the 55% auto-answer threshold.', reason: 'low_confidence' };
+  }
+  if (draft.confidence < 0.75) {
+    return { verdict: 'review', note: 'Answer cites ' + draft.sources.length + ' source(s) but moderate confidence (' + Math.round(draft.confidence * 100) + '%); shown with a caution flag.', reason: null };
+  }
+  return { verdict: 'passed', note: 'Grounded in ' + draft.sources.length + ' source(s) at ' + Math.round(draft.confidence * 100) + '% confidence.', reason: null };
+};
+
+/* Full portal turn: retrieve -> audit -> persist -> auto-escalate on failure. */
+export const runPortalTurn = async (
+  tenantId: string, query: string,
+  opts: { conversationId?: string | null; customerName?: string } = {}
+): Promise<PortalTurnResult> => {
+  const draft = await draftAgentAction(tenantId, query, 'customer');
+  const audit = auditAnswer(draft);
+  const escalate = audit.verdict === 'failed';
+
+  // 1) conversation (reuse existing or create)
+  let conversationId = opts.conversationId || null;
+  if (!conversationId) {
+    const conv = await createConversation({
+      tenant_id: tenantId, channel: 'chat',
+      status: escalate ? 'pending' : 'open',
+      subject: query.slice(0, 120),
+      customer_name: opts.customerName || 'Web Visitor',
+      confidence_score: draft.confidence,
+    } as any);
+    conversationId = (conv && (conv as any).id) || null;
+  }
+
+  // 2) persist the customer message + the audited agent answer
+  if (conversationId) {
+    await addMessage({ conversation_id: conversationId, tenant_id: tenantId, role: 'user', content: query, requires_approval: false } as any);
+    await addMessage({
+      conversation_id: conversationId, tenant_id: tenantId, role: 'agent',
+      content: draft.answer, confidence_score: draft.confidence,
+      requires_approval: escalate, sources: draft.sources,
+      audit_verdict: audit.verdict, audit_note: audit.note,
+    } as any);
+  }
+
+  // 3) auto-escalate to a human when the audit fails
+  let escalationId: string | null = null;
+  if (escalate && conversationId) {
+    const { data, error } = await supabase.from('escalations').insert({
+      tenant_id: tenantId, conversation_id: conversationId,
+      reason: audit.reason || 'low_confidence', question: query,
+      draft_answer: draft.answer, confidence: draft.confidence, status: 'open',
+    }).select().single();
+    if (error) { console.error('runPortalTurn escalate:', error.message); }
+    else { escalationId = (data as any).id; }
+  }
+
+  return {
+    conversationId, answer: draft.answer, confidence: draft.confidence,
+    sources: draft.sources, agentName: draft.agentName,
+    auditVerdict: audit.verdict, auditNote: audit.note,
+    escalated: escalate, escalationId, escalationReason: audit.reason,
+  };
+};
+
+/* Manual escalation triggered by the customer or agent (always-available path). */
+export const escalateConversation = async (
+  tenantId: string, conversationId: string, question: string
+): Promise<{ ok: boolean; escalationId?: string; error?: string }> => {
+  const { data, error } = await supabase.from('escalations').insert({
+    tenant_id: tenantId, conversation_id: conversationId,
+    reason: 'customer_request', question, status: 'open',
+  }).select().single();
+  if (error) { console.error('escalateConversation:', error.message); return { ok: false, error: error.message }; }
+  await supabase.from('conversations').update({ status: 'pending' }).eq('id', conversationId).eq('tenant_id', tenantId);
+  return { ok: true, escalationId: (data as any).id };
+};
+
+export interface PortalEscalation { id: string; reason: string; question: string | null; confidence: number | null; status: string; created_at: string; conversation_id: string | null; }
+export const fetchEscalations = async (tenantId: string, status?: string): Promise<PortalEscalation[]> => {
+  let q = supabase.from('escalations').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
+  if (status) q = q.eq('status', status);
+  const { data, error } = await q;
+  if (error) { console.error('fetchEscalations:', error.message); return []; }
+  return (data as PortalEscalation[]) || [];
+};

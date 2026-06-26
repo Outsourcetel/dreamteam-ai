@@ -6102,6 +6102,59 @@ const CustomerPortalPage = ({
     }[]
   >([]);
   const [agentUsed, setAgentUsed] = useState('Support Agent');
+  // ----- rebuilt live portal chat state -----
+  const pTenantId: string | null = (user && (user as any).tenantId) || (tenant && (tenant as any).id) || null;
+  const pIsUuid = (v: any) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  const pLive = pIsUuid(pTenantId);
+  const [pConvos, setPConvos] = useState<any[]>([]);
+  const [pActiveId, setPActiveId] = useState<string | null>(null);
+  const [pMessages, setPMessages] = useState<any[]>([]);
+  const [pInput, setPInput] = useState('');
+  const [pSending, setPSending] = useState(false);
+  const [pEscalating, setPEscalating] = useState(false);
+  const [pLastResult, setPLastResult] = useState<any>(null);
+
+  const pLoadConvos = React.useCallback(async () => {
+    if (!pLive || !pTenantId) return;
+    const cs = await api.fetchConversations(pTenantId);
+    setPConvos(cs as any);
+  }, [pLive, pTenantId]);
+
+  const pOpenConvo = React.useCallback(async (id: string) => {
+    if (!pTenantId) return;
+    setPActiveId(id);
+    const ms = await api.fetchConversationMessages(id);
+    setPMessages(ms as any);
+  }, [pTenantId]);
+
+  React.useEffect(() => {
+    if (pLive && subPage === 'portal_conversations') { pLoadConvos(); }
+  }, [pLive, subPage, pLoadConvos]);
+
+  const pSend = async () => {
+    const q = pInput.trim();
+    if (!q || !pTenantId || pSending) return;
+    setPSending(true);
+    setPInput('');
+    setPMessages((m) => [...m, { role: 'user', content: q, _local: true }]);
+    const res = await api.runPortalTurn(pTenantId, q, { conversationId: pActiveId, customerName: (user && (user as any).name) || 'Web Visitor' });
+    setPLastResult(res);
+    if (res.conversationId) { setPActiveId(res.conversationId); await pOpenConvo(res.conversationId); }
+    await pLoadConvos();
+    setPSending(false);
+  };
+
+  const pEscalate = async () => {
+    if (!pTenantId || !pActiveId || pEscalating) return;
+    setPEscalating(true);
+    const lastQ = [...pMessages].reverse().find((m) => m.role === 'user');
+    await api.escalateConversation(pTenantId, pActiveId, (lastQ && lastQ.content) || 'Customer requested a human');
+    await pOpenConvo(pActiveId); await pLoadConvos();
+    setPEscalating(false);
+  };
+
+  const pNewChat = () => { setPActiveId(null); setPMessages([]); setPLastResult(null); setPInput(''); };
+
 
   const runAgentPipeline = (query: string) => {
     const isBilling =
@@ -6872,247 +6925,87 @@ const CustomerPortalPage = ({
   }
 
   if (subPage === 'portal_conversations') {
+    const verdictTone = (v) => v === 'passed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : v === 'review' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-rose-500/15 text-rose-300 border-rose-500/30';
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
-        <div className="flex items-center justify-between mb-6">
+        <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+        <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-2xl font-bold text-white">Conversations</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              AI-handled customer conversations — live and historical
-            </p>
+            <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
+            <p className="text-slate-400 text-sm mt-1">AI answers from your knowledge base, audited before reply, with a human escalation path.</p>
           </div>
-          <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
-            {['All', 'Open', 'Resolved', 'Escalated'].map((f) => (
-              <button
-                key={f}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white rounded-md"
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <button onClick={pNewChat} className="px-3 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>+ New chat</button>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-          {conversations.map((conv, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-4 px-5 py-4 hover:bg-slate-800/40 cursor-pointer transition-all ${
-                i < conversations.length - 1 ? 'border-b border-slate-800' : ''
-              }`}
-            >
-              <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-indigo-300 flex-shrink-0">
-                {conv.customer
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-medium text-white">
-                    {conv.customer}
-                  </span>
-                  <Badge
-                    label={conv.status}
-                    color={statusColors[conv.status]}
-                  />
-                </div>
-                <div className="text-xs text-slate-400 truncate">
-                  {conv.preview}
-                </div>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <div className="text-xs text-slate-500">{conv.agent}</div>
-                <div className="text-xs text-slate-600 mt-0.5">
-                  {conv.messages} msgs · {conv.time}
-                </div>
+        {!pLive && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6">
+            <p className="text-amber-300 font-medium">Demo account</p>
+            <p className="mt-2 text-sm text-slate-300 max-w-2xl">The live customer portal runs on real, tenant-isolated conversations and retrieves answers from your published knowledge base. Sign in with a provisioned tenant account to ask questions, see confidence scores and audited replies, and use the human-escalation path.</p>
+          </div>
+        )}
+        {pLive && (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
+            <div className="lg:col-span-1 order-2 lg:order-1">
+              <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Past chats</p>
+              <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+                {pConvos.length === 0 && (<p className="text-sm text-slate-600">No conversations yet.</p>)}
+                {pConvos.map((c) => (
+                  <button key={c.id} onClick={() => pOpenConvo(c.id)}
+                    className={'w-full text-left px-3 py-2 rounded-lg border text-sm transition ' + (pActiveId === c.id ? 'border-slate-600 bg-slate-800' : 'border-slate-800 bg-slate-900/40 hover:bg-slate-800/60')}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-slate-200">{c.subject || 'Conversation'}</span>
+                      <span className={'text-[10px] px-1.5 py-0.5 rounded ' + (c.status === 'escalated' || c.status === 'pending' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-700 text-slate-300')}>{c.status}</span>
+                    </div>
+                    {typeof c.confidence_score === 'number' && (<div className="text-[10px] text-slate-500 mt-0.5">conf {Math.round(c.confidence_score * 100)}%</div>)}
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-white">
-              Live AI Agent Chat
-              <span className="ml-2 text-xs px-2 py-0.5 bg-emerald-900 text-emerald-400 rounded-full">
-                {agentUsed}
-              </span>
-            </h2>
-            <button
-              onClick={() => setTraceVisible((v) => !v)}
-              className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-400 hover:text-white transition-colors"
-            >
-              {traceVisible ? 'Hide' : 'Show'} Reasoning Trace
-            </button>
-          </div>
-
-          {/* Agent Reasoning Trace Panel */}
-          {traceVisible && traceSteps.length > 0 && (
-            <div className="mb-4 bg-slate-950 border border-slate-700 rounded-xl p-3">
-              <div className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">
-                Agent Pipeline — {agentUsed}
-              </div>
-              <div className="space-y-1.5">
-                {traceSteps.map((step, idx) => {
-                  const statusColors: Record<string, string> = {
-                    pending: 'text-slate-600',
-                    running: 'text-yellow-400 animate-pulse',
-                    done: 'text-emerald-400',
-                    escalated: 'text-orange-400',
-                  };
-                  const statusIcons: Record<string, string> = {
-                    pending: 'O',
-                    running: '~',
-                    done: 'V',
-                    escalated: '!',
-                  };
-                  return (
-                    <div key={idx} className="flex items-start gap-2">
-                      <span
-                        className={`text-xs font-mono w-4 flex-shrink-0 font-bold mt-0.5 ${
-                          statusColors[step.status]
-                        }`}
-                      >
-                        {statusIcons[step.status]}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-slate-300">
-                            {step.stage}
-                          </span>
-                          {step.confidence !== undefined && (
-                            <span className="text-xs text-slate-500">
-                              conf:{' '}
-                              <span
-                                className={
-                                  step.confidence >= 80
-                                    ? 'text-emerald-400'
-                                    : 'text-orange-400'
-                                }
-                              >
-                                {step.confidence}%
-                              </span>
-                            </span>
-                          )}
-                          {step.duration !== undefined && (
-                            <span className="text-xs text-slate-600">
-                              {step.duration}ms
-                            </span>
-                          )}
-                        </div>
-                        {step.detail && (
-                          <div className="text-xs text-slate-500 mt-0.5 truncate">
-                            {step.detail}
+            <div className="lg:col-span-3 order-1 lg:order-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col" style={{ minHeight: '60vh' }}>
+                <div className="flex-1 p-5 space-y-4 overflow-y-auto" style={{ maxHeight: '56vh' }}>
+                  {pMessages.length === 0 && (
+                    <div className="text-center text-slate-500 text-sm mt-10">Ask a question to get started. Answers are drawn from your knowledge base and audited before you see them.</div>
+                  )}
+                  {pMessages.map((m, i) => (
+                    <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
+                      <div className={'max-w-[80%] rounded-2xl px-4 py-3 ' + (m.role === 'user' ? 'text-white rounded-br-sm' : 'bg-slate-800 text-slate-200 rounded-bl-sm')} style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
+                        <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                        {m.role === 'agent' && (
+                          <div className="mt-2 pt-2 border-t border-slate-700/60 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {typeof m.confidence_score === 'number' && (<span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">confidence {Math.round(m.confidence_score * 100)}%</span>)}
+                              {m.audit_verdict && (<span className={'text-[10px] px-1.5 py-0.5 rounded border ' + verdictTone(m.audit_verdict)}>{m.audit_verdict === 'passed' ? 'audit passed' : m.audit_verdict === 'review' ? 'audit: review' : 'audit failed'}</span>)}
+                            </div>
+                            {m.audit_note && (<p className="text-[10px] text-slate-500">{m.audit_note}</p>)}
+                            {Array.isArray(m.sources) && m.sources.length > 0 && (
+                              <p className="text-[10px] text-slate-500">Sources: {m.sources.map((s) => s.title).join(', ')}</p>
+                            )}
                           </div>
                         )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Chat messages */}
-          <div className="space-y-3 mb-4 max-h-56 overflow-y-auto flex-1">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                <div
-                  className={`max-w-xs rounded-2xl px-4 py-2.5 ${
-                    msg.role === 'user'
-                      ? 'text-white rounded-br-sm'
-                      : 'bg-slate-800 text-slate-200 rounded-bl-sm'
-                  }`}
-                  style={
-                    msg.role === 'user' ? { backgroundColor: accentColor } : {}
-                  }
-                >
-                  <p className="text-xs">{msg.text}</p>
-                  {msg.confidence && (
-                    <p className="text-xs opacity-60 mt-1">
-                      Confidence: {msg.confidence}%
-                    </p>
-                  )}
-                  {msg.actions && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {msg.actions.map((a, j) => (
-                        <button
-                          key={j}
-                          className="text-xs px-2 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-                        >
-                          {a}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  ))}
+                  {pSending && (<div className="flex justify-start"><div className="bg-slate-800 text-slate-400 rounded-2xl px-4 py-3 text-sm">Searching the knowledge base and auditing...</div></div>)}
                 </div>
-              </div>
-            ))}
-            {typing && (
-              <div className="flex justify-start">
-                <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-2.5">
-                  <div className="flex gap-1 items-center">
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" />
-                      <span
-                        className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce"
-                        style={{ animationDelay: '0.1s' }}
-                      />
-                      <span
-                        className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce"
-                        style={{ animationDelay: '0.2s' }}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500 ml-1">
-                      {agentUsed} thinking...
-                    </span>
+                {pLastResult && pLastResult.escalated && (
+                  <div className="mx-5 mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-300">
+                    No confident answer was found, so this was routed to a human teammate ({pLastResult.escalationReason === 'no_answer' ? 'no knowledge match' : 'low confidence'}). A teammate will reply shortly.
+                  </div>
+                )}
+                <div className="border-t border-slate-800 p-4">
+                  <div className="flex gap-2">
+                    <input value={pInput} onChange={(e) => setPInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') pSend(); }} placeholder="Ask a question..." className="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500" />
+                    <button onClick={pSend} disabled={pSending || !pInput.trim()} className="px-4 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-40" style={{ backgroundColor: accentColor }}>Send</button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <p className="text-[11px] text-slate-500">Answers are retrieved from published KB docs, videos and past cases, then audited before reply.</p>
+                    <button onClick={pEscalate} disabled={!pActiveId || pEscalating} className="text-[11px] text-amber-400 hover:text-amber-300 disabled:opacity-40 underline">Escalate to a human</button>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
-
-          {/* Suggested prompts */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {[
-              'Why was I charged?',
-              'Reset my password',
-              'How do I set up SSO?',
-            ].map((p) => (
-              <button
-                key={p}
-                onClick={() => {
-                  setChatInput(p);
-                }}
-                className="text-xs px-2 py-1 bg-slate-800 text-slate-400 hover:text-indigo-300 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Ask anything — billing, access, product..."
-              className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-            <button
-              onClick={sendMessage}
-              className="px-4 py-2.5 text-white text-sm rounded-xl font-medium"
-              style={{ backgroundColor: accentColor }}
-            >
-              Send
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     );
   }
