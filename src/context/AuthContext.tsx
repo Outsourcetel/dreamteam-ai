@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import {
   fetchTenants,
+  fetchTenantById,
   fetchKnowledgeArticles,
   fetchConversations,
   fetchDashboardStats,
@@ -11,7 +12,7 @@ import {
   DBConversation,
 } from '../lib/api';
 import type { AuthUser, Tenant, Page } from '../types';
-import { mockTenants, canAccessPage } from '../lib/mockData';
+import { canAccessPage } from '../lib/mockData';
 
 interface DbStats {
   totalConversations: number;
@@ -64,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
   const [dbConversations, setDbConversations] = useState<DBConversation[]>([]);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
+  const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
   // Restore Supabase session on load
   useEffect(() => {
@@ -120,12 +122,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!_cleanup) setDbTenants(t);
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
-          const [a, c, s] = await Promise.all([
+          const [a, c, s, t] = await Promise.all([
             fetchKnowledgeArticles(tid),
             fetchConversations(tid),
             fetchDashboardStats(tid),
+            fetchTenantById(tid),
           ]);
-          if (!_cleanup) { setDbArticles(a); setDbConversations(c); setDbStats(s as any); }
+          if (!_cleanup) {
+            setDbArticles(a);
+            setDbConversations(c);
+            setDbStats(s as any);
+            setDbCurrentTenant(t);
+          }
         }
       } catch(e) { console.error('[DT] data load:', e); }
     })();
@@ -136,10 +144,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isDTUser = !!(authedUser && ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(authedUser.role));
   const isTenantUser = !!(authedUser && ['tenant_owner', 'tenant_admin', 'tenant_manager', 'tenant_user'].includes(authedUser.role));
 
-  const currentTenant =
+  // Build a Tenant UI object from the DB record, falling back to the
+  // god-mode override if a DT support agent is operating on behalf of a tenant.
+  const currentTenant: Tenant | undefined =
     godModeSession?.tenant ||
-    (authedUser?.tenantId
-      ? mockTenants.find((t) => t.id === authedUser.tenantId)
+    (dbCurrentTenant
+      ? {
+          id:           dbCurrentTenant.id,
+          name:         dbCurrentTenant.name,
+          slug:         dbCurrentTenant.slug,
+          primaryColor: dbCurrentTenant.accent_color ?? '#6366f1',
+          accentColor:  dbCurrentTenant.accent_color ?? '#6366f1',
+          plan:         dbCurrentTenant.plan,
+          status:       dbCurrentTenant.status,
+          industry:     dbCurrentTenant.industry ?? '',
+          contactEmail: '',
+          agentsActive: 0,
+          usersCount:   0,
+          monthlyTokens: 0,
+          tokenLimit:   5000000,
+          createdAt:    dbCurrentTenant.created_at,
+        }
       : undefined);
 
   const handleLogin = (u: AuthUser) => {
@@ -165,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDbArticles([]);
     setDbConversations([]);
     setDbStats(null);
+    setDbCurrentTenant(null);
   };
 
   return (

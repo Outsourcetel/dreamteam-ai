@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
+import { writeAuditLog } from '../services/auditLogService';
 
 export interface StoredDE {
   id: string;
@@ -53,7 +54,8 @@ function dbToStored(row: Record<string, unknown>): StoredDE {
 
 export function useDigitalEmployees(
   tenantId: string | undefined,
-  defaults: StoredDE[]
+  defaults: StoredDE[],
+  actorId?: string
 ) {
   const [employees, setEmployees] = useState<StoredDE[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,9 +136,15 @@ export function useDigitalEmployees(
 
       const newDE = dbToStored(data as Record<string, unknown>);
       setEmployees(prev => [...prev, newDE]);
+      writeAuditLog({
+        tenant_id: tenantId, actor_user_id: actorId,
+        action: 'hire', entity_type: 'digital_employee',
+        entity_id: newDE.id, entity_name: newDE.name,
+        after_data: { catalog_id: de.catalog_id, status: de.status },
+      });
       return newDE;
     },
-    [tenantId]
+    [tenantId, actorId]
   );
 
   const update = useCallback(
@@ -181,11 +189,18 @@ export function useDigitalEmployees(
           .update({ lifecycle_status: 'retired', status: 'disabled' })
           .eq('id', id)
           .eq('tenant_id', tenantId);
-        if (error) console.error('dismiss DE:', error.message);
+        if (error) {
+          console.error('dismiss DE:', error.message);
+        } else {
+          writeAuditLog({
+            tenant_id: tenantId, actor_user_id: actorId,
+            action: 'dismiss', entity_type: 'digital_employee', entity_id: id,
+          });
+        }
       }
       setEmployees(prev => prev.filter(d => d.id !== id));
     },
-    [tenantId]
+    [tenantId, actorId]
   );
 
   const toggleStatus = useCallback(

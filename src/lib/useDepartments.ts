@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import {
+  fetchDepartments,
+  createDepartment,
+  updateDepartment as svcUpdate,
+  deleteDepartment,
+} from '../services/departmentService';
 
 export interface Department {
   id: string;
@@ -10,58 +17,51 @@ export interface Department {
   createdAt: string;
 }
 
-const DEFAULT_DEPARTMENTS: Department[] = [
-  { id: 'd1', name: 'Leadership', description: 'Executive and senior leadership team', head: 'Sarah Mitchell', memberCount: 2, color: '#6366f1', createdAt: '2026-01-15' },
-  { id: 'd2', name: 'IT', description: 'Technology infrastructure and support', head: 'James Okafor', memberCount: 3, color: '#3b82f6', createdAt: '2026-01-15' },
-  { id: 'd3', name: 'Operations', description: 'Process management and efficiency', head: 'Priya Nair', memberCount: 4, color: '#10b981', createdAt: '2026-02-01' },
-  { id: 'd4', name: 'Finance', description: 'Financial planning, reporting, and compliance', head: 'Tom Bergmann', memberCount: 3, color: '#f59e0b', createdAt: '2026-02-14' },
-  { id: 'd5', name: 'Customer Success', description: 'Account management and retention', head: 'Elena Vasquez', memberCount: 5, color: '#06b6d4', createdAt: '2026-03-01' },
-  { id: 'd6', name: 'Revenue', description: 'Sales and revenue generation', head: 'Marcus Webb', memberCount: 4, color: '#8b5cf6', createdAt: '2026-03-10' },
-  { id: 'd7', name: 'HR & People', description: 'People operations, hiring, and culture', head: '', memberCount: 2, color: '#ec4899', createdAt: '2026-03-15' },
-  { id: 'd8', name: 'Legal & Compliance', description: 'Legal affairs and regulatory compliance', head: '', memberCount: 2, color: '#ef4444', createdAt: '2026-04-01' },
+export const DEPT_NAMES = [
+  'Leadership', 'Operations', 'Revenue', 'Customer Success',
+  'Finance', 'Technology', 'Quality Assurance', 'HR & People',
 ];
 
-const STORAGE_KEY = 'dt_departments';
-
-function load(): Department[] | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function save(depts: Department[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(depts)); } catch {}
-}
-
 export function useDepartments() {
-  const [departments, setDepartments] = useState<Department[]>(() => load() ?? DEFAULT_DEPARTMENTS);
+  const { authedUser, currentTenant } = useAuth();
+  const tenantId = currentTenant?.id;
+  const actorId  = authedUser?.id;
 
-  useEffect(() => { save(departments); }, [departments]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const addDepartment = useCallback((data: Pick<Department, 'name' | 'description' | 'head' | 'color'>) => {
-    const newDept: Department = {
-      id: 'd_' + Date.now(),
-      name: data.name,
-      description: data.description,
-      head: data.head,
-      memberCount: 0,
-      color: data.color,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setDepartments(prev => [...prev, newDept]);
-    return newDept;
-  }, []);
+  useEffect(() => {
+    if (!tenantId) { setLoading(false); return; }
+    setLoading(true);
+    fetchDepartments(tenantId).then(depts => {
+      setDepartments(depts);
+      setLoading(false);
+    });
+  }, [tenantId]);
 
-  const updateDepartment = useCallback((id: string, updates: Partial<Omit<Department, 'id' | 'createdAt'>>) => {
+  const addDepartment = useCallback(async (
+    data: Pick<Department, 'name' | 'description' | 'head' | 'color'>
+  ): Promise<Department | null> => {
+    if (!tenantId) return null;
+    const dept = await createDepartment(tenantId, data, actorId);
+    if (dept) setDepartments(prev => [...prev, dept]);
+    return dept;
+  }, [tenantId, actorId]);
+
+  const updateDepartment = useCallback(async (
+    id: string,
+    updates: Partial<Omit<Department, 'id' | 'createdAt'>>
+  ) => {
+    if (!tenantId) return;
     setDepartments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-  }, []);
+    await svcUpdate(id, tenantId, updates, actorId);
+  }, [tenantId, actorId]);
 
-  const removeDepartment = useCallback((id: string) => {
+  const removeDepartment = useCallback(async (id: string) => {
+    if (!tenantId) return;
     setDepartments(prev => prev.filter(d => d.id !== id));
-  }, []);
+    await deleteDepartment(id, tenantId, actorId);
+  }, [tenantId, actorId]);
 
-  return { departments, addDepartment, updateDepartment, removeDepartment };
+  return { departments, loading, addDepartment, updateDepartment, removeDepartment };
 }
-
-export const DEPT_NAMES = DEFAULT_DEPARTMENTS.map(d => d.name);

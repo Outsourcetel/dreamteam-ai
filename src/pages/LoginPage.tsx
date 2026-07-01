@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import type { AuthUser } from '../types';
 import { Spinner } from '../components';
-import { mockUsers } from '../lib/mockData';
 
 const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Professional Services', 'Manufacturing', 'Education', 'Real Estate', 'Legal', 'Other'];
 
@@ -24,12 +23,6 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
   const [suError, setSuError] = useState('');
   const [suLoading, setSuLoading] = useState(false);
   const [suSuccess, setSuSuccess] = useState(false);
-
-  const demoAccounts = [
-    { group: 'DreamTeam Platform', users: [mockUsers[0], mockUsers[1], mockUsers[2], mockUsers[3]] },
-    { group: 'Tenant: Acme Corp', users: [mockUsers[4], mockUsers[5], mockUsers[6], mockUsers[7]] },
-    { group: 'Other Tenants', users: [mockUsers[8], mockUsers[9]] },
-  ];
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -214,27 +207,13 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
                   {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
                 </button>
               </form>
-              <div className="border-t border-slate-800 pt-5">
-                <p className="text-xs text-slate-500 mb-3">Demo accounts — click to log in instantly:</p>
-                <div className="space-y-4">
-                  {demoAccounts.map((group, gi) => (
-                    <div key={gi}>
-                      <p className="text-xs text-slate-600 uppercase tracking-wider mb-2">{group.group}</p>
-                      <div className="space-y-1">
-                        {group.users.map(u => (
-                          <button key={u.id} onClick={() => onLogin(u)}
-                            className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-all text-left">
-                            <div className="w-7 h-7 rounded-full bg-indigo-600/50 flex items-center justify-center text-xs font-bold text-indigo-300 flex-shrink-0">{u.avatar}</div>
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium text-white truncate">{u.name}</div>
-                              <div className="text-xs text-slate-500 truncate">{u.role.replace(/_/g, ' ')}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="border-t border-slate-800 pt-5 text-center">
+                <p className="text-xs text-slate-600">
+                  Don't have an account?{' '}
+                  <button onClick={() => setTab('signup')} className="text-indigo-400 hover:text-indigo-300 underline">
+                    Create your organization
+                  </button>
+                </p>
               </div>
             </>
           )}
