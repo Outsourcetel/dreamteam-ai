@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, Modal, PageTabs, AGENT_TABS } from '../../components'
+import { useDigitalEmployees } from '../../lib/useDigitalEmployees'
+import type { StoredDE } from '../../lib/useDigitalEmployees'
+import HireModal from '../../components/HireModal'
 
 // ---- Local types used by this page ----
 type ConnectorCategory =
@@ -1381,6 +1384,27 @@ const defaultAgents: AgentDef[] = [
 ];
 
 // ============================================================
+// DEFAULT StoredDE seed (mirrors defaultAgents for first load)
+// ============================================================
+const defaultStoredDEs: StoredDE[] = defaultAgents.map(a => ({
+  id: a.id,
+  name: a.name,
+  description: a.description,
+  icon: a.icon,
+  category: a.category,
+  department: a.category === 'Customer' ? 'Customer Success' : 'Operations',
+  status: a.status,
+  capabilities: a.actions,
+  channels: ['chat', 'email'],
+  knowledgeSources: a.knowledgeSources,
+  confidenceThreshold: a.confidenceThreshold,
+  requiredApproval: a.requiredApproval,
+  createdAt: new Date().toISOString(),
+  tasksThisMonth: a.tasksThisMonth,
+  successRate: a.successRate,
+}));
+
+// ============================================================
 // COMPONENT
 // ============================================================
 
@@ -1395,6 +1419,10 @@ const AgentWorkforcePage = ({
   page: Page;
   setPage: (p: Page) => void;
 }) => {
+  const { employees, hire, toggleStatus } = useDigitalEmployees(defaultStoredDEs);
+  const [showHireModal, setShowHireModal] = useState(false);
+
+  // Keep a mutable agents list for the existing detail-view UI (which uses AgentDef shape)
   const [agents, setAgents] = useState<AgentDef[]>(defaultAgents);
   const [filter, setFilter] = useState<'all' | 'active' | 'idle' | 'disabled'>(
     'all'
@@ -1408,21 +1436,42 @@ const AgentWorkforcePage = ({
   >('overview');
   const accentColor = tenant?.primaryColor || '#6366f1';
 
+  // Sync employees from hook into the AgentDef list used by card/detail views
+  useEffect(() => {
+    setAgents(prev => {
+      const existingIds = new Set(prev.map(a => a.id));
+      const newOnes = employees
+        .filter(e => !existingIds.has(e.id))
+        .map(e => ({
+          ...defaultAgents[0], // sensible defaults for new DEs
+          id: e.id,
+          name: e.name,
+          description: e.description,
+          icon: e.icon,
+          category: e.category,
+          status: e.status,
+          capabilities: e.capabilities,
+          actions: e.capabilities,
+          knowledgeSources: e.knowledgeSources,
+          confidenceThreshold: e.confidenceThreshold,
+          requiredApproval: e.requiredApproval,
+          tasksThisMonth: e.tasksThisMonth,
+          successRate: e.successRate,
+        }));
+      // Sync status changes from hook back to detail list
+      const synced = prev.map(a => {
+        const live = employees.find(e => e.id === a.id);
+        return live ? { ...a, status: live.status } : a;
+      });
+      return [...synced, ...newOnes];
+    });
+  }, [employees]);
+
   const filtered = agents.filter(
     (a) =>
       (filter === 'all' || a.status === filter) &&
       (catFilter === 'all' || a.category === catFilter)
   );
-
-  const toggleStatus = (id: string) => {
-    setAgents((prev) =>
-      prev.map((a) =>
-        a.id === id
-          ? { ...a, status: a.status === 'active' ? 'idle' : 'active' }
-          : a
-      )
-    );
-  };
 
   const statusColor = (s: string) =>
     s === 'active'
@@ -1443,17 +1492,18 @@ const AgentWorkforcePage = ({
           </p>
         </div>
         <button
+          onClick={() => setShowHireModal(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium"
           style={{ backgroundColor: accentColor }}
         >
-          + Add Agent
+          + Hire Digital Employee
         </button>
       </div>
 
       {/* Agentic Pipeline Banner */}
       <div className="mb-6 bg-slate-900 border border-slate-800 rounded-xl p-4">
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-          How Agents Work — Agentic Pipeline
+          How Digital Employees Work — Workforce Pipeline
         </div>
         <div className="flex items-center gap-2 overflow-x-auto">
           {[
@@ -1511,7 +1561,7 @@ const AgentWorkforcePage = ({
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         <StatCard
-          label="Total Agents"
+          label="Digital Employees"
           value={String(agents.length)}
           icon="⚡"
           color="blue"
@@ -1523,13 +1573,13 @@ const AgentWorkforcePage = ({
           color="emerald"
         />
         <StatCard
-          label="Customer Agents"
+          label="Customer-Facing"
           value={String(agents.filter((a) => a.category === 'Customer').length)}
           icon="✉"
           color="purple"
         />
         <StatCard
-          label="Internal Agents"
+          label="Internal"
           value={String(agents.filter((a) => a.category === 'Internal').length)}
           icon="⊟"
           color="amber"
@@ -1563,7 +1613,7 @@ const AgentWorkforcePage = ({
               }`}
               style={catFilter === c ? { backgroundColor: accentColor } : {}}
             >
-              {c === 'all' ? 'All' : c + ' Agents'}
+              {c === 'all' ? 'All' : c}
             </button>
           ))}
         </div>
@@ -2611,6 +2661,17 @@ const AgentWorkforcePage = ({
             </button>
           </div>
         </Modal>
+      )}
+
+      {showHireModal && (
+        <HireModal
+          accentColor={accentColor}
+          onClose={() => setShowHireModal(false)}
+          onHire={(de) => {
+            hire(de);
+            setShowHireModal(false);
+          }}
+        />
       )}
     </div>
   );

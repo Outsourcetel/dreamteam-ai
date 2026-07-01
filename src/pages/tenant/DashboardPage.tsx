@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { AuthUser, Tenant } from '../../types';
+import { useDigitalEmployees } from '../../lib/useDigitalEmployees';
 
 const DashboardPage = ({
   user,
@@ -16,16 +17,29 @@ const DashboardPage = ({
   const [timeRange, setTimeRange] = useState('7d');
   const accent = tenant?.primaryColor || '#6366f1';
 
-  const digitalEmployees = [
-    { name: 'Support DE', dept: 'Customer Success', status: 'active', tasks: 48, accuracy: 96, load: 82, lastActive: '30s ago' },
-    { name: 'Onboarding DE', dept: 'HR', status: 'active', tasks: 23, accuracy: 99, load: 45, lastActive: '2m ago' },
-    { name: 'Billing DE', dept: 'Finance', status: 'active', tasks: 31, accuracy: 98, load: 61, lastActive: '1m ago' },
-    { name: 'HR Knowledge DE', dept: 'HR', status: 'active', tasks: 67, accuracy: 94, load: 91, lastActive: '15s ago' },
-    { name: 'Compliance DE', dept: 'Legal', status: 'active', tasks: 15, accuracy: 97, load: 28, lastActive: '5m ago' },
-    { name: 'Sales Assist DE', dept: 'Revenue', status: 'active', tasks: 19, accuracy: 92, load: 38, lastActive: '3m ago' },
-    { name: 'IT Helpdesk DE', dept: 'IT', status: 'active', tasks: 88, accuracy: 95, load: 95, lastActive: '10s ago' },
-    { name: 'Data Analyst DE', dept: 'Operations', status: 'idle', tasks: 4, accuracy: 100, load: 5, lastActive: '22m ago' },
-  ];
+  // Reads from the same localStorage store as AgentWorkforcePage so
+  // newly hired DEs appear here immediately without a code change.
+  const { employees: storedDEs } = useDigitalEmployees([]);
+  const digitalEmployees = storedDEs.length > 0
+    ? storedDEs.map(d => ({
+        name: d.name,
+        dept: d.department,
+        status: d.status,
+        tasks: d.tasksThisMonth,
+        accuracy: d.successRate,
+        load: d.status === 'active' ? Math.min(95, 30 + d.tasksThisMonth % 65) : 5,
+        lastActive: d.status === 'active' ? 'recently' : 'idle',
+      }))
+    : [
+        { name: 'Support DE', dept: 'Customer Success', status: 'active', tasks: 48, accuracy: 96, load: 82, lastActive: '30s ago' },
+        { name: 'Onboarding DE', dept: 'HR', status: 'active', tasks: 23, accuracy: 99, load: 45, lastActive: '2m ago' },
+        { name: 'Billing DE', dept: 'Finance', status: 'active', tasks: 31, accuracy: 98, load: 61, lastActive: '1m ago' },
+        { name: 'HR Knowledge DE', dept: 'HR', status: 'active', tasks: 67, accuracy: 94, load: 91, lastActive: '15s ago' },
+        { name: 'Compliance DE', dept: 'Legal', status: 'active', tasks: 15, accuracy: 97, load: 28, lastActive: '5m ago' },
+        { name: 'Sales Assist DE', dept: 'Revenue', status: 'active', tasks: 19, accuracy: 92, load: 38, lastActive: '3m ago' },
+        { name: 'IT Helpdesk DE', dept: 'IT', status: 'active', tasks: 88, accuracy: 95, load: 95, lastActive: '10s ago' },
+        { name: 'Data Analyst DE', dept: 'Operations', status: 'idle', tasks: 4, accuracy: 100, load: 5, lastActive: '22m ago' },
+      ];
 
   const approvals = [
     { id: 'APR-441', de: 'Billing DE', action: 'Issue $450 credit to account #7712', risk: 'medium', age: '18m' },
