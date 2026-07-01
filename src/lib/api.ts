@@ -103,6 +103,18 @@ export interface DBAgentAction {
 // =====================================================
 // TENANT QUERIES
 // =====================================================
+export const updateTenant = async (
+  id: string,
+  updates: Partial<Pick<DBTenant, 'name' | 'industry' | 'accent_color'>>
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('tenants')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) { console.error('updateTenant:', error.message); return false; }
+  return true;
+};
+
 export const fetchTenants = async (): Promise<DBTenant[]> => {
   const { data, error } = await supabase
     .from('tenants')

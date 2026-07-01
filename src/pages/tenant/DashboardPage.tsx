@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
-import type { AuthUser, Tenant } from '../../types';
+import React, { useState, useEffect } from 'react';
+import type { AuthUser, Tenant, Page } from '../../types';
 import { useDigitalEmployees } from '../../lib/useDigitalEmployees';
+import { fetchAgentActions, approveAgentAction, rejectAgentAction } from '../../lib/api';
 
 const DashboardPage = ({
   user,
   tenant,
+  setPage,
   dbStats,
 }: {
   user?: AuthUser;
   tenant?: Tenant;
+  setPage?: (p: Page) => void;
   dbStats?: {
     totalConversations: number; openConversations: number; resolvedConversations: number;
     totalArticles: number; publishedArticles: number; pendingApprovals: number; autoResolved: number;
@@ -41,11 +44,42 @@ const DashboardPage = ({
         { name: 'Data Analyst DE', dept: 'Operations', status: 'idle', tasks: 4, accuracy: 100, load: 5, lastActive: '22m ago' },
       ];
 
-  const approvals = [
+  type ApprovalItem = { id: string; de: string; action: string; risk: string; age: string };
+  const mockApprovals: ApprovalItem[] = [
     { id: 'APR-441', de: 'Billing DE', action: 'Issue $450 credit to account #7712', risk: 'medium', age: '18m' },
     { id: 'APR-440', de: 'HR Knowledge DE', action: 'Update vacation policy for EMEA team', risk: 'low', age: '1h' },
     { id: 'APR-439', de: 'Compliance DE', action: 'Archive 3 outdated policy documents', risk: 'low', age: '2h' },
   ];
+  const [approvals, setApprovals] = useState<ApprovalItem[]>(mockApprovals);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+
+  // Fetch real pending actions from Supabase; fall back to mock on error/empty
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetchAgentActions(tenant.id, 10).then(actions => {
+      const pending = actions.filter(a => a.requires_approval && a.status === 'pending');
+      if (pending.length > 0) {
+        setApprovals(pending.map(a => ({
+          id: a.id,
+          de: a.agent_name,
+          action: a.description || a.action_type,
+          risk: a.confidence_score != null ? (a.confidence_score < 0.6 ? 'high' : a.confidence_score < 0.8 ? 'medium' : 'low') : 'medium',
+          age: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        })));
+      }
+    });
+  }, [tenant?.id]);
+
+  const handleApproval = async (id: string, decision: 'approve' | 'deny') => {
+    setDecidingId(id);
+    const isReal = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id);
+    if (isReal) {
+      if (decision === 'approve') await approveAgentAction(id, user?.id || 'unknown');
+      else await rejectAgentAction(id, user?.id || 'unknown');
+    }
+    setApprovals(prev => prev.filter(a => a.id !== id));
+    setDecidingId(null);
+  };
 
   const bottlenecks = [
     { label: 'IT Helpdesk DE at 95% load', severity: 'high', action: 'Consider deploying additional capacity' },
@@ -105,6 +139,34 @@ const DashboardPage = ({
           ))}
         </div>
       </div>
+
+      {/* Empty state for brand-new tenants */}
+      {storedDEs.length === 0 && !dbStats && (
+        <div className="mb-6 bg-slate-900 border border-slate-700 rounded-xl p-8">
+          <div className="max-w-lg mx-auto text-center">
+            <div className="text-4xl mb-3">⚡</div>
+            <h2 className="text-lg font-semibold text-white mb-2">Your Digital Workforce is ready to be built</h2>
+            <p className="text-slate-400 text-sm mb-6">Hire your first Digital Employee, upload your knowledge base, and invite your team — your Workforce HQ will populate automatically.</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: '⚡', label: 'Hire a Digital Employee', page: 'agents' as Page, desc: 'From the pre-built catalog' },
+                { icon: '◈', label: 'Upload Knowledge', page: 'hub_ingestion' as Page, desc: 'Files, URLs, or connectors' },
+                { icon: '◉', label: 'Invite Your Team', page: 'users' as Page, desc: 'Add managers and approvers' },
+              ].map(item => (
+                <button
+                  key={item.page}
+                  onClick={() => setPage?.(item.page)}
+                  className="bg-slate-800 hover:bg-slate-700 rounded-xl p-4 text-left transition-all border border-slate-700 hover:border-slate-600"
+                >
+                  <div className="text-2xl mb-2">{item.icon}</div>
+                  <div className="text-xs font-semibold text-white mb-1">{item.label}</div>
+                  <div className="text-xs text-slate-500">{item.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -181,14 +243,29 @@ const DashboardPage = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-600">{a.de} · {a.age} ago</span>
                   <div className="flex gap-1.5">
-                    <button className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Deny</button>
-                    <button className="text-xs px-2 py-1 rounded text-white" style={{ backgroundColor: accent }}>Approve</button>
+                    <button
+                      disabled={decidingId === a.id}
+                      onClick={() => handleApproval(a.id, 'deny')}
+                      className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-red-600/50 disabled:opacity-40 transition-all"
+                    >Deny</button>
+                    <button
+                      disabled={decidingId === a.id}
+                      onClick={() => handleApproval(a.id, 'approve')}
+                      className="text-xs px-2 py-1 rounded text-white disabled:opacity-40 transition-all"
+                      style={{ backgroundColor: accent }}
+                    >{decidingId === a.id ? '…' : 'Approve'}</button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          <button className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-all">View all approvals →</button>
+          {approvals.length === 0 && (
+            <div className="text-center py-4 text-xs text-emerald-400">All caught up — no pending approvals</div>
+          )}
+          <button
+            onClick={() => setPage?.('portal_approvals')}
+            className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-all"
+          >View all approvals →</button>
         </div>
       </div>
 
