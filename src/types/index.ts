@@ -49,6 +49,9 @@ export type TenantPage =
   | 'cs'
   | 'implementation'
   | 'marketplace'
+  | 'control_fabric'
+  | 'capabilities'
+  | 'intelligence'
   | 'audit_log'
   | 'users';
 

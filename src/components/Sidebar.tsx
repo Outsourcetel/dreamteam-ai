@@ -45,6 +45,9 @@ const Sidebar = ({
       if (p === 'portal_overview' || p.startsWith('portal_')) return 'portal';
       if (p === 'agents' || p === 'swarm') return 'agents';
       if (p === 'cs') return 'cs';
+      if (p === 'control_fabric') return 'control_fabric';
+      if (p === 'capabilities') return 'capabilities';
+      if (p === 'intelligence') return 'intelligence';
       if (p === 'security' || p === 'integrations' || p === 'connectors' || p === 'settings') return 'admin';
       return p;
     };
@@ -185,6 +188,13 @@ const Sidebar = ({
             <NavItem id="implementation" label="Implementation" icon="⊞" />
             <NavItem id="marketplace" label="Marketplace" icon="⊕" />
           </Section>
+          {isOwnerOrAdmin && (
+            <Section title="Intelligence">
+              <NavItem id="control_fabric" label="Control Fabric" icon="⇄" />
+              <NavItem id="capabilities" label="Capabilities" icon="⚡" />
+              <NavItem id="intelligence" label="AI Config" icon="⚛" />
+            </Section>
+          )}
           {isOwnerOrAdmin && (
             <Section title="Administration">
               <NavItem id="users" label="Team Members" icon="◉" />

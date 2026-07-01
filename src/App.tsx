@@ -24,6 +24,9 @@ import UserManagementPage from './pages/tenant/UserManagementPage';
 import CSWorkspacePage from './pages/tenant/CSWorkspacePage';
 import ImplementationWorkspacePage from './pages/tenant/ImplementationWorkspacePage';
 import ConnectorMarketplacePage from './pages/tenant/ConnectorMarketplacePage';
+import ControlFabricPage from './pages/tenant/ControlFabricPage';
+import CapabilitiesPage from './pages/tenant/CapabilitiesPage';
+import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -44,6 +47,9 @@ const PAGE_TO_URL: Record<string, string> = {
   cs:                     '/customer-success',
   implementation:         '/implementation',
   marketplace:            '/marketplace',
+  control_fabric:         '/control-fabric',
+  capabilities:           '/capabilities',
+  intelligence:           '/intelligence',
   audit_log:              '/audit-log',
   users:                  '/users',
   security:               '/security',
@@ -192,6 +198,12 @@ function AppShell() {
         return <ImplementationWorkspacePage {...commonProps} />;
       case 'marketplace':
         return <ConnectorMarketplacePage {...commonProps} />;
+      case 'control_fabric':
+        return <ControlFabricPage />;
+      case 'capabilities':
+        return <CapabilitiesPage />;
+      case 'intelligence':
+        return <IntelligencePlatformPage />;
       case 'audit_log':
         return <AuditLogPage {...commonProps} />;
       case 'users':
