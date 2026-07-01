@@ -1570,6 +1570,16 @@ const AgentWorkforcePage = ({
   const [pickerEscThreshold, setPickerEscThreshold] = useState<number>(60);
   const [modelSaveStatus, setModelSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
+  // Overview tab controlled state
+  const [ovName, setOvName] = useState('');
+  const [ovPersona, setOvPersona] = useState('');
+  const [ovDescription, setOvDescription] = useState('');
+  const [ovStatus, setOvStatus] = useState<'active' | 'idle' | 'disabled'>('active');
+  const [ovAudience, setOvAudience] = useState<'Customer' | 'Internal'>('Customer');
+  const [ovThreshold, setOvThreshold] = useState(75);
+  const [ovApproval, setOvApproval] = useState(false);
+  const [ovSaveStatus, setOvSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
   // Sync employees from hook into the AgentDef list used by card/detail views
   useEffect(() => {
     setAgents(prev => {
@@ -1601,7 +1611,7 @@ const AgentWorkforcePage = ({
     });
   }, [employees]);
 
-  // Sync model picker when a DE is selected
+  // Sync model picker + overview fields when a DE is selected
   useEffect(() => {
     if (!selectedAgent) return;
     const stored = employees.find(e => e.id === selectedAgent.id);
@@ -1611,6 +1621,15 @@ const AgentWorkforcePage = ({
     setPickerEscModelId(stored?.escalation_model_id ?? 'claude-sonnet-5');
     setPickerEscThreshold(stored?.escalation_threshold ?? 60);
     setModelSaveStatus('idle');
+    // Overview
+    setOvName(stored?.name ?? selectedAgent.name);
+    setOvPersona(stored?.persona_name ?? '');
+    setOvDescription(stored?.description ?? selectedAgent.description);
+    setOvStatus((stored?.status ?? selectedAgent.status) as any);
+    setOvAudience((stored?.category ?? selectedAgent.category) as any);
+    setOvThreshold(stored?.confidenceThreshold ?? selectedAgent.confidenceThreshold ?? 75);
+    setOvApproval(stored?.requiredApproval ?? selectedAgent.requiredApproval ?? false);
+    setOvSaveStatus('idle');
   }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = agents.filter(
@@ -1938,127 +1957,129 @@ const AgentWorkforcePage = ({
           {/* === OVERVIEW TAB === */}
           {configTab === 'overview' && (
             <div className="space-y-4">
+              {/* Name + Persona */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-800 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 mb-1">Status</div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">NAME</label>
+                  <input
+                    value={ovName}
+                    onChange={e => setOvName(e.target.value)}
+                    placeholder="e.g. Support Assistant"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">PERSONA NAME <span className="font-normal text-slate-600">(shown to customers)</span></label>
+                  <input
+                    value={ovPersona}
+                    onChange={e => setOvPersona(e.target.value)}
+                    placeholder="e.g. Aria, Max, Alex…"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">DESCRIPTION <span className="font-normal text-slate-600">(what this DE does)</span></label>
+                <textarea
+                  value={ovDescription}
+                  onChange={e => setOvDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Describe what this Digital Employee handles, its scope, and any limits on what it should answer."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+
+              {/* Status + Audience */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">STATUS</label>
                   <select
-                    className="bg-slate-700 text-white text-sm rounded px-2 py-1 w-full"
-                    defaultValue={selectedAgent.status}
+                    value={ovStatus}
+                    onChange={e => setOvStatus(e.target.value as any)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="active">Active</option>
-                    <option value="idle">Idle</option>
-                    <option value="disabled">Disabled</option>
+                    <option value="active">Active — answering customers</option>
+                    <option value="idle">Idle — paused</option>
+                    <option value="disabled">Disabled — offline</option>
                   </select>
                 </div>
-                <div className="bg-slate-800 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 mb-1">Audience</div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">AUDIENCE</label>
                   <select
-                    className="bg-slate-700 text-white text-sm rounded px-2 py-1 w-full"
-                    defaultValue={selectedAgent.category}
+                    value={ovAudience}
+                    onChange={e => setOvAudience(e.target.value as any)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="Customer">Customer-facing</option>
                     <option value="Internal">Internal Staff</option>
-                    <option value="Both">Both</option>
                   </select>
                 </div>
               </div>
-              <div className="bg-slate-800 rounded-lg p-3">
-                <div className="text-xs text-slate-400 mb-1">Description</div>
-                <textarea
-                  className="bg-slate-700 text-white text-sm rounded px-2 py-1 w-full resize-none"
-                  rows={2}
-                  defaultValue={selectedAgent.description}
+
+              {/* Confidence threshold */}
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-slate-400 tracking-wider">CONFIDENCE THRESHOLD</label>
+                  <span className="text-white text-sm font-bold font-mono">{ovThreshold}%</span>
+                </div>
+                <input
+                  type="range" min={30} max={95} value={ovThreshold}
+                  onChange={e => setOvThreshold(Number(e.target.value))}
+                  className="w-full accent-indigo-500"
                 />
+                <div className="flex justify-between text-xs text-slate-600 mt-1">
+                  <span>30% — escalate often</span>
+                  <span>95% — rarely escalate</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  When the AI's confidence in its answer falls below this, the conversation is escalated to your team.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-800 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 mb-1">
-                    Confidence Threshold
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={50}
-                      max={99}
-                      defaultValue={selectedAgent.confidenceThreshold}
-                      className="flex-1 accent-indigo-500"
-                    />
-                    <span className="text-white text-sm font-bold w-10 text-right">
-                      {selectedAgent.confidenceThreshold}%
-                    </span>
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Agent escalates below this
-                  </div>
+
+              {/* Approval required */}
+              <div className="flex items-center justify-between bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3">
+                <div>
+                  <div className="text-sm text-white">Require human approval before acting</div>
+                  <div className="text-xs text-slate-500 mt-0.5">All DE actions go to the approval queue before execution</div>
                 </div>
-                <div className="bg-slate-800 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 mb-2">
-                    Advanced Capabilities
-                  </div>
-                  <label className="flex items-center gap-2 mb-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked={selectedAgent.memoryEnabled}
-                      className="accent-indigo-500"
-                    />
-                    <span className="text-slate-300 text-xs">
-                      Conversation Memory
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked={selectedAgent.multiAgentEnabled}
-                      className="accent-indigo-500"
-                    />
-                    <span className="text-slate-300 text-xs">
-                      Multi-Agent Orchestration
-                    </span>
-                  </label>
-                </div>
+                <button
+                  onClick={() => setOvApproval(v => !v)}
+                  className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${ovApproval ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                  style={ovApproval ? { backgroundColor: accentColor } : {}}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${ovApproval ? 'left-5' : 'left-1'}`} />
+                </button>
               </div>
-              <div className="bg-slate-800 rounded-lg p-3">
-                <div className="text-xs text-slate-400 mb-2">
-                  Knowledge Sources
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedAgent.knowledgeSources.map((src) => (
-                    <span
-                      key={src}
-                      className="px-2 py-1 bg-indigo-900 text-indigo-300 rounded text-xs flex items-center gap-1"
-                    >
-                      {src}
-                      <button className="text-indigo-400 hover:text-red-400 ml-1">
-                        x
-                      </button>
-                    </span>
-                  ))}
-                  <button className="px-2 py-1 bg-slate-700 text-slate-400 rounded text-xs hover:text-white border border-dashed border-slate-600">
-                    + Add Source
-                  </button>
-                </div>
+
+              {/* Save */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={async () => {
+                    const stored = employees.find(e => e.id === selectedAgent?.id);
+                    if (!stored) return;
+                    setOvSaveStatus('saving');
+                    await update(stored.id, {
+                      name: ovName,
+                      persona_name: ovPersona,
+                      description: ovDescription,
+                      status: ovStatus,
+                      category: ovAudience,
+                      confidenceThreshold: ovThreshold,
+                      requiredApproval: ovApproval,
+                    });
+                    setOvSaveStatus('saved');
+                    setTimeout(() => setOvSaveStatus('idle'), 3000);
+                  }}
+                  disabled={ovSaveStatus === 'saving'}
+                  className="px-5 py-2 text-white text-xs font-medium rounded-xl transition-all disabled:opacity-60"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {ovSaveStatus === 'saving' ? 'Saving…' : 'Save Configuration'}
+                </button>
+                {ovSaveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved — active on next customer query</span>}
               </div>
-              {selectedAgent.multiAgentEnabled &&
-                selectedAgent.subAgents.length > 0 && (
-                  <div className="bg-slate-800 rounded-lg p-3">
-                    <div className="text-xs text-slate-400 mb-2">
-                      Sub-Agents (called automatically)
-                    </div>
-                    <div className="flex gap-2">
-                      {selectedAgent.subAgents.map((sid) => {
-                        const sub = agents.find((a) => a.id === sid);
-                        return sub ? (
-                          <span
-                            key={sid}
-                            className="px-2 py-1 bg-emerald-900 text-emerald-300 rounded text-xs"
-                          >
-                            {sub.icon} {sub.name}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                )}
             </div>
           )}
 

@@ -29,6 +29,7 @@ export interface StoredDE {
   task_type: string;
   escalation_model_id: string;
   escalation_threshold: number;
+  persona_name: string;
 }
 
 function dbToStored(row: Record<string, unknown>): StoredDE {
@@ -59,6 +60,7 @@ function dbToStored(row: Record<string, unknown>): StoredDE {
     task_type: (row.task_type as string) ?? 'chat',
     escalation_model_id: (row.escalation_model_id as string) ?? 'claude-sonnet-5',
     escalation_threshold: (row.escalation_threshold as number) ?? 60,
+    persona_name: (row.persona_name as string) ?? '',
   };
 }
 
@@ -162,6 +164,7 @@ export function useDigitalEmployees(
       const dbChanges: Record<string, unknown> = {};
       if (changes.name !== undefined) dbChanges.name = changes.name;
       if (changes.description !== undefined) dbChanges.description = changes.description;
+      if (changes.category !== undefined) dbChanges.category = changes.category;
       if (changes.icon !== undefined) dbChanges.icon = changes.icon;
       if (changes.status !== undefined) dbChanges.status = changes.status;
       if (changes.lifecycle_status !== undefined) dbChanges.lifecycle_status = changes.lifecycle_status;
@@ -181,6 +184,7 @@ export function useDigitalEmployees(
       if (changes.task_type !== undefined) dbChanges.task_type = changes.task_type;
       if (changes.escalation_model_id !== undefined) dbChanges.escalation_model_id = changes.escalation_model_id;
       if (changes.escalation_threshold !== undefined) dbChanges.escalation_threshold = changes.escalation_threshold;
+      if (changes.persona_name !== undefined) dbChanges.persona_name = changes.persona_name;
 
       if (tenantId && Object.keys(dbChanges).length > 0) {
         const { error } = await supabase
