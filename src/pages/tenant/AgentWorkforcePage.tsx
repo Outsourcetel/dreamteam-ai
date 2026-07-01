@@ -178,6 +178,23 @@ interface RegisteredConnector {
 }
 
 // ============================================================
+// DATA — knowledge tags
+// ============================================================
+
+export const knowledgeTags: { id: string; label: string }[] = [
+  { id: 't1', label: 'policy' },
+  { id: 't2', label: 'onboarding' },
+  { id: 't3', label: 'compliance' },
+  { id: 't4', label: 'product' },
+  { id: 't5', label: 'pricing' },
+  { id: 't6', label: 'hr' },
+  { id: 't7', label: 'finance' },
+  { id: 't8', label: 'support' },
+  { id: 't9', label: 'legal' },
+  { id: 't10', label: 'technical' },
+];
+
+// ============================================================
 // DATA — knowledge taxonomy
 // ============================================================
 
