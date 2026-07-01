@@ -88,6 +88,11 @@ const CustomerPortalPage = ({
   React.useEffect(() => {
     if (pLive && subPage === 'portal_escalations') eLoadEsc();
   }, [pLive, subPage, eLoadEsc]);
+  React.useEffect(() => {
+    if (pLive && subPage === 'portal_settings' && pTenantId) {
+      api.fetchAlertEmail(pTenantId).then(e => { if (e) setAlertEmail(e); });
+    }
+  }, [pLive, subPage, pTenantId]);
   const eClaim = async (row: any) => {
     if (!row || !pTenantId) return;
     setEBusy(true);
@@ -552,6 +557,9 @@ const CustomerPortalPage = ({
   // Human-in-the-loop decision state + audit trail
   const [decisionLog, setDecisionLog] = useState([]);
   const [decidingId, setDecidingId] = useState(null);
+  const [alertEmail, setAlertEmail] = useState('');
+  const [alertEmailSaving, setAlertEmailSaving] = useState(false);
+  const [alertEmailSaved, setAlertEmailSaved] = useState(false);
   const [decisionToast, setDecisionToast] = useState(null);
   const handleDecision = async (item, decision) => {
     setDecidingId(item.id);
@@ -1498,6 +1506,46 @@ const CustomerPortalPage = ({
               ))}
             </div>
           </div>
+          {/* Escalation Alerts */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">Escalation Alerts</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Get an email when a conversation is escalated to your team. Powered by Resend — add your API key in Platform Config to activate.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-400 block mb-1.5">Alert Email Address</label>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={alertEmail}
+                    onChange={e => { setAlertEmail(e.target.value); setAlertEmailSaved(false); }}
+                    placeholder="ops@yourcompany.com"
+                    className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!alertEmail || !tenant?.id) return;
+                      setAlertEmailSaving(true);
+                      await api.saveAlertEmail(tenant.id, alertEmail);
+                      setAlertEmailSaving(false);
+                      setAlertEmailSaved(true);
+                      setTimeout(() => setAlertEmailSaved(false), 3000);
+                    }}
+                    disabled={alertEmailSaving || !alertEmail}
+                    className="px-4 py-2.5 text-sm font-medium rounded-xl text-white disabled:opacity-50 transition-all"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {alertEmailSaving ? 'Saving…' : alertEmailSaved ? 'Saved ✓' : 'Save'}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-600 mt-1.5">
+                  Emails sent from <span className="font-mono">alerts@dreamteam.ai</span> · replies go to your address
+                </p>
+              </div>
+            </div>
+          </div>
+
           <button
             className="px-6 py-2.5 text-white text-sm font-medium rounded-xl"
             style={{ backgroundColor: accentColor }}

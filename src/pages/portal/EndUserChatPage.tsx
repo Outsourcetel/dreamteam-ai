@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { runPortalTurn } from '../../lib/api';
+import { runPortalTurn, submitCSAT } from '../../lib/api';
 import { PageTabs, PORTAL_TABS } from '../../components';
 
 interface ChatMessage {
@@ -46,6 +46,7 @@ const EndUserChatPage = ({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [escalated, setEscalated] = useState(false);
   const [customerName] = useState(user?.name || 'Customer');
+  const [csatRated, setCsatRated] = useState<Record<string, 1 | -1>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -207,6 +208,37 @@ const EndUserChatPage = ({
                       <span className="truncate">{s.title}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* CSAT rating — shown after DE messages when conversation is live */}
+              {m.role === 'de' && !m.escalated && conversationId && tenantId && (
+                <div className="flex items-center gap-2 px-1 mt-0.5">
+                  {csatRated[m.id] ? (
+                    <span className="text-xs text-slate-600">
+                      {csatRated[m.id] === 1 ? 'Thanks for the feedback!' : 'Thanks — we\'ll improve.'}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-xs text-slate-600">Helpful?</span>
+                      <button
+                        onClick={async () => {
+                          setCsatRated(prev => ({ ...prev, [m.id]: 1 }));
+                          await submitCSAT(conversationId, tenantId, 1);
+                        }}
+                        className="text-slate-600 hover:text-emerald-400 transition-colors text-sm"
+                        title="Yes, helpful"
+                      >👍</button>
+                      <button
+                        onClick={async () => {
+                          setCsatRated(prev => ({ ...prev, [m.id]: -1 }));
+                          await submitCSAT(conversationId, tenantId, -1);
+                        }}
+                        className="text-slate-600 hover:text-red-400 transition-colors text-sm"
+                        title="Not helpful"
+                      >👎</button>
+                    </>
+                  )}
                 </div>
               )}
 

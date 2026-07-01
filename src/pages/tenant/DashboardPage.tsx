@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { useDigitalEmployees } from '../../lib/useDigitalEmployees';
 import { fetchAgentActions, approveAgentAction, rejectAgentAction } from '../../lib/api';
+import { SetupChecklist } from '../../components/SetupChecklist';
 
 const DashboardPage = ({
   user,
@@ -172,6 +173,11 @@ const DashboardPage = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Setup checklist — shown until dismissed */}
+      {tenant?.id && (
+        <SetupChecklist tenantId={tenant.id} accentColor={accent} setPage={setPage} />
       )}
 
       {/* Top KPIs */}

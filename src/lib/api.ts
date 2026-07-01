@@ -879,14 +879,19 @@ export const runPortalTurn = async (
 
 /* Manual escalation triggered by the customer or agent (always-available path). */
 export const escalateConversation = async (
-  tenantId: string, conversationId: string, question: string
+  tenantId: string,
+  conversationId: string,
+  question: string,
+  opts?: { customerName?: string; confidence?: number; reason?: string },
 ): Promise<{ ok: boolean; escalationId?: string; error?: string }> => {
   const { data, error } = await supabase.from('escalations').insert({
     tenant_id: tenantId, conversation_id: conversationId,
-    reason: 'customer_request', question, status: 'open',
+    reason: opts?.reason ?? 'customer_request', question, status: 'open',
   }).select().single();
   if (error) { console.error('escalateConversation:', error.message); return { ok: false, error: error.message }; }
   await supabase.from('conversations').update({ status: 'pending' }).eq('id', conversationId).eq('tenant_id', tenantId);
+  // Fire alert email non-blocking
+  triggerEscalationAlert(tenantId, conversationId, question, opts?.customerName, opts?.confidence, opts?.reason).catch(() => {});
   return { ok: true, escalationId: (data as any).id };
 };
 
@@ -1284,3 +1289,177 @@ export const fetchConversationStats = async (tenantId: string) => {
     : 0;
   return { total, resolved, escalated, selfServed, avgConfidence };
 };
+
+// ============================================================
+// CSAT
+// ============================================================
+
+export const submitCSAT = async (
+  conversationId: string,
+  tenantId: string,
+  score: 1 | -1,
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('conversations')
+    .update({ csat_score: score, csat_submitted_at: new Date().toISOString() })
+    .eq('id', conversationId)
+    .eq('tenant_id', tenantId);
+  if (error) console.error('submitCSAT:', error.message);
+  return !error;
+};
+
+// ============================================================
+// ALERT EMAIL CONFIG
+// ============================================================
+
+export const saveAlertEmail = async (tenantId: string, email: string): Promise<boolean> => {
+  return savePlatformConfig({ [`alert_email_${tenantId}`]: email });
+};
+
+export const fetchAlertEmail = async (tenantId: string): Promise<string> => {
+  const { data } = await supabase
+    .from('platform_config')
+    .select('value')
+    .eq('key', `alert_email_${tenantId}`)
+    .maybeSingle();
+  return (data as any)?.value ?? '';
+};
+
+export const triggerEscalationAlert = async (
+  tenantId: string,
+  conversationId: string,
+  question: string,
+  customerName?: string,
+  confidence?: number,
+  reason?: string,
+): Promise<void> => {
+  try {
+    await supabase.functions.invoke('send-alert', {
+      body: {
+        tenant_id: tenantId,
+        type: 'escalation_alert',
+        payload: {
+          conversation_id: conversationId,
+          question,
+          customer_name: customerName ?? 'Customer',
+          confidence: confidence != null ? String(Math.round(confidence * 100)) : null,
+          reason: reason ?? 'low_confidence',
+          inbox_url: `${window.location.origin}/portal/escalations`,
+        },
+      },
+    });
+  } catch (e) {
+    console.error('triggerEscalationAlert (non-fatal):', e);
+  }
+};
+
+// ============================================================
+// SETUP CHECKLIST
+// ============================================================
+
+export interface SetupStep {
+  id: string;
+  label: string;
+  description: string;
+  done: boolean;
+  page: string;
+  cta: string;
+}
+
+export const fetchSetupChecklist = async (tenantId: string): Promise<SetupStep[]> => {
+  if (!tenantId || !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(tenantId)) {
+    return buildChecklist({ articles: 0, des: 0, hasApiKey: false, hasAlertEmail: false, users: 0, conversations: 0, playbooks: 0 });
+  }
+
+  const [
+    { count: articles },
+    { count: des },
+    hasApiKey,
+    { count: users },
+    { count: conversations },
+    { count: playbooks },
+    alertEmail,
+  ] = await Promise.all([
+    supabase.from('knowledge_articles').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'published'),
+    supabase.from('digital_employees').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId).eq('status', 'active'),
+    hasPlatformConfigKey('ANTHROPIC_API_KEY'),
+    supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+    supabase.from('playbooks').select('*', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+    fetchAlertEmail(tenantId),
+  ]);
+
+  return buildChecklist({
+    articles: articles ?? 0,
+    des: des ?? 0,
+    hasApiKey,
+    hasAlertEmail: !!alertEmail,
+    users: users ?? 0,
+    conversations: conversations ?? 0,
+    playbooks: playbooks ?? 0,
+  });
+};
+
+function buildChecklist(d: {
+  articles: number; des: number; hasApiKey: boolean;
+  hasAlertEmail: boolean; users: number; conversations: number; playbooks: number;
+}): SetupStep[] {
+  return [
+    {
+      id: 'kb_article',
+      label: 'Publish your first KB article',
+      description: 'Your Digital Employees answer from your Knowledge Base. Add at least one article.',
+      done: d.articles > 0,
+      page: 'hub_articles',
+      cta: 'Go to Knowledge Hub',
+    },
+    {
+      id: 'digital_employee',
+      label: 'Activate a Digital Employee',
+      description: 'Hire and activate at least one DE to start serving customers.',
+      done: d.des > 0,
+      page: 'agents',
+      cta: 'Go to Workforce',
+    },
+    {
+      id: 'ai_key',
+      label: 'Connect your AI engine',
+      description: 'Add an Anthropic API key to unlock full AI-powered responses.',
+      done: d.hasApiKey,
+      page: 'settings',
+      cta: 'Go to Settings → AI Engine',
+    },
+    {
+      id: 'alert_email',
+      label: 'Set up escalation alerts',
+      description: 'Get an email when a customer is escalated to a human. Never miss an urgent query.',
+      done: d.hasAlertEmail,
+      page: 'portal_settings',
+      cta: 'Go to Portal Settings',
+    },
+    {
+      id: 'team',
+      label: 'Invite your team',
+      description: 'Add at least one team member to review approvals and manage the platform.',
+      done: d.users > 1,
+      page: 'users',
+      cta: 'Go to User Management',
+    },
+    {
+      id: 'first_conversation',
+      label: 'Run your first test conversation',
+      description: 'Use Live Chat or the DE Test Panel to see how your AI responds.',
+      done: d.conversations > 0,
+      page: 'eu_chat',
+      cta: 'Open Live Chat',
+    },
+    {
+      id: 'playbook',
+      label: 'Create your first Playbook',
+      description: 'Define how your Digital Employees operate — the governing business process.',
+      done: d.playbooks > 0,
+      page: 'playbooks',
+      cta: 'Go to Playbooks',
+    },
+  ];
+}
