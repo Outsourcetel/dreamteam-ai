@@ -1249,6 +1249,9 @@ Tool invocations always carry organisation context. A tool called via any protoc
 
 ## 16. Public API Future
 
+> **Phase 2 — Architecture Reserved, Not Built in Phase 1**
+> The sections below define the architecture for DreamTeam's public platform API — the API surface that will be exposed when DreamTeam is licensed to other organisations. This is a Priority 4 capability under `docs/13_Product_Strategy_and_Phase1_Mission.md`. The architecture is documented here so Phase 1 internal APIs are designed to extend cleanly into the public surface without redesign. No public API endpoints are built or exposed in Phase 1.
+
 ### 16.1 Public API Readiness Criteria
 
 A capability is ready for public API exposure when:
@@ -1323,6 +1326,9 @@ Data deletions follow the archival and anonymisation rules in `docs/08_Database_
 ---
 
 ## 17. SDK Standards
+
+> **Phase 2 — Architecture Reserved, Not Built in Phase 1**
+> SDK tooling is required for the public platform licensing phase. Architecture standards are defined here for consistency with future implementation. SDKs are not built or published in Phase 1.
 
 ### 17.1 SDK Philosophy
 
