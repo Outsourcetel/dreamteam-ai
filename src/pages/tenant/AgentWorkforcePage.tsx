@@ -331,7 +331,7 @@ export const knowledgeTaxonomy: KnowledgeProductLocal[] = [
           },
           {
             id: 's13',
-            label: 'Agent Actions',
+            label: 'Workforce Actions',
             subSections: [
               { id: 'ss35', label: 'Requesting Actions', articleCount: 6 },
               { id: 'ss36', label: 'Approvals Explained', articleCount: 4 },
@@ -1436,9 +1436,9 @@ const AgentWorkforcePage = ({
       <PageTabs tabs={AGENT_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">AI Agents</h1>
+          <h1 className="text-2xl font-bold text-white">Digital Employees</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Configure agents that assist customers and internal staff — with
+            Configure Digital Employees that assist customers and internal staff — with
             full audit and approval controls
           </p>
         </div>

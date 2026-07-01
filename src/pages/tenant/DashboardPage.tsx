@@ -22,7 +22,7 @@ const DashboardPage = ({
 
   const kpiData = [
     {
-      label: 'Active AI Agents',
+      label: 'Active Digital Employees',
       value: '8',
       sub: '2 pending config',
       icon: '⚡',
@@ -181,7 +181,7 @@ const DashboardPage = ({
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+            <h1 className="text-2xl font-bold text-white">Workforce HQ</h1>
             {dbStats && (
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />

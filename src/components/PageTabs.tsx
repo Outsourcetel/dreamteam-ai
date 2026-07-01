@@ -15,7 +15,7 @@ export const HUB_TABS: { id: Page; label: string }[] = [
 export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'portal_overview', label: 'Overview' },
   { id: 'portal_conversations', label: 'Conversations' },
-  { id: 'portal_actions', label: 'Agent Actions' },
+  { id: 'portal_actions', label: 'Workforce Actions' },
   { id: 'portal_approvals', label: 'Approvals' },
   { id: 'portal_tickets', label: 'Tickets' },
   { id: 'portal_escalations', label: 'Escalations' },
@@ -23,8 +23,8 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
 ];
 
 export const AGENT_TABS: { id: Page; label: string }[] = [
-  { id: 'agents', label: 'AI Agents' },
-  { id: 'swarm', label: 'Swarm Monitor' },
+  { id: 'agents', label: 'Digital Employees' },
+  { id: 'swarm', label: 'Workforce Engine' },
 ];
 
 export const ADMIN_TABS: { id: Page; label: string }[] = [

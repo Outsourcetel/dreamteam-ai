@@ -77,12 +77,12 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
             </div>
           </div>
           <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
-            AI agents that work
+            Digital Employees that work
             <br />
             for you 24/7
           </h1>
           <p className="text-indigo-200 text-sm leading-relaxed mb-8">
-            Knowledge base and configurable AI agents that serve your customers
+            Knowledge base and Digital Employees that serve your customers
             and internal staff equally — with full audit trails and
             human-in-the-loop controls.
           </p>
@@ -93,8 +93,8 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
                 desc: 'One source of truth for customers and staff',
               },
               {
-                label: 'Configurable AI Agents',
-                desc: 'Agents that act on behalf of your customers',
+                label: 'Digital Employees',
+                desc: 'Digital Employees that act on behalf of your customers',
               },
               {
                 label: 'Human-in-the-Loop',

@@ -19,7 +19,7 @@ const OnboardingWizard = ({
     { label: 'Workspace Brand', icon: '1' },
     { label: 'Data Connectors', icon: '2' },
     { label: 'Knowledge Base', icon: '3' },
-    { label: 'AI Agents', icon: '4' },
+    { label: 'Digital Employees', icon: '4' },
     { label: 'Invite Team', icon: '5' },
     { label: 'Go Live', icon: '6' },
   ];
@@ -98,7 +98,7 @@ const OnboardingWizard = ({
                 Connect Your Data
               </h2>
               <p className="text-slate-400 text-sm">
-                Connect data sources so AI agents have the right context
+                Connect data sources so Digital Employees have the right context
               </p>
             </div>
             <div className="space-y-3">
@@ -192,7 +192,7 @@ const OnboardingWizard = ({
             <div className="text-center">
               <div className="text-5xl mb-3">D</div>
               <h2 className="text-xl font-bold text-white mb-1">
-                Activate AI Agents
+                Activate Digital Employees
               </h2>
               <p className="text-slate-400 text-sm">
                 Choose which agents to deploy — each serves customers or staff

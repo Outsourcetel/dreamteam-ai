@@ -1184,7 +1184,7 @@ const KnowledgeHubPage = ({
                     <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500">
                       <option>Billing &amp; Subscriptions</option>
                       <option>Security &amp; Access</option>
-                      <option>AI Agents &amp; Config</option>
+                      <option>Digital Employees &amp; Config</option>
                       <option>Onboarding</option>
                       <option>Integrations &amp; APIs</option>
                     </select>

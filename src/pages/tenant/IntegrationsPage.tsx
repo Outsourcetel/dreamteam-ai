@@ -24,7 +24,7 @@ const IntegrationsPage = ({
     { name: 'Zendesk', cat: 'Support', connected: true, desc: 'Sync tickets and conversations bidirectionally' },
     { name: 'Intercom', cat: 'Support', connected: false, desc: 'AI answers in Intercom live chat widget' },
     { name: 'Salesforce', cat: 'CRM', connected: true, desc: 'Sync customers, leads, and account activity' },
-    { name: 'HubSpot', cat: 'CRM', connected: false, desc: 'CRM contacts and deals sync with AI agents' },
+    { name: 'HubSpot', cat: 'CRM', connected: false, desc: 'CRM contacts and deals sync with Digital Employees' },
     { name: 'Stripe', cat: 'Payments', connected: true, desc: 'Billing lookups and payment status for agents' },
     { name: 'QuickBooks', cat: 'Accounting', connected: false, desc: 'Invoice generation and financial data access' },
     { name: 'Jira', cat: 'Project', connected: false, desc: 'Ticket creation and issue tracking integration' },

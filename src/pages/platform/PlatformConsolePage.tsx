@@ -64,7 +64,7 @@ const PlatformConsolePage = ({
             trend={'of ' + tenants.length + ' total'}
           />
           <StatCard
-            label="Total AI Agents"
+            label="Total Digital Employees"
             value={String(totalAgents)}
             icon="⚡"
             color="emerald"
