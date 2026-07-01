@@ -67,6 +67,22 @@ const ACTOR_ICON: Record<AuditEvent['actorType'], string> = {
   system: '⊟',
 };
 
+const exportCsv = (events: AuditEvent[]) => {
+  const headers = ['Timestamp', 'Actor', 'Actor Type', 'Event Type', 'Action', 'Detail', 'Status', 'IP'];
+  const rows = events.map(e => [
+    e.ts, e.actor, e.actorType, e.eventType, e.action,
+    `"${e.detail.replace(/"/g, '""')}"`, e.status, e.ip || '',
+  ]);
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
   const [filter, setFilter] = useState<EventType>('all');
   const [search, setSearch] = useState('');
@@ -93,7 +109,10 @@ const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) =>
           </div>
           <p className="text-slate-400 text-sm mt-1">Complete record of user actions, Digital Employee decisions, and security events</p>
         </div>
-        <button className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-sm hover:bg-slate-700 transition-all">
+        <button
+          onClick={() => exportCsv(filtered)}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-sm hover:bg-slate-700 transition-all"
+        >
           ↓ Export CSV
         </button>
       </div>

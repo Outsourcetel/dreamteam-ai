@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { supabase } from '../../supabase';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
+import { useDepartments } from '../../lib/useDepartments';
 
 const DEPARTMENTS = ['Leadership', 'Customer Success', 'Finance', 'HR & People', 'Legal & Compliance', 'Revenue', 'IT', 'Operations', 'Product', 'Marketing'];
+
+const DEPT_COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#06b6d4','#8b5cf6','#ec4899','#ef4444','#84cc16','#f97316'];
 
 const ROLE_COLOR: Record<TenantRole, string> = {
   tenant_owner: 'text-amber-400 bg-amber-400/10',
@@ -134,7 +137,14 @@ const InviteModal = ({
 // ── Main Page ─────────────────────────────────────────────────
 const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
   const { members, invite, updateRole, updateDepartment, toggleStatus, remove, resendInvite } = useUsers();
+  const { departments, addDepartment, updateDepartment: updateDept, removeDepartment } = useDepartments();
   const [showInvite, setShowInvite] = useState(false);
+  const [showAddDept, setShowAddDept] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newDeptDesc, setNewDeptDesc] = useState('');
+  const [newDeptHead, setNewDeptHead] = useState('');
+  const [newDeptColor, setNewDeptColor] = useState(DEPT_COLORS[0]);
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<'all' | TenantRole>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | TeamMember['status']>('all');
   const [search, setSearch] = useState('');
@@ -349,6 +359,120 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Department Management */}
+      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Departments</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Organise your team and Digital Employees by department</p>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setShowAddDept(v => !v)}
+              className="text-xs px-3 py-1.5 rounded-lg text-white transition-all"
+              style={{ backgroundColor: accentColor }}
+            >
+              + Add Department
+            </button>
+          )}
+        </div>
+
+        {showAddDept && (
+          <div className="mb-4 p-4 bg-slate-800/60 rounded-xl border border-slate-700 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Name</label>
+                <input value={newDeptName} onChange={e => setNewDeptName(e.target.value)}
+                  placeholder="e.g. Product"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Head of Department</label>
+                <select value={newDeptHead} onChange={e => setNewDeptHead(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                  <option value="">None assigned</option>
+                  {members.filter(m => m.status === 'active').map(m => (
+                    <option key={m.id} value={m.fullName}>{m.fullName}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Description</label>
+              <input value={newDeptDesc} onChange={e => setNewDeptDesc(e.target.value)}
+                placeholder="Short description of this department's function"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Colour</label>
+              <div className="flex items-center gap-2">
+                {DEPT_COLORS.map(c => (
+                  <button key={c} onClick={() => setNewDeptColor(c)}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${newDeptColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (!newDeptName.trim()) return;
+                  addDepartment({ name: newDeptName.trim(), description: newDeptDesc.trim(), head: newDeptHead, color: newDeptColor });
+                  setNewDeptName(''); setNewDeptDesc(''); setNewDeptHead(''); setNewDeptColor(DEPT_COLORS[0]);
+                  setShowAddDept(false);
+                }}
+                className="px-4 py-1.5 text-sm text-white rounded-lg transition-all"
+                style={{ backgroundColor: accentColor }}
+              >Create</button>
+              <button onClick={() => setShowAddDept(false)} className="px-4 py-1.5 text-sm text-slate-400 hover:text-white bg-slate-700 rounded-lg transition-all">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {departments.map(dept => {
+            const deptMembers = members.filter(m => m.department === dept.name && m.status === 'active');
+            return (
+              <div key={dept.id} className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 hover:border-slate-600 transition-all group">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                    style={{ backgroundColor: dept.color + '30', color: dept.color }}>
+                    {dept.name[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">{dept.name}</div>
+                    {dept.head && <div className="text-xs text-slate-500 truncate">Lead: {dept.head}</div>}
+                  </div>
+                  {isAdmin && (
+                    <button
+                      onClick={() => removeDepartment(dept.id)}
+                      className="text-slate-700 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                      title="Remove department"
+                    >✕</button>
+                  )}
+                </div>
+                {dept.description && <p className="text-xs text-slate-500 mb-3 line-clamp-2">{dept.description}</p>}
+                <div className="flex items-center justify-between">
+                  <div className="flex -space-x-1">
+                    {deptMembers.slice(0, 4).map(m => (
+                      <div key={m.id} title={m.fullName}
+                        className="w-5 h-5 rounded-full border border-slate-900 text-xs flex items-center justify-center font-bold text-white"
+                        style={{ backgroundColor: dept.color + '60', color: dept.color }}>
+                        {m.avatar[0]}
+                      </div>
+                    ))}
+                    {deptMembers.length > 4 && (
+                      <div className="w-5 h-5 rounded-full bg-slate-700 border border-slate-900 text-xs flex items-center justify-center text-slate-400">+{deptMembers.length - 4}</div>
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-500">{deptMembers.length} active</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

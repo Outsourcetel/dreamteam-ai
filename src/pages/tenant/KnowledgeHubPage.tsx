@@ -1861,38 +1861,61 @@ const KnowledgeHubPage = ({
           />
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Knowledge Gap Detection — computed from real articles */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-4">
-              Top Queries with Content Gaps
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-white">Knowledge Gap Detection</h2>
+              <span className="text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded">
+                {[
+                  ...articles.filter(a => (a.views ?? 0) === 0),
+                  ...articles.filter(a => {
+                    if (!a.updated) return false;
+                    const daysAgo = (Date.now() - new Date(a.updated).getTime()) / 86400000;
+                    return daysAgo > 90;
+                  }),
+                ].length} gaps found
+              </span>
+            </div>
             <div className="space-y-2">
+              {/* Zero-view articles */}
+              {articles.filter(a => (a.views ?? 0) === 0).slice(0, 3).map((a, i) => (
+                <div key={`nv-${i}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-white font-medium truncate">{a.title}</div>
+                    <div className="text-xs text-slate-500">{a.category} · 0 views — never seen by a customer or DE</div>
+                  </div>
+                  <Badge label="Unread" color="red" />
+                </div>
+              ))}
+              {/* Stale articles (not updated in >90 days) */}
+              {articles.filter(a => {
+                const updated = a.updated || a.updatedAt || '';
+                if (!updated || updated.includes('ago') || updated.includes('day') || updated.includes('hour')) return false;
+                const daysAgo = (Date.now() - new Date(updated).getTime()) / 86400000;
+                return daysAgo > 90;
+              }).slice(0, 2).map((a, i) => (
+                <div key={`st-${i}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-white font-medium truncate">{a.title}</div>
+                    <div className="text-xs text-slate-500">{a.category} · Last updated {a.updated || a.updatedAt}</div>
+                  </div>
+                  <Badge label="Stale" color="yellow" />
+                </div>
+              ))}
+              {/* Static high-signal queries with no KB coverage */}
               {[
-                { q: 'How do I export data to CSV?', count: 147, gap: true },
-                {
-                  q: 'What is the SLA for P1 incidents?',
-                  count: 89,
-                  gap: false,
-                },
-                {
-                  q: 'Can I have multiple payment methods?',
-                  count: 76,
-                  gap: true,
-                },
-                { q: 'How to set up SSO with Okta?', count: 68, gap: false },
-                { q: 'Where can I find my API key?', count: 54, gap: false },
+                { q: 'How do I export data to CSV?', count: 147 },
+                { q: 'Can I have multiple payment methods?', count: 76 },
+                { q: 'How to set up SSO with Okta?', count: 68 },
               ].map((item, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50"
-                >
-                  <span className="text-xs text-slate-500 w-5">{i + 1}</span>
+                <div key={`qg-${i}`} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/50">
                   <div className="flex-1">
                     <div className="text-xs text-white">{item.q}</div>
-                    <div className="text-xs text-slate-500">
-                      {item.count} queries
-                    </div>
+                    <div className="text-xs text-slate-500">{item.count} customer queries — no article found</div>
                   </div>
-                  {item.gap && <Badge label="Content gap" color="red" />}
+                  <button className="text-xs px-2 py-1 rounded text-white bg-indigo-600 hover:bg-indigo-500 transition-all whitespace-nowrap">
+                    + Draft article
+                  </button>
                 </div>
               ))}
             </div>
