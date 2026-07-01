@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { supabase } from '../../supabase';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
 import { useDepartments } from '../../lib/useDepartments';
@@ -32,7 +31,7 @@ const InviteModal = ({
   accentColor,
 }: {
   onClose: () => void;
-  onInvite: (data: { fullName: string; email: string; role: TenantRole; department: string; invitedBy: string }) => void;
+  onInvite: (data: { fullName: string; email: string; role: TenantRole; department: string; invitedBy: string }) => Promise<void>;
   currentUser?: AuthUser;
   accentColor: string;
 }) => {
@@ -49,20 +48,12 @@ const InviteModal = ({
     setError('');
     setLoading(true);
     try {
-      // Attempt real Supabase invite — graceful fallback if not configured
-      await supabase.auth.signUp({
-        email: email.trim(),
-        password: Math.random().toString(36).slice(2) + 'Aa1!', // temp password
-        options: {
-          data: { full_name: fullName.trim(), role, layer: 'tenant' },
-        },
-      });
-    } catch {
-      // Non-fatal — still add to local list
-    } finally {
-      onInvite({ fullName: fullName.trim(), email: email.trim(), role, department, invitedBy: currentUser?.name || 'Admin' });
-      setLoading(false);
+      await onInvite({ fullName: fullName.trim(), email: email.trim(), role, department, invitedBy: currentUser?.name || 'Admin' });
       onClose();
+    } catch (err: any) {
+      setError(err.message || 'Invitation failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -481,7 +472,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           accentColor={accentColor}
           currentUser={user}
           onClose={() => setShowInvite(false)}
-          onInvite={(data) => { invite(data); setShowInvite(false); }}
+          onInvite={async (data) => { await invite({ ...data, tenantId: tenant?.id }); }}
         />
       )}
     </div>

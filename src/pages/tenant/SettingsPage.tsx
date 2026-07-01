@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { PageTabs, ADMIN_TABS } from '../../components';
 import { updateTenant } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 
 const INDUSTRIES = [
   'Technology', 'Financial Services', 'Healthcare', 'Retail & E-commerce',
@@ -15,6 +16,7 @@ const SettingsPage = ({
   page,
   setPage,
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
+  const { refreshTenant } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [activeTab, setActiveTab] = useState<'general' | 'tokens' | 'billing' | 'team' | 'security'>('general');
 
@@ -43,6 +45,7 @@ const SettingsPage = ({
     });
     setSaving(false);
     setSaveStatus(ok ? 'saved' : 'error');
+    if (ok) await refreshTenant();
     setTimeout(() => setSaveStatus('idle'), 3000);
   };
 

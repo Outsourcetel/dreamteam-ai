@@ -50,6 +50,7 @@ interface AuthContextValue {
   setSidebarCollapsed: (v: boolean) => void;
   setGodModeSession: (s: GodModeSession | null) => void;
   setShowOnboarding: (v: boolean) => void;
+  refreshTenant: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -182,6 +183,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (canAccessPage(authedUser.role, p)) setCurrentPage(p);
   };
 
+  const refreshTenant = async () => {
+    const tid = authedUser?.tenantId ?? dbCurrentTenant?.id;
+    if (!tid) return;
+    const t = await fetchTenantById(tid);
+    setDbCurrentTenant(t);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setAuthedUser(null as any);
@@ -213,6 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSidebarCollapsed,
       setGodModeSession,
       setShowOnboarding,
+      refreshTenant,
     }}>
       {children}
     </AuthContext.Provider>

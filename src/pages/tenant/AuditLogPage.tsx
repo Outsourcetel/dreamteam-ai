@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant } from '../../types';
+import { fetchAuditLogs } from '../../services/auditLogService';
 
 type EventType = 'all' | 'user' | 'digital_employee' | 'knowledge' | 'approval' | 'security' | 'finance';
 
@@ -14,27 +15,6 @@ interface AuditEvent {
   status: 'success' | 'blocked' | 'escalated' | 'pending';
   ip?: string;
 }
-
-const mockEvents: AuditEvent[] = [
-  { id: 'e1',  ts: '2026-07-01 14:42:11', actor: 'Support Specialist', actorType: 'digital_employee', eventType: 'digital_employee', action: 'Conversation resolved', detail: 'Resolved password reset for customer #8821 — confidence 94%', status: 'success' },
-  { id: 'e2',  ts: '2026-07-01 14:39:04', actor: 'Sarah Mitchell', actorType: 'user', eventType: 'approval', action: 'Approval granted', detail: 'Approved credit of $450 to account #7712 (APR-441)', status: 'success', ip: '185.23.11.4' },
-  { id: 'e3',  ts: '2026-07-01 14:31:58', actor: 'Billing Specialist', actorType: 'digital_employee', eventType: 'finance', action: 'Action blocked — awaiting approval', detail: 'Issue $450 credit to account #7712 — routed for human approval', status: 'pending' },
-  { id: 'e4',  ts: '2026-07-01 14:28:33', actor: 'James Okafor', actorType: 'user', eventType: 'knowledge', action: 'Article published', detail: 'Published "Refund Policy v2" to Knowledge Hub', status: 'success', ip: '91.44.202.17' },
-  { id: 'e5',  ts: '2026-07-01 14:22:10', actor: 'Compliance Officer', actorType: 'digital_employee', eventType: 'security', action: 'Policy flag raised', detail: 'Flagged response containing PII — escalated before delivery', status: 'escalated' },
-  { id: 'e6',  ts: '2026-07-01 14:18:47', actor: 'Priya Nair', actorType: 'user', eventType: 'user', action: 'User role updated', detail: 'Changed James Okafor from tenant_user to tenant_manager', status: 'success', ip: '91.44.202.18' },
-  { id: 'e7',  ts: '2026-07-01 14:11:03', actor: 'IT Helpdesk Specialist', actorType: 'digital_employee', eventType: 'digital_employee', action: 'Conversation escalated', detail: 'Could not resolve VPN issue — confidence 41% — sent to human', status: 'escalated' },
-  { id: 'e8',  ts: '2026-07-01 14:04:29', actor: 'Tom Bergmann', actorType: 'user', eventType: 'user', action: 'Login', detail: 'Signed in from new device', status: 'success', ip: '62.153.88.22' },
-  { id: 'e9',  ts: '2026-07-01 13:58:11', actor: 'Finance Analyst', actorType: 'digital_employee', eventType: 'finance', action: 'Exception detected', detail: 'Transaction TXN-9182 flagged — $12,400 variance vs expected range', status: 'escalated' },
-  { id: 'e10', ts: '2026-07-01 13:51:44', actor: 'Knowledge Curator', actorType: 'digital_employee', eventType: 'knowledge', action: 'Knowledge gap detected', detail: '14 customers asked about "Refund Policy v2" — no article found', status: 'success' },
-  { id: 'e11', ts: '2026-07-01 13:42:17', actor: 'Sarah Mitchell', actorType: 'user', eventType: 'approval', action: 'Approval denied', detail: 'Denied archive of 3 policy documents (APR-439) — pending legal review', status: 'blocked', ip: '185.23.11.4' },
-  { id: 'e12', ts: '2026-07-01 13:35:09', actor: 'Onboarding Specialist', actorType: 'digital_employee', eventType: 'digital_employee', action: 'Onboarding task completed', detail: 'Sent welcome pack and tool access guide to Sarah Mitchell', status: 'success' },
-  { id: 'e13', ts: '2026-07-01 13:28:53', actor: 'System', actorType: 'system', eventType: 'security', action: 'Failed login attempt', detail: '3 consecutive failures for unknown@example.com — account not found', status: 'blocked' },
-  { id: 'e14', ts: '2026-07-01 13:19:31', actor: 'Priya Nair', actorType: 'user', eventType: 'user', action: 'Digital Employee enabled', detail: 'Enabled HR Advisor from catalog for HR & People department', status: 'success', ip: '91.44.202.18' },
-  { id: 'e15', ts: '2026-07-01 12:58:04', actor: 'HR Advisor', actorType: 'digital_employee', eventType: 'digital_employee', action: 'Sensitive topic routed', detail: 'HR question re: disciplinary procedure escalated to HR team', status: 'escalated' },
-  { id: 'e16', ts: '2026-07-01 12:41:22', actor: 'James Okafor', actorType: 'user', eventType: 'knowledge', action: 'Connector synced', detail: 'Confluence connector synced 847 articles to Knowledge Hub', status: 'success', ip: '91.44.202.17' },
-  { id: 'e17', ts: '2026-07-01 12:22:17', actor: 'Compliance Officer', actorType: 'digital_employee', eventType: 'security', action: 'Unauthorized action blocked', detail: 'Blocked attempt to export customer list without approval', status: 'blocked' },
-  { id: 'e18', ts: '2026-07-01 12:08:49', actor: 'Tom Bergmann', actorType: 'user', eventType: 'finance', action: 'Finance report viewed', detail: 'Accessed Q2 reconciliation report', status: 'success', ip: '62.153.88.22' },
-];
 
 const TYPE_LABELS: Record<Exclude<EventType, 'all'>, string> = {
   user: 'User Action',
@@ -67,6 +47,58 @@ const ACTOR_ICON: Record<AuditEvent['actorType'], string> = {
   system: '⊟',
 };
 
+const ACTION_LABELS: Record<string, string> = {
+  hire: 'Digital Employee hired',
+  dismiss: 'Digital Employee dismissed',
+  update: 'Record updated',
+  update_role: 'Role updated',
+  invite: 'User invited',
+  create: 'Record created',
+  delete: 'Record deleted',
+  approve: 'Approved',
+  reject: 'Rejected',
+  login: 'Signed in',
+  logout: 'Signed out',
+};
+
+function entityTypeToEventType(entityType: string): Exclude<EventType, 'all'> {
+  if (entityType === 'digital_employee') return 'digital_employee';
+  if (entityType === 'knowledge' || entityType === 'article') return 'knowledge';
+  if (entityType === 'approval') return 'approval';
+  if (entityType === 'security') return 'security';
+  if (entityType === 'finance' || entityType === 'transaction') return 'finance';
+  return 'user';
+}
+
+function dbRowToEvent(row: Record<string, unknown>): AuditEvent {
+  const entityType = (row.entity_type as string) || 'user';
+  const action = (row.action as string) || 'update';
+  const entityName = (row.entity_name as string) || '';
+  const afterData = row.after_data as Record<string, unknown> | null;
+
+  let detail = entityName;
+  if (afterData && Object.keys(afterData).length > 0) {
+    const parts = Object.entries(afterData)
+      .slice(0, 2)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+    detail = entityName ? `${entityName} — ${parts}` : parts;
+  }
+
+  const actorUserId = row.actor_user_id as string | null;
+
+  return {
+    id: row.id as string,
+    ts: new Date(row.created_at as string).toISOString().replace('T', ' ').slice(0, 19),
+    actor: actorUserId ? actorUserId.slice(0, 8) + '…' : 'System',
+    actorType: actorUserId ? 'user' : 'system',
+    eventType: entityTypeToEventType(entityType),
+    action: ACTION_LABELS[action] || action.replace(/_/g, ' '),
+    detail: detail || entityType,
+    status: 'success',
+  };
+}
+
 const exportCsv = (events: AuditEvent[]) => {
   const headers = ['Timestamp', 'Actor', 'Actor Type', 'Event Type', 'Action', 'Detail', 'Status', 'IP'];
   const rows = events.map(e => [
@@ -83,17 +115,31 @@ const exportCsv = (events: AuditEvent[]) => {
   URL.revokeObjectURL(url);
 };
 
-const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
+const AuditLogPage = ({ user: _user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<EventType>('all');
   const [search, setSearch] = useState('');
 
-  const filtered = mockEvents.filter(e => {
+  useEffect(() => {
+    if (!tenant?.id) { setLoading(false); return; }
+    setLoading(true);
+    fetchAuditLogs(tenant.id, { limit: 200 }).then(rows => {
+      setEvents((rows ?? []).map(r => dbRowToEvent(r as unknown as Record<string, unknown>)));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [tenant?.id]);
+
+  const filtered = events.filter(e => {
     const matchType = filter === 'all' || e.eventType === filter;
-    const matchSearch = !search || e.actor.toLowerCase().includes(search.toLowerCase()) || e.action.toLowerCase().includes(search.toLowerCase()) || e.detail.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search ||
+      e.actor.toLowerCase().includes(search.toLowerCase()) ||
+      e.action.toLowerCase().includes(search.toLowerCase()) ||
+      e.detail.toLowerCase().includes(search.toLowerCase());
     return matchType && matchSearch;
   });
 
-  const counts = mockEvents.reduce<Record<string, number>>((acc, e) => {
+  const counts = events.reduce<Record<string, number>>((acc, e) => {
     acc[e.eventType] = (acc[e.eventType] || 0) + 1;
     return acc;
   }, {});
@@ -103,10 +149,7 @@ const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) =>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">Audit Log</h1>
-            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">Demo data</span>
-          </div>
+          <h1 className="text-2xl font-bold text-white">Audit Log</h1>
           <p className="text-slate-400 text-sm mt-1">Complete record of user actions, Digital Employee decisions, and security events</p>
         </div>
         <button
@@ -156,9 +199,14 @@ const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) =>
           <div className="col-span-1">Status</div>
         </div>
         <div className="divide-y divide-slate-800/50">
-          {filtered.map(e => (
+          {loading ? (
+            <div className="py-16 text-center text-slate-600 text-sm">Loading audit log…</div>
+          ) : filtered.map(e => (
             <div key={e.id} className="grid grid-cols-12 gap-4 px-4 py-3 hover:bg-slate-800/30 transition-all items-start">
-              <div className="col-span-2 text-xs text-slate-500 font-mono pt-0.5">{e.ts.split(' ')[1]}<br /><span className="text-slate-700">{e.ts.split(' ')[0]}</span></div>
+              <div className="col-span-2 text-xs text-slate-500 font-mono pt-0.5">
+                {e.ts.split(' ')[1]}<br />
+                <span className="text-slate-700">{e.ts.split(' ')[0]}</span>
+              </div>
               <div className="col-span-2 flex items-start gap-2">
                 <span className="text-slate-500 text-xs mt-0.5">{ACTOR_ICON[e.actorType]}</span>
                 <div>
@@ -172,7 +220,9 @@ const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) =>
                 </span>
               </div>
               <div className="col-span-2 text-xs text-slate-300 font-medium leading-snug">{e.action}</div>
-              <div className="col-span-4 text-xs text-slate-500 leading-snug">{e.detail}{e.ip && <span className="ml-2 text-slate-700">· {e.ip}</span>}</div>
+              <div className="col-span-4 text-xs text-slate-500 leading-snug">
+                {e.detail}{e.ip && <span className="ml-2 text-slate-700">· {e.ip}</span>}
+              </div>
               <div className="col-span-1">
                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_STYLE[e.status]}`}>
                   {e.status}
@@ -181,13 +231,15 @@ const AuditLogPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) =>
             </div>
           ))}
         </div>
-        {filtered.length === 0 && (
-          <div className="py-12 text-center text-slate-600 text-sm">No events match your filter</div>
+        {!loading && filtered.length === 0 && (
+          <div className="py-12 text-center text-slate-600 text-sm">
+            {events.length === 0 ? 'No audit events yet — actions you take will appear here' : 'No events match your filter'}
+          </div>
         )}
       </div>
 
       <div className="mt-4 text-xs text-slate-600 text-center">
-        Showing {filtered.length} of {mockEvents.length} events · Real-time audit trail connects when live Supabase data is available
+        Showing {filtered.length} of {events.length} events · Live audit trail from your database
       </div>
     </div>
   );
