@@ -6,6 +6,7 @@ import type { StoredDE } from '../../lib/useDigitalEmployees'
 import HireModal from '../../components/HireModal'
 import { DE_CATALOG } from '../../lib/deCatalog'
 import type { CatalogDE } from '../../lib/deCatalog'
+import { DETestPanel } from '../../components/DETestPanel'
 
 // ---- Local types used by this page ----
 type ConnectorCategory =
@@ -1549,6 +1550,7 @@ const AgentWorkforcePage = ({
   const [configTab, setConfigTab] = useState<
     'overview' | 'model' | 'pipeline' | 'validators' | 'actions' | 'knowledge'
   >('overview');
+  const [showTestPanel, setShowTestPanel] = useState(false);
   const accentColor = tenant?.primaryColor || '#6366f1';
 
   // Sync employees from hook into the AgentDef list used by card/detail views
@@ -2708,77 +2710,23 @@ const AgentWorkforcePage = ({
                 </div>
               </div>
 
-              {/* Test Retrieval */}
-              <div className="bg-slate-800 rounded-lg p-4">
-                <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide">
-                  Test Retrieval
+              {/* Test DE — live conversation with real KB retrieval */}
+              {tenant?.id && (
+                <div className="bg-slate-800 rounded-lg p-4" style={{ minHeight: 320 }}>
+                  <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide flex items-center justify-between">
+                    <span>Test This DE</span>
+                    <span className="text-slate-600 normal-case font-normal">Live · uses your knowledge base</span>
+                  </div>
+                  <div style={{ height: 300 }} className="flex flex-col">
+                    <DETestPanel
+                      tenantId={tenant.id}
+                      deId={employees.find(e => e.name === selectedAgent?.name)?.id}
+                      deName={selectedAgent?.name ?? 'Digital Employee'}
+                      accentColor={accentColor}
+                    />
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    placeholder={
-                      'Enter a sample query to test what this agent would retrieve...'
-                    }
-                    className="flex-1 bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    className="px-3 py-2 rounded-lg text-white text-xs font-medium"
-                    style={{ backgroundColor: accentColor }}
-                  >
-                    Test
-                  </button>
-                </div>
-                <div className="mt-2 space-y-1.5 text-xs">
-                  {[
-                    {
-                      source: 'KB Article',
-                      title: 'How to Request a Refund',
-                      breadcrumb:
-                        'DreamTeam Platform › Billing › Invoices & Payments › Refund Policy',
-                      score: 0.94,
-                    },
-                    {
-                      source: 'Stripe Billing',
-                      title: 'Invoice #inv_2026_0621',
-                      breadcrumb:
-                        'Customer › Invoice › amount, status, lineItems',
-                      score: 0.88,
-                    },
-                    {
-                      source: 'Imported File',
-                      title: 'Product_Pricing_Sheet_Q2_2026.xlsx',
-                      breadcrumb:
-                        'DreamTeam Platform › Billing & Subscriptions',
-                      score: 0.72,
-                    },
-                  ].map((r, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-2 p-2 bg-slate-900 rounded-lg"
-                    >
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-xs flex-shrink-0 ${
-                          r.source === 'KB Article'
-                            ? 'bg-indigo-900 text-indigo-300'
-                            : r.source === 'Imported File'
-                            ? 'bg-yellow-900 text-yellow-300'
-                            : 'bg-emerald-900 text-emerald-300'
-                        }`}
-                      >
-                        {r.source}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-slate-300 truncate">{r.title}</div>
-                        <div className="text-slate-600 truncate">
-                          {r.breadcrumb}
-                        </div>
-                      </div>
-                      <span className="text-emerald-400 font-mono flex-shrink-0">
-                        {r.score.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
           )}
 

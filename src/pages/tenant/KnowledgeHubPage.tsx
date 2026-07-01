@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, Modal, PageTabs, HUB_TABS } from '../../components'
 import { DBKnowledgeArticle, upsertKnowledgeArticle } from '../../lib/api'
+import { ingestArticle } from '../../services/knowledgeIngestionService'
 
 // ---- Local types ----
 type KnowledgeItemType =
@@ -436,7 +437,19 @@ const KnowledgeHubPage = ({
         created_by: user?.id ?? null,
       });
       if (saved) {
-        addLog(`File uploaded: ${file.name} — ${chunkCount} chunks indexed`);
+        addLog(`File uploaded: ${file.name} — generating embeddings…`);
+        const ingestResult = await ingestArticle({
+          tenantId: tenant.id,
+          content: cleaned || file.name,
+          title,
+          articleId: saved.id,
+          sourceType: 'file',
+        });
+        if (ingestResult.success) {
+          addLog(`Embeddings ready: ${ingestResult.chunks_created} chunks (${ingestResult.mode})`);
+        } else {
+          addLog(`Saved without embeddings — add OPENAI_API_KEY to Supabase secrets to enable semantic search`, false);
+        }
       } else {
         addLog(`File saved locally: ${file.name} (Supabase not connected)`, false);
       }
@@ -520,7 +533,20 @@ const KnowledgeHubPage = ({
         created_by: user?.id ?? null,
       });
       if (saved) {
-        addLog(`URL ingested: ${title}`);
+        addLog(`URL ingested: ${title} — generating embeddings…`);
+        const ingestResult = await ingestArticle({
+          tenantId: tenant.id,
+          content: body,
+          title,
+          articleId: saved.id,
+          sourceType: 'url',
+          sourceUrl: urlInput.trim(),
+        });
+        if (ingestResult.success) {
+          addLog(`Embeddings ready: ${ingestResult.chunks_created} chunks (${ingestResult.mode})`);
+        } else {
+          addLog(`Saved without embeddings — add OPENAI_API_KEY to Supabase secrets to enable semantic search`, false);
+        }
       } else {
         addLog(`URL stub saved locally: ${title} (Supabase not connected)`, false);
       }
