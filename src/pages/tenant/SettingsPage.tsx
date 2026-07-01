@@ -37,8 +37,10 @@ const SettingsPage = ({
   // AI Engine tab
   const [anthropicKey, setAnthropicKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [googleKey, setGoogleKey] = useState('');
   const [anthropicSet, setAnthropicSet] = useState(false);
   const [openaiSet, setOpenaiSet] = useState(false);
+  const [googleSet, setGoogleSet] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
@@ -60,7 +62,8 @@ const SettingsPage = ({
       Promise.all([
         hasPlatformConfigKey('ANTHROPIC_API_KEY'),
         hasPlatformConfigKey('OPENAI_API_KEY'),
-      ]).then(([a, o]) => { setAnthropicSet(a); setOpenaiSet(o); });
+        hasPlatformConfigKey('GOOGLE_AI_KEY'),
+      ]).then(([a, o, g]) => { setAnthropicSet(a); setOpenaiSet(o); setGoogleSet(g); });
     }
     if (activeTab === 'usage') {
       Promise.all([fetchTenants(), fetchAllTenantsUsage()]).then(([ts, usage]) => {
@@ -93,6 +96,7 @@ const SettingsPage = ({
     const entries: Record<string, string> = {};
     if (anthropicKey.trim()) entries['ANTHROPIC_API_KEY'] = anthropicKey.trim();
     if (openaiKey.trim()) entries['OPENAI_API_KEY'] = openaiKey.trim();
+    if (googleKey.trim()) entries['GOOGLE_AI_KEY'] = googleKey.trim();
     if (!Object.keys(entries).length) return;
     setKeySaving(true);
     const ok = await savePlatformConfig(entries);
@@ -101,6 +105,7 @@ const SettingsPage = ({
     if (ok) {
       if (anthropicKey.trim()) { setAnthropicSet(true); setAnthropicKey(''); }
       if (openaiKey.trim()) { setOpenaiSet(true); setOpenaiKey(''); }
+      if (googleKey.trim()) { setGoogleSet(true); setGoogleKey(''); }
     }
     setTimeout(() => setKeyStatus('idle'), 4000);
   };
@@ -271,10 +276,30 @@ const SettingsPage = ({
               </p>
             </div>
 
+            {/* Google */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-slate-400">Google AI Key <span className="text-slate-600 font-normal">(optional)</span></label>
+                {googleSet
+                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini models active</span>
+                  : <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
+              </div>
+              <input
+                type="password"
+                value={googleKey}
+                onChange={e => setGoogleKey(e.target.value)}
+                placeholder={googleSet ? 'Enter new key to replace existing…' : 'AIza…'}
+                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+              <p className="text-xs text-slate-600 mt-1">
+                Get your key at aistudio.google.com → API Keys. Enables Gemini 1.5 Flash (cheapest overall) and Gemini 2.0 Flash.
+              </p>
+            </div>
+
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSaveKeys}
-                disabled={keySaving || (!anthropicKey.trim() && !openaiKey.trim())}
+                disabled={keySaving || (!anthropicKey.trim() && !openaiKey.trim() && !googleKey.trim())}
                 className="px-6 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
                 style={{ backgroundColor: accentColor }}
               >

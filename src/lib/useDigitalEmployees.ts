@@ -24,6 +24,8 @@ export interface StoredDE {
   tasksThisMonth: number;
   successRate: number;
   catalog_id?: string;
+  model_provider: string;
+  model_id: string;
 }
 
 function dbToStored(row: Record<string, unknown>): StoredDE {
@@ -49,6 +51,8 @@ function dbToStored(row: Record<string, unknown>): StoredDE {
     tasksThisMonth: (row.tasks_this_month as number) ?? 0,
     successRate: Number(row.success_rate ?? 100),
     catalog_id: row.catalog_id as string | undefined,
+    model_provider: (row.model_provider as string) ?? 'anthropic',
+    model_id: (row.model_id as string) ?? 'claude-haiku-4-5-20251001',
   };
 }
 
@@ -166,6 +170,8 @@ export function useDigitalEmployees(
       if (changes.successRate !== undefined) dbChanges.success_rate = changes.successRate;
       if (changes.tags !== undefined) dbChanges.tags = changes.tags;
       if (changes.workspace !== undefined) dbChanges.workspace = changes.workspace;
+      if (changes.model_provider !== undefined) dbChanges.model_provider = changes.model_provider;
+      if (changes.model_id !== undefined) dbChanges.model_id = changes.model_id;
 
       if (tenantId && Object.keys(dbChanges).length > 0) {
         const { error } = await supabase

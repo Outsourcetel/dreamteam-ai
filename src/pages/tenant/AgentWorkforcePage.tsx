@@ -7,6 +7,8 @@ import HireModal from '../../components/HireModal'
 import { DE_CATALOG } from '../../lib/deCatalog'
 import type { CatalogDE } from '../../lib/deCatalog'
 import { DETestPanel } from '../../components/DETestPanel'
+import { MODELS, PROVIDER_LABELS, TIER_COLORS, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from '../../lib/models'
+import type { ModelProvider } from '../../lib/models'
 
 // ---- Local types used by this page ----
 type ConnectorCategory =
@@ -1509,6 +1511,11 @@ const defaultStoredDEs: StoredDE[] = defaultAgents.map(a => ({
   icon: a.icon,
   category: a.category,
   department: a.category === 'Customer' ? 'Customer Success' : 'Operations',
+  workspace: '',
+  lifecycle_status: 'active',
+  trust_level: 'supervised' as const,
+  responsibilities: [],
+  tags: [],
   status: a.status,
   capabilities: a.actions,
   channels: ['chat', 'email'],
@@ -1518,6 +1525,8 @@ const defaultStoredDEs: StoredDE[] = defaultAgents.map(a => ({
   createdAt: new Date().toISOString(),
   tasksThisMonth: a.tasksThisMonth,
   successRate: a.successRate,
+  model_provider: a.modelConfig.provider === 'google' ? 'google' : a.modelConfig.provider === 'openai' ? 'openai' : 'anthropic',
+  model_id: a.modelConfig.model,
 }));
 
 // ============================================================
@@ -1535,7 +1544,7 @@ const AgentWorkforcePage = ({
   page: Page;
   setPage: (p: Page) => void;
 }) => {
-  const { employees, hire, toggleStatus } = useDigitalEmployees(tenant?.id, defaultStoredDEs, user?.id);
+  const { employees, hire, update, toggleStatus } = useDigitalEmployees(tenant?.id, defaultStoredDEs, user?.id);
   const [showHireModal, setShowHireModal] = useState(false);
 
   // Keep a mutable agents list for the existing detail-view UI (which uses AgentDef shape)
@@ -1552,6 +1561,11 @@ const AgentWorkforcePage = ({
   >('overview');
   const [showTestPanel, setShowTestPanel] = useState(false);
   const accentColor = tenant?.primaryColor || '#6366f1';
+
+  // Model picker state (synced when a DE is selected)
+  const [pickerProv, setPickerProv] = useState<ModelProvider>(DEFAULT_PROVIDER);
+  const [pickerId, setPickerId] = useState<string>(DEFAULT_MODEL_ID);
+  const [modelSaveStatus, setModelSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   // Sync employees from hook into the AgentDef list used by card/detail views
   useEffect(() => {
@@ -1583,6 +1597,15 @@ const AgentWorkforcePage = ({
       return [...synced, ...newOnes];
     });
   }, [employees]);
+
+  // Sync model picker when a DE is selected
+  useEffect(() => {
+    if (!selectedAgent) return;
+    const stored = employees.find(e => e.id === selectedAgent.id);
+    setPickerProv((stored?.model_provider as ModelProvider) ?? DEFAULT_PROVIDER);
+    setPickerId(stored?.model_id ?? DEFAULT_MODEL_ID);
+    setModelSaveStatus('idle');
+  }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = agents.filter(
     (a) =>
@@ -2036,147 +2059,84 @@ const AgentWorkforcePage = ({
           {/* === MODEL TAB === */}
           {configTab === 'model' && (
             <div className="space-y-4">
-              <div className="bg-slate-800 rounded-lg p-4">
-                <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide">
-                  LLM Provider & Model
-                </div>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <div className="text-xs text-slate-500 mb-1">Provider</div>
-                    <select
-                      className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                      defaultValue={selectedAgent.modelConfig.provider}
-                    >
-                      <option value="anthropic">Anthropic</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="google">Google</option>
-                      <option value="custom">Custom / Self-hosted</option>
-                    </select>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-1">Model</div>
-                    <select
-                      className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                      defaultValue={selectedAgent.modelConfig.model}
-                    >
-                      <optgroup label="Anthropic">
-                        <option value="claude-opus-4-5">
-                          Claude Opus 4.5 (Most capable)
-                        </option>
-                        <option value="claude-sonnet-4-5">
-                          Claude Sonnet 4.5 (Balanced)
-                        </option>
-                        <option value="claude-haiku-3-5">
-                          Claude Haiku 3.5 (Fast)
-                        </option>
-                      </optgroup>
-                      <optgroup label="OpenAI">
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4o-mini">GPT-4o Mini</option>
-                        <option value="o3">o3 (Reasoning)</option>
-                      </optgroup>
-                      <optgroup label="Google">
-                        <option value="gemini-2-pro">Gemini 2.0 Pro</option>
-                        <option value="gemini-2-flash">Gemini 2.0 Flash</option>
-                      </optgroup>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <div className="text-xs text-slate-500 mb-1">
-                      Temperature
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.1}
-                      className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                      defaultValue={selectedAgent.modelConfig.temperature}
-                    />
-                    <div className="text-xs text-slate-600 mt-1">
-                      0 = precise, 1 = creative
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-1">
-                      Max Output Tokens
-                    </div>
-                    <input
-                      type="number"
-                      className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                      defaultValue={selectedAgent.modelConfig.maxTokens}
-                    />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-1">
-                      Context Window
-                    </div>
-                    <input
-                      type="number"
-                      className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                      defaultValue={selectedAgent.modelConfig.contextWindow}
-                    />
-                  </div>
-                </div>
+              {/* Provider filter tabs */}
+              <div className="flex gap-1 bg-slate-800 rounded-lg p-1 w-fit">
+                {(['anthropic', 'openai', 'google'] as ModelProvider[]).map(prov => (
+                  <button key={prov} onClick={() => setPickerProv(prov)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all capitalize ${pickerProv === prov ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                    style={pickerProv === prov ? { backgroundColor: accentColor } : {}}>
+                    {PROVIDER_LABELS[prov]}
+                  </button>
+                ))}
               </div>
-              <div className="bg-slate-800 rounded-lg p-4">
-                <div className="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wide">
-                  System Prompt
-                </div>
-                <textarea
-                  className="bg-slate-700 text-white text-sm rounded px-3 py-2 w-full resize-none font-mono"
-                  rows={5}
-                  defaultValue={selectedAgent.modelConfig.systemPrompt}
-                />
-                <div className="text-xs text-slate-500 mt-1">
-                  Use {'{kb_context}'} to inject retrieved knowledge. Use{' '}
-                  {'{customer_name}'} for personalisation.
-                </div>
+
+              {/* Model cards */}
+              <div className="grid grid-cols-1 gap-2">
+                {MODELS.filter(m => m.provider === pickerProv).map(m => {
+                  const isSelected = pickerId === m.id;
+                  return (
+                    <button key={m.id} onClick={() => setPickerId(m.id)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all ${isSelected ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'}`}
+                      style={isSelected ? { borderColor: accentColor, backgroundColor: accentColor + '15' } : {}}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-medium text-white">{m.name}</div>
+                          {m.recommended && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-400">Recommended</span>
+                          )}
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${TIER_COLORS[m.tier]}`}>{m.tier}</span>
+                        </div>
+                        {isSelected && <span className="text-xs font-medium" style={{ color: accentColor }}>✓ Selected</span>}
+                      </div>
+                      <div className="text-xs text-slate-400 mb-2">{m.badge}</div>
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span>Input <span className="text-slate-300">${m.inputCostPer1M}/M tokens</span></span>
+                        <span>Output <span className="text-slate-300">${m.outputCostPer1M}/M tokens</span></span>
+                        <span>Context <span className="text-slate-300">{m.contextK}k tokens</span></span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="bg-slate-800 rounded-lg p-4">
-                <div className="text-xs text-slate-400 mb-3 font-semibold uppercase tracking-wide">
-                  RAG (Retrieval-Augmented Generation)
-                </div>
-                <label className="flex items-center gap-2 mb-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    defaultChecked={selectedAgent.modelConfig.ragEnabled}
-                    className="accent-indigo-500"
-                  />
-                  <span className="text-slate-300 text-sm">
-                    Enable RAG — inject retrieved KB context before reasoning
-                  </span>
-                </label>
-                {selectedAgent.modelConfig.ragEnabled && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs text-slate-500 mb-1">
-                        Top-K Chunks to Retrieve
-                      </div>
-                      <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full"
-                        defaultValue={selectedAgent.modelConfig.ragTopK}
-                      />
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500 mb-1">
-                        Retrieval Strategy
-                      </div>
-                      <select className="bg-slate-700 text-white text-sm rounded px-2 py-2 w-full">
-                        <option value="semantic">Semantic (vector)</option>
-                        <option value="hybrid">
-                          Hybrid (semantic + keyword)
-                        </option>
-                        <option value="keyword">Keyword (BM25)</option>
-                      </select>
-                    </div>
+
+              {/* Cost estimate */}
+              {(() => {
+                const m = MODELS.find(x => x.id === pickerId);
+                if (!m) return null;
+                const estPerQuery = ((400 * m.inputCostPer1M) + (150 * m.outputCostPer1M)) / 1_000_000;
+                return (
+                  <div className="bg-slate-800/50 rounded-xl p-3 text-xs text-slate-400">
+                    <span className="font-medium text-slate-300">Estimated cost per query:</span>{' '}
+                    ~${estPerQuery.toFixed(4)} (based on ~400 input + 150 output tokens)
+                    {' · '}
+                    1,000 queries ≈ ${(estPerQuery * 1000).toFixed(2)}
                   </div>
-                )}
+                );
+              })()}
+
+              {/* Save */}
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={async () => {
+                    const stored = employees.find(e => e.id === selectedAgent?.id);
+                    if (!stored) return;
+                    await update(stored.id, { model_provider: pickerProv, model_id: pickerId });
+                    setModelSaveStatus('saved');
+                    setTimeout(() => setModelSaveStatus('idle'), 3000);
+                  }}
+                  className="px-5 py-2 text-white text-xs font-medium rounded-xl transition-all"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  Save Model Selection
+                </button>
+                {modelSaveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved — DE will use this model from next query</span>}
+              </div>
+
+              <div className="border-t border-slate-800 pt-4">
+                <div className="text-xs text-slate-600">
+                  Note: Knowledge base retrieval always uses OpenAI embeddings for best search quality, regardless of which model you select for responses.
+                  OpenAI API key is needed for semantic search; without it the system falls back to keyword search.
+                </div>
               </div>
             </div>
           )}
