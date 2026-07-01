@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import type { AuthUser, Tenant } from '../../types';
-import { Badge } from '../../components';
-import MiniLineChart from '../../components/MiniLineChart';
 
 const DashboardPage = ({
   user,
@@ -13,333 +11,222 @@ const DashboardPage = ({
   dbStats?: {
     totalConversations: number; openConversations: number; resolvedConversations: number;
     totalArticles: number; publishedArticles: number; pendingApprovals: number; autoResolved: number;
-    channelBreakdown: { chat: number; email: number; phone: number };
-    sentimentBreakdown: { positive: number; neutral: number; negative: number };
   } | null;
 }) => {
   const [timeRange, setTimeRange] = useState('7d');
-  const accentColor = tenant?.primaryColor || '#6366f1';
+  const accent = tenant?.primaryColor || '#6366f1';
 
-  const kpiData = [
-    {
-      label: 'Active Digital Employees',
-      value: '8',
-      sub: '2 pending config',
-      icon: '⚡',
-      color: 'indigo',
-      trend: '+2 this week',
-      sparkData: [4, 5, 5, 6, 7, 7, 8],
-    },
-    {
-      label: 'Conversations Today',
-      value: dbStats ? dbStats.totalConversations.toLocaleString() : '1,284',
-      sub: dbStats ? `${dbStats.openConversations} open · ${dbStats.resolvedConversations} resolved` : 'Customers plus Staff',
-      icon: '✉',
-      color: 'blue',
-      trend: '+18%',
-      sparkData: [800, 950, 1050, 920, 1100, 1200, 1284],
-    },
-    {
-      label: 'Actions Completed',
-      value: '342',
-      sub: 'Agent-executed tasks',
-      icon: '⚙',
-      color: 'emerald',
-      trend: '+34%',
-      sparkData: [180, 220, 260, 200, 290, 310, 342],
-    },
-    {
-      label: 'Pending Approvals',
-      value: dbStats ? String(dbStats.pendingApprovals) : '12',
-      sub: dbStats ? (dbStats.pendingApprovals > 0 ? `${dbStats.pendingApprovals} require human review` : 'All caught up!') : 'Require human review',
-      icon: '⚠',
-      color: 'amber',
-      trend: '3 urgent',
-      sparkData: [5, 8, 12, 9, 11, 10, 12],
-    },
-    {
-      label: 'KB Articles',
-      value: dbStats ? dbStats.totalArticles.toLocaleString() : '2,847',
-      sub: dbStats ? `${dbStats.publishedArticles} published · ${dbStats.totalArticles - dbStats.publishedArticles} drafts` : '94% coverage score',
-      icon: '◈',
-      color: 'purple',
-      trend: '+127 this month',
-      sparkData: [2100, 2300, 2450, 2600, 2700, 2790, 2847],
-    },
-    {
-      label: 'Avg Resolution Time',
-      value: '1m 24s',
-      sub: 'Down from 4m 12s',
-      icon: '✚',
-      color: 'emerald',
-      trend: '-66%',
-      sparkData: [252, 210, 190, 170, 155, 140, 84],
-    },
-    {
-      label: 'Customer Satisfaction',
-      value: '94.2%',
-      sub: 'Based on 1,140 ratings',
-      icon: '★',
-      color: 'amber',
-      trend: '+2.1%',
-      sparkData: [88, 90, 91, 92, 93, 93.5, 94.2],
-    },
-    {
-      label: 'Token Usage',
-      value: '2.4M',
-      sub:
-        'of ' +
-        ((tenant?.tokenLimit || 5000000) / 1000000).toFixed(0) +
-        'M limit',
-      icon: '⊟',
-      color: 'blue',
-      trend: '48% used',
-      sparkData: [300, 600, 900, 1200, 1600, 2000, 2400],
-    },
+  const digitalEmployees = [
+    { name: 'Support DE', dept: 'Customer Success', status: 'active', tasks: 48, accuracy: 96, load: 82, lastActive: '30s ago' },
+    { name: 'Onboarding DE', dept: 'HR', status: 'active', tasks: 23, accuracy: 99, load: 45, lastActive: '2m ago' },
+    { name: 'Billing DE', dept: 'Finance', status: 'active', tasks: 31, accuracy: 98, load: 61, lastActive: '1m ago' },
+    { name: 'HR Knowledge DE', dept: 'HR', status: 'active', tasks: 67, accuracy: 94, load: 91, lastActive: '15s ago' },
+    { name: 'Compliance DE', dept: 'Legal', status: 'active', tasks: 15, accuracy: 97, load: 28, lastActive: '5m ago' },
+    { name: 'Sales Assist DE', dept: 'Revenue', status: 'active', tasks: 19, accuracy: 92, load: 38, lastActive: '3m ago' },
+    { name: 'IT Helpdesk DE', dept: 'IT', status: 'active', tasks: 88, accuracy: 95, load: 95, lastActive: '10s ago' },
+    { name: 'Data Analyst DE', dept: 'Operations', status: 'idle', tasks: 4, accuracy: 100, load: 5, lastActive: '22m ago' },
   ];
 
-  const recentActivity = [
-    {
-      time: '2m ago',
-      agent: 'Support Agent',
-      action: 'Resolved password reset for customer #8821',
-      type: 'resolved',
-      icon: 'v',
-    },
-    {
-      time: '5m ago',
-      agent: 'Onboarding Agent',
-      action: 'Sent welcome email and setup guide to new hire Sarah M.',
-      type: 'action',
-      icon: '>',
-    },
-    {
-      time: '12m ago',
-      agent: 'Billing Agent',
-      action: 'Generated invoice INV-2847 and dispatched to accounts',
-      type: 'action',
-      icon: '>',
-    },
-    {
-      time: '18m ago',
-      agent: 'Support Agent',
-      action: 'Escalated ticket T-9921 — confidence below threshold',
-      type: 'escalated',
-      icon: '!',
-    },
-    {
-      time: '24m ago',
-      agent: 'HR Agent',
-      action: 'Answered direct deposit question for 3 employees',
-      type: 'resolved',
-      icon: 'v',
-    },
-    {
-      time: '31m ago',
-      agent: 'Compliance Agent',
-      action: 'Flagged policy update in Q3 handbook — KB refresh triggered',
-      type: 'flagged',
-      icon: 'f',
-    },
-    {
-      time: '45m ago',
-      agent: 'Sales Agent',
-      action: 'Qualified lead from web chat and routed to CRM',
-      type: 'action',
-      icon: '>',
-    },
-    {
-      time: '1h ago',
-      agent: 'Billing Agent',
-      action: 'Awaiting approval: Issue $450 credit to account 7712',
-      type: 'pending',
-      icon: 'p',
-    },
+  const approvals = [
+    { id: 'APR-441', de: 'Billing DE', action: 'Issue $450 credit to account #7712', risk: 'medium', age: '18m' },
+    { id: 'APR-440', de: 'HR Knowledge DE', action: 'Update vacation policy for EMEA team', risk: 'low', age: '1h' },
+    { id: 'APR-439', de: 'Compliance DE', action: 'Archive 3 outdated policy documents', risk: 'low', age: '2h' },
   ];
 
-  const typeColors: Record<string, string> = {
-    resolved: 'text-emerald-400',
-    action: 'text-blue-400',
-    escalated: 'text-amber-400',
-    flagged: 'text-orange-400',
-    pending: 'text-purple-400',
-  };
-
-  const agentStatus = [
-    { name: 'Support Agent', status: 'active', tasks: 48, accuracy: 96, icon: 'A' },
-    { name: 'Onboarding Agent', status: 'active', tasks: 23, accuracy: 99, icon: 'B' },
-    { name: 'Billing Agent', status: 'active', tasks: 31, accuracy: 98, icon: 'C' },
-    { name: 'HR Knowledge Agent', status: 'active', tasks: 67, accuracy: 94, icon: 'D' },
-    { name: 'Compliance Agent', status: 'active', tasks: 15, accuracy: 97, icon: 'E' },
-    { name: 'Sales Assist Agent', status: 'active', tasks: 19, accuracy: 92, icon: 'F' },
-    { name: 'IT Helpdesk Agent', status: 'active', tasks: 88, accuracy: 95, icon: 'G' },
-    { name: 'Data Analyst Agent', status: 'idle', tasks: 4, accuracy: 100, icon: 'H' },
+  const bottlenecks = [
+    { label: 'IT Helpdesk DE at 95% load', severity: 'high', action: 'Consider deploying additional capacity' },
+    { label: '3 escalations unassigned >30m', severity: 'high', action: 'Assign to human agent' },
+    { label: 'Knowledge gap: Refund policy v2', severity: 'medium', action: 'Article draft ready for review' },
+    { label: 'Onboarding flow stalled — 2 new hires', severity: 'medium', action: 'Check connector sync status' },
   ];
+
+  const recommendations = [
+    { icon: '↑', text: 'Deploy a second IT Helpdesk DE — current load at 95%, response time degrading during peak hours.', type: 'action' },
+    { icon: '◈', text: 'Knowledge coverage for "Refund Policy v2" is 0%. 12 customers asked about it this week — draft an article.', type: 'knowledge' },
+    { icon: '$', text: 'Digital Employees resolved 1,140 conversations that would have cost ~$8,550 in human agent time this week.', type: 'saving' },
+    { icon: '★', text: 'CSAT is up 2.1% this month. Top driver: faster first response from Support DE (avg 8s vs 4m human).', type: 'insight' },
+  ];
+
+  const knowledgeHealth = [
+    { label: 'Coverage Score', value: '94%', bar: 94, color: 'emerald' },
+    { label: 'Freshness Score', value: '78%', bar: 78, color: 'blue' },
+    { label: 'Articles Published', value: '2,847', bar: 100, color: 'indigo' },
+    { label: 'Stale (>90 days)', value: '34', bar: 12, color: 'amber' },
+  ];
+
+  const totalTasks = digitalEmployees.reduce((s, d) => s + d.tasks, 0);
+  const humanTasks = 48;
+  const digitalPct = Math.round((totalTasks / (totalTasks + humanTasks)) * 100);
+
+  const riskColor = (r: string) =>
+    r === 'high' ? 'text-red-400 bg-red-400/10' : r === 'medium' ? 'text-amber-400 bg-amber-400/10' : 'text-emerald-400 bg-emerald-400/10';
+
+  const sevColor = (s: string) =>
+    s === 'high' ? 'border-l-red-500' : 'border-l-amber-500';
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">Workforce HQ</h1>
-            {dbStats && (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 font-medium">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                Live DB
-              </span>
-            )}
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 font-medium">
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+              Live
+            </span>
             {!dbStats && (
-              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">
-                Demo data
-              </span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">Demo data</span>
             )}
           </div>
-          <p className="text-slate-400 text-sm mt-1">
-            Welcome back — here is what your AI workforce is doing right now
-          </p>
+          <p className="text-slate-400 text-sm mt-1">Your Digital Workforce command center — {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
         </div>
         <div className="flex items-center gap-2">
           {['24h', '7d', '30d'].map((r) => (
-            <button
-              key={r}
-              onClick={() => setTimeRange(r)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                timeRange === r
-                  ? 'text-white'
-                  : 'text-slate-400 hover:text-white bg-slate-800'
-              }`}
-              style={timeRange === r ? { backgroundColor: accentColor } : {}}
-            >
+            <button key={r} onClick={() => setTimeRange(r)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${timeRange === r ? 'text-white' : 'text-slate-400 hover:text-white bg-slate-800'}`}
+              style={timeRange === r ? { backgroundColor: accent } : {}}>
               {r}
             </button>
           ))}
         </div>
       </div>
 
+      {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {kpiData.map((k, i) => (
-          <div
-            key={i}
-            className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all"
-          >
+        {[
+          { label: 'Active Digital Employees', value: '8', sub: '1 idle · 0 errors', icon: '⚡', trend: '+2 this week', trendUp: true },
+          { label: 'Digital vs Human Workload', value: `${digitalPct}%`, sub: `${totalTasks} DE tasks · ${humanTasks} human tasks`, icon: '⇌', trend: `+${digitalPct - 71}% from last week`, trendUp: true },
+          { label: 'Pending Approvals', value: String(dbStats?.pendingApprovals ?? approvals.length), sub: '1 awaiting >1h', icon: '⚠', trend: '3 require action', trendUp: false },
+          { label: 'Workforce Accuracy', value: '95.8%', sub: 'Across all Digital Employees', icon: '◎', trend: '+0.4% this week', trendUp: true },
+        ].map((k, i) => (
+          <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all">
             <div className="flex items-start justify-between mb-3">
               <span className="text-lg text-slate-400">{k.icon}</span>
-              <span className="text-xs text-emerald-400 font-medium">
-                {k.trend}
-              </span>
+              <span className={`text-xs font-medium ${k.trendUp ? 'text-emerald-400' : 'text-amber-400'}`}>{k.trend}</span>
             </div>
             <div className="text-2xl font-bold text-white mb-1">{k.value}</div>
-            <div className="text-xs text-slate-400 mb-2">{k.label}</div>
+            <div className="text-xs text-slate-400 mb-1">{k.label}</div>
             <div className="text-xs text-slate-600">{k.sub}</div>
-            <div className="mt-2">
-              <MiniLineChart data={k.sparkData} color={accentColor} />
-            </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      {/* Main grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        {/* Workforce Health */}
+        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-white">Agent Status</h2>
-            <Badge label="8 agents" color="indigo" />
+            <h2 className="text-sm font-semibold text-white">Workforce Health</h2>
+            <span className="text-xs text-slate-500">{digitalEmployees.filter(d => d.status === 'active').length} active · {digitalEmployees.filter(d => d.status === 'idle').length} idle</span>
           </div>
           <div className="space-y-2">
-            {agentStatus.map((a, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 transition-all"
-              >
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center text-xs text-indigo-300 font-bold">
-                  {a.icon}
+            {digitalEmployees.map((de, i) => (
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/50 transition-all">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ backgroundColor: accent + '30', color: accent }}>
+                  {de.name[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-white truncate">
-                    {a.name}
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-white">{de.name}</span>
+                    <span className="text-xs text-slate-600">{de.dept}</span>
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {a.tasks} tasks · {a.accuracy}% acc
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${de.load}%`, backgroundColor: de.load > 85 ? '#f59e0b' : accent }} />
+                    </div>
+                    <span className="text-xs text-slate-500 w-8">{de.load}%</span>
                   </div>
                 </div>
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    a.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'
-                  }`}
-                />
+                <div className="text-right flex-shrink-0">
+                  <div className="text-xs text-white font-medium">{de.tasks} tasks</div>
+                  <div className="text-xs text-slate-500">{de.accuracy}% acc</div>
+                </div>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${de.status === 'active' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
               </div>
             ))}
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5">
+        {/* Pending Approvals */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-white">
-              Live Activity Feed
-            </h2>
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-              Live
-            </span>
+            <h2 className="text-sm font-semibold text-white">Pending Approvals</h2>
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 text-xs">{approvals.length} open</span>
           </div>
           <div className="space-y-3">
-            {recentActivity.map((a, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3 p-3 rounded-lg bg-slate-800/40 hover:bg-slate-800/70 transition-all"
-              >
-                <span
-                  className={`text-sm mt-0.5 ${
-                    typeColors[a.type] || 'text-slate-400'
-                  }`}
-                >
-                  {a.icon}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-medium text-slate-300">
-                      {a.agent}
-                    </span>
-                    <span className="text-xs text-slate-600">{a.time}</span>
-                  </div>
-                  <div className="text-xs text-slate-400">{a.action}</div>
+            {approvals.map((a, i) => (
+              <div key={i} className="p-3 rounded-lg bg-slate-800/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500 font-mono">{a.id}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${riskColor(a.risk)}`}>{a.risk}</span>
                 </div>
-                {a.type === 'pending' && (
-                  <button
-                    className="text-xs px-2 py-1 rounded text-white flex-shrink-0"
-                    style={{ backgroundColor: accentColor }}
-                  >
-                    Review
-                  </button>
-                )}
+                <p className="text-xs text-slate-300">{a.action}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-600">{a.de} · {a.age} ago</span>
+                  <div className="flex gap-1.5">
+                    <button className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Deny</button>
+                    <button className="text-xs px-2 py-1 rounded text-white" style={{ backgroundColor: accent }}>Approve</button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
+          <button className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-all">View all approvals →</button>
         </div>
       </div>
 
-      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-sm font-semibold text-white">
-              Token Usage This Month
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              2.4M of {((tenant?.tokenLimit || 5000000) / 1000000).toFixed(0)}M
-              tokens used
-            </p>
+      {/* Bottom grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Operational Bottlenecks */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-4">Operational Bottlenecks</h2>
+          <div className="space-y-2">
+            {bottlenecks.map((b, i) => (
+              <div key={i} className={`p-3 rounded-lg bg-slate-800/50 border-l-2 ${sevColor(b.severity)}`}>
+                <div className="text-xs text-slate-300 font-medium mb-1">{b.label}</div>
+                <div className="text-xs text-slate-500">{b.action}</div>
+              </div>
+            ))}
           </div>
-          <Badge label="48% used" color="blue" />
         </div>
-        <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: '48%', backgroundColor: accentColor }}
-          />
+
+        {/* Business Recommendations */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-4">Business Recommendations</h2>
+          <div className="space-y-3">
+            {recommendations.map((r, i) => (
+              <div key={i} className="flex gap-3 p-3 rounded-lg bg-slate-800/40 hover:bg-slate-800/70 transition-all">
+                <span className="text-base flex-shrink-0" style={{ color: accent }}>{r.icon}</span>
+                <p className="text-xs text-slate-400 leading-relaxed">{r.text}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex justify-between mt-2 text-xs text-slate-500">
-          <span>0</span>
-          <span>Resets in 18 days</span>
-          <span>{((tenant?.tokenLimit || 5000000) / 1000000).toFixed(0)}M</span>
+
+        {/* Knowledge Health */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-4">Knowledge Health</h2>
+          <div className="space-y-4">
+            {knowledgeHealth.map((k, i) => (
+              <div key={i}>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-xs text-slate-400">{k.label}</span>
+                  <span className="text-xs font-medium text-white">{k.value}</span>
+                </div>
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full"
+                    style={{ width: `${k.bar}%`, backgroundColor: k.color === 'emerald' ? '#10b981' : k.color === 'blue' ? '#3b82f6' : k.color === 'indigo' ? accent : '#f59e0b' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="text-xs text-amber-300 font-medium mb-1">34 articles need review</div>
+            <div className="text-xs text-slate-500">Last updated &gt;90 days ago — may be outdated</div>
+          </div>
         </div>
       </div>
     </div>

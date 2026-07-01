@@ -178,6 +178,8 @@ const Sidebar = ({
             <NavItem id="portal_overview" label="Customer Portal" icon="◎" />
             <NavItem id="insight" label="Insight Engine" icon="⚛" />
             <NavItem id="finance" label="Finance Control Tower" icon="🏦" />
+            <NavItem id="revenue" label="Revenue Workspace" icon="$" />
+            <NavItem id="hr" label="HR Workspace" icon="◉" />
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">

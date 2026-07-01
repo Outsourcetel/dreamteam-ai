@@ -17,6 +17,8 @@ import IntegrationsPage from './pages/tenant/IntegrationsPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import FinanceControlTowerPage from './pages/tenant/FinanceControlTowerPage';
+import RevenueWorkspacePage from './pages/tenant/RevenueWorkspacePage';
+import HRWorkspacePage from './pages/tenant/HRWorkspacePage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -32,6 +34,8 @@ const PAGE_TO_URL: Record<string, string> = {
   swarm:                  '/swarm',
   insight:                '/insight',
   finance:                '/finance',
+  revenue:                '/revenue',
+  hr:                     '/hr',
   security:               '/security',
   integrations:           '/integrations',
   connectors:             '/connectors',
@@ -168,6 +172,10 @@ function AppShell() {
         return <CustomerPortalPage {...commonProps} subPage={currentPage as any} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
+      case 'revenue':
+        return <RevenueWorkspacePage {...commonProps} />;
+      case 'hr':
+        return <HRWorkspacePage {...commonProps} />;
       default:
         return <DashboardPage {...commonProps} />;
     }

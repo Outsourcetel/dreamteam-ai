@@ -43,7 +43,9 @@ export type TenantPage =
   | 'knowledge_taxonomy'
   | 'knowledge_connectors'
   | 'knowledge_files'
-  | 'finance';
+  | 'finance'
+  | 'revenue'
+  | 'hr';
 
 export type EndUserPage = 'chat' | 'history' | 'profile';
 
