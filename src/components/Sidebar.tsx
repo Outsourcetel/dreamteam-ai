@@ -182,6 +182,8 @@ const Sidebar = ({
             <NavItem id="revenue" label="Revenue Workspace" icon="$" />
             <NavItem id="hr" label="HR Workspace" icon="◉" />
             <NavItem id="cs" label="Customer Success" icon="★" />
+            <NavItem id="implementation" label="Implementation" icon="⊞" />
+            <NavItem id="marketplace" label="Marketplace" icon="⊕" />
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">
