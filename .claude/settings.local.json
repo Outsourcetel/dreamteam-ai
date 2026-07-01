@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(gh repo view Outsourcetel/dreamteam-ai --json name,description,defaultBranchRef 2>&1)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version 2>&1)",
+      "PowerShell(git clone https://github.com/Outsourcetel/dreamteam-ai.git \"D:\\\\Dream Team AI\" 2>&1)",
+      "WebFetch(domain:github.com)",
+      "PowerShell(gh repo clone Outsourcetel/dreamteam-ai \"D:\\\\Dream Team AI\" 2>&1)",
+      "Bash(gh repo *)",
+      "PowerShell(& \"C:\\\\Program Files\\\\GitHub CLI\\\\gh.exe\" repo clone Outsourcetel/dreamteam-ai \"D:\\\\Dream Team AI\" 2>&1)",
+      "PowerShell(cd \"D:\\\\Dream Team AI\"; $env:PATH = \"C:\\\\Program Files\\\\nodejs;$env:PATH\"; npm install react-router-dom@6 2>&1 | tail -5)",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue | Select-Object Source; Get-ChildItem \"C:\\\\Program Files\\\\nodejs\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:APPDATA\\\\npm\" -ErrorAction SilentlyContinue | Select-Object Name -First 5)",
+      "Bash(Get-Content \"D:\\\\Dream Team AI\\\\src\\\\App.tsx\")",
+      "Bash(Measure-Object -Line)",
+      "Bash(Get-Content \"D:\\\\Dream Team AI\\\\package.json\")",
+      "PowerShell(git -C \"D:\\\\Dream Team AI\" log --oneline -5 2>&1)",
+      "PowerShell(git -C \"D:\\\\Dream Team AI\" show HEAD:src/App.tsx)",
+      "PowerShell(git -C \"D:\\\\Dream Team AI\" show HEAD:src/App.tsx > \"C:\\\\Users\\\\SPECTRE\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Dream-Team-AI\\\\9cba64e5-0d5c-4e83-a0fe-fe6b89890991\\\\scratchpad\\\\App_original.tsx\")"
+    ]
+  }
+}
