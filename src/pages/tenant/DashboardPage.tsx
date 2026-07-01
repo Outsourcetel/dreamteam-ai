@@ -22,7 +22,7 @@ const DashboardPage = ({
 
   // Reads from the same localStorage store as AgentWorkforcePage so
   // newly hired DEs appear here immediately without a code change.
-  const { employees: storedDEs } = useDigitalEmployees([]);
+  const { employees: storedDEs } = useDigitalEmployees(tenant?.id, []);
   const digitalEmployees = storedDEs.length > 0
     ? storedDEs.map(d => ({
         name: d.name,
