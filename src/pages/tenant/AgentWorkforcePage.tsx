@@ -1534,7 +1534,7 @@ const AgentWorkforcePage = ({
   page: Page;
   setPage: (p: Page) => void;
 }) => {
-  const { employees, hire, toggleStatus } = useDigitalEmployees(defaultStoredDEs);
+  const { employees, hire, toggleStatus } = useDigitalEmployees(tenant?.id, defaultStoredDEs);
   const [showHireModal, setShowHireModal] = useState(false);
 
   // Keep a mutable agents list for the existing detail-view UI (which uses AgentDef shape)

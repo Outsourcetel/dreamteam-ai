@@ -884,3 +884,275 @@ export const resolveEscalation = async (args: {
   }
   return { ok: true };
 };
+
+
+// ============================================================
+// DIGITAL EMPLOYEES
+// ============================================================
+
+export interface DBDigitalEmployee {
+  id: string;
+  tenant_id: string;
+  catalog_id: string | null;
+  name: string;
+  persona_name: string | null;
+  description: string;
+  icon: string;
+  category: 'Customer' | 'Internal';
+  department: string;
+  workspace: string;
+  status: 'active' | 'idle' | 'disabled';
+  lifecycle_status: string;
+  trust_level: 'supervised' | 'established' | 'trusted' | 'autonomous';
+  capabilities: string[];
+  responsibilities: string[];
+  channels: string[];
+  knowledge_sources: string[];
+  tags: string[];
+  confidence_threshold: number;
+  required_approval: boolean;
+  skills: { name: string; proficiency: number; evidence?: string }[];
+  model_config: Record<string, unknown>;
+  tasks_this_month: number;
+  success_rate: number;
+  fte_equivalent: number | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const fetchDigitalEmployees = async (tenantId: string): Promise<DBDigitalEmployee[]> => {
+  const { data, error } = await supabase
+    .from('digital_employees')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .not('lifecycle_status', 'in', '(retired,archived)')
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchDigitalEmployees:', error.message); return []; }
+  return (data as DBDigitalEmployee[]) ?? [];
+};
+
+export const fetchDigitalEmployeeById = async (id: string, tenantId: string): Promise<DBDigitalEmployee | null> => {
+  const { data, error } = await supabase
+    .from('digital_employees')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single();
+  if (error) { console.error('fetchDigitalEmployeeById:', error.message); return null; }
+  return data as DBDigitalEmployee;
+};
+
+export const createDigitalEmployee = async (
+  tenantId: string,
+  de: Omit<DBDigitalEmployee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
+): Promise<DBDigitalEmployee | null> => {
+  const { data, error } = await supabase
+    .from('digital_employees')
+    .insert({ ...de, tenant_id: tenantId })
+    .select()
+    .single();
+  if (error) { console.error('createDigitalEmployee:', error.message); return null; }
+  return data as DBDigitalEmployee;
+};
+
+export const updateDigitalEmployee = async (
+  id: string,
+  tenantId: string,
+  updates: Partial<Omit<DBDigitalEmployee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>>
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('digital_employees')
+    .update(updates)
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+  if (error) { console.error('updateDigitalEmployee:', error.message); return false; }
+  return true;
+};
+
+export const retireDigitalEmployee = async (id: string, tenantId: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('digital_employees')
+    .update({ lifecycle_status: 'retired', status: 'disabled' })
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+  if (error) { console.error('retireDigitalEmployee:', error.message); return false; }
+  return true;
+};
+
+export const fetchDEPerformanceSummary = async (tenantId: string) => {
+  const { data, error } = await supabase
+    .from('digital_employees')
+    .select('status, category, trust_level, tasks_this_month, success_rate, fte_equivalent')
+    .eq('tenant_id', tenantId)
+    .not('lifecycle_status', 'in', '(retired,archived)');
+  if (error || !data) return { total: 0, active: 0, customer: 0, internal: 0, totalTasks: 0, avgSuccessRate: 0, totalFte: 0 };
+  return {
+    total: data.length,
+    active: data.filter(d => d.status === 'active').length,
+    customer: data.filter(d => d.category === 'Customer').length,
+    internal: data.filter(d => d.category === 'Internal').length,
+    totalTasks: data.reduce((s, d) => s + (d.tasks_this_month ?? 0), 0),
+    avgSuccessRate: data.length ? Math.round(data.reduce((s, d) => s + Number(d.success_rate ?? 0), 0) / data.length) : 0,
+    totalFte: data.reduce((s, d) => s + Number(d.fte_equivalent ?? 0), 0),
+  };
+};
+
+
+// ============================================================
+// PLAYBOOKS
+// ============================================================
+
+export interface DBPlaybook {
+  id: string;
+  tenant_id: string;
+  digital_employee_id: string | null;
+  parent_playbook_id: string | null;
+  name: string;
+  slug: string;
+  version: number;
+  domain: string;
+  business_objective: string;
+  owner_role: string | null;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  lifecycle_status: string;
+  is_base_playbook: boolean;
+  trigger_type: string;
+  capabilities_used: string[];
+  knowledge_collections: string[];
+  connector_requirements: unknown[];
+  human_approval_required: boolean;
+  approval_points: unknown[];
+  decision_rules: unknown[];
+  escalation_rules: unknown[];
+  exception_handlers: unknown[];
+  expected_outputs: unknown[];
+  kpis: { name: string; target: number; unit: string; current_value?: number }[];
+  estimated_duration_ms: number | null;
+  estimated_cost_usd: number | null;
+  tasks_this_month: number;
+  success_rate: number;
+  de_handled_rate: number;
+  certified_by: string | null;
+  certified_at: string | null;
+  next_review_due: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const fetchPlaybooks = async (tenantId: string, filters?: {
+  domain?: string;
+  lifecycle_status?: string;
+  digital_employee_id?: string;
+}): Promise<DBPlaybook[]> => {
+  let q = supabase
+    .from('playbooks')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .not('lifecycle_status', 'in', '(retired)')
+    .order('created_at', { ascending: false });
+  if (filters?.domain) q = q.eq('domain', filters.domain);
+  if (filters?.lifecycle_status) q = q.eq('lifecycle_status', filters.lifecycle_status);
+  if (filters?.digital_employee_id) q = q.eq('digital_employee_id', filters.digital_employee_id);
+  const { data, error } = await q;
+  if (error) { console.error('fetchPlaybooks:', error.message); return []; }
+  return (data as DBPlaybook[]) ?? [];
+};
+
+export const fetchPlaybookById = async (id: string, tenantId: string): Promise<DBPlaybook | null> => {
+  const { data, error } = await supabase
+    .from('playbooks')
+    .select('*')
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .single();
+  if (error) { console.error('fetchPlaybookById:', error.message); return null; }
+  return data as DBPlaybook;
+};
+
+export const createPlaybook = async (
+  tenantId: string,
+  pb: Omit<DBPlaybook, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
+): Promise<DBPlaybook | null> => {
+  const { data, error } = await supabase
+    .from('playbooks')
+    .insert({ ...pb, tenant_id: tenantId })
+    .select()
+    .single();
+  if (error) { console.error('createPlaybook:', error.message); return null; }
+  return data as DBPlaybook;
+};
+
+export const updatePlaybook = async (
+  id: string,
+  tenantId: string,
+  updates: Partial<Omit<DBPlaybook, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>>
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('playbooks')
+    .update(updates)
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+  if (error) { console.error('updatePlaybook:', error.message); return false; }
+  return true;
+};
+
+export const advancePlaybookLifecycle = async (
+  id: string,
+  tenantId: string,
+  newStatus: DBPlaybook['lifecycle_status'],
+  certifiedBy?: string
+): Promise<boolean> => {
+  const updates: Partial<DBPlaybook> = { lifecycle_status: newStatus };
+  if (newStatus === 'certified' && certifiedBy) {
+    updates.certified_by = certifiedBy;
+    updates.certified_at = new Date().toISOString();
+  }
+  return updatePlaybook(id, tenantId, updates);
+};
+
+export const fetchPlaybookSummary = async (tenantId: string) => {
+  const { data, error } = await supabase
+    .from('playbooks')
+    .select('lifecycle_status, domain, risk_level, de_handled_rate, tasks_this_month')
+    .eq('tenant_id', tenantId);
+  if (error || !data) return { total: 0, active: 0, domains: 0, avgHandledRate: 0, totalTasks: 0 };
+  const domains = new Set(data.map(p => p.domain).filter(Boolean));
+  return {
+    total: data.length,
+    active: data.filter(p => p.lifecycle_status === 'active').length,
+    domains: domains.size,
+    avgHandledRate: data.length ? Math.round(data.reduce((s, p) => s + Number(p.de_handled_rate ?? 0), 0) / data.length) : 0,
+    totalTasks: data.reduce((s, p) => s + (p.tasks_this_month ?? 0), 0),
+  };
+};
+
+// Assign a Playbook to a Digital Employee
+export const assignPlaybookToDE = async (
+  tenantId: string,
+  digitalEmployeeId: string,
+  playbookId: string,
+  isPrimary = false
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('de_playbook_assignments')
+    .upsert({
+      tenant_id: tenantId,
+      digital_employee_id: digitalEmployeeId,
+      playbook_id: playbookId,
+      is_primary: isPrimary,
+    }, { onConflict: 'digital_employee_id,playbook_id' });
+  if (error) { console.error('assignPlaybookToDE:', error.message); return false; }
+  return true;
+};
+
+export const fetchDEPlaybooks = async (tenantId: string, digitalEmployeeId: string): Promise<DBPlaybook[]> => {
+  const { data, error } = await supabase
+    .from('de_playbook_assignments')
+    .select('playbook_id, playbooks(*)')
+    .eq('tenant_id', tenantId)
+    .eq('digital_employee_id', digitalEmployeeId);
+  if (error) { console.error('fetchDEPlaybooks:', error.message); return []; }
+  return (data ?? []).map((row: any) => row.playbooks as DBPlaybook).filter(Boolean);
+};
