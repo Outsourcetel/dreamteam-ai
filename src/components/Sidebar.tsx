@@ -183,6 +183,7 @@ const Sidebar = ({
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">
+              <NavItem id="users" label="Team Members" icon="◉" />
               <NavItem id="security" label="Admin" icon="⚠" />
               <NavItem id="audit_log" label="Audit Log" icon="≡" />
             </Section>

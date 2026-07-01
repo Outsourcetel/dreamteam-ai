@@ -46,7 +46,8 @@ export type TenantPage =
   | 'finance'
   | 'revenue'
   | 'hr'
-  | 'audit_log';
+  | 'audit_log'
+  | 'users';
 
 export type EndUserPage = 'chat' | 'history' | 'profile';
 
