@@ -184,6 +184,7 @@ const Sidebar = ({
           {isOwnerOrAdmin && (
             <Section title="Administration">
               <NavItem id="security" label="Admin" icon="⚠" />
+              <NavItem id="audit_log" label="Audit Log" icon="≡" />
             </Section>
           )}
         </>

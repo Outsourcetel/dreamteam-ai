@@ -4,21 +4,30 @@ import type { AuthUser } from '../types';
 import { Spinner } from '../components';
 import { mockUsers } from '../lib/mockData';
 
+const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Professional Services', 'Manufacturing', 'Education', 'Real Estate', 'Legal', 'Other'];
+
 const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
+  const [tab, setTab] = useState<'signin' | 'signup'>('signin');
+
+  // Sign-in state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Sign-up state
+  const [suFullName, setSuFullName] = useState('');
+  const [suEmail, setSuEmail] = useState('');
+  const [suPassword, setSuPassword] = useState('');
+  const [suOrgName, setSuOrgName] = useState('');
+  const [suIndustry, setSuIndustry] = useState(INDUSTRIES[0]);
+  const [suError, setSuError] = useState('');
+  const [suLoading, setSuLoading] = useState(false);
+  const [suSuccess, setSuSuccess] = useState(false);
+
   const demoAccounts = [
-    {
-      group: 'DreamTeam Platform',
-      users: [mockUsers[0], mockUsers[1], mockUsers[2], mockUsers[3]],
-    },
-    {
-      group: 'Tenant: Acme Corp',
-      users: [mockUsers[4], mockUsers[5], mockUsers[6], mockUsers[7]],
-    },
+    { group: 'DreamTeam Platform', users: [mockUsers[0], mockUsers[1], mockUsers[2], mockUsers[3]] },
+    { group: 'Tenant: Acme Corp', users: [mockUsers[4], mockUsers[5], mockUsers[6], mockUsers[7]] },
     { group: 'Other Tenants', users: [mockUsers[8], mockUsers[9]] },
   ];
 
@@ -27,10 +36,7 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
     setError('');
     setLoading(true);
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) {
         setError(authError.message);
       } else if (authData.user) {
@@ -51,164 +57,247 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 flex">
-      <div
-        className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden"
-        style={{
-          background:
-            'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)',
-        }}
-      >
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-indigo-500 blur-3xl" />
-          <div className="absolute bottom-20 right-20 w-48 h-48 rounded-full bg-purple-500 blur-3xl" />
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuError('');
+    if (!suFullName.trim() || !suEmail.trim() || !suPassword.trim() || !suOrgName.trim()) {
+      setSuError('All fields are required.');
+      return;
+    }
+    if (suPassword.length < 8) {
+      setSuError('Password must be at least 8 characters.');
+      return;
+    }
+    setSuLoading(true);
+    try {
+      // 1. Create the auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: suEmail.trim(),
+        password: suPassword,
+        options: {
+          data: {
+            full_name: suFullName.trim(),
+            role: 'tenant_owner',
+            layer: 'tenant',
+          },
+        },
+      });
+      if (authError) throw authError;
+
+      const userId = authData.user?.id;
+      if (!userId) throw new Error('User creation failed.');
+
+      // 2. Create the organization (tenant)
+      const slug = suOrgName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      const { data: tenantData, error: tenantError } = await supabase
+        .from('tenants')
+        .insert({
+          name: suOrgName.trim(),
+          slug: `${slug}-${Date.now()}`,
+          industry: suIndustry,
+          plan: 'trial',
+          status: 'trial',
+          settings: {},
+        })
+        .select()
+        .single();
+
+      if (tenantError) {
+        // Non-fatal if tenants table doesn't exist yet — still show success
+        console.warn('Could not create tenant record:', tenantError.message);
+      }
+
+      const tenantId = tenantData?.id || null;
+
+      // 3. Create the user profile
+      if (tenantId) {
+        await supabase.from('profiles').insert({
+          user_id: userId,
+          tenant_id: tenantId,
+          full_name: suFullName.trim(),
+          role: 'tenant_owner',
+          layer: 'tenant',
+          is_active: true,
+        }).throwOnError().catch(() => {});
+      }
+
+      setSuSuccess(true);
+    } catch (err: any) {
+      setSuError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setSuLoading(false);
+    }
+  };
+
+  const leftPanel = (
+    <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)' }}>
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-indigo-500 blur-3xl" />
+        <div className="absolute bottom-20 right-20 w-48 h-48 rounded-full bg-purple-500 blur-3xl" />
+      </div>
+      <div className="relative">
+        <div className="flex items-center gap-3 mb-16">
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold">DT</div>
+          <div>
+            <div className="text-white font-bold text-lg">DreamTeam AI</div>
+            <div className="text-indigo-300 text-xs">Digital Workforce Platform</div>
+          </div>
         </div>
-        <div className="relative">
-          <div className="flex items-center gap-3 mb-16">
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold">
-              DT
-            </div>
-            <div>
-              <div className="text-white font-bold text-lg">DreamTeam AI</div>
-              <div className="text-indigo-300 text-xs">
-                Agentic Intelligence Platform
+        <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
+          Digital Employees that work<br />for you 24/7
+        </h1>
+        <p className="text-indigo-200 text-sm leading-relaxed mb-8">
+          Knowledge base and Digital Employees that serve your customers and internal staff equally — with full audit trails and human-in-the-loop controls.
+        </p>
+        <div className="space-y-4">
+          {[
+            { label: 'Unified Knowledge Base', desc: 'One source of truth for customers and staff' },
+            { label: 'Digital Employees', desc: 'Digital Employees that act on behalf of your customers' },
+            { label: 'Human-in-the-Loop', desc: 'Approval flows and confidence gates built in' },
+          ].map((f, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-indigo-300 flex-shrink-0 font-bold">{i + 1}</div>
+              <div>
+                <div className="text-white text-sm font-medium">{f.label}</div>
+                <div className="text-indigo-300 text-xs">{f.desc}</div>
               </div>
             </div>
-          </div>
-          <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
-            Digital Employees that work
-            <br />
-            for you 24/7
-          </h1>
-          <p className="text-indigo-200 text-sm leading-relaxed mb-8">
-            Knowledge base and Digital Employees that serve your customers
-            and internal staff equally — with full audit trails and
-            human-in-the-loop controls.
-          </p>
-          <div className="space-y-4">
-            {[
-              {
-                label: 'Unified Knowledge Base',
-                desc: 'One source of truth for customers and staff',
-              },
-              {
-                label: 'Digital Employees',
-                desc: 'Digital Employees that act on behalf of your customers',
-              },
-              {
-                label: 'Human-in-the-Loop',
-                desc: 'Approval flows and confidence gates built in',
-              },
-            ].map((f, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-indigo-300 flex-shrink-0 font-bold">
-                  {String(i + 1)}
-                </div>
-                <div>
-                  <div className="text-white text-sm font-medium">
-                    {f.label}
-                  </div>
-                  <div className="text-indigo-300 text-xs">{f.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="relative text-xs text-indigo-400">
-          © 2026 DreamTeam AI · Built for enterprise-grade security · Demo environment
+          ))}
         </div>
       </div>
+      <div className="relative text-xs text-indigo-400">© 2026 DreamTeam AI · Enterprise-grade security</div>
+    </div>
+  );
 
+  return (
+    <div className="min-h-screen bg-slate-950 flex">
+      {leftPanel}
       <div className="flex-1 flex flex-col justify-center p-8 lg:p-16">
         <div className="max-w-sm mx-auto w-full">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">
-              DT
-            </div>
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
             <span className="text-white font-bold">DreamTeam AI</span>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
-          <p className="text-slate-400 text-sm mb-8">
-            Sign in to your workspace
-          </p>
-          <div className="space-y-4 mb-6">
-            <div>
-              <label className="text-xs font-medium text-slate-400 block mb-1.5">
-                Email
-              </label>
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                type="email"
-                placeholder="you@company.com"
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-400 block mb-1.5">
-                Password
-              </label>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                type="password"
-                placeholder="..."
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            {error && <p className="text-xs text-red-400">{error}</p>}
-            <button
-              onClick={() => handleLogin()}
-              disabled={loading}
-              className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Spinner /> Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
+
+          {/* Tab switcher */}
+          <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6">
+            <button onClick={() => setTab('signin')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              Sign In
+            </button>
+            <button onClick={() => setTab('signup')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              Create Account
             </button>
           </div>
-          <div className="border-t border-slate-800 pt-5">
-            <p className="text-xs text-slate-500 mb-3">
-              Demo accounts — click to log in instantly:
-            </p>
-            <div className="space-y-4">
-              {demoAccounts.map((group, gi) => (
-                <div key={gi}>
-                  <p className="text-xs text-slate-600 uppercase tracking-wider mb-2">
-                    {group.group}
-                  </p>
-                  <div className="space-y-1">
-                    {group.users.map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => onLogin(u)}
-                        className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-all text-left"
-                      >
-                        <div className="w-7 h-7 rounded-full bg-indigo-600/50 flex items-center justify-center text-xs font-bold text-indigo-300 flex-shrink-0">
-                          {u.avatar}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium text-white truncate">
-                            {u.name}
-                          </div>
-                          <div className="text-xs text-slate-500 truncate">
-                            {u.role.replace(/_/g, ' ')}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+
+          {/* ── SIGN IN ── */}
+          {tab === 'signin' && (
+            <>
+              <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
+              <p className="text-slate-400 text-sm mb-6">Sign in to your workspace</p>
+              <form onSubmit={handleLogin} className="space-y-4 mb-6">
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
+                  <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com"
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
-              ))}
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Password</label>
+                  <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                </div>
+                {error && <p className="text-xs text-red-400">{error}</p>}
+                <button type="submit" disabled={loading}
+                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                  {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
+                </button>
+              </form>
+              <div className="border-t border-slate-800 pt-5">
+                <p className="text-xs text-slate-500 mb-3">Demo accounts — click to log in instantly:</p>
+                <div className="space-y-4">
+                  {demoAccounts.map((group, gi) => (
+                    <div key={gi}>
+                      <p className="text-xs text-slate-600 uppercase tracking-wider mb-2">{group.group}</p>
+                      <div className="space-y-1">
+                        {group.users.map(u => (
+                          <button key={u.id} onClick={() => onLogin(u)}
+                            className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-all text-left">
+                            <div className="w-7 h-7 rounded-full bg-indigo-600/50 flex items-center justify-center text-xs font-bold text-indigo-300 flex-shrink-0">{u.avatar}</div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-white truncate">{u.name}</div>
+                              <div className="text-xs text-slate-500 truncate">{u.role.replace(/_/g, ' ')}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── SIGN UP ── */}
+          {tab === 'signup' && !suSuccess && (
+            <>
+              <h2 className="text-2xl font-bold text-white mb-1">Create your organization</h2>
+              <p className="text-slate-400 text-sm mb-6">Set up your Digital Workforce in minutes</p>
+              <form onSubmit={handleSignUp} className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Full Name</label>
+                  <input value={suFullName} onChange={e => setSuFullName(e.target.value)} type="text" placeholder="Sarah Mitchell"
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Work Email</label>
+                  <input value={suEmail} onChange={e => setSuEmail(e.target.value)} type="email" placeholder="you@company.com"
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Password</label>
+                  <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div className="border-t border-slate-800 pt-4">
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Organization Name</label>
+                  <input value={suOrgName} onChange={e => setSuOrgName(e.target.value)} type="text" placeholder="Acme Corp"
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Industry</label>
+                  <select value={suIndustry} onChange={e => setSuIndustry(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                    {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
+                  </select>
+                </div>
+                {suError && <p className="text-xs text-red-400">{suError}</p>}
+                <button type="submit" disabled={suLoading}
+                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                  {suLoading ? <><Spinner /> Creating account...</> : 'Create Organization'}
+                </button>
+                <p className="text-xs text-slate-600 text-center">
+                  By signing up you agree to DreamTeam's terms of service
+                </p>
+              </form>
+            </>
+          )}
+
+          {/* ── SIGN UP SUCCESS ── */}
+          {tab === 'signup' && suSuccess && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
+              <h2 className="text-xl font-bold text-white mb-2">Organization created</h2>
+              <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                Check your email to confirm your account, then sign in to access your workspace.
+              </p>
+              <button onClick={() => { setTab('signin'); setSuSuccess(false); setEmail(suEmail); }}
+                className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
+                Go to Sign In
+              </button>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

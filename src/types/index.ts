@@ -45,7 +45,8 @@ export type TenantPage =
   | 'knowledge_files'
   | 'finance'
   | 'revenue'
-  | 'hr';
+  | 'hr'
+  | 'audit_log';
 
 export type EndUserPage = 'chat' | 'history' | 'profile';
 

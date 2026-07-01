@@ -4,6 +4,8 @@ import { Badge, StatCard, Modal, PageTabs, AGENT_TABS } from '../../components'
 import { useDigitalEmployees } from '../../lib/useDigitalEmployees'
 import type { StoredDE } from '../../lib/useDigitalEmployees'
 import HireModal from '../../components/HireModal'
+import { DE_CATALOG } from '../../lib/deCatalog'
+import type { CatalogDE } from '../../lib/deCatalog'
 
 // ---- Local types used by this page ----
 type ConnectorCategory =
@@ -1046,6 +1048,102 @@ export const registeredConnectors: RegisteredConnector[] = [
   },
 ];
 
+// ── DE Catalog Section Component ──────────────────────────────
+const DECatalogSection = ({
+  accentColor,
+  enabledIds,
+  onEnable,
+}: {
+  accentColor: string;
+  enabledIds: string[];
+  onEnable: (cat: CatalogDE) => void;
+}) => {
+  const [expanded, setExpanded] = useState(true);
+  const [catFilter, setCatFilter] = useState<'all' | 'Customer' | 'Internal'>('all');
+
+  const available = DE_CATALOG.filter(c => {
+    const alreadyEnabled = enabledIds.some(id =>
+      // match by catalog id stored in hook, or by name if seeded from defaults
+      id === c.id || id.startsWith('a') // default agents don't block catalog
+    );
+    // Only block if explicitly hired from catalog (id starts with cat_)
+    const blockByExactId = enabledIds.includes(c.id);
+    return !blockByExactId;
+  });
+
+  const filtered = available.filter(c => catFilter === 'all' || c.category === catFilter);
+
+  return (
+    <div className="mt-8 border-t border-slate-800 pt-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Digital Employee Catalog</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{available.length} Digital Employees available to enable for your organization</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+            {(['all', 'Customer', 'Internal'] as const).map(f => (
+              <button key={f} onClick={() => setCatFilter(f)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${catFilter === f ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                style={catFilter === f ? { backgroundColor: accentColor } : {}}>
+                {f === 'all' ? 'All' : f}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setExpanded(e => !e)}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-all">
+            {expanded ? '▲ Collapse' : '▼ Expand'}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(cat => (
+            <div key={cat.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all flex flex-col">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold text-white flex-shrink-0"
+                  style={{ backgroundColor: accentColor + '25' }}>
+                  {cat.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-white">{cat.name}</div>
+                  <div className="text-xs text-slate-500">{cat.department}</div>
+                </div>
+                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${cat.category === 'Customer' ? 'text-blue-400 bg-blue-400/10' : 'text-purple-400 bg-purple-400/10'}`}>
+                  {cat.category}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed mb-3 flex-1">{cat.description}</p>
+              <div className="flex flex-wrap gap-1 mb-4">
+                {cat.tags.map(t => (
+                  <span key={t} className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">{t}</span>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                <div className="text-xs text-slate-600">{cat.defaultThreshold}% threshold · {cat.defaultChannels.length} channels</div>
+                <button
+                  onClick={() => onEnable(cat)}
+                  className="text-xs px-3 py-1.5 rounded-lg text-white font-medium transition-all"
+                  style={{ backgroundColor: accentColor }}>
+                  Enable
+                </button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="col-span-3 py-8 text-center text-slate-600 text-sm">
+              All Digital Employees in this category are already enabled.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+
 const defaultAgents: AgentDef[] = [
   {
     id: 'a1',
@@ -1731,6 +1829,27 @@ const AgentWorkforcePage = ({
           </div>
         ))}
       </div>
+
+      {/* ── Digital Employee Catalog ── */}
+      <DECatalogSection
+        accentColor={accentColor}
+        enabledIds={employees.map(e => e.id)}
+        onEnable={(cat) => {
+          hire({
+            name: cat.name,
+            description: cat.description,
+            icon: cat.icon,
+            category: cat.category,
+            department: cat.department,
+            status: 'active',
+            capabilities: cat.defaultCapabilities,
+            channels: cat.defaultChannels,
+            knowledgeSources: cat.defaultKnowledgeSources,
+            confidenceThreshold: cat.defaultThreshold,
+            requiredApproval: cat.defaultApprovalRequired,
+          });
+        }}
+      />
 
       {selectedAgent && (
         <Modal
