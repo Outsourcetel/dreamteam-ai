@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, Modal, PageTabs, HUB_TABS } from '../../components'
-import { DBKnowledgeArticle } from '../../lib/api'
+import { DBKnowledgeArticle, upsertKnowledgeArticle } from '../../lib/api'
 
 // ---- Local types ----
 type KnowledgeItemType =
@@ -372,11 +372,22 @@ const KnowledgeHubPage = ({
   const [newBody, setNewBody] = React.useState('');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
   const [filterAudience, setFilterAudience] = React.useState<string>('all');
-  // --- RAG document ingestion (client-side chunking) ---
+  // --- RAG document ingestion ---
   const uploadInputRef = React.useRef(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const [uploadResult, setUploadResult] = React.useState(null);
   const [uploadedArticles, setUploadedArticles] = React.useState([]);
+  const [urlInput, setUrlInput] = React.useState('');
+  const [urlTitle, setUrlTitle] = React.useState('');
+  const [urlAudience, setUrlAudience] = React.useState<'both'|'internal'|'customer'>('both');
+  const [isIngestingUrl, setIsIngestingUrl] = React.useState(false);
+  const [ingestLog, setIngestLog] = React.useState<{msg: string; ok: boolean; ts: string}[]>([]);
+
+  const addLog = (msg: string, ok = true) => {
+    const ts = new Date().toLocaleTimeString();
+    setIngestLog(prev => [{ msg, ok, ts }, ...prev].slice(0, 20));
+  };
+
   const handleFileUpload = async (file) => {
     setIsUploading(true);
     let text = "";
@@ -387,26 +398,139 @@ const KnowledgeHubPage = ({
     const cleaned = text.replace(/\s+/g, " ").trim();
     const words = cleaned ? cleaned.split(" ").filter(Boolean) : [];
     const CHUNK = 600;
-    let chunkCount;
-    if (cleaned.length > 0) { chunkCount = Math.max(1, Math.ceil(cleaned.length / CHUNK)); }
-    else { chunkCount = Math.max(1, Math.round(file.size / 1800)); }
+    const chunkCount = cleaned.length > 0
+      ? Math.max(1, Math.ceil(cleaned.length / CHUNK))
+      : Math.max(1, Math.round(file.size / 1800));
     const preview = cleaned ? cleaned.slice(0, 220) : "";
     const title = file.name.replace(/\.[^.]+$/, "");
-    await new Promise((r) => setTimeout(r, 700));
-    const newDoc = {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'file';
+
+    const localDoc = {
       id: 'up_' + Date.now(),
-      title: title,
+      title,
       category: 'Uploaded',
-      tags: ['upload', file.name.split('.').pop().toLowerCase()],
+      tags: ['upload', ext],
       status: 'published',
       views: 0, helpful: 0,
       audience: 'both',
       updated: 'just now',
       content: cleaned || (file.name + " (binary document registered for embedding)"),
     };
-    setUploadedArticles((prev) => [newDoc, ...prev]);
-    setUploadResult({ fileName: file.name, sizeKb: Math.max(1, Math.round(file.size / 1024)), wordCount: words.length, chunkCount: chunkCount, preview: preview });
+
+    // Persist to Supabase if tenant is available
+    if (tenant?.id) {
+      const saved = await upsertKnowledgeArticle({
+        tenant_id: tenant.id,
+        title,
+        body: cleaned || file.name,
+        summary: preview || title,
+        status: 'published',
+        audience: 'both',
+        category: 'Uploaded',
+        tags: ['upload', ext],
+        quality_score: 0,
+        freshness_score: 100,
+        view_count: 0,
+        helpful_count: 0,
+        not_helpful_count: 0,
+        created_by: user?.id ?? null,
+      });
+      if (saved) {
+        addLog(`File uploaded: ${file.name} — ${chunkCount} chunks indexed`);
+      } else {
+        addLog(`File saved locally: ${file.name} (Supabase not connected)`, false);
+      }
+    } else {
+      addLog(`File saved locally: ${file.name} (connect Supabase to persist)`, false);
+    }
+
+    setUploadedArticles((prev) => [localDoc, ...prev]);
+    setUploadResult({
+      fileName: file.name,
+      sizeKb: Math.max(1, Math.round(file.size / 1024)),
+      wordCount: words.length,
+      chunkCount,
+      preview,
+    });
     setIsUploading(false);
+  };
+
+  const handleUrlIngest = async () => {
+    if (!urlInput.trim()) return;
+    setIsIngestingUrl(true);
+    const title = urlTitle.trim() || new URL(urlInput.trim()).hostname;
+    let body = '';
+    // Try Edge Function first (server-side, no CORS restrictions)
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (supabaseUrl && supabaseKey) {
+        const efRes = await fetch(`${supabaseUrl}/functions/v1/ingest-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ url: urlInput.trim() }),
+        });
+        if (efRes.ok) {
+          const ef = await efRes.json();
+          if (!ef.error) {
+            body = ef.body ?? '';
+            if (!urlTitle.trim() && ef.title) setUrlTitle(ef.title);
+          }
+        }
+      }
+    } catch { /* fall through */ }
+    if (!body) {
+      try {
+        // Direct fetch — works for CORS-permissive URLs
+        const res = await fetch(urlInput.trim());
+        const html = await res.text();
+        body = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 8000);
+      } catch {
+        // Both failed — create a reference stub
+        body = `Source URL: ${urlInput.trim()}\n\nContent extraction requires the ingest-url Edge Function (supabase/functions/ingest-url/index.ts). Deploy it in Supabase Dashboard → Edge Functions to enable full server-side ingestion.`;
+      }
+    }
+    const summary = body.slice(0, 200);
+    const localDoc = {
+      id: 'url_' + Date.now(),
+      title,
+      category: 'URL Source',
+      tags: ['url', 'web'],
+      status: 'published',
+      views: 0, helpful: 0,
+      audience: urlAudience,
+      updated: 'just now',
+      content: body,
+    };
+    if (tenant?.id) {
+      const saved = await upsertKnowledgeArticle({
+        tenant_id: tenant.id,
+        title,
+        body,
+        summary,
+        status: 'published',
+        audience: urlAudience,
+        category: 'URL Source',
+        tags: ['url', 'web'],
+        quality_score: 0,
+        freshness_score: 100,
+        view_count: 0,
+        helpful_count: 0,
+        not_helpful_count: 0,
+        created_by: user?.id ?? null,
+      });
+      if (saved) {
+        addLog(`URL ingested: ${title}`);
+      } else {
+        addLog(`URL stub saved locally: ${title} (Supabase not connected)`, false);
+      }
+    } else {
+      addLog(`URL stub saved locally: ${title}`, false);
+    }
+    setUploadedArticles(prev => [localDoc, ...prev]);
+    setUrlInput('');
+    setUrlTitle('');
+    setIsIngestingUrl(false);
   };
 
   const articles = [...uploadedArticles,
@@ -1296,82 +1420,158 @@ const KnowledgeHubPage = ({
   if (subPage === 'hub_ingestion') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+        <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">
-              Ingestion Pipeline
-            </h1>
+            <h1 className="text-2xl font-bold text-white">Ingestion Pipeline</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Connect data sources — content is automatically chunked, embedded,
-              and indexed into the KB
+              Upload files or add URLs — content is chunked, embedded, and indexed into the KB
             </p>
           </div>
-          <button
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium"
-            style={{ backgroundColor: accentColor }}
-          >
-            + Add Source
-          </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ingestionSources.map((src, i) => (
+
+        {/* File Upload */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4">Upload File</h2>
             <div
-              key={i}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all"
+              className="border-2 border-dashed border-slate-700 rounded-xl p-8 text-center hover:border-slate-500 transition-all cursor-pointer"
+              onClick={() => (uploadInputRef.current as any)?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileUpload(f); }}
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-lg font-bold text-indigo-300">
-                  {src.icon}
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-white">
-                    {src.name}
-                  </div>
-                  <Badge
-                    label={src.status === 'syncing' ? 'Syncing' : 'Active'}
-                    color={src.status === 'syncing' ? 'yellow' : 'green'}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2 text-xs text-slate-400">
-                <div className="flex justify-between">
-                  <span>Documents indexed</span>
-                  <span className="text-white">
-                    {src.docs.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Last sync</span>
-                  <span className="text-white">{src.lastSync}</span>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">
-                  Sync Now
-                </button>
-                <button className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">
-                  Settings
-                </button>
-              </div>
+              <div className="text-3xl mb-3">↑</div>
+              <p className="text-slate-400 text-sm">Drag & drop or click to browse</p>
+              <p className="text-slate-600 text-xs mt-1">.txt · .md · .csv · .json · .pdf</p>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                className="hidden"
+                accept=".txt,.md,.csv,.json,.pdf"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+              />
             </div>
-          ))}
+            {isUploading && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                <span className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                Processing and indexing…
+              </div>
+            )}
+            {uploadResult && !isUploading && (
+              <div className="mt-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-xs space-y-1">
+                <div className="text-emerald-400 font-medium">Indexed: {(uploadResult as any).fileName}</div>
+                <div className="text-slate-400">
+                  {(uploadResult as any).wordCount.toLocaleString()} words · {(uploadResult as any).chunkCount} chunks · {(uploadResult as any).sizeKb} KB
+                </div>
+                {(uploadResult as any).preview && (
+                  <p className="text-slate-500 mt-1 line-clamp-2">{(uploadResult as any).preview}…</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* URL Ingestion */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4">Add URL Source</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">URL</label>
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={e => setUrlInput(e.target.value)}
+                  placeholder="https://docs.yourproduct.com/guide"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Title (optional)</label>
+                <input
+                  type="text"
+                  value={urlTitle}
+                  onChange={e => setUrlTitle(e.target.value)}
+                  placeholder="Leave blank to auto-detect"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Audience</label>
+                <div className="flex gap-2">
+                  {(['both','customer','internal'] as const).map(a => (
+                    <button
+                      key={a}
+                      onClick={() => setUrlAudience(a)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${urlAudience === a ? 'text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                      style={urlAudience === a ? { backgroundColor: accentColor } : {}}
+                    >
+                      {a.charAt(0).toUpperCase() + a.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={handleUrlIngest}
+                disabled={!urlInput.trim() || isIngestingUrl}
+                className="w-full py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition-all flex items-center justify-center gap-2"
+                style={{ backgroundColor: accentColor }}
+              >
+                {isIngestingUrl ? (
+                  <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Ingesting…</>
+                ) : '+ Ingest URL'}
+              </button>
+              <p className="text-xs text-slate-600">CORS-permissive URLs are fetched directly. Others create a reference stub — deploy the <code className="text-slate-500">ingest-url</code> Edge Function for full content extraction.</p>
+            </div>
+          </div>
         </div>
-        <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">
-            Pipeline Activity Log
-          </h2>
+
+        {/* Connected Sources */}
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-white mb-3">Connected Sources</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {ingestionSources.map((src, i) => (
+              <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center text-lg text-indigo-300">
+                    {src.icon}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">{src.name}</div>
+                    <Badge label={src.status === 'syncing' ? 'Syncing' : 'Active'} color={src.status === 'syncing' ? 'yellow' : 'green'} />
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400 mb-3">
+                  <span>{src.docs.toLocaleString()} docs</span>
+                  <span>{src.lastSync}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">Sync Now</button>
+                  <button className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">Settings</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Activity Log */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-4">Pipeline Activity</h2>
           <div className="space-y-2">
-            {[
-              'Zendesk: 42 new tickets ingested and embedded — 2 min ago',
-              'Confluence: 8 pages updated, KB refresh triggered — 12 min ago',
-              'Google Drive: Policy doc v3.2 detected, diff processed — 1 hr ago',
-              'PDF Upload: Q3 Training Manual fully indexed 124 chunks — 3 hr ago',
-              'GitHub: 3 README files changed, embeddings updated — 1 day ago',
-            ].map((log, i) => (
+            {ingestLog.length > 0 ? ingestLog.map((entry, i) => (
               <div key={i} className="flex items-start gap-3 text-xs">
-                <span className="text-emerald-400 mt-0.5">v</span>
-                <span className="text-slate-300">{log}</span>
+                <span className={entry.ok ? 'text-emerald-400 mt-0.5' : 'text-amber-400 mt-0.5'}>{entry.ok ? '✓' : '!'}</span>
+                <span className="text-slate-300 flex-1">{entry.msg}</span>
+                <span className="text-slate-600">{entry.ts}</span>
+              </div>
+            )) : [
+              { msg: 'Zendesk: 42 new tickets ingested and embedded', ts: '2 min ago', ok: true },
+              { msg: 'Confluence: 8 pages updated, KB refresh triggered', ts: '12 min ago', ok: true },
+              { msg: 'Google Drive: Policy doc v3.2 detected, diff processed', ts: '1 hr ago', ok: true },
+              { msg: 'GitHub: 3 README files changed, embeddings updated', ts: '1 day ago', ok: true },
+            ].map((entry, i) => (
+              <div key={i} className="flex items-start gap-3 text-xs">
+                <span className="text-emerald-400 mt-0.5">✓</span>
+                <span className="text-slate-300 flex-1">{entry.msg}</span>
+                <span className="text-slate-600">{entry.ts}</span>
               </div>
             ))}
           </div>

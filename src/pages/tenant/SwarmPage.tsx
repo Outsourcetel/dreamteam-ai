@@ -5,6 +5,7 @@ import { PageTabs, AGENT_TABS } from '../../components';
 const SwarmPage = ({ tenant, page, setPage }: { tenant?: Tenant; page?: Page; setPage?: (p: Page) => void }) => {
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [tick, setTick] = useState(0);
+  const [showActivation, setShowActivation] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 2000);
@@ -69,6 +70,51 @@ const SwarmPage = ({ tenant, page, setPage }: { tenant?: Tenant; page?: Page; se
           <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
           <span className="text-xs text-emerald-400 font-medium">All agents live</span>
         </div>
+      </div>
+
+      {/* LLM Activation Banner */}
+      <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-amber-400 text-lg">⚡</span>
+            <div>
+              <div className="text-sm font-semibold text-amber-300">Workforce Engine is running in rule-based mode</div>
+              <div className="text-xs text-amber-400/70 mt-0.5">Connect your Anthropic API key to activate full LLM reasoning — the Edge Function code is already written and ready to deploy</div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowActivation(v => !v)}
+            className="text-xs text-amber-400 border border-amber-500/40 rounded-lg px-3 py-1.5 hover:bg-amber-500/10 transition-all whitespace-nowrap"
+          >
+            {showActivation ? 'Hide steps' : 'Activate AI →'}
+          </button>
+        </div>
+
+        {showActivation && (
+          <div className="mt-4 border-t border-amber-500/20 pt-4">
+            <p className="text-xs text-amber-300/80 font-medium mb-3">5 steps — no terminal needed, takes about 10 minutes</p>
+            <div className="space-y-3">
+              {[
+                { n: 1, title: 'Get your Anthropic API key', detail: 'Go to console.anthropic.com → API Keys → Create Key. Copy it.' },
+                { n: 2, title: 'Open your Supabase project', detail: 'Go to app.supabase.com → open this project → Edge Functions in the left sidebar.' },
+                { n: 3, title: 'Add the API key as a secret', detail: 'In Edge Functions → Secrets → Add new secret. Name: ANTHROPIC_API_KEY. Value: paste your key.' },
+                { n: 4, title: 'Deploy workforce-chat', detail: 'Click "Deploy a new function" → upload supabase/functions/workforce-chat/index.ts from this codebase.' },
+                { n: 5, title: 'Test it', detail: 'Open the Customer Portal and send a message. A confidence score in the response confirms the LLM is live.' },
+              ].map(step => (
+                <div key={step.n} className="flex gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{step.n}</div>
+                  <div>
+                    <div className="text-xs font-semibold text-white">{step.title}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{step.detail}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 bg-slate-900/60 rounded-lg p-3 text-xs text-slate-400">
+              Once deployed, Digital Employees switch from rule-based scoring to real Claude Haiku with KB retrieval. Confidence scoring, approval routing, and conversation memory all activate automatically — no other code changes needed.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6">
