@@ -9,6 +9,11 @@ export interface DEExecuteResult {
   chunks_found: number;
   search_mode: 'semantic' | 'fulltext';
   de_name: string;
+  model_used?: { provider: string; modelId: string; attempt: number };
+  escalated?: boolean;
+  routed_by?: string | null;
+  task_type?: string;
+  tokens_used?: number;
   error?: string;
 }
 

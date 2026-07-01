@@ -26,6 +26,9 @@ export interface StoredDE {
   catalog_id?: string;
   model_provider: string;
   model_id: string;
+  task_type: string;
+  escalation_model_id: string;
+  escalation_threshold: number;
 }
 
 function dbToStored(row: Record<string, unknown>): StoredDE {
@@ -53,6 +56,9 @@ function dbToStored(row: Record<string, unknown>): StoredDE {
     catalog_id: row.catalog_id as string | undefined,
     model_provider: (row.model_provider as string) ?? 'anthropic',
     model_id: (row.model_id as string) ?? 'claude-haiku-4-5-20251001',
+    task_type: (row.task_type as string) ?? 'chat',
+    escalation_model_id: (row.escalation_model_id as string) ?? 'claude-sonnet-5',
+    escalation_threshold: (row.escalation_threshold as number) ?? 60,
   };
 }
 
@@ -172,6 +178,9 @@ export function useDigitalEmployees(
       if (changes.workspace !== undefined) dbChanges.workspace = changes.workspace;
       if (changes.model_provider !== undefined) dbChanges.model_provider = changes.model_provider;
       if (changes.model_id !== undefined) dbChanges.model_id = changes.model_id;
+      if (changes.task_type !== undefined) dbChanges.task_type = changes.task_type;
+      if (changes.escalation_model_id !== undefined) dbChanges.escalation_model_id = changes.escalation_model_id;
+      if (changes.escalation_threshold !== undefined) dbChanges.escalation_threshold = changes.escalation_threshold;
 
       if (tenantId && Object.keys(dbChanges).length > 0) {
         const { error } = await supabase

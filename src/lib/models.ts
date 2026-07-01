@@ -133,3 +133,80 @@ export function getModel(id: string): ModelDef | undefined {
 
 export const DEFAULT_MODEL_ID = 'claude-haiku-4-5-20251001';
 export const DEFAULT_PROVIDER: ModelProvider = 'anthropic';
+
+// ── Task types — each maps to the best-suited model ───────────────────────────
+export interface TaskTypeDef {
+  id: string;
+  label: string;
+  description: string;
+  bestProvider: ModelProvider;
+  bestModelId: string;
+  escalationModelId: string;  // upgrade to this model if primary is not confident
+  icon: string;
+}
+
+export const TASK_TYPES: TaskTypeDef[] = [
+  {
+    id: 'chat',
+    label: 'Chat & Q&A',
+    description: 'Fast conversational responses from knowledge base',
+    bestProvider: 'anthropic',
+    bestModelId: 'claude-haiku-4-5-20251001',
+    escalationModelId: 'claude-sonnet-5',
+    icon: '💬',
+  },
+  {
+    id: 'summarisation',
+    label: 'Summarisation',
+    description: 'Summarise long documents — uses Gemini 1M+ context window',
+    bestProvider: 'google',
+    bestModelId: 'gemini-1.5-pro',
+    escalationModelId: 'claude-sonnet-5',
+    icon: '📄',
+  },
+  {
+    id: 'compliance',
+    label: 'Compliance & Legal',
+    description: 'Precise, careful checks — uses most capable model to minimise errors',
+    bestProvider: 'anthropic',
+    bestModelId: 'claude-opus-4-8',
+    escalationModelId: 'claude-opus-4-8',
+    icon: '⚖️',
+  },
+  {
+    id: 'reasoning',
+    label: 'Complex Reasoning',
+    description: 'Multi-step analysis, synthesis across sources',
+    bestProvider: 'anthropic',
+    bestModelId: 'claude-sonnet-5',
+    escalationModelId: 'claude-opus-4-8',
+    icon: '🧠',
+  },
+  {
+    id: 'data_analysis',
+    label: 'Data & Finance',
+    description: 'Structured data, numbers, spreadsheet-style tasks',
+    bestProvider: 'openai',
+    bestModelId: 'gpt-4o',
+    escalationModelId: 'claude-sonnet-5',
+    icon: '📊',
+  },
+  {
+    id: 'drafting',
+    label: 'Content Drafting',
+    description: 'Emails, proposals, reports — quality writing',
+    bestProvider: 'anthropic',
+    bestModelId: 'claude-sonnet-5',
+    escalationModelId: 'claude-opus-4-8',
+    icon: '✍️',
+  },
+  {
+    id: 'classification',
+    label: 'Classification & Tagging',
+    description: 'Routing, labelling, intent detection — minimal cost',
+    bestProvider: 'google',
+    bestModelId: 'gemini-1.5-flash',
+    escalationModelId: 'claude-haiku-4-5-20251001',
+    icon: '🏷️',
+  },
+];

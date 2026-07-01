@@ -7,7 +7,7 @@ import HireModal from '../../components/HireModal'
 import { DE_CATALOG } from '../../lib/deCatalog'
 import type { CatalogDE } from '../../lib/deCatalog'
 import { DETestPanel } from '../../components/DETestPanel'
-import { MODELS, PROVIDER_LABELS, TIER_COLORS, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from '../../lib/models'
+import { MODELS, PROVIDER_LABELS, TIER_COLORS, TASK_TYPES, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from '../../lib/models'
 import type { ModelProvider } from '../../lib/models'
 
 // ---- Local types used by this page ----
@@ -1565,6 +1565,9 @@ const AgentWorkforcePage = ({
   // Model picker state (synced when a DE is selected)
   const [pickerProv, setPickerProv] = useState<ModelProvider>(DEFAULT_PROVIDER);
   const [pickerId, setPickerId] = useState<string>(DEFAULT_MODEL_ID);
+  const [pickerTaskType, setPickerTaskType] = useState<string>('chat');
+  const [pickerEscModelId, setPickerEscModelId] = useState<string>('claude-sonnet-5');
+  const [pickerEscThreshold, setPickerEscThreshold] = useState<number>(60);
   const [modelSaveStatus, setModelSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
   // Sync employees from hook into the AgentDef list used by card/detail views
@@ -1604,6 +1607,9 @@ const AgentWorkforcePage = ({
     const stored = employees.find(e => e.id === selectedAgent.id);
     setPickerProv((stored?.model_provider as ModelProvider) ?? DEFAULT_PROVIDER);
     setPickerId(stored?.model_id ?? DEFAULT_MODEL_ID);
+    setPickerTaskType(stored?.task_type ?? 'chat');
+    setPickerEscModelId(stored?.escalation_model_id ?? 'claude-sonnet-5');
+    setPickerEscThreshold(stored?.escalation_threshold ?? 60);
     setModelSaveStatus('idle');
   }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2114,29 +2120,87 @@ const AgentWorkforcePage = ({
                 );
               })()}
 
+              {/* Escalation config */}
+              <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                <div className="text-xs font-semibold text-slate-300 mb-3 uppercase tracking-wide">Tiered Escalation</div>
+                <p className="text-xs text-slate-500 mb-4">
+                  If the primary model is below the escalation threshold, it automatically retries with a stronger model before creating an approval request.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1.5">Escalation model</label>
+                    <select
+                      value={pickerEscModelId}
+                      onChange={e => setPickerEscModelId(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                    >
+                      {MODELS.filter(m => m.tier !== 'economy').map(m => (
+                        <option key={m.id} value={m.id}>{PROVIDER_LABELS[m.provider]} — {m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1.5">
+                      Escalation threshold: <span className="text-white font-mono">{pickerEscThreshold}%</span>
+                    </label>
+                    <input
+                      type="range" min={20} max={80} value={pickerEscThreshold}
+                      onChange={e => setPickerEscThreshold(Number(e.target.value))}
+                      className="w-full accent-indigo-500"
+                    />
+                    <div className="flex justify-between text-xs text-slate-600 mt-1">
+                      <span>20% — escalate often</span>
+                      <span>80% — rarely escalate</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Task type */}
+              <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                <div className="text-xs font-semibold text-slate-300 mb-1 uppercase tracking-wide">Task Type</div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Declares what this DE mainly does. If you haven't manually selected a model above, the system auto-selects the best model for this task type.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {TASK_TYPES.map(tt => (
+                    <button key={tt.id} onClick={() => setPickerTaskType(tt.id)}
+                      className={`text-left p-2.5 rounded-lg border transition-all ${pickerTaskType === tt.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 hover:border-slate-600'}`}
+                      style={pickerTaskType === tt.id ? { borderColor: accentColor, backgroundColor: accentColor + '15' } : {}}>
+                      <div className="text-xs font-medium text-white mb-0.5">{tt.icon} {tt.label}</div>
+                      <div className="text-xs text-slate-500">{tt.description}</div>
+                      <div className="text-xs text-slate-600 mt-1">Auto-model: {tt.bestModelId.split('-').slice(0, 3).join('-')}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Save */}
               <div className="flex items-center gap-3 pt-1">
                 <button
                   onClick={async () => {
                     const stored = employees.find(e => e.id === selectedAgent?.id);
                     if (!stored) return;
-                    await update(stored.id, { model_provider: pickerProv, model_id: pickerId });
+                    await update(stored.id, {
+                      model_provider: pickerProv,
+                      model_id: pickerId,
+                      task_type: pickerTaskType,
+                      escalation_model_id: pickerEscModelId,
+                      escalation_threshold: pickerEscThreshold,
+                    });
                     setModelSaveStatus('saved');
                     setTimeout(() => setModelSaveStatus('idle'), 3000);
                   }}
                   className="px-5 py-2 text-white text-xs font-medium rounded-xl transition-all"
                   style={{ backgroundColor: accentColor }}
                 >
-                  Save Model Selection
+                  Save Intelligence Config
                 </button>
-                {modelSaveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved — DE will use this model from next query</span>}
+                {modelSaveStatus === 'saved' && <span className="text-xs text-emerald-400">Saved — active on next query</span>}
               </div>
 
-              <div className="border-t border-slate-800 pt-4">
-                <div className="text-xs text-slate-600">
-                  Note: Knowledge base retrieval always uses OpenAI embeddings for best search quality, regardless of which model you select for responses.
-                  OpenAI API key is needed for semantic search; without it the system falls back to keyword search.
-                </div>
+              <div className="text-xs text-slate-700 pt-1">
+                KB semantic search always uses OpenAI embeddings regardless of which response model is selected.
               </div>
             </div>
           )}

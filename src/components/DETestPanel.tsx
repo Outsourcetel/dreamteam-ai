@@ -106,6 +106,15 @@ export const DETestPanel: React.FC<DETestPanelProps> = ({ tenantId, deId, deName
                       {m.result.search_mode === 'semantic' ? '⚛ semantic' : '≡ keyword'} · {m.result.chunks_found} chunks
                     </span>
                   )}
+                  {m.result.model_used && (
+                    <span className="text-xs text-slate-600">
+                      {m.result.model_used.modelId.split('-').slice(0, 3).join('-')}
+                      {m.result.escalated ? ' ↑ escalated' : ''}
+                    </span>
+                  )}
+                  {m.result.routed_by === 'intent_router' && (
+                    <span className="text-xs text-slate-600">auto-routed</span>
+                  )}
                 </div>
               )}
 
