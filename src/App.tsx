@@ -28,6 +28,7 @@ import ControlFabricPage from './pages/tenant/ControlFabricPage';
 import CapabilitiesPage from './pages/tenant/CapabilitiesPage';
 import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
+import ApprovalsPage from './pages/tenant/ApprovalsPage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -52,6 +53,7 @@ const PAGE_TO_URL: Record<string, string> = {
   capabilities:           '/capabilities',
   intelligence:           '/intelligence',
   audit_log:              '/audit-log',
+  admin_approvals:        '/approvals',
   users:                  '/users',
   playbooks:              '/playbooks',
   security:               '/security',
@@ -188,6 +190,8 @@ function AppShell() {
       case 'portal_settings':
       case 'portal_escalations':
         return <CustomerPortalPage {...commonProps} subPage={currentPage as any} />;
+      case 'admin_approvals':
+        return <ApprovalsPage {...commonProps} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
       case 'revenue':

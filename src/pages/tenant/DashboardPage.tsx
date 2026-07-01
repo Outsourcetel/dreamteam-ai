@@ -15,6 +15,8 @@ const DashboardPage = ({
   dbStats?: {
     totalConversations: number; openConversations: number; resolvedConversations: number;
     totalArticles: number; publishedArticles: number; pendingApprovals: number; autoResolved: number;
+    channelBreakdown?: { chat: number; email: number; phone: number };
+    sentimentBreakdown?: { positive: number; neutral: number; negative: number };
   } | null;
 }) => {
   const [timeRange, setTimeRange] = useState('7d');
@@ -105,6 +107,10 @@ const DashboardPage = ({
   const totalTasks = digitalEmployees.reduce((s, d) => s + d.tasks, 0);
   const humanTasks = 48;
   const digitalPct = Math.round((totalTasks / (totalTasks + humanTasks)) * 100);
+  const activeDeCount = digitalEmployees.filter(d => d.status === 'active').length;
+  const idleDeCount = digitalEmployees.filter(d => d.status === 'idle').length;
+  const pendingApprovalCount = dbStats?.pendingApprovals ?? approvals.length;
+  const highRiskCount = approvals.filter((a: any) => a.risk === 'high').length;
 
   const riskColor = (r: string) =>
     r === 'high' ? 'text-red-400 bg-red-400/10' : r === 'medium' ? 'text-amber-400 bg-amber-400/10' : 'text-emerald-400 bg-emerald-400/10';
@@ -171,10 +177,10 @@ const DashboardPage = ({
       {/* Top KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Active Digital Employees', value: '8', sub: '1 idle · 0 errors', icon: '⚡', trend: '+2 this week', trendUp: true },
-          { label: 'Digital vs Human Workload', value: `${digitalPct}%`, sub: `${totalTasks} DE tasks · ${humanTasks} human tasks`, icon: '⇌', trend: `+${digitalPct - 71}% from last week`, trendUp: true },
-          { label: 'Pending Approvals', value: String(dbStats?.pendingApprovals ?? approvals.length), sub: '1 awaiting >1h', icon: '⚠', trend: '3 require action', trendUp: false },
-          { label: 'Workforce Accuracy', value: '95.8%', sub: 'Across all Digital Employees', icon: '◎', trend: '+0.4% this week', trendUp: true },
+          { label: 'Active Digital Employees', value: String(activeDeCount || storedDEs.length), sub: `${idleDeCount} idle · ${storedDEs.length} total`, icon: '⚡', trend: 'from your workforce', trendUp: true },
+          { label: 'Digital vs Human Workload', value: `${digitalPct}%`, sub: `${totalTasks} DE tasks · ${humanTasks} human tasks`, icon: '⇌', trend: 'DE-handled this period', trendUp: true },
+          { label: 'Pending Approvals', value: String(pendingApprovalCount), sub: highRiskCount > 0 ? `${highRiskCount} high risk` : 'no high risk items', icon: '⚠', trend: pendingApprovalCount > 0 ? 'require action' : 'all clear', trendUp: pendingApprovalCount === 0 },
+          { label: 'Knowledge Articles', value: String(dbStats?.publishedArticles ?? '—'), sub: dbStats ? `${dbStats.totalArticles} total · ${dbStats.totalArticles - dbStats.publishedArticles} draft` : 'loading…', icon: '◈', trend: 'in your knowledge hub', trendUp: true },
         ].map((k, i) => (
           <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-700 transition-all">
             <div className="flex items-start justify-between mb-3">
@@ -263,7 +269,7 @@ const DashboardPage = ({
             <div className="text-center py-4 text-xs text-emerald-400">All caught up — no pending approvals</div>
           )}
           <button
-            onClick={() => setPage?.('portal_approvals')}
+            onClick={() => setPage?.('admin_approvals')}
             className="mt-3 w-full text-xs text-slate-500 hover:text-slate-300 transition-all"
           >View all approvals →</button>
         </div>
