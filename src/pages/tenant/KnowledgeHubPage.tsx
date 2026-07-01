@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, Modal, PageTabs, HUB_TABS } from '../../components'
-import { DBKnowledgeArticle, upsertKnowledgeArticle } from '../../lib/api'
+import { DBKnowledgeArticle, upsertKnowledgeArticle, updateArticleStatus, fetchKnowledgeArticles } from '../../lib/api'
 import { ingestArticle } from '../../services/knowledgeIngestionService'
 
 // ---- Local types ----
@@ -336,20 +336,89 @@ const KnowledgeHubPage = ({
   dbArticles?: DBKnowledgeArticle[];
   setPage: (p: Page) => void;
 }) => {
+  // Local live article state — refreshed after create/edit/status changes
+  const [liveArticles, setLiveArticles] = useState<DBKnowledgeArticle[]>(dbArticles);
+  const refreshArticles = async () => {
+    if (tenant?.id) {
+      const fresh = await fetchKnowledgeArticles(tenant.id);
+      setLiveArticles(fresh);
+    }
+  };
+  useEffect(() => { setLiveArticles(dbArticles); }, [dbArticles]);
+
+  // Edit modal state
+  const [editArticle, setEditArticle] = useState<DBKnowledgeArticle | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editBody, setEditBody] = useState('');
+  const [editSummary, setEditSummary] = useState('');
+  const [editAudience, setEditAudience] = useState<'customer' | 'internal' | 'both'>('both');
+  const [editCategory, setEditCategory] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editToast, setEditToast] = useState('');
+
+  const openEdit = (a: DBKnowledgeArticle | null) => {
+    setEditArticle(a);
+    setEditTitle(a?.title || '');
+    setEditBody(a?.body || '');
+    setEditSummary(a?.summary || '');
+    setEditAudience((a?.audience as any) || 'both');
+    setEditCategory(a?.category || '');
+    setEditTags((a?.tags || []).join(', '));
+    setEditStatus((a?.status === 'published' ? 'published' : 'draft') as any);
+  };
+
+  const saveEdit = async (publishNow?: boolean) => {
+    if (!editTitle.trim() || !editBody.trim() || !tenant?.id) return;
+    setEditSaving(true);
+    const status = publishNow ? 'published' : editStatus;
+    const tagsArr = editTags.split(',').map(t => t.trim()).filter(Boolean);
+    const saved = await upsertKnowledgeArticle({
+      ...(editArticle ? { id: editArticle.id } : {}),
+      tenant_id: tenant.id,
+      title: editTitle.trim(),
+      body: editBody.trim(),
+      summary: editSummary.trim() || editBody.trim().slice(0, 200),
+      status,
+      audience: editAudience,
+      category: editCategory.trim() || 'General',
+      tags: tagsArr,
+      quality_score: editArticle?.quality_score ?? 0,
+      freshness_score: 100,
+      view_count: editArticle?.view_count ?? 0,
+      helpful_count: editArticle?.helpful_count ?? 0,
+      not_helpful_count: editArticle?.not_helpful_count ?? 0,
+      created_by: user?.id ?? undefined,
+    });
+    if (saved) {
+      if (status === 'published') {
+        // Trigger embedding via ingest-knowledge edge function
+        ingestArticle({ tenantId: tenant.id, content: editBody.trim(), title: editTitle.trim(), articleId: saved.id, sourceType: 'article' }).catch(() => {});
+      }
+      await refreshArticles();
+      setEditToast(status === 'published' ? 'Published and indexed for AI' : 'Saved as draft');
+      setTimeout(() => setEditToast(''), 3000);
+      setEditArticle(undefined as any);
+    }
+    setEditSaving(false);
+  };
+
   // Use real DB articles when available, fallback to mock
-  const allKnowledgeItems = dbArticles.length > 0
-    ? dbArticles.map(a => ({
+  const allKnowledgeItems = liveArticles.length > 0
+    ? liveArticles.map(a => ({
         id: a.id, title: a.title, type: 'article' as const,
         audience: a.audience, tags: a.tags || [], subTags: [],
         summary: a.summary || '', author: '', version: '1.0',
         createdAt: a.created_at, updatedAt: a.updated_at,
         freshnessScore: a.freshness_score, viewCount: a.view_count,
-        helpfulRating: a.helpful_count, embedStatus: 'embedded' as const,
+        helpfulRating: a.helpful_count, embedStatus: a.status === 'published' ? 'indexed' as const : 'pending' as const,
         chunkCount: 0, status: a.status as any, category: a.category || '',
         productId: '', moduleId: '', sectionId: '', subSectionId: '',
         qualityScore: a.quality_score, body: a.body,
+        rawArticle: a,
       }))
-    : mockKnowledgeItems;
+    : mockKnowledgeItems.map(a => ({ ...a, rawArticle: null }));
 
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [searchQ, setSearchQ] = useState('');
@@ -900,7 +969,7 @@ const KnowledgeHubPage = ({
   }
 
   if (subPage === 'hub_articles') {
-    const kbItems = mockKnowledgeItems.filter((a) =>
+    const kbItems = allKnowledgeItems.filter((a) =>
       searchQ ? a.title.toLowerCase().includes(searchQ.toLowerCase()) : true
     );
     const published = kbItems.filter((a) => a.embedStatus === 'indexed').length;
@@ -942,7 +1011,7 @@ const KnowledgeHubPage = ({
             </p>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => openEdit(null)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold shadow-lg hover:opacity-90 transition-opacity"
             style={{ backgroundColor: accentColor }}
           >
@@ -1159,14 +1228,27 @@ const KnowledgeHubPage = ({
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors">
+                          <button
+                            onClick={() => (article as any).rawArticle && openEdit((article as any).rawArticle)}
+                            className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                          >
                             Edit
                           </button>
-                          <button className="px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-900/30 rounded transition-colors">
-                            {article.embedStatus === 'indexed'
-                              ? 'Live'
-                              : 'Publish'}
-                          </button>
+                          {article.embedStatus !== 'indexed' && (article as any).rawArticle && (
+                            <button
+                              onClick={async () => {
+                                await updateArticleStatus((article as any).rawArticle.id, 'published');
+                                ingestArticle({ tenantId: tenant!.id, content: (article as any).rawArticle.body, title: article.title, articleId: (article as any).rawArticle.id, sourceType: 'article' }).catch(() => {});
+                                await refreshArticles();
+                              }}
+                              className="px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-900/30 rounded transition-colors"
+                            >
+                              Publish
+                            </button>
+                          )}
+                          {article.embedStatus === 'indexed' && (
+                            <span className="px-2 py-1 text-xs text-emerald-600">Live</span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1238,206 +1320,118 @@ const KnowledgeHubPage = ({
             </tbody>
           </table>
         </div>
-        {showCreateModal && (
-          <Modal
-            title="New Knowledge Article"
-            onClose={() => {
-              setShowCreateModal(false);
-              setCreateType(null);
-              setNewTitle('');
-              setNewBody('');
-            }}
-          >
-            {!createType ? (
-              <div>
-                <p className="text-slate-400 text-sm mb-4">
-                  How would you like to create this article?
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {(
-                    [
-                      {
-                        type: 'write' as const,
-                        label: 'Write Article',
-                        desc: 'Create directly in the platform',
-                      },
-                      {
-                        type: 'upload' as const,
-                        label: 'Upload PDF / DOCX',
-                        desc: 'Policy docs, manuals, guides',
-                      },
-                      {
-                        type: 'url' as const,
-                        label: 'Import from URL',
-                        desc: 'Crawl your help centre or docs site',
-                      },
-                      {
-                        type: 'template' as const,
-                        label: 'Use a Template',
-                        desc: 'Pre-built KB starter templates',
-                      },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.type}
-                      onClick={() => setCreateType(opt.type)}
-                      className="p-4 bg-slate-800 border border-slate-700 rounded-xl text-left hover:border-violet-500 hover:bg-slate-700/80 transition-all"
-                    >
-                      <div className="text-white font-medium text-sm mb-1">
-                        {opt.label}
-                      </div>
-                      <div className="text-slate-400 text-xs">{opt.desc}</div>
-                    </button>
-                  ))}
-                </div>
+        {/* Toast */}
+        {editToast && (
+          <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
+            {editToast}
+          </div>
+        )}
+
+        {/* Create / Edit article modal */}
+        {editArticle !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
+                <h2 className="text-base font-semibold text-white">
+                  {editArticle ? 'Edit Article' : 'New Article'}
+                </h2>
+                <button onClick={() => setEditArticle(undefined as any)} className="text-slate-500 hover:text-white text-xl leading-none">×</button>
               </div>
-            ) : createType === 'write' ? (
-              <div className="space-y-4">
+
+              <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wider">
-                    TITLE
-                  </label>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">TITLE</label>
                   <input
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="Article title..."
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    placeholder="Article title…"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wider">
-                    CONTENT
-                  </label>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">CONTENT</label>
                   <textarea
-                    value={newBody}
-                    onChange={(e) => setNewBody(e.target.value)}
-                    placeholder="Write your article content..."
-                    rows={7}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none"
+                    value={editBody}
+                    onChange={e => setEditBody(e.target.value)}
+                    placeholder="Write the full article content here. This is what your Digital Employees will use to answer customer questions."
+                    rows={10}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none font-mono leading-relaxed"
                   />
+                  <p className="text-xs text-slate-600 mt-1">{editBody.length} chars · ~{Math.ceil(editBody.split(/\s+/).filter(Boolean).length / 600)} chunk(s) when published</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wider">
-                      AUDIENCE
-                    </label>
-                    <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500">
-                      <option>Customer</option>
-                      <option>Internal</option>
-                      <option>Both</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wider">
-                      CATEGORY
-                    </label>
-                    <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500">
-                      <option>Billing &amp; Subscriptions</option>
-                      <option>Security &amp; Access</option>
-                      <option>Digital Employees &amp; Config</option>
-                      <option>Onboarding</option>
-                      <option>Integrations &amp; APIs</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                  <button
-                    onClick={() => setCreateType(null)}
-                    className="text-sm text-slate-400 hover:text-white transition-colors"
-                  >
-                    Back
-                  </button>
-                  <div className="flex gap-2">
-                    <button className="px-4 py-2 rounded-xl text-sm bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
-                      Save Draft
-                    </button>
-                    <button
-                      className="px-4 py-2 rounded-xl text-sm text-white font-medium hover:opacity-90 transition-opacity"
-                      style={{ backgroundColor: accentColor }}
-                    >
-                      Publish
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-10">
-                <p className="text-slate-400 text-sm mb-2">
-                  {createType === 'upload'
-                    ? 'Drag and drop your PDF, DOCX, or MD file here, or click to browse'
-                    : createType === 'url'
-                    ? 'Enter the URL of your help centre or documentation site to crawl'
-                    : 'Choose from pre-built KB article templates for common topics'}
-                </p>
-                {createType === 'upload' && (
-                  <div className="mt-4">
-                    <input
-                      ref={uploadInputRef}
-                      type="file"
-                      accept=".txt,.md,.csv,.json,.pdf,.docx"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) handleFileUpload(f); }}
-                    />
-                    {!uploadResult ? (
-                      <button
-                        type="button"
-                        onClick={() => uploadInputRef.current && uploadInputRef.current.click()}
-                        disabled={isUploading}
-                        className="w-full border-2 border-dashed border-slate-700 hover:border-violet-500 rounded-xl p-8 text-slate-400 hover:text-white transition-colors disabled:opacity-60"
-                      >
-                        {isUploading ? 'Processing & chunking document...' : 'Click to select a .txt, .md, .csv, .json, .pdf or .docx file'}
-                      </button>
-                    ) : (
-                      <div className="border border-emerald-700/50 bg-emerald-500/5 rounded-xl p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-white truncate">{uploadResult.fileName}</div>
-                            <div className="text-xs text-slate-400 mt-0.5">{uploadResult.sizeKb} KB · {uploadResult.wordCount} words</div>
-                          </div>
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">Indexed</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div className="bg-slate-800/60 rounded-lg p-3 text-center">
-                            <div className="text-lg font-bold text-white">{uploadResult.chunkCount}</div>
-                            <div className="text-xs text-slate-500">chunks created</div>
-                          </div>
-                          <div className="bg-slate-800/60 rounded-lg p-3 text-center">
-                            <div className="text-lg font-bold text-white">{uploadResult.chunkCount}</div>
-                            <div className="text-xs text-slate-500">vectors embedded</div>
-                          </div>
-                        </div>
-                        {uploadResult.preview && (
-                          <div className="bg-slate-900/60 rounded-lg p-3 mb-3">
-                            <div className="text-xs text-slate-500 mb-1">First chunk preview</div>
-                            <div className="text-xs text-slate-300 line-clamp-3">{uploadResult.preview}</div>
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => { setUploadResult(null); if (uploadInputRef.current) uploadInputRef.current.value = ""; }}
-                          className="text-xs text-slate-400 hover:text-white transition-colors"
-                        >
-                          Upload another file
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {createType === 'url' && (
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">SUMMARY <span className="font-normal text-slate-600">(optional — shown in search results)</span></label>
                   <input
-                    placeholder="https://docs.yourcompany.com..."
-                    className="mt-4 w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                    value={editSummary}
+                    onChange={e => setEditSummary(e.target.value)}
+                    placeholder="One-sentence description of this article…"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
                   />
-                )}
-                <button
-                  onClick={() => setCreateType(null)}
-                  className="mt-4 text-sm text-slate-500 hover:text-white transition-colors"
-                >
-                  Back to options
-                </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">AUDIENCE</label>
+                    <select
+                      value={editAudience}
+                      onChange={e => setEditAudience(e.target.value as any)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500"
+                    >
+                      <option value="customer">Customer</option>
+                      <option value="internal">Internal</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">CATEGORY</label>
+                    <input
+                      value={editCategory}
+                      onChange={e => setEditCategory(e.target.value)}
+                      placeholder="e.g. Billing, HR, IT…"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">TAGS</label>
+                    <input
+                      value={editTags}
+                      onChange={e => setEditTags(e.target.value)}
+                      placeholder="refund, billing, faq"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                </div>
               </div>
-            )}
-          </Modal>
+
+              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 flex-shrink-0">
+                <button
+                  onClick={() => setEditArticle(undefined as any)}
+                  className="text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => saveEdit(false)}
+                    disabled={editSaving || !editTitle.trim() || !editBody.trim()}
+                    className="px-4 py-2 rounded-xl text-sm bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-40"
+                  >
+                    Save Draft
+                  </button>
+                  <button
+                    onClick={() => saveEdit(true)}
+                    disabled={editSaving || !editTitle.trim() || !editBody.trim()}
+                    className="px-4 py-2 rounded-xl text-sm text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {editSaving ? 'Publishing…' : 'Publish & Index'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
