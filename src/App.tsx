@@ -21,6 +21,7 @@ import RevenueWorkspacePage from './pages/tenant/RevenueWorkspacePage';
 import HRWorkspacePage from './pages/tenant/HRWorkspacePage';
 import AuditLogPage from './pages/tenant/AuditLogPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
+import CSWorkspacePage from './pages/tenant/CSWorkspacePage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -38,6 +39,7 @@ const PAGE_TO_URL: Record<string, string> = {
   finance:                '/finance',
   revenue:                '/revenue',
   hr:                     '/hr',
+  cs:                     '/customer-success',
   audit_log:              '/audit-log',
   users:                  '/users',
   security:               '/security',
@@ -180,6 +182,8 @@ function AppShell() {
         return <RevenueWorkspacePage {...commonProps} />;
       case 'hr':
         return <HRWorkspacePage {...commonProps} />;
+      case 'cs':
+        return <CSWorkspacePage {...commonProps} />;
       case 'audit_log':
         return <AuditLogPage {...commonProps} />;
       case 'users':

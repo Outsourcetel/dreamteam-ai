@@ -46,6 +46,7 @@ export type TenantPage =
   | 'finance'
   | 'revenue'
   | 'hr'
+  | 'cs'
   | 'audit_log'
   | 'users';
 

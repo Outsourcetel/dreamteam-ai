@@ -44,6 +44,7 @@ const Sidebar = ({
       if (p === 'hub_overview' || p.startsWith('hub_') || p.startsWith('knowledge_')) return 'knowledge';
       if (p === 'portal_overview' || p.startsWith('portal_')) return 'portal';
       if (p === 'agents' || p === 'swarm') return 'agents';
+      if (p === 'cs') return 'cs';
       if (p === 'security' || p === 'integrations' || p === 'connectors' || p === 'settings') return 'admin';
       return p;
     };
@@ -180,6 +181,7 @@ const Sidebar = ({
             <NavItem id="finance" label="Finance Control Tower" icon="🏦" />
             <NavItem id="revenue" label="Revenue Workspace" icon="$" />
             <NavItem id="hr" label="HR Workspace" icon="◉" />
+            <NavItem id="cs" label="Customer Success" icon="★" />
           </Section>
           {isOwnerOrAdmin && (
             <Section title="Administration">

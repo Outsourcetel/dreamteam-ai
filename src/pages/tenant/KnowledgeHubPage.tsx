@@ -1581,51 +1581,242 @@ const KnowledgeHubPage = ({
   }
 
   if (subPage === 'hub_training') {
-    return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Team Training</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            AI-powered training modules built from your knowledge base — track
-            staff completion
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {trainingModules.map((mod, i) => (
-            <div
-              key={i}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all"
-            >
-              <div className="mb-3">
-                <div className="text-sm font-semibold text-white mb-1">
-                  {mod.title}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge label={mod.category} color="indigo" />
-                  <span className="text-xs text-slate-500">{mod.duration}</span>
-                </div>
-              </div>
-              <div className="mb-2">
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Team completion</span>
-                  <span className="text-white">{mod.completions}%</span>
-                </div>
-                <div className="h-2 bg-slate-800 rounded-full">
-                  <div
-                    className="h-full rounded-full bg-indigo-500"
-                    style={{ width: mod.completions + '%' }}
-                  />
-                </div>
-              </div>
-              <button className="w-full mt-3 py-2 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-all">
-                View Details
-              </button>
+    // Per-module completion tracking stored in state
+    const TrainingCenter = () => {
+      const [moduleCompletions, setModuleCompletions] = React.useState<Record<string, Record<string, boolean>>>(() => {
+        try { return JSON.parse(localStorage.getItem('dt_training_completions') || '{}'); } catch { return {}; }
+      });
+      const [expandedMod, setExpandedMod] = React.useState<string | null>(null);
+      const [assigningMod, setAssigningMod] = React.useState<string | null>(null);
+      const [assignedModules, setAssignedModules] = React.useState<Record<string, string[]>>(() => {
+        try { return JSON.parse(localStorage.getItem('dt_training_assignments') || '{}'); } catch { return {}; }
+      });
+
+      const staff = [
+        { id: 's1', name: 'Sarah Mitchell', dept: 'Leadership', avatar: 'SM' },
+        { id: 's2', name: 'James Okafor', dept: 'IT', avatar: 'JO' },
+        { id: 's3', name: 'Priya Nair', dept: 'Operations', avatar: 'PN' },
+        { id: 's4', name: 'Tom Bergmann', dept: 'Finance', avatar: 'TB' },
+        { id: 's5', name: 'Elena Vasquez', dept: 'Customer Success', avatar: 'EV' },
+        { id: 's6', name: 'Marcus Webb', dept: 'Revenue', avatar: 'MW' },
+      ];
+
+      const saveCompletions = (next: Record<string, Record<string, boolean>>) => {
+        setModuleCompletions(next);
+        try { localStorage.setItem('dt_training_completions', JSON.stringify(next)); } catch {}
+      };
+
+      const saveAssignments = (next: Record<string, string[]>) => {
+        setAssignedModules(next);
+        try { localStorage.setItem('dt_training_assignments', JSON.stringify(next)); } catch {}
+      };
+
+      const toggleComplete = (modTitle: string, staffId: string) => {
+        const next = {
+          ...moduleCompletions,
+          [modTitle]: {
+            ...(moduleCompletions[modTitle] || {}),
+            [staffId]: !(moduleCompletions[modTitle]?.[staffId]),
+          },
+        };
+        saveCompletions(next);
+      };
+
+      const toggleAssign = (modTitle: string, staffId: string) => {
+        const current = assignedModules[modTitle] || [];
+        const next = current.includes(staffId)
+          ? current.filter(id => id !== staffId)
+          : [...current, staffId];
+        saveAssignments({ ...assignedModules, [modTitle]: next });
+      };
+
+      const getModCompletion = (modTitle: string) => {
+        const assigned = assignedModules[modTitle] || staff.map(s => s.id);
+        if (assigned.length === 0) return 0;
+        const done = assigned.filter(id => moduleCompletions[modTitle]?.[id]).length;
+        return Math.round((done / assigned.length) * 100);
+      };
+
+      const totalAssigned = Object.values(assignedModules).flat().length;
+      const totalCompleted = Object.entries(moduleCompletions).reduce((sum, [, perStaff]) =>
+        sum + Object.values(perStaff).filter(Boolean).length, 0);
+
+      return (
+        <div className="flex-1 overflow-auto bg-slate-950 p-6">
+          <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Training Center</h1>
+              <p className="text-slate-400 text-sm mt-1">
+                AI-generated modules from your Knowledge Base — assign to staff and track completion
+              </p>
             </div>
-          ))}
+            <button
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium"
+              style={{ backgroundColor: accentColor }}
+            >
+              + Generate Module
+            </button>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {[
+              { label: 'Modules', value: String(trainingModules.length), sub: 'From KB' },
+              { label: 'Staff Enrolled', value: String(staff.length), sub: 'Active members' },
+              { label: 'Completions', value: String(totalCompleted), sub: 'This month' },
+              { label: 'Avg Completion', value: `${Math.round(trainingModules.reduce((s, m) => s + getModCompletion(m.title), 0) / trainingModules.length)}%`, sub: 'Across all modules' },
+            ].map((k, i) => (
+              <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-2xl font-bold text-white mb-1">{k.value}</div>
+                <div className="text-xs text-slate-400">{k.label}</div>
+                <div className="text-xs text-slate-600 mt-0.5">{k.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Module cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {trainingModules.map((mod, i) => {
+              const pct = getModCompletion(mod.title);
+              const assigned = assignedModules[mod.title] || staff.map(s => s.id);
+              const doneCount = assigned.filter(id => moduleCompletions[mod.title]?.[id]).length;
+              return (
+                <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all">
+                  <div className="mb-3">
+                    <div className="text-sm font-semibold text-white mb-1">{mod.title}</div>
+                    <div className="flex items-center gap-2">
+                      <Badge label={mod.category} color="indigo" />
+                      <span className="text-xs text-slate-500">{mod.duration}</span>
+                    </div>
+                  </div>
+                  <div className="mb-3">
+                    <div className="flex justify-between text-xs text-slate-400 mb-1">
+                      <span>{doneCount}/{assigned.length} completed</span>
+                      <span className={pct === 100 ? 'text-emerald-400' : pct >= 70 ? 'text-white' : 'text-amber-400'}>{pct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Staff avatars */}
+                  <div className="flex items-center gap-1 mb-3">
+                    {assigned.slice(0, 6).map(id => {
+                      const s = staff.find(s => s.id === id);
+                      const done = moduleCompletions[mod.title]?.[id];
+                      return s ? (
+                        <button
+                          key={id}
+                          title={`${s.name} — ${done ? 'completed' : 'pending'}`}
+                          onClick={() => toggleComplete(mod.title, id)}
+                          className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center border-2 transition-all ${
+                            done ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' : 'border-slate-700 bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {s.avatar[0]}
+                        </button>
+                      ) : null;
+                    })}
+                    {assigned.length > 6 && <span className="text-xs text-slate-500">+{assigned.length - 6}</span>}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setExpandedMod(expandedMod === mod.title ? null : mod.title)}
+                      className="flex-1 py-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-all"
+                    >
+                      {expandedMod === mod.title ? 'Hide' : 'View'} progress
+                    </button>
+                    <button
+                      onClick={() => setAssigningMod(assigningMod === mod.title ? null : mod.title)}
+                      className="px-3 py-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-all"
+                    >
+                      Assign
+                    </button>
+                  </div>
+
+                  {/* Per-person progress */}
+                  {expandedMod === mod.title && (
+                    <div className="mt-3 pt-3 border-t border-slate-700 space-y-1.5">
+                      {assigned.map(id => {
+                        const s = staff.find(s => s.id === id);
+                        const done = moduleCompletions[mod.title]?.[id];
+                        return s ? (
+                          <div key={id} className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-full bg-slate-700 text-xs flex items-center justify-center text-slate-400 flex-shrink-0">{s.avatar[0]}</div>
+                            <span className="flex-1 text-xs text-slate-300">{s.name}</span>
+                            <button
+                              onClick={() => toggleComplete(mod.title, id)}
+                              className={`text-xs px-2 py-0.5 rounded transition-all ${done ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500 hover:text-slate-300'}`}
+                            >
+                              {done ? '✓ Done' : 'Pending'}
+                            </button>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+
+                  {/* Assign modal inline */}
+                  {assigningMod === mod.title && (
+                    <div className="mt-3 pt-3 border-t border-slate-700">
+                      <p className="text-xs text-slate-400 mb-2">Toggle staff assignment:</p>
+                      <div className="space-y-1">
+                        {staff.map(s => {
+                          const isAssigned = (assignedModules[mod.title] || staff.map(s => s.id)).includes(s.id);
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => toggleAssign(mod.title, s.id)}
+                              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all ${isAssigned ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                            >
+                              <div className="w-5 h-5 rounded-full bg-slate-700 text-xs flex items-center justify-center flex-shrink-0">{s.avatar[0]}</div>
+                              <span className="flex-1 text-left">{s.name}</span>
+                              <span className="text-slate-500">{s.dept}</span>
+                              {isAssigned && <span className="text-indigo-400">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Staff completion summary */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4">Staff Completion Summary</h2>
+            <div className="space-y-2">
+              {staff.map(s => {
+                const total = trainingModules.length;
+                const done = trainingModules.filter(m => moduleCompletions[m.title]?.[s.id]).length;
+                const pct = Math.round((done / total) * 100);
+                return (
+                  <div key={s.id} className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-full bg-slate-800 text-xs font-bold flex items-center justify-center flex-shrink-0"
+                      style={{ color: accentColor }}>{s.avatar}</div>
+                    <div className="flex-1">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-white">{s.name}</span>
+                        <span className={pct === 100 ? 'text-emerald-400' : 'text-slate-400'}>{done}/{total} modules</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pct === 100 ? '#10b981' : accentColor }} />
+                      </div>
+                    </div>
+                    <span className="text-xs text-slate-500 w-8 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
-    );
+      );
+    };
+    return <TrainingCenter />;
   }
 
   if (subPage === 'hub_analytics') {
