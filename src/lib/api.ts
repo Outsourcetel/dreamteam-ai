@@ -283,6 +283,70 @@ export const approveAgentAction = async (id: string, approvedBy: string): Promis
 };
 
 // =====================================================
+// PLATFORM CONFIG (API keys stored in DB, service-role only via edge fn)
+// These write to platform_config via a thin upsert. The values are stored
+// server-side and never returned to the client after saving.
+// =====================================================
+export const savePlatformConfig = async (entries: Record<string, string>): Promise<boolean> => {
+  const rows = Object.entries(entries).map(([key, value]) => ({
+    key, value, updated_at: new Date().toISOString(),
+  }));
+  const { error } = await supabase
+    .from('platform_config')
+    .upsert(rows, { onConflict: 'key' });
+  if (error) { console.error('savePlatformConfig:', error.message); return false; }
+  return true;
+};
+
+export const hasPlatformConfigKey = async (key: string): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('platform_config')
+    .select('key')
+    .eq('key', key)
+    .single();
+  return !error && !!data;
+};
+
+// =====================================================
+// TENANT AI USAGE
+// =====================================================
+export interface TenantUsage {
+  tenant_id: string;
+  year_month: string;
+  tokens_used: number;
+}
+
+export const fetchTenantUsage = async (tenantId: string): Promise<TenantUsage[]> => {
+  const { data, error } = await supabase
+    .from('tenant_ai_usage')
+    .select('tenant_id, year_month, tokens_used')
+    .eq('tenant_id', tenantId)
+    .order('year_month', { ascending: false })
+    .limit(12);
+  if (error) { console.error('fetchTenantUsage:', error.message); return []; }
+  return data ?? [];
+};
+
+export const fetchAllTenantsUsage = async (): Promise<TenantUsage[]> => {
+  const yearMonth = new Date().toISOString().slice(0, 7);
+  const { data, error } = await supabase
+    .from('tenant_ai_usage')
+    .select('tenant_id, year_month, tokens_used')
+    .eq('year_month', yearMonth);
+  if (error) { console.error('fetchAllTenantsUsage:', error.message); return []; }
+  return data ?? [];
+};
+
+export const updateTenantBudget = async (tenantId: string, monthlyTokenBudget: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('tenants')
+    .update({ monthly_token_budget: monthlyTokenBudget, updated_at: new Date().toISOString() })
+    .eq('id', tenantId);
+  if (error) { console.error('updateTenantBudget:', error.message); return false; }
+  return true;
+};
+
+// =====================================================
 // DASHBOARD STATS
 // =====================================================
 export const fetchDashboardStats = async (tenantId: string) => {

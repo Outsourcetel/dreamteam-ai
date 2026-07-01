@@ -1,20 +1,12 @@
 /**
  * de-execute Edge Function — Digital Employee Execution Engine
  *
- * The core runtime. Given a DE and an incoming message:
- *  1. Loads DE configuration (persona, confidence threshold, capabilities)
- *  2. Retrieves relevant knowledge (vector search if embeddings exist, else full-text)
- *  3. Calls Claude claude-haiku to generate a response
- *  4. Checks confidence against the DE's threshold
- *  5. If confident → returns response
- *     If not → creates an agent_action for human review and returns escalated status
- *
  * POST /functions/v1/de-execute
  * Body: { tenant_id, de_id?, message, conversation_id? }
  *
  * Secrets required:
- *   ANTHROPIC_API_KEY — from console.anthropic.com
- *   OPENAI_API_KEY    — optional; enables semantic search if knowledge_chunks have embeddings
+ *   ANTHROPIC_API_KEY — from platform_config table or env secret
+ *   OPENAI_API_KEY    — optional; enables semantic search
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -52,11 +44,62 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not configured');
-    const openaiKey = Deno.env.get('OPENAI_API_KEY') ?? null;
+    // ── Load API keys: env secret first, fall back to platform_config table ──────
+    let anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') ?? null;
+    let openaiKey = Deno.env.get('OPENAI_API_KEY') ?? null;
 
-    // ── 1. Load DE configuration ───────────────────────────────────────────────
+    if (!anthropicKey || !openaiKey) {
+      const keys = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
+      const { data: configs } = await supabase
+        .from('platform_config')
+        .select('key, value')
+        .in('key', keys);
+      if (configs) {
+        for (const row of configs) {
+          if (row.key === 'ANTHROPIC_API_KEY' && !anthropicKey) anthropicKey = row.value;
+          if (row.key === 'OPENAI_API_KEY' && !openaiKey) openaiKey = row.value;
+        }
+      }
+    }
+
+    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not configured — add it in Settings → AI Engine');
+
+    // ── 1. Load tenant + check token budget ───────────────────────────────────────
+    const { data: tenantRow } = await supabase
+      .from('tenants')
+      .select('monthly_token_budget, name')
+      .eq('id', tenant_id)
+      .single();
+
+    const budget: number = tenantRow?.monthly_token_budget ?? 100000;
+    const yearMonth = new Date().toISOString().slice(0, 7); // '2026-07'
+
+    const { data: usageRow } = await supabase
+      .from('tenant_ai_usage')
+      .select('tokens_used')
+      .eq('tenant_id', tenant_id)
+      .eq('year_month', yearMonth)
+      .single();
+
+    const currentUsage = usageRow?.tokens_used ?? 0;
+
+    if (budget > 0 && currentUsage >= budget) {
+      return new Response(JSON.stringify({
+        response: 'This workspace has reached its monthly AI token limit. Please contact your administrator.',
+        confidence: 0,
+        threshold: 75,
+        status: 'escalated',
+        sources: [],
+        chunks_found: 0,
+        search_mode: 'fulltext',
+        de_name: 'Digital Employee',
+        budget_exceeded: true,
+        tokens_used: currentUsage,
+        budget,
+      }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
+    // ── 2. Load DE configuration ───────────────────────────────────────────────
     let de: Record<string, unknown> = {
       name: 'Digital Employee',
       description: 'A helpful AI assistant',
@@ -74,13 +117,12 @@ serve(async (req) => {
 
     const threshold = (de.confidence_threshold as number) ?? 75;
 
-    // ── 2. Retrieve relevant knowledge ────────────────────────────────────────
+    // ── 3. Retrieve relevant knowledge ────────────────────────────────────────
     let context = '';
     let sources: { title: string; similarity: number }[] = [];
     let chunksFound = 0;
     let searchMode = 'fulltext';
 
-    // Try semantic search first if OpenAI key is available
     if (openaiKey) {
       const queryEmbedding = await embedText(message, openaiKey);
       if (queryEmbedding) {
@@ -105,7 +147,6 @@ serve(async (req) => {
       }
     }
 
-    // Fall back to full-text search
     if (!context) {
       const { data: articles } = await supabase.rpc('search_knowledge', {
         p_tenant_id: tenant_id,
@@ -129,7 +170,7 @@ serve(async (req) => {
       context = 'No relevant knowledge found in the knowledge base for this query.';
     }
 
-    // ── 3. Build DE persona prompt ─────────────────────────────────────────────
+    // ── 4. Build DE persona prompt ─────────────────────────────────────────────
     const caps = (de.capabilities as string[])?.join(', ') || 'general assistance';
     const resps = (de.responsibilities as string[])?.join('; ') || '';
 
@@ -152,7 +193,7 @@ Rules:
 KNOWLEDGE BASE:
 ${context}`;
 
-    // ── 4. Call Claude claude-haiku ────────────────────────────────────────────
+    // ── 5. Call Claude Haiku ───────────────────────────────────────────────────
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -176,8 +217,8 @@ ${context}`;
     const anthropicData = await anthropicRes.json();
     const rawText: string = anthropicData.content?.[0]?.text ?? '';
 
-    // ── 5. Parse confidence from model output ──────────────────────────────────
-    let confidence = chunksFound > 0 ? 70 : 30; // default based on KB hit
+    // ── 6. Parse confidence ────────────────────────────────────────────────────
+    let confidence = chunksFound > 0 ? 70 : 30;
     let responseText = rawText;
 
     const jsonMatch = rawText.match(/\{"confidence":\s*(\d+(?:\.\d+)?)\}/);
@@ -189,7 +230,17 @@ ${context}`;
     confidence = Math.min(100, Math.max(0, Math.round(confidence)));
     const needsApproval = confidence < threshold;
 
-    // ── 6. Create agent_action if below threshold ──────────────────────────────
+    // ── 7. Log token usage ────────────────────────────────────────────────────
+    const tokensUsed = (anthropicData.usage?.input_tokens ?? 0) + (anthropicData.usage?.output_tokens ?? 0);
+    if (tokensUsed > 0) {
+      await supabase.rpc('increment_tenant_token_usage', {
+        p_tenant_id: tenant_id,
+        p_year_month: yearMonth,
+        p_tokens: tokensUsed,
+      }).catch(() => {}); // non-fatal; don't block response on logging failure
+    }
+
+    // ── 8. Create agent_action if below confidence threshold ───────────────────
     if (needsApproval) {
       await supabase.from('agent_actions').insert({
         tenant_id,
@@ -209,7 +260,7 @@ ${context}`;
       });
     }
 
-    // ── 7. Log message to conversation if provided ─────────────────────────────
+    // ── 9. Log to conversation if provided ─────────────────────────────────────
     if (conversation_id) {
       await supabase.from('conversation_messages').insert({
         conversation_id,
@@ -219,7 +270,7 @@ ${context}`;
         confidence_score: confidence / 100,
         requires_approval: needsApproval,
         kb_articles_used: chunksFound,
-      }).throwOnError().catch(() => {}); // non-fatal
+      }).throwOnError().catch(() => {});
     }
 
     return new Response(JSON.stringify({
@@ -231,6 +282,8 @@ ${context}`;
       chunks_found: chunksFound,
       search_mode: searchMode,
       de_name: de.name,
+      tokens_used: tokensUsed,
+      budget_remaining: budget > 0 ? budget - currentUsage - tokensUsed : null,
     }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
 
   } catch (err) {
