@@ -29,6 +29,7 @@ import CapabilitiesPage from './pages/tenant/CapabilitiesPage';
 import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import ApprovalsPage from './pages/tenant/ApprovalsPage';
+import EndUserChatPage from './pages/portal/EndUserChatPage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -192,6 +193,8 @@ function AppShell() {
         return <CustomerPortalPage {...commonProps} subPage={currentPage as any} />;
       case 'admin_approvals':
         return <ApprovalsPage {...commonProps} />;
+      case 'eu_chat':
+        return <EndUserChatPage {...commonProps} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
       case 'revenue':

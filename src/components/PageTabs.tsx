@@ -14,11 +14,12 @@ export const HUB_TABS: { id: Page; label: string }[] = [
 
 export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'portal_overview', label: 'Overview' },
+  { id: 'eu_chat', label: 'Live Chat' },
   { id: 'portal_conversations', label: 'Conversations' },
+  { id: 'portal_escalations', label: 'Escalations' },
   { id: 'portal_actions', label: 'Workforce Actions' },
   { id: 'portal_approvals', label: 'Approvals' },
   { id: 'portal_tickets', label: 'Tickets' },
-  { id: 'portal_escalations', label: 'Escalations' },
   { id: 'portal_settings', label: 'Settings' },
 ];
 
