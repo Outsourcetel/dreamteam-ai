@@ -178,6 +178,7 @@ const Sidebar = ({
           <Section title="Workspace">
             <NavItem id="dashboard" label="Workforce HQ" icon="⌘" />
             <NavItem id="agents" label="Digital Employees" icon="⚡" />
+            <NavItem id="playbooks" label="Playbooks" icon="▦" />
             <NavItem id="hub_overview" label="Knowledge Hub" icon="◈" />
             <NavItem id="portal_overview" label="Customer Portal" icon="◎" />
             <NavItem id="insight" label="Insight Engine" icon="⚛" />

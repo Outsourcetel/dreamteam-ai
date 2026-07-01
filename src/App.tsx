@@ -27,6 +27,7 @@ import ConnectorMarketplacePage from './pages/tenant/ConnectorMarketplacePage';
 import ControlFabricPage from './pages/tenant/ControlFabricPage';
 import CapabilitiesPage from './pages/tenant/CapabilitiesPage';
 import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
+import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -52,6 +53,7 @@ const PAGE_TO_URL: Record<string, string> = {
   intelligence:           '/intelligence',
   audit_log:              '/audit-log',
   users:                  '/users',
+  playbooks:              '/playbooks',
   security:               '/security',
   integrations:           '/integrations',
   connectors:             '/connectors',
@@ -204,6 +206,8 @@ function AppShell() {
         return <CapabilitiesPage />;
       case 'intelligence':
         return <IntelligencePlatformPage />;
+      case 'playbooks':
+        return <PlaybooksPage {...commonProps} />;
       case 'audit_log':
         return <AuditLogPage {...commonProps} />;
       case 'users':

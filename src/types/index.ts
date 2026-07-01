@@ -53,7 +53,8 @@ export type TenantPage =
   | 'capabilities'
   | 'intelligence'
   | 'audit_log'
-  | 'users';
+  | 'users'
+  | 'playbooks';
 
 export type EndUserPage = 'chat' | 'history' | 'profile';
 
