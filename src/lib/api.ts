@@ -356,12 +356,54 @@ const scoreArticle = (queryTokens: string[], a: DBKnowledgeArticle): number => {
   return Math.min(1, coverage * 0.6 + density * 0.4);
 };
 
+// ── LLM swap point ─────────────────────────────────────────────────────────
+// Attempt the workforce-chat Edge Function (powered by Claude via Anthropic API).
+// Falls back to the rule-based scorer below if the function is not yet deployed.
+// To activate: deploy supabase/functions/workforce-chat/index.ts and add the
+// ANTHROPIC_API_KEY secret in Supabase dashboard → Project Settings → Secrets.
+const tryEdgeFunction = async (
+  tenantId: string,
+  query: string,
+  conversationId?: string | null
+): Promise<AgentDraft | null> => {
+  try {
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/workforce-chat`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ message: query, tenantId, conversationId }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.source === 'fallback' || !data.response) return null;
+    return {
+      agentName: 'Support Digital Employee',
+      actionType: data.requires_approval ? 'draft' : 'send',
+      description: `Claude response (${Math.round(data.confidence * 100)}% confidence, ${data.kb_articles_used} KB articles)`,
+      answer: data.response,
+      confidence: data.confidence,
+      sources: [],
+      requiresApproval: data.requires_approval,
+    };
+  } catch {
+    return null;
+  }
+};
+
 // Draft a proposed agent action by retrieving from the tenant KB.
 export const draftAgentAction = async (
   tenantId: string,
   query: string,
-  audience: 'customer' | 'internal' = 'customer'
+  audience: 'customer' | 'internal' = 'customer',
+  conversationId?: string | null
 ): Promise<AgentDraft> => {
+  // Try the LLM Edge Function first — if deployed and API key is set, use it.
+  const llmDraft = await tryEdgeFunction(tenantId, query, conversationId);
+  if (llmDraft) return llmDraft;
+
   const APPROVAL_THRESHOLD = 0.55; // below => route to human approval
   // Retrieval: zero-cost Postgres full-text search (tenant-isolated RPC).
   // The search_knowledge RPC enforces tenant_id + published status + audience
