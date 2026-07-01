@@ -1220,3 +1220,67 @@ export const fetchDEPlaybooks = async (tenantId: string, digitalEmployeeId: stri
   if (error) { console.error('fetchDEPlaybooks:', error.message); return []; }
   return (data ?? []).map((row: any) => row.playbooks as DBPlaybook).filter(Boolean);
 };
+
+// ============================================================
+// CONVERSATION MANAGEMENT (admin take-over + resolve)
+// ============================================================
+
+export const resolveConversation = async (
+  tenantId: string,
+  conversationId: string,
+  humanReply: string,
+  resolvedBy?: string | null,
+): Promise<boolean> => {
+  const now = new Date().toISOString();
+  // Post the human reply message
+  const { error: msgErr } = await supabase.from('conversation_messages').insert({
+    conversation_id: conversationId,
+    tenant_id: tenantId,
+    role: 'agent',
+    content: humanReply,
+    requires_approval: false,
+    created_at: now,
+  });
+  if (msgErr) console.error('resolveConversation/insert:', msgErr.message);
+
+  // Mark conversation resolved
+  const { error: convErr } = await supabase.from('conversations').update({
+    status: 'resolved',
+    resolved_at: now,
+    assigned_to: resolvedBy ?? null,
+    resolution_type: 'human',
+  }).eq('id', conversationId).eq('tenant_id', tenantId);
+  if (convErr) console.error('resolveConversation/update:', convErr.message);
+
+  return !msgErr && !convErr;
+};
+
+export const updateTenantProfile = async (
+  tenantId: string,
+  data: { name?: string; industry?: string; accent_color?: string },
+): Promise<boolean> => {
+  const { error } = await supabase.from('tenants')
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq('id', tenantId);
+  if (error) console.error('updateTenantProfile:', error.message);
+  return !error;
+};
+
+export const fetchConversationStats = async (tenantId: string) => {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('status, confidence_score, resolution_type, created_at')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error || !data) return { total: 0, resolved: 0, escalated: 0, selfServed: 0, avgConfidence: 0 };
+  const total = data.length;
+  const resolved = data.filter(d => d.status === 'resolved').length;
+  const escalated = data.filter(d => d.status === 'escalated').length;
+  const selfServed = data.filter(d => d.resolution_type === 'ai' || (!d.resolution_type && d.status === 'resolved')).length;
+  const withConf = data.filter(d => d.confidence_score != null);
+  const avgConfidence = withConf.length
+    ? Math.round(withConf.reduce((s, d) => s + Number(d.confidence_score), 0) / withConf.length * 100)
+    : 0;
+  return { total, resolved, escalated, selfServed, avgConfidence };
+};

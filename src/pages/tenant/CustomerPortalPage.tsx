@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, PageTabs, PORTAL_TABS } from '../../components'
 import { supabase } from '../../supabase'
-import { runAgentLoop } from '../../lib/api'
+import { runAgentLoop, resolveConversation } from '../../lib/api'
 import * as api from '../../lib/api'
 
 const CustomerPortalPage = ({
@@ -896,86 +896,181 @@ const CustomerPortalPage = ({
     );
   }
 
+  // ── Conversations inbox (admin view) ─────────────────────────
+  const [convFilter, setConvFilter] = React.useState<string>('all');
+  const [humanReply, setHumanReply] = React.useState('');
+  const [humanBusy, setHumanBusy] = React.useState(false);
+  const [convToast, setConvToast] = React.useState<string | null>(null);
+
+  const convStatusColor = (s: string) => {
+    if (s === 'resolved') return 'bg-emerald-500/15 text-emerald-300';
+    if (s === 'escalated') return 'bg-red-500/15 text-red-300';
+    if (s === 'pending') return 'bg-amber-500/15 text-amber-300';
+    return 'bg-slate-700/50 text-slate-400';
+  };
+
+  const convFiltered = convFilter === 'all' ? pConvos : pConvos.filter(c => c.status === convFilter);
+
+  const doTakeOver = async () => {
+    if (!pActiveId || !humanReply.trim() || !pTenantId) return;
+    setHumanBusy(true);
+    const me = (user as any)?.id ?? null;
+    const ok = await resolveConversation(pTenantId, pActiveId, humanReply.trim(), me);
+    if (ok) {
+      setHumanReply('');
+      await pOpenConvo(pActiveId);
+      await pLoadConvos();
+      setConvToast('Conversation resolved — your reply was posted.');
+      setTimeout(() => setConvToast(null), 3000);
+    }
+    setHumanBusy(false);
+  };
+
+  const doMarkResolved = async () => {
+    if (!pActiveId || !pTenantId) return;
+    setHumanBusy(true);
+    const { error } = await supabase.from('conversations').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolution_type: 'human' }).eq('id', pActiveId).eq('tenant_id', pTenantId);
+    if (!error) { await pLoadConvos(); setConvToast('Marked as resolved.'); setTimeout(() => setConvToast(null), 2500); }
+    setHumanBusy(false);
+  };
+
   if (subPage === 'portal_conversations') {
-    const verdictTone = (v) => v === 'passed' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : v === 'review' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    const activeConv = pConvos.find(c => c.id === pActiveId);
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
-        <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
-            <p className="text-slate-400 text-sm mt-1">AI answers from your knowledge base, audited before reply, with a human escalation path.</p>
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+        <div className="flex-shrink-0 px-6 pt-6">
+          <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold text-white">Conversations Inbox</h1>
+              <p className="text-slate-400 text-xs mt-0.5">All customer conversations — review, reply as human, or resolve.</p>
+            </div>
+            <button onClick={pLoadConvos} className="px-3 py-1.5 text-xs font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>Refresh</button>
           </div>
-          <button onClick={pNewChat} className="px-3 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>+ New chat</button>
+          {!pLive && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4">
+              <p className="text-amber-300 font-medium text-sm">Demo account</p>
+              <p className="mt-1 text-xs text-slate-300">The conversations inbox shows real customer conversations from your tenant. Sign in with a provisioned tenant account to see live data.</p>
+            </div>
+          )}
+          {/* Filter bar */}
+          {pLive && (
+            <div className="flex gap-1 bg-slate-800 rounded-lg p-1 mb-4 w-fit">
+              {['all', 'open', 'escalated', 'pending', 'resolved'].map(f => (
+                <button key={f} onClick={() => setConvFilter(f)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${convFilter === f ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                  style={convFilter === f ? { backgroundColor: accentColor } : {}}>{f}</button>
+              ))}
+            </div>
+          )}
         </div>
-        {!pLive && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-6">
-            <p className="text-amber-300 font-medium">Demo account</p>
-            <p className="mt-2 text-sm text-slate-300 max-w-2xl">The live customer portal runs on real, tenant-isolated conversations and retrieves answers from your published knowledge base. Sign in with a provisioned tenant account to ask questions, see confidence scores and audited replies, and use the human-escalation path.</p>
-          </div>
-        )}
+
         {pLive && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-            <div className="lg:col-span-1 order-2 lg:order-1">
-              <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Past chats</p>
-              <div className="space-y-1 max-h-[60vh] overflow-y-auto">
-                {pConvos.length === 0 && (<p className="text-sm text-slate-600">No conversations yet.</p>)}
-                {pConvos.map((c) => (
+          <div className="flex-1 flex overflow-hidden px-6 pb-6 gap-4">
+            {/* Left: conversation list */}
+            <div className="w-72 flex-shrink-0 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto space-y-1">
+                {convFiltered.length === 0 && (
+                  <p className="text-sm text-slate-600 py-4 text-center">No conversations found.</p>
+                )}
+                {convFiltered.map(c => (
                   <button key={c.id} onClick={() => pOpenConvo(c.id)}
-                    className={'w-full text-left px-3 py-2 rounded-lg border text-sm transition ' + (pActiveId === c.id ? 'border-slate-600 bg-slate-800' : 'border-slate-800 bg-slate-900/40 hover:bg-slate-800/60')}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-slate-200">{c.subject || 'Conversation'}</span>
-                      <span className={'text-[10px] px-1.5 py-0.5 rounded ' + (c.status === 'escalated' || c.status === 'pending' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-700 text-slate-300')}>{c.status}</span>
+                    className={'w-full text-left px-3 py-3 rounded-xl border transition-all ' + (pActiveId === c.id ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700')}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-sm font-medium text-white truncate">{c.customer_name || 'Customer'}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${convStatusColor(c.status)}`}>{c.status}</span>
                     </div>
-                    {typeof c.confidence_score === 'number' && (<div className="text-[10px] text-slate-500 mt-0.5">conf {Math.round(c.confidence_score * 100)}%</div>)}
+                    <div className="text-xs text-slate-500 truncate mb-1">{c.subject || 'Untitled conversation'}</div>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-600">
+                      <span>{c.channel || 'chat'}</span>
+                      {typeof c.confidence_score === 'number' && (<><span>·</span><span>{Math.round(c.confidence_score * 100)}% conf</span></>)}
+                      <span>·</span>
+                      <span>{new Date(c.created_at).toLocaleDateString()}</span>
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
-            <div className="lg:col-span-3 order-1 lg:order-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/40 flex flex-col" style={{ minHeight: '60vh' }}>
-                <div className="flex-1 p-5 space-y-4 overflow-y-auto" style={{ maxHeight: '56vh' }}>
-                  {pMessages.length === 0 && (
-                    <div className="text-center text-slate-500 text-sm mt-10">Ask a question to get started. Answers are drawn from your knowledge base and audited before you see them.</div>
-                  )}
-                  {pMessages.map((m, i) => (
-                    <div key={i} className={'flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start')}>
-                      <div className={'max-w-[80%] rounded-2xl px-4 py-3 ' + (m.role === 'user' ? 'text-white rounded-br-sm' : 'bg-slate-800 text-slate-200 rounded-bl-sm')} style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
-                        <p className="text-sm whitespace-pre-wrap">{m.content}</p>
-                        {m.role === 'agent' && (
-                          <div className="mt-2 pt-2 border-t border-slate-700/60 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {typeof m.confidence_score === 'number' && (<span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">confidence {Math.round(m.confidence_score * 100)}%</span>)}
-                              {m.audit_verdict && (<span className={'text-[10px] px-1.5 py-0.5 rounded border ' + verdictTone(m.audit_verdict)}>{m.audit_verdict === 'passed' ? 'audit passed' : m.audit_verdict === 'review' ? 'audit: review' : 'audit failed'}</span>)}
-                            </div>
-                            {m.audit_note && (<p className="text-[10px] text-slate-500">{m.audit_note}</p>)}
-                            {Array.isArray(m.sources) && m.sources.length > 0 && (
-                              <p className="text-[10px] text-slate-500">Sources: {m.sources.map((s) => s.title).join(', ')}</p>
+
+            {/* Right: thread + actions */}
+            <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+              {!pActiveId ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Select a conversation to review.</div>
+              ) : (
+                <>
+                  {/* Thread header */}
+                  <div className="flex-shrink-0 border-b border-slate-800 px-5 py-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{activeConv?.customer_name || 'Customer'}</div>
+                      <div className="text-xs text-slate-500">{activeConv?.subject || activeConv?.channel || 'chat'}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {activeConv?.status !== 'resolved' && (
+                        <button onClick={doMarkResolved} disabled={humanBusy}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300 transition-all disabled:opacity-40">
+                          Mark resolved
+                        </button>
+                      )}
+                      {activeConv && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${convStatusColor(activeConv.status)}`}>{activeConv.status}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Messages */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                    {pMessages.length === 0 && (<div className="text-center text-slate-600 text-sm pt-8">No messages yet.</div>)}
+                    {pMessages.map((m, i) => (
+                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
+                          m.role === 'user' ? 'text-white rounded-br-sm' : 'bg-slate-800 text-slate-200 rounded-bl-sm'
+                        }`} style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
+                          <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {m.role !== 'user' && (
+                              <span className="text-[10px] text-slate-500">
+                                {m.role === 'system' ? 'System' : 'DE'}
+                              </span>
                             )}
+                            {typeof m.confidence_score === 'number' && (
+                              <span className="text-[10px] text-slate-600">{Math.round(m.confidence_score * 100)}% conf</span>
+                            )}
+                            <span className="text-[10px] text-slate-700">{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                        )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Human reply / take-over panel */}
+                  {activeConv?.status !== 'resolved' && (
+                    <div className="flex-shrink-0 border-t border-slate-800 p-4">
+                      <p className="text-xs text-slate-500 mb-2">Reply as human agent — this resolves the conversation</p>
+                      <div className="flex gap-2">
+                        <textarea
+                          value={humanReply}
+                          onChange={e => setHumanReply(e.target.value)}
+                          rows={2}
+                          placeholder="Type your reply to the customer…"
+                          className="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+                        />
+                        <button onClick={doTakeOver} disabled={humanBusy || !humanReply.trim()}
+                          className="px-4 rounded-lg text-sm font-medium text-white self-stretch disabled:opacity-40 transition-all"
+                          style={{ backgroundColor: accentColor }}>
+                          {humanBusy ? '…' : 'Send & resolve'}
+                        </button>
                       </div>
                     </div>
-                  ))}
-                  {pSending && (<div className="flex justify-start"><div className="bg-slate-800 text-slate-400 rounded-2xl px-4 py-3 text-sm">Searching the knowledge base and auditing...</div></div>)}
-                </div>
-                {pLastResult && pLastResult.escalated && (
-                  <div className="mx-5 mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-300">
-                    No confident answer was found, so this was routed to a human teammate ({pLastResult.escalationReason === 'no_answer' ? 'no knowledge match' : 'low confidence'}). A teammate will reply shortly.
-                  </div>
-                )}
-                <div className="border-t border-slate-800 p-4">
-                  <div className="flex gap-2">
-                    <input value={pInput} onChange={(e) => setPInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') pSend(); }} placeholder="Ask a question..." className="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500" />
-                    <button onClick={pSend} disabled={pSending || !pInput.trim()} className="px-4 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-40" style={{ backgroundColor: accentColor }}>Send</button>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <p className="text-[11px] text-slate-500">Answers are retrieved from published KB docs, videos and past cases, then audited before reply.</p>
-                    <button onClick={pEscalate} disabled={!pActiveId || pEscalating} className="text-[11px] text-amber-400 hover:text-amber-300 disabled:opacity-40 underline">Escalate to a human</button>
-                  </div>
-                </div>
-              </div>
+                  )}
+                </>
+              )}
             </div>
+          </div>
+        )}
+
+        {convToast && (
+          <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-emerald-600 shadow-lg text-sm font-medium text-white">
+            {convToast}
           </div>
         )}
       </div>

@@ -269,6 +269,29 @@ function CreateModal({ tenantId, accentColor, digitalEmployees, onClose, onCreat
 
 // ── Detail Panel ───────────────────────────────────────────────
 
+type StepType = 'action' | 'decision' | 'approval' | 'notification' | 'condition'
+
+interface PlaybookStep {
+  id: string
+  step: number
+  title: string
+  description: string
+  type: StepType
+  requires_approval: boolean
+}
+
+const STEP_TYPES: { value: StepType; label: string; color: string }[] = [
+  { value: 'action', label: 'Action', color: 'bg-indigo-500/15 text-indigo-400' },
+  { value: 'decision', label: 'Decision', color: 'bg-amber-500/15 text-amber-400' },
+  { value: 'approval', label: 'Approval', color: 'bg-red-500/15 text-red-400' },
+  { value: 'notification', label: 'Notification', color: 'bg-blue-500/15 text-blue-400' },
+  { value: 'condition', label: 'Condition', color: 'bg-purple-500/15 text-purple-400' },
+]
+
+function stepTypeCls(t: StepType) {
+  return STEP_TYPES.find(s => s.value === t)?.color ?? 'bg-slate-700/50 text-slate-400'
+}
+
 function DetailPanel({
   playbook,
   digitalEmployees,
@@ -285,8 +308,49 @@ function DetailPanel({
   onUpdated: (pb: DBPlaybook) => void
 }) {
   const [advancing, setAdvancing] = useState(false)
+  const [detailTab, setDetailTab] = useState<'overview' | 'steps' | 'lifecycle'>('overview')
   const nextStage = LIFECYCLE_NEXT[playbook.lifecycle_status]
   const assignedDE = digitalEmployees.find(d => d.id === playbook.digital_employee_id)
+
+  // Steps — stored in decision_rules as PlaybookStep[]
+  const initSteps = (): PlaybookStep[] => {
+    if (!Array.isArray(playbook.decision_rules)) return []
+    return playbook.decision_rules.filter((r: any) => r && r.step && r.title) as PlaybookStep[]
+  }
+  const [steps, setSteps] = useState<PlaybookStep[]>(initSteps)
+  const [addingStep, setAddingStep] = useState(false)
+  const [newStep, setNewStep] = useState({ title: '', description: '', type: 'action' as StepType, requires_approval: false })
+  const [savingSteps, setSavingSteps] = useState(false)
+
+  const saveSteps = async (updated: PlaybookStep[]) => {
+    setSavingSteps(true)
+    const ok = await updatePlaybook(playbook.id, tenantId, { decision_rules: updated as any[] })
+    if (ok) onUpdated({ ...playbook, decision_rules: updated as any[] })
+    setSavingSteps(false)
+  }
+
+  const addStep = async () => {
+    if (!newStep.title.trim()) return
+    const step: PlaybookStep = {
+      id: Date.now().toString(),
+      step: steps.length + 1,
+      title: newStep.title.trim(),
+      description: newStep.description.trim(),
+      type: newStep.type,
+      requires_approval: newStep.requires_approval,
+    }
+    const updated = [...steps, step]
+    setSteps(updated)
+    await saveSteps(updated)
+    setNewStep({ title: '', description: '', type: 'action', requires_approval: false })
+    setAddingStep(false)
+  }
+
+  const removeStep = async (id: string) => {
+    const updated = steps.filter(s => s.id !== id).map((s, i) => ({ ...s, step: i + 1 }))
+    setSteps(updated)
+    await saveSteps(updated)
+  }
 
   const advance = async () => {
     if (!nextStage) return
@@ -302,6 +366,8 @@ function DetailPanel({
       <span className="text-sm text-white flex-1">{value ?? <span className="text-slate-600">—</span>}</span>
     </div>
   )
+
+  const inputCls = 'w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500 transition-colors'
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -327,128 +393,187 @@ function DetailPanel({
           <button onClick={onClose} className="text-slate-600 hover:text-slate-400 text-xl leading-none flex-shrink-0">×</button>
         </div>
 
+        {/* Sub-tabs */}
+        <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-slate-800">
+          {(['overview', 'steps', 'lifecycle'] as const).map(t => (
+            <button key={t} onClick={() => setDetailTab(t)}
+              className={`px-3 py-2 text-xs font-medium capitalize border-b-2 transition-all ${
+                detailTab === t ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+              style={detailTab === t ? { borderColor: accentColor } : {}}>
+              {t} {t === 'steps' && steps.length > 0 ? `(${steps.length})` : ''}
+            </button>
+          ))}
+        </div>
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {/* Business Objective */}
-          {playbook.business_objective && (
-            <div className="mb-5 bg-slate-900 rounded-xl p-4 border border-slate-800">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Business Objective</p>
-              <p className="text-sm text-slate-300 leading-relaxed">{playbook.business_objective}</p>
-            </div>
-          )}
-
-          {/* Core fields */}
-          <div className="mb-5">
-            <Row label="Trigger" value={<span className="capitalize">{playbook.trigger_type.replace(/_/g, ' ')}</span>} />
-            <Row label="Owner Role" value={playbook.owner_role} />
-            <Row label="Digital Employee" value={assignedDE ? (
-              <span className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs flex items-center justify-center font-bold">
-                  {assignedDE.icon}
-                </span>
-                {assignedDE.name}
-              </span>
-            ) : null} />
-            <Row label="Approval Required" value={playbook.human_approval_required ? (
-              <span className="text-amber-400">Yes</span>
-            ) : 'No'} />
-            <Row label="Base Playbook" value={playbook.is_base_playbook ? 'Yes — can be inherited' : 'No'} />
-            <Row label="Performance" value={playbook.tasks_this_month > 0 ? (
-              <span className="flex items-center gap-3">
-                <span>{playbook.tasks_this_month} tasks</span>
-                <span className="text-emerald-400">{playbook.de_handled_rate}% DE-handled</span>
-                <span className="text-slate-400">{playbook.success_rate}% success</span>
-              </span>
-            ) : <span className="text-slate-600">No executions yet</span>} />
-          </div>
-
-          {/* Capabilities */}
-          {playbook.capabilities_used.length > 0 && (
-            <div className="mb-5">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Capabilities Used</p>
-              <div className="flex flex-wrap gap-2">
-                {playbook.capabilities_used.map(c => (
-                  <span key={c} className="text-xs px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">{c}</span>
-                ))}
+          {detailTab === 'overview' && (
+            <>
+              {playbook.business_objective && (
+                <div className="mb-5 bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Business Objective</p>
+                  <p className="text-sm text-slate-300 leading-relaxed">{playbook.business_objective}</p>
+                </div>
+              )}
+              <div className="mb-5">
+                <Row label="Trigger" value={<span className="capitalize">{playbook.trigger_type.replace(/_/g, ' ')}</span>} />
+                <Row label="Owner Role" value={playbook.owner_role} />
+                <Row label="Digital Employee" value={assignedDE ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs flex items-center justify-center font-bold">{assignedDE.icon}</span>
+                    {assignedDE.name}
+                  </span>
+                ) : null} />
+                <Row label="Approval Required" value={playbook.human_approval_required ? <span className="text-amber-400">Yes</span> : 'No'} />
+                <Row label="Base Playbook" value={playbook.is_base_playbook ? 'Yes — can be inherited' : 'No'} />
+                <Row label="Performance" value={playbook.tasks_this_month > 0 ? (
+                  <span className="flex items-center gap-3">
+                    <span>{playbook.tasks_this_month} tasks</span>
+                    <span className="text-emerald-400">{playbook.de_handled_rate}% DE-handled</span>
+                    <span className="text-slate-400">{playbook.success_rate}% success</span>
+                  </span>
+                ) : <span className="text-slate-600">No executions yet</span>} />
               </div>
-            </div>
-          )}
-
-          {/* Knowledge */}
-          {playbook.knowledge_collections.length > 0 && (
-            <div className="mb-5">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Knowledge Collections</p>
-              <div className="flex flex-wrap gap-2">
-                {playbook.knowledge_collections.map(k => (
-                  <span key={k} className="text-xs px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">{k}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* KPIs */}
-          {playbook.kpis.length > 0 && (
-            <div className="mb-5">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">KPI Targets</p>
-              <div className="space-y-2">
-                {playbook.kpis.map((kpi, i) => (
-                  <div key={i} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
-                    <span className="text-sm text-slate-300">{kpi.name}</span>
-                    <span className="text-sm font-medium text-white">{kpi.target}{kpi.unit}</span>
+              {playbook.capabilities_used.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Capabilities Used</p>
+                  <div className="flex flex-wrap gap-2">
+                    {playbook.capabilities_used.map(c => (
+                      <span key={c} className="text-xs px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">{c}</span>
+                    ))}
                   </div>
-                ))}
+                </div>
+              )}
+              {playbook.kpis.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">KPI Targets</p>
+                  <div className="space-y-2">
+                    {playbook.kpis.map((kpi, i) => (
+                      <div key={i} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
+                        <span className="text-sm text-slate-300">{kpi.name}</span>
+                        <span className="text-sm font-medium text-white">{kpi.target}{kpi.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {detailTab === 'steps' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-slate-500">Define the workflow steps this Playbook executes in sequence.</p>
+                {!addingStep && (
+                  <button onClick={() => setAddingStep(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg text-white transition-all"
+                    style={{ backgroundColor: accentColor }}>+ Add Step</button>
+                )}
               </div>
+
+              {/* Existing steps */}
+              {steps.length === 0 && !addingStep && (
+                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                  <p className="text-slate-500 text-sm">No steps defined yet.</p>
+                  <p className="text-slate-600 text-xs mt-1">Add steps to design the workflow this Playbook follows.</p>
+                </div>
+              )}
+              {steps.map((s, i) => (
+                <div key={s.id} className="flex gap-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
+                  <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
+                    style={{ backgroundColor: accentColor + '60' }}>{s.step}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-medium text-white">{s.title}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${stepTypeCls(s.type)}`}>{s.type}</span>
+                      {s.requires_approval && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">needs approval</span>}
+                    </div>
+                    {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
+                  </div>
+                  <button onClick={() => removeStep(s.id)} className="text-slate-700 hover:text-red-400 transition-all text-sm flex-shrink-0">×</button>
+                </div>
+              ))}
+
+              {/* Add step form */}
+              {addingStep && (
+                <div className="bg-slate-900 border border-indigo-500/30 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">New Step {steps.length + 1}</p>
+                  <input className={inputCls} placeholder="Step title (e.g. Validate customer identity)" value={newStep.title} onChange={e => setNewStep(p => ({ ...p, title: e.target.value }))} />
+                  <textarea className={inputCls + ' resize-none'} rows={2} placeholder="What happens in this step?" value={newStep.description} onChange={e => setNewStep(p => ({ ...p, description: e.target.value }))} />
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-500 block mb-1">Step Type</label>
+                      <select className={inputCls} value={newStep.type} onChange={e => setNewStep(p => ({ ...p, type: e.target.value as StepType }))}>
+                        {STEP_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-end gap-2 pb-0.5">
+                      <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-400">
+                        <input type="checkbox" checked={newStep.requires_approval} onChange={e => setNewStep(p => ({ ...p, requires_approval: e.target.checked }))} />
+                        Needs approval
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setAddingStep(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Cancel</button>
+                    <button onClick={addStep} disabled={savingSteps || !newStep.title.trim()}
+                      className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 transition-all"
+                      style={{ backgroundColor: accentColor }}>
+                      {savingSteps ? 'Saving…' : 'Add Step'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Lifecycle progress */}
-          <div className="mb-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-3">Lifecycle</p>
-            <div className="flex items-center gap-1 flex-wrap">
-              {LIFECYCLE_STAGES.filter(s => !['deprecated', 'retired'].includes(s)).map((s, i) => {
-                const idx = LIFECYCLE_STAGES.indexOf(playbook.lifecycle_status)
-                const thisIdx = LIFECYCLE_STAGES.indexOf(s)
-                const isPast = thisIdx < idx
-                const isCurrent = s === playbook.lifecycle_status
-                return (
-                  <React.Fragment key={s}>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize transition-all ${
-                      isCurrent ? lifecycleBadgeClass(s) :
-                      isPast ? 'bg-slate-800 text-slate-500 line-through' :
-                      'bg-slate-900 text-slate-600'
-                    }`}>{s}</span>
-                    {i < LIFECYCLE_STAGES.filter(s => !['deprecated', 'retired'].includes(s)).length - 1 && (
-                      <span className="text-slate-700 text-xs">›</span>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-            </div>
-          </div>
-
-          {playbook.next_review_due && (
-            <div className="text-xs text-slate-500 mt-2">
-              Next review due: <span className="text-slate-300">{playbook.next_review_due}</span>
+          {detailTab === 'lifecycle' && (
+            <div>
+              <p className="text-xs text-slate-500 mb-4">Track this Playbook through its operational lifecycle — from design to active deployment.</p>
+              <div className="space-y-2">
+                {LIFECYCLE_STAGES.map((s, i) => {
+                  const idx = LIFECYCLE_STAGES.indexOf(playbook.lifecycle_status)
+                  const thisIdx = LIFECYCLE_STAGES.indexOf(s)
+                  const isPast = thisIdx < idx
+                  const isCurrent = s === playbook.lifecycle_status
+                  return (
+                    <div key={s} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                      isCurrent ? 'border-indigo-500/40 bg-indigo-500/10' :
+                      isPast ? 'border-slate-800 bg-slate-900/30' :
+                      'border-slate-800/40 bg-slate-900/10'
+                    }`}>
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                        isCurrent ? 'text-white' : isPast ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-600'
+                      }`} style={isCurrent ? { backgroundColor: accentColor } : {}}>
+                        {isPast ? '✓' : String(i + 1)}
+                      </div>
+                      <span className={`text-sm capitalize font-medium ${isCurrent ? 'text-white' : isPast ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
+                        {s}
+                      </span>
+                      {isCurrent && <span className="ml-auto text-xs text-indigo-400">Current</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              {playbook.next_review_due && (
+                <div className="mt-4 text-xs text-slate-500">
+                  Next review due: <span className="text-slate-300">{playbook.next_review_due}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer actions */}
         <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-600">
-            Created {new Date(playbook.created_at).toLocaleDateString()}
-          </div>
+          <div className="text-xs text-slate-600">Created {new Date(playbook.created_at).toLocaleDateString()}</div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors">
-              Close
-            </button>
+            <button onClick={onClose} className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors">Close</button>
             {nextStage && (
-              <button
-                onClick={advance}
-                disabled={advancing}
+              <button onClick={advance} disabled={advancing}
                 className="px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-all disabled:opacity-50 capitalize"
-                style={{ backgroundColor: accentColor }}
-              >
+                style={{ backgroundColor: accentColor }}>
                 {advancing ? 'Advancing…' : `Advance → ${nextStage}`}
               </button>
             )}
