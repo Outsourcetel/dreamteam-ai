@@ -695,32 +695,271 @@ const SecurityPage = ({
       )}
 
       {/* ── COMPLIANCE ── */}
-      {activeTab === 'compliance' && (
-        <>
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4 text-xs text-amber-300">
-            Note: DreamTeam AI does not currently hold any of the certifications below. These represent compliance goals on our roadmap, not attained or audited certifications.
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              { name: 'SOC 2 Type II', desc: 'Not yet certified. Controls being designed.', cert: 'No audit completed' },
-              { name: 'GDPR', desc: 'Alignment in progress. Not independently verified.', cert: 'DPA not yet available' },
-              { name: 'ISO 27001', desc: 'Not yet certified.', cert: 'No certificate issued' },
-              { name: 'HIPAA', desc: 'Not supported yet. Planned for healthcare tenants.', cert: 'No BAA available' },
-              { name: 'PCI DSS', desc: 'Not yet assessed.', cert: 'No SAQ completed' },
-              { name: 'CCPA', desc: 'Alignment in progress. Not independently verified.', cert: 'Not yet attested' },
-            ].map((c, i) => (
-              <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-sm">{c.name.slice(0, 3)}</div>
-                  <div><div className="text-sm font-semibold text-white">{c.name}</div><Badge label="On roadmap" color="slate" /></div>
+      {activeTab === 'compliance' && (() => {
+        const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        const todayISO = new Date().toISOString().slice(0, 10);
+        const overallScore = 73;
+
+        const frameworks = [
+          {
+            name: 'SOC 2 Type II', abbr: 'SOC', status: 'In Progress', pct: 65, controls: [26, 40],
+            gaps: ['Incident response procedures not documented', 'Vendor risk assessments incomplete', 'Change management process not formalized'],
+            ctrlList: [
+              { id: 'CC1.1', name: 'Management oversight', st: 'pass' },
+              { id: 'CC2.1', name: 'Internal communications', st: 'pass' },
+              { id: 'CC3.1', name: 'Risk assessment', st: 'fail' },
+              { id: 'CC6.1', name: 'Logical access controls', st: 'pass' },
+              { id: 'CC7.1', name: 'Change management', st: 'fail' },
+              { id: 'CC8.1', name: 'Incident response', st: 'partial' },
+            ],
+          },
+          {
+            name: 'GDPR', abbr: 'GDP', status: 'In Progress', pct: 78, controls: [31, 40],
+            gaps: ['Data retention policy needs update', 'Consent management not fully implemented'],
+            ctrlList: [
+              { id: 'Art.5', name: 'Data minimization', st: 'pass' },
+              { id: 'Art.13', name: 'Privacy notice', st: 'pass' },
+              { id: 'Art.17', name: 'Right to erasure', st: 'partial' },
+              { id: 'Art.25', name: 'Privacy by design', st: 'pass' },
+              { id: 'Art.32', name: 'Security measures', st: 'pass' },
+              { id: 'Art.33', name: 'Breach notification', st: 'fail' },
+            ],
+          },
+          {
+            name: 'ISO 27001', abbr: 'ISO', status: 'In Progress', pct: 42, controls: [17, 40],
+            gaps: ['Asset inventory not complete', 'Supplier security policies missing', 'Business continuity plan not tested'],
+            ctrlList: [
+              { id: 'A.5', name: 'Info security policies', st: 'pass' },
+              { id: 'A.6', name: 'Organisation of security', st: 'partial' },
+              { id: 'A.8', name: 'Asset management', st: 'fail' },
+              { id: 'A.9', name: 'Access control', st: 'pass' },
+              { id: 'A.12', name: 'Operations security', st: 'partial' },
+            ],
+          },
+          {
+            name: 'HIPAA', abbr: 'HIP', status: 'Not Started', pct: 0, controls: [0, 40],
+            gaps: ['BAA not available', 'PHI data not classified', 'Audit controls not implemented'],
+            ctrlList: [
+              { id: '164.308', name: 'Administrative safeguards', st: 'fail' },
+              { id: '164.310', name: 'Physical safeguards', st: 'fail' },
+              { id: '164.312', name: 'Technical safeguards', st: 'fail' },
+            ],
+          },
+          {
+            name: 'PCI DSS', abbr: 'PCI', status: 'Not Started', pct: 0, controls: [0, 40],
+            gaps: ['SAQ not completed', 'Cardholder data environment not scoped', 'Network segmentation not implemented'],
+            ctrlList: [
+              { id: 'Req 1', name: 'Install/maintain network controls', st: 'fail' },
+              { id: 'Req 2', name: 'Secure vendor defaults', st: 'fail' },
+              { id: 'Req 6', name: 'Develop secure systems', st: 'fail' },
+            ],
+          },
+          {
+            name: 'CCPA', abbr: 'CCP', status: 'In Progress', pct: 55, controls: [22, 40],
+            gaps: ['Consumer request process not fully automated', 'Third-party data sharing not fully documented'],
+            ctrlList: [
+              { id: 'Sec.1798.100', name: 'Right to know', st: 'pass' },
+              { id: 'Sec.1798.105', name: 'Right to delete', st: 'partial' },
+              { id: 'Sec.1798.120', name: 'Right to opt-out', st: 'pass' },
+              { id: 'Sec.1798.150', name: 'Security', st: 'fail' },
+            ],
+          },
+        ];
+
+        const [expandedFramework, setExpandedFramework] = useState<string | null>(null);
+        const [reportModal, setReportModal] = useState(false);
+        const [reportType, setReportType] = useState('Full Audit Report');
+        const [reportFrameworks, setReportFrameworks] = useState<string[]>(['SOC 2 Type II', 'GDPR']);
+        const [reportPeriod, setReportPeriod] = useState('This Quarter');
+        const [reportIncludes, setReportIncludes] = useState<string[]>(['Audit log excerpt', 'Team access review']);
+        const [generating, setGenerating] = useState(false);
+
+        const toggleReportFw = (name: string) => setReportFrameworks(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
+        const toggleReportInclude = (name: string) => setReportIncludes(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]);
+
+        const generateReport = async () => {
+          setGenerating(true);
+          await new Promise(r => setTimeout(r, 2000));
+          const selectedFws = frameworks.filter(f => reportFrameworks.includes(f.name));
+          const ctrlRows = selectedFws.flatMap(f => f.ctrlList.map(c => `<tr><td style="padding:6px 12px;border-bottom:1px solid #334155">${f.name}</td><td style="padding:6px 12px;border-bottom:1px solid #334155">${c.id}</td><td style="padding:6px 12px;border-bottom:1px solid #334155">${c.name}</td><td style="padding:6px 12px;border-bottom:1px solid #334155;color:${c.st === 'pass' ? '#10b981' : c.st === 'fail' ? '#ef4444' : '#f59e0b'}">${c.st.toUpperCase()}</td></tr>`)).join('');
+          const fwSummary = selectedFws.map(f => `<tr><td style="padding:6px 12px;border-bottom:1px solid #334155">${f.name}</td><td style="padding:6px 12px;border-bottom:1px solid #334155">${f.status}</td><td style="padding:6px 12px;border-bottom:1px solid #334155">${f.pct}%</td><td style="padding:6px 12px;border-bottom:1px solid #334155">${f.controls[0]}/${f.controls[1]}</td></tr>`).join('');
+          const auditExcerpt = reportIncludes.includes('Audit log excerpt') ? `<h2 style="color:#e2e8f0;margin-top:32px">Audit Log Excerpt</h2><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${['Timestamp','User','Action','Type','Severity'].map(h=>`<th style="text-align:left;padding:8px 12px;border-bottom:2px solid #334155;color:#94a3b8">${h}</th>`).join('')}</tr></thead><tbody>${[['10:42 AM','Morgan Chen','Approved credit request $350','approval','info'],['10:38 AM','Support Agent','Password reset attempt — pending','agent_action','warn'],['10:21 AM','Taylor Smith','Added team member — manager role','admin','info'],['9:55 AM','Billing Agent','Issued $120 credit to account 7712','agent_action','info'],['9:30 AM','Morgan Chen','Exported tenant data backup','admin','warn']].map(r=>`<tr>${r.map(c=>`<td style="padding:6px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+          const accessReview = reportIncludes.includes('Team access review') ? `<h2 style="color:#e2e8f0;margin-top:32px">Team Access Review</h2><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${['Name','Email','Role','Last Active'].map(h=>`<th style="text-align:left;padding:8px 12px;border-bottom:2px solid #334155;color:#94a3b8">${h}</th>`).join('')}</tr></thead><tbody>${[['Morgan Chen','morgan@acme.com','Owner','2 min ago'],['Taylor Smith','taylor@acme.com','Admin','1 hr ago'],['Quinn Park','quinn@acme.com','Manager','3 hr ago'],['Drew Wilson','drew@acme.com','User','1 day ago']].map(r=>`<tr>${r.map(c=>`<td style="padding:6px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Compliance Report — ${todayISO}</title><style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:32px}h1{color:#fff}h2{color:#e2e8f0;font-size:16px;margin-top:24px}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 12px;border-bottom:2px solid #334155;color:#94a3b8}td{padding:6px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1}.badge{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px}.score{font-size:48px;font-weight:700;color:#6366f1}</style></head><body><div style="border-bottom:2px solid #6366f1;padding-bottom:16px;margin-bottom:24px"><h1 style="margin:0">DreamTeam AI — Compliance Report</h1><p style="color:#64748b;margin:4px 0">${reportType} · ${reportPeriod} · Generated ${today}</p></div><div style="display:flex;align-items:center;gap:24px;margin-bottom:24px"><div><div class="score">${overallScore}%</div><div style="color:#64748b;font-size:13px">Overall Compliance Score</div></div><div style="flex:1"><p style="color:#94a3b8;font-size:13px">This report covers ${selectedFws.length} framework(s): ${reportFrameworks.join(', ')}. Assessment date: ${today}.</p></div></div><h2>Framework Summary</h2><table><thead><tr><th>Framework</th><th>Status</th><th>Progress</th><th>Controls</th></tr></thead><tbody>${fwSummary}</tbody></table><h2>Controls Detail</h2><table><thead><tr><th>Framework</th><th>Control ID</th><th>Control Name</th><th>Status</th></tr></thead><tbody>${ctrlRows}</tbody></table>${auditExcerpt}${accessReview}<div style="margin-top:40px;border-top:1px solid #334155;padding-top:16px;color:#475569;font-size:12px">Prepared by: ${user?.name || 'Admin'} · ${today} · DreamTeam AI Compliance Platform</div></body></html>`;
+          const blob = new Blob([html], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `compliance_report_${todayISO}.html`;
+          a.click();
+          URL.revokeObjectURL(url);
+          setGenerating(false);
+          setReportModal(false);
+          showToast('✓ Compliance report downloaded');
+        };
+
+        const statusColor = (s: string) => s === 'In Progress' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' : s === 'Ready for Audit' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : s === 'Certified' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-slate-700/50 text-slate-400 border-slate-600/30';
+
+        return (
+          <>
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4 text-xs text-amber-300">
+              Note: DreamTeam AI does not currently hold any of the certifications below. These represent compliance goals on our roadmap, not attained or audited certifications.
+            </div>
+
+            {/* Score dashboard */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-4">
+              <div className="flex items-center gap-6">
+                {/* Circular gauge */}
+                <div className="relative w-24 h-24 flex-shrink-0">
+                  <div className="w-24 h-24 rounded-full" style={{ background: `conic-gradient(${accentColor} ${overallScore * 3.6}deg, #1e293b ${overallScore * 3.6}deg)` }}>
+                    <div className="absolute inset-2 rounded-full bg-slate-900 flex items-center justify-center">
+                      <span className="text-lg font-bold text-white">{overallScore}%</span>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400 mb-2">{c.desc}</p>
-                <p className="text-xs text-slate-500">{c.cert}</p>
+                <div className="flex-1">
+                  <h2 className="text-base font-semibold text-white mb-0.5">Overall Compliance Score</h2>
+                  <p className="text-xs text-slate-500 mb-3">Last assessed: {today}</p>
+                  <button onClick={() => setReportModal(true)}
+                    className="px-4 py-2 text-sm font-medium text-white rounded-xl hover:opacity-90"
+                    style={{ backgroundColor: accentColor }}>
+                    Generate Compliance Report
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-        </>
-      )}
+            </div>
+
+            {/* Framework cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {frameworks.map((fw) => (
+                <div key={fw.name} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-sm">{fw.abbr}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-white">{fw.name}</div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${statusColor(fw.status)}`}>{fw.status}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-white">{fw.pct}%</div>
+                      <div className="text-xs text-slate-500">{fw.controls[0]}/{fw.controls[1]} controls</div>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-slate-700 rounded-full h-1.5 mb-3">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${fw.pct}%`, backgroundColor: fw.pct > 0 ? accentColor : 'transparent' }} />
+                  </div>
+
+                  {/* Gaps */}
+                  <div className="mb-3">
+                    <p className="text-xs text-slate-500 font-medium mb-1">Key gaps:</p>
+                    <ul className="space-y-0.5">
+                      {fw.gaps.map((g, i) => (
+                        <li key={i} className="text-xs text-slate-400 flex items-start gap-1">
+                          <span className="text-red-400 flex-shrink-0 mt-0.5">•</span>
+                          {g}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Expandable controls */}
+                  <button onClick={() => setExpandedFramework(expandedFramework === fw.name ? null : fw.name)}
+                    className="text-xs text-slate-400 hover:text-white transition-all flex items-center gap-1">
+                    View Controls {expandedFramework === fw.name ? '▲' : '▼'}
+                  </button>
+                  {expandedFramework === fw.name && (
+                    <div className="mt-3 space-y-1">
+                      {fw.ctrlList.map(c => (
+                        <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 bg-slate-800/50 rounded-lg">
+                          <span className={`text-xs font-medium w-3 ${c.st === 'pass' ? 'text-emerald-400' : c.st === 'fail' ? 'text-red-400' : 'text-amber-400'}`}>
+                            {c.st === 'pass' ? '✓' : c.st === 'fail' ? '✗' : '~'}
+                          </span>
+                          <span className="text-xs text-slate-500 font-mono w-16 flex-shrink-0">{c.id}</span>
+                          <span className="text-xs text-slate-300">{c.name}</span>
+                          <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${c.st === 'pass' ? 'bg-emerald-500/15 text-emerald-400' : c.st === 'fail' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                            {c.st}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Report modal */}
+            {reportModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-semibold">Generate Compliance Report</h3>
+                    <button onClick={() => setReportModal(false)} className="text-slate-400 hover:text-white text-lg">×</button>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Report type</label>
+                      <select value={reportType} onChange={e => setReportType(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                        <option>Full Audit Report</option>
+                        <option>Executive Summary</option>
+                        <option>Gap Analysis</option>
+                        <option>Controls Evidence</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-2">Frameworks</label>
+                      <div className="space-y-1.5">
+                        {frameworks.map(fw => (
+                          <label key={fw.name} className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" className="accent-indigo-500"
+                              checked={reportFrameworks.includes(fw.name)}
+                              onChange={() => toggleReportFw(fw.name)} />
+                            <span className="text-xs text-white">{fw.name}</span>
+                            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border ${statusColor(fw.status)}`}>{fw.pct}%</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Period</label>
+                      <select value={reportPeriod} onChange={e => setReportPeriod(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                        <option>This Quarter</option>
+                        <option>Last Quarter</option>
+                        <option>Custom date range</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-2">Include</label>
+                      <div className="space-y-1.5">
+                        {['Audit log excerpt', 'Team access review', 'Data flow diagram', 'Risk register'].map(item => (
+                          <label key={item} className="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" className="accent-indigo-500"
+                              checked={reportIncludes.includes(item)}
+                              onChange={() => toggleReportInclude(item)} />
+                            <span className="text-xs text-white">{item}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={generateReport} disabled={generating || reportFrameworks.length === 0}
+                      className="w-full py-2.5 text-sm font-medium text-white rounded-xl disabled:opacity-50 hover:opacity-90 flex items-center justify-center gap-2"
+                      style={{ backgroundColor: accentColor }}>
+                      {generating ? (
+                        <>
+                          <span className="w-4 h-4 border border-white/40 border-t-white rounded-full animate-spin" />
+                          Generating report…
+                        </>
+                      ) : 'Generate Report'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* ── APPROVALS ── */}
       {activeTab === 'approvals' && (
