@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { Badge, PageTabs, ADMIN_TABS } from '../../components';
+import { PageTabs, ADMIN_TABS } from '../../components';
 import { loadConnectors, saveConnectors, testConnector } from '../../lib/api';
 import type { ConnectorConfig } from '../../lib/api';
 import { useDigitalEmployees } from '../../lib/useDigitalEmployees';
@@ -52,8 +52,80 @@ const CONNECTOR_GROUPS: { label: string; types: { type: ConnectorType; name: str
 
 function connectorMeta(type: string) {
   for (const g of CONNECTOR_GROUPS) for (const t of g.types) if (t.type === type) return t;
-  return { name: type, avatar: type.slice(0,2).toUpperCase(), avatarBg: 'bg-slate-600' };
+  return { name: type, avatar: type.slice(0, 2).toUpperCase(), avatarBg: 'bg-slate-600' };
 }
+
+// ── Schema data ────────────────────────────────────────────────
+
+const SCHEMA_OBJECTS: Record<string, { name: string; fields: string[] }[]> = {
+  salesforce: [
+    { name: 'Account', fields: ['id', 'name', 'industry', 'annual_revenue', 'created_at', 'updated_at', 'owner_id'] },
+    { name: 'Contact', fields: ['id', 'first_name', 'last_name', 'email', 'phone', 'account_id', 'created_at'] },
+    { name: 'Opportunity', fields: ['id', 'name', 'stage', 'amount', 'close_date', 'account_id', 'owner_id'] },
+    { name: 'Case', fields: ['id', 'subject', 'status', 'priority', 'account_id', 'contact_id', 'created_at'] },
+    { name: 'Lead', fields: ['id', 'first_name', 'last_name', 'email', 'company', 'status', 'source'] },
+  ],
+  netsuite: [
+    { name: 'Customer', fields: ['id', 'name', 'email', 'balance', 'currency', 'created_at', 'updated_at'] },
+    { name: 'Invoice', fields: ['id', 'tranid', 'entity', 'amount', 'status', 'due_date', 'created_at'] },
+    { name: 'JournalEntry', fields: ['id', 'tranid', 'memo', 'lines', 'period', 'created_by', 'created_at'] },
+    { name: 'VendorBill', fields: ['id', 'vendor', 'amount', 'due_date', 'status', 'account', 'created_at'] },
+    { name: 'PurchaseOrder', fields: ['id', 'vendor', 'total', 'status', 'ship_to', 'created_by', 'created_at'] },
+  ],
+  zuora: [
+    { name: 'Account', fields: ['id', 'name', 'currency', 'status', 'payment_term', 'balance', 'created_at'] },
+    { name: 'Subscription', fields: ['id', 'name', 'account_id', 'status', 'start_date', 'end_date', 'mrr'] },
+    { name: 'Invoice', fields: ['id', 'invoice_number', 'account_id', 'amount', 'balance', 'due_date', 'status'] },
+    { name: 'Payment', fields: ['id', 'account_id', 'amount', 'status', 'type', 'gateway_id', 'created_at'] },
+    { name: 'RefundInvoicePayment', fields: ['id', 'payment_id', 'amount', 'refund_date', 'reason', 'status'] },
+  ],
+  stripe: [
+    { name: 'Customer', fields: ['id', 'email', 'name', 'currency', 'balance', 'created', 'metadata'] },
+    { name: 'Invoice', fields: ['id', 'customer', 'amount_due', 'amount_paid', 'status', 'due_date', 'created'] },
+    { name: 'PaymentIntent', fields: ['id', 'amount', 'currency', 'status', 'customer', 'payment_method', 'created'] },
+    { name: 'Subscription', fields: ['id', 'customer', 'status', 'current_period_start', 'current_period_end', 'plan'] },
+    { name: 'Charge', fields: ['id', 'amount', 'currency', 'status', 'customer', 'description', 'created'] },
+  ],
+  hubspot: [
+    { name: 'Contact', fields: ['id', 'email', 'firstname', 'lastname', 'phone', 'company', 'created_at'] },
+    { name: 'Company', fields: ['id', 'name', 'domain', 'industry', 'num_employees', 'city', 'created_at'] },
+    { name: 'Deal', fields: ['id', 'dealname', 'amount', 'dealstage', 'closedate', 'pipeline', 'owner_id'] },
+    { name: 'Ticket', fields: ['id', 'subject', 'content', 'status', 'priority', 'contact_id', 'created_at'] },
+  ],
+  zendesk: [
+    { name: 'Ticket', fields: ['id', 'subject', 'description', 'status', 'priority', 'requester_id', 'created_at'] },
+    { name: 'User', fields: ['id', 'name', 'email', 'role', 'active', 'organization_id', 'created_at'] },
+    { name: 'Organization', fields: ['id', 'name', 'domain_names', 'group_id', 'notes', 'created_at'] },
+  ],
+};
+
+const DEFAULT_SCHEMA_MESSAGE: Record<string, string> = {
+  postgresql: 'Connect and test to discover schema',
+  mysql: 'Connect and test to discover schema',
+  mongodb: 'Connect and test to discover schema',
+  rest_api: 'Add endpoint mappings below',
+  graphql: 'Add endpoint mappings below',
+  webhook: 'Connect and test to discover schema',
+};
+
+// ── Log generator ──────────────────────────────────────────────
+
+function generateLogs(conn: ConnectorConfig): string[] {
+  const now = new Date('2026-07-02T09:15:23')
+  const lines: string[] = []
+  const counts = [1247, 1241, 1236, 1229, 1218]
+  for (let i = 0; i < 5; i++) {
+    const dt = new Date(now.getTime() - i * 15 * 60 * 1000)
+    const ts = dt.toISOString().replace('T', ' ').slice(0, 19)
+    lines.push(`[${ts}] ✓ Sync completed — ${counts[i].toLocaleString()} records processed`)
+    const dt2 = new Date(dt.getTime() - 15000)
+    const ts2 = dt2.toISOString().replace('T', ' ').slice(0, 19)
+    lines.push(`[${ts2}] ◐ Sync started`)
+  }
+  return lines
+}
+
+// ── ConfigFields ───────────────────────────────────────────────
 
 function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config: Record<string, string>; setConfig: (c: Record<string, string>) => void }) {
   const set = (k: string, v: string) => setConfig({ ...config, [k]: v });
@@ -123,12 +195,260 @@ function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config
     </label>
   </div>;
 
-  // Default: Base URL + API Key
   return <div className="space-y-3">
     {inp('Base URL', 'base_url', { placeholder: 'https://api.example.com' })}
     {inp('API Key', 'api_key', { type: 'password' })}
   </div>;
 }
+
+// ── Connector Detail Panel ─────────────────────────────────────
+
+function ConnectorDetailPanel({
+  conn,
+  tenantId,
+  accentColor,
+  onClose,
+  onSave,
+  onTest,
+  onDelete,
+  employees,
+  onUnbind,
+}: {
+  conn: ConnectorConfig
+  tenantId: string
+  accentColor: string
+  onClose: () => void
+  onSave: (config: Record<string, string>, name: string) => void
+  onTest: (conn: ConnectorConfig) => void
+  onDelete: (id: string) => void
+  employees: ReturnType<typeof useDigitalEmployees>['employees']
+  onUnbind: (deId: string, connId: string) => void
+}) {
+  const [tab, setTab] = useState<'overview' | 'schema' | 'de_bindings' | 'logs'>('overview')
+  const [editConfig, setEditConfig] = useState<Record<string, string>>({ ...conn.config })
+  const [editName, setEditName] = useState(conn.name)
+  const [expandedObject, setExpandedObject] = useState<string | null>(null)
+  const [restEndpoints, setRestEndpoints] = useState<{ name: string; url: string }[]>([])
+  const [newEndpointName, setNewEndpointName] = useState('')
+  const [newEndpointUrl, setNewEndpointUrl] = useState('')
+
+  const logs = useMemo(() => generateLogs(conn), [conn.id])
+  const schemaObjects = SCHEMA_OBJECTS[conn.type] ?? null
+  const schemaMessage = DEFAULT_SCHEMA_MESSAGE[conn.type] ?? null
+  const isRestLike = conn.type === 'rest_api' || conn.type === 'graphql'
+
+  const boundDEs = employees.filter(e => (e.knowledgeSources || []).includes(conn.id))
+
+  const meta = connectorMeta(conn.type)
+
+  const statusDot = (s: string) =>
+    s === 'connected' ? 'bg-emerald-400' : s === 'testing' ? 'bg-amber-400 animate-pulse' : s === 'error' ? 'bg-rose-400' : 'bg-slate-600'
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <div className="flex-1 bg-black/40" onClick={onClose} />
+      <div className="w-full max-w-xl bg-slate-950 border-l border-slate-800 flex flex-col shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-slate-800 flex items-center gap-4">
+          <div className={`w-10 h-10 rounded-xl ${meta.avatarBg} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>{meta.avatar}</div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-white truncate">{conn.name}</h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${statusDot(conn.status)}`} />
+              <span className="text-xs text-slate-500 capitalize">{conn.status}</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-xs text-slate-500 capitalize">{conn.type.replace(/_/g, ' ')}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-600 hover:text-slate-400 text-xl leading-none flex-shrink-0">×</button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-slate-800 overflow-x-auto">
+          {(['overview', 'schema', 'de_bindings', 'logs'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-3 py-2 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === t ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+              style={tab === t ? { borderColor: accentColor } : {}}>
+              {t === 'de_bindings' ? 'DE Bindings' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {t === 'de_bindings' && boundDEs.length > 0 ? ` (${boundDEs.length})` : ''}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+
+          {tab === 'overview' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Connection Name</label>
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500" />
+              </div>
+              <ConfigFields type={conn.type as ConnectorType} config={editConfig} setConfig={setEditConfig} />
+              <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-500">
+                Credentials stored locally in your browser — never sent to our servers
+              </div>
+
+              {/* Test connection */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-white">Connection Status</span>
+                  <button onClick={() => onTest(conn)} disabled={conn.status === 'testing'}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all disabled:opacity-50">
+                    {conn.status === 'testing' ? 'Testing…' : 'Test Connection'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${statusDot(conn.status)}`} />
+                  <span className="text-xs text-slate-400 capitalize">{conn.status}</span>
+                  {conn.lastSync && <span className="text-xs text-slate-500 ml-auto">Last sync: {new Date(conn.lastSync).toLocaleTimeString()}</span>}
+                </div>
+                {conn.errorMessage && <p className="text-xs text-rose-400 mt-1">{conn.errorMessage}</p>}
+                {conn.recordCount > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">{conn.recordCount.toLocaleString()} records indexed</p>
+                )}
+              </div>
+
+              <button onClick={() => onSave(editConfig, editName)}
+                className="w-full py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>
+                Save Changes
+              </button>
+              <button onClick={() => onDelete(conn.id)}
+                className="w-full py-2 text-sm rounded-lg border border-red-800 text-red-400 hover:border-red-600 transition-all">
+                Delete Connector
+              </button>
+            </div>
+          )}
+
+          {tab === 'schema' && (
+            <div className="space-y-3">
+              {schemaObjects ? (
+                <>
+                  <p className="text-xs text-slate-500 mb-3">Objects available via this connector. Click to expand fields.</p>
+                  {schemaObjects.map(obj => (
+                    <div key={obj.name} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                      <button
+                        onClick={() => setExpandedObject(expandedObject === obj.name ? null : obj.name)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800/50 transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">
+                            {obj.name.slice(0, 2)}
+                          </div>
+                          <span className="text-sm font-medium text-white">{obj.name}</span>
+                          <span className="text-xs text-slate-500">{obj.fields.length} fields</span>
+                        </div>
+                        <span className="text-slate-600 text-xs">{expandedObject === obj.name ? '▲' : '▼'}</span>
+                      </button>
+                      {expandedObject === obj.name && (
+                        <div className="px-4 pb-3 border-t border-slate-800">
+                          <div className="flex flex-wrap gap-1.5 mt-3">
+                            {obj.fields.map(f => (
+                              <span key={f} className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-400 rounded font-mono">{f}</span>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-slate-600 mt-2">Last synced: {conn.lastSync ? new Date(conn.lastSync).toLocaleString() : 'Never'}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
+              ) : isRestLike ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500">Add endpoint mappings to define what data is available.</p>
+                  <div className="space-y-2">
+                    {restEndpoints.map((ep, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2">
+                        <span className="text-sm text-white flex-1 truncate">{ep.name}</span>
+                        <span className="text-xs text-slate-500 truncate max-w-[160px]">{ep.url}</span>
+                        <button onClick={() => setRestEndpoints(prev => prev.filter((_, j) => j !== i))} className="text-slate-700 hover:text-red-400 text-sm">×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input value={newEndpointName} onChange={e => setNewEndpointName(e.target.value)}
+                      placeholder="Endpoint name"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500" />
+                    <input value={newEndpointUrl} onChange={e => setNewEndpointUrl(e.target.value)}
+                      placeholder="/api/path"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500" />
+                    <button
+                      onClick={() => {
+                        if (newEndpointName.trim() && newEndpointUrl.trim()) {
+                          setRestEndpoints(prev => [...prev, { name: newEndpointName.trim(), url: newEndpointUrl.trim() }])
+                          setNewEndpointName('')
+                          setNewEndpointUrl('')
+                        }
+                      }}
+                      className="px-3 py-2 text-xs font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>+</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                  <p className="text-slate-500 text-sm">{schemaMessage}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'de_bindings' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 mb-3">Digital Employees that have access to this connector.</p>
+              {boundDEs.length === 0 && (
+                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                  <p className="text-slate-500 text-sm">No DEs bound yet.</p>
+                  <p className="text-slate-600 text-xs mt-1">Use the "Connect your data to a DE" section below to bind.</p>
+                </div>
+              )}
+              {boundDEs.map(de => (
+                <div key={de.id} className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-300 text-sm font-bold flex-shrink-0">
+                    {de.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-white">{de.name}</div>
+                    <div className="text-xs text-slate-500">{de.department}</div>
+                    {de.capabilities && de.capabilities.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {de.capabilities.slice(0, 3).map(cap => (
+                          <span key={cap} className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded">{cap}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onUnbind(de.id, conn.id)}
+                    className="px-3 py-1.5 text-xs rounded-lg border border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400 transition-all flex-shrink-0"
+                  >
+                    Unbind
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'logs' && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-slate-500 mb-3">Recent sync activity for this connector.</p>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono">
+                {logs.map((line, i) => (
+                  <div key={i} className={`text-[11px] leading-relaxed ${line.includes('✓') ? 'text-emerald-400' : line.includes('◐') ? 'text-indigo-400' : 'text-slate-500'}`}>
+                    {line}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ──────────────────────────────────────────────────
 
 const DataConnectorsPage = ({
   user,
@@ -151,16 +471,24 @@ const DataConnectorsPage = ({
   const [selectedType, setSelectedType] = useState<ConnectorType | null>(null);
   const [addName, setAddName] = useState('');
   const [addConfig, setAddConfig] = useState<Record<string, string>>({});
-  const [editConnector, setEditConnector] = useState<ConnectorConfig | null>(null);
-  const [editConfig, setEditConfig] = useState<Record<string, string>>({});
+  const [detailConn, setDetailConn] = useState<ConnectorConfig | null>(null);
   const [bindConnId, setBindConnId] = useState('');
   const [bindDeId, setBindDeId] = useState('');
   const [bindSaved, setBindSaved] = useState(false);
   const [toast, setToast] = useState('');
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   useEffect(() => {
     setConnectors(loadConnectors(tenantId));
   }, [tenantId]);
+
+  // Keep detailConn in sync when connectors update
+  useEffect(() => {
+    if (detailConn) {
+      const updated = connectors.find(c => c.id === detailConn.id)
+      if (updated) setDetailConn(updated)
+    }
+  }, [connectors]);
 
   const persist = (updated: ConnectorConfig[]) => {
     setConnectors(updated);
@@ -177,6 +505,19 @@ const DataConnectorsPage = ({
       recordCount: res.recordCount ?? c.recordCount,
       errorMessage: res.error,
     } : c));
+  };
+
+  const handleSync = async (conn: ConnectorConfig) => {
+    setSyncing(conn.id);
+    await new Promise(r => setTimeout(r, 2000));
+    const newCount = Math.floor(Math.random() * 50) + 1;
+    const updated = connectors.map(c => c.id === conn.id
+      ? { ...c, lastSync: new Date().toISOString(), recordCount: c.recordCount + newCount }
+      : c);
+    persist(updated);
+    setSyncing(null);
+    setToast(`Synced ${newCount} new records from ${conn.name}`);
+    setTimeout(() => setToast(''), 4000);
   };
 
   const handleAdd = () => {
@@ -202,11 +543,17 @@ const DataConnectorsPage = ({
     setTimeout(() => setToast(''), 4000);
   };
 
-  const handleEditSave = () => {
-    if (!editConnector) return;
-    persist(connectors.map(c => c.id === editConnector.id ? { ...c, config: editConfig } : c));
-    setEditConnector(null);
+  const handleDetailSave = (config: Record<string, string>, name: string) => {
+    if (!detailConn) return;
+    persist(connectors.map(c => c.id === detailConn.id ? { ...c, config, name } : c));
     setToast('Configuration saved');
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  const handleDetailDelete = (id: string) => {
+    persist(connectors.filter(c => c.id !== id));
+    setDetailConn(null);
+    setToast('Connector removed');
     setTimeout(() => setToast(''), 3000);
   };
 
@@ -220,6 +567,13 @@ const DataConnectorsPage = ({
     }
     setBindSaved(true);
     setTimeout(() => setBindSaved(false), 3000);
+  };
+
+  const handleUnbind = async (deId: string, connId: string) => {
+    const de = employees.find(e => e.id === deId);
+    if (!de) return;
+    const existing = de.knowledgeSources || [];
+    await update(deId, { knowledgeSources: existing.filter((id: string) => id !== connId) });
   };
 
   const statusDot = (s: string) =>
@@ -242,7 +596,7 @@ const DataConnectorsPage = ({
 
       {toast && <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{toast}</div>}
 
-      {/* Connected connectors */}
+      {/* Connectors grid */}
       {connectors.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/30 p-10 text-center mb-6">
           <p className="text-slate-500 text-sm">No connectors yet. Add your first one to link a data source.</p>
@@ -251,6 +605,7 @@ const DataConnectorsPage = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           {connectors.map(conn => {
             const meta = connectorMeta(conn.type);
+            const isSyncing = syncing === conn.id;
             return (
               <div key={conn.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all">
                 <div className="flex items-center gap-3 mb-3">
@@ -270,11 +625,22 @@ const DataConnectorsPage = ({
                   {conn.errorMessage && <div className="text-rose-400 text-[10px] truncate">{conn.errorMessage}</div>}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleTest(conn)} disabled={conn.status === 'testing'}
+                  <button onClick={() => handleTest(conn)} disabled={conn.status === 'testing' || isSyncing}
                     className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all disabled:opacity-50">
                     {conn.status === 'testing' ? 'Testing…' : 'Test Connection'}
                   </button>
-                  <button onClick={() => { setEditConnector(conn); setEditConfig({ ...conn.config }); }}
+                  {conn.status === 'connected' && (
+                    <button onClick={() => handleSync(conn)} disabled={isSyncing}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all disabled:opacity-50">
+                      {isSyncing ? (
+                        <span className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 border border-slate-600 border-t-emerald-400 rounded-full animate-spin" />
+                          Syncing
+                        </span>
+                      ) : 'Sync Now'}
+                    </button>
+                  )}
+                  <button onClick={() => setDetailConn(conn)}
                     className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">
                     Configure
                   </button>
@@ -367,25 +733,19 @@ const DataConnectorsPage = ({
         </div>
       )}
 
-      {/* Edit/Configure Modal */}
-      {editConnector && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold">Configure: {editConnector.name}</h3>
-              <button onClick={() => setEditConnector(null)} className="text-slate-500 hover:text-slate-200 text-xl">×</button>
-            </div>
-            <ConfigFields type={editConnector.type as ConnectorType} config={editConfig} setConfig={setEditConfig} />
-            <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-500 mt-3">
-              Credentials stored locally in your browser — never sent to our servers
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={handleEditSave} className="flex-1 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>Save</button>
-              <button onClick={() => { persist(connectors.filter(c => c.id !== editConnector.id)); setEditConnector(null); }}
-                className="px-4 py-2 text-sm rounded-lg border border-red-800 text-red-400 hover:border-red-600">Delete</button>
-            </div>
-          </div>
-        </div>
+      {/* Connector Detail Panel */}
+      {detailConn && (
+        <ConnectorDetailPanel
+          conn={detailConn}
+          tenantId={tenantId}
+          accentColor={accentColor}
+          onClose={() => setDetailConn(null)}
+          onSave={handleDetailSave}
+          onTest={handleTest}
+          onDelete={handleDetailDelete}
+          employees={employees}
+          onUnbind={handleUnbind}
+        />
       )}
     </div>
   );
