@@ -12,6 +12,31 @@ import type { ModelProvider } from '../../lib/models'
 import { fetchKnowledgeArticles, fetchTenantProfiles } from '../../lib/api'
 import type { DBProfile } from '../../lib/api'
 
+// ---- A/B Test types ----
+interface ABVariant {
+  id: 'control' | 'challenger';
+  label: string;
+  modelId: string;
+  modelProvider: string;
+  systemPromptSnippet: string;
+  confidenceThreshold: number;
+  temperature: number;
+  trafficSplit: number;
+}
+
+interface ABTest {
+  id: string;
+  deId: string;
+  name: string;
+  status: 'draft' | 'running' | 'paused' | 'completed';
+  startedAt: string | null;
+  endedAt: string | null;
+  variants: [ABVariant, ABVariant];
+  metric: 'confidence' | 'csat' | 'resolution_rate' | 'escalation_rate';
+  winnerVariantId: string | null;
+  minSampleSize: number;
+}
+
 // ---- Local types used by this page ----
 type ConnectorCategory =
   | 'crm'
@@ -1567,8 +1592,26 @@ const AgentWorkforcePage = ({
   );
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [configTab, setConfigTab] = useState<
-    'overview' | 'persona' | 'model' | 'pipeline' | 'validators' | 'actions' | 'knowledge'
+    'overview' | 'persona' | 'model' | 'pipeline' | 'validators' | 'actions' | 'abtest' | 'knowledge'
   >('overview');
+  // A/B Test state
+  const [abTests, setAbTests] = useState<ABTest[]>([]);
+  const [abShowCreate, setAbShowCreate] = useState(false);
+  const [abConfirmPromote, setAbConfirmPromote] = useState(false);
+  const [abConfirmEnd, setAbConfirmEnd] = useState(false);
+  const [abEndWinner, setAbEndWinner] = useState<'control' | 'challenger' | 'inconclusive'>('inconclusive');
+  const [abForm, setAbForm] = useState({
+    name: '',
+    metric: 'confidence' as ABTest['metric'],
+    minSampleSize: 100,
+    trafficSplit: 30,
+    challengerLabel: 'Challenger',
+    challengerModelId: DEFAULT_MODEL_ID,
+    challengerModelProvider: DEFAULT_PROVIDER as string,
+    challengerConfidence: 65,
+    challengerTemperature: 0.5,
+    challengerSystemPrompt: '',
+  });
   const [showTestPanel, setShowTestPanel] = useState(false);
   const accentColor = tenant?.primaryColor || '#6366f1';
 
@@ -1744,6 +1787,13 @@ const AgentWorkforcePage = ({
       ]);
     }
     setExpandedTiers([1]);
+    // Load A/B tests for this DE
+    if (selectedAgent?.id) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('dt_ab_tests_' + selectedAgent.id) || '[]');
+        setAbTests(stored);
+      } catch { setAbTests([]); }
+    }
   }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = agents.filter(
@@ -2047,6 +2097,7 @@ const AgentWorkforcePage = ({
                 'pipeline',
                 'validators',
                 'actions',
+                'abtest',
                 'knowledge',
               ] as const
             ).map((t) => (
@@ -2064,6 +2115,8 @@ const AgentWorkforcePage = ({
                   ? 'Validators'
                   : t === 'knowledge'
                   ? 'Knowledge & Data'
+                  : t === 'abtest'
+                  ? 'A/B Test'
                   : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
@@ -3027,6 +3080,350 @@ const AgentWorkforcePage = ({
               </div>
             </div>
           )}
+
+          {/* === A/B TEST TAB === */}
+          {configTab === 'abtest' && (() => {
+            const deId = selectedAgent?.id || 'demo';
+            const saveTests = (tests: ABTest[]) => {
+              setAbTests(tests);
+              try { localStorage.setItem('dt_ab_tests_' + deId, JSON.stringify(tests)); } catch {}
+            };
+            const activeTest = abTests.find(t => t.status !== 'completed') || null;
+            const completedTests = abTests.filter(t => t.status === 'completed');
+
+            // Simulated metrics seeded from test id
+            const simResults = (test: ABTest) => {
+              const seed = (test.id.charCodeAt(0) + test.id.charCodeAt(1)) % 80 + 40;
+              const controlConvs = Math.floor(seed * 0.7);
+              const challengerConvs = Math.floor(seed * 0.3);
+              const hash = (s: string) => s.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+              const h = hash(test.id);
+              return {
+                control: { convs: controlConvs, confidence: 72 + (h % 14), csat: 84 + (h % 8), escalation: 12 + (h % 7), resolution: 78 + (h % 8) },
+                challenger: { convs: challengerConvs, confidence: 68 + ((h * 3) % 23), csat: 80 + ((h * 2) % 15), escalation: 10 + ((h * 5) % 11), resolution: 75 + ((h * 4) % 16) },
+                totalConvs: controlConvs + challengerConvs,
+              };
+            };
+
+            const metricLabel = (m: ABTest['metric']) => m === 'confidence' ? 'Confidence Score' : m === 'csat' ? 'CSAT Rating' : m === 'resolution_rate' ? 'Resolution Rate' : 'Escalation Rate';
+            const getMetricValue = (m: ABTest['metric'], r: any) => m === 'confidence' ? r.confidence : m === 'csat' ? r.csat : m === 'resolution_rate' ? r.resolution : r.escalation;
+            const higherIsBetter = (m: ABTest['metric']) => m !== 'escalation_rate';
+
+            return (
+              <div className="space-y-4">
+                {!activeTest && (
+                  <div className="bg-slate-800 rounded-xl p-8 text-center">
+                    <div className="text-3xl mb-3">⚗</div>
+                    <p className="text-white font-semibold mb-1">No active A/B test</p>
+                    <p className="text-sm text-slate-400 mb-4">Test different configurations to find what works best for {selectedAgent?.name}.</p>
+                    <button onClick={() => { setAbShowCreate(true); setAbForm({ name: '', metric: 'confidence', minSampleSize: 100, trafficSplit: 30, challengerLabel: 'Challenger', challengerModelId: pickerProv === DEFAULT_PROVIDER ? DEFAULT_MODEL_ID : pickerId, challengerModelProvider: pickerProv, challengerConfidence: 65, challengerTemperature: 0.5, challengerSystemPrompt: '' }); }}
+                      className="px-4 py-2 text-sm font-medium text-white rounded-xl hover:opacity-90" style={{ backgroundColor: accentColor }}>Create A/B Test</button>
+                  </div>
+                )}
+
+                {activeTest && (() => {
+                  const res = simResults(activeTest);
+                  const control = activeTest.variants[0];
+                  const challenger = activeTest.variants[1];
+                  const ctrlMetric = getMetricValue(activeTest.metric, res.control);
+                  const chalMetric = getMetricValue(activeTest.metric, res.challenger);
+                  const higherBetter = higherIsBetter(activeTest.metric);
+                  const challengerWins = higherBetter ? chalMetric > ctrlMetric : chalMetric < ctrlMetric;
+                  const isSignificant = res.totalConvs >= activeTest.minSampleSize;
+                  const statusBadge = activeTest.status === 'running' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : activeTest.status === 'paused' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600/40';
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Header card */}
+                      <div className="bg-slate-800 rounded-xl p-4">
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <h3 className="text-white font-semibold">{activeTest.name}</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">Started: {activeTest.startedAt ? new Date(activeTest.startedAt).toLocaleDateString() : 'Not started'} · Metric: {metricLabel(activeTest.metric)}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full border capitalize ${statusBadge} ${activeTest.status === 'running' ? 'animate-pulse' : ''}`}>{activeTest.status}</span>
+                        </div>
+                        {/* Traffic split bar */}
+                        <div className="mb-3">
+                          <div className="flex text-xs text-slate-400 justify-between mb-1">
+                            <span>Control ({100 - challenger.trafficSplit}%)</span>
+                            <span>Challenger ({challenger.trafficSplit}%)</span>
+                          </div>
+                          <div className="h-3 rounded-full overflow-hidden flex">
+                            <div className="bg-blue-500 h-full transition-all" style={{ width: (100 - challenger.trafficSplit) + '%' }} />
+                            <div className="bg-indigo-500 h-full transition-all" style={{ width: challenger.trafficSplit + '%' }} />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {activeTest.status === 'draft' && (
+                            <button onClick={() => { const updated = [...abTests]; const idx = updated.findIndex(t => t.id === activeTest.id); if (idx >= 0) { updated[idx] = { ...updated[idx], status: 'running', startedAt: new Date().toISOString() }; saveTests(updated); } }}
+                              className="px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90" style={{ backgroundColor: accentColor }}>Start Test</button>
+                          )}
+                          {activeTest.status === 'running' && (
+                            <button onClick={() => { const updated = [...abTests]; const idx = updated.findIndex(t => t.id === activeTest.id); if (idx >= 0) { updated[idx] = { ...updated[idx], status: 'paused' }; saveTests(updated); } }}
+                              className="px-3 py-1.5 text-xs font-medium text-white rounded-lg bg-amber-600 hover:opacity-90">Pause</button>
+                          )}
+                          {activeTest.status === 'paused' && (
+                            <button onClick={() => { const updated = [...abTests]; const idx = updated.findIndex(t => t.id === activeTest.id); if (idx >= 0) { updated[idx] = { ...updated[idx], status: 'running' }; saveTests(updated); } }}
+                              className="px-3 py-1.5 text-xs font-medium text-white rounded-lg hover:opacity-90" style={{ backgroundColor: accentColor }}>Resume</button>
+                          )}
+                          <button onClick={() => setAbConfirmEnd(true)} className="px-3 py-1.5 text-xs font-medium text-slate-300 rounded-lg border border-slate-600 hover:border-slate-400">End Test</button>
+                        </div>
+                      </div>
+
+                      {/* Variant comparison table */}
+                      <div className="bg-slate-800 rounded-xl p-4">
+                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Variant Configuration</h4>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="text-slate-500" />
+                          <div className="text-center text-blue-300 font-medium">Control ({100 - challenger.trafficSplit}%)</div>
+                          <div className="text-center text-indigo-300 font-medium">Challenger ({challenger.trafficSplit}%)</div>
+                          {[
+                            { label: 'Model', ctrl: control.modelId.split('-').slice(0, 3).join('-'), chal: challenger.modelId.split('-').slice(0, 3).join('-') },
+                            { label: 'Confidence', ctrl: control.confidenceThreshold + '%', chal: challenger.confidenceThreshold + '%' },
+                            { label: 'Temperature', ctrl: control.temperature.toFixed(1), chal: challenger.temperature.toFixed(1) },
+                            { label: 'System Prompt', ctrl: control.systemPromptSnippet ? control.systemPromptSnippet.substring(0, 30) + '…' : 'Default', chal: challenger.systemPromptSnippet ? challenger.systemPromptSnippet.substring(0, 30) + '…' : 'Same as control' },
+                          ].map(row => (
+                            <React.Fragment key={row.label}>
+                              <div className="text-slate-500 py-1">{row.label}</div>
+                              <div className="text-center text-slate-200 py-1 bg-slate-900/40 rounded">{row.ctrl}</div>
+                              <div className="text-center text-slate-200 py-1 bg-slate-900/40 rounded">{row.chal}</div>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Results */}
+                      {activeTest.status !== 'draft' && (
+                        <div className="bg-slate-800 rounded-xl p-4">
+                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Results</h4>
+                          <div className="grid grid-cols-3 gap-2 text-xs mb-4">
+                            <div className="text-slate-500" />
+                            <div className="text-center text-blue-300 font-medium">Control</div>
+                            <div className="text-center text-indigo-300 font-medium">Challenger</div>
+                            {[
+                              { label: 'Conversations', ctrl: res.control.convs, chal: res.challenger.convs, unit: '', higherBetter: true },
+                              { label: 'Avg Confidence', ctrl: res.control.confidence, chal: res.challenger.confidence, unit: '%', higherBetter: true },
+                              { label: 'CSAT', ctrl: res.control.csat, chal: res.challenger.csat, unit: '%', higherBetter: true },
+                              { label: 'Escalation Rate', ctrl: res.control.escalation, chal: res.challenger.escalation, unit: '%', higherBetter: false },
+                              { label: 'Resolution Rate', ctrl: res.control.resolution, chal: res.challenger.resolution, unit: '%', higherBetter: true },
+                            ].map(row => {
+                              const ctrlWins = row.higherBetter ? row.ctrl >= row.chal : row.ctrl <= row.chal;
+                              return (
+                                <React.Fragment key={row.label}>
+                                  <div className="text-slate-500 py-1">{row.label}</div>
+                                  <div className={`text-center py-1 rounded ${ctrlWins ? 'text-emerald-400 font-semibold bg-emerald-500/10' : 'text-slate-300 bg-slate-900/40'}`}>{row.ctrl}{row.unit}</div>
+                                  <div className={`text-center py-1 rounded ${!ctrlWins ? 'text-emerald-400 font-semibold bg-emerald-500/10' : 'text-slate-300 bg-slate-900/40'}`}>{row.chal}{row.unit}</div>
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                          <p className={`text-xs mb-3 ${isSignificant ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {isSignificant ? '✓ Statistically significant (p < 0.05)' : `⚠ Not yet significant — need ${activeTest.minSampleSize - res.totalConvs} more conversations`}
+                          </p>
+                          {/* Primary metric winner callout */}
+                          {challengerWins && isSignificant ? (
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3">
+                              <p className="text-sm text-emerald-300 font-medium">Challenger is performing better on {metricLabel(activeTest.metric)}. Consider promoting it.</p>
+                              {activeTest.status === 'running' && (
+                                <button onClick={() => setAbConfirmPromote(true)} className="mt-2 px-3 py-1.5 text-xs font-medium text-white rounded-lg bg-emerald-600 hover:bg-emerald-500">Promote Challenger →</button>
+                              )}
+                            </div>
+                          ) : !challengerWins && isSignificant ? (
+                            <div className="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2">
+                              <p className="text-sm text-slate-300">Control is performing better. Continue running or adjust challenger.</p>
+                            </div>
+                          ) : (
+                            <div className="bg-slate-700/50 border border-slate-600/40 rounded-lg px-4 py-2">
+                              <p className="text-sm text-slate-400">Results are too close to call.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Create test modal */}
+                {abShowCreate && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-white font-semibold">Create A/B Test</h3>
+                        <button onClick={() => setAbShowCreate(false)} className="text-slate-400 hover:text-white text-lg">×</button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Test name</label>
+                          <input value={abForm.name} onChange={e => setAbForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. GPT-4o vs Claude Haiku — confidence comparison" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Primary metric</label>
+                            <select value={abForm.metric} onChange={e => setAbForm(f => ({ ...f, metric: e.target.value as any }))} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                              <option value="confidence">Confidence Score</option>
+                              <option value="csat">CSAT Rating</option>
+                              <option value="resolution_rate">Resolution Rate</option>
+                              <option value="escalation_rate">Escalation Rate</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Min sample size</label>
+                            <input type="number" min={10} value={abForm.minSampleSize} onChange={e => setAbForm(f => ({ ...f, minSampleSize: Number(e.target.value) }))} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Traffic to challenger: {abForm.trafficSplit}% / Control: {100 - abForm.trafficSplit}%</label>
+                          <input type="range" min={10} max={50} value={abForm.trafficSplit} onChange={e => setAbForm(f => ({ ...f, trafficSplit: Number(e.target.value) }))} className="w-full accent-indigo-500" />
+                          <div className="flex text-xs text-slate-500 justify-between mt-0.5"><span>10%</span><span>50%</span></div>
+                        </div>
+                        <div className="border-t border-slate-700 pt-3">
+                          <p className="text-xs font-semibold text-slate-300 mb-3">Configure Challenger Variant</p>
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Label</label>
+                            <input value={abForm.challengerLabel} onChange={e => setAbForm(f => ({ ...f, challengerLabel: e.target.value }))} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 mt-3">
+                            <div>
+                              <label className="text-xs text-slate-400 block mb-1">Provider</label>
+                              <select value={abForm.challengerModelProvider} onChange={e => setAbForm(f => ({ ...f, challengerModelProvider: e.target.value, challengerModelId: MODELS.find(m => m.provider === e.target.value)?.id || DEFAULT_MODEL_ID }))} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                                {Object.keys(PROVIDER_LABELS).map(p => <option key={p} value={p}>{PROVIDER_LABELS[p as keyof typeof PROVIDER_LABELS]}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-slate-400 block mb-1">Model</label>
+                              <select value={abForm.challengerModelId} onChange={e => setAbForm(f => ({ ...f, challengerModelId: e.target.value }))} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                                {MODELS.filter(m => m.provider === abForm.challengerModelProvider).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="mt-3">
+                            <label className="text-xs text-slate-400 block mb-1">Confidence threshold: {abForm.challengerConfidence}%</label>
+                            <input type="range" min={30} max={95} value={abForm.challengerConfidence} onChange={e => setAbForm(f => ({ ...f, challengerConfidence: Number(e.target.value) }))} className="w-full accent-indigo-500" />
+                          </div>
+                          <div className="mt-3">
+                            <label className="text-xs text-slate-400 block mb-1">Temperature: {abForm.challengerTemperature.toFixed(1)}</label>
+                            <input type="range" min={0} max={10} value={abForm.challengerTemperature * 10} onChange={e => setAbForm(f => ({ ...f, challengerTemperature: Number(e.target.value) / 10 }))} className="w-full accent-indigo-500" />
+                          </div>
+                          <div className="mt-3">
+                            <label className="text-xs text-slate-400 block mb-1">System prompt override (empty = same as control)</label>
+                            <textarea value={abForm.challengerSystemPrompt} onChange={e => setAbForm(f => ({ ...f, challengerSystemPrompt: e.target.value }))} rows={3} placeholder="Leave empty to use the same system prompt as control…" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none resize-none" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-4">
+                        <button onClick={() => {
+                          if (!abForm.name.trim()) return;
+                          const storedDE = employees.find(e => e.id === deId);
+                          const controlVariant: ABVariant = {
+                            id: 'control', label: 'Control (Current)',
+                            modelId: storedDE?.model_id || pickerId,
+                            modelProvider: storedDE?.model_provider || pickerProv,
+                            systemPromptSnippet: '',
+                            confidenceThreshold: storedDE?.confidenceThreshold || ovThreshold,
+                            temperature: 0.3,
+                            trafficSplit: 100 - abForm.trafficSplit,
+                          };
+                          const challengerVariant: ABVariant = {
+                            id: 'challenger', label: abForm.challengerLabel,
+                            modelId: abForm.challengerModelId,
+                            modelProvider: abForm.challengerModelProvider,
+                            systemPromptSnippet: abForm.challengerSystemPrompt.slice(0, 200),
+                            confidenceThreshold: abForm.challengerConfidence,
+                            temperature: abForm.challengerTemperature,
+                            trafficSplit: abForm.trafficSplit,
+                          };
+                          const newTest: ABTest = {
+                            id: 'ab_' + Date.now(),
+                            deId,
+                            name: abForm.name,
+                            status: 'draft',
+                            startedAt: null, endedAt: null,
+                            variants: [controlVariant, challengerVariant],
+                            metric: abForm.metric,
+                            winnerVariantId: null,
+                            minSampleSize: abForm.minSampleSize,
+                          };
+                          saveTests([newTest, ...abTests]);
+                          setAbShowCreate(false);
+                        }} className="flex-1 py-2 text-sm font-medium text-white rounded-xl hover:opacity-90" style={{ backgroundColor: accentColor }}>Create Test</button>
+                        <button onClick={() => setAbShowCreate(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirm promote modal */}
+                {abConfirmPromote && activeTest && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                      <h3 className="text-white font-semibold mb-2">Promote Challenger?</h3>
+                      <p className="text-sm text-slate-400 mb-4">This will update {selectedAgent?.name}'s config to match the Challenger variant. The test will be marked as completed.</p>
+                      <div className="flex gap-2">
+                        <button onClick={async () => {
+                          const challenger = activeTest.variants[1];
+                          const deStored2 = employees.find(e => e.id === deId);
+                          if (deStored2) {
+                            await update(deId, { model_id: challenger.modelId, model_provider: challenger.modelProvider as any, confidenceThreshold: challenger.confidenceThreshold });
+                          }
+                          const updated = abTests.map(t => t.id === activeTest.id ? { ...t, status: 'completed' as const, winnerVariantId: 'challenger', endedAt: new Date().toISOString() } : t);
+                          saveTests(updated);
+                          setAbConfirmPromote(false);
+                        }} className="flex-1 py-2 text-sm font-medium text-white rounded-xl bg-emerald-600 hover:bg-emerald-500">Confirm & Promote</button>
+                        <button onClick={() => setAbConfirmPromote(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirm end test modal */}
+                {abConfirmEnd && activeTest && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                      <h3 className="text-white font-semibold mb-3">End Test</h3>
+                      <p className="text-sm text-slate-400 mb-3">Who won?</p>
+                      <div className="flex gap-2 mb-4">
+                        {(['control', 'challenger', 'inconclusive'] as const).map(w => (
+                          <button key={w} onClick={() => setAbEndWinner(w)}
+                            className={`flex-1 py-2 text-xs font-medium rounded-lg border capitalize transition-all ${abEndWinner === w ? 'text-white border-transparent' : 'border-slate-600 text-slate-400'}`}
+                            style={abEndWinner === w ? { backgroundColor: accentColor } : {}}>{w}</button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const updated = abTests.map(t => t.id === activeTest.id ? { ...t, status: 'completed' as const, winnerVariantId: abEndWinner === 'inconclusive' ? null : abEndWinner, endedAt: new Date().toISOString() } : t);
+                          saveTests(updated);
+                          setAbConfirmEnd(false);
+                        }} className="flex-1 py-2 text-sm font-medium text-white rounded-xl hover:opacity-90" style={{ backgroundColor: accentColor }}>End Test</button>
+                        <button onClick={() => setAbConfirmEnd(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Past tests */}
+                {completedTests.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Past Tests</h4>
+                    {completedTests.map(test => {
+                      const winnerLabel = test.winnerVariantId === 'challenger' ? '🏆 Challenger' : test.winnerVariantId === 'control' ? '🏆 Control' : '— Inconclusive';
+                      return (
+                        <div key={test.id} className="bg-slate-800 rounded-xl p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm text-white font-medium">{test.name}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">{test.startedAt ? new Date(test.startedAt).toLocaleDateString() : '—'} → {test.endedAt ? new Date(test.endedAt).toLocaleDateString() : '—'} · {metricLabel(test.metric)}</p>
+                            </div>
+                            <span className={`text-xs px-2 py-1 rounded-full ${test.winnerVariantId === 'challenger' ? 'bg-indigo-500/15 text-indigo-300' : test.winnerVariantId === 'control' ? 'bg-blue-500/15 text-blue-300' : 'bg-slate-700/50 text-slate-400'}`}>{winnerLabel}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* === KNOWLEDGE & DATA TAB === */}
           {configTab === 'knowledge' && (
