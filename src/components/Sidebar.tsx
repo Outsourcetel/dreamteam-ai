@@ -5,7 +5,7 @@ import type { Page, AuthUser, Tenant } from '../types';
 const SERVICE_GROUPS: Record<string, string[]> = {
   portal_overview: [
     'portal_overview', 'portal_conversations', 'portal_escalations',
-    'portal_actions', 'portal_approvals', 'portal_tickets', 'portal_settings', 'eu_chat',
+    'portal_actions', 'portal_approvals', 'portal_tickets', 'portal_settings', 'eu_chat', 'portal_email',
   ],
   finance: ['finance'],
   revenue: ['revenue'],

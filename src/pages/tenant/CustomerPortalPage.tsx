@@ -1091,6 +1091,427 @@ const CustomerPortalPage = ({
     );
   }
 
+  if (subPage === 'portal_email') {
+    interface EmailThread {
+      id: string;
+      subject: string;
+      fromName: string;
+      fromEmail: string;
+      lastMessageAt: string;
+      status: 'open' | 'replied' | 'resolved' | 'spam';
+      priority: 'urgent' | 'normal' | 'low';
+      assignedTo: string | null;
+      messageCount: number;
+      preview: string;
+      label?: string;
+      aiDraft?: string;
+    }
+
+    const SEED_EMAILS: EmailThread[] = [
+      { id: 'em1', subject: 'Invoice #INV-2041 discrepancy', fromName: 'Michael Torres', fromEmail: 'mtorres@acmecorp.com', lastMessageAt: new Date(Date.now() - 25*60000).toISOString(), status: 'open', priority: 'urgent', assignedTo: null, messageCount: 2, preview: 'Hi, I noticed that invoice #INV-2041 has an incorrect amount. We were charged $12,450 but our contract...', aiDraft: "Dear Michael, Thank you for bringing this to our attention. I've reviewed invoice #INV-2041 and can confirm there was a discrepancy. Our billing team will issue a corrected invoice within 24 hours. We apologize for the inconvenience." },
+      { id: 'em2', subject: 'Cannot access my account', fromName: 'Sarah Chen', fromEmail: 'schen@globex.io', lastMessageAt: new Date(Date.now() - 2*3600000).toISOString(), status: 'open', priority: 'normal', assignedTo: null, messageCount: 1, preview: 'I have been trying to log into my account since this morning and keep getting an error...', aiDraft: "Hi Sarah, I'm sorry to hear you're having trouble accessing your account. Let's get this resolved quickly. Could you please confirm the email address associated with your account and describe the exact error message you're seeing?" },
+      { id: 'em3', subject: 'Feature request: bulk export', fromName: 'James Park', fromEmail: 'jpark@initech.com', lastMessageAt: new Date(Date.now() - 5*3600000).toISOString(), status: 'replied', priority: 'low', assignedTo: 'Morgan Chen', messageCount: 3, preview: 'Following up on my earlier request about bulk CSV export...', aiDraft: undefined },
+      { id: 'em4', subject: 'Renewal question for Enterprise plan', fromName: 'Lisa Wong', fromEmail: 'lwong@enterprise.co', lastMessageAt: new Date(Date.now() - 24*3600000).toISOString(), status: 'open', priority: 'normal', assignedTo: null, messageCount: 1, preview: 'Our current Enterprise contract expires next month. I wanted to discuss renewal terms...', aiDraft: "Hi Lisa, Thank you for reaching out about your Enterprise renewal. I'd be happy to discuss renewal terms with you. Our team will reach out within 24 hours to schedule a call. In the meantime, can you share any specific requirements or changes you'd like to see in the new contract?" },
+      { id: 'em5', subject: 'Integration with Slack not working', fromName: 'David Kim', fromEmail: 'david@startupxyz.com', lastMessageAt: new Date(Date.now() - 48*3600000).toISOString(), status: 'resolved', priority: 'normal', assignedTo: 'Taylor Smith', messageCount: 5, preview: 'The Slack integration has been resolved, thank you for your help!', aiDraft: undefined },
+      { id: 'em6', subject: 'Billing question re: seat count', fromName: 'Emma Johnson', fromEmail: 'emma@teamco.com', lastMessageAt: new Date(Date.now() - 72*3600000).toISOString(), status: 'open', priority: 'normal', assignedTo: null, messageCount: 1, preview: 'We recently added 3 new team members and want to understand how that affects our billing...', aiDraft: "Hi Emma, Great to hear your team is growing! Adding 3 new seats will be prorated for the remainder of your current billing cycle. I can send you an updated quote — shall I do that?" },
+    ];
+
+    const loadEmailThreads = (): EmailThread[] => {
+      try {
+        const saved = localStorage.getItem('dt_email_threads_' + pTenantId);
+        if (saved) return JSON.parse(saved);
+      } catch {}
+      return SEED_EMAILS;
+    };
+
+    const saveEmailThreads = (threads: EmailThread[]) => {
+      try { localStorage.setItem('dt_email_threads_' + pTenantId, JSON.stringify(threads)); } catch {}
+    };
+
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [emailThreads, setEmailThreads] = React.useState<EmailThread[]>(loadEmailThreads);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [selectedEmail, setSelectedEmail] = React.useState<EmailThread | null>(null);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [emailFilter, setEmailFilter] = React.useState<string>('all');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [replyBody, setReplyBody] = React.useState('');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [emailToast, setEmailToast] = React.useState<string | null>(null);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [showCompose, setShowCompose] = React.useState(false);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [composeTo, setComposeTo] = React.useState('');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [composeSubject, setComposeSubject] = React.useState('');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [composeBody, setComposeBody] = React.useState('');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [draftRegen, setDraftRegen] = React.useState(false);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [regenDraftText, setRegenDraftText] = React.useState<string | null>(null);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [emailAttachments, setEmailAttachments] = React.useState<{ name: string; size: number }[]>([]);
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const emailFileRef = React.useRef<HTMLInputElement>(null);
+
+    const relativeTime = (iso: string) => {
+      const diff = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
+    };
+
+    const statusDot = (s: string) => {
+      if (s === 'open') return 'bg-emerald-400';
+      if (s === 'replied') return 'bg-blue-400';
+      return 'bg-slate-500';
+    };
+
+    const getRoutingBadge = (thread: EmailThread): string | null => {
+      const text = (thread.subject + ' ' + thread.preview).toLowerCase();
+      for (const rule of routingRules.filter(r => r.enabled)) {
+        if (rule.triggerType === 'keyword' && text.includes(rule.triggerValue.toLowerCase())) {
+          if (rule.routeTo !== 'any') {
+            const p = portalProfiles.find(pp => pp.id === rule.routeTo);
+            if (p) return (p.name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+          }
+        }
+      }
+      return null;
+    };
+
+    const filteredEmails = emailFilter === 'all' ? emailThreads : emailThreads.filter(e => e.status === emailFilter);
+    const filterCounts: Record<string, number> = {
+      all: emailThreads.length,
+      open: emailThreads.filter(e => e.status === 'open').length,
+      replied: emailThreads.filter(e => e.status === 'replied').length,
+      resolved: emailThreads.filter(e => e.status === 'resolved').length,
+    };
+
+    const doSendReply = () => {
+      if (!selectedEmail || !replyBody.trim()) return;
+      const updated = emailThreads.map(e => e.id === selectedEmail.id
+        ? { ...e, status: 'replied' as const, messageCount: e.messageCount + 1, lastMessageAt: new Date().toISOString() }
+        : e);
+      setEmailThreads(updated);
+      saveEmailThreads(updated);
+      setSelectedEmail(prev => prev ? { ...prev, status: 'replied', messageCount: prev.messageCount + 1, lastMessageAt: new Date().toISOString() } : null);
+      setReplyBody('');
+      setEmailToast('Reply sent to ' + selectedEmail.fromEmail);
+      setTimeout(() => setEmailToast(null), 3000);
+    };
+
+    const doMarkResolved = () => {
+      if (!selectedEmail) return;
+      const updated = emailThreads.map(e => e.id === selectedEmail.id ? { ...e, status: 'resolved' as const } : e);
+      setEmailThreads(updated);
+      saveEmailThreads(updated);
+      setSelectedEmail(prev => prev ? { ...prev, status: 'resolved' } : null);
+      setEmailToast('Marked as resolved');
+      setTimeout(() => setEmailToast(null), 3000);
+    };
+
+    const doMarkSpam = () => {
+      if (!selectedEmail) return;
+      const updated = emailThreads.map(e => e.id === selectedEmail.id ? { ...e, status: 'spam' as const } : e);
+      setEmailThreads(updated);
+      saveEmailThreads(updated);
+      setSelectedEmail(null);
+      setEmailToast('Marked as spam');
+      setTimeout(() => setEmailToast(null), 3000);
+    };
+
+    const doRegenDraft = () => {
+      if (!selectedEmail?.aiDraft) return;
+      setDraftRegen(true);
+      setTimeout(() => {
+        setRegenDraftText(selectedEmail.aiDraft + ' (Regenerated: Our team is committed to resolving this promptly.)');
+        setDraftRegen(false);
+      }, 1000);
+    };
+
+    const doComposeSend = () => {
+      if (!composeTo.trim() || !composeSubject.trim()) return;
+      const newThread: EmailThread = {
+        id: 'em_' + Date.now(),
+        subject: composeSubject,
+        fromName: user?.name || 'Agent',
+        fromEmail: composeTo,
+        lastMessageAt: new Date().toISOString(),
+        status: 'replied',
+        priority: 'normal',
+        assignedTo: user?.name || null,
+        messageCount: 1,
+        preview: composeBody.slice(0, 80),
+      };
+      const updated = [newThread, ...emailThreads];
+      setEmailThreads(updated);
+      saveEmailThreads(updated);
+      setShowCompose(false);
+      setComposeTo(''); setComposeSubject(''); setComposeBody('');
+      setEmailToast('Email sent to ' + composeTo);
+      setTimeout(() => setEmailToast(null), 3000);
+    };
+
+    const currentDraft = regenDraftText ?? selectedEmail?.aiDraft ?? null;
+
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+        <div className="flex-shrink-0 px-6 pt-6">
+          <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold text-white">Email Inbox</h1>
+              <p className="text-slate-400 text-xs mt-0.5">Async email support — view threads, AI drafts, and reply directly.</p>
+            </div>
+            <button onClick={() => setShowCompose(true)}
+              className="px-4 py-2 text-sm font-medium text-white rounded-xl transition-all hover:opacity-90 flex items-center gap-2"
+              style={{ backgroundColor: accentColor }}>
+              ✉ Compose
+            </button>
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex gap-1 bg-slate-800 rounded-lg p-1 mb-4 w-fit">
+            {(['all', 'open', 'replied', 'resolved'] as const).map(f => (
+              <button key={f} onClick={() => setEmailFilter(f)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${emailFilter === f ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                style={emailFilter === f ? { backgroundColor: accentColor } : {}}>
+                {f} ({filterCounts[f]})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden px-6 pb-6 gap-4">
+          {/* Left: email list */}
+          <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto space-y-1">
+              {filteredEmails.length === 0 && (
+                <p className="text-sm text-slate-600 py-4 text-center">No emails in this filter.</p>
+              )}
+              {filteredEmails.map(email => {
+                const routeBadge = getRoutingBadge(email);
+                return (
+                  <button key={email.id} onClick={() => { setSelectedEmail(email); setReplyBody('Hi ' + email.fromName + ',\n\n'); setRegenDraftText(null); }}
+                    className={'w-full text-left px-3 py-3 rounded-xl border transition-all ' + (selectedEmail?.id === email.id ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700')}>
+                    <div className="flex items-start gap-2 mb-1">
+                      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${statusDot(email.status)}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-sm font-semibold text-white truncate">{email.fromName}</span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {email.priority === 'urgent' && <span className="w-1.5 h-1.5 rounded-full bg-red-400" title="Urgent" />}
+                            {routeBadge && <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">→ {routeBadge}</span>}
+                            <span className="text-[10px] text-slate-500">{relativeTime(email.lastMessageAt)}</span>
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-300 truncate font-medium">{email.subject}</div>
+                        <div className="text-xs text-slate-500 truncate mt-0.5">{email.preview}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] text-slate-600">{email.messageCount} msg{email.messageCount !== 1 ? 's' : ''}</span>
+                          {email.aiDraft && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium">✦ AI draft ready</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: email detail + reply */}
+          <div className="flex-1 flex flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+            {!selectedEmail ? (
+              <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Select an email to view and reply.</div>
+            ) : (
+              <>
+                {/* Thread header */}
+                <div className="flex-shrink-0 border-b border-slate-800 px-5 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="text-base font-bold text-white truncate">{selectedEmail.subject}</h2>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-sm text-slate-300">{selectedEmail.fromName}</span>
+                        <span className="text-xs text-slate-500">&lt;{selectedEmail.fromEmail}&gt;</span>
+                        <span className="text-xs text-slate-600">{relativeTime(selectedEmail.lastMessageAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {selectedEmail.priority === 'urgent' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-medium">Urgent</span>
+                      )}
+                      <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${selectedEmail.status === 'open' ? 'bg-emerald-500/15 text-emerald-300' : selectedEmail.status === 'replied' ? 'bg-blue-500/15 text-blue-300' : 'bg-slate-700/50 text-slate-400'}`}>
+                        {selectedEmail.status}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Assign to */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className="text-xs text-slate-500">Assigned to:</span>
+                    <select
+                      value={selectedEmail.assignedTo || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        const updated = emailThreads.map(em => em.id === selectedEmail.id ? { ...em, assignedTo: val || null } : em);
+                        setEmailThreads(updated);
+                        saveEmailThreads(updated);
+                        setSelectedEmail(prev => prev ? { ...prev, assignedTo: val || null } : null);
+                      }}
+                      className="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none">
+                      <option value="">Unassigned</option>
+                      {portalProfiles.map(p => <option key={p.id} value={p.name || p.email}>{p.name || p.email}</option>)}
+                      <option value="Morgan Chen">Morgan Chen</option>
+                      <option value="Taylor Smith">Taylor Smith</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  {/* Original message card */}
+                  <div className="rounded-xl border border-slate-700 bg-slate-950/50 p-4">
+                    <div className="flex items-center gap-3 mb-3 pb-3 border-b border-slate-800">
+                      <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                        {selectedEmail.fromName[0]}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-white">{selectedEmail.fromName}</div>
+                        <div className="text-xs text-slate-500">{selectedEmail.fromEmail}</div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed">{selectedEmail.preview}</p>
+                  </div>
+
+                  {/* AI Draft */}
+                  {currentDraft && (
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-semibold text-purple-300">✦ AI-drafted reply</div>
+                        <button onClick={doRegenDraft} disabled={draftRegen}
+                          className="text-xs text-purple-400 hover:text-purple-200 border border-purple-500/30 rounded-lg px-2 py-1 transition-all disabled:opacity-50">
+                          {draftRegen ? 'Regenerating…' : 'Regenerate'}
+                        </button>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">{currentDraft}</p>
+                      <button
+                        onClick={() => setReplyBody(currentDraft)}
+                        className="mt-3 text-xs px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 transition-all">
+                        Use this draft
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Reply composer */}
+                {selectedEmail.status !== 'spam' && (
+                  <div className="flex-shrink-0 border-t border-slate-800 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">Reply as:</span>
+                      <span className="text-xs text-slate-300">{user?.name || 'Agent'} &lt;{user?.email || 'agent@company.com'}&gt;</span>
+                    </div>
+                    <textarea
+                      value={replyBody}
+                      onChange={e => setReplyBody(e.target.value)}
+                      rows={4}
+                      placeholder={'Hi ' + selectedEmail.fromName + ',\n\n'}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+                    />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        ref={emailFileRef}
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx,.txt,.csv"
+                        multiple
+                        className="hidden"
+                        onChange={e => {
+                          const files = Array.from(e.target.files || []);
+                          setEmailAttachments(prev => [...prev, ...files.map(f => ({ name: f.name, size: f.size }))]);
+                          if (emailFileRef.current) emailFileRef.current.value = '';
+                        }}
+                      />
+                      <button onClick={() => emailFileRef.current?.click()}
+                        className="px-3 py-2 text-xs border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-all">
+                        📎 Attach
+                      </button>
+                      {emailAttachments.map((att, i) => (
+                        <span key={i} className="text-xs bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-300 flex items-center gap-1">
+                          {att.name}
+                          <button onClick={() => setEmailAttachments(prev => prev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-red-400 ml-1">✕</button>
+                        </span>
+                      ))}
+                      <div className="flex-1" />
+                      <button onClick={doSendReply} disabled={!replyBody.trim()}
+                        className="px-4 py-2 text-sm font-medium text-white rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
+                        style={{ backgroundColor: accentColor }}>
+                        Send Reply
+                      </button>
+                      <button onClick={doMarkResolved}
+                        className="px-3 py-2 text-sm border border-slate-700 rounded-xl text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300 transition-all">
+                        Mark Resolved
+                      </button>
+                      <button onClick={doMarkSpam}
+                        className="px-3 py-2 text-sm border border-red-500/30 rounded-xl text-red-400 hover:border-red-500/60 hover:text-red-300 transition-all">
+                        Mark Spam
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Compose modal */}
+        {showCompose && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white font-semibold">New Email</h3>
+                <button onClick={() => setShowCompose(false)} className="text-slate-400 hover:text-white text-lg leading-none">×</button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">To</label>
+                  <input value={composeTo} onChange={e => setComposeTo(e.target.value)} placeholder="customer@example.com"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Subject</label>
+                  <input value={composeSubject} onChange={e => setComposeSubject(e.target.value)} placeholder="Subject…"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Body</label>
+                  <textarea value={composeBody} onChange={e => setComposeBody(e.target.value)} rows={5} placeholder="Write your email…"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button onClick={doComposeSend} disabled={!composeTo.trim() || !composeSubject.trim()}
+                  className="px-4 py-2 text-sm font-medium text-white rounded-xl disabled:opacity-40 transition-all hover:opacity-90"
+                  style={{ backgroundColor: accentColor }}>
+                  Send
+                </button>
+                <button onClick={() => setShowCompose(false)} className="px-3 py-2 text-sm text-slate-400 hover:text-white">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {emailToast && (
+          <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-emerald-600 shadow-lg text-sm font-medium text-white">
+            {emailToast}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (subPage === 'portal_tickets') {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
