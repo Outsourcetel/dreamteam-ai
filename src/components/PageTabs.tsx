@@ -4,6 +4,7 @@ import type { Page } from '../types';
 export const HUB_TABS: { id: Page; label: string }[] = [
   { id: 'hub_overview', label: 'Overview' },
   { id: 'hub_articles', label: 'Articles' },
+  { id: 'hub_review', label: 'Review Queue' },
   { id: 'knowledge_taxonomy', label: 'Taxonomy' },
   { id: 'hub_ingestion', label: 'Ingestion' },
   { id: 'knowledge_connectors', label: 'Connectors' },
