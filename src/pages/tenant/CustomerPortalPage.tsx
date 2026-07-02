@@ -620,7 +620,7 @@ const CustomerPortalPage = ({
   // Quick-access action bar (always shown)
   const OverviewActionBar = () => (
     <div className="flex flex-wrap items-center gap-2 mb-5">
-      <button onClick={() => setPage('portal_widget' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
+      <button onClick={() => setPage('eu_chat' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
         <span>💬</span> Customer View
       </button>
       <button onClick={() => setPage('portal_conversations' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
