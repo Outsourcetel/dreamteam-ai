@@ -9,6 +9,7 @@ type ConnectorType =
   | 'salesforce' | 'hubspot' | 'zendesk'
   | 'netsuite' | 'quickbooks' | 'xero'
   | 'zuora' | 'stripe' | 'chargebee'
+  | 'gainsight'
   | 'rest_api' | 'graphql' | 'webhook'
   | 'postgresql' | 'mysql' | 'mongodb';
 
@@ -19,6 +20,7 @@ const CONNECTOR_GROUPS: { label: string; types: { type: ConnectorType; name: str
       { type: 'salesforce', name: 'Salesforce', avatar: 'SF', avatarBg: 'bg-blue-500' },
       { type: 'hubspot', name: 'HubSpot', avatar: 'HS', avatarBg: 'bg-orange-500' },
       { type: 'zendesk', name: 'Zendesk', avatar: 'ZD', avatarBg: 'bg-green-500' },
+      { type: 'gainsight', name: 'Gainsight', avatar: 'GS', avatarBg: 'bg-teal-600' },
     ],
   },
   {
@@ -85,6 +87,12 @@ const SCHEMA_OBJECTS: Record<string, { name: string; fields: string[] }[]> = {
     { name: 'PaymentIntent', fields: ['id', 'amount', 'currency', 'status', 'customer', 'payment_method', 'created'] },
     { name: 'Subscription', fields: ['id', 'customer', 'status', 'current_period_start', 'current_period_end', 'plan'] },
     { name: 'Charge', fields: ['id', 'amount', 'currency', 'status', 'customer', 'description', 'created'] },
+  ],
+  gainsight: [
+    { name: 'Company', fields: ['id', 'name', 'arr', 'health_score', 'health_trend', 'renewal_date', 'csm_owner', 'stage', 'risk_reason', 'nps_score'] },
+    { name: 'Contract', fields: ['id', 'company_id', 'value', 'start_date', 'renewal_date', 'status', 'signed_by'] },
+    { name: 'CTA', fields: ['id', 'company_id', 'type', 'priority', 'due_date', 'status', 'owner', 'notes'] },
+    { name: 'Timeline', fields: ['id', 'company_id', 'type', 'notes', 'logged_by', 'created_at'] },
   ],
   hubspot: [
     { name: 'Contact', fields: ['id', 'email', 'firstname', 'lastname', 'phone', 'company', 'created_at'] },
@@ -386,6 +394,12 @@ function ConfigFields({
     {inp('Client ID', 'client_id')}
     {inp('Client Secret', 'client_secret', { type: 'password' })}
     {inp('Entity ID', 'entity_id')}
+  </div>;
+
+  if (type === 'gainsight') return <div className="space-y-3">
+    {inp('Gainsight Domain', 'domain', { placeholder: 'yourcompany.gainsightcloud.com' })}
+    {inp('Access Key', 'access_key', { type: 'password' })}
+    {inp('API Version', 'api_version', { placeholder: 'v1.0' })}
   </div>;
 
   if (type === 'rest_api' || type === 'graphql') return <div className="space-y-3">
@@ -1227,9 +1241,203 @@ function HealthStrip({ connectors, accentColor, onSyncAll, syncingAll, syncAllPr
   );
 }
 
+// ── Connector Actions & Webhooks data ──────────────────────────
+
+interface ConnectorAction {
+  id: string;
+  label: string;
+  description: string;
+  requiresApproval: boolean;
+  params: string[];
+}
+
+interface ConnectorWebhook {
+  event: string;
+  description: string;
+}
+
+const CONNECTOR_ACTIONS: Record<string, ConnectorAction[]> = {
+  zuora: [
+    { id: 'create_invoice', label: 'Generate Invoice', description: 'Create a new invoice for a subscription', requiresApproval: true, params: ['subscription_id', 'amount', 'due_date'] },
+    { id: 'mark_paid', label: 'Mark Invoice Paid', description: 'Record payment received and update invoice status', requiresApproval: false, params: ['invoice_id', 'payment_amount', 'payment_date'] },
+    { id: 'send_payment_reminder', label: 'Send Payment Reminder', description: 'Trigger a payment reminder email via Zuora', requiresApproval: false, params: ['invoice_id', 'contact_email'] },
+    { id: 'cancel_subscription', label: 'Cancel Subscription', description: 'Cancel a subscription at period end', requiresApproval: true, params: ['subscription_id', 'reason'] },
+  ],
+  gainsight: [
+    { id: 'update_renewal_status', label: 'Update Renewal Status', description: 'Set the renewal stage in Gainsight (Renewed/Churned/At Risk)', requiresApproval: false, params: ['company_id', 'status', 'notes'] },
+    { id: 'create_ctd', label: 'Create Call to Action', description: 'Create a CTA for the CSM to follow up', requiresApproval: false, params: ['company_id', 'type', 'due_date', 'priority'] },
+    { id: 'log_timeline', label: 'Log Timeline Activity', description: 'Log an interaction or event to Gainsight timeline', requiresApproval: false, params: ['company_id', 'type', 'notes'] },
+  ],
+};
+
+const CONNECTOR_WEBHOOKS: Record<string, ConnectorWebhook[]> = {
+  zuora: [
+    { event: 'payment.received', description: 'Fires when a payment is successfully processed' },
+    { event: 'invoice.created', description: 'Fires when a new invoice is generated' },
+    { event: 'subscription.renewal_upcoming', description: 'Fires 30/15/7 days before renewal' },
+  ],
+  gainsight: [
+    { event: 'health_score.changed', description: 'Fires when a company health score changes significantly' },
+    { event: 'renewal.approaching', description: 'Fires when renewal is within configured days' },
+  ],
+};
+
+// ── Actions Tab ────────────────────────────────────────────────
+
+function ActionsTab({ conn, accentColor, onToast }: { conn: ConnectorConfig; accentColor: string; onToast: (msg: string) => void }) {
+  const actions = CONNECTOR_ACTIONS[conn.type] ?? [];
+  const webhooks = CONNECTOR_WEBHOOKS[conn.type] ?? [];
+  const [testModal, setTestModal] = useState<{ action: ConnectorAction; params: Record<string, string> } | null>(null);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const openTest = (action: ConnectorAction) => {
+    const params: Record<string, string> = {};
+    action.params.forEach(p => { params[p] = ''; });
+    setTestModal({ action, params });
+    setTestResult(null);
+  };
+
+  const runTest = async () => {
+    if (!testModal) return;
+    setTesting(true);
+    await new Promise(r => setTimeout(r, 1200));
+    const mockResponses: Record<string, object> = {
+      create_invoice: { invoice_id: 'INV-20260731-001', amount: 84420, status: 'draft', due_date: '2026-07-31', created_at: new Date().toISOString() },
+      mark_paid: { invoice_id: testModal.params['invoice_id'] || 'INV-001', status: 'paid', payment_date: new Date().toISOString().split('T')[0], confirmation: 'PAY-' + Math.floor(Math.random() * 90000 + 10000) },
+      send_payment_reminder: { sent: true, email: testModal.params['contact_email'] || 'billing@client.com', timestamp: new Date().toISOString() },
+      cancel_subscription: { subscription_id: testModal.params['subscription_id'] || 'SUB-001', status: 'pending_cancellation', effective_date: '2026-08-01' },
+      update_renewal_status: { company_id: testModal.params['company_id'] || 'CO-001', renewal_stage: testModal.params['status'] || 'Renewed', updated_at: new Date().toISOString() },
+      create_ctd: { cta_id: 'CTA-' + Math.floor(Math.random() * 9000 + 1000), type: testModal.params['type'] || 'Renewal', status: 'open', created_at: new Date().toISOString() },
+      log_timeline: { activity_id: 'ACT-' + Math.floor(Math.random() * 9000 + 1000), logged: true, timestamp: new Date().toISOString() },
+    };
+    const response = mockResponses[testModal.action.id] ?? { status: 'ok', message: 'Action simulated successfully' };
+    setTestResult(JSON.stringify(response, null, 2));
+    setTesting(false);
+  };
+
+  if (actions.length === 0) {
+    return (
+      <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+        <p className="text-slate-500 text-sm">No actions defined for this connector.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-white mb-0.5">Connector Actions</p>
+        <p className="text-xs text-slate-500">These actions can be triggered by Digital Employees and Playbooks.</p>
+      </div>
+
+      <div className="space-y-3">
+        {actions.map(action => (
+          <div key={action.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="text-sm font-medium text-white">{action.label}</span>
+                  {action.requiresApproval
+                    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Requires Approval</span>
+                    : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/50 text-slate-400">Auto-approved</span>
+                  }
+                </div>
+                <p className="text-xs text-slate-400">{action.description}</p>
+                {action.params.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {action.params.map(p => (
+                      <span key={p} className="text-[10px] px-1.5 py-0.5 bg-slate-800 text-slate-500 rounded font-mono">{p}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => openTest(action)}
+                className="flex-shrink-0 px-3 py-1.5 text-xs rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-all"
+              >
+                Test Action
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {webhooks.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Webhooks</p>
+          <div className="space-y-2">
+            {webhooks.map(wh => (
+              <div key={wh.event} className="flex items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
+                <div>
+                  <p className="text-xs font-mono text-indigo-300">{wh.event}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{wh.description}</p>
+                </div>
+                <button
+                  onClick={() => onToast('Configure endpoint: copy your webhook URL from the Sync tab')}
+                  className="flex-shrink-0 px-2.5 py-1 text-[10px] rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500 transition-all"
+                >
+                  Configure Endpoint
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Test Action Modal */}
+      {testModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-slate-950 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Test: {testModal.action.label}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Simulated — no real API call made</p>
+              </div>
+              <button onClick={() => { setTestModal(null); setTestResult(null); }} className="text-slate-600 hover:text-slate-400 text-xl leading-none">×</button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              {testModal.action.params.map(param => (
+                <div key={param}>
+                  <label className="text-xs text-slate-400 block mb-1 font-mono">{param}</label>
+                  <input
+                    value={testModal.params[param] || ''}
+                    onChange={e => setTestModal(prev => prev ? { ...prev, params: { ...prev.params, [param]: e.target.value } } : null)}
+                    placeholder={`Enter ${param}`}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              ))}
+
+              {testResult && (
+                <div>
+                  <p className="text-xs text-emerald-400 mb-1">Response (mock)</p>
+                  <pre className="text-[10px] bg-slate-900 border border-slate-800 rounded-xl p-3 text-emerald-300 font-mono overflow-x-auto">{testResult}</pre>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={runTest}
+                  disabled={testing}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50 transition-all"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  {testing ? 'Simulating…' : 'Run Test'}
+                </button>
+                <button onClick={() => { setTestModal(null); setTestResult(null); }} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Connector Detail Panel ─────────────────────────────────────
 
-type DetailTab = 'overview' | 'schema' | 'field_map' | 'de_bindings' | 'lineage' | 'logs';
+type DetailTab = 'overview' | 'schema' | 'field_map' | 'de_bindings' | 'lineage' | 'logs' | 'actions';
 
 function ConnectorDetailPanel({
   conn, tenantId: _tenantId, accentColor, onClose, onSave, onTest, onDelete, onDuplicate, employees, onUnbind, onToast,
@@ -1339,6 +1547,8 @@ function ConnectorDetailPanel({
     setRetryAttempt(0);
   };
 
+  const hasActions = (CONNECTOR_ACTIONS[conn.type]?.length ?? 0) > 0;
+
   const TABS: { id: DetailTab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'schema', label: 'Schema' },
@@ -1346,6 +1556,7 @@ function ConnectorDetailPanel({
     { id: 'de_bindings', label: `DE Bindings${boundDEs.length > 0 ? ` (${boundDEs.length})` : ''}` },
     { id: 'lineage', label: 'Lineage' },
     { id: 'logs', label: 'Logs' },
+    ...(hasActions ? [{ id: 'actions' as DetailTab, label: 'Actions' }] : []),
   ];
 
   return (
@@ -1596,6 +1807,8 @@ function ConnectorDetailPanel({
               ))}
             </div>
           )}
+
+          {tab === 'actions' && <ActionsTab conn={conn} accentColor={accentColor} onToast={onToast} />}
 
           {tab === 'lineage' && <LineageTab conn={conn} boundDEs={boundDEs} />}
 

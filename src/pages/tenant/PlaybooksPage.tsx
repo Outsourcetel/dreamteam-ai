@@ -15,6 +15,64 @@ import {
   type ConnectorConfig,
 } from '../../lib/api'
 
+// ── Renewal Playbook Template ──────────────────────────────────
+
+const RENEWAL_PLAYBOOK_STEPS = [
+  { id: 's1', step: 1, title: 'Pull Contract from Gainsight', description: 'Fetch contract renewal date, ARR, health score, and CSM owner for the account.', type: 'action' as const, requires_approval: false, output_var: 'gainsight_contract', connector: 'gainsight', action: 'read_contract', timeout_seconds: 30, on_failure: 'stop' as const, mock_output: { company_name: 'TCP Inc', contract_value: 84000, health_score: 72, renewal_date: '2026-07-31', csm_owner: 'Morgan Chen' } },
+  { id: 's2', step: 2, title: 'Pull Subscription from Zuora', description: 'Fetch current subscription details, MRR, and any usage overages from Zuora.', type: 'action' as const, requires_approval: false, output_var: 'zuora_subscription', connector: 'zuora', action: 'read_subscription', timeout_seconds: 30, on_failure: 'stop' as const, mock_output: { subscription_id: 'SUB-00123', mrr: 7000, overage_amount: 420, plan: 'Enterprise' } },
+  { id: 's3', step: 3, title: 'Health Score Check', description: 'Route renewal based on Gainsight health score — healthy accounts go to standard renewal, at-risk accounts get CSM review.', type: 'decision' as const, requires_approval: false, condition: 'gainsight_contract.health_score >= 70', on_true: 's4', on_false: 's4b' },
+  { id: 's4', step: 4, title: 'Generate Invoice in Zuora', description: 'Create renewal invoice in Zuora for the subscription amount plus any overages.', type: 'action' as const, requires_approval: true, output_var: 'invoice', connector: 'zuora', action: 'create_invoice', timeout_seconds: 60, on_failure: 'notify' as any, mock_output: { invoice_id: 'INV-20260731-TCP', amount: 84420, due_date: '2026-07-31', status: 'draft' } },
+  { id: 's4b', step: 5, title: 'Flag for CSM Review', description: 'Health score below threshold — create a Gainsight CTA and notify the CSM before generating invoice.', type: 'notification' as const, requires_approval: false, assigned_to: 'csm_owner' },
+  { id: 's5', step: 6, title: 'Send Renewal Email — Day 0', description: 'Send the initial renewal email with invoice link to the primary billing contact.', type: 'action' as const, requires_approval: false, connector: 'email', action: 'send_template', timeout_seconds: 30, on_failure: 'skip' as const },
+  { id: 's6', step: 7, title: 'Wait 7 Days — Check Payment', description: 'Monitor Zuora for payment_received event. If unpaid after 7 days, send reminder.', type: 'condition' as const, requires_approval: false, condition: 'invoice.status === "paid"', on_true: 's9', on_false: 's7' },
+  { id: 's7', step: 8, title: 'Send Payment Reminder — Day 7', description: 'Invoice still unpaid — send a friendly reminder email.', type: 'action' as const, requires_approval: false, connector: 'zuora', action: 'send_payment_reminder', timeout_seconds: 30, on_failure: 'skip' as const },
+  { id: 's8', step: 9, title: 'Final Notice — Day 14', description: 'Second follow-up if still unpaid after 14 days. Notify CSM and send final notice email.', type: 'notification' as const, requires_approval: false, assigned_to: 'csm_owner' },
+  { id: 's9', step: 10, title: 'Mark Invoice Paid in Zuora', description: 'Payment confirmed — update invoice status in Zuora to PAID.', type: 'action' as const, requires_approval: false, connector: 'zuora', action: 'mark_paid', timeout_seconds: 30, on_failure: 'stop' as const },
+  { id: 's10', step: 11, title: 'Update Renewal Status in Gainsight', description: 'Log the successful renewal to Gainsight timeline and update renewal stage to "Renewed".', type: 'action' as const, requires_approval: false, connector: 'gainsight', action: 'update_renewal_status', timeout_seconds: 30, on_failure: 'skip' as const },
+  { id: 's11', step: 12, title: 'Renewal Complete', description: 'Notify the account team that TCP renewal is complete. Log summary.', type: 'notification' as const, requires_approval: false, assigned_to: 'account_owner' },
+]
+
+const RENEWAL_PLAYBOOK_TEMPLATE: DBPlaybook = {
+  id: 'pb-renewal-001',
+  tenant_id: 'a0000000-0000-0000-0000-000000000001',
+  digital_employee_id: null,
+  parent_playbook_id: null,
+  name: 'Customer Renewal Workflow',
+  slug: 'customer-renewal-workflow',
+  version: 1,
+  domain: 'finance',
+  business_objective: 'End-to-end renewal management: detect upcoming renewals, generate invoices in Zuora, send email cadence, and confirm payment.',
+  owner_role: 'Finance Manager',
+  risk_level: 'medium',
+  lifecycle_status: 'active',
+  is_base_playbook: false,
+  trigger_type: 'scheduled',
+  capabilities_used: ['billing', 'invoicing', 'renewal_management', 'email'],
+  knowledge_collections: [],
+  connector_requirements: ['zuora', 'gainsight'],
+  human_approval_required: true,
+  approval_points: [],
+  decision_rules: RENEWAL_PLAYBOOK_STEPS as any[],
+  escalation_rules: [],
+  exception_handlers: [],
+  expected_outputs: [],
+  kpis: [
+    { name: 'Renewal Rate', target: 95, unit: '%' },
+    { name: 'Days to Invoice', target: 3, unit: ' days' },
+  ],
+  estimated_duration_ms: null,
+  estimated_cost_usd: null,
+  tasks_this_month: 8,
+  success_rate: 94,
+  de_handled_rate: 82,
+  certified_by: null,
+  certified_at: null,
+  next_review_due: null,
+  created_by: null,
+  created_at: '2026-07-01T00:00:00.000Z',
+  updated_at: '2026-07-01T00:00:00.000Z',
+}
+
 // ── Constants ──────────────────────────────────────────────────
 
 const DOMAINS = [
@@ -926,6 +984,14 @@ function DetailPanel({
                         <span className="text-[10px] text-slate-600 ml-auto">View called playbook →</span>
                       </div>
                     )}
+                    {(s as any).connector && (
+                      <div className="mt-1.5 flex items-center gap-1.5 pl-2 border-l-2 border-violet-500/30">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 font-mono">
+                          {(s as any).connector} → {(s as any).action}
+                        </span>
+                        <span className="text-[9px] text-slate-600">Connector Action</span>
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => removeStep(s.id)} className="text-slate-700 hover:text-red-400 transition-all text-sm flex-shrink-0">×</button>
                 </div>
@@ -1271,9 +1337,12 @@ export default function PlaybooksPage({
       fetchDigitalEmployees(tenantId),
       fetchPlaybookSummary(tenantId),
     ])
-    setPlaybooks(pbs)
+    // Inject renewal template if not already present
+    const hasRenewal = pbs.some(p => p.id === RENEWAL_PLAYBOOK_TEMPLATE.id || p.name === RENEWAL_PLAYBOOK_TEMPLATE.name)
+    const mergedPbs = hasRenewal ? pbs : [{ ...RENEWAL_PLAYBOOK_TEMPLATE, tenant_id: tenantId }, ...pbs]
+    setPlaybooks(mergedPbs)
     setDigitalEmployees(des)
-    setSummary(sum)
+    setSummary({ ...sum, total: sum.total + (hasRenewal ? 0 : 1), active: sum.active + (hasRenewal ? 0 : 1) })
     setLoading(false)
   }, [tenantId])
 
@@ -1394,13 +1463,22 @@ export default function PlaybooksPage({
 
         if (step.type === 'action') {
           await new Promise(r => setTimeout(r, 800 + 300 * i))
-          let out = connNames.length >= 2
-            ? `Action completed: Fetched records from ${connNames[0]} · Posted to ${connNames[1]}`
-            : connNames.length === 1 ? `Action completed: Fetched records from ${connNames[0]}` : `Completed: ${step.title}`
+          const mockOutput = (step as any).mock_output
+          const connectorRef = (step as any).connector
+          let out = connectorRef
+            ? `Connector action: ${connectorRef} → ${(step as any).action ?? step.title}`
+            : connNames.length >= 2
+              ? `Action completed: Fetched records from ${connNames[0]} · Posted to ${connNames[1]}`
+              : connNames.length === 1 ? `Action completed: Fetched records from ${connNames[0]}` : `Completed: ${step.title}`
           if (step.output_var) {
-            const val = simVal(step.output_var)
-            runCtx[step.output_var] = val
-            out += ` · Output: {{${step.output_var}}} = ${typeof val === 'number' ? '$' + val.toLocaleString() : val}`
+            if (mockOutput) {
+              runCtx[step.output_var] = mockOutput
+              out += ` · Output: ${JSON.stringify(mockOutput).slice(0, 80)}…`
+            } else {
+              const val = simVal(step.output_var)
+              runCtx[step.output_var] = val
+              out += ` · Output: {{${step.output_var}}} = ${typeof val === 'number' ? '$' + val.toLocaleString() : val}`
+            }
           }
           return { output: out }
         }
