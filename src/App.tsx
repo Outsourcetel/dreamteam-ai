@@ -77,6 +77,16 @@ const PAGE_TO_URL: Record<string, string> = {
   portal_tickets:         '/portal/tickets',
   portal_escalations:     '/portal/escalations',
   portal_settings:        '/portal/settings',
+  portal_email:           '/portal/email',
+  hub_review:             '/knowledge/review',
+  admin_overview:         '/security',
+  admin_rbac:             '/security/rbac',
+  admin_audit:            '/security/audit',
+  admin_compliance:       '/security/compliance',
+  agent_overview:         '/agents',
+  agent_builder:          '/agents/builder',
+  agent_testing:          '/agents/testing',
+  agent_deployments:      '/agents/deployments',
   eu_chat:                '/chat',
   eu_actions:             '/my-actions',
   eu_tickets:             '/my-tickets',
@@ -159,12 +169,20 @@ function AppShell() {
       case 'dashboard':
         return <DashboardPage {...commonProps} dbStats={dbStats} />;
       case 'agents':
+      case 'agent_overview':
+      case 'agent_builder':
+      case 'agent_testing':
+      case 'agent_deployments':
         return <AgentWorkforcePage {...commonProps} />;
       case 'swarm':
         return <SwarmPage tenant={currentTenant} />;
       case 'insight':
         return <InsightEnginePage {...commonProps} />;
       case 'security':
+      case 'admin_overview':
+      case 'admin_rbac':
+      case 'admin_audit':
+      case 'admin_compliance':
         return <SecurityPage {...commonProps} />;
       case 'integrations':
         return <IntegrationsPage {...commonProps} />;
@@ -179,6 +197,7 @@ function AppShell() {
         return <KnowledgeDataPage {...commonProps} />;
       case 'hub_overview':
       case 'hub_articles':
+      case 'hub_review':
       case 'hub_ingestion':
       case 'hub_training':
       case 'hub_analytics':
@@ -190,6 +209,7 @@ function AppShell() {
       case 'portal_tickets':
       case 'portal_settings':
       case 'portal_escalations':
+      case 'portal_email':
         return <CustomerPortalPage {...commonProps} subPage={currentPage as any} />;
       case 'admin_approvals':
         return <ApprovalsPage {...commonProps} />;
