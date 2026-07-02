@@ -30,6 +30,7 @@ import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import ApprovalsPage from './pages/tenant/ApprovalsPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
+import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -343,7 +344,7 @@ function AppShell() {
         return <PlaceholderPage title="Specialist Function" description="Deep-domain expertise called on demand by primary Customer DEs." />;
       // ── Workforce ─────────────────────────────────────────────
       case 'workforce_des':
-        return <PlaceholderPage title="Digital Employees" description="Your complete DE roster — organised by entity and sub-function." />;
+        return <WorkforceDEsPage setPage={handleSetPage} />;
       case 'workforce_de_profile':
         return <PlaceholderPage title="DE Profile" description="Full Digital Employee configuration: Identity, Training, Knowledge, SOPs, Playbooks, Systems, Guardrails, Human Loop, Performance, Audit." />;
       // ── Knowledge ─────────────────────────────────────────────
