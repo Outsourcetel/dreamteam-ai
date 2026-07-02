@@ -90,6 +90,56 @@ const PAGE_TO_URL: Record<string, string> = {
   eu_chat:                '/chat',
   eu_actions:             '/my-actions',
   eu_tickets:             '/my-tickets',
+  // Entities
+  entity_customer:            '/customer',
+  entity_customer_bd:         '/customer/bd',
+  entity_customer_sales:      '/customer/sales',
+  entity_customer_onboarding: '/customer/onboarding',
+  entity_customer_support:    '/customer/support',
+  entity_customer_success:    '/customer/success',
+  entity_customer_renewal:    '/customer/renewal',
+  entity_vendor:              '/vendor',
+  entity_vendor_sourcing:     '/vendor/sourcing',
+  entity_vendor_contracts:    '/vendor/contracts',
+  entity_vendor_management:   '/vendor/management',
+  entity_workforce:           '/workforce-entity',
+  entity_workforce_talent:    '/workforce-entity/talent',
+  entity_workforce_onboarding:'/workforce-entity/onboarding',
+  entity_workforce_development:'/workforce-entity/development',
+  entity_workforce_payroll:   '/workforce-entity/payroll',
+  // Outcomes
+  outcome_revenue:    '/outcomes/revenue',
+  outcome_delivery:   '/outcomes/delivery',
+  outcome_financial:  '/outcomes/financial',
+  outcome_risk:       '/outcomes/risk',
+  // Specialist
+  specialist_technical:    '/specialist/technical',
+  specialist_legal:        '/specialist/legal',
+  specialist_finance_deep: '/specialist/finance',
+  specialist_people:       '/specialist/people',
+  // Workforce (DEs)
+  workforce_des:       '/workforce/des',
+  workforce_de_profile:'/workforce/de-profile',
+  // Knowledge
+  knowledge_library:   '/knowledge/library',
+  knowledge_ingestion: '/knowledge/ingestion',
+  knowledge_gaps:      '/knowledge/gaps',
+  knowledge_quality:   '/knowledge/quality',
+  // Systems
+  systems_connectors: '/systems/connectors',
+  systems_playbooks:  '/systems/playbooks',
+  // Operations
+  ops_human_tasks: '/ops/tasks',
+  ops_activity:    '/ops/activity',
+  // Intelligence
+  intelligence_performance: '/intelligence/performance',
+  intelligence_insights:    '/intelligence/insights',
+  // Governance
+  gov_compliance: '/governance/compliance',
+  gov_audit:      '/governance/audit',
+  gov_security:   '/governance/security',
+  // Setup
+  company_setup:  '/setup',
 };
 
 const URL_TO_PAGE: Record<string, Page> = Object.fromEntries(
@@ -121,6 +171,17 @@ function URLSync() {
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
+}
+
+// ── Placeholder page for new routes ────────────────────────────
+function PlaceholderPage({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-center p-8">
+      <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">◈</div>
+      <h2 className="text-lg font-semibold text-slate-200 mb-2">{title}</h2>
+      <p className="text-sm text-slate-500 max-w-sm">{description}</p>
+    </div>
+  );
 }
 
 // ── Main authenticated shell ────────────────────────────────────
@@ -239,6 +300,85 @@ function AppShell() {
         return <AuditLogPage {...commonProps} />;
       case 'users':
         return <UserManagementPage {...commonProps} />;
+      // ── Entity pages ──────────────────────────────────────────
+      case 'entity_customer':
+        return <PlaceholderPage title="Customer Lifecycle" description="Full customer journey from Business Development through Renewal & Expansion." />;
+      case 'entity_customer_bd':
+        return <PlaceholderPage title="Business Development" description="Prospect identification, outreach sequences, and qualification workflows." />;
+      case 'entity_customer_sales':
+        return <PlaceholderPage title="Sales" description="Pipeline management, proposals, demos, and deal closing." />;
+      case 'entity_customer_onboarding':
+        return <PlaceholderPage title="Onboarding & Implementation" description="Client onboarding, product configuration, and go-live management." />;
+      case 'entity_customer_support':
+        return <PlaceholderPage title="Support" description="Ticket triage, knowledge-based resolution, and escalation management." />;
+      case 'entity_customer_success':
+        return <PlaceholderPage title="Customer Success" description="Health monitoring, QBR preparation, and at-risk account management." />;
+      case 'entity_customer_renewal':
+        return <PlaceholderPage title="Renewal & Expansion" description="Renewal pipeline, invoice generation, and expansion opportunity identification." />;
+      case 'entity_vendor':
+      case 'entity_vendor_sourcing':
+      case 'entity_vendor_contracts':
+      case 'entity_vendor_management':
+        return <PlaceholderPage title="Vendors & Partners" description="Supplier sourcing, contract management, and relationship oversight." />;
+      case 'entity_workforce':
+      case 'entity_workforce_talent':
+      case 'entity_workforce_onboarding':
+      case 'entity_workforce_development':
+      case 'entity_workforce_payroll':
+        return <PlaceholderPage title="Workforce" description="Talent acquisition, onboarding, performance, and payroll management." />;
+      // ── Outcome pages ─────────────────────────────────────────
+      case 'outcome_revenue':
+        return <PlaceholderPage title="Revenue & Growth" description="Pipeline health, conversion rates, retention metrics, and expansion revenue." />;
+      case 'outcome_delivery':
+        return <PlaceholderPage title="Product & Engineering" description="Roadmap, development, release management, and incident response." />;
+      case 'outcome_financial':
+        return <PlaceholderPage title="Financial Health" description="AP/AR, cash flow, budgeting, revenue recognition, and financial reporting." />;
+      case 'outcome_risk':
+        return <PlaceholderPage title="Risk & Compliance" description="Regulatory compliance, risk assessment, and guardrail management." />;
+      // ── Specialist pages ──────────────────────────────────────
+      case 'specialist_technical':
+      case 'specialist_legal':
+      case 'specialist_finance_deep':
+      case 'specialist_people':
+        return <PlaceholderPage title="Specialist Function" description="Deep-domain expertise called on demand by primary Customer DEs." />;
+      // ── Workforce ─────────────────────────────────────────────
+      case 'workforce_des':
+        return <PlaceholderPage title="Digital Employees" description="Your complete DE roster — organised by entity and sub-function." />;
+      case 'workforce_de_profile':
+        return <PlaceholderPage title="DE Profile" description="Full Digital Employee configuration: Identity, Training, Knowledge, SOPs, Playbooks, Systems, Guardrails, Human Loop, Performance, Audit." />;
+      // ── Knowledge ─────────────────────────────────────────────
+      case 'knowledge_library':
+        return <PlaceholderPage title="Knowledge Library" description="All knowledge organised by entity, audience, type, and confidence level." />;
+      case 'knowledge_ingestion':
+        return <PlaceholderPage title="Ingestion & Sources" description="Connect knowledge sources, ingest documents, and configure processing." />;
+      case 'knowledge_gaps':
+        return <PlaceholderPage title="Gap Detection" description="Real-time gap signals from DE queries and human escalations. Internal Resolution Agent drafts articles from historical solutions." />;
+      case 'knowledge_quality':
+        return <PlaceholderPage title="Quality & Coverage" description="Knowledge freshness, confidence calibration, and coverage per DE role." />;
+      // ── Systems ───────────────────────────────────────────────
+      case 'systems_connectors':
+        return <PlaceholderPage title="Connectors" description="All system integrations, bound to specific DEs with data access configuration." />;
+      case 'systems_playbooks':
+        return <PlaceholderPage title="Playbooks" description="Workflow library: Process, Response, Escalation, Cross-function, Crisis, and Scheduled playbooks." />;
+      // ── Operations ────────────────────────────────────────────
+      case 'ops_human_tasks':
+        return <PlaceholderPage title="Human Tasks" description="Approval gates, review gates, escalations, overrides, and training feedback awaiting human action." />;
+      case 'ops_activity':
+        return <PlaceholderPage title="Activity Log" description="Every DE action logged — filterable by entity, DE, action type, and outcome." />;
+      // ── Intelligence ──────────────────────────────────────────
+      case 'intelligence_performance':
+        return <PlaceholderPage title="Performance Analytics" description="DE resolution rates, accuracy, CSAT, escalation rates, and cost efficiency." />;
+      case 'intelligence_insights':
+        return <PlaceholderPage title="Business Insights" description="Anomaly detection, trend analysis, gap reports, and retraining recommendations." />;
+      // ── Governance ────────────────────────────────────────────
+      case 'gov_compliance':
+        return <PlaceholderPage title="Compliance & Guardrails" description="Industry compliance templates, organisational guardrails, and DE-level restrictions." />;
+      case 'gov_audit':
+        return <PlaceholderPage title="Audit Trail" description="Immutable log of all DE actions, human approvals, and system events." />;
+      case 'gov_security':
+        return <PlaceholderPage title="Security & Access" description="Platform RBAC, SSO, API keys, and session management." />;
+      case 'company_setup':
+        return <PlaceholderPage title="Company Setup" description="Configure your industry, activate functions, and set up your first Digital Employees." />;
       default:
         return <DashboardPage {...commonProps} />;
     }

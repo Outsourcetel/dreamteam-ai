@@ -10,7 +10,73 @@ export type PlatformPage =
   | 'platform_remote_access';
 
 export type TenantPage =
+  // ── Home ──────────────────────────────────────────
   | 'dashboard'
+
+  // ── Entities (what the company serves/manages) ───
+  // Customer entity
+  | 'entity_customer'           // Customer lifecycle overview
+  | 'entity_customer_bd'        // Business Development sub-function
+  | 'entity_customer_sales'     // Sales sub-function
+  | 'entity_customer_onboarding'// Onboarding & Implementation
+  | 'entity_customer_support'   // Support
+  | 'entity_customer_success'   // Customer Success
+  | 'entity_customer_renewal'   // Renewal & Expansion
+  // Vendor/Partner entity
+  | 'entity_vendor'
+  | 'entity_vendor_sourcing'
+  | 'entity_vendor_contracts'
+  | 'entity_vendor_management'
+  // Workforce entity
+  | 'entity_workforce'
+  | 'entity_workforce_talent'
+  | 'entity_workforce_onboarding'
+  | 'entity_workforce_development'
+  | 'entity_workforce_payroll'
+
+  // ── Outcomes (what the company achieves) ─────────
+  | 'outcome_revenue'           // Revenue & pipeline health
+  | 'outcome_delivery'          // Product/service delivery (industry-named)
+  | 'outcome_financial'         // Financial health: AP/AR, reporting, tax
+  | 'outcome_risk'              // Risk & Compliance
+
+  // ── Specialist Functions (called on demand) ───────
+  | 'specialist_technical'
+  | 'specialist_legal'
+  | 'specialist_finance_deep'
+  | 'specialist_people'
+
+  // ── Workforce (DE management) ─────────────────────
+  | 'workforce_des'             // Digital Employees roster
+  | 'workforce_de_profile'      // Individual DE profile (all 10 tabs)
+
+  // ── Knowledge ─────────────────────────────────────
+  | 'knowledge_library'         // Knowledge library
+  | 'knowledge_ingestion'       // Ingest sources
+  | 'knowledge_gaps'            // Gap detection & resolution
+  | 'knowledge_quality'         // Freshness, coverage, confidence
+
+  // ── Systems ───────────────────────────────────────
+  | 'systems_connectors'        // All integrations
+  | 'systems_playbooks'         // Workflow library
+
+  // ── Operations ────────────────────────────────────
+  | 'ops_human_tasks'           // Approval gates, escalations, review
+  | 'ops_activity'              // Activity log
+
+  // ── Intelligence ──────────────────────────────────
+  | 'intelligence_performance'  // DE analytics
+  | 'intelligence_insights'     // Business insights & anomalies
+
+  // ── Governance ────────────────────────────────────
+  | 'gov_compliance'            // Industry guardrails & compliance templates
+  | 'gov_audit'                 // Immutable audit trail
+  | 'gov_security'              // Access, SSO, API keys, sessions
+
+  // ── Company Setup ─────────────────────────────────
+  | 'company_setup'
+
+  // ── Legacy pages (kept for backward compatibility) ─
   | 'agents'
   | 'agent_overview'
   | 'agent_builder'
