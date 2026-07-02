@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import * as api from '../../lib/api';
 import type { AuthUser, Tenant } from '../../types';
 
@@ -71,6 +71,18 @@ function FinanceControlTowerPage(props: any) {
   const [parsedRows, setParsedRows] = React.useState<Record<string, string>[]>([]);
   const [fileName, setFileName] = React.useState<string>('');
   const [ingesting, setIngesting] = React.useState<boolean>(false);
+  // Invoice state
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invCustName, setInvCustName] = useState('');
+  const [invCustEmail, setInvCustEmail] = useState('');
+  const [invDate, setInvDate] = useState(new Date().toISOString().split('T')[0]);
+  const [invDueDate, setInvDueDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0]; });
+  const [invLines, setInvLines] = useState([{ desc: '', qty: 1, price: 0 }]);
+  const [invNotes, setInvNotes] = useState('');
+  const [invTerms, setInvTerms] = useState('Per contract terms');
+  const [invAutoSend, setInvAutoSend] = useState(true);
+  const [invSending, setInvSending] = useState(false);
+  const [sentInvoices, setSentInvoices] = useState<any[]>([]);
 
   React.useEffect(() => {
     if (tab === 'upload' && workspace && tenantId) {
@@ -174,7 +186,7 @@ function FinanceControlTowerPage(props: any) {
         <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{toast}</div>
       )}
       <div className="mt-5 flex gap-1 border-b border-slate-800">
-        {[['dashboard','Dashboard'],['exceptions','Exceptions ('+openExc.length+')'],['tasks','Close tasks'],['audit','Audit evidence'],['upload','Upload & connect']].map(([id,label]) => (
+        {[['dashboard','Dashboard'],['invoices','Invoices'],['exceptions','Exceptions ('+openExc.length+')'],['tasks','Close tasks'],['audit','Audit evidence'],['upload','Upload & connect']].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ' + (tab===id ? 'border-indigo-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}</button>
         ))}
@@ -190,6 +202,100 @@ function FinanceControlTowerPage(props: any) {
           <FinStat label="AP due" value={finMoney(metrics.apDue)} sub="Payables outstanding" tone={metrics.apDue ? 'amber' : 'emerald'} />
           <FinStat label="Unmatched bank lines" value={String(metrics.unmatched)} sub="Need reconciliation" tone={metrics.unmatched ? 'rose' : 'emerald'} />
           <FinStat label="Total exceptions" value={String(metrics.totalExceptions)} sub="Detected this close" />
+        </div>
+      )}
+
+      {tab === 'invoices' && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Invoices</h2>
+            <button onClick={() => setShowInvoiceModal(true)} className="px-4 py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accent }}>+ Generate Invoice</button>
+          </div>
+          {sentInvoices.length > 0 && (
+            <table className="w-full text-sm border-collapse mb-6">
+              <thead><tr className="border-b border-slate-800 text-left text-xs text-slate-500">{['Customer','Email','Date','Due','Total','Status'].map(h => <th key={h} className="py-2 pr-4">{h}</th>)}</tr></thead>
+              <tbody>{sentInvoices.map((inv, i) => <tr key={i} className="border-b border-slate-800 text-slate-300"><td className="py-2 pr-4">{inv.custName}</td><td className="py-2 pr-4">{inv.custEmail}</td><td className="py-2 pr-4">{inv.date}</td><td className="py-2 pr-4">{inv.dueDate}</td><td className="py-2 pr-4">{finMoney(inv.total)}</td><td className="py-2 pr-4 text-emerald-400">{inv.sent ? 'Sent' : 'Draft'}</td></tr>)}</tbody>
+            </table>
+          )}
+          {sentInvoices.length === 0 && <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-8 text-center text-slate-500 text-sm">No invoices generated yet. Click "Generate Invoice" to create your first one.</div>}
+
+          {/* Invoice Modal */}
+          {showInvoiceModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-white font-semibold text-lg">Generate Invoice</h3>
+                  <button onClick={() => setShowInvoiceModal(false)} className="text-slate-500 hover:text-slate-200 text-xl">×</button>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div><label className="text-xs text-slate-400 block mb-1">Customer Name</label><input value={invCustName} onChange={e => setInvCustName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                  <div><label className="text-xs text-slate-400 block mb-1">Customer Email</label><input type="email" value={invCustEmail} onChange={e => setInvCustEmail(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                  <div><label className="text-xs text-slate-400 block mb-1">Invoice Date</label><input type="date" value={invDate} onChange={e => setInvDate(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                  <div><label className="text-xs text-slate-400 block mb-1">Due Date</label><input type="date" value={invDueDate} onChange={e => setInvDueDate(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                </div>
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-slate-400">Line Items</label>
+                    <button onClick={() => setInvLines(l => [...l, { desc: '', qty: 1, price: 0 }])} className="text-xs text-indigo-400 hover:text-indigo-300">+ Add Row</button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-12 gap-2 text-xs text-slate-500"><div className="col-span-6">Description</div><div className="col-span-2">Qty</div><div className="col-span-3">Unit Price</div><div className="col-span-1"></div></div>
+                    {invLines.map((line, i) => (
+                      <div key={i} className="grid grid-cols-12 gap-2">
+                        <input className="col-span-6 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none" value={line.desc} onChange={e => setInvLines(l => l.map((x, j) => j === i ? { ...x, desc: e.target.value } : x))} placeholder="Service or product" />
+                        <input type="number" className="col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none" value={line.qty} onChange={e => setInvLines(l => l.map((x, j) => j === i ? { ...x, qty: Number(e.target.value) } : x))} />
+                        <input type="number" className="col-span-3 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none" value={line.price} onChange={e => setInvLines(l => l.map((x, j) => j === i ? { ...x, price: Number(e.target.value) } : x))} />
+                        <button onClick={() => setInvLines(l => l.filter((_, j) => j !== i))} className="col-span-1 text-slate-600 hover:text-red-400 text-sm">×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-right text-sm font-medium text-white mt-2">Total: {finMoney(invLines.reduce((s, l) => s + l.qty * l.price, 0))}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div><label className="text-xs text-slate-400 block mb-1">Notes</label><textarea value={invNotes} onChange={e => setInvNotes(e.target.value)} rows={2} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                  <div><label className="text-xs text-slate-400 block mb-1">Terms</label><textarea value={invTerms} onChange={e => setInvTerms(e.target.value)} rows={2} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" /></div>
+                </div>
+                <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                  <input type="checkbox" checked={invAutoSend} onChange={() => setInvAutoSend(v => !v)} className="accent-indigo-500" />
+                  <span className="text-sm text-slate-300">Send automatically to customer email</span>
+                </label>
+                {/* Preview */}
+                <div className="rounded-xl border border-slate-700 bg-slate-950 p-4 mb-4 text-sm">
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-3">Invoice Preview</div>
+                  <div className="flex justify-between mb-2"><span className="text-slate-400">Customer:</span><span className="text-white">{invCustName || '—'}</span></div>
+                  <div className="flex justify-between mb-2"><span className="text-slate-400">Email:</span><span className="text-white">{invCustEmail || '—'}</span></div>
+                  <div className="flex justify-between mb-2"><span className="text-slate-400">Date:</span><span className="text-white">{invDate}</span></div>
+                  <div className="flex justify-between mb-4"><span className="text-slate-400">Due:</span><span className="text-white">{invDueDate}</span></div>
+                  {invLines.map((l, i) => l.desc && <div key={i} className="flex justify-between text-xs text-slate-300 mb-1"><span>{l.desc} × {l.qty}</span><span>{finMoney(l.qty * l.price)}</span></div>)}
+                  <div className="flex justify-between font-bold text-white border-t border-slate-700 pt-2 mt-2"><span>Total</span><span>{finMoney(invLines.reduce((s, l) => s + l.qty * l.price, 0))}</span></div>
+                  {invNotes && <p className="text-xs text-slate-500 mt-2">{invNotes}</p>}
+                  <p className="text-xs text-slate-600 mt-1">{invTerms}</p>
+                </div>
+                <button
+                  disabled={invSending || !invCustName || !invCustEmail}
+                  onClick={async () => {
+                    if (!tenantId) return;
+                    setInvSending(true);
+                    const total = invLines.reduce((s, l) => s + l.qty * l.price, 0);
+                    const body = `Invoice from DreamTeam AI\n\nCustomer: ${invCustName}\nDate: ${invDate}\nDue: ${invDueDate}\n\nItems:\n${invLines.filter(l => l.desc).map(l => `- ${l.desc} × ${l.qty} = $${(l.qty * l.price).toFixed(2)}`).join('\n')}\n\nTotal: $${total.toFixed(2)}\n\n${invNotes ? 'Notes: ' + invNotes + '\n' : ''}${invTerms}`;
+                    let sent = false;
+                    if (invAutoSend && invCustEmail) {
+                      const r = await api.sendDEEmail({ tenantId, toEmail: invCustEmail, toName: invCustName, subject: `Invoice — Due ${invDueDate}`, body, templateType: 'invoice' });
+                      sent = r.ok;
+                    }
+                    setSentInvoices(prev => [...prev, { custName: invCustName, custEmail: invCustEmail, date: invDate, dueDate: invDueDate, total, sent }]);
+                    setToast(sent ? `Invoice sent to ${invCustEmail}` : 'Invoice saved (not sent)');
+                    setTimeout(() => setToast(''), 4000);
+                    setShowInvoiceModal(false);
+                    setInvCustName(''); setInvCustEmail(''); setInvLines([{ desc: '', qty: 1, price: 0 }]); setInvNotes('');
+                    setInvSending(false);
+                  }}
+                  className="w-full py-2.5 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: accent }}>
+                  {invSending ? 'Generating…' : invAutoSend ? 'Generate & Send' : 'Generate'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
