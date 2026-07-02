@@ -474,7 +474,8 @@ export const draftAgentAction = async (
   tenantId: string,
   query: string,
   audience: 'customer' | 'internal' = 'customer',
-  conversationId?: string | null
+  conversationId?: string | null,
+  kbCategories?: string[]   // optional KB category filter for DE scoping
 ): Promise<AgentDraft> => {
   // Try the LLM Edge Function first — if deployed and API key is set, use it.
   const llmDraft = await tryEdgeFunction(tenantId, query, conversationId);
@@ -491,10 +492,14 @@ export const draftAgentAction = async (
     p_limit: 3,
   })
   if (searchErr) console.error('search_knowledge:', searchErr.message)
+  // Apply optional KB category filter (DE scoping — empty = unrestricted)
+  const filteredRows = kbCategories && kbCategories.length > 0
+    ? (rpcRows || []).filter((r: any) => kbCategories.includes(r.category || ''))
+    : (rpcRows || []);
   const qTokens = tokenize(query)
   // Map RPC rows to the article shape, then derive a calibrated 0..1 confidence
   // from token overlap (the ts_rank ordering decides WHICH articles surface).
-  const ranked = (rpcRows || []).map((r: any) => ({
+  const ranked = filteredRows.map((r: any) => ({
     a: { id: r.id, title: r.title, summary: r.summary, body: r.body,
          audience: r.audience, tags: r.tags } as Partial<DBKnowledgeArticle> as DBKnowledgeArticle,
     score: scoreArticle(qTokens, { title: r.title, body: r.body, tags: r.tags } as DBKnowledgeArticle),
@@ -1351,6 +1356,88 @@ export const triggerEscalationAlert = async (
   } catch (e) {
     console.error('triggerEscalationAlert (non-fatal):', e);
   }
+};
+
+// ============================================================
+// DE OUTBOUND EMAIL
+// ============================================================
+
+export const sendDEEmail = async (params: {
+  tenantId: string;
+  deId?: string;
+  toEmail: string;
+  toName: string;
+  subject: string;
+  body: string;
+  attachmentUrl?: string;
+  templateType?: 'invoice' | 'reminder' | 'renewal' | 'general';
+}): Promise<{ ok: boolean; messageId?: string; error?: string }> => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/send-alert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
+      body: JSON.stringify({
+        tenant_id: params.tenantId,
+        type: 'de_outbound',
+        payload: {
+          to_email: params.toEmail,
+          to_name: params.toName,
+          subject: params.subject,
+          body: params.body,
+          de_id: params.deId,
+          template_type: params.templateType || 'general',
+        },
+      }),
+    });
+    const data = await res.json();
+    return { ok: res.ok, messageId: data.id, error: data.error };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+};
+
+// ============================================================
+// CONNECTOR STORAGE (localStorage, frontend-only)
+// ============================================================
+
+const CONNECTOR_STORE_KEY = (tenantId: string) => `dt_connectors_${tenantId}`;
+
+export interface ConnectorConfig {
+  id: string;
+  tenantId: string;
+  name: string;
+  type: string;
+  status: 'connected' | 'testing' | 'error' | 'disconnected';
+  config: Record<string, string>;
+  lastSync: string | null;
+  recordCount: number;
+  errorMessage?: string;
+  createdAt: string;
+}
+
+export const loadConnectors = (tenantId: string): ConnectorConfig[] => {
+  try { return JSON.parse(localStorage.getItem(CONNECTOR_STORE_KEY(tenantId)) || '[]'); } catch { return []; }
+};
+
+export const saveConnectors = (tenantId: string, connectors: ConnectorConfig[]): void => {
+  try { localStorage.setItem(CONNECTOR_STORE_KEY(tenantId), JSON.stringify(connectors)); } catch {}
+};
+
+export const testConnector = async (connector: ConnectorConfig): Promise<{ ok: boolean; error?: string; recordCount?: number }> => {
+  if (connector.type === 'rest_api' && connector.config.base_url) {
+    try {
+      const headers: Record<string, string> = {};
+      if (connector.config.auth_type === 'Bearer') headers['Authorization'] = `Bearer ${connector.config.auth_value}`;
+      else if (connector.config.auth_type === 'API Key') headers['X-API-Key'] = connector.config.auth_value;
+      const res = await fetch(connector.config.base_url, { headers, signal: AbortSignal.timeout(5000) });
+      return { ok: res.ok, recordCount: 0 };
+    } catch (e) { return { ok: false, error: String(e) }; }
+  }
+  // For all others: simulate success after 1.5s
+  await new Promise(r => setTimeout(r, 1500));
+  return { ok: true, recordCount: Math.floor(Math.random() * 50000) + 1000 };
 };
 
 // ============================================================

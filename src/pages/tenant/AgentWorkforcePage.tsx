@@ -9,6 +9,8 @@ import type { CatalogDE } from '../../lib/deCatalog'
 import { DETestPanel } from '../../components/DETestPanel'
 import { MODELS, PROVIDER_LABELS, TIER_COLORS, TASK_TYPES, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from '../../lib/models'
 import type { ModelProvider } from '../../lib/models'
+import { fetchKnowledgeArticles, fetchTenantProfiles } from '../../lib/api'
+import type { DBProfile } from '../../lib/api'
 
 // ---- Local types used by this page ----
 type ConnectorCategory =
@@ -1579,6 +1581,28 @@ const AgentWorkforcePage = ({
   const [ovThreshold, setOvThreshold] = useState(75);
   const [ovApproval, setOvApproval] = useState(false);
   const [ovSaveStatus, setOvSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // KB Scope (Phase 1 Fix A)
+  const [ovKbScope, setOvKbScope] = useState<string[]>([]);
+  const [kbCategories, setKbCategories] = useState<string[]>([]);
+  // Escalation Handler (Phase 1 Fix B)
+  const [ovEscHandler, setOvEscHandler] = useState('');
+  const [teamProfiles, setTeamProfiles] = useState<DBProfile[]>([]);
+  // DE Action Types (Phase 2B)
+  const [canSendEmail, setCanSendEmail] = useState(false);
+  const [canGenerateDocs, setCanGenerateDocs] = useState(false);
+  const [canReadConnectors, setCanReadConnectors] = useState(false);
+  const [canWriteConnectors, setCanWriteConnectors] = useState(false);
+  const [canJournalEntries, setCanJournalEntries] = useState(false);
+
+  // Load KB categories + team profiles when tenant is known
+  useEffect(() => {
+    if (!tenant?.id) return;
+    fetchKnowledgeArticles(tenant.id).then(articles => {
+      const cats = Array.from(new Set(articles.map(a => a.category).filter(Boolean) as string[]));
+      setKbCategories(cats);
+    });
+    fetchTenantProfiles(tenant.id).then(profiles => setTeamProfiles(profiles));
+  }, [tenant?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync employees from hook into the AgentDef list used by card/detail views
   useEffect(() => {
@@ -1630,6 +1654,17 @@ const AgentWorkforcePage = ({
     setOvThreshold(stored?.confidenceThreshold ?? selectedAgent.confidenceThreshold ?? 75);
     setOvApproval(stored?.requiredApproval ?? selectedAgent.requiredApproval ?? false);
     setOvSaveStatus('idle');
+    // KB Scope
+    setOvKbScope(stored?.knowledgeSources ?? []);
+    // Escalation Handler
+    setOvEscHandler((stored as any)?.model_config?.escalation_handler_id ?? '');
+    // Action types
+    const caps = stored?.capabilities ?? ['answer_kb'];
+    setCanSendEmail(caps.includes('send_email'));
+    setCanGenerateDocs(caps.includes('generate_docs'));
+    setCanReadConnectors(caps.includes('read_connectors'));
+    setCanWriteConnectors(caps.includes('write_connectors'));
+    setCanJournalEntries(caps.includes('journal_entries'));
   }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = agents.filter(
@@ -2018,6 +2053,22 @@ const AgentWorkforcePage = ({
                 </div>
               </div>
 
+              {/* Escalation Handler */}
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">ESCALATION HANDLER</label>
+                <select
+                  value={ovEscHandler}
+                  onChange={e => setOvEscHandler(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Any available team member</option>
+                  {teamProfiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.full_name || p.id}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">When the DE escalates, route to this person's inbox.</p>
+              </div>
+
               {/* Confidence threshold */}
               <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -2053,6 +2104,60 @@ const AgentWorkforcePage = ({
                 </button>
               </div>
 
+              {/* Knowledge Scope */}
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                <div className="mb-2">
+                  <label className="text-xs font-semibold text-slate-400 tracking-wider">KNOWLEDGE SCOPE</label>
+                  <p className="text-xs text-slate-500 mt-0.5">Restrict this DE to specific KB categories. No selection = unrestricted access.</p>
+                </div>
+                {kbCategories.length === 0 ? (
+                  <p className="text-xs text-slate-600">No KB categories found — publish articles with categories to enable scoping.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {kbCategories.map(cat => {
+                      const sel = ovKbScope.includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => setOvKbScope(prev => sel ? prev.filter(c => c !== cat) : [...prev, cat])}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${sel ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'}`}
+                          style={sel ? { borderColor: accentColor, backgroundColor: accentColor + '25', color: accentColor } : {}}
+                        >{cat}</button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* What this DE can do */}
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                <label className="text-xs font-semibold text-slate-400 block mb-3 tracking-wider">WHAT THIS DE CAN DO</label>
+                <div className="space-y-2">
+                  {[
+                    { label: 'Answer questions', sub: 'From Knowledge Base', key: 'answer_kb', state: true, disabled: true },
+                    { label: 'Send emails', sub: 'Outbound emails to customers or team', key: 'send_email', state: canSendEmail, set: setCanSendEmail },
+                    { label: 'Generate documents', sub: 'Invoices, reports, summaries', key: 'generate_docs', state: canGenerateDocs, set: setCanGenerateDocs },
+                    { label: 'Read connector data', sub: 'Query connected data sources', key: 'read_connectors', state: canReadConnectors, set: setCanReadConnectors },
+                    { label: 'Write to connectors', sub: 'Create/update records in external systems', key: 'write_connectors', state: canWriteConnectors, set: setCanWriteConnectors },
+                    { label: 'Make journal entries', sub: 'Post to accounting systems', key: 'journal_entries', state: canJournalEntries, set: setCanJournalEntries },
+                  ].map(item => (
+                    <label key={item.key} className={`flex items-start gap-3 ${item.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input
+                        type="checkbox"
+                        checked={item.state}
+                        disabled={item.disabled}
+                        onChange={() => !item.disabled && item.set && item.set((v: boolean) => !v)}
+                        className="mt-0.5 accent-indigo-500"
+                      />
+                      <div>
+                        <div className="text-sm text-white">{item.label}</div>
+                        <div className="text-xs text-slate-500">{item.sub}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               {/* Save */}
               <div className="flex items-center gap-3 pt-1">
                 <button
@@ -2060,6 +2165,8 @@ const AgentWorkforcePage = ({
                     const stored = employees.find(e => e.id === selectedAgent?.id);
                     if (!stored) return;
                     setOvSaveStatus('saving');
+                    const caps = ['answer_kb', ...(canSendEmail ? ['send_email'] : []), ...(canGenerateDocs ? ['generate_docs'] : []), ...(canReadConnectors ? ['read_connectors'] : []), ...(canWriteConnectors ? ['write_connectors'] : []), ...(canJournalEntries ? ['journal_entries'] : [])];
+                    const existingModelConfig = (stored as any).model_config || {};
                     await update(stored.id, {
                       name: ovName,
                       persona_name: ovPersona,
@@ -2068,7 +2175,14 @@ const AgentWorkforcePage = ({
                       category: ovAudience,
                       confidenceThreshold: ovThreshold,
                       requiredApproval: ovApproval,
-                    });
+                      knowledgeSources: ovKbScope,
+                      capabilities: caps,
+                    } as any);
+                    // Store escalation_handler_id in model_config via direct supabase update
+                    if (tenant?.id) {
+                      const { supabase: sb } = await import('../../supabase');
+                      await sb.from('digital_employees').update({ model_config: { ...existingModelConfig, escalation_handler_id: ovEscHandler || null } }).eq('id', stored.id).eq('tenant_id', tenant.id);
+                    }
                     setOvSaveStatus('saved');
                     setTimeout(() => setOvSaveStatus('idle'), 3000);
                   }}

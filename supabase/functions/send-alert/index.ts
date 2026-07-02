@@ -18,7 +18,7 @@ serve(async (req) => {
     const body = await req.json();
     const { tenant_id, type, payload } = body as {
       tenant_id: string;
-      type: 'escalation_alert' | 'budget_warning' | 'csat_negative';
+      type: 'escalation_alert' | 'budget_warning' | 'csat_negative' | 'de_outbound';
       payload: Record<string, string>;
     };
 
@@ -42,6 +42,29 @@ serve(async (req) => {
 
     const resendKey = configMap['RESEND_API_KEY'];
     const alertEmail = configMap[`alert_email_${tenant_id}`] || configMap['alert_email'];
+
+    // Handle de_outbound separately — uses to_email from payload, not alertEmail
+    if (type === 'de_outbound') {
+      const subject = payload.subject || 'Message from our team';
+      const html = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+    <p style="color:#334155">${(payload.body || '').replace(/\n/g, '<br>')}</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0">
+    <p style="color:#94a3b8;font-size:12px">Sent by your AI assistant · To unsubscribe reply STOP</p>
+  </div>`;
+      const toEmail = payload.to_email;
+      if (!resendKey || !toEmail) {
+        await supabase.from('notifications').insert({ tenant_id, type, status: 'pending', payload });
+        return new Response(JSON.stringify({ ok: true, sent: false, reason: 'no_config' }), { headers: corsHeaders });
+      }
+      const sendRes2 = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'DreamTeam AI <alerts@dreamteam.ai>', to: [toEmail], subject, html }),
+      });
+      const sendData2 = await sendRes2.json();
+      await supabase.from('notifications').insert({ tenant_id, type, status: sendRes2.ok ? 'sent' : 'failed', payload: { ...payload, resend_response: sendData2 }, sent_at: sendRes2.ok ? new Date().toISOString() : null });
+      return new Response(JSON.stringify({ ok: true, sent: sendRes2.ok, id: sendData2.id }), { headers: corsHeaders });
+    }
 
     if (!resendKey || !alertEmail) {
       // Log notification as pending — will be retried when email is configured

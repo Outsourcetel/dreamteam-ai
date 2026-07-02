@@ -79,6 +79,14 @@ const CustomerPortalPage = ({
   const eReply = eReplyS[0]; const setEReply = eReplyS[1];
   const eBusyS = React.useState(false);
   const eBusy = eBusyS[0]; const setEBusy = eBusyS[1];
+  const [eResolved, setEResolved] = React.useState<string | null>(null);
+  const [eResolvedReply, setEResolvedReply] = React.useState('');
+  const [showKBSuggest, setShowKBSuggest] = React.useState<any>(null);
+  const [kbSuggestTitle, setKbSuggestTitle] = React.useState('');
+  const [kbSuggestBody, setKbSuggestBody] = React.useState('');
+  const [kbSuggestSaving, setKbSuggestSaving] = React.useState(false);
+  const [eConvMessages, setEConvMessages] = React.useState<any[]>([]);
+  const [eConvOpen, setEConvOpen] = React.useState(false);
   const eLoadEsc = React.useCallback(async () => {
     if (!pLive || !pTenantId) return;
     const open = await api.fetchEscalations(pTenantId, 'open');
@@ -88,6 +96,11 @@ const CustomerPortalPage = ({
   React.useEffect(() => {
     if (pLive && subPage === 'portal_escalations') eLoadEsc();
   }, [pLive, subPage, eLoadEsc]);
+  // Load full conversation thread when an escalation is selected
+  React.useEffect(() => {
+    if (!eSel?.conversation_id) { setEConvMessages([]); return; }
+    supabase.from('messages').select('*').eq('conversation_id', eSel.conversation_id).order('created_at', { ascending: true }).then(({ data }) => setEConvMessages(data || []));
+  }, [eSel?.conversation_id]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (pLive && subPage === 'portal_settings' && pTenantId) {
       api.fetchAlertEmail(pTenantId).then(e => { if (e) setAlertEmail(e); });
@@ -105,8 +118,14 @@ const CustomerPortalPage = ({
     if (!row || !pTenantId || !eReply.trim()) return;
     setEBusy(true);
     const me = ((user as any) && ((user as any).id || (user as any).userId)) || null;
+    const sentReply = eReply;
     const r = await api.resolveEscalation({ escalationId: row.id, tenantId: pTenantId, conversationId: row.conversation_id || null, reply: eReply, resolvedBy: me });
-    if (r.ok) { setEReply(''); setESel(null); await eLoadEsc(); }
+    if (r.ok) {
+      setEResolvedReply(sentReply);
+      setEResolved(row.id);
+      setEReply('');
+      await eLoadEsc();
+    }
     setEBusy(false);
   };
   const pLoadConvos = React.useCallback(async () => {
@@ -1294,24 +1313,99 @@ const CustomerPortalPage = ({
               {!eSel ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-slate-500 text-sm">Select an escalation to review and respond.</div>
               ) : (
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-                  <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
                     <span className={"text-[11px] px-2 py-0.5 rounded border " + eTone(eSel.audit_verdict)}>{eReasonLabel(eSel.reason)}</span>
                     <span className="text-xs text-slate-500">{eSel.status === 'assigned' ? 'Claimed' : 'Unclaimed'}</span>
                   </div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Customer asked</p>
-                  <p className="text-slate-100 mt-1 mb-4">{eSel.question || '—'}</p>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">AI draft answer{typeof eSel.confidence === 'number' ? " (" + Math.round(eSel.confidence * 100) + "% confidence)" : ""}</p>
-                  <div className="mt-1 mb-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-300 whitespace-pre-wrap">{eSel.draft_answer || 'No answer was produced — the AI could not find a confident match.'}</div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Your reply to the customer</p>
-                  <textarea value={eReply} onChange={(e) => setEReply((e.target as any).value)} rows={4} placeholder="Write the human answer that will be posted into the conversation..." className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500" />
-                  <div className="flex items-center gap-2 mt-3">
+
+                  {/* Full conversation thread */}
+                  {eSel.conversation_id && (
+                    <div>
+                      <button onClick={() => setEConvOpen(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1">
+                        <span>{eConvOpen ? '▼' : '▶'}</span> Full conversation {eConvMessages.length > 0 ? `(${eConvMessages.length} messages)` : ''}
+                      </button>
+                      {eConvOpen && eConvMessages.length > 0 && (
+                        <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto border border-slate-800 rounded-lg p-2">
+                          {eConvMessages.map((m: any, i: number) => (
+                            <div key={m.id || i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[80%] rounded-lg px-2.5 py-1.5 text-xs ${m.role === 'user' ? 'bg-indigo-500/20 text-indigo-200' : 'bg-slate-800 text-slate-400'}`}>
+                                {m.content || m.body || ''}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Customer asked</p>
+                    <p className="text-slate-100 mt-1">{eSel.question || '—'}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      AI draft answer
+                      {typeof eSel.confidence === 'number' && (
+                        <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${eSel.confidence < 0.4 ? 'bg-rose-500/20 text-rose-300' : eSel.confidence < 0.65 ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                          {Math.round(eSel.confidence * 100)}% confidence
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">The DE searched your knowledge base but could not answer with sufficient confidence.</p>
+                    {eSel.draft_answer && (
+                      <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400 whitespace-pre-wrap font-mono text-xs opacity-70">{eSel.draft_answer}</div>
+                    )}
+                    {!eSel.draft_answer && (
+                      <div className="mt-1 text-xs text-slate-600 italic">No answer was produced — the AI could not find a confident match.</div>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Your reply to the customer</p>
+                    <textarea value={eReply} onChange={(e) => setEReply((e.target as any).value)} rows={4} placeholder="Write the human answer that will be posted into the conversation..." className="w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500" />
+                  </div>
+
+                  <div className="flex items-center gap-2">
                     {eSel.status !== 'assigned' && (
                       <button disabled={eBusy} onClick={() => eClaim(eSel)} className="px-3 py-2 text-sm rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500 disabled:opacity-50">Claim</button>
                     )}
                     <button disabled={eBusy || !eReply.trim()} onClick={() => eResolve(eSel)} className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>{eBusy ? 'Working...' : 'Send reply & resolve'}</button>
                   </div>
-                  <p className="text-[11px] text-slate-600 mt-2">Resolving posts your reply into the conversation and marks both the escalation and the conversation as resolved. The AI never auto-sends a human reply.</p>
+
+                  {eResolved === eSel.id && (
+                    <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                      <span className="text-emerald-400 text-sm">✓ Reply sent</span>
+                      <button onClick={() => { setShowKBSuggest(eSel); setKbSuggestTitle(eSel.question || ''); setKbSuggestBody(eResolvedReply); }} className="text-xs text-indigo-400 hover:text-indigo-300 underline">Add this answer to Knowledge Base →</button>
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-slate-600">Resolving posts your reply into the conversation and marks both the escalation and the conversation as resolved. The AI never auto-sends a human reply.</p>
+                </div>
+              )}
+
+              {/* Add-to-KB modal */}
+              {showKBSuggest && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+                  <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+                    <h3 className="text-white font-semibold mb-4">Add to Knowledge Base</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Title</label>
+                        <input value={kbSuggestTitle} onChange={e => setKbSuggestTitle(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Body</label>
+                        <textarea value={kbSuggestBody} onChange={e => setKbSuggestBody(e.target.value)} rows={5} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button disabled={kbSuggestSaving} onClick={async () => { if (!pTenantId) return; setKbSuggestSaving(true); await api.upsertKnowledgeArticle({ tenant_id: pTenantId, title: kbSuggestTitle, body: kbSuggestBody, audience: 'customer', category: 'Support', status: 'draft' }); setKbSuggestSaving(false); setShowKBSuggest(null); }} className="px-4 py-2 text-sm rounded-lg border border-slate-600 text-slate-200 hover:border-slate-400 disabled:opacity-50">Save Draft</button>
+                      <button disabled={kbSuggestSaving} onClick={async () => { if (!pTenantId) return; setKbSuggestSaving(true); await api.upsertKnowledgeArticle({ tenant_id: pTenantId, title: kbSuggestTitle, body: kbSuggestBody, audience: 'customer', category: 'Support', status: 'published' }); setKbSuggestSaving(false); setShowKBSuggest(null); }} className="px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>Publish</button>
+                      <button onClick={() => setShowKBSuggest(null)} className="ml-auto px-3 py-2 text-sm text-slate-400 hover:text-slate-200">Cancel</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
