@@ -800,7 +800,7 @@ const CustomerPortalPage = ({
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={PORTAL_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Customer Portal</h1>
+          <h1 className="text-2xl font-bold text-white">Customer Support</h1>
           <p className="text-slate-400 text-sm mt-1">
             Digital Employees serve your customers 24/7 — answering questions, resolving
             issues, and taking action on their behalf
