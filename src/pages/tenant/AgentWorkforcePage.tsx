@@ -52,6 +52,14 @@ interface AgentModelConfig {
   ragEnabled: boolean;
   ragTopK: number;
   contextWindow: number;
+  fallback_model?: string;
+  fallback_provider?: string;
+  latency_threshold_ms?: number;
+  route_by_task?: boolean;
+  task_routes?: { simple: { model: string; provider: string }; complex: { model: string; provider: string }; code: { model: string; provider: string } };
+  token_budget?: { monthly_limit: number; hard_limit: boolean };
+  persona?: { tone: string; opening_greeting: string; closing_signature: string; avoid_phrases: string; always_mention: string };
+  escalation_tiers?: Array<{ tier: number; assignee_id: string; trigger_confidence: number; after_minutes: number; channel: 'inapp' | 'email' | 'both' }>;
 }
 
 interface AgentDef {
@@ -1559,7 +1567,7 @@ const AgentWorkforcePage = ({
   );
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [configTab, setConfigTab] = useState<
-    'overview' | 'model' | 'pipeline' | 'validators' | 'actions' | 'knowledge'
+    'overview' | 'persona' | 'model' | 'pipeline' | 'validators' | 'actions' | 'knowledge'
   >('overview');
   const [showTestPanel, setShowTestPanel] = useState(false);
   const accentColor = tenant?.primaryColor || '#6366f1';
@@ -1593,6 +1601,42 @@ const AgentWorkforcePage = ({
   const [canReadConnectors, setCanReadConnectors] = useState(false);
   const [canWriteConnectors, setCanWriteConnectors] = useState(false);
   const [canJournalEntries, setCanJournalEntries] = useState(false);
+
+  // Fallback & Routing (Model tab)
+  const [modelFallbackEnabled, setModelFallbackEnabled] = useState(false);
+  const [fallbackProvider, setFallbackProvider] = useState<ModelProvider>(DEFAULT_PROVIDER);
+  const [fallbackModelId, setFallbackModelId] = useState(DEFAULT_MODEL_ID);
+  const [latencyThresholdMs, setLatencyThresholdMs] = useState(5000);
+  const [modelRouteByTask, setModelRouteByTask] = useState(false);
+  const [taskRouteSimpleModel, setTaskRouteSimpleModel] = useState(DEFAULT_MODEL_ID);
+  const [taskRouteSimpleProv, setTaskRouteSimpleProv] = useState<ModelProvider>(DEFAULT_PROVIDER);
+  const [taskRouteComplexModel, setTaskRouteComplexModel] = useState(DEFAULT_MODEL_ID);
+  const [taskRouteComplexProv, setTaskRouteComplexProv] = useState<ModelProvider>(DEFAULT_PROVIDER);
+  const [taskRouteCodeModel, setTaskRouteCodeModel] = useState(DEFAULT_MODEL_ID);
+  const [taskRouteCodeProv, setTaskRouteCodeProv] = useState<ModelProvider>(DEFAULT_PROVIDER);
+
+  // Token Budget (Model tab)
+  const [tokenBudgetMonthly, setTokenBudgetMonthly] = useState(0);
+  const [tokenBudgetHard, setTokenBudgetHard] = useState(false);
+
+  // Persona tab
+  const [personaTone, setPersonaTone] = useState<'professional' | 'empathetic' | 'technical' | 'friendly' | 'formal' | 'custom'>('professional');
+  const [personaOpening, setPersonaOpening] = useState('');
+  const [personaClosing, setPersonaClosing] = useState('');
+  const [personaAvoid, setPersonaAvoid] = useState('');
+  const [personaAlwaysMention, setPersonaAlwaysMention] = useState('');
+  const [personaSystemPrompt, setPersonaSystemPrompt] = useState('');
+  const [personaSaveStatus, setPersonaSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [showPromptHistory, setShowPromptHistory] = useState(false);
+
+  // Escalation Tiers (Overview tab)
+  type EscTier = { tier: number; assignee_id: string; trigger_confidence: number; after_minutes: number; channel: 'inapp' | 'email' | 'both' };
+  const [escalationTiers, setEscalationTiers] = useState<EscTier[]>([
+    { tier: 1, assignee_id: '', trigger_confidence: 60, after_minutes: 0, channel: 'inapp' },
+    { tier: 2, assignee_id: '', trigger_confidence: 60, after_minutes: 30, channel: 'both' },
+    { tier: 3, assignee_id: '', trigger_confidence: 60, after_minutes: 120, channel: 'email' },
+  ]);
+  const [expandedTiers, setExpandedTiers] = useState<number[]>([1]);
 
   // Load KB categories + team profiles when tenant is known
   useEffect(() => {
@@ -1665,6 +1709,41 @@ const AgentWorkforcePage = ({
     setCanReadConnectors(caps.includes('read_connectors'));
     setCanWriteConnectors(caps.includes('write_connectors'));
     setCanJournalEntries(caps.includes('journal_entries'));
+    // Fallback / routing
+    const mc = (stored as any)?.model_config || {};
+    setModelFallbackEnabled(!!mc.fallback_model);
+    setFallbackProvider((mc.fallback_provider as ModelProvider) || DEFAULT_PROVIDER);
+    setFallbackModelId(mc.fallback_model || DEFAULT_MODEL_ID);
+    setLatencyThresholdMs(mc.latency_threshold_ms || 5000);
+    setModelRouteByTask(!!mc.route_by_task);
+    setTaskRouteSimpleProv((mc.task_routes?.simple?.provider as ModelProvider) || DEFAULT_PROVIDER);
+    setTaskRouteSimpleModel(mc.task_routes?.simple?.model || DEFAULT_MODEL_ID);
+    setTaskRouteComplexProv((mc.task_routes?.complex?.provider as ModelProvider) || DEFAULT_PROVIDER);
+    setTaskRouteComplexModel(mc.task_routes?.complex?.model || DEFAULT_MODEL_ID);
+    setTaskRouteCodeProv((mc.task_routes?.code?.provider as ModelProvider) || DEFAULT_PROVIDER);
+    setTaskRouteCodeModel(mc.task_routes?.code?.model || DEFAULT_MODEL_ID);
+    // Token budget
+    setTokenBudgetMonthly(mc.token_budget?.monthly_limit || 0);
+    setTokenBudgetHard(mc.token_budget?.hard_limit || false);
+    // Persona
+    const p = mc.persona || {};
+    setPersonaTone(p.tone || 'professional');
+    setPersonaOpening(p.opening_greeting || '');
+    setPersonaClosing(p.closing_signature || '');
+    setPersonaAvoid(p.avoid_phrases || '');
+    setPersonaAlwaysMention(p.always_mention || '');
+    setPersonaSystemPrompt(stored?.model_config ? (mc as any).systemPrompt || '' : selectedAgent?.modelConfig?.systemPrompt || '');
+    // Escalation tiers
+    if (mc.escalation_tiers?.length) {
+      setEscalationTiers(mc.escalation_tiers);
+    } else {
+      setEscalationTiers([
+        { tier: 1, assignee_id: '', trigger_confidence: 60, after_minutes: 0, channel: 'inapp' },
+        { tier: 2, assignee_id: '', trigger_confidence: 60, after_minutes: 30, channel: 'both' },
+        { tier: 3, assignee_id: '', trigger_confidence: 60, after_minutes: 120, channel: 'email' },
+      ]);
+    }
+    setExpandedTiers([1]);
   }, [selectedAgent?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = agents.filter(
@@ -1959,10 +2038,11 @@ const AgentWorkforcePage = ({
           onClose={() => setSelectedAgent(null)}
         >
           {/* Tab bar */}
-          <div className="flex gap-1 mb-6 p-1 bg-slate-800 rounded-lg">
+          <div className="flex gap-1 mb-6 p-1 bg-slate-800 rounded-lg flex-wrap">
             {(
               [
                 'overview',
+                'persona',
                 'model',
                 'pipeline',
                 'validators',
@@ -2053,20 +2133,80 @@ const AgentWorkforcePage = ({
                 </div>
               </div>
 
-              {/* Escalation Handler */}
-              <div>
-                <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">ESCALATION HANDLER</label>
-                <select
-                  value={ovEscHandler}
-                  onChange={e => setOvEscHandler(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">Any available team member</option>
-                  {teamProfiles.map(p => (
-                    <option key={p.id} value={p.id}>{p.full_name || p.id}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-slate-500 mt-1">When the DE escalates, route to this person's inbox.</p>
+              {/* Escalation Tiers */}
+              <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
+                <label className="text-xs font-semibold text-slate-400 block mb-3 tracking-wider">ESCALATION TIERS</label>
+                <div className="space-y-2">
+                  {escalationTiers.map((tier) => {
+                    const isExpanded = expandedTiers.includes(tier.tier);
+                    const tierLabel = tier.tier === 1 ? 'Tier 1 — First escalation' : tier.tier === 2 ? `Tier 2 — If unresolved after ${tier.after_minutes}min` : `Tier 3 — Manager escalation`;
+                    return (
+                      <div key={tier.tier} className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => setExpandedTiers(prev => prev.includes(tier.tier) ? prev.filter(t => t !== tier.tier) : [...prev, tier.tier])}
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+                        >
+                          <span className="text-xs font-medium text-slate-300">{tierLabel}</span>
+                          <span className="text-slate-600 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                        </button>
+                        {isExpanded && (
+                          <div className="px-3 pb-3 space-y-2 border-t border-slate-800 pt-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-slate-500 block mb-1">Assignee</label>
+                                <select
+                                  value={tier.assignee_id}
+                                  onChange={e => setEscalationTiers(prev => prev.map(t => t.tier === tier.tier ? { ...t, assignee_id: e.target.value } : t))}
+                                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                                >
+                                  <option value="">First available</option>
+                                  {teamProfiles.map(p => (
+                                    <option key={p.id} value={p.id}>{p.full_name || p.id}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs text-slate-500 block mb-1">Channel</label>
+                                <select
+                                  value={tier.channel}
+                                  onChange={e => setEscalationTiers(prev => prev.map(t => t.tier === tier.tier ? { ...t, channel: e.target.value as any } : t))}
+                                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                                >
+                                  <option value="inapp">In-app notification</option>
+                                  <option value="email">Email</option>
+                                  <option value="both">Both</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-slate-500 block mb-1">Trigger at confidence &lt;</label>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number" min={0} max={100} value={tier.trigger_confidence}
+                                    onChange={e => setEscalationTiers(prev => prev.map(t => t.tier === tier.tier ? { ...t, trigger_confidence: Number(e.target.value) } : t))}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                                  />
+                                  <span className="text-xs text-slate-500">%</span>
+                                </div>
+                              </div>
+                              {tier.tier > 1 && (
+                                <div>
+                                  <label className="text-xs text-slate-500 block mb-1">After unresolved (min)</label>
+                                  <input
+                                    type="number" min={0} value={tier.after_minutes}
+                                    onChange={e => setEscalationTiers(prev => prev.map(t => t.tier === tier.tier ? { ...t, after_minutes: Number(e.target.value) } : t))}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Confidence threshold */}
@@ -2178,10 +2318,10 @@ const AgentWorkforcePage = ({
                       knowledgeSources: ovKbScope,
                       capabilities: caps,
                     } as any);
-                    // Store escalation_handler_id in model_config via direct supabase update
+                    // Store escalation tiers + handler in model_config
                     if (tenant?.id) {
                       const { supabase: sb } = await import('../../supabase');
-                      await sb.from('digital_employees').update({ model_config: { ...existingModelConfig, escalation_handler_id: ovEscHandler || null } }).eq('id', stored.id).eq('tenant_id', tenant.id);
+                      await sb.from('digital_employees').update({ model_config: { ...existingModelConfig, escalation_handler_id: ovEscHandler || null, escalation_tiers: escalationTiers } }).eq('id', stored.id).eq('tenant_id', tenant.id);
                     }
                     setOvSaveStatus('saved');
                     setTimeout(() => setOvSaveStatus('idle'), 3000);
@@ -2196,6 +2336,156 @@ const AgentWorkforcePage = ({
               </div>
             </div>
           )}
+
+          {/* === PERSONA TAB === */}
+          {configTab === 'persona' && (() => {
+            const tonePresets: Array<{ id: typeof personaTone; label: string; desc: string }> = [
+              { id: 'professional', label: 'Professional', desc: 'Clear, direct, business-appropriate. No slang.' },
+              { id: 'empathetic', label: 'Empathetic', desc: 'Warm, understanding, validates customer feelings before answering.' },
+              { id: 'technical', label: 'Technical', desc: 'Precise, uses technical terminology, assumes high knowledge.' },
+              { id: 'friendly', label: 'Friendly', desc: 'Casual, approachable, uses first names, slight humor OK.' },
+              { id: 'formal', label: 'Formal', desc: 'Formal register, no contractions, conservative language.' },
+              { id: 'custom', label: 'Custom', desc: 'Define your own tone below.' },
+            ];
+            const promptHistoryKey = `dt_prompt_history_${selectedAgent?.id}`;
+            const promptHistory: Array<{ savedAt: string; prompt: string }> = (() => {
+              try { return JSON.parse(localStorage.getItem(promptHistoryKey) || '[]'); } catch { return []; }
+            })();
+            const generatePrompt = () => {
+              const toneDesc = tonePresets.find(t => t.id === personaTone)?.desc || '';
+              const name = ovPersona || ovName || selectedAgent?.name || 'this assistant';
+              let p = `You are ${name}, a digital employee.\n\nTone: ${toneDesc}`;
+              if (personaOpening) p += `\n\nOpening: ${personaOpening}`;
+              if (personaClosing) p += `\n\nClosing: ${personaClosing}`;
+              if (personaAvoid) p += `\n\nAvoid these phrases: ${personaAvoid}`;
+              if (personaAlwaysMention) p += `\n\nAlways mention: ${personaAlwaysMention}`;
+              setPersonaSystemPrompt(p);
+            };
+            const savePersona = async () => {
+              const stored = employees.find(e => e.id === selectedAgent?.id);
+              if (!stored) return;
+              setPersonaSaveStatus('saving');
+              const mc = (stored as any)?.model_config || {};
+              const history = promptHistory.slice(0, 4);
+              if (personaSystemPrompt) {
+                history.unshift({ savedAt: new Date().toISOString(), prompt: personaSystemPrompt });
+                localStorage.setItem(promptHistoryKey, JSON.stringify(history.slice(0, 5)));
+              }
+              if (tenant?.id) {
+                const { supabase: sb } = await import('../../supabase');
+                await sb.from('digital_employees').update({ model_config: { ...mc, persona: { tone: personaTone, opening_greeting: personaOpening, closing_signature: personaClosing, avoid_phrases: personaAvoid, always_mention: personaAlwaysMention }, systemPrompt: personaSystemPrompt } }).eq('id', stored.id).eq('tenant_id', tenant.id);
+              }
+              setPersonaSaveStatus('saved');
+              setTimeout(() => setPersonaSaveStatus('idle'), 3000);
+            };
+            return (
+              <div className="space-y-5">
+                {/* 1. Tone & Style */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-2 tracking-wider">TONE & STYLE</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {tonePresets.map(tp => (
+                      <button key={tp.id} onClick={() => setPersonaTone(tp.id)}
+                        className={`text-left p-3 rounded-xl border transition-all ${personaTone === tp.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'}`}
+                        style={personaTone === tp.id ? { borderColor: accentColor, backgroundColor: accentColor + '15' } : {}}>
+                        <div className="text-xs font-semibold text-white mb-0.5">{tp.label}</div>
+                        <div className="text-xs text-slate-400 leading-tight">{tp.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {personaTone === 'custom' && (
+                    <textarea
+                      rows={2}
+                      placeholder="Describe the tone you want this DE to use…"
+                      className="mt-2 w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                    />
+                  )}
+                </div>
+
+                {/* 2. Voice & Signature */}
+                <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 space-y-3">
+                  <label className="text-xs font-semibold text-slate-400 block tracking-wider">VOICE & SIGNATURE</label>
+                  <div className="text-xs text-slate-500">Responding as: <span className="text-slate-300 font-medium">{ovPersona || ovName || selectedAgent?.name || '—'}</span></div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Opening greeting</label>
+                    <input value={personaOpening} onChange={e => setPersonaOpening(e.target.value)}
+                      placeholder="e.g. Hi there! I'm Aria, your support specialist."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Closing signature</label>
+                    <input value={personaClosing} onChange={e => setPersonaClosing(e.target.value)}
+                      placeholder="e.g. Let me know if there's anything else I can help with!"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Avoid these phrases <span className="text-slate-600">(comma-separated)</span></label>
+                    <textarea value={personaAvoid} onChange={e => setPersonaAvoid(e.target.value)} rows={2}
+                      placeholder="e.g. I'm sorry, unfortunately, I can't help with that"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Always mention</label>
+                    <textarea value={personaAlwaysMention} onChange={e => setPersonaAlwaysMention(e.target.value)} rows={2}
+                      placeholder="e.g. If escalating, always mention our 24hr callback guarantee"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none" />
+                  </div>
+                </div>
+
+                {/* 3. System Prompt Builder */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-400 tracking-wider">SYSTEM PROMPT</label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <button onClick={() => setShowPromptHistory(v => !v)}
+                          className="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all">
+                          History
+                        </button>
+                        {showPromptHistory && promptHistory.length > 0 && (
+                          <div className="absolute right-0 top-7 z-10 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                            {promptHistory.map((h, i) => (
+                              <button key={i} onClick={() => { setPersonaSystemPrompt(h.prompt); setShowPromptHistory(false); }}
+                                className="w-full text-left px-3 py-2.5 hover:bg-slate-800 border-b border-slate-800 last:border-0 transition-all">
+                                <div className="text-xs text-slate-400">{new Date(h.savedAt).toLocaleString()}</div>
+                                <div className="text-xs text-slate-500 truncate mt-0.5">{h.prompt.slice(0, 60)}…</div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={generatePrompt}
+                        className="text-xs px-3 py-1 rounded-lg text-white transition-all"
+                        style={{ backgroundColor: accentColor }}>
+                        Generate from settings
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">Auto-generated from settings above, or override manually. Synced with Model tab.</p>
+                  <textarea
+                    value={personaSystemPrompt}
+                    onChange={e => setPersonaSystemPrompt(e.target.value)}
+                    rows={6}
+                    maxLength={4096}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none font-mono"
+                    placeholder="System prompt will appear here after clicking 'Generate from settings', or type your own…"
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-600">{personaSystemPrompt.length} / 4096 chars</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <button onClick={savePersona} disabled={personaSaveStatus === 'saving'}
+                    className="px-5 py-2 text-white text-xs font-medium rounded-xl transition-all disabled:opacity-60"
+                    style={{ backgroundColor: accentColor }}>
+                    {personaSaveStatus === 'saving' ? 'Saving…' : 'Save Persona'}
+                  </button>
+                  {personaSaveStatus === 'saved' && <span className="text-xs text-emerald-400">Persona saved</span>}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* === MODEL TAB === */}
           {configTab === 'model' && (
@@ -2310,6 +2600,127 @@ const AgentWorkforcePage = ({
                 </div>
               </div>
 
+              {/* Fallback & Routing */}
+              <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 space-y-3">
+                <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Fallback &amp; Routing</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-white">Enable fallback model</div>
+                    <div className="text-xs text-slate-500">Used if primary model fails or exceeds latency threshold</div>
+                  </div>
+                  <button onClick={() => setModelFallbackEnabled(v => !v)}
+                    className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${modelFallbackEnabled ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                    style={modelFallbackEnabled ? { backgroundColor: accentColor } : {}}>
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${modelFallbackEnabled ? 'left-5' : 'left-1'}`} />
+                  </button>
+                </div>
+                {modelFallbackEnabled && (
+                  <div className="space-y-3 pt-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Fallback provider</label>
+                        <select value={fallbackProvider} onChange={e => setFallbackProvider(e.target.value as ModelProvider)}
+                          className="w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none">
+                          {(['anthropic', 'openai', 'google'] as ModelProvider[]).map(p => (
+                            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 block mb-1">Fallback model</label>
+                        <select value={fallbackModelId} onChange={e => setFallbackModelId(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-none">
+                          {MODELS.filter(m => m.provider === fallbackProvider).map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Latency threshold (ms)</label>
+                      <input type="number" min={500} max={60000} value={latencyThresholdMs}
+                        onChange={e => setLatencyThresholdMs(Number(e.target.value))}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                      <p className="text-xs text-slate-600 mt-1">If primary model fails or exceeds latency threshold ({latencyThresholdMs}ms), fall back automatically.</p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-700">
+                  <div>
+                    <div className="text-sm text-white">Route by task type</div>
+                    <div className="text-xs text-slate-500">Different models for different task types — cost efficiency</div>
+                  </div>
+                  <button onClick={() => setModelRouteByTask(v => !v)}
+                    className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${modelRouteByTask ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                    style={modelRouteByTask ? { backgroundColor: accentColor } : {}}>
+                    <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${modelRouteByTask ? 'left-5' : 'left-1'}`} />
+                  </button>
+                </div>
+                {modelRouteByTask && (
+                  <div className="space-y-2">
+                    {[
+                      { label: 'Simple Q&A', prov: taskRouteSimpleProv, setProv: setTaskRouteSimpleProv, model: taskRouteSimpleModel, setModel: setTaskRouteSimpleModel },
+                      { label: 'Complex Reasoning', prov: taskRouteComplexProv, setProv: setTaskRouteComplexProv, model: taskRouteComplexModel, setModel: setTaskRouteComplexModel },
+                      { label: 'Code / Structured Output', prov: taskRouteCodeProv, setProv: setTaskRouteCodeProv, model: taskRouteCodeModel, setModel: setTaskRouteCodeModel },
+                    ].map(row => (
+                      <div key={row.label} className="grid grid-cols-3 gap-2 items-center">
+                        <span className="text-xs text-slate-400">{row.label}</span>
+                        <select value={row.prov} onChange={e => row.setProv(e.target.value as ModelProvider)}
+                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none">
+                          {(['anthropic', 'openai', 'google'] as ModelProvider[]).map(p => (
+                            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+                          ))}
+                        </select>
+                        <select value={row.model} onChange={e => row.setModel(e.target.value)}
+                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none">
+                          {MODELS.filter(m => m.provider === row.prov).map(m => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Token Budget */}
+              {(() => {
+                const stored = employees.find(e => e.id === selectedAgent?.id);
+                const estimatedTokens = (stored?.tasksThisMonth ?? selectedAgent?.tasksThisMonth ?? 0) * 500;
+                const budgetPct = tokenBudgetMonthly > 0 ? Math.min(100, Math.round((estimatedTokens / tokenBudgetMonthly) * 100)) : 0;
+                return (
+                  <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 space-y-3">
+                    <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Token Budget</div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Monthly token limit <span className="text-slate-600">(0 = unlimited)</span></label>
+                      <input type="number" min={0} value={tokenBudgetMonthly}
+                        onChange={e => setTokenBudgetMonthly(Number(e.target.value))}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-500">~{estimatedTokens.toLocaleString()} tokens used this month (estimated)</span>
+                        {tokenBudgetMonthly > 0 && <span className="text-xs text-slate-400">{budgetPct}%</span>}
+                      </div>
+                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${budgetPct > 90 ? 'bg-red-500' : budgetPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: tokenBudgetMonthly > 0 ? `${budgetPct}%` : '0%' }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm text-white">Block DE when budget exceeded</div>
+                        <div className="text-xs text-slate-500">When off — warn only</div>
+                      </div>
+                      <button onClick={() => setTokenBudgetHard(v => !v)}
+                        className={`w-10 h-6 rounded-full relative transition-colors flex-shrink-0 ${tokenBudgetHard ? 'bg-red-500' : 'bg-slate-700'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${tokenBudgetHard ? 'left-5' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Save */}
               <div className="flex items-center gap-3 pt-1">
                 <button
@@ -2323,6 +2734,12 @@ const AgentWorkforcePage = ({
                       escalation_model_id: pickerEscModelId,
                       escalation_threshold: pickerEscThreshold,
                     });
+                    // Save extended model config
+                    if (tenant?.id) {
+                      const { supabase: sb } = await import('../../supabase');
+                      const mc = (stored as any)?.model_config || {};
+                      await sb.from('digital_employees').update({ model_config: { ...mc, fallback_model: modelFallbackEnabled ? fallbackModelId : null, fallback_provider: modelFallbackEnabled ? fallbackProvider : null, latency_threshold_ms: latencyThresholdMs, route_by_task: modelRouteByTask, task_routes: modelRouteByTask ? { simple: { model: taskRouteSimpleModel, provider: taskRouteSimpleProv }, complex: { model: taskRouteComplexModel, provider: taskRouteComplexProv }, code: { model: taskRouteCodeModel, provider: taskRouteCodeProv } } : null, token_budget: { monthly_limit: tokenBudgetMonthly, hard_limit: tokenBudgetHard } } }).eq('id', stored.id).eq('tenant_id', tenant.id);
+                    }
                     setModelSaveStatus('saved');
                     setTimeout(() => setModelSaveStatus('idle'), 3000);
                   }}
