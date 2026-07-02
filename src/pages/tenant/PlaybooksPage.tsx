@@ -99,6 +99,7 @@ interface StepExecution {
   output?: string
   error?: string
   approvedBy?: string
+  subSteps?: { title: string; status: StepStatus }[]
 }
 
 interface PlaybookRun {
@@ -250,6 +251,22 @@ function RunModal({
                   )}
                   {se.error && (
                     <p className="text-xs text-red-400 mt-0.5">{se.error}</p>
+                  )}
+                  {se.subSteps && se.subSteps.length > 0 && (
+                    <div className="mt-2 space-y-1 pl-3 border-l-2 border-teal-500/30">
+                      {se.subSteps.map((ss, si) => (
+                        <div key={si} className="flex items-center gap-2 text-[11px]">
+                          <span className="text-slate-500">└─</span>
+                          <span className={`${ss.status === 'completed' ? 'text-emerald-400' : ss.status === 'running' ? 'text-white' : ss.status === 'failed' ? 'text-red-400' : 'text-slate-500'}`}>
+                            Step {si + 1}: {ss.title}
+                          </span>
+                          <span className="text-slate-600">→</span>
+                          <span className={`text-[10px] ${ss.status === 'completed' ? 'text-emerald-400' : ss.status === 'running' ? 'text-teal-300' : ss.status === 'failed' ? 'text-red-400' : 'text-slate-600'}`}>
+                            {ss.status === 'completed' ? '✓' : ss.status === 'running' ? 'running...' : ss.status === 'failed' ? '✗' : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                   {isApproval && (
                     <div className="mt-2">
@@ -471,7 +488,7 @@ function CreateModal({ tenantId, accentColor, digitalEmployees, onClose, onCreat
 
 // ── Detail Panel ───────────────────────────────────────────────
 
-type StepType = 'action' | 'decision' | 'approval' | 'notification' | 'condition'
+type StepType = 'action' | 'decision' | 'approval' | 'notification' | 'condition' | 'playbook'
 
 interface PlaybookStep {
   id: string
@@ -489,6 +506,10 @@ interface PlaybookStep {
   on_failure?: 'stop' | 'skip' | 'escalate'
   assigned_to?: string
   retry_count?: number
+  called_playbook_id?: string
+  called_playbook_name?: string
+  pass_context?: boolean
+  await_completion?: boolean
 }
 
 const STEP_TYPES: { value: StepType; label: string; color: string }[] = [
@@ -497,6 +518,7 @@ const STEP_TYPES: { value: StepType; label: string; color: string }[] = [
   { value: 'approval', label: 'Approval', color: 'bg-red-500/15 text-red-400' },
   { value: 'notification', label: 'Notification', color: 'bg-blue-500/15 text-blue-400' },
   { value: 'condition', label: 'Condition', color: 'bg-purple-500/15 text-purple-400' },
+  { value: 'playbook', label: 'Call Playbook', color: 'bg-teal-500/15 text-teal-400' },
 ]
 
 function stepTypeCls(t: StepType) {
@@ -514,6 +536,7 @@ function runStatusBadge(status: PlaybookRun['status']) {
 function DetailPanel({
   playbook,
   digitalEmployees,
+  playbooks,
   tenantId,
   accentColor,
   onClose,
@@ -522,6 +545,7 @@ function DetailPanel({
 }: {
   playbook: DBPlaybook
   digitalEmployees: DBDigitalEmployee[]
+  playbooks: DBPlaybook[]
   tenantId: string
   accentColor: string
   onClose: () => void
@@ -577,7 +601,7 @@ function DetailPanel({
   }
   const [steps, setSteps] = useState<PlaybookStep[]>(initSteps)
   const [addingStep, setAddingStep] = useState(false)
-  const [newStep, setNewStep] = useState({ title: '', description: '', type: 'action' as StepType, requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop' as 'stop' | 'skip' | 'escalate', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0 })
+  const [newStep, setNewStep] = useState({ title: '', description: '', type: 'action' as StepType, requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop' as 'stop' | 'skip' | 'escalate', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0, called_playbook_id: '', called_playbook_name: '', pass_context: true, await_completion: true })
   const [savingSteps, setSavingSteps] = useState(false)
   const [versionNote, setVersionNote] = useState('')
   const [versionToast, setVersionToast] = useState('')
@@ -620,11 +644,17 @@ function DetailPanel({
       ...(newStep.type === 'decision' && newStep.on_true ? { on_true: newStep.on_true } : {}),
       ...(newStep.type === 'decision' && newStep.on_false ? { on_false: newStep.on_false } : {}),
       ...(newStep.type === 'approval' && newStep.assigned_to.trim() ? { assigned_to: newStep.assigned_to.trim() } : {}),
+      ...(newStep.type === 'playbook' ? {
+        called_playbook_id: newStep.called_playbook_id || undefined,
+        called_playbook_name: newStep.called_playbook_name || undefined,
+        pass_context: newStep.pass_context,
+        await_completion: newStep.await_completion,
+      } : {}),
     }
     const updated = [...steps, step]
     setSteps(updated)
     await saveSteps(updated)
-    setNewStep({ title: '', description: '', type: 'action', requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0 })
+    setNewStep({ title: '', description: '', type: 'action', requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0, called_playbook_id: '', called_playbook_name: '', pass_context: true, await_completion: true })
     setAddingStep(false)
   }
 
@@ -806,6 +836,35 @@ function DetailPanel({
                   </div>
                 </div>
               )}
+              {/* Playbook Chain */}
+              {steps.some(s => s.type === 'playbook') && (
+                <div className="mb-5">
+                  <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-3">Playbook Chain</p>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-5 h-5 rounded bg-indigo-500/20 text-indigo-300 text-xs flex items-center justify-center font-bold">▦</span>
+                      <span className="text-sm font-medium text-white">{playbook.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ml-auto ${lifecycleBadgeClass(playbook.lifecycle_status)}`}>{playbook.lifecycle_status}</span>
+                    </div>
+                    <div className="space-y-2 pl-5 border-l border-slate-700">
+                      {steps.filter(s => s.type === 'playbook').map(s => {
+                        const calledPB = playbooks.find(p => p.id === s.called_playbook_id)
+                        return (
+                          <div key={s.id} className="flex items-center gap-2">
+                            <span className="text-teal-500 text-xs">└─</span>
+                            <span className="text-xs text-teal-300">▦</span>
+                            <span className="text-xs text-slate-300 flex-1">{s.called_playbook_name || 'Unknown playbook'}</span>
+                            {calledPB && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${lifecycleBadgeClass(calledPB.lifecycle_status)}`}>{calledPB.lifecycle_status}</span>
+                            )}
+                            <span className="text-[10px] text-slate-600">View →</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -858,6 +917,15 @@ function DetailPanel({
                       {s.on_failure && s.on_failure !== 'stop' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">fail: {s.on_failure}</span>}
                     </div>
                     {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
+                    {s.type === 'playbook' && s.called_playbook_id && (
+                      <div className="mt-1.5 flex items-center gap-2 pl-2 border-l-2 border-teal-500/40">
+                        <span className="text-teal-400 text-xs">→</span>
+                        <span className="text-xs text-teal-300 font-medium">▦ {s.called_playbook_name || 'Unknown playbook'}</span>
+                        {s.pass_context && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">passes context</span>}
+                        {!s.await_completion && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">fire &amp; continue</span>}
+                        <span className="text-[10px] text-slate-600 ml-auto">View called playbook →</span>
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => removeStep(s.id)} className="text-slate-700 hover:text-red-400 transition-all text-sm flex-shrink-0">×</button>
                 </div>
@@ -940,9 +1008,73 @@ function DetailPanel({
                       </div>
                     </div>
                   )}
+                  {/* Playbook type extra fields */}
+                  {newStep.type === 'playbook' && (() => {
+                    const otherPlaybooks = playbooks.filter(pb => pb.id !== playbook.id)
+                    const selectedPB = otherPlaybooks.find(pb => pb.id === newStep.called_playbook_id)
+                    // Circular reference check
+                    const isCircular = selectedPB && Array.isArray(selectedPB.decision_rules) &&
+                      (selectedPB.decision_rules as any[]).some((r: any) => r?.type === 'playbook' && r?.called_playbook_id === playbook.id)
+                    return (
+                      <div className="bg-slate-800 rounded-lg p-3 space-y-3">
+                        <p className="text-xs text-teal-400 font-medium">Call Playbook settings</p>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Select playbook to call</label>
+                          <select className={inputCls} value={newStep.called_playbook_id}
+                            onChange={e => {
+                              const pb2 = otherPlaybooks.find(p => p.id === e.target.value)
+                              setNewStep(p => ({
+                                ...p,
+                                called_playbook_id: e.target.value,
+                                called_playbook_name: pb2?.name || '',
+                                title: !p.title.trim() || p.title.startsWith('Call: ') ? (pb2 ? `Call: ${pb2.name}` : p.title) : p.title,
+                              }))
+                            }}>
+                            <option value="">— Select a playbook —</option>
+                            {otherPlaybooks.map(pb2 => (
+                              <option key={pb2.id} value={pb2.id}>
+                                {pb2.name} — {domainLabel(pb2.domain)} [{pb2.lifecycle_status}]
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {isCircular && (
+                          <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                            ⚠ Circular reference detected — {selectedPB?.name} already calls this playbook.
+                          </p>
+                        )}
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <div onClick={() => setNewStep(p => ({ ...p, pass_context: !p.pass_context }))}
+                            className={`w-9 h-5 rounded-full transition-all flex-shrink-0 mt-0.5 ${newStep.pass_context ? 'bg-teal-500' : 'bg-slate-700'}`}>
+                            <div className={`w-4 h-4 bg-white rounded-full shadow mt-0.5 transition-all ${newStep.pass_context ? 'ml-4' : 'ml-0.5'}`} />
+                          </div>
+                          <div>
+                            <span className="text-xs text-white">Pass current context</span>
+                            <p className="text-[10px] text-slate-500">Share variables from this run with the called playbook</p>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <div onClick={() => setNewStep(p => ({ ...p, await_completion: !p.await_completion }))}
+                            className={`w-9 h-5 rounded-full transition-all flex-shrink-0 mt-0.5 ${newStep.await_completion ? 'bg-teal-500' : 'bg-slate-700'}`}>
+                            <div className={`w-4 h-4 bg-white rounded-full shadow mt-0.5 transition-all ${newStep.await_completion ? 'ml-4' : 'ml-0.5'}`} />
+                          </div>
+                          <div>
+                            <span className="text-xs text-white">Wait for completion</span>
+                            <p className="text-[10px] text-slate-500">{newStep.await_completion ? 'Pause this playbook until the called playbook finishes' : 'Fire and continue — called playbook runs in background'}</p>
+                          </div>
+                        </label>
+                      </div>
+                    )
+                  })()}
                   <div className="flex gap-2">
                     <button onClick={() => setAddingStep(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Cancel</button>
-                    <button onClick={addStep} disabled={savingSteps || !newStep.title.trim()}
+                    <button onClick={addStep}
+                      disabled={savingSteps || !newStep.title.trim() || (newStep.type === 'playbook' && (() => {
+                        const otherPlaybooks = playbooks.filter(pb2 => pb2.id !== playbook.id)
+                        const selectedPB = otherPlaybooks.find(pb2 => pb2.id === newStep.called_playbook_id)
+                        return !!(selectedPB && Array.isArray(selectedPB.decision_rules) &&
+                          (selectedPB.decision_rules as any[]).some((r: any) => r?.type === 'playbook' && r?.called_playbook_id === playbook.id))
+                      })())}
                       className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 transition-all"
                       style={{ backgroundColor: accentColor }}>
                       {savingSteps ? 'Saving…' : 'Add Step'}
@@ -1297,6 +1429,34 @@ export default function PlaybooksPage({
           await new Promise(r => setTimeout(r, 500))
           return { output: 'Condition checked: true' }
         }
+        if (step.type === 'playbook') {
+          const calledPB = playbooks.find(p => p.id === step.called_playbook_id)
+          if (!calledPB) {
+            return { output: '', failed: true, failMsg: 'Called playbook not found' }
+          }
+          if (!step.await_completion) {
+            await new Promise(r => setTimeout(r, 300))
+            return { output: `Sub-playbook '${calledPB.name}' triggered in background — continuing` }
+          }
+          // Execute sub-steps inline
+          const subSteps: PlaybookStep[] = Array.isArray(calledPB.decision_rules)
+            ? (calledPB.decision_rules as any[]).filter((r: any) => r && r.step && r.title) as PlaybookStep[]
+            : []
+          const subStepState: { title: string; status: StepStatus }[] = subSteps.map(ss => ({ title: ss.title, status: 'pending' as StepStatus }))
+          // Show initial sub-step state
+          run.steps[i] = { ...run.steps[i], subSteps: [...subStepState] }
+          persistRun(run)
+          for (let si = 0; si < subSteps.length; si++) {
+            subStepState[si] = { ...subStepState[si], status: 'running' }
+            run.steps[i] = { ...run.steps[i], subSteps: [...subStepState] }
+            persistRun(run)
+            await new Promise(r => setTimeout(r, 300))
+            subStepState[si] = { ...subStepState[si], status: 'completed' }
+            run.steps[i] = { ...run.steps[i], subSteps: [...subStepState] }
+            persistRun(run)
+          }
+          return { output: `Sub-playbook '${calledPB.name}' completed — ${subSteps.length} steps executed` }
+        }
 
         await new Promise(r => setTimeout(r, 400))
         return { output: `Completed: ${step.title}` }
@@ -1350,7 +1510,7 @@ export default function PlaybooksPage({
     persistRun(run)
 
     return run
-  }, [tenantId])
+  }, [tenantId, playbooks])
 
   const handleRunPlaybook = useCallback((pb: DBPlaybook) => {
     executePlaybook(pb, 'manual')
@@ -1530,6 +1690,7 @@ export default function PlaybooksPage({
         <DetailPanel
           playbook={selected}
           digitalEmployees={digitalEmployees}
+          playbooks={playbooks}
           tenantId={tenantId}
           accentColor={accentColor}
           onClose={() => setSelected(null)}

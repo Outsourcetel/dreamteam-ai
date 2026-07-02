@@ -99,13 +99,39 @@ const SAMPLE_GAPS = [
   { topic: 'Pricing and plan comparison', queryCount: 19, covered: true },
 ];
 
+// ---- Language support ----
+const LANGUAGES = [
+  { code: 'en', label: 'English', flag: '🇺🇸' },
+  { code: 'es', label: 'Spanish', flag: '🇪🇸' },
+  { code: 'fr', label: 'French', flag: '🇫🇷' },
+  { code: 'de', label: 'German', flag: '🇩🇪' },
+  { code: 'pt', label: 'Portuguese', flag: '🇧🇷' },
+  { code: 'ar', label: 'Arabic', flag: '🇸🇦' },
+  { code: 'zh', label: 'Chinese', flag: '🇨🇳' },
+  { code: 'ja', label: 'Japanese', flag: '🇯🇵' },
+  { code: 'hi', label: 'Hindi', flag: '🇮🇳' },
+]
+
+function langByCode(code: string) {
+  return LANGUAGES.find(l => l.code === code) ?? LANGUAGES[0]
+}
+
 // ---- Article overlay (localStorage) helpers ----
+type ArticleTranslation = {
+  title: string;
+  body: string;
+  summary: string;
+  translatedAt: string;
+}
+
 type ArticleMeta = {
   status?: string;
   reviewNote?: string;
   reviewDate?: string;
   reviewerId?: string;
   scheduledAt?: string;
+  language?: string;
+  translations?: Record<string, ArticleTranslation>;
 }
 
 type ArticleVersion = {
@@ -528,6 +554,10 @@ const KnowledgeHubPage = ({
   const [editCategory, setEditCategory] = useState('');
   const [editTags, setEditTags] = useState('');
   const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
+  const [editLanguage, setEditLanguage] = useState('en');
+  const [editingTranslationLang, setEditingTranslationLang] = useState<string | null>(null);
+  const [translationsOpen, setTranslationsOpen] = useState(false);
+  const [translatingLang, setTranslatingLang] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editToast, setEditToast] = useState('');
   // Edit modal extra fields
@@ -556,10 +586,13 @@ const KnowledgeHubPage = ({
     setRevisionNote('');
     setScheduleDate('');
     setShowVersionHistory(false);
+    setEditingTranslationLang(null);
+    setTranslationsOpen(false);
     if (a?.id) {
       const meta = tenant?.id ? loadMeta(tenant.id) : {};
       setEditReviewDate(meta[a.id]?.reviewDate || '');
       setEditReviewerId(meta[a.id]?.reviewerId || '');
+      setEditLanguage(meta[a.id]?.language || 'en');
       setEditVersions(loadVersions(a.id));
       // Load profiles
       if (tenant?.id && tenantProfiles.length === 0) {
@@ -568,6 +601,7 @@ const KnowledgeHubPage = ({
     } else {
       setEditReviewDate('');
       setEditReviewerId('');
+      setEditLanguage('en');
       setEditVersions([]);
       if (tenant?.id && tenantProfiles.length === 0) {
         fetchTenantProfiles(tenant.id).then(setTenantProfiles);
@@ -603,12 +637,28 @@ const KnowledgeHubPage = ({
       created_by: user?.id ?? undefined,
     });
     if (saved) {
-      // Update overlay meta for review date / reviewer
-      if (editReviewDate || editReviewerId) {
+      // Update overlay meta for review date / reviewer / language
+      const metaPatch: Partial<ArticleMeta> = {};
+      if (editReviewDate) metaPatch.reviewDate = editReviewDate;
+      if (editReviewerId) metaPatch.reviewerId = editReviewerId;
+      metaPatch.language = editLanguage;
+      if (editingTranslationLang) {
+        // Save to translation slot instead
+        const existing = loadMeta(tenant.id);
+        const prev = existing[saved.id]?.translations || {};
         patchMeta(tenant.id, saved.id, {
-          ...(editReviewDate ? { reviewDate: editReviewDate } : {}),
-          ...(editReviewerId ? { reviewerId: editReviewerId } : {}),
+          translations: {
+            ...prev,
+            [editingTranslationLang]: {
+              title: editTitle.trim(),
+              body: editBody.trim(),
+              summary: editSummary.trim(),
+              translatedAt: new Date().toISOString(),
+            },
+          },
         });
+      } else if (Object.keys(metaPatch).length > 0) {
+        patchMeta(tenant.id, saved.id, metaPatch);
       }
       if (publishNow) {
         clearArticleMeta(tenant.id, saved.id);
@@ -718,6 +768,7 @@ const KnowledgeHubPage = ({
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
   const [filterAudience, setFilterAudience] = React.useState<string>('all');
   const [articleFilterStatus, setArticleFilterStatus] = React.useState<string>('all');
+  const [langFilter, setLangFilter] = React.useState<string>('all');
   const [checkedIds, setCheckedIds] = React.useState<Set<string>>(new Set());
   // --- RAG document ingestion ---
   const uploadInputRef = React.useRef(null);
@@ -1214,6 +1265,34 @@ const KnowledgeHubPage = ({
           </div>
         </div>
 
+        {/* Language Coverage */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+          <h2 className="text-sm font-semibold text-white mb-3">Language Coverage</h2>
+          <div className="flex flex-wrap gap-3">
+            {(() => {
+              const counts: Record<string, number> = {}
+              for (const a of liveArticles) {
+                const lang = articleMeta[a.id]?.language || 'en'
+                counts[lang] = (counts[lang] || 0) + 1
+                // Also count translations as additional language articles
+                for (const tl of Object.keys(articleMeta[a.id]?.translations || {})) {
+                  counts[tl] = (counts[tl] || 0) + 1
+                }
+              }
+              const entries = LANGUAGES.filter(l => counts[l.code] > 0)
+              if (entries.length === 0) return <p className="text-xs text-slate-500">No language metadata yet — edit articles to set language.</p>
+              return entries.map(l => (
+                <div key={l.code} className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-xl">
+                  <span className="text-lg">{l.flag}</span>
+                  <span className="text-xs text-slate-300">{l.label}</span>
+                  <span className="text-xs text-slate-500">—</span>
+                  <span className="text-xs font-semibold text-white">{counts[l.code]} {counts[l.code] === 1 ? 'article' : 'articles'}</span>
+                </div>
+              ))
+            })()}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">
@@ -1365,7 +1444,14 @@ const KnowledgeHubPage = ({
       const rawA = (a as any).rawArticle as DBKnowledgeArticle | null;
       const effStatus = rawA ? getArticleStatus(rawA, articleMeta) : (a.embedStatus === 'indexed' ? 'published' : 'draft');
       return effStatus === articleFilterStatus;
-    }).filter(a => filterAudience === 'all' || a.audience === filterAudience);
+    }).filter(a => filterAudience === 'all' || a.audience === filterAudience)
+    .filter(a => {
+      if (langFilter === 'all') return true;
+      const rawA = (a as any).rawArticle as DBKnowledgeArticle | null;
+      if (!rawA) return langFilter === 'en';
+      const artLang = articleMeta[rawA.id]?.language;
+      return artLang ? artLang === langFilter : langFilter === 'en';
+    });
 
     const bulkAction = async (action: 'review' | 'publish' | 'archive') => {
       if (!tenant?.id) return;
@@ -1583,6 +1669,16 @@ const KnowledgeHubPage = ({
             <option value="Internal">Internal</option>
             <option value="Both">Both</option>
           </select>
+          <select
+            value={langFilter}
+            onChange={(e) => setLangFilter(e.target.value)}
+            className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500"
+          >
+            <option value="all">All Languages</option>
+            {LANGUAGES.map(l => (
+              <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
+            ))}
+          </select>
           <span className="text-slate-500 text-sm ml-auto">{filteredKbItems.length} articles</span>
         </div>
 
@@ -1614,6 +1710,7 @@ const KnowledgeHubPage = ({
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3">ARTICLE</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">STATUS</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">QUALITY</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-16">LANG</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-36">TAGS</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">REVIEW DUE</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-20">CITED</th>
@@ -1701,6 +1798,19 @@ const KnowledgeHubPage = ({
                           </div>
                         );
                       })() : <span className="text-slate-600 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const artLangCode = rawA ? (articleMeta[rawA.id]?.language || 'en') : 'en';
+                        const artLang = langByCode(artLangCode);
+                        const translationCount = rawA ? Object.keys(articleMeta[rawA.id]?.translations || {}).length : 0;
+                        return (
+                          <span className="text-base" title={artLang.label}>
+                            {artLang.flag}
+                            {translationCount > 0 && <span className="text-[10px] text-teal-400 ml-0.5">+{translationCount}</span>}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -1895,6 +2005,122 @@ const KnowledgeHubPage = ({
                     />
                   </div>
                 </div>
+
+                {/* Language selector */}
+                <div className="pt-2 border-t border-slate-800">
+                  <label className="text-xs font-semibold text-slate-400 block mb-2 tracking-wider">LANGUAGE</label>
+                  {editingTranslationLang && (
+                    <div className="mb-2 flex items-center gap-2 px-3 py-2 bg-teal-500/10 border border-teal-500/30 rounded-xl text-xs text-teal-400">
+                      <span>Editing {langByCode(editingTranslationLang).flag} {langByCode(editingTranslationLang).label} translation — original is English</span>
+                      <button onClick={() => {
+                        setEditingTranslationLang(null);
+                        if (editArticle) {
+                          setEditTitle(editArticle.title);
+                          setEditBody(editArticle.body || '');
+                          setEditSummary(editArticle.summary || '');
+                        }
+                      }} className="ml-auto underline hover:text-teal-300">Back to original</button>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {LANGUAGES.map(l => (
+                      <button
+                        key={l.code}
+                        onClick={() => !editingTranslationLang && setEditLanguage(l.code)}
+                        title={l.label}
+                        className={`text-xl px-2 py-1 rounded-lg border transition-all ${editLanguage === l.code && !editingTranslationLang ? 'border-violet-500 bg-violet-500/10' : 'border-slate-700 hover:border-slate-500'}`}
+                      >
+                        {l.flag}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">{langByCode(editLanguage).label} — primary language of this article</p>
+                </div>
+
+                {/* Translations panel */}
+                {editArticle?.id && (
+                  <div className="pt-2 border-t border-slate-800">
+                    <button
+                      onClick={() => setTranslationsOpen(v => !v)}
+                      className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+                    >
+                      {translationsOpen ? '▾' : '▸'} Translations ({Object.keys((tenant?.id ? loadMeta(tenant.id) : {})[editArticle.id]?.translations || {}).length} languages)
+                    </button>
+                    {translationsOpen && (() => {
+                      const meta = tenant?.id ? loadMeta(tenant.id) : {}
+                      const articleTranslations = meta[editArticle.id]?.translations || {}
+                      return (
+                        <div className="mt-3 space-y-2">
+                          {LANGUAGES.filter(l => l.code !== 'en').map(l => {
+                            const tl = articleTranslations[l.code]
+                            const isTranslating = translatingLang === l.code
+                            return (
+                              <div key={l.code} className="flex items-center gap-3 px-3 py-2.5 bg-slate-800/60 rounded-xl">
+                                <span className="text-lg">{l.flag}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium text-slate-300">{l.label}</div>
+                                  {tl && <div className="text-[10px] text-slate-500">Last translated: {new Date(tl.translatedAt).toLocaleDateString()}</div>}
+                                </div>
+                                {isTranslating ? (
+                                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <span className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                    Translating with AI…
+                                  </div>
+                                ) : tl ? (
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => {
+                                        setEditingTranslationLang(l.code)
+                                        setEditTitle(tl.title)
+                                        setEditBody(tl.body)
+                                        setEditSummary(tl.summary)
+                                      }}
+                                      className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 transition-all"
+                                    >Edit</button>
+                                    <button
+                                      onClick={() => {
+                                        if (!tenant?.id) return
+                                        const m = loadMeta(tenant.id)
+                                        const t2 = { ...(m[editArticle.id]?.translations || {}) }
+                                        delete t2[l.code]
+                                        patchMeta(tenant.id, editArticle.id, { translations: t2 })
+                                        setArticleMeta(loadMeta(tenant.id))
+                                      }}
+                                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                                    >Delete</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={async () => {
+                                      if (!tenant?.id) return
+                                      setTranslatingLang(l.code)
+                                      await new Promise(r => setTimeout(r, 1500))
+                                      const labelUpper = l.label
+                                      const newTl: ArticleTranslation = {
+                                        title: `[${l.code.toUpperCase()}] ${editTitle}`,
+                                        body: `[Translated to ${labelUpper}]\n\n${editBody.slice(0, 200)}\n\n[...rest of article translated]`,
+                                        summary: `[${l.code.toUpperCase()}] ${editSummary.slice(0, 100)}`,
+                                        translatedAt: new Date().toISOString(),
+                                      }
+                                      const m = loadMeta(tenant.id)
+                                      const prev = m[editArticle.id]?.translations || {}
+                                      patchMeta(tenant.id, editArticle.id, { translations: { ...prev, [l.code]: newTl } })
+                                      setArticleMeta(loadMeta(tenant.id))
+                                      setTranslatingLang(null)
+                                      setEditToast(`✓ Translated to ${labelUpper}`)
+                                      setTimeout(() => setEditToast(''), 3000)
+                                    }}
+                                    className="text-xs px-2 py-1 rounded bg-teal-500/20 text-teal-400 hover:bg-teal-500/30 transition-all"
+                                  >Translate</button>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
 
                 {/* Review date + Assign reviewer */}
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
