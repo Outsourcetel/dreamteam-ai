@@ -480,6 +480,15 @@ interface PlaybookStep {
   description: string
   type: StepType
   requires_approval: boolean
+  condition?: string
+  on_true?: string
+  on_false?: string
+  output_var?: string
+  input_vars?: string[]
+  timeout_seconds?: number
+  on_failure?: 'stop' | 'skip' | 'escalate'
+  assigned_to?: string
+  retry_count?: number
 }
 
 const STEP_TYPES: { value: StepType; label: string; color: string }[] = [
@@ -568,8 +577,25 @@ function DetailPanel({
   }
   const [steps, setSteps] = useState<PlaybookStep[]>(initSteps)
   const [addingStep, setAddingStep] = useState(false)
-  const [newStep, setNewStep] = useState({ title: '', description: '', type: 'action' as StepType, requires_approval: false })
+  const [newStep, setNewStep] = useState({ title: '', description: '', type: 'action' as StepType, requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop' as 'stop' | 'skip' | 'escalate', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0 })
   const [savingSteps, setSavingSteps] = useState(false)
+  const [versionNote, setVersionNote] = useState('')
+  const [versionToast, setVersionToast] = useState('')
+  const [showVersionNote, setShowVersionNote] = useState(false)
+
+  const versionKey = `dt_pb_versions_${playbook.id}`
+  type PBVersion = { version: number; savedAt: string; steps: PlaybookStep[]; trigger: any; note: string }
+  const loadVersions = (): PBVersion[] => { try { return JSON.parse(localStorage.getItem(versionKey) || '[]') } catch { return [] } }
+  const saveVersion = () => {
+    const versions = loadVersions()
+    const nextVer = (versions[0]?.version ?? 0) + 1
+    versions.unshift({ version: nextVer, savedAt: new Date().toISOString(), steps, trigger: { type: triggerType, schedule: triggerSchedule, event: triggerEvent }, note: versionNote.trim() })
+    localStorage.setItem(versionKey, JSON.stringify(versions.slice(0, 20)))
+    setVersionToast(`Version ${nextVer} saved`)
+    setTimeout(() => setVersionToast(''), 3000)
+    setVersionNote('')
+    setShowVersionNote(false)
+  }
 
   const saveSteps = async (updated: PlaybookStep[]) => {
     setSavingSteps(true)
@@ -587,11 +613,18 @@ function DetailPanel({
       description: newStep.description.trim(),
       type: newStep.type,
       requires_approval: newStep.requires_approval,
+      ...(newStep.output_var.trim() ? { output_var: newStep.output_var.trim() } : {}),
+      ...(newStep.timeout_seconds > 0 ? { timeout_seconds: newStep.timeout_seconds } : {}),
+      ...(newStep.on_failure !== 'stop' ? { on_failure: newStep.on_failure } : {}),
+      ...(newStep.type === 'decision' && newStep.condition.trim() ? { condition: newStep.condition.trim() } : {}),
+      ...(newStep.type === 'decision' && newStep.on_true ? { on_true: newStep.on_true } : {}),
+      ...(newStep.type === 'decision' && newStep.on_false ? { on_false: newStep.on_false } : {}),
+      ...(newStep.type === 'approval' && newStep.assigned_to.trim() ? { assigned_to: newStep.assigned_to.trim() } : {}),
     }
     const updated = [...steps, step]
     setSteps(updated)
     await saveSteps(updated)
-    setNewStep({ title: '', description: '', type: 'action', requires_approval: false })
+    setNewStep({ title: '', description: '', type: 'action', requires_approval: false, output_var: '', timeout_seconds: 0, on_failure: 'stop', condition: '', on_true: '', on_false: '', assigned_to: '', retry_count: 0 })
     setAddingStep(false)
   }
 
@@ -787,6 +820,23 @@ function DetailPanel({
                 )}
               </div>
 
+              {/* Variables panel */}
+              {steps.some(s => s.output_var) && (
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                  <p className="text-xs text-slate-500 mb-2">Available variables in this playbook:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {steps.filter(s => s.output_var).map(s => (
+                      <button key={s.id}
+                        onClick={() => navigator.clipboard.writeText(`{{${s.output_var}}}`)}
+                        className="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono hover:border-slate-500 transition-all"
+                        title="Click to copy">
+                        {`{{${s.output_var}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {steps.length === 0 && !addingStep && (
                 <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
                   <p className="text-slate-500 text-sm">No steps defined yet.</p>
@@ -802,6 +852,10 @@ function DetailPanel({
                       <span className="text-sm font-medium text-white">{s.title}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${stepTypeCls(s.type)}`}>{s.type}</span>
                       {s.requires_approval && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">needs approval</span>}
+                      {s.output_var && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400 font-mono">→ {s.output_var}</span>}
+                      {s.condition && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400 font-mono">if: {s.condition.slice(0, 20)}</span>}
+                      {s.timeout_seconds && s.timeout_seconds > 0 ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">⏱ {s.timeout_seconds}s</span> : null}
+                      {s.on_failure && s.on_failure !== 'stop' && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">fail: {s.on_failure}</span>}
                     </div>
                     {s.description && <p className="text-xs text-slate-400">{s.description}</p>}
                   </div>
@@ -828,6 +882,64 @@ function DetailPanel({
                       </label>
                     </div>
                   </div>
+                  {/* New fields — all types */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Output variable</label>
+                      <input className={inputCls} placeholder="e.g. invoice_amount" value={newStep.output_var} onChange={e => setNewStep(p => ({ ...p, output_var: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Timeout (seconds, 0=none)</label>
+                      <input type="number" min={0} className={inputCls} value={newStep.timeout_seconds} onChange={e => setNewStep(p => ({ ...p, timeout_seconds: Number(e.target.value) }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">On failure</label>
+                      <select className={inputCls} value={newStep.on_failure} onChange={e => setNewStep(p => ({ ...p, on_failure: e.target.value as any }))}>
+                        <option value="stop">Stop playbook</option>
+                        <option value="skip">Skip this step</option>
+                        <option value="escalate">Escalate to handler</option>
+                      </select>
+                    </div>
+                  </div>
+                  {/* Decision type extra fields */}
+                  {newStep.type === 'decision' && (
+                    <div className="bg-slate-800 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-amber-400 font-medium">Decision branch</p>
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">Condition expression</label>
+                        <input className={inputCls} placeholder='e.g. {{invoice_amount}} > 10000' value={newStep.condition} onChange={e => setNewStep(p => ({ ...p, condition: e.target.value }))} />
+                        <p className="text-xs text-slate-600 mt-1">Use {`{{var_name}}`} to reference output from previous steps.</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">If true → go to</label>
+                          <select className={inputCls} value={newStep.on_true} onChange={e => setNewStep(p => ({ ...p, on_true: e.target.value }))}>
+                            <option value="">Next step</option>
+                            {steps.map(s => <option key={s.id} value={s.id}>{s.step}. {s.title}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">If false → go to</label>
+                          <select className={inputCls} value={newStep.on_false} onChange={e => setNewStep(p => ({ ...p, on_false: e.target.value }))}>
+                            <option value="">Next step</option>
+                            <option value="stop">Stop playbook</option>
+                            <option value="skip">Skip</option>
+                            {steps.map(s => <option key={s.id} value={s.id}>{s.step}. {s.title}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Approval type extra fields */}
+                  {newStep.type === 'approval' && (
+                    <div className="bg-slate-800 rounded-lg p-3 space-y-2">
+                      <p className="text-xs text-red-400 font-medium">Approval settings</p>
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">Assign to (role or leave blank for any handler)</label>
+                        <input className={inputCls} placeholder="e.g. Finance Manager" value={newStep.assigned_to} onChange={e => setNewStep(p => ({ ...p, assigned_to: e.target.value }))} />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={() => setAddingStep(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Cancel</button>
                     <button onClick={addStep} disabled={savingSteps || !newStep.title.trim()}
@@ -878,6 +990,41 @@ function DetailPanel({
                   </div>
                 )
               })}
+              {/* Version History */}
+              {(() => {
+                const versions = loadVersions()
+                if (versions.length === 0) return null
+                return (
+                  <div className="mt-6 pt-4 border-t border-slate-800">
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-3">Version History</p>
+                    <div className="space-y-2">
+                      {versions.slice(0, 5).map(v => (
+                        <div key={v.version} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-white">v{v.version}</span>
+                              <span className="text-xs text-slate-500">{new Date(v.savedAt).toLocaleString()}</span>
+                              <span className="text-xs text-slate-600">{v.steps.length} steps</span>
+                            </div>
+                            {v.note && <p className="text-xs text-slate-400 mt-0.5">{v.note}</p>}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Restore v${v.version}? This will replace your current steps.`)) {
+                                setSteps(v.steps)
+                                saveSteps(v.steps)
+                              }
+                            }}
+                            className="text-xs px-2.5 py-1 rounded border border-slate-700 text-slate-400 hover:border-indigo-500 hover:text-indigo-300 transition-all flex-shrink-0"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
 
@@ -919,9 +1066,27 @@ function DetailPanel({
         </div>
 
         {/* Footer actions */}
-        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between gap-3">
+        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-slate-600">Created {new Date(playbook.created_at).toLocaleDateString()}</div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center flex-wrap">
+            {versionToast && <span className="text-xs text-emerald-400">{versionToast}</span>}
+            {showVersionNote && (
+              <input
+                value={versionNote}
+                onChange={e => setVersionNote(e.target.value)}
+                placeholder="Version note (optional)"
+                className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none w-40"
+              />
+            )}
+            <button
+              onClick={() => { if (!showVersionNote) { setShowVersionNote(true) } else { saveVersion() } }}
+              className="px-3 py-1.5 rounded-lg text-xs border border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white transition-all"
+            >
+              {showVersionNote ? 'Save' : '⎘ Save Version'}
+            </button>
+            {showVersionNote && (
+              <button onClick={() => setShowVersionNote(false)} className="text-xs text-slate-600 hover:text-slate-400">Cancel</button>
+            )}
             <button onClick={onClose} className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors">Close</button>
             {nextStage && (
               <button onClick={advance} disabled={advancing}
@@ -1043,72 +1208,144 @@ export default function PlaybooksPage({
       saveRuns(tenantId, stored)
     }
 
-    for (let i = 0; i < steps.length; i++) {
+    // Safe expression evaluator — no eval()
+    const evalCondition = (expr: string, ctx: Record<string, unknown>): boolean => {
+      try {
+        let resolved = expr
+        // Replace {{var}} with values from context
+        resolved = resolved.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+          const val = ctx[key]
+          return val !== undefined ? String(val) : '0'
+        })
+        // Whitelist: only allow safe tokens
+        if (!/^[\d\s\w"'.<>=!&|()]+$/.test(resolved)) return false
+        // Use Function constructor with allowlist — safer than eval
+        // eslint-disable-next-line no-new-func
+        return Boolean(new Function(`return (${resolved})`)())
+      } catch {
+        return false
+      }
+    }
+
+    const simVal = (varName: string): unknown => {
+      const n = varName.toLowerCase()
+      if (n.includes('amount') || n.includes('value') || n.includes('total')) return Math.floor(Math.random() * 49000) + 1000
+      if (n.includes('id')) return 'ID-' + Math.floor(Math.random() * 90000 + 10000)
+      if (n.includes('email')) return 'customer@example.com'
+      if (n.includes('status')) return 'active'
+      return 'completed'
+    }
+
+    const runCtx: Record<string, unknown> = {}
+
+    let i = 0
+    while (i < steps.length) {
       const step = steps[i]
 
       run.steps[i] = { ...run.steps[i], status: 'running', startedAt: new Date().toISOString() }
       run.status = 'running'
       persistRun(run)
 
-      if (step.type === 'approval') {
-        run.steps[i] = { ...run.steps[i], status: 'waiting_approval' }
-        run.status = 'waiting_approval'
-        persistRun(run)
-
-        await new Promise<void>(resolve => {
-          approvalResolverRef.current = resolve
-        })
-
-        run.steps[i] = {
-          ...run.steps[i],
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          approvedBy: 'Manual',
-          output: 'Approved by operator',
+      // Timeout race
+      const timeoutSecs = step.timeout_seconds ?? 0
+      const makeStepPromise = async (): Promise<{ output: string; failed?: boolean; failMsg?: string; jumpTo?: string }> => {
+        if (step.type === 'approval') {
+          run.steps[i] = { ...run.steps[i], status: 'waiting_approval', output: step.assigned_to ? `Awaiting approval from: ${step.assigned_to}` : 'Awaiting approval from: Any handler' }
+          run.status = 'waiting_approval'
+          persistRun(run)
+          await new Promise<void>(resolve => { approvalResolverRef.current = resolve })
+          return { output: `Approved by operator${step.assigned_to ? ` (assigned to ${step.assigned_to})` : ''}` }
         }
-        run.status = 'running'
-        persistRun(run)
-
-      } else {
-        let delay = 400
-        let output = ''
 
         const connReqs = playbook.connector_requirements ?? []
         const connNames = connectedNamesForTypes(connReqs)
 
         if (step.type === 'action') {
-          delay = 800 + 300 * i
-          if (connNames.length >= 2) {
-            output = `Action completed: Fetched records from ${connNames[0]} · Posted to ${connNames[1]}`
-          } else if (connNames.length === 1) {
-            output = `Action completed: Fetched records from ${connNames[0]}`
-          } else {
-            output = `Completed: ${step.title}`
+          await new Promise(r => setTimeout(r, 800 + 300 * i))
+          let out = connNames.length >= 2
+            ? `Action completed: Fetched records from ${connNames[0]} · Posted to ${connNames[1]}`
+            : connNames.length === 1 ? `Action completed: Fetched records from ${connNames[0]}` : `Completed: ${step.title}`
+          if (step.output_var) {
+            const val = simVal(step.output_var)
+            runCtx[step.output_var] = val
+            out += ` · Output: {{${step.output_var}}} = ${typeof val === 'number' ? '$' + val.toLocaleString() : val}`
           }
-        } else if (step.type === 'decision') {
-          delay = 600
-          output = 'Decision evaluated: proceeding with default path'
-        } else if (step.type === 'notification') {
-          delay = 400
-          output = 'Notification sent'
-        } else if (step.type === 'condition') {
-          delay = 500
-          output = 'Condition checked: true'
+          return { output: out }
         }
 
-        await new Promise(r => setTimeout(r, delay))
-
-        run.steps[i] = {
-          ...run.steps[i],
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          output,
+        if (step.type === 'decision') {
+          await new Promise(r => setTimeout(r, 600))
+          if (step.condition) {
+            const result = evalCondition(step.condition, runCtx)
+            const condDisplay = step.condition.replace(/\{\{(\w+)\}\}/g, (_, k) => runCtx[k] !== undefined ? String(runCtx[k]) : `{{${k}}}`)
+            const out = `Condition: ${condDisplay} → ${result ? 'TRUE' : 'FALSE'}`
+            const jumpId = result ? step.on_true : step.on_false
+            if (jumpId && jumpId !== 'stop' && jumpId !== 'skip') {
+              return { output: out, jumpTo: jumpId }
+            }
+            if (jumpId === 'stop') return { output: out + ' — stopping playbook', failed: true, failMsg: 'Condition led to stop' }
+            return { output: out }
+          }
+          return { output: 'Decision evaluated: proceeding with default path' }
         }
+
+        if (step.type === 'notification') {
+          await new Promise(r => setTimeout(r, 400))
+          return { output: 'Notification sent' }
+        }
+        if (step.type === 'condition') {
+          await new Promise(r => setTimeout(r, 500))
+          return { output: 'Condition checked: true' }
+        }
+
+        await new Promise(r => setTimeout(r, 400))
+        return { output: `Completed: ${step.title}` }
+      }
+
+      let result: { output: string; failed?: boolean; failMsg?: string; jumpTo?: string } = { output: '' }
+      try {
+        if (timeoutSecs > 0) {
+          const timeoutPromise = new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`Step timed out after ${timeoutSecs}s`)), timeoutSecs * 1000))
+          result = await Promise.race([makeStepPromise(), timeoutPromise])
+        } else {
+          result = await makeStepPromise()
+        }
+      } catch (err: any) {
+        const failAction = step.on_failure || 'stop'
+        run.steps[i] = { ...run.steps[i], status: 'failed', completedAt: new Date().toISOString(), error: err.message }
+        persistRun(run)
+        if (failAction === 'stop') { run.status = 'failed'; break }
+        if (failAction === 'escalate') { run.status = 'waiting_approval'; persistRun(run); await new Promise<void>(r => { approvalResolverRef.current = r }) }
+        // skip: just continue
+        i++; continue
+      }
+
+      if (step.type === 'approval' && !result.failed) {
+        run.steps[i] = { ...run.steps[i], status: 'completed', completedAt: new Date().toISOString(), approvedBy: 'Manual', output: result.output }
+        run.status = 'running'
+        persistRun(run)
+      } else if (result.failed) {
+        run.steps[i] = { ...run.steps[i], status: 'failed', completedAt: new Date().toISOString(), error: result.failMsg }
+        run.status = 'failed'
+        persistRun(run)
+        break
+      } else {
+        run.steps[i] = { ...run.steps[i], status: 'completed', completedAt: new Date().toISOString(), output: result.output }
         persistRun(run)
       }
+
+      // Jump to a specific step if decision said so
+      if (result.jumpTo) {
+        const jumpIdx = steps.findIndex(s => s.id === result.jumpTo)
+        if (jumpIdx >= 0) { i = jumpIdx; continue }
+      }
+
+      i++
     }
 
-    run.status = 'completed'
+    if (run.status !== 'failed') {
+      run.status = 'completed'
+    }
     run.completedAt = new Date().toISOString()
     persistRun(run)
 
