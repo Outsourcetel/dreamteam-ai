@@ -29,6 +29,7 @@ export type TenantPage =
   | 'portal_tickets'
   | 'portal_escalations'
   | 'portal_settings'
+  | 'portal_email'
   | 'insight'
   | 'swarm'
   | 'security'

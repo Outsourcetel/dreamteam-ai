@@ -21,6 +21,7 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'portal_actions', label: 'DE Actions' },
   { id: 'portal_approvals', label: 'Approvals' },
   { id: 'portal_tickets', label: 'Tickets' },
+  { id: 'portal_email', label: 'Email Inbox' },
   { id: 'portal_settings', label: 'Settings' },
 ];
 
