@@ -249,15 +249,67 @@ function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config
   </div>;
 }
 
+// ── Masking helpers ────────────────────────────────────────────
+
+type MaskBehavior = 'redact' | 'partial' | 'hash' | 'mask_middle' | 'full';
+type MaskingRule = { behavior: MaskBehavior; allowedRoles: string[] };
+
+const MASK_LABELS: Record<MaskBehavior, string> = {
+  redact: 'Redact ([REDACTED])',
+  partial: 'Partial (joh***)',
+  hash: 'Hash (SHA256:a3f2...)',
+  mask_middle: 'Mask middle (j***@co.com)',
+  full: 'Full (no masking)',
+};
+
+const ALL_ROLES = ['tenant_owner', 'tenant_admin', 'tenant_manager', 'tenant_user'];
+
+function applyMask(value: string, behavior: MaskBehavior, viewerRole: string, allowedRoles: string[]): string {
+  if (allowedRoles.includes(viewerRole)) return value;
+  if (behavior === 'redact') return '[REDACTED]';
+  if (behavior === 'partial') return value.slice(0, 3) + '***';
+  if (behavior === 'hash') return 'SHA256:' + Math.abs(value.split('').reduce((a, c) => (a << 5) - a + c.charCodeAt(0), 0)).toString(16).slice(0, 8) + '...';
+  if (behavior === 'mask_middle') {
+    if (value.includes('@')) {
+      const [local, domain] = value.split('@');
+      return local[0] + '***@' + domain;
+    }
+    return value.slice(0, 3) + '***' + value.slice(-4);
+  }
+  return value;
+}
+
+const PREVIEW_RECORDS: Record<string, { field: string; canonicalId: string; value: string }[]> = {
+  salesforce: [
+    { field: 'customer.name', canonicalId: 'customer.name', value: 'Acme Corporation' },
+    { field: 'customer.email', canonicalId: 'customer.email', value: 'john.doe@acme.com' },
+    { field: 'customer.id', canonicalId: 'customer.id', value: '0018000001XYZ' },
+    { field: 'invoice.amount', canonicalId: 'invoice.amount', value: '$12,450.00' },
+    { field: 'customer.phone', canonicalId: 'customer.phone', value: '+1-555-867-4521' },
+  ],
+};
+
 // ── Field Map Tab ──────────────────────────────────────────────
 
 function FieldMapTab({ conn, accentColor }: { conn: ConnectorConfig; accentColor: string }) {
   const storageKey = `dt_connector_fieldmap_${conn.id}`;
+  const maskingKey = `dt_connector_masking_${conn.id}`;
   const [mappings, setMappings] = useState<Record<string, FieldMapping>>(() => {
     try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { return {}; }
   });
+  const [maskingRules, setMaskingRules] = useState<Record<string, MaskingRule>>(() => {
+    try { return JSON.parse(localStorage.getItem(maskingKey) || '{}'); } catch { return {}; }
+  });
   const [selectedField, setSelectedField] = useState<string>(CANONICAL_FIELDS[0].id);
   const [saved, setSaved] = useState(false);
+  const [previewRole, setPreviewRole] = useState<string>('tenant_user');
+
+  const updateMaskingRule = (fieldId: string, patch: Partial<MaskingRule>) => {
+    const current = maskingRules[fieldId] || { behavior: 'redact', allowedRoles: ['tenant_owner', 'tenant_admin'] };
+    const next = { ...maskingRules, [fieldId]: { ...current, ...patch } };
+    setMaskingRules(next);
+    try { localStorage.setItem(maskingKey, JSON.stringify(next)); } catch {}
+  };
 
   const schemaObjects = SCHEMA_OBJECTS[conn.type] ?? [];
   const allSourceFields: string[] = schemaObjects.flatMap(obj => obj.fields.map(f => `${obj.name}.${f}`));
@@ -438,6 +490,108 @@ function FieldMapTab({ conn, accentColor }: { conn: ConnectorConfig; accentColor
           )}
         </div>
       </div>
+
+      {/* PII Masking Rules */}
+      {(() => {
+        const piiFields = CANONICAL_FIELDS.filter(f => mappings[f.id]?.isPii);
+        const previewRecords = PREVIEW_RECORDS[conn.type] || [];
+        return (
+          <div className="mt-4 rounded-xl border border-red-800/40 bg-red-500/5 p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">&#128274;</span>
+              <span className="text-sm font-semibold text-white">PII Masking Rules</span>
+              <span className="ml-auto px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-400 border border-red-800/40">{piiFields.length} fields marked as PII</span>
+            </div>
+
+            {piiFields.length === 0 ? (
+              <p className="text-xs text-slate-500">No fields marked as PII yet. Toggle "Mark as PII" on a field to configure masking.</p>
+            ) : (
+              <div className="space-y-3">
+                {piiFields.map(cf => {
+                  const rule = maskingRules[cf.id] || { behavior: 'redact' as MaskBehavior, allowedRoles: ['tenant_owner', 'tenant_admin'] };
+                  return (
+                    <div key={cf.id} className="bg-slate-900 border border-slate-700 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-white">{cf.label}</span>
+                        <span className="text-[10px] text-slate-500">{mappings[cf.id]?.sourceField || '(not mapped)'}</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Masking behavior</label>
+                          <select value={rule.behavior} onChange={e => updateMaskingRule(cf.id, { behavior: e.target.value as MaskBehavior })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none">
+                            {(Object.entries(MASK_LABELS) as [MaskBehavior, string][]).map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">Who can see unmasked</label>
+                          <div className="flex flex-wrap gap-2">
+                            {ALL_ROLES.map(r => (
+                              <label key={r} className="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" className="accent-indigo-500"
+                                  checked={rule.allowedRoles.includes(r)}
+                                  onChange={e => {
+                                    const next = e.target.checked ? [...rule.allowedRoles, r] : rule.allowedRoles.filter(x => x !== r);
+                                    updateMaskingRule(cf.id, { allowedRoles: next });
+                                  }} />
+                                <span className="text-[10px] text-slate-300">{r.replace('tenant_', '')}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Masking Preview */}
+            {previewRecords.length > 0 && (
+              <div className="border-t border-red-800/30 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-slate-300">Customer Record Preview (with masking applied)</p>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-slate-400">View as role:</label>
+                    <select value={previewRole} onChange={e => setPreviewRole(e.target.value)}
+                      className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-white focus:outline-none">
+                      {ALL_ROLES.map(r => <option key={r} value={r}>{r.replace('tenant_', '')}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                  {previewRecords.map((rec, i) => {
+                    const rule = maskingRules[rec.canonicalId];
+                    const isPii = mappings[rec.canonicalId]?.isPii;
+                    const maskedVal = rule && isPii ? applyMask(rec.value, rule.behavior, previewRole, rule.allowedRoles) : rec.value;
+                    const wasMasked = maskedVal !== rec.value;
+                    return (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2 text-[11px] font-mono ${i < previewRecords.length - 1 ? 'border-b border-slate-800' : ''}`}>
+                        <span className="text-slate-500 w-32 flex-shrink-0">{rec.field}</span>
+                        <span className={`flex-1 ${wasMasked ? 'text-amber-300' : 'text-slate-200'}`}>{maskedVal}</span>
+                        {isPii && <span className={`text-[9px] px-1.5 py-0.5 rounded ${wasMasked ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>{wasMasked ? 'masked - PII' : 'full access'}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* DE access enforcement note */}
+            <div className="border border-slate-700 rounded-lg px-3 py-2 text-[11px] text-slate-400 bg-slate-900/50">
+              <p className="font-medium text-slate-300 mb-1">DE access enforcement</p>
+              <p>When a DE queries this connector, PII fields are automatically masked based on the DE's trust level:</p>
+              <ul className="mt-1 space-y-0.5 ml-3">
+                <li>• <span className="text-slate-300">Supervised DE:</span> all PII masked</li>
+                <li>• <span className="text-slate-300">Established DE:</span> partial masking</li>
+                <li>• <span className="text-slate-300">Trusted DE:</span> full access to all fields</li>
+              </ul>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -470,12 +624,36 @@ function defaultSyncConfig(connType: string): SyncConfig {
   };
 }
 
+interface AlertConfig {
+  onFail: boolean;
+  onDrop: boolean;
+  dropThreshold: number;
+  onStale: boolean;
+  staleHours: number;
+  delivery: { inApp: boolean; email: boolean };
+  emailAddr: string;
+}
+
+function defaultAlertConfig(): AlertConfig {
+  return { onFail: true, onDrop: true, dropThreshold: 20, onStale: true, staleHours: 24, delivery: { inApp: true, email: false }, emailAddr: '' };
+}
+
 function SyncConfigSection({ conn, accentColor, onToast }: { conn: ConnectorConfig; accentColor: string; onToast: (msg: string) => void }) {
   const storageKey = `dt_connector_sync_${conn.id}`;
+  const alertsKey = `dt_connector_alerts_${conn.id}`;
   const [cfg, setCfg] = useState<SyncConfig>(() => {
     try { return { ...defaultSyncConfig(conn.type), ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; } catch { return defaultSyncConfig(conn.type); }
   });
+  const [alertCfg, setAlertCfg] = useState<AlertConfig>(() => {
+    try { return { ...defaultAlertConfig(), ...JSON.parse(localStorage.getItem(alertsKey) || '{}') }; } catch { return defaultAlertConfig(); }
+  });
   const [newFilter, setNewFilter] = useState<SyncFilter>({ field: '', operator: 'equals', value: '' });
+
+  const saveAlerts = (updates: Partial<AlertConfig>) => {
+    const next = { ...alertCfg, ...updates };
+    setAlertCfg(next);
+    try { localStorage.setItem(alertsKey, JSON.stringify(next)); } catch {}
+  };
 
   const schemaObjects = SCHEMA_OBJECTS[conn.type] ?? [];
   const allFields = schemaObjects.flatMap(obj => obj.fields.map(f => `${obj.name}.${f}`));
@@ -652,6 +830,72 @@ function SyncConfigSection({ conn, accentColor, onToast }: { conn: ConnectorConf
         className="w-full py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>
         Save Sync Config
       </button>
+
+      {/* Health Alerts */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-white">Health Alerts</h3>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-xs text-slate-300">Alert when sync fails</span>
+          <button onClick={() => saveAlerts({ onFail: !alertCfg.onFail })}
+            className={`w-9 h-5 rounded-full transition-all relative ${alertCfg.onFail ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${alertCfg.onFail ? 'left-4' : 'left-0.5'}`} />
+          </button>
+        </label>
+
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+            <button onClick={() => saveAlerts({ onDrop: !alertCfg.onDrop })}
+              className={`w-9 h-5 rounded-full transition-all relative ${alertCfg.onDrop ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${alertCfg.onDrop ? 'left-4' : 'left-0.5'}`} />
+            </button>
+            <span className="text-xs text-slate-300">Alert when records drop by more than</span>
+          </label>
+          <div className="flex items-center gap-1">
+            <input type="number" min={1} max={100} value={alertCfg.dropThreshold}
+              onChange={e => saveAlerts({ dropThreshold: Math.min(100, Math.max(1, parseInt(e.target.value) || 20)) })}
+              className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none" />
+            <span className="text-xs text-slate-400">%</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+            <button onClick={() => saveAlerts({ onStale: !alertCfg.onStale })}
+              className={`w-9 h-5 rounded-full transition-all relative ${alertCfg.onStale ? 'bg-indigo-500' : 'bg-slate-700'}`}>
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${alertCfg.onStale ? 'left-4' : 'left-0.5'}`} />
+            </button>
+            <span className="text-xs text-slate-300">Alert when out of sync for more than</span>
+          </label>
+          <div className="flex items-center gap-1">
+            <input type="number" min={1} max={168} value={alertCfg.staleHours}
+              onChange={e => saveAlerts({ staleHours: Math.min(168, Math.max(1, parseInt(e.target.value) || 24)) })}
+              className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none" />
+            <span className="text-xs text-slate-400">hours</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-400 block mb-2">Alert delivery</label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="accent-indigo-500" checked={alertCfg.delivery.inApp}
+                onChange={e => saveAlerts({ delivery: { ...alertCfg.delivery, inApp: e.target.checked } })} />
+              <span className="text-xs text-slate-300">In-app notification</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="accent-indigo-500" checked={alertCfg.delivery.email}
+                onChange={e => saveAlerts({ delivery: { ...alertCfg.delivery, email: e.target.checked } })} />
+              <span className="text-xs text-slate-300">Email</span>
+            </label>
+            {alertCfg.delivery.email && (
+              <input value={alertCfg.emailAddr} onChange={e => saveAlerts({ emailAddr: e.target.value })}
+                placeholder="alerts@yourcompany.com"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -778,6 +1022,9 @@ function HealthStrip({ connectors, accentColor, onSyncAll, syncingAll, syncAllPr
   const healthDot = healthStatus === 'Good' ? 'bg-emerald-400' : healthStatus === 'Degraded' ? 'bg-amber-400' : 'bg-rose-400';
   const connectedCount = connectors.filter(c => c.status === 'connected').length;
 
+  const TOTAL_CONNECTOR_TYPES = 15;
+  const configuredTypes = new Set(connectors.map(c => c.type)).size;
+
   return (
     <div className="flex items-center gap-3 mb-6 overflow-x-auto pb-1">
       {[
@@ -786,6 +1033,7 @@ function HealthStrip({ connectors, accentColor, onSyncAll, syncingAll, syncAllPr
         { label: 'Last Sync', value: lastSyncLabel, color: 'text-slate-300', dot: null },
         { label: 'Records', value: totalRecords.toLocaleString(), color: 'text-slate-300', dot: null },
         { label: 'Field Maps', value: fieldMapsCount.toString(), color: 'text-indigo-300', dot: null },
+        { label: 'Types Config\'d', value: `${configuredTypes}/${TOTAL_CONNECTOR_TYPES}`, color: 'text-slate-300', dot: null },
         { label: 'Sync Health', value: healthStatus, color: healthColor, dot: healthDot },
       ].map(s => (
         <div key={s.label} className="flex-shrink-0 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 min-w-[110px]">
@@ -813,11 +1061,12 @@ function HealthStrip({ connectors, accentColor, onSyncAll, syncingAll, syncAllPr
 type DetailTab = 'overview' | 'schema' | 'field_map' | 'de_bindings' | 'lineage' | 'logs';
 
 function ConnectorDetailPanel({
-  conn, tenantId: _tenantId, accentColor, onClose, onSave, onTest, onDelete, employees, onUnbind, onToast,
+  conn, tenantId: _tenantId, accentColor, onClose, onSave, onTest, onDelete, onDuplicate, employees, onUnbind, onToast,
 }: {
   conn: ConnectorConfig; tenantId: string; accentColor: string;
   onClose: () => void; onSave: (config: Record<string, string>, name: string) => void;
   onTest: (conn: ConnectorConfig) => void; onDelete: (id: string) => void;
+  onDuplicate: (conn: ConnectorConfig) => void;
   employees: ReturnType<typeof useDigitalEmployees>['employees'];
   onUnbind: (deId: string, connId: string) => void;
   onToast: (msg: string) => void;
@@ -935,6 +1184,10 @@ function ConnectorDetailPanel({
               <button onClick={() => onSave(editConfig, editName)}
                 className="w-full py-2 text-sm font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>
                 Save Changes
+              </button>
+              <button onClick={() => onDuplicate(conn)}
+                className="w-full py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">
+                Duplicate Connector
               </button>
               <button onClick={() => onDelete(conn.id)}
                 className="w-full py-2 text-sm rounded-lg border border-red-800 text-red-400 hover:border-red-600 transition-all">
@@ -1120,6 +1373,7 @@ const DataConnectorsPage = ({
   const [syncAllProgress, setSyncAllProgress] = useState(0);
   const [retryingConn, setRetryingConn] = useState<string | null>(null);
   const [retryCountdowns, setRetryCountdowns] = useState<Record<string, number>>({});
+  const [syncAnomalies, setSyncAnomalies] = useState<Record<string, string>>({});
 
   useEffect(() => { setConnectors(loadConnectors(tenantId)); }, [tenantId]);
 
@@ -1146,10 +1400,21 @@ const DataConnectorsPage = ({
   const handleSync = async (conn: ConnectorConfig) => {
     setSyncing(conn.id);
     await new Promise(r => setTimeout(r, 2000));
-    const newCount = Math.floor(Math.random() * 50) + 1;
-    persist(connectors.map(c => c.id === conn.id ? { ...c, lastSync: new Date().toISOString(), recordCount: c.recordCount + newCount } : c));
-    setSyncing(null);
-    showToast(`Synced ${newCount} new records from ${conn.name}`);
+    const isAnomaly = Math.random() < 0.1;
+    if (isAnomaly && conn.recordCount > 0) {
+      const dropPct = Math.floor(Math.random() * 20) + 10;
+      const dropped = Math.floor(conn.recordCount * (dropPct / 100));
+      persist(connectors.map(c => c.id === conn.id ? { ...c, lastSync: new Date().toISOString(), recordCount: Math.max(0, c.recordCount - dropped) } : c));
+      setSyncAnomalies(prev => ({ ...prev, [conn.id]: `Sync anomaly detected: record count dropped ${dropPct}%. Review the Logs tab.` }));
+      setSyncing(null);
+      showToast(`Sync anomaly on ${conn.name} — record count dropped ${dropPct}%`);
+    } else {
+      const newCount = Math.floor(Math.random() * 50) + 1;
+      persist(connectors.map(c => c.id === conn.id ? { ...c, lastSync: new Date().toISOString(), recordCount: c.recordCount + newCount } : c));
+      setSyncAnomalies(prev => { const n = { ...prev }; delete n[conn.id]; return n; });
+      setSyncing(null);
+      showToast(`Synced ${newCount} new records from ${conn.name}`);
+    }
   };
 
   const handleSyncAll = async () => {
@@ -1208,6 +1473,20 @@ const DataConnectorsPage = ({
     showToast('Connector removed');
   };
 
+  const handleDuplicate = (conn: ConnectorConfig) => {
+    const copy: ConnectorConfig = {
+      ...conn,
+      id: crypto.randomUUID(),
+      name: `${conn.name} (copy)`,
+      status: 'disconnected',
+      lastSync: null,
+      recordCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+    persist([...connectors, copy]);
+    showToast(`Duplicated as "${copy.name}"`);
+  };
+
   const handleBind = async () => {
     if (!bindConnId || !bindDeId) return;
     const de = employees.find(e => e.id === bindDeId);
@@ -1261,6 +1540,13 @@ const DataConnectorsPage = ({
             const countdown = retryCountdowns[conn.id];
             return (
               <div key={conn.id} className={`bg-slate-900 border rounded-xl p-5 hover:border-slate-700 transition-all ${conn.status === 'error' ? 'border-rose-800/50' : 'border-slate-800'}`}>
+                {syncAnomalies[conn.id] && (
+                  <div className="mb-3 flex items-start gap-2 px-3 py-2 bg-amber-500/10 border border-amber-700/40 rounded-lg">
+                    <span className="text-amber-400 text-xs">&#9888;</span>
+                    <span className="text-xs text-amber-300">{syncAnomalies[conn.id]}</span>
+                    <button onClick={() => setSyncAnomalies(prev => { const n = { ...prev }; delete n[conn.id]; return n; })} className="ml-auto text-slate-500 hover:text-white text-sm leading-none">×</button>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 mb-3">
                   <div className={`w-9 h-9 rounded-lg ${meta.avatarBg} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>{meta.avatar}</div>
                   <div className="flex-1 min-w-0">
@@ -1366,13 +1652,21 @@ const DataConnectorsPage = ({
                   <div key={g.label}>
                     <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">{g.label}</p>
                     <div className="grid grid-cols-3 gap-2">
-                      {g.types.map(t => (
-                        <button key={t.type} onClick={() => { setSelectedType(t.type); setAddName(t.name); setAddStep(2); }}
-                          className="flex items-center gap-2 p-3 rounded-xl border border-slate-700 hover:border-indigo-500 bg-slate-800 transition-all text-left">
-                          <div className={`w-7 h-7 rounded-lg ${t.avatarBg} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>{t.avatar}</div>
-                          <span className="text-xs text-slate-300 truncate">{t.name}</span>
-                        </button>
-                      ))}
+                      {g.types.map(t => {
+                        const typeCount = connectors.filter(c => c.type === t.type && c.status === 'connected').length;
+                        return (
+                          <button key={t.type} onClick={() => { setSelectedType(t.type); setAddName(t.name); setAddStep(2); }}
+                            className="flex items-center gap-2 p-3 rounded-xl border border-slate-700 hover:border-indigo-500 bg-slate-800 transition-all text-left">
+                            <div className={`w-7 h-7 rounded-lg ${t.avatarBg} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>{t.avatar}</div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs text-slate-300 truncate block">{t.name}</span>
+                              {typeCount > 0 && (
+                                <span className="text-[9px] text-emerald-400">{typeCount} connected</span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -1402,7 +1696,7 @@ const DataConnectorsPage = ({
         <ConnectorDetailPanel
           conn={detailConn} tenantId={tenantId} accentColor={accentColor}
           onClose={() => setDetailConn(null)} onSave={handleDetailSave} onTest={handleTest}
-          onDelete={handleDetailDelete} employees={employees} onUnbind={handleUnbind} onToast={showToast}
+          onDelete={handleDetailDelete} onDuplicate={handleDuplicate} employees={employees} onUnbind={handleUnbind} onToast={showToast}
         />
       )}
     </div>
