@@ -18,6 +18,7 @@ export type TenantPage =
   | 'agent_deployments'
   | 'hub_overview'
   | 'hub_articles'
+  | 'hub_review'
   | 'hub_ingestion'
   | 'hub_training'
   | 'hub_analytics'
