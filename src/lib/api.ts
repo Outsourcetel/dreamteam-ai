@@ -1425,6 +1425,16 @@ export const saveConnectors = (tenantId: string, connectors: ConnectorConfig[]):
   try { localStorage.setItem(CONNECTOR_STORE_KEY(tenantId), JSON.stringify(connectors)); } catch {}
 };
 
+// TODO(oauth): implement real OAuth callback handler
+// When a provider redirects back with ?code=AUTH_CODE&state=CONNECTOR_ID:
+//   1. POST /api/oauth/callback with { code, connectorId, tenantId }
+//   2. Server exchanges code for access_token + refresh_token via provider token endpoint
+//   3. Tokens stored encrypted in Supabase connector_credentials table (never in localStorage)
+//   4. Return { ok: true, account: providerAccountLabel, scope: grantedScopes }
+//   5. Set connector status='connected', config.oauth_connected='true' in DB
+// Supported providers: salesforce, hubspot, zendesk, quickbooks, xero, chargebee
+// export const handleOAuthCallback = async (code: string, connectorId: string, tenantId: string) => { ... };
+
 export const testConnector = async (connector: ConnectorConfig): Promise<{ ok: boolean; error?: string; recordCount?: number }> => {
   if (connector.type === 'rest_api' && connector.config.base_url) {
     try {
