@@ -2,8 +2,27 @@ import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, PageTabs, PORTAL_TABS } from '../../components'
 import { supabase } from '../../supabase'
-import { runAgentLoop, resolveConversation } from '../../lib/api'
+import { runAgentLoop, resolveConversation, fetchTenantProfiles, triggerEscalationAlert } from '../../lib/api'
 import * as api from '../../lib/api'
+import type { DBProfile } from '../../lib/api'
+
+// ── Routing Rule types ─────────────────────────────────────────
+interface RoutingRule {
+  id: string;
+  triggerType: 'sentiment' | 'keyword' | 'tag';
+  triggerValue: string;
+  routeTo: string; // profileId or 'any'
+  priorityBump: 'urgent' | 'high' | 'normal' | 'low' | 'none';
+  addLabel: string; // labelId or ''
+  enabled: boolean;
+}
+
+interface RoutingLogEntry {
+  time: string;
+  snippet: string;
+  routedToName: string;
+  priority: string;
+}
 
 // ── Sentiment helper ───────────────────────────────────────────
 const getSentiment = (text: string): '😤' | '😊' | '😐' => {
@@ -22,6 +41,14 @@ const slaStatus = (mins: number, urgentMins: number, normalMins: number): 'green
   if (mins > normalMins) return 'red';
   if (mins > normalMins * 0.7) return 'amber';
   return 'green';
+};
+
+// ── SLA priority derivation ────────────────────────────────────
+const deriveConvPriority = (text: string): 'urgent' | 'normal' | 'low' => {
+  const t = (text || '').toLowerCase();
+  if (/urgent|emergency|asap|immediately|critical|down|broken|not working/.test(t)) return 'urgent';
+  if (/billing|charge|payment|invoice|refund/.test(t)) return 'normal';
+  return 'low';
 };
 
 const SLADot = ({ color }: { color: 'green' | 'amber' | 'red' }) => (
@@ -96,6 +123,25 @@ const CustomerPortalPage = ({
   const [pSending, setPSending] = useState(false);
   const [pEscalating, setPEscalating] = useState(false);
   const [pLastResult, setPLastResult] = useState<any>(null);
+
+  // ----- SLA breach state -----
+  const [convPriority, setConvPriority] = useState<Record<string, 'urgent' | 'normal' | 'low'>>({});
+  const [slaBreachers, setSlaBreachers] = useState<Set<string>>(new Set());
+  const prevBreachersRef = useRef<Set<string>>(new Set());
+
+  // ----- routing state -----
+  const [routingRules, setRoutingRules] = useState<RoutingRule[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dt_portal_routing_' + pTenantId) || 'null') || [
+      { id: 'rr1', triggerType: 'sentiment', triggerValue: 'negative', routeTo: 'any', priorityBump: 'urgent', addLabel: '', enabled: true },
+      { id: 'rr2', triggerType: 'sentiment', triggerValue: 'positive', routeTo: 'any', priorityBump: 'none', addLabel: '', enabled: true },
+      { id: 'rr3', triggerType: 'keyword', triggerValue: 'cancel', routeTo: 'any', priorityBump: 'high', addLabel: '', enabled: true },
+    ]; } catch { return []; }
+  });
+  const [convAssignments, setConvAssignments] = useState<Record<string, string>>({});
+  const [routingLog, setRoutingLog] = useState<RoutingLogEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dt_routing_log_' + pTenantId) || '[]'); } catch { return []; }
+  });
+  const [portalProfiles, setPortalProfiles] = useState<DBProfile[]>([]);
 
   // ----- portal settings state -----
   const [settingsSection, setSettingsSection] = useState<string>('branding');
@@ -278,7 +324,54 @@ const CustomerPortalPage = ({
     if (!pLive || !pTenantId) return;
     const cs = await api.fetchConversations(pTenantId);
     setPConvos(cs as any);
-  }, [pLive, pTenantId]);
+
+    // Derive priorities
+    const priorities: Record<string, 'urgent' | 'normal' | 'low'> = {};
+    (cs as any[]).forEach((c: any) => {
+      priorities[c.id] = deriveConvPriority(c.last_message || c.subject || '');
+    });
+    setConvPriority(priorities);
+
+    // Apply routing rules
+    const assignments: Record<string, string> = {};
+    const newLogEntries: RoutingLogEntry[] = [];
+    (cs as any[]).forEach((c: any) => {
+      const sentiment = getSentiment(c.last_message || '');
+      const sentimentLabel = sentiment === '😤' ? 'negative' : sentiment === '😊' ? 'positive' : 'neutral';
+      const text = (c.last_message || c.subject || '').toLowerCase();
+      routingRules.filter(r => r.enabled).forEach(rule => {
+        let matches = false;
+        if (rule.triggerType === 'sentiment' && rule.triggerValue === sentimentLabel) matches = true;
+        if (rule.triggerType === 'keyword' && text.includes(rule.triggerValue.toLowerCase())) matches = true;
+        if (matches) {
+          if (rule.routeTo !== 'any') assignments[c.id] = rule.routeTo;
+          if (rule.priorityBump !== 'none') {
+            const order = ['urgent', 'normal', 'high', 'low'];
+            const current = priorities[c.id] || 'low';
+            const bump = rule.priorityBump === 'high' ? 'normal' : rule.priorityBump;
+            if (order.indexOf(bump as string) < order.indexOf(current)) {
+              priorities[c.id] = bump as 'urgent' | 'normal' | 'low';
+            }
+          }
+          const profileName = rule.routeTo === 'any' ? 'Any available' : (portalProfiles.find(p => p.id === rule.routeTo)?.name || rule.routeTo);
+          newLogEntries.push({
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            snippet: c.last_message ? c.last_message.substring(0, 40) : rule.triggerValue,
+            routedToName: profileName,
+            priority: rule.priorityBump === 'none' ? 'No change' : rule.priorityBump,
+          });
+        }
+      });
+    });
+    setConvAssignments(assignments);
+    if (newLogEntries.length > 0) {
+      setRoutingLog(prev => {
+        const updated = [...newLogEntries, ...prev].slice(0, 20);
+        try { localStorage.setItem('dt_routing_log_' + pTenantId, JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
+  }, [pLive, pTenantId, routingRules, portalProfiles]);
 
   const pOpenConvo = React.useCallback(async (id: string) => {
     if (!pTenantId) return;
@@ -290,6 +383,45 @@ const CustomerPortalPage = ({
   React.useEffect(() => {
     if (pLive && subPage === 'portal_conversations') { pLoadConvos(); }
   }, [pLive, subPage, pLoadConvos]);
+
+  // Load portal profiles once
+  React.useEffect(() => {
+    if (pLive && pTenantId) {
+      fetchTenantProfiles(pTenantId).then(p => setPortalProfiles(p));
+    }
+  }, [pLive, pTenantId]);
+
+  // SLA breach detection — runs immediately then every 60s
+  React.useEffect(() => {
+    if (!pLive || pConvos.length === 0) return;
+    const check = () => {
+      const breached = new Set<string>();
+      pConvos.forEach((c: any) => {
+        if (c.status === 'resolved') return;
+        const elapsed = elapsedMinutes(c.created_at);
+        const pri = convPriority[c.id] || 'low';
+        const threshold = pri === 'urgent' ? slaUrgent : pri === 'normal' ? slaNormal : slaLow;
+        if (elapsed > threshold) breached.add(c.id);
+      });
+      setSlaBreachers(breached);
+      // Alert on new breaches
+      if (slaAlertEnabled && pTenantId) {
+        breached.forEach(id => {
+          if (!prevBreachersRef.current.has(id)) {
+            const c = pConvos.find((x: any) => x.id === id);
+            const elapsed = c ? elapsedMinutes(c.created_at) : 0;
+            const pri = convPriority[id] || 'low';
+            const threshold = pri === 'urgent' ? slaUrgent : pri === 'normal' ? slaNormal : slaLow;
+            triggerEscalationAlert(pTenantId, id, 'SLA breach detected', undefined, undefined, `SLA breached: ${elapsed}m elapsed, threshold ${threshold}m, priority ${pri}`).catch(() => {});
+          }
+        });
+      }
+      prevBreachersRef.current = breached;
+    };
+    check();
+    const interval = setInterval(check, 60000);
+    return () => clearInterval(interval);
+  }, [pLive, pConvos, convPriority, slaUrgent, slaNormal, slaLow, slaAlertEnabled, pTenantId]);
 
   const pSend = async () => {
     const q = pInput.trim();
@@ -493,7 +625,15 @@ const CustomerPortalPage = ({
     return 'bg-slate-700/50 text-slate-400';
   };
 
-  const convFiltered = convFilter === 'all' ? pConvos : pConvos.filter(c => c.status === convFilter);
+  const convFiltered = (() => {
+    const base = convFilter === 'all' ? pConvos : pConvos.filter((c: any) => c.status === convFilter);
+    // Sort breached to top
+    return [...base].sort((a: any, b: any) => {
+      const ab = slaBreachers.has(a.id) ? 0 : 1;
+      const bb = slaBreachers.has(b.id) ? 0 : 1;
+      return ab - bb;
+    });
+  })();
 
   const doTakeOver = async () => {
     if (!pActiveId || !humanReply.trim() || !pTenantId) return;
@@ -538,13 +678,21 @@ const CustomerPortalPage = ({
             </div>
           )}
           {pLive && (
-            <div className="flex gap-1 bg-slate-800 rounded-lg p-1 mb-4 w-fit">
-              {['all', 'open', 'escalated', 'pending', 'resolved'].map(f => (
-                <button key={f} onClick={() => setConvFilter(f)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${convFilter === f ? 'text-white' : 'text-slate-400 hover:text-white'}`}
-                  style={convFilter === f ? { backgroundColor: accentColor } : {}}>{f}</button>
-              ))}
-            </div>
+            <>
+              {slaBreachers.size > 0 && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2 mb-3 flex items-center justify-between">
+                  <span className="text-sm text-red-300">⚠ {slaBreachers.size} conversation{slaBreachers.size > 1 ? 's' : ''} have breached SLA response time.</span>
+                  <button onClick={() => setConvFilter('open')} className="text-xs text-red-400 hover:text-red-200 font-medium ml-4 whitespace-nowrap">View all →</button>
+                </div>
+              )}
+              <div className="flex gap-1 bg-slate-800 rounded-lg p-1 mb-4 w-fit">
+                {['all', 'open', 'escalated', 'pending', 'resolved'].map(f => (
+                  <button key={f} onClick={() => setConvFilter(f)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${convFilter === f ? 'text-white' : 'text-slate-400 hover:text-white'}`}
+                    style={convFilter === f ? { backgroundColor: accentColor } : {}}>{f}</button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -556,19 +704,32 @@ const CustomerPortalPage = ({
                 {convFiltered.length === 0 && (
                   <p className="text-sm text-slate-600 py-4 text-center">No conversations found.</p>
                 )}
-                {convFiltered.map(c => {
+                {convFiltered.map((c: any) => {
                   const lastMsg = c.last_message || c.subject || '';
                   const sentiment = getSentiment(lastMsg);
                   const convLabels = (appliedLabels[c.id] || []).map((lid: string) => conversationLabels.find(l => l.id === lid)).filter(Boolean);
+                  const isBreached = slaBreachers.has(c.id);
+                  const assignedProfileId = convAssignments[c.id];
+                  const assignedProfile = assignedProfileId ? portalProfiles.find(p => p.id === assignedProfileId) : null;
+                  const assignedInitials = assignedProfile ? (assignedProfile.name || '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : null;
+                  const isPriorityBumped = convPriority[c.id] === 'urgent' && deriveConvPriority(lastMsg) !== 'urgent';
                   return (
                     <div key={c.id} className="relative">
                       <button onClick={() => pOpenConvo(c.id)}
-                        className={'w-full text-left px-3 py-3 rounded-xl border transition-all ' + (pActiveId === c.id ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700')}>
+                        className={'w-full text-left px-3 py-3 rounded-xl border transition-all ' + (pActiveId === c.id ? 'border-indigo-500/60 bg-indigo-500/10' : isBreached ? 'border-red-500/30 bg-red-500/5 hover:border-red-500/50' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700')}>
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <span className="text-sm font-medium text-white truncate">{c.customer_name || 'Customer'}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <span className="text-sm">{sentiment}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${convStatusColor(c.status)}`}>{c.status}</span>
+                            {assignedInitials && (
+                              <span className="text-[9px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">→ {assignedInitials}</span>
+                            )}
+                            {isPriorityBumped && <span title="Priority bumped by routing rule">⚡</span>}
+                            {isBreached ? (
+                              <span className="animate-pulse bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">SLA ⚠</span>
+                            ) : (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${convStatusColor(c.status)}`}>{c.status}</span>
+                            )}
                           </div>
                         </div>
                         <div className="text-xs text-slate-500 truncate mb-1">{c.subject || 'Untitled conversation'}</div>
@@ -976,7 +1137,12 @@ const CustomerPortalPage = ({
       { id: 'prechat', label: 'Pre-chat Form', icon: '📋' },
       { id: 'sla', label: 'SLA Rules', icon: '⏱' },
       { id: 'labels', label: 'Labels & Alerts', icon: '🏷' },
+      { id: 'routing', label: 'Routing Rules', icon: '⚡' },
     ];
+    const saveRoutingRules = (rules: RoutingRule[]) => {
+      setRoutingRules(rules);
+      try { localStorage.setItem('dt_portal_routing_' + pTenantId, JSON.stringify(rules)); } catch {}
+    };
     const PRESET_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#14b8a6'];
 
     return (
@@ -1296,6 +1462,93 @@ const CustomerPortalPage = ({
                 <button onClick={saveSlaSettings} className="px-5 py-2.5 text-sm font-medium text-white rounded-xl transition-all hover:opacity-90" style={{ backgroundColor: accentColor }}>
                   Save SLA Rules
                 </button>
+              </div>
+            )}
+
+            {/* ── ROUTING RULES ── */}
+            {settingsSection === 'routing' && (
+              <div className="space-y-5">
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-white">Routing Rules</h2>
+                      <p className="text-xs text-slate-400 mt-1">Auto-assign conversations and adjust priority based on sentiment or keywords</p>
+                    </div>
+                    <button onClick={() => saveRoutingRules([...routingRules, { id: 'rr' + Date.now(), triggerType: 'keyword', triggerValue: '', routeTo: 'any', priorityBump: 'none', addLabel: '', enabled: true }])}
+                      className="px-3 py-1.5 text-xs font-medium text-white rounded-lg transition-all hover:opacity-90" style={{ backgroundColor: accentColor }}>+ Add Rule</button>
+                  </div>
+                  <div className="space-y-2">
+                    {routingRules.map((rule, idx) => (
+                      <div key={rule.id} className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-3 flex-wrap">
+                        <select value={rule.triggerType}
+                          onChange={e => { const r = [...routingRules]; r[idx] = { ...r[idx], triggerType: e.target.value as any, triggerValue: '' }; saveRoutingRules(r); }}
+                          className="bg-slate-700 border border-slate-600 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none">
+                          <option value="sentiment">Sentiment</option>
+                          <option value="keyword">Keyword</option>
+                          <option value="tag">Tag</option>
+                        </select>
+                        {rule.triggerType === 'sentiment' ? (
+                          <select value={rule.triggerValue}
+                            onChange={e => { const r = [...routingRules]; r[idx] = { ...r[idx], triggerValue: e.target.value }; saveRoutingRules(r); }}
+                            className="bg-slate-700 border border-slate-600 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none">
+                            <option value="negative">Negative 😤</option>
+                            <option value="positive">Positive 😊</option>
+                            <option value="neutral">Neutral 😐</option>
+                          </select>
+                        ) : (
+                          <input value={rule.triggerValue}
+                            onChange={e => { const r = [...routingRules]; r[idx] = { ...r[idx], triggerValue: e.target.value }; saveRoutingRules(r); }}
+                            placeholder={rule.triggerType === 'keyword' ? 'e.g. cancel' : 'tag name'}
+                            className="bg-slate-700 border border-slate-600 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none w-28" />
+                        )}
+                        <span className="text-slate-500 text-xs">→ Route to</span>
+                        <select value={rule.routeTo}
+                          onChange={e => { const r = [...routingRules]; r[idx] = { ...r[idx], routeTo: e.target.value }; saveRoutingRules(r); }}
+                          className="bg-slate-700 border border-slate-600 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none flex-1 min-w-0">
+                          <option value="any">Any available</option>
+                          {portalProfiles.map(p => <option key={p.id} value={p.id}>{p.name || p.email}</option>)}
+                        </select>
+                        <span className="text-slate-500 text-xs">Priority</span>
+                        <select value={rule.priorityBump}
+                          onChange={e => { const r = [...routingRules]; r[idx] = { ...r[idx], priorityBump: e.target.value as any }; saveRoutingRules(r); }}
+                          className="bg-slate-700 border border-slate-600 text-xs text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none">
+                          <option value="none">No change</option>
+                          <option value="urgent">Urgent</option>
+                          <option value="high">High</option>
+                          <option value="normal">Normal</option>
+                          <option value="low">Low</option>
+                        </select>
+                        <button onClick={() => { const r = [...routingRules]; r[idx] = { ...r[idx], enabled: !r[idx].enabled }; saveRoutingRules(r); }}
+                          className="w-9 h-5 rounded-full transition-all relative flex-shrink-0"
+                          style={{ backgroundColor: rule.enabled ? accentColor : '#334155' }}>
+                          <div className={`w-4 h-4 bg-white rounded-full shadow absolute top-0.5 transition-all ${rule.enabled ? 'left-4' : 'left-0.5'}`} />
+                        </button>
+                        <button onClick={() => saveRoutingRules(routingRules.filter((_, i) => i !== idx))}
+                          className="text-slate-600 hover:text-red-400 text-sm transition-colors">✕</button>
+                      </div>
+                    ))}
+                    {routingRules.length === 0 && (
+                      <p className="text-xs text-slate-600 text-center py-4">No routing rules yet. Add one above.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recent routing activity */}
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                  <h2 className="text-sm font-semibold text-white mb-3">Recent Routing Activity</h2>
+                  {routingLog.length === 0 ? (
+                    <p className="text-xs text-slate-600">No routing decisions logged yet. Routing fires when conversations load.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {routingLog.slice(0, 5).map((entry, i) => (
+                        <div key={i} className="flex items-start gap-3 text-xs text-slate-400">
+                          <span className="text-slate-600 whitespace-nowrap">[{entry.time}]</span>
+                          <span className="flex-1 truncate">"{entry.snippet}" → Routed to <span className="text-slate-200">{entry.routedToName}</span> · Priority: <span className="text-amber-300">{entry.priority}</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
