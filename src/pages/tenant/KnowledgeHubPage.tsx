@@ -1,8 +1,79 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { AuthUser, Tenant, Page } from '../../types'
 import { Badge, StatCard, Modal, PageTabs, HUB_TABS } from '../../components'
-import { DBKnowledgeArticle, upsertKnowledgeArticle, updateArticleStatus, fetchKnowledgeArticles } from '../../lib/api'
+import { DBKnowledgeArticle, DBProfile, upsertKnowledgeArticle, updateArticleStatus, fetchKnowledgeArticles, fetchTenantProfiles } from '../../lib/api'
 import { ingestArticle } from '../../services/knowledgeIngestionService'
+
+// ---- Article overlay (localStorage) helpers ----
+type ArticleMeta = {
+  status?: string;
+  reviewNote?: string;
+  reviewDate?: string;
+  reviewerId?: string;
+  scheduledAt?: string;
+}
+
+type ArticleVersion = {
+  savedAt: string;
+  title: string;
+  body: string;
+}
+
+function loadMeta(tenantId: string): Record<string, ArticleMeta> {
+  try { return JSON.parse(localStorage.getItem(`dt_article_meta_${tenantId}`) || '{}'); } catch { return {}; }
+}
+
+function saveMeta(tenantId: string, meta: Record<string, ArticleMeta>) {
+  try { localStorage.setItem(`dt_article_meta_${tenantId}`, JSON.stringify(meta)); } catch {}
+}
+
+function patchMeta(tenantId: string, articleId: string, patch: Partial<ArticleMeta>) {
+  const meta = loadMeta(tenantId);
+  meta[articleId] = { ...(meta[articleId] || {}), ...patch };
+  saveMeta(tenantId, meta);
+}
+
+function clearArticleMeta(tenantId: string, articleId: string) {
+  const meta = loadMeta(tenantId);
+  delete meta[articleId];
+  saveMeta(tenantId, meta);
+}
+
+function getArticleStatus(article: DBKnowledgeArticle, meta: Record<string, ArticleMeta>): string {
+  if (article.status === 'published') return 'published';
+  return meta[article.id]?.status || 'draft';
+}
+
+function loadVersions(articleId: string): ArticleVersion[] {
+  try { return JSON.parse(localStorage.getItem(`dt_article_versions_${articleId}`) || '[]'); } catch { return []; }
+}
+
+function pushVersion(articleId: string, version: ArticleVersion) {
+  const versions = loadVersions(articleId);
+  versions.unshift(version);
+  const trimmed = versions.slice(0, 10);
+  try { localStorage.setItem(`dt_article_versions_${articleId}`, JSON.stringify(trimmed)); } catch {}
+}
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  draft: 'bg-slate-700/50 text-slate-400',
+  in_review: 'bg-amber-500/15 text-amber-400',
+  needs_revision: 'bg-red-500/15 text-red-400',
+  approved: 'bg-blue-500/15 text-blue-400',
+  published: 'bg-emerald-500/15 text-emerald-400',
+  scheduled: 'bg-purple-500/15 text-purple-400',
+  archived: 'bg-slate-800/50 text-slate-600',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  in_review: 'In Review',
+  needs_revision: 'Needs Revision',
+  approved: 'Approved',
+  published: 'Published',
+  scheduled: 'Scheduled',
+  archived: 'Archived',
+};
 
 // ---- Local types ----
 type KnowledgeItemType =
@@ -338,13 +409,20 @@ const KnowledgeHubPage = ({
 }) => {
   // Local live article state — refreshed after create/edit/status changes
   const [liveArticles, setLiveArticles] = useState<DBKnowledgeArticle[]>(dbArticles);
+  const [articleMeta, setArticleMeta] = useState<Record<string, ArticleMeta>>({});
+  const [tenantProfiles, setTenantProfiles] = useState<DBProfile[]>([]);
+
   const refreshArticles = async () => {
     if (tenant?.id) {
       const fresh = await fetchKnowledgeArticles(tenant.id);
       setLiveArticles(fresh);
+      setArticleMeta(loadMeta(tenant.id));
     }
   };
-  useEffect(() => { setLiveArticles(dbArticles); }, [dbArticles]);
+  useEffect(() => {
+    setLiveArticles(dbArticles);
+    if (tenant?.id) setArticleMeta(loadMeta(tenant.id));
+  }, [dbArticles, tenant?.id]);
 
   // Edit modal state
   const [editArticle, setEditArticle] = useState<DBKnowledgeArticle | null>(null);
@@ -357,6 +435,17 @@ const KnowledgeHubPage = ({
   const [editStatus, setEditStatus] = useState<'draft' | 'published'>('draft');
   const [editSaving, setEditSaving] = useState(false);
   const [editToast, setEditToast] = useState('');
+  // Edit modal extra fields
+  const [editReviewDate, setEditReviewDate] = useState('');
+  const [editReviewerId, setEditReviewerId] = useState('');
+  const [showScheduleInput, setShowScheduleInput] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [showRevisionInput, setShowRevisionInput] = useState(false);
+  const [revisionNote, setRevisionNote] = useState('');
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [editVersions, setEditVersions] = useState<ArticleVersion[]>([]);
+
+  const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const openEdit = (a: DBKnowledgeArticle | null) => {
     setEditArticle(a);
@@ -367,11 +456,38 @@ const KnowledgeHubPage = ({
     setEditCategory(a?.category || '');
     setEditTags((a?.tags || []).join(', '));
     setEditStatus((a?.status === 'published' ? 'published' : 'draft') as any);
+    setShowScheduleInput(false);
+    setShowRevisionInput(false);
+    setRevisionNote('');
+    setScheduleDate('');
+    setShowVersionHistory(false);
+    if (a?.id) {
+      const meta = tenant?.id ? loadMeta(tenant.id) : {};
+      setEditReviewDate(meta[a.id]?.reviewDate || '');
+      setEditReviewerId(meta[a.id]?.reviewerId || '');
+      setEditVersions(loadVersions(a.id));
+      // Load profiles
+      if (tenant?.id && tenantProfiles.length === 0) {
+        fetchTenantProfiles(tenant.id).then(setTenantProfiles);
+      }
+    } else {
+      setEditReviewDate('');
+      setEditReviewerId('');
+      setEditVersions([]);
+      if (tenant?.id && tenantProfiles.length === 0) {
+        fetchTenantProfiles(tenant.id).then(setTenantProfiles);
+      }
+    }
   };
 
   const saveEdit = async (publishNow?: boolean) => {
     if (!editTitle.trim() || !editBody.trim() || !tenant?.id) return;
     setEditSaving(true);
+    // Push version before saving
+    const targetId = editArticle?.id;
+    if (targetId) {
+      pushVersion(targetId, { savedAt: new Date().toISOString(), title: editTitle, body: editBody });
+    }
     const status = publishNow ? 'published' : editStatus;
     const tagsArr = editTags.split(',').map(t => t.trim()).filter(Boolean);
     const saved = await upsertKnowledgeArticle({
@@ -392,16 +508,54 @@ const KnowledgeHubPage = ({
       created_by: user?.id ?? undefined,
     });
     if (saved) {
-      if (status === 'published') {
-        // Trigger embedding via ingest-knowledge edge function
+      // Update overlay meta for review date / reviewer
+      if (editReviewDate || editReviewerId) {
+        patchMeta(tenant.id, saved.id, {
+          ...(editReviewDate ? { reviewDate: editReviewDate } : {}),
+          ...(editReviewerId ? { reviewerId: editReviewerId } : {}),
+        });
+      }
+      if (publishNow) {
+        clearArticleMeta(tenant.id, saved.id);
         ingestArticle({ tenantId: tenant.id, content: editBody.trim(), title: editTitle.trim(), articleId: saved.id, sourceType: 'article' }).catch(() => {});
       }
       await refreshArticles();
-      setEditToast(status === 'published' ? 'Published and indexed for AI' : 'Saved as draft');
+      setEditToast(publishNow ? 'Published and indexed for AI' : 'Saved as draft');
       setTimeout(() => setEditToast(''), 3000);
       setEditArticle(undefined as any);
     }
     setEditSaving(false);
+  };
+
+  const submitForReview = () => {
+    if (!editArticle?.id || !tenant?.id) return;
+    patchMeta(tenant.id, editArticle.id, { status: 'in_review' });
+    setArticleMeta(loadMeta(tenant.id));
+    setEditToast('Submitted for review');
+    setTimeout(() => setEditToast(''), 3000);
+    setEditArticle(undefined as any);
+  };
+
+  const approveAndPublish = async (article: DBKnowledgeArticle) => {
+    if (!tenant?.id) return;
+    await updateArticleStatus(article.id, 'published');
+    ingestArticle({ tenantId: tenant.id, content: article.body, title: article.title, articleId: article.id, sourceType: 'article' }).catch(() => {});
+    clearArticleMeta(tenant.id, article.id);
+    await refreshArticles();
+    setEditToast('Published and indexed for AI');
+    setTimeout(() => setEditToast(''), 3000);
+    setEditArticle(undefined as any);
+  };
+
+  const sendRevisionRequest = (articleId: string, note: string) => {
+    if (!tenant?.id) return;
+    patchMeta(tenant.id, articleId, { status: 'needs_revision', reviewNote: note });
+    setArticleMeta(loadMeta(tenant.id));
+    setShowRevisionInput(false);
+    setRevisionNote('');
+    setEditToast('Revision requested');
+    setTimeout(() => setEditToast(''), 3000);
+    setEditArticle(undefined as any);
   };
 
   // Use real DB articles when available, fallback to mock
@@ -442,6 +596,8 @@ const KnowledgeHubPage = ({
   const [newBody, setNewBody] = React.useState('');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
   const [filterAudience, setFilterAudience] = React.useState<string>('all');
+  const [articleFilterStatus, setArticleFilterStatus] = React.useState<string>('all');
+  const [checkedIds, setCheckedIds] = React.useState<Set<string>>(new Set());
   // --- RAG document ingestion ---
   const uploadInputRef = React.useRef(null);
   const [isUploading, setIsUploading] = React.useState(false);
@@ -852,6 +1008,10 @@ const KnowledgeHubPage = ({
   );
 
   if (subPage === 'hub_overview') {
+    const inReviewCount = liveArticles.filter(a => {
+      const s = getArticleStatus(a, articleMeta);
+      return s === 'in_review' || s === 'needs_revision';
+    }).length;
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
@@ -892,6 +1052,11 @@ const KnowledgeHubPage = ({
             trend="+2% vs last month"
           />
         </div>
+        {inReviewCount > 0 && (
+          <div className="mb-6">
+            <StatCard label="Awaiting Review" value={String(inReviewCount)} icon="◈" color="amber" />
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">
@@ -972,8 +1137,17 @@ const KnowledgeHubPage = ({
     const kbItems = allKnowledgeItems.filter((a) =>
       searchQ ? a.title.toLowerCase().includes(searchQ.toLowerCase()) : true
     );
-    const published = kbItems.filter((a) => a.embedStatus === 'indexed').length;
-    const drafts = kbItems.filter((a) => a.embedStatus === 'pending').length;
+    // Status counts using overlay for DB articles
+    const statusCounts = {
+      all: kbItems.length,
+      published: kbItems.filter(a => (a as any).rawArticle ? getArticleStatus((a as any).rawArticle, articleMeta) === 'published' : a.embedStatus === 'indexed').length,
+      in_review: kbItems.filter(a => (a as any).rawArticle ? getArticleStatus((a as any).rawArticle, articleMeta) === 'in_review' : false).length,
+      draft: kbItems.filter(a => (a as any).rawArticle ? getArticleStatus((a as any).rawArticle, articleMeta) === 'draft' : a.embedStatus === 'pending').length,
+      needs_revision: kbItems.filter(a => (a as any).rawArticle ? getArticleStatus((a as any).rawArticle, articleMeta) === 'needs_revision' : false).length,
+      archived: kbItems.filter(a => (a as any).rawArticle ? getArticleStatus((a as any).rawArticle, articleMeta) === 'archived' : false).length,
+    };
+    const published = statusCounts.published;
+    const drafts = statusCounts.draft;
     const stale = kbItems.filter((a) => a.embedStatus === 'stale').length;
     const avgFresh = Math.round(
       kbItems.reduce((s, a) => s + a.freshnessScore, 0) / (kbItems.length || 1)
@@ -991,14 +1165,37 @@ const KnowledgeHubPage = ({
     );
     const coverageGaps = [
       { topic: 'API Rate Limits & Throttling', activeCases: 47, articles: 0 },
-      {
-        topic: 'Multi-Factor Authentication Setup',
-        activeCases: 34,
-        articles: 0,
-      },
+      { topic: 'Multi-Factor Authentication Setup', activeCases: 34, articles: 0 },
       { topic: 'Bulk Data Export Guide', activeCases: 28, articles: 1 },
       { topic: 'Webhook Configuration', activeCases: 19, articles: 0 },
     ];
+
+    const filteredKbItems = kbItems.filter(a => {
+      if (articleFilterStatus === 'all') return true;
+      const rawA = (a as any).rawArticle as DBKnowledgeArticle | null;
+      const effStatus = rawA ? getArticleStatus(rawA, articleMeta) : (a.embedStatus === 'indexed' ? 'published' : 'draft');
+      return effStatus === articleFilterStatus;
+    }).filter(a => filterAudience === 'all' || a.audience === filterAudience);
+
+    const bulkAction = async (action: 'review' | 'publish' | 'archive') => {
+      if (!tenant?.id) return;
+      for (const id of Array.from(checkedIds)) {
+        const raw = liveArticles.find(a => a.id === id);
+        if (!raw) continue;
+        if (action === 'review') {
+          patchMeta(tenant.id, id, { status: 'in_review' });
+        } else if (action === 'publish') {
+          await updateArticleStatus(id, 'published');
+          clearArticleMeta(tenant.id, id);
+          ingestArticle({ tenantId: tenant.id, content: raw.body, title: raw.title, articleId: id, sourceType: 'article' }).catch(() => {});
+        } else if (action === 'archive') {
+          patchMeta(tenant.id, id, { status: 'archived' });
+        }
+      }
+      setCheckedIds(new Set());
+      await refreshArticles();
+    };
+
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
@@ -1006,8 +1203,7 @@ const KnowledgeHubPage = ({
           <div>
             <h1 className="text-2xl font-bold text-white">Knowledge Base</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Articles, docs, and release notes tagged and indexed for AI
-              retrieval
+              Articles, docs, and release notes tagged and indexed for AI retrieval
             </p>
           </div>
           <button
@@ -1024,28 +1220,37 @@ const KnowledgeHubPage = ({
             { label: 'PUBLISHED', value: published, color: 'text-emerald-400' },
             { label: 'DRAFTS', value: drafts, color: 'text-yellow-400' },
             { label: 'STALE', value: stale, color: 'text-orange-400' },
-            {
-              label: 'AVG QUALITY',
-              value: avgQuality + '%',
-              color: 'text-violet-300',
-            },
-            {
-              label: 'AVG FRESHNESS',
-              value: avgFresh + '%',
-              color: 'text-blue-300',
-            },
+            { label: 'AVG QUALITY', value: avgQuality + '%', color: 'text-violet-300' },
+            { label: 'AVG FRESHNESS', value: avgFresh + '%', color: 'text-blue-300' },
           ].map((stat) => (
-            <div
-              key={stat.label}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-4"
-            >
-              <p className="text-slate-500 text-xs font-semibold tracking-widest mb-1">
-                {stat.label}
-              </p>
+            <div key={stat.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-semibold tracking-widest mb-1">{stat.label}</p>
               <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
             </div>
           ))}
         </div>
+
+        {/* Status filter chips */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {([
+            { key: 'all', label: 'All' },
+            { key: 'published', label: 'Published' },
+            { key: 'in_review', label: 'In Review' },
+            { key: 'draft', label: 'Drafts' },
+            { key: 'needs_revision', label: 'Needs Revision' },
+            { key: 'archived', label: 'Archived' },
+          ] as const).map(chip => (
+            <button
+              key={chip.key}
+              onClick={() => setArticleFilterStatus(chip.key)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${articleFilterStatus === chip.key ? 'text-white border-transparent' : 'text-slate-400 border-slate-700 hover:border-slate-500'}`}
+              style={articleFilterStatus === chip.key ? { backgroundColor: accentColor, borderColor: accentColor } : {}}
+            >
+              {chip.label} ({statusCounts[chip.key] ?? kbItems.length})
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-3 mb-4">
           <input
             value={searchQ}
@@ -1053,16 +1258,6 @@ const KnowledgeHubPage = ({
             placeholder="Search articles, tags, KB IDs..."
             className="flex-1 max-w-sm bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
           />
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500"
-          >
-            <option value="all">All Status</option>
-            <option value="indexed">Published</option>
-            <option value="pending">Drafts</option>
-            <option value="stale">Stale</option>
-          </select>
           <select
             value={filterAudience}
             onChange={(e) => setFilterAudience(e.target.value)}
@@ -1073,187 +1268,140 @@ const KnowledgeHubPage = ({
             <option value="Internal">Internal</option>
             <option value="Both">Both</option>
           </select>
-          <span className="text-slate-500 text-sm ml-auto">
-            {kbItems.length} articles
-          </span>
+          <span className="text-slate-500 text-sm ml-auto">{filteredKbItems.length} articles</span>
         </div>
+
+        {/* Bulk action bar */}
+        {checkedIds.size > 0 && (
+          <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl">
+            <span className="text-sm text-white font-medium">{checkedIds.size} selected</span>
+            <button onClick={() => bulkAction('review')} className="px-3 py-1 rounded-lg text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all">Submit for Review</button>
+            <button onClick={() => bulkAction('publish')} className="px-3 py-1 rounded-lg text-xs bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all">Publish Selected</button>
+            <button onClick={() => bulkAction('archive')} className="px-3 py-1 rounded-lg text-xs bg-slate-700 text-slate-300 hover:bg-slate-600 transition-all">Archive Selected</button>
+            <button onClick={() => setCheckedIds(new Set())} className="ml-auto text-slate-500 hover:text-white text-xs">Clear</button>
+          </div>
+        )}
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-950">
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">
-                  KB ID
+                <th className="px-4 py-3 w-8">
+                  <input type="checkbox" className="accent-indigo-500"
+                    checked={checkedIds.size === filteredKbItems.filter(a => (a as any).rawArticle).length && checkedIds.size > 0}
+                    onChange={e => {
+                      if (e.target.checked) setCheckedIds(new Set(filteredKbItems.filter(a => (a as any).rawArticle).map(a => a.id)));
+                      else setCheckedIds(new Set());
+                    }}
+                  />
                 </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3">
-                  ARTICLE
-                </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-36">
-                  TAGS
-                </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">
-                  UPDATED
-                </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">
-                  QUALITY
-                </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">
-                  FRESHNESS
-                </th>
-                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">
-                  AUDIENCE
-                </th>
-                <th className="text-right text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">
-                  ACTIONS
-                </th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">KB ID</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3">ARTICLE</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">STATUS</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-36">TAGS</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">REVIEW DUE</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-20">CITED</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">AUDIENCE</th>
+                <th className="text-right text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {kbItems
-                .filter(
-                  (a) =>
-                    filterStatus === 'all' || a.embedStatus === filterStatus
-                )
-                .filter(
-                  (a) =>
-                    filterAudience === 'all' || a.audience === filterAudience
-                )
-                .map((article, idx) => {
-                  const quality = Math.min(
-                    100,
-                    Math.round(
-                      article.freshnessScore * 0.6 +
-                        (article.chunkCount / 30) * 40
-                    )
-                  );
-                  const qualityColor =
-                    quality >= 85
-                      ? '#10b981'
-                      : quality >= 65
-                      ? '#f59e0b'
-                      : '#ef4444';
-                  const freshColor =
-                    article.freshnessScore >= 80
-                      ? '#10b981'
-                      : article.freshnessScore >= 50
-                      ? '#f59e0b'
-                      : '#ef4444';
-                  const kbId =
-                    'KB-' +
-                    String(1000 + idx * 37 + article.chunkCount)
-                      .padStart(4, '0')
-                      .substring(0, 4);
-                  return (
-                    <tr
-                      key={article.id}
-                      className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors group"
-                    >
-                      <td className="px-4 py-3 font-mono text-slate-500 text-xs">
-                        {kbId} <span className="text-slate-700">v1</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-white text-sm leading-snug">
-                          {article.title}
-                        </div>
-                        <div className="text-slate-500 text-xs mt-0.5 truncate max-w-xs">
-                          {article.summary}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {article.tags.slice(0, 2).map((t) => (
-                            <span
-                              key={t}
-                              className="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300 border border-slate-700"
-                            >
-                              {t}
-                            </span>
-                          ))}
-                          {article.tags.length > 2 && (
-                            <span className="px-2 py-0.5 rounded-full text-xs text-slate-500">
-                              +{article.tags.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">
-                        {new Date(article.updatedAt).toLocaleDateString(
-                          'en-US',
-                          { month: 'short', day: 'numeric', year: '2-digit' }
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-slate-800 rounded-full h-1.5 min-w-12">
-                            <div
-                              className="h-1.5 rounded-full"
-                              style={{
-                                width: quality + '%',
-                                backgroundColor: qualityColor,
-                              }}
-                            ></div>
-                          </div>
-                          <span className="text-xs text-slate-400 w-6">
-                            {quality}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-slate-800 rounded-full h-1.5 min-w-12">
-                            <div
-                              className="h-1.5 rounded-full"
-                              style={{
-                                width: article.freshnessScore + '%',
-                                backgroundColor: freshColor,
-                              }}
-                            ></div>
-                          </div>
-                          <span className="text-xs text-slate-400 w-6">
-                            {article.freshnessScore}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            article.audience === 'Customer'
-                              ? 'bg-blue-900/40 text-blue-300 border border-blue-800'
-                              : article.audience === 'Internal'
-                              ? 'bg-purple-900/40 text-purple-300 border border-purple-800'
-                              : 'bg-teal-900/40 text-teal-300 border border-teal-800'
-                          }`}
+              {filteredKbItems.map((article, idx) => {
+                const rawA = (article as any).rawArticle as DBKnowledgeArticle | null;
+                const effStatus = rawA ? getArticleStatus(rawA, articleMeta) : (article.embedStatus === 'indexed' ? 'published' : 'draft');
+                const badgeClass = STATUS_BADGE_CLASS[effStatus] || STATUS_BADGE_CLASS.draft;
+                const badgeLabel = STATUS_LABEL[effStatus] || effStatus;
+
+                // Citation count seeded from id
+                const citationCount = rawA
+                  ? rawA.id.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % 150
+                  : 0;
+
+                // Review date
+                const reviewDate = rawA ? articleMeta[rawA.id]?.reviewDate : undefined;
+                let reviewDateEl: React.ReactNode = <span className="text-slate-600">—</span>;
+                if (reviewDate) {
+                  const rd = new Date(reviewDate);
+                  const now = new Date();
+                  const diffDays = (rd.getTime() - now.getTime()) / 86400000;
+                  if (diffDays < 0) reviewDateEl = <span className="text-red-400 text-xs">⚠ Overdue</span>;
+                  else if (diffDays <= 14) reviewDateEl = <span className="text-amber-400 text-xs">Due soon</span>;
+                  else reviewDateEl = <span className="text-slate-400 text-xs">{rd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>;
+                }
+
+                const kbId = 'KB-' + String(1000 + idx * 37 + article.chunkCount).padStart(4, '0').substring(0, 4);
+                const isChecked = checkedIds.has(article.id);
+
+                return (
+                  <tr
+                    key={article.id}
+                    className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors group"
+                  >
+                    <td className="px-4 py-3">
+                      {rawA && (
+                        <input type="checkbox" className="accent-indigo-500" checked={isChecked}
+                          onChange={e => {
+                            const next = new Set(checkedIds);
+                            if (e.target.checked) next.add(article.id); else next.delete(article.id);
+                            setCheckedIds(next);
+                          }}
+                        />
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-slate-500 text-xs">
+                      {kbId} <span className="text-slate-700">v1</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-white text-sm leading-snug">{article.title}</div>
+                      <div className="text-slate-500 text-xs mt-0.5 truncate max-w-xs">{article.summary}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}`}>{badgeLabel}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {article.tags.slice(0, 2).map((t) => (
+                          <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300 border border-slate-700">{t}</span>
+                        ))}
+                        {article.tags.length > 2 && <span className="px-2 py-0.5 rounded-full text-xs text-slate-500">+{article.tags.length - 2}</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{reviewDateEl}</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">{effStatus === 'published' ? `${citationCount}×` : '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${article.audience === 'Customer' ? 'bg-blue-900/40 text-blue-300 border border-blue-800' : article.audience === 'Internal' ? 'bg-purple-900/40 text-purple-300 border border-purple-800' : 'bg-teal-900/40 text-teal-300 border border-teal-800'}`}>
+                        {article.audience}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => rawA && openEdit(rawA)}
+                          className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                         >
-                          {article.audience}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Edit
+                        </button>
+                        {effStatus !== 'published' && rawA && (
                           <button
-                            onClick={() => (article as any).rawArticle && openEdit((article as any).rawArticle)}
-                            className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                            onClick={async () => {
+                              await updateArticleStatus(rawA.id, 'published');
+                              if (tenant?.id) clearArticleMeta(tenant.id, rawA.id);
+                              ingestArticle({ tenantId: tenant!.id, content: rawA.body, title: article.title, articleId: rawA.id, sourceType: 'article' }).catch(() => {});
+                              await refreshArticles();
+                            }}
+                            className="px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-900/30 rounded transition-colors"
                           >
-                            Edit
+                            Publish
                           </button>
-                          {article.embedStatus !== 'indexed' && (article as any).rawArticle && (
-                            <button
-                              onClick={async () => {
-                                await updateArticleStatus((article as any).rawArticle.id, 'published');
-                                ingestArticle({ tenantId: tenant!.id, content: (article as any).rawArticle.body, title: article.title, articleId: (article as any).rawArticle.id, sourceType: 'article' }).catch(() => {});
-                                await refreshArticles();
-                              }}
-                              className="px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-900/30 rounded transition-colors"
-                            >
-                              Publish
-                            </button>
-                          )}
-                          {article.embedStatus === 'indexed' && (
-                            <span className="px-2 py-1 text-xs text-emerald-600">Live</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        )}
+                        {effStatus === 'published' && (
+                          <span className="px-2 py-1 text-xs text-emerald-600">Live</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1403,16 +1551,120 @@ const KnowledgeHubPage = ({
                     />
                   </div>
                 </div>
+
+                {/* Review date + Assign reviewer */}
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">REVIEW BY DATE</label>
+                    <input
+                      type="date"
+                      value={editReviewDate}
+                      onChange={e => setEditReviewDate(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  {tenant?.id && (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">ASSIGN REVIEWER</label>
+                      <select
+                        value={editReviewerId}
+                        onChange={e => setEditReviewerId(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+                      >
+                        <option value="">— None —</option>
+                        {tenantProfiles.map(p => (
+                          <option key={p.id} value={p.id}>{p.full_name || p.id}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Version History */}
+                <div className="border-t border-slate-800 pt-2">
+                  <button
+                    onClick={() => setShowVersionHistory(v => !v)}
+                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1"
+                  >
+                    {showVersionHistory ? '▾' : '▸'} Version History ({editVersions.length})
+                  </button>
+                  {showVersionHistory && (
+                    <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                      {editVersions.length === 0 && <p className="text-xs text-slate-600">No saved versions yet.</p>}
+                      {editVersions.map((v, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-slate-400 bg-slate-800/50 rounded-lg px-3 py-1.5">
+                          <span className="flex-1">Saved {new Date(v.savedAt).toLocaleString()} · {v.body.length} chars</span>
+                          <button
+                            onClick={() => { setEditBody(v.body); setEditTitle(v.title); }}
+                            className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline revision feedback input */}
+                {showRevisionInput && (
+                  <div className="border-t border-slate-800 pt-3 space-y-2">
+                    <label className="text-xs font-semibold text-slate-400 tracking-wider">REVISION FEEDBACK</label>
+                    <textarea
+                      value={revisionNote}
+                      onChange={e => setRevisionNote(e.target.value)}
+                      placeholder="Your feedback to the author…"
+                      rows={3}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => editArticle?.id && sendRevisionRequest(editArticle.id, revisionNote)}
+                        disabled={!revisionNote.trim()}
+                        className="px-3 py-1.5 rounded-lg text-xs text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-40 transition-all"
+                      >
+                        Send Revision Request
+                      </button>
+                      <button onClick={() => setShowRevisionInput(false)} className="text-xs text-slate-500 hover:text-white">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inline schedule input */}
+                {showScheduleInput && (
+                  <div className="border-t border-slate-800 pt-3 space-y-2">
+                    <label className="text-xs font-semibold text-slate-400 tracking-wider">SCHEDULE PUBLISH DATE</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="datetime-local"
+                        value={scheduleDate}
+                        onChange={e => setScheduleDate(e.target.value)}
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!editArticle?.id || !tenant?.id || !scheduleDate) return;
+                          patchMeta(tenant.id, editArticle.id, { status: 'scheduled', scheduledAt: scheduleDate });
+                          setArticleMeta(loadMeta(tenant.id));
+                          setShowScheduleInput(false);
+                          setEditToast('Scheduled for publish');
+                          setTimeout(() => setEditToast(''), 3000);
+                          setEditArticle(undefined as any);
+                        }}
+                        disabled={!scheduleDate}
+                        className="px-3 py-1.5 rounded-lg text-xs text-white bg-purple-600 hover:bg-purple-500 disabled:opacity-40 transition-all"
+                      >
+                        Schedule
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 flex-shrink-0">
-                <button
-                  onClick={() => setEditArticle(undefined as any)}
-                  className="text-sm text-slate-400 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <div className="flex gap-2">
+              {/* Button bar */}
+              <div className="px-6 py-4 border-t border-slate-800 flex-shrink-0 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {/* Save Draft — always */}
                   <button
                     onClick={() => saveEdit(false)}
                     disabled={editSaving || !editTitle.trim() || !editBody.trim()}
@@ -1420,13 +1672,76 @@ const KnowledgeHubPage = ({
                   >
                     Save Draft
                   </button>
+
+                  {/* Submit for Review — when draft or needs_revision */}
+                  {(() => {
+                    const curStatus = editArticle ? getArticleStatus(editArticle, articleMeta) : 'draft';
+                    return (curStatus === 'draft' || curStatus === 'needs_revision') && (
+                      <button
+                        onClick={submitForReview}
+                        disabled={!editArticle?.id}
+                        className="px-4 py-2 rounded-xl text-sm bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all disabled:opacity-40"
+                      >
+                        Submit for Review
+                      </button>
+                    );
+                  })()}
+
+                  {/* Admin: Approve & Publish + Request Revision */}
+                  {isAdmin && (() => {
+                    const curStatus = editArticle ? getArticleStatus(editArticle, articleMeta) : 'draft';
+                    return (curStatus === 'in_review' || curStatus === 'approved') && editArticle && (<>
+                      <button
+                        onClick={() => approveAndPublish(editArticle)}
+                        disabled={editSaving}
+                        className="px-4 py-2 rounded-xl text-sm bg-emerald-600 text-white hover:bg-emerald-500 transition-all disabled:opacity-40"
+                      >
+                        Approve & Publish
+                      </button>
+                      <button
+                        onClick={() => setShowRevisionInput(v => !v)}
+                        className="px-4 py-2 rounded-xl text-sm bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition-all"
+                      >
+                        Request Revision
+                      </button>
+                    </>);
+                  })()}
+
+                  {/* Schedule — when draft / in_review / needs_revision */}
+                  {(() => {
+                    const curStatus = editArticle ? getArticleStatus(editArticle, articleMeta) : 'draft';
+                    return ['draft','in_review','needs_revision'].includes(curStatus) && editArticle && (
+                      <button
+                        onClick={() => setShowScheduleInput(v => !v)}
+                        className="px-4 py-2 rounded-xl text-sm bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-all"
+                      >
+                        Schedule
+                      </button>
+                    );
+                  })()}
+
+                  {/* Archive — when published */}
+                  {editArticle && getArticleStatus(editArticle, articleMeta) === 'published' && tenant?.id && (
+                    <button
+                      onClick={async () => {
+                        await updateArticleStatus(editArticle.id, 'draft');
+                        patchMeta(tenant!.id, editArticle.id, { status: 'archived' });
+                        await refreshArticles();
+                        setEditToast('Article archived');
+                        setTimeout(() => setEditToast(''), 3000);
+                        setEditArticle(undefined as any);
+                      }}
+                      className="px-4 py-2 rounded-xl text-sm bg-slate-800 border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+                    >
+                      Archive
+                    </button>
+                  )}
+
                   <button
-                    onClick={() => saveEdit(true)}
-                    disabled={editSaving || !editTitle.trim() || !editBody.trim()}
-                    className="px-4 py-2 rounded-xl text-sm text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
-                    style={{ backgroundColor: accentColor }}
+                    onClick={() => setEditArticle(undefined as any)}
+                    className="text-sm text-slate-400 hover:text-white transition-colors ml-auto"
                   >
-                    {editSaving ? 'Publishing…' : 'Publish & Index'}
+                    Cancel
                   </button>
                 </div>
               </div>
@@ -1435,6 +1750,180 @@ const KnowledgeHubPage = ({
         )}
       </div>
     );
+  }
+
+  if (subPage === 'hub_review') {
+    const ReviewQueue = () => {
+      const [selectedId, setSelectedId] = React.useState<string | null>(null);
+      const [reviewNote, setReviewNote] = React.useState('');
+      const [showReviewInput, setShowReviewInput] = React.useState(false);
+      const [toast, setToast] = React.useState('');
+
+      const queueItems = liveArticles.filter(a => {
+        const s = getArticleStatus(a, articleMeta);
+        return s === 'in_review' || s === 'needs_revision';
+      });
+
+      const selectedArticle = queueItems.find(a => a.id === selectedId) || null;
+      const selectedStatus = selectedArticle ? getArticleStatus(selectedArticle, articleMeta) : '';
+      const selectedMeta = selectedArticle ? articleMeta[selectedArticle.id] : undefined;
+
+      const doApprove = async () => {
+        if (!selectedArticle || !tenant?.id) return;
+        await updateArticleStatus(selectedArticle.id, 'published');
+        ingestArticle({ tenantId: tenant.id, content: selectedArticle.body, title: selectedArticle.title, articleId: selectedArticle.id, sourceType: 'article' }).catch(() => {});
+        clearArticleMeta(tenant.id, selectedArticle.id);
+        await refreshArticles();
+        setSelectedId(null);
+        setToast('Published and indexed');
+        setTimeout(() => setToast(''), 3000);
+      };
+
+      const doRevision = () => {
+        if (!selectedArticle || !tenant?.id || !reviewNote.trim()) return;
+        patchMeta(tenant.id, selectedArticle.id, { status: 'needs_revision', reviewNote });
+        setArticleMeta(loadMeta(tenant.id));
+        setShowReviewInput(false);
+        setReviewNote('');
+        setToast('Revision requested');
+        setTimeout(() => setToast(''), 3000);
+      };
+
+      const doArchive = () => {
+        if (!selectedArticle || !tenant?.id) return;
+        patchMeta(tenant.id, selectedArticle.id, { status: 'archived' });
+        setArticleMeta(loadMeta(tenant.id));
+        setSelectedId(null);
+        setToast('Archived');
+        setTimeout(() => setToast(''), 3000);
+      };
+
+      return (
+        <div className="flex-1 overflow-hidden bg-slate-950 flex flex-col">
+          <div className="px-6 pt-6">
+            <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
+            <div className="mb-4">
+              <h1 className="text-2xl font-bold text-white">Review Queue</h1>
+              <p className="text-slate-400 text-sm mt-1">Articles awaiting editorial review before publishing</p>
+            </div>
+          </div>
+          {queueItems.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-4xl mb-3 text-slate-700">◈</div>
+                <p className="text-slate-400 text-sm">No articles awaiting review</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-1 overflow-hidden border-t border-slate-800">
+              {/* Left panel */}
+              <div className="w-72 border-r border-slate-800 overflow-y-auto flex-shrink-0">
+                {queueItems.map(a => {
+                  const s = getArticleStatus(a, articleMeta);
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => { setSelectedId(a.id); setShowReviewInput(false); setReviewNote(''); }}
+                      className={`w-full text-left px-4 py-3 border-b border-slate-800/50 hover:bg-slate-800/50 transition-colors ${selectedId === a.id ? 'bg-slate-800' : ''}`}
+                    >
+                      <div className="font-medium text-white text-sm truncate mb-1">{a.title}</div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${STATUS_BADGE_CLASS[s]}`}>{STATUS_LABEL[s]}</span>
+                      </div>
+                      <div className="text-xs text-slate-500">{a.category || 'General'} · {new Date(a.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right panel */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {!selectedArticle ? (
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-slate-500 text-sm">Select an article to review</p>
+                  </div>
+                ) : (
+                  <div className="max-w-2xl">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h2 className="text-xl font-bold text-white mb-1">{selectedArticle.title}</h2>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE_CLASS[selectedStatus]}`}>{STATUS_LABEL[selectedStatus]}</span>
+                          <span className="text-xs text-slate-500">Last updated {new Date(selectedArticle.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedMeta?.reviewNote && (
+                      <div className="mb-4 px-4 py-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                        <p className="text-xs font-semibold text-yellow-400 mb-1">AUTHOR NOTE</p>
+                        <p className="text-sm text-yellow-200">{selectedMeta.reviewNote}</p>
+                      </div>
+                    )}
+
+                    <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 max-h-64 overflow-y-auto">
+                      {selectedArticle.body}
+                    </pre>
+
+                    <div className="flex flex-wrap gap-3 text-xs text-slate-400 mb-6">
+                      <span>Audience: <span className="text-white">{selectedArticle.audience}</span></span>
+                      <span>Category: <span className="text-white">{selectedArticle.category || 'General'}</span></span>
+                      {(selectedArticle.tags || []).length > 0 && (
+                        <span>Tags: <span className="text-white">{(selectedArticle.tags || []).join(', ')}</span></span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <button
+                        onClick={doApprove}
+                        className="px-4 py-2 rounded-xl text-sm bg-emerald-600 text-white hover:bg-emerald-500 transition-all"
+                      >
+                        Approve & Publish
+                      </button>
+                      <button
+                        onClick={() => setShowReviewInput(v => !v)}
+                        className="px-4 py-2 rounded-xl text-sm bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all"
+                      >
+                        Request Revision
+                      </button>
+                      <button
+                        onClick={doArchive}
+                        className="px-4 py-2 rounded-xl text-sm bg-slate-800 border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+                      >
+                        Archive
+                      </button>
+                    </div>
+
+                    {showReviewInput && (
+                      <div className="space-y-2">
+                        <textarea
+                          value={reviewNote}
+                          onChange={e => setReviewNote(e.target.value)}
+                          placeholder="Your feedback to the author…"
+                          rows={3}
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none"
+                        />
+                        <button
+                          onClick={doRevision}
+                          disabled={!reviewNote.trim()}
+                          className="px-4 py-2 rounded-xl text-sm bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 transition-all"
+                        >
+                          Send Revision Request
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {toast && (
+            <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>
+          )}
+        </div>
+      );
+    };
+    return <ReviewQueue />;
   }
 
   if (subPage === 'hub_ingestion') {
