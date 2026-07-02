@@ -4,6 +4,101 @@ import { Badge, StatCard, Modal, PageTabs, HUB_TABS } from '../../components'
 import { DBKnowledgeArticle, DBProfile, upsertKnowledgeArticle, updateArticleStatus, fetchKnowledgeArticles, fetchTenantProfiles } from '../../lib/api'
 import { ingestArticle } from '../../services/knowledgeIngestionService'
 
+// ---- Search quality config ----
+type SearchConfig = {
+  rerankingModel: 'keyword' | 'semantic' | 'hybrid';
+  topK: number;
+  finalK: number;
+  minConfidence: number;
+  audienceFilter: { customer: boolean; internal: boolean; both: boolean };
+};
+
+function defaultSearchConfig(): SearchConfig {
+  return { rerankingModel: 'hybrid', topK: 10, finalK: 3, minConfidence: 40, audienceFilter: { customer: true, internal: true, both: true } };
+}
+
+function loadSearchConfig(tenantId: string): SearchConfig {
+  try {
+    const raw = localStorage.getItem(`dt_kb_search_${tenantId}`);
+    return raw ? { ...defaultSearchConfig(), ...JSON.parse(raw) } : defaultSearchConfig();
+  } catch { return defaultSearchConfig(); }
+}
+
+function saveSearchConfig(tenantId: string, cfg: SearchConfig) {
+  try { localStorage.setItem(`dt_kb_search_${tenantId}`, JSON.stringify(cfg)); } catch {}
+}
+
+function hybridScore(article: DBKnowledgeArticle, query: string, mode: 'keyword' | 'semantic' | 'hybrid'): { kw: number; semantic: number; final: number } {
+  const q = query.toLowerCase();
+  const titleWords = article.title.toLowerCase().split(/\s+/);
+  const bodyWords = (article.body || '').toLowerCase().split(/\s+/).slice(0, 200);
+  const tagWords = (article.tags || []).join(' ').toLowerCase().split(/\s+/);
+  const queryWords = q.split(/\s+/).filter(w => w.length > 2);
+
+  let kwScore = 0;
+  for (const qw of queryWords) {
+    if (titleWords.some(w => w.includes(qw))) kwScore += 3;
+    if (bodyWords.some(w => w.includes(qw))) kwScore += 1;
+    if (tagWords.some(w => w.includes(qw))) kwScore += 2;
+  }
+
+  const queryChars = new Set(q.replace(/\s/g, '').split(''));
+  const titleChars = new Set(article.title.toLowerCase().replace(/\s/g, '').split(''));
+  const overlap = [...queryChars].filter(c => titleChars.has(c)).length;
+  const semanticScore = queryChars.size > 0 ? overlap / Math.max(queryChars.size, titleChars.size) : 0;
+
+  const daysSinceUpdate = (Date.now() - new Date((article as any).updated_at || (article as any).created_at).getTime()) / 86400000;
+  const freshnessBoost = daysSinceUpdate < 30 ? 0.1 : 0;
+
+  let finalScore: number;
+  if (mode === 'keyword') finalScore = kwScore;
+  else if (mode === 'semantic') finalScore = semanticScore * 10 + freshnessBoost * 10;
+  else finalScore = (kwScore * 0.6) + (semanticScore * 10 * 0.4) + (freshnessBoost * 10);
+
+  return { kw: kwScore, semantic: semanticScore, final: finalScore };
+}
+
+// ---- Article quality score ----
+function articleQualityScore(article: DBKnowledgeArticle): number {
+  let score = 0;
+  if (article.title && article.title.length > 10) score += 20;
+  if (article.body && article.body.length > 200) score += 25;
+  if (article.body && article.body.length > 1000) score += 10;
+  if (article.summary && article.summary.length > 50) score += 15;
+  if (article.tags && article.tags.filter(t => !t.startsWith('__')).length > 0) score += 10;
+  if (article.category) score += 10;
+  if (article.audience) score += 10;
+  return Math.min(score, 100);
+}
+
+function qualityLabel(score: number): { label: string; color: string; bg: string } {
+  if (score >= 80) return { label: 'Excellent', color: 'text-emerald-400', bg: 'bg-emerald-500/20' };
+  if (score >= 60) return { label: 'Good', color: 'text-blue-400', bg: 'bg-blue-500/20' };
+  if (score >= 40) return { label: 'Fair', color: 'text-amber-400', bg: 'bg-amber-500/20' };
+  return { label: 'Needs work', color: 'text-red-400', bg: 'bg-red-500/20' };
+}
+
+function qualityMissingHints(article: DBKnowledgeArticle): string[] {
+  const hints: string[] = [];
+  if (!article.title || article.title.length <= 10) hints.push('Add a descriptive title (+20 pts)');
+  if (!article.body || article.body.length <= 200) hints.push('Add more body content (+25 pts)');
+  else if (article.body.length <= 1000) hints.push('Expand article for depth bonus (+10 pts)');
+  if (!article.summary || article.summary.length <= 50) hints.push('Add a summary (+15 pts)');
+  if (!article.tags || article.tags.filter(t => !t.startsWith('__')).length === 0) hints.push('Add tags to improve +10 pts');
+  if (!article.category) hints.push('Set a category (+10 pts)');
+  if (!article.audience) hints.push('Set audience (+10 pts)');
+  return hints;
+}
+
+// ---- Coverage gaps data ----
+const SAMPLE_GAPS = [
+  { topic: 'Cancellation and churn process', queryCount: 47, covered: false },
+  { topic: 'API rate limit errors', queryCount: 31, covered: false },
+  { topic: 'SSO configuration guide', queryCount: 28, covered: true },
+  { topic: 'Data export and GDPR requests', queryCount: 24, covered: false },
+  { topic: 'Pricing and plan comparison', queryCount: 19, covered: true },
+];
+
 // ---- Article overlay (localStorage) helpers ----
 type ArticleMeta = {
   status?: string;
@@ -576,6 +671,32 @@ const KnowledgeHubPage = ({
 
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [searchQ, setSearchQ] = useState('');
+  const [searchConfig, setSearchConfig] = useState<SearchConfig>(() => loadSearchConfig(tenant?.id || 'demo'));
+  const [searchQualityOpen, setSearchQualityOpen] = useState(false);
+  const [previewQuery, setPreviewQuery] = useState('');
+  const [previewResults, setPreviewResults] = useState<{ article: DBKnowledgeArticle; kw: number; semantic: number; final: number; fresh: boolean }[]>([]);
+  const [qualityTooltip, setQualityTooltip] = useState<string | null>(null);
+
+  const updateSearchConfig = (patch: Partial<SearchConfig>) => {
+    const next = { ...searchConfig, ...patch };
+    setSearchConfig(next);
+    saveSearchConfig(tenant?.id || 'demo', next);
+  };
+
+  const runPreview = () => {
+    if (!previewQuery.trim() || liveArticles.length === 0) return;
+    const scored = liveArticles.map(a => {
+      const s = hybridScore(a, previewQuery, searchConfig.rerankingModel);
+      const daysSince = (Date.now() - new Date((a as any).updated_at || (a as any).created_at).getTime()) / 86400000;
+      return { article: a, ...s, fresh: daysSince < 30 };
+    });
+    scored.sort((a, b) => b.final - a.final);
+    const aboveThreshold = scored.filter(r => {
+      const maxPossible = 30;
+      return (r.final / maxPossible) * 100 >= searchConfig.minConfidence;
+    });
+    setPreviewResults(aboveThreshold.slice(0, 5));
+  };
   const [selectedArticle, setSelectedArticle] = useState<null | {
     id: string;
     title: string;
@@ -1012,7 +1133,7 @@ const KnowledgeHubPage = ({
       const s = getArticleStatus(a, articleMeta);
       return s === 'in_review' || s === 'needs_revision';
     }).length;
-    return (
+    return (<>
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={HUB_TABS} page={subPage} setPage={setPage} accentColor={accentColor} />
         <div className="mb-6">
@@ -1057,6 +1178,42 @@ const KnowledgeHubPage = ({
             <StatCard label="Awaiting Review" value={String(inReviewCount)} icon="◈" color="amber" />
           </div>
         )}
+        {/* Knowledge Gaps section */}
+        <div className="bg-slate-900 border border-amber-800/40 rounded-xl overflow-hidden mb-6">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-amber-950/10">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 text-sm">&#9888;</span>
+              <span className="text-xs font-semibold text-slate-400 tracking-widest">KNOWLEDGE GAPS</span>
+              <span className="text-slate-600 mx-1">&#183;</span>
+              <span className="text-xs text-slate-500">TOPICS WITH UNANSWERED QUERIES</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-900/30 text-amber-300 border border-amber-800/50">AI-DETECTED</span>
+          </div>
+          <div className="divide-y divide-slate-800/50">
+            {SAMPLE_GAPS.map((gap, i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3 hover:bg-slate-800/20 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-slate-200">{gap.topic}</span>
+                </div>
+                <span className={`text-xs font-semibold ${gap.covered ? 'text-slate-500' : 'text-amber-400'}`}>
+                  {gap.queryCount} {gap.covered ? 'queries' : 'unanswered queries'}
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${gap.covered ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                  {gap.covered ? 'Covered' : 'Not covered'}
+                </span>
+                {!gap.covered && (
+                  <button
+                    onClick={() => { openEdit(null); setEditTitle(gap.topic); }}
+                    className="px-3 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700 transition-colors whitespace-nowrap"
+                  >
+                    Create Article →
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">
@@ -1130,7 +1287,40 @@ const KnowledgeHubPage = ({
           </div>
         </div>
       </div>
-    );
+      {editArticle !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
+              <h2 className="text-base font-semibold text-white">New Article</h2>
+              <button onClick={() => setEditArticle(undefined as any)} className="text-slate-500 hover:text-white text-xl leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">TITLE</label>
+                <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Article title…"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-400 block mb-1.5 tracking-wider">CONTENT</label>
+                <textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={8}
+                  placeholder="Write article content here…"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none font-mono" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-800 flex-shrink-0 flex gap-2">
+              <button onClick={() => saveEdit(false)} disabled={editSaving || !editTitle.trim() || !editBody.trim()}
+                className="px-4 py-2 rounded-xl text-sm bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 disabled:opacity-40">Save Draft</button>
+              <button onClick={() => saveEdit(true)} disabled={editSaving || !editTitle.trim() || !editBody.trim()}
+                className="px-4 py-2 rounded-xl text-sm text-white disabled:opacity-40" style={{ backgroundColor: accentColor }}>Publish</button>
+              <button onClick={() => setEditArticle(undefined as any)} className="ml-auto text-sm text-slate-400 hover:text-white">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">{editToast}</div>
+      )}
+    </>);
   }
 
   if (subPage === 'hub_articles') {
@@ -1251,6 +1441,131 @@ const KnowledgeHubPage = ({
           ))}
         </div>
 
+        {/* Search Quality Panel */}
+        <div className="mb-4">
+          <button
+            onClick={() => setSearchQualityOpen(v => !v)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-400 bg-slate-800 border border-slate-700 hover:border-slate-600 hover:text-white transition-all"
+          >
+            <span>&#9881;</span>
+            <span>Search Quality</span>
+            <span className="text-slate-600">{searchQualityOpen ? '▲' : '▼'}</span>
+          </button>
+          {searchQualityOpen && (
+            <div className="mt-2 bg-slate-900 border border-slate-700 rounded-xl p-5 space-y-5">
+              {/* Retrieval Settings */}
+              <div>
+                <h3 className="text-xs font-semibold text-slate-300 tracking-wider mb-3">RETRIEVAL SETTINGS</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Reranking model</label>
+                    <select
+                      value={searchConfig.rerankingModel}
+                      onChange={e => updateSearchConfig({ rerankingModel: e.target.value as any })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="keyword">None (keyword only)</option>
+                      <option value="semantic">Semantic (simulated)</option>
+                      <option value="hybrid">Hybrid (keyword + semantic, recommended)</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Top-K retrieved</label>
+                      <input type="number" min={3} max={20} value={searchConfig.topK}
+                        onChange={e => updateSearchConfig({ topK: Math.min(20, Math.max(3, parseInt(e.target.value) || 10)) })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                      <p className="text-[10px] text-slate-600 mt-0.5">More = better recall but slower</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Final results to DE</label>
+                      <input type="number" min={1} max={10} value={searchConfig.finalK}
+                        onChange={e => updateSearchConfig({ finalK: Math.min(10, Math.max(1, parseInt(e.target.value) || 3)) })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Minimum confidence threshold: <span className="text-white">{searchConfig.minConfidence}%</span></label>
+                    <input type="range" min={0} max={100} value={searchConfig.minConfidence}
+                      onChange={e => updateSearchConfig({ minConfidence: parseInt(e.target.value) })}
+                      className="w-full accent-indigo-500" />
+                    <p className="text-[10px] text-slate-600 mt-0.5">Articles scoring below this are excluded from results</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-2">Audience filter</label>
+                    <div className="flex gap-3">
+                      {(['customer', 'internal', 'both'] as const).map(a => (
+                        <label key={a} className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="checkbox"
+                            checked={searchConfig.audienceFilter[a]}
+                            onChange={e => updateSearchConfig({ audienceFilter: { ...searchConfig.audienceFilter, [a]: e.target.checked } })}
+                            className="accent-indigo-500" />
+                          <span className="text-xs text-slate-300 capitalize">{a}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reranking Preview */}
+              <div className="border-t border-slate-800 pt-4">
+                <h3 className="text-xs font-semibold text-slate-300 tracking-wider mb-3">RERANKING PREVIEW</h3>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    value={previewQuery}
+                    onChange={e => setPreviewQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && runPreview()}
+                    placeholder="Type a test query…"
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={runPreview}
+                    disabled={!previewQuery.trim() || liveArticles.length === 0}
+                    className="px-4 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-40 transition-all"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    Preview results
+                  </button>
+                </div>
+                {liveArticles.length === 0 && (
+                  <p className="text-xs text-slate-600">Load real KB articles to preview reranking (mock items not supported).</p>
+                )}
+                {previewResults.length > 0 && (
+                  <div className="space-y-2">
+                    {(() => {
+                      const maxScore = Math.max(...previewResults.map(r => r.final), 0.01);
+                      return previewResults.map((r, idx) => (
+                        <div key={r.article.id} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                              style={{ backgroundColor: accentColor }}>#{idx + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-white truncate">{r.article.title}</div>
+                              <div className="text-xs text-slate-500">{r.article.category || 'General'}</div>
+                            </div>
+                            {r.fresh && <span className="text-[10px] text-emerald-400 flex items-center gap-1">&#127807; Recently updated</span>}
+                          </div>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <div className="flex gap-1.5">
+                              <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">KW: {r.kw.toFixed(1)}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded">Semantic: {r.semantic.toFixed(2)}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-300 rounded">Final: {r.final.toFixed(1)}</span>
+                            </div>
+                          </div>
+                          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${(r.final / maxScore) * 100}%`, backgroundColor: accentColor }} />
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-3 mb-4">
           <input
             value={searchQ}
@@ -1298,6 +1613,7 @@ const KnowledgeHubPage = ({
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">KB ID</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3">ARTICLE</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">STATUS</th>
+                <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-24">QUALITY</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-36">TAGS</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-28">REVIEW DUE</th>
                 <th className="text-left text-xs font-semibold text-slate-500 tracking-wider px-4 py-3 w-20">CITED</th>
@@ -1357,6 +1673,34 @@ const KnowledgeHubPage = ({
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}`}>{badgeLabel}</span>
+                    </td>
+                    <td className="px-4 py-3 relative">
+                      {rawA ? (() => {
+                        const qs = articleQualityScore(rawA);
+                        const ql = qualityLabel(qs);
+                        const hints = qualityMissingHints(rawA);
+                        const tooltipId = `qt_${rawA.id}`;
+                        return (
+                          <div className="relative inline-block">
+                            <button
+                              onMouseEnter={() => setQualityTooltip(tooltipId)}
+                              onMouseLeave={() => setQualityTooltip(null)}
+                              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ql.bg} ${ql.color} cursor-default`}
+                            >
+                              <span>{qs}</span>
+                              <span className="text-[9px] opacity-70">{ql.label}</span>
+                            </button>
+                            {qualityTooltip === tooltipId && hints.length > 0 && (
+                              <div className="absolute left-0 top-full mt-1 z-20 bg-slate-800 border border-slate-700 rounded-xl p-3 shadow-xl w-52">
+                                <p className="text-[10px] font-semibold text-slate-400 mb-1.5 tracking-wider">TO IMPROVE</p>
+                                {hints.map((h, i) => (
+                                  <p key={i} className="text-[10px] text-slate-300 mb-0.5">• {h}</p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })() : <span className="text-slate-600 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
