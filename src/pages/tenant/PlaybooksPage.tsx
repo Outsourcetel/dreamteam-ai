@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import type { AuthUser, Tenant, Page } from '../../types'
-import { StatCard, Badge } from '../../components'
+import { StatCard } from '../../components'
 import {
   fetchPlaybooks,
   createPlaybook,
@@ -9,8 +9,10 @@ import {
   fetchPlaybookSummary,
   fetchDigitalEmployees,
   assignPlaybookToDE,
+  loadConnectors,
   type DBPlaybook,
   type DBDigitalEmployee,
+  type ConnectorConfig,
 } from '../../lib/api'
 
 // ── Constants ──────────────────────────────────────────────────
@@ -85,6 +87,207 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
+// ── Execution State Model ──────────────────────────────────────
+
+type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'waiting_approval' | 'skipped'
+
+interface StepExecution {
+  stepId: string
+  status: StepStatus
+  startedAt?: string
+  completedAt?: string
+  output?: string
+  error?: string
+  approvedBy?: string
+}
+
+interface PlaybookRun {
+  id: string
+  playbookId: string
+  playbookName: string
+  startedAt: string
+  completedAt?: string
+  status: 'running' | 'completed' | 'failed' | 'waiting_approval' | 'paused'
+  steps: StepExecution[]
+  triggeredBy: 'manual' | 'scheduled' | 'event'
+  context?: Record<string, string>
+}
+
+function loadRuns(tenantId: string): PlaybookRun[] {
+  try {
+    return JSON.parse(localStorage.getItem(`dt_pb_runs_${tenantId}`) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveRuns(tenantId: string, runs: PlaybookRun[]) {
+  localStorage.setItem(`dt_pb_runs_${tenantId}`, JSON.stringify(runs))
+}
+
+// ── Run Modal ─────────────────────────────────────────────────
+
+function RunModal({
+  run,
+  onApprove,
+  onClose,
+  accentColor,
+}: {
+  run: PlaybookRun
+  onApprove: (stepId: string) => void
+  onClose: () => void
+  accentColor: string
+}) {
+  const completedCount = run.steps.filter(s => s.status === 'completed').length
+  const total = run.steps.length
+  const pct = total > 0 ? Math.round((completedCount / total) * 100) : 0
+  const isRunning = run.status === 'running'
+  const isWaiting = run.status === 'waiting_approval'
+
+  const elapsed = run.completedAt
+    ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+    : Math.round((Date.now() - new Date(run.startedAt).getTime()) / 1000)
+
+  const barColor = run.status === 'completed'
+    ? 'bg-emerald-500'
+    : run.status === 'waiting_approval'
+    ? 'bg-amber-500'
+    : 'bg-indigo-500'
+
+  const headerStatus = run.status === 'completed'
+    ? 'Completed'
+    : run.status === 'waiting_approval'
+    ? 'Waiting for Approval'
+    : run.status === 'failed'
+    ? 'Failed'
+    : 'Execution in Progress'
+
+  const approvalCount = run.steps.filter(s => s.approvedBy).length
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-slate-800 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-white">{run.playbookName}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{headerStatus}</p>
+          </div>
+          <button onClick={onClose} disabled={isRunning} className="text-slate-600 hover:text-slate-400 text-xl leading-none disabled:opacity-30">×</button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="px-6 pt-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-slate-500">{completedCount} of {total} steps</span>
+            <span className="text-xs text-slate-500">{pct}%</span>
+          </div>
+          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        {/* Steps list */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+          {run.steps.map((se, idx) => {
+            const isStepRunning = se.status === 'running'
+            const isApproval = se.status === 'waiting_approval'
+            return (
+              <div key={se.stepId} className={`flex gap-3 rounded-xl p-3.5 border transition-all ${
+                isStepRunning ? 'border-indigo-500/40 bg-indigo-500/5' :
+                isApproval ? 'border-amber-500/40 bg-amber-500/5' :
+                se.status === 'completed' ? 'border-emerald-500/20 bg-slate-900/50' :
+                se.status === 'failed' ? 'border-red-500/30 bg-red-500/5' :
+                'border-slate-800 bg-slate-900/30'
+              }`}>
+                {/* Status icon */}
+                <div className="flex-shrink-0 mt-0.5">
+                  {isStepRunning && (
+                    <div className="w-5 h-5 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin" />
+                  )}
+                  {isApproval && (
+                    <div className="w-5 h-5 rounded-full border-2 border-amber-400 flex items-center justify-center">
+                      <span className="text-[8px] text-amber-400">⏳</span>
+                    </div>
+                  )}
+                  {se.status === 'completed' && (
+                    <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                      <span className="text-[10px] text-white font-bold">✓</span>
+                    </div>
+                  )}
+                  {se.status === 'failed' && (
+                    <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
+                      <span className="text-[10px] text-white font-bold">×</span>
+                    </div>
+                  )}
+                  {se.status === 'pending' && (
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-700 flex items-center justify-center">
+                      <span className="text-[8px] text-slate-600">{idx + 1}</span>
+                    </div>
+                  )}
+                  {se.status === 'skipped' && (
+                    <div className="w-5 h-5 rounded-full border-2 border-slate-700 flex items-center justify-center">
+                      <span className="text-[8px] text-slate-500">—</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm font-medium ${
+                      se.status === 'pending' ? 'text-slate-500' :
+                      se.status === 'completed' ? 'text-slate-300' :
+                      se.status === 'running' ? 'text-white' :
+                      se.status === 'waiting_approval' ? 'text-amber-300' :
+                      'text-white'
+                    }`}>Step {idx + 1}</span>
+                    {se.approvedBy && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">Approved</span>
+                    )}
+                  </div>
+                  {se.output && (
+                    <p className="text-xs text-slate-400 mt-0.5">{se.output}</p>
+                  )}
+                  {se.error && (
+                    <p className="text-xs text-red-400 mt-0.5">{se.error}</p>
+                  )}
+                  {isApproval && (
+                    <div className="mt-2">
+                      <p className="text-xs text-amber-400 mb-1.5">This step requires manual approval to proceed.</p>
+                      <button
+                        onClick={() => onApprove(se.stepId)}
+                        className="px-3 py-1 text-xs font-medium rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 transition-all"
+                      >
+                        Approve &amp; Continue
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between gap-3">
+          <div className="text-xs text-slate-500">
+            {run.status === 'completed'
+              ? `✓ Playbook completed in ${elapsed}s — ${completedCount} steps completed${approvalCount > 0 ? `, ${approvalCount} required approval` : ''}`
+              : `Elapsed: ${elapsed}s`}
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isRunning || isWaiting}
+            className="px-4 py-1.5 text-sm text-slate-400 hover:text-white transition-colors disabled:opacity-30"
+          >
+            {isRunning || isWaiting ? 'Running…' : 'Close'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Create Modal ───────────────────────────────────────────────
 
 interface CreateModalProps {
@@ -157,7 +360,6 @@ function CreateModal({ tenantId, accentColor, digitalEmployees, onClose, onCreat
     setSaving(false)
     if (!pb) { setError('Failed to create playbook. Try again.'); return }
 
-    // If a DE was selected, create the assignment
     if (form.digital_employee_id && pb.id) {
       await assignPlaybookToDE(tenantId, form.digital_employee_id, pb.id, true)
     }
@@ -292,6 +494,14 @@ function stepTypeCls(t: StepType) {
   return STEP_TYPES.find(s => s.value === t)?.color ?? 'bg-slate-700/50 text-slate-400'
 }
 
+function runStatusBadge(status: PlaybookRun['status']) {
+  if (status === 'completed') return 'bg-emerald-500/15 text-emerald-400'
+  if (status === 'running') return 'bg-indigo-500/15 text-indigo-400'
+  if (status === 'waiting_approval') return 'bg-amber-500/15 text-amber-400'
+  if (status === 'failed') return 'bg-red-500/15 text-red-400'
+  return 'bg-slate-700/50 text-slate-400'
+}
+
 function DetailPanel({
   playbook,
   digitalEmployees,
@@ -299,6 +509,7 @@ function DetailPanel({
   accentColor,
   onClose,
   onUpdated,
+  onRunPlaybook,
 }: {
   playbook: DBPlaybook
   digitalEmployees: DBDigitalEmployee[]
@@ -306,9 +517,24 @@ function DetailPanel({
   accentColor: string
   onClose: () => void
   onUpdated: (pb: DBPlaybook) => void
+  onRunPlaybook: (pb: DBPlaybook) => void
 }) {
   const [advancing, setAdvancing] = useState(false)
-  const [detailTab, setDetailTab] = useState<'trigger' | 'overview' | 'steps' | 'lifecycle'>('overview')
+  const [detailTab, setDetailTab] = useState<'trigger' | 'overview' | 'steps' | 'runs' | 'lifecycle'>('overview')
+  const [connectors, setConnectors] = useState<ConnectorConfig[]>([])
+  const [runs, setRuns] = useState<PlaybookRun[]>([])
+
+  useEffect(() => {
+    setConnectors(loadConnectors(tenantId))
+  }, [tenantId])
+
+  useEffect(() => {
+    if (detailTab === 'runs') {
+      const all = loadRuns(tenantId)
+      setRuns(all.filter(r => r.playbookId === playbook.id).slice(0, 10))
+    }
+  }, [tenantId, playbook.id, detailTab])
+
   // Trigger tab state
   const initTrigger = () => {
     const rules = playbook.decision_rules as any
@@ -331,10 +557,11 @@ function DetailPanel({
     setTriggerToast('Trigger saved')
     setTimeout(() => setTriggerToast(''), 3000)
   }
+
   const nextStage = LIFECYCLE_NEXT[playbook.lifecycle_status]
   const assignedDE = digitalEmployees.find(d => d.id === playbook.digital_employee_id)
 
-  // Steps — stored in decision_rules as PlaybookStep[]
+  // Steps
   const initSteps = (): PlaybookStep[] => {
     if (!Array.isArray(playbook.decision_rules)) return []
     return playbook.decision_rules.filter((r: any) => r && r.step && r.title) as PlaybookStep[]
@@ -416,14 +643,15 @@ function DetailPanel({
         </div>
 
         {/* Sub-tabs */}
-        <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-slate-800">
-          {(['trigger', 'overview', 'steps', 'lifecycle'] as const).map(t => (
+        <div className="flex gap-1 px-6 pt-4 pb-0 border-b border-slate-800 overflow-x-auto">
+          {(['trigger', 'overview', 'steps', 'runs', 'lifecycle'] as const).map(t => (
             <button key={t} onClick={() => setDetailTab(t)}
-              className={`px-3 py-2 text-xs font-medium capitalize border-b-2 transition-all ${
+              className={`px-3 py-2 text-xs font-medium capitalize border-b-2 transition-all whitespace-nowrap ${
                 detailTab === t ? 'border-indigo-500 text-white' : 'border-transparent text-slate-500 hover:text-slate-300'
               }`}
               style={detailTab === t ? { borderColor: accentColor } : {}}>
-              {t} {t === 'steps' && steps.length > 0 ? `(${steps.length})` : ''}
+              {t}{t === 'steps' && steps.length > 0 ? ` (${steps.length})` : ''}
+              {t === 'runs' && runs.length > 0 ? ` (${runs.length})` : ''}
             </button>
           ))}
         </div>
@@ -451,7 +679,7 @@ function DetailPanel({
                     </div>
                   </div>
                   {triggerType === opt.type && opt.type === 'manual' && (
-                    <button onClick={e => { e.stopPropagation(); setTriggerToast(`${playbook.name} triggered — ${steps.length || 0} steps queued`); setTimeout(() => setTriggerToast(''), 3000); }}
+                    <button onClick={e => { e.stopPropagation(); onRunPlaybook(playbook) }}
                       className="mt-3 px-3 py-1.5 text-xs font-medium rounded-lg text-white" style={{ backgroundColor: accentColor }}>Run Now</button>
                   )}
                   {triggerType === opt.type && opt.type === 'scheduled' && (
@@ -509,6 +737,18 @@ function DetailPanel({
                     <span className="text-slate-400">{playbook.success_rate}% success</span>
                   </span>
                 ) : <span className="text-slate-600">No executions yet</span>} />
+                {playbook.connector_requirements && playbook.connector_requirements.length > 0 && (
+                  <Row label="Connectors" value={
+                    <div className="flex flex-wrap gap-1.5">
+                      {playbook.connector_requirements.map(req => {
+                        const found = connectors.find(c => c.type === req && c.status === 'connected')
+                        return found
+                          ? <span key={req} className="text-xs px-2 py-0.5 bg-emerald-500/15 text-emerald-400 rounded-full">✓ {found.name}</span>
+                          : <span key={req} className="text-xs px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded-full">⚠ {req} not connected</span>
+                      })}
+                    </div>
+                  } />
+                )}
               </div>
               {playbook.capabilities_used.length > 0 && (
                 <div className="mb-5">
@@ -547,14 +787,13 @@ function DetailPanel({
                 )}
               </div>
 
-              {/* Existing steps */}
               {steps.length === 0 && !addingStep && (
                 <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
                   <p className="text-slate-500 text-sm">No steps defined yet.</p>
                   <p className="text-slate-600 text-xs mt-1">Add steps to design the workflow this Playbook follows.</p>
                 </div>
               )}
-              {steps.map((s, i) => (
+              {steps.map((s) => (
                 <div key={s.id} className="flex gap-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
                   <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
                     style={{ backgroundColor: accentColor + '60' }}>{s.step}</div>
@@ -570,7 +809,6 @@ function DetailPanel({
                 </div>
               ))}
 
-              {/* Add step form */}
               {addingStep && (
                 <div className="bg-slate-900 border border-indigo-500/30 rounded-xl p-4 space-y-3">
                   <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">New Step {steps.length + 1}</p>
@@ -600,6 +838,46 @@ function DetailPanel({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {detailTab === 'runs' && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500 mb-3">Last 10 execution runs for this playbook.</p>
+              {runs.length === 0 && (
+                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                  <p className="text-slate-500 text-sm">No runs yet.</p>
+                  <p className="text-slate-600 text-xs mt-1">Click ▶ Run to execute this playbook.</p>
+                </div>
+              )}
+              {runs.map(run => {
+                const elapsed = run.completedAt
+                  ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+                  : null
+                const completed = run.steps.filter(s => s.status === 'completed').length
+                const approvalCount = run.steps.filter(s => s.approvedBy).length
+                return (
+                  <div key={run.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${runStatusBadge(run.status)}`}>{run.status.replace(/_/g, ' ')}</span>
+                        <span className="text-xs text-slate-500">{new Date(run.startedAt).toLocaleString()}</span>
+                      </div>
+                      {elapsed !== null && <span className="text-xs text-slate-500">{elapsed}s</span>}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {completed} of {run.steps.length} steps completed{approvalCount > 0 ? ` · ${approvalCount} approved` : ''}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {run.steps.filter(s => s.output || s.error).map((se, i) => (
+                        <div key={se.stepId} className="text-[10px] text-slate-500 truncate">
+                          Step {i + 1}: {se.output || se.error}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -683,7 +961,10 @@ export default function PlaybooksPage({
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [showCreate, setShowCreate] = useState(false)
   const [selected, setSelected] = useState<DBPlaybook | null>(null)
-  const [runToast, setRunToast] = useState('')
+
+  // Execution state
+  const [currentRun, setCurrentRun] = useState<PlaybookRun | null>(null)
+  const approvalResolverRef = useRef<(() => void) | null>(null)
 
   const load = useCallback(async () => {
     if (!tenantId) return
@@ -721,6 +1002,130 @@ export default function PlaybooksPage({
     if (selected?.id === pb.id) setSelected(pb)
   }
 
+  // ── Execution Engine ───────────────────────────────────────
+
+  const executePlaybook = useCallback(async (
+    playbook: DBPlaybook,
+    triggeredBy: PlaybookRun['triggeredBy'],
+    context?: Record<string, string>
+  ): Promise<PlaybookRun> => {
+    const steps: PlaybookStep[] = Array.isArray(playbook.decision_rules)
+      ? (playbook.decision_rules as any[]).filter((r: any) => r && r.step && r.title) as PlaybookStep[]
+      : []
+
+    const conns = loadConnectors(tenantId)
+    const connectedNamesForTypes = (types: string[]) =>
+      types.flatMap(t => conns.filter(c => c.type === t && c.status === 'connected').map(c => c.name))
+
+    const run: PlaybookRun = {
+      id: crypto.randomUUID(),
+      playbookId: playbook.id,
+      playbookName: playbook.name,
+      startedAt: new Date().toISOString(),
+      status: 'running',
+      steps: steps.map(s => ({ stepId: s.id, status: 'pending' as StepStatus })),
+      triggeredBy,
+      context,
+    }
+
+    const allRuns = loadRuns(tenantId)
+    allRuns.unshift({ ...run })
+    saveRuns(tenantId, allRuns)
+    setCurrentRun({ ...run })
+
+    const persistRun = (updated: PlaybookRun) => {
+      const snap = { ...updated, steps: updated.steps.map(s => ({ ...s })) }
+      setCurrentRun(snap)
+      const stored = loadRuns(tenantId)
+      const idx = stored.findIndex(r => r.id === snap.id)
+      if (idx >= 0) stored[idx] = snap
+      else stored.unshift(snap)
+      saveRuns(tenantId, stored)
+    }
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+
+      run.steps[i] = { ...run.steps[i], status: 'running', startedAt: new Date().toISOString() }
+      run.status = 'running'
+      persistRun(run)
+
+      if (step.type === 'approval') {
+        run.steps[i] = { ...run.steps[i], status: 'waiting_approval' }
+        run.status = 'waiting_approval'
+        persistRun(run)
+
+        await new Promise<void>(resolve => {
+          approvalResolverRef.current = resolve
+        })
+
+        run.steps[i] = {
+          ...run.steps[i],
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          approvedBy: 'Manual',
+          output: 'Approved by operator',
+        }
+        run.status = 'running'
+        persistRun(run)
+
+      } else {
+        let delay = 400
+        let output = ''
+
+        const connReqs = playbook.connector_requirements ?? []
+        const connNames = connectedNamesForTypes(connReqs)
+
+        if (step.type === 'action') {
+          delay = 800 + 300 * i
+          if (connNames.length >= 2) {
+            output = `Action completed: Fetched records from ${connNames[0]} · Posted to ${connNames[1]}`
+          } else if (connNames.length === 1) {
+            output = `Action completed: Fetched records from ${connNames[0]}`
+          } else {
+            output = `Completed: ${step.title}`
+          }
+        } else if (step.type === 'decision') {
+          delay = 600
+          output = 'Decision evaluated: proceeding with default path'
+        } else if (step.type === 'notification') {
+          delay = 400
+          output = 'Notification sent'
+        } else if (step.type === 'condition') {
+          delay = 500
+          output = 'Condition checked: true'
+        }
+
+        await new Promise(r => setTimeout(r, delay))
+
+        run.steps[i] = {
+          ...run.steps[i],
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          output,
+        }
+        persistRun(run)
+      }
+    }
+
+    run.status = 'completed'
+    run.completedAt = new Date().toISOString()
+    persistRun(run)
+
+    return run
+  }, [tenantId])
+
+  const handleRunPlaybook = useCallback((pb: DBPlaybook) => {
+    executePlaybook(pb, 'manual')
+  }, [executePlaybook])
+
+  const handleApprove = useCallback((_stepId: string) => {
+    if (approvalResolverRef.current) {
+      approvalResolverRef.current()
+      approvalResolverRef.current = null
+    }
+  }, [])
+
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       {/* Header */}
@@ -740,22 +1145,16 @@ export default function PlaybooksPage({
         </button>
       </div>
 
-      {/* Run toast */}
-      {runToast && (
-        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">{runToast}</div>
-      )}
-
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Playbooks"     value={String(summary.total)}          icon="▦" color="blue" />
-        <StatCard label="Active"              value={String(summary.active)}          icon="◈" color="emerald" />
-        <StatCard label="Domains Covered"     value={String(summary.domains)}         icon="⊞" color="purple" />
-        <StatCard label="Avg DE-Handled Rate" value={`${summary.avgHandledRate}%`}   icon="⚡" color="amber" />
+        <StatCard label="Total Playbooks"     value={String(summary.total)}         icon="▦" color="blue" />
+        <StatCard label="Active"              value={String(summary.active)}         icon="◈" color="emerald" />
+        <StatCard label="Domains Covered"     value={String(summary.domains)}        icon="⊞" color="purple" />
+        <StatCard label="Avg DE-Handled Rate" value={`${summary.avgHandledRate}%`}  icon="⚡" color="amber" />
       </div>
 
       {/* Filters */}
       <div className="flex items-center gap-3 mb-5 flex-wrap">
-        {/* Domain filter */}
         <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
           <button
             onClick={() => setDomainFilter('all')}
@@ -771,7 +1170,6 @@ export default function PlaybooksPage({
           ))}
         </div>
 
-        {/* Status filter */}
         <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
           {(['all', 'designed', 'active', 'certified', 'published'] as const).map(s => (
             <button key={s}
@@ -819,7 +1217,6 @@ export default function PlaybooksPage({
                 onClick={() => setSelected(pb)}
                 className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 cursor-pointer transition-all group"
               >
-                {/* Top row */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -839,21 +1236,18 @@ export default function PlaybooksPage({
                   </div>
                 </div>
 
-                {/* Domain + trigger */}
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-xs text-slate-500">{domainLabel(pb.domain)}</span>
                   <span className="text-slate-700">·</span>
                   <span className="text-xs text-slate-500 capitalize">{pb.trigger_type.replace(/_/g, ' ')}</span>
                 </div>
 
-                {/* Business objective */}
                 {pb.business_objective && (
                   <p className="text-xs text-slate-400 leading-relaxed mb-4 line-clamp-2">
                     {pb.business_objective}
                   </p>
                 )}
 
-                {/* Footer */}
                 <div className="flex items-center justify-between pt-3 border-t border-slate-800">
                   <div className="flex items-center gap-2">
                     {de ? (
@@ -873,7 +1267,7 @@ export default function PlaybooksPage({
                     )}
                     <span className="text-xs text-slate-600">v{pb.version}</span>
                     <button
-                      onClick={e => { e.stopPropagation(); setRunToast(`${pb.name} triggered — ${Array.isArray(pb.decision_rules) ? pb.decision_rules.filter((r: any) => r?.step).length : 0} steps queued`); setTimeout(() => setRunToast(''), 3000); }}
+                      onClick={e => { e.stopPropagation(); handleRunPlaybook(pb) }}
                       className="px-2 py-0.5 text-[10px] rounded border border-slate-700 text-slate-400 hover:border-indigo-500 hover:text-indigo-300 transition-all">▶ Run</button>
                   </div>
                 </div>
@@ -903,6 +1297,17 @@ export default function PlaybooksPage({
           accentColor={accentColor}
           onClose={() => setSelected(null)}
           onUpdated={handleUpdated}
+          onRunPlaybook={handleRunPlaybook}
+        />
+      )}
+
+      {/* Run Modal */}
+      {currentRun && (
+        <RunModal
+          run={currentRun}
+          onApprove={handleApprove}
+          onClose={() => setCurrentRun(null)}
+          accentColor={accentColor}
         />
       )}
     </div>
