@@ -31,6 +31,20 @@ interface GodModeSession {
   operator: AuthUser;
 }
 
+export interface CompanyProfile {
+  id: 'tcp' | 'pwc';
+  name: string;
+  industry: string;
+  badge: string;
+  badgeColor: string;
+  activeDEs: number;
+}
+
+export const COMPANIES_LOOKUP: Record<'tcp' | 'pwc', CompanyProfile> = {
+  tcp: { id: 'tcp', name: 'TCP Software', industry: 'Technology / SaaS', badge: 'TECH', badgeColor: '#6366f1', activeDEs: 8 },
+  pwc: { id: 'pwc', name: 'PWC', industry: 'Financial Services', badge: 'FIN', badgeColor: '#0ea5e9', activeDEs: 6 },
+};
+
 interface AuthContextValue {
   authedUser: AuthUser | null;
   currentPage: Page;
@@ -44,6 +58,9 @@ interface AuthContextValue {
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
   isTenantUser: boolean;
+  activeCompanyId: 'tcp' | 'pwc';
+  setActiveCompanyId: (id: 'tcp' | 'pwc') => void;
+  activeCompany: CompanyProfile;
   handleLogin: (u: AuthUser) => void;
   handleLogout: () => Promise<void>;
   handleSetPage: (p: Page) => void;
@@ -61,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [godModeSession, setGodModeSession] = useState<GodModeSession | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [activeCompanyId, setActiveCompanyId] = useState<'tcp' | 'pwc'>('tcp');
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
@@ -145,6 +163,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isDTUser = !!(authedUser && ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(authedUser.role));
   const isTenantUser = !!(authedUser && ['tenant_owner', 'tenant_admin', 'tenant_manager', 'tenant_user'].includes(authedUser.role));
 
+  const activeCompany: CompanyProfile = COMPANIES_LOOKUP[activeCompanyId];
+
   // Build a Tenant UI object from the DB record, falling back to the
   // god-mode override if a DT support agent is operating on behalf of a tenant.
   const currentTenant: Tenant | undefined =
@@ -215,6 +235,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       currentTenant,
       isDTUser,
       isTenantUser,
+      activeCompanyId,
+      setActiveCompanyId,
+      activeCompany,
       handleLogin,
       handleLogout,
       handleSetPage,
