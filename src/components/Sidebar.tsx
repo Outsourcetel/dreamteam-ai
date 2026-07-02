@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { Page } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   page: Page;
@@ -13,10 +14,10 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-// ── Company seed data ────────────────────────────────────────────
+// ── Company seed data (for picker UI only — source of truth is context) ────
 const COMPANIES = [
   {
-    id: 'tcp',
+    id: 'tcp' as const,
     name: 'TCP Software',
     industry: 'Technology / SaaS',
     badge: 'TECH',
@@ -25,7 +26,7 @@ const COMPANIES = [
     activeDEs: 8,
   },
   {
-    id: 'pwc',
+    id: 'pwc' as const,
     name: 'PWC',
     industry: 'Financial Services',
     badge: 'FIN',
@@ -195,12 +196,11 @@ function buildNav(companyId: string): NavSection[] {
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const [activeCompany, setActiveCompany] = useState(0);
+  const { activeCompanyId, setActiveCompanyId, activeCompany } = useAuth();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['customer']));
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
 
-  const company = COMPANIES[activeCompany];
-  const nav = buildNav(company.id);
+  const nav = buildNav(activeCompany.id);
 
   const toggleGroup = (id: string) => {
     setOpenGroups(prev => {
@@ -224,10 +224,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         </button>
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white cursor-pointer"
-          style={{ background: company.badgeColor }}
+          style={{ background: activeCompany.badgeColor }}
           onClick={() => setCollapsed(false)}
         >
-          {company.badge}
+          {activeCompany.badge}
         </div>
         <div className="w-px h-4 bg-slate-800" />
         {['⬡', '◎', '⚡', '◫', '⟷', '✋', '◈', '⚑'].map((icon, i) => (
@@ -252,23 +252,23 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           onClick={() => setShowCompanyPicker(!showCompanyPicker)}
           className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-slate-900 transition-colors group"
         >
-          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: company.badgeColor }}>
-            {company.badge}
+          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: activeCompany.badgeColor }}>
+            {activeCompany.badge}
           </div>
           <div className="flex-1 text-left min-w-0">
-            <div className="text-xs font-semibold text-slate-100 truncate">{company.name}</div>
-            <div className="text-[10px] text-slate-500 truncate">{company.industry}</div>
+            <div className="text-xs font-semibold text-slate-100 truncate">{activeCompany.name}</div>
+            <div className="text-[10px] text-slate-500 truncate">{activeCompany.industry}</div>
           </div>
           <span className="text-slate-600 text-xs group-hover:text-slate-400">⌄</span>
         </button>
 
         {showCompanyPicker && (
           <div className="mt-1 bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
-            {COMPANIES.map((c, i) => (
+            {COMPANIES.map((c) => (
               <button
                 key={c.id}
-                onClick={() => { setActiveCompany(i); setShowCompanyPicker(false); }}
-                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-800 transition-colors ${i === activeCompany ? 'bg-slate-800/50' : ''}`}
+                onClick={() => { setActiveCompanyId(c.id); setShowCompanyPicker(false); }}
+                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-800 transition-colors ${c.id === activeCompanyId ? 'bg-slate-800/50' : ''}`}
               >
                 <div className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c.badgeColor }}>
                   {c.badge}
@@ -277,7 +277,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                   <div className="text-xs font-medium text-slate-200">{c.name}</div>
                   <div className="text-[10px] text-slate-500">{c.activeDEs} DEs active</div>
                 </div>
-                {i === activeCompany && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
+                {c.id === activeCompanyId && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
               </button>
             ))}
             <button
