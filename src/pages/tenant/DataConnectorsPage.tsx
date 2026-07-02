@@ -175,7 +175,72 @@ function generateEnhancedLogs(_conn: ConnectorConfig): EnhancedLog[] {
 
 // ── ConfigFields ───────────────────────────────────────────────
 
-function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config: Record<string, string>; setConfig: (c: Record<string, string>) => void }) {
+// ── OAuth provider config ──────────────────────────────────────
+
+const OAUTH_PROVIDERS: Record<string, {
+  displayName: string;
+  loginDomain: string;
+  scopes: string;
+  permissions: string[];
+  fakeAccount: string;
+}> = {
+  salesforce: {
+    displayName: 'Salesforce',
+    loginDomain: 'login.salesforce.com',
+    scopes: 'api refresh_token offline_access',
+    permissions: ['Read and write CRM records', 'Access contacts and accounts', 'Manage opportunities and cases', 'Refresh access offline'],
+    fakeAccount: 'DreamTeam Org (dreamteam.my.salesforce.com)',
+  },
+  hubspot: {
+    displayName: 'HubSpot',
+    loginDomain: 'app.hubspot.com',
+    scopes: 'crm.objects.contacts.read crm.objects.deals.read',
+    permissions: ['Read contacts and companies', 'Read deals and pipelines', 'Access marketing email data', 'View form submissions'],
+    fakeAccount: 'DreamTeam Portal (portal ID 98432156)',
+  },
+  zendesk: {
+    displayName: 'Zendesk',
+    loginDomain: 'login.zendesk.com',
+    scopes: 'read write',
+    permissions: ['Read and manage tickets', 'Access user profiles', 'View helpdesk macros', 'Read ticket comments and history'],
+    fakeAccount: 'dreamteam.zendesk.com',
+  },
+  quickbooks: {
+    displayName: 'QuickBooks',
+    loginDomain: 'appcenter.intuit.com',
+    scopes: 'com.intuit.quickbooks.accounting',
+    permissions: ['Read invoices and payments', 'Access chart of accounts', 'Read vendor and customer records', 'View financial reports'],
+    fakeAccount: 'DreamTeam LLC (Company ID 1234567890)',
+  },
+  xero: {
+    displayName: 'Xero',
+    loginDomain: 'login.xero.com',
+    scopes: 'accounting.transactions accounting.contacts',
+    permissions: ['Read and write invoices', 'Access contacts and organisations', 'View bank transactions', 'Read purchase orders'],
+    fakeAccount: 'DreamTeam Ltd (Xero Org: AU-dreamteam)',
+  },
+  chargebee: {
+    displayName: 'Chargebee',
+    loginDomain: 'dreamteam.chargebee.com',
+    scopes: 'full_access',
+    permissions: ['Read subscriptions and invoices', 'Access customer billing data', 'View payment transactions', 'Read addon and plan catalog'],
+    fakeAccount: 'DreamTeam (dreamteam.chargebee.com)',
+  },
+};
+
+const OAUTH_TYPES = new Set(Object.keys(OAUTH_PROVIDERS));
+
+function ConfigFields({
+  type, config, setConfig,
+  authMethod, setAuthMethod, onOAuthConnect,
+}: {
+  type: ConnectorType;
+  config: Record<string, string>;
+  setConfig: (c: Record<string, string>) => void;
+  authMethod?: 'oauth' | 'manual';
+  setAuthMethod?: (m: 'oauth' | 'manual') => void;
+  onOAuthConnect?: () => void;
+}) {
   const set = (k: string, v: string) => setConfig({ ...config, [k]: v });
   const inp = (label: string, key: string, opts?: { type?: string; placeholder?: string }) => (
     <div key={key}>
@@ -190,11 +255,122 @@ function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config
     </div>
   );
 
-  if (type === 'salesforce') return <div className="space-y-3">
-    {inp('Instance URL', 'instance_url', { placeholder: 'https://yourorg.salesforce.com' })}
-    {inp('Client ID', 'client_id')}
-    {inp('Client Secret', 'client_secret', { type: 'password' })}
-    <p className="text-xs text-slate-500">In production, this will redirect to Salesforce OAuth.</p>
+  // OAuth-supported types: show auth method selector first
+  if (OAUTH_TYPES.has(type) && type !== 'stripe') {
+    const provider = OAUTH_PROVIDERS[type];
+    const method = authMethod || 'oauth';
+    const isConnected = config.oauth_connected === 'true';
+
+    return (
+      <div className="space-y-4">
+        {/* Auth method selector */}
+        <div>
+          <label className="text-xs text-slate-400 block mb-2">Authentication Method</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['oauth', 'manual'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setAuthMethod?.(m)}
+                className={`px-3 py-2.5 rounded-lg border text-left transition-all ${method === m
+                  ? 'border-indigo-500 bg-indigo-500/10 text-white'
+                  : 'border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-500'}`}
+              >
+                <div className="text-xs font-semibold">{m === 'oauth' ? 'OAuth 2.0' : 'API Key / Manual'}</div>
+                <div className="text-[10px] mt-0.5 opacity-70">{m === 'oauth' ? 'Recommended' : 'Advanced'}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {method === 'oauth' && !isConnected && (
+          <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-bold ${connectorMeta(type).avatarBg}`}>
+                {connectorMeta(type).avatar}
+              </div>
+              <div>
+                <div className="text-sm font-medium text-white">Connect with {provider.displayName}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">You'll be redirected to authorise DreamTeam AI</div>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Permissions requested</p>
+              {provider.permissions.map(p => (
+                <div key={p} className="flex items-center gap-2 text-xs text-slate-300">
+                  <div className="w-1 h-1 rounded-full bg-indigo-400 flex-shrink-0" />
+                  {p}
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] text-slate-600 font-mono bg-slate-950 rounded px-2 py-1 border border-slate-800">
+              Scopes: {provider.scopes}
+            </div>
+            <button
+              onClick={onOAuthConnect}
+              className="w-full py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-all flex items-center justify-center gap-2"
+            >
+              <span>🔐</span> Connect with {provider.displayName}
+            </button>
+          </div>
+        )}
+
+        {method === 'oauth' && isConnected && (
+          <div className="rounded-xl border border-emerald-700/50 bg-emerald-500/5 p-3 space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-xs font-medium text-emerald-300">OAuth Connected</span>
+            </div>
+            <p className="text-[11px] text-slate-400">{config.oauth_account || provider.fakeAccount}</p>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {provider.scopes.split(' ').map(s => (
+                <span key={s} className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded font-mono">{s}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {method === 'manual' && (
+          <div className="space-y-3">
+            {type === 'salesforce' && <>
+              {inp('Instance URL', 'instance_url', { placeholder: 'https://yourorg.salesforce.com' })}
+              {inp('Client ID', 'client_id')}
+              {inp('Client Secret', 'client_secret', { type: 'password' })}
+            </>}
+            {type === 'hubspot' && <>
+              {inp('Access Token', 'access_token', { type: 'password', placeholder: 'pat-na1-...' })}
+            </>}
+            {type === 'zendesk' && <>
+              {inp('Subdomain', 'subdomain', { placeholder: 'yourcompany' })}
+              {inp('Email', 'email', { placeholder: 'admin@yourcompany.com' })}
+              {inp('API Token', 'api_token', { type: 'password' })}
+            </>}
+            {type === 'quickbooks' && <>
+              {inp('Realm ID (Company ID)', 'realm_id')}
+              {inp('Access Token', 'access_token', { type: 'password' })}
+              {inp('Refresh Token', 'refresh_token', { type: 'password' })}
+            </>}
+            {type === 'xero' && <>
+              {inp('Client ID', 'client_id')}
+              {inp('Client Secret', 'client_secret', { type: 'password' })}
+              {inp('Tenant ID', 'tenant_id')}
+            </>}
+            {type === 'chargebee' && <>
+              {inp('Site Name', 'site', { placeholder: 'yourcompany' })}
+              {inp('API Key', 'api_key', { type: 'password' })}
+            </>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Stripe: API key only (not OAuth)
+  if (type === 'stripe') return <div className="space-y-3">
+    <div className="rounded-lg border border-amber-700/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
+      Stripe uses API keys, not OAuth. Enter your secret key below.
+    </div>
+    {inp('Secret Key', 'api_key', { placeholder: 'sk_live_...', type: 'password' })}
+    {inp('Webhook Secret', 'webhook_secret', { type: 'password' })}
   </div>;
 
   if (type === 'netsuite') return <div className="space-y-3">
@@ -210,11 +386,6 @@ function ConfigFields({ type, config, setConfig }: { type: ConnectorType; config
     {inp('Client ID', 'client_id')}
     {inp('Client Secret', 'client_secret', { type: 'password' })}
     {inp('Entity ID', 'entity_id')}
-  </div>;
-
-  if (type === 'stripe') return <div className="space-y-3">
-    {inp('API Key', 'api_key', { placeholder: 'sk_live_...', type: 'password' })}
-    {inp('Webhook Secret', 'webhook_secret', { type: 'password' })}
   </div>;
 
   if (type === 'rest_api' || type === 'graphql') return <div className="space-y-3">
@@ -1083,6 +1254,62 @@ function ConnectorDetailPanel({
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [expandError, setExpandError] = useState(false);
 
+  // OAuth state
+  const [authMethod, setAuthMethod] = useState<'oauth' | 'manual'>(() =>
+    (conn.config.oauth_connected === 'true') ? 'oauth' : 'oauth'
+  );
+  const [oauthModal, setOauthModal] = useState(false);
+  const [oauthAuthorising, setOauthAuthorising] = useState(false);
+
+  const provider = OAUTH_PROVIDERS[conn.type];
+
+  const handleOAuthConnect = () => setOauthModal(true);
+
+  const handleOAuthAuthorise = async () => {
+    setOauthAuthorising(true);
+    await new Promise(r => setTimeout(r, 1500));
+    const now = new Date().toISOString();
+    const p = OAUTH_PROVIDERS[conn.type];
+    const nextConfig = {
+      ...editConfig,
+      oauth_connected: 'true',
+      oauth_connected_at: now,
+      oauth_scope: p?.scopes || '',
+      oauth_account: p?.fakeAccount || conn.name,
+    };
+    setEditConfig(nextConfig);
+    setOauthAuthorising(false);
+    setOauthModal(false);
+    onSave(nextConfig, editName);
+    onToast(`✓ Connected to ${p?.displayName || conn.name} via OAuth`);
+  };
+
+  const handleOAuthDisconnect = () => {
+    if (!window.confirm(`Disconnect ${provider?.displayName || conn.name}? This will require re-authorisation to reconnect.`)) return;
+    const nextConfig = { ...editConfig };
+    delete nextConfig.oauth_connected;
+    delete nextConfig.oauth_connected_at;
+    delete nextConfig.oauth_scope;
+    delete nextConfig.oauth_account;
+    setEditConfig(nextConfig);
+    onSave(nextConfig, editName);
+    onToast(`Disconnected from ${provider?.displayName || conn.name}`);
+  };
+
+  const handleOAuthReauthorise = () => setOauthModal(true);
+
+  const oauthConnectedAt = editConfig.oauth_connected_at
+    ? (() => {
+        const diff = Date.now() - new Date(editConfig.oauth_connected_at).getTime();
+        const mins = Math.round(diff / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hrs = Math.round(mins / 60);
+        if (hrs < 24) return `${hrs}h ago`;
+        return `${Math.round(hrs / 24)}d ago`;
+      })()
+    : null;
+
   const logs = useMemo(() => generateEnhancedLogs(conn), [conn.id]);
   const schemaObjects = SCHEMA_OBJECTS[conn.type] ?? null;
   const schemaMessage = DEFAULT_SCHEMA_MESSAGE[conn.type] ?? null;
@@ -1124,7 +1351,7 @@ function ConnectorDetailPanel({
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40" onClick={onClose} />
-      <div className="w-full max-w-xl bg-slate-950 border-l border-slate-800 flex flex-col shadow-2xl overflow-hidden">
+      <div className="w-full max-w-xl bg-slate-950 border-l border-slate-800 flex flex-col shadow-2xl overflow-hidden relative">
         <div className="px-6 py-5 border-b border-slate-800 flex items-center gap-4">
           <div className={`w-10 h-10 rounded-xl ${meta.avatarBg} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>{meta.avatar}</div>
           <div className="flex-1 min-w-0">
@@ -1149,6 +1376,61 @@ function ConnectorDetailPanel({
           ))}
         </div>
 
+        {/* OAuth browser-window modal */}
+        {oauthModal && provider && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="w-full max-w-sm mx-4 rounded-xl overflow-hidden shadow-2xl border border-slate-700">
+              {/* Browser chrome */}
+              <div className="bg-slate-200 px-3 py-2 flex items-center gap-2">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-400" />
+                  <div className="w-3 h-3 rounded-full bg-amber-400" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-400" />
+                </div>
+                <div className="flex-1 bg-white rounded px-2 py-0.5 font-mono text-[10px] text-slate-500 truncate">
+                  🔒 {provider.loginDomain}/oauth2/authorize?client_id=dt_prod&scope={encodeURIComponent(provider.scopes)}&response_type=code
+                </div>
+              </div>
+              {/* Fake login form */}
+              <div className="bg-white px-6 py-6 space-y-4">
+                <div className="text-center mb-2">
+                  <div className={`w-12 h-12 rounded-xl mx-auto flex items-center justify-center text-white text-lg font-bold mb-3 ${connectorMeta(conn.type).avatarBg}`}>
+                    {connectorMeta(conn.type).avatar}
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">Sign in to {provider.displayName}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">DreamTeam AI is requesting access</p>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-1 font-medium">Email</label>
+                  <input disabled value="admin@yourcompany.com" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-400 bg-slate-50 cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-1 font-medium">Password</label>
+                  <input disabled type="password" value="••••••••••" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-400 bg-slate-50 cursor-not-allowed" />
+                </div>
+                <div className="space-y-2 pt-1">
+                  <button
+                    onClick={handleOAuthAuthorise}
+                    disabled={oauthAuthorising}
+                    className="w-full py-2 text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {oauthAuthorising ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Authorising…
+                      </>
+                    ) : `Authorise DreamTeam AI`}
+                  </button>
+                  <button onClick={() => setOauthModal(false)} disabled={oauthAuthorising}
+                    className="w-full py-2 text-sm rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all disabled:opacity-50">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto px-6 py-4">
 
           {tab === 'overview' && (
@@ -1158,7 +1440,37 @@ function ConnectorDetailPanel({
                 <input value={editName} onChange={e => setEditName(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500" />
               </div>
-              <ConfigFields type={conn.type as ConnectorType} config={editConfig} setConfig={setEditConfig} />
+              {/* OAuth connected banner */}
+              {OAUTH_TYPES.has(conn.type) && editConfig.oauth_connected === 'true' && provider && (
+                <div className="rounded-xl border border-emerald-700/50 bg-emerald-500/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span className="text-xs font-semibold text-emerald-300">✓ OAuth Connected</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={handleOAuthReauthorise} className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-all">Re-authorise</button>
+                      <button onClick={handleOAuthDisconnect} className="text-[10px] text-rose-400 hover:text-rose-300 transition-all">Disconnect</button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400">{editConfig.oauth_account || provider.fakeAccount}</p>
+                  {oauthConnectedAt && <p className="text-[10px] text-slate-500">Authorised {oauthConnectedAt}</p>}
+                  <div className="flex flex-wrap gap-1">
+                    {(editConfig.oauth_scope || provider.scopes).split(' ').map(s => (
+                      <span key={s} className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded font-mono">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <ConfigFields
+                type={conn.type as ConnectorType}
+                config={editConfig}
+                setConfig={setEditConfig}
+                authMethod={authMethod}
+                setAuthMethod={setAuthMethod}
+                onOAuthConnect={handleOAuthConnect}
+              />
               <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-500">
                 Credentials stored locally in your browser — never sent to our servers
               </div>

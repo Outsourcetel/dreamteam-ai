@@ -1592,7 +1592,7 @@ const AgentWorkforcePage = ({
   );
   const [selectedAgent, setSelectedAgent] = useState<AgentDef | null>(null);
   const [configTab, setConfigTab] = useState<
-    'overview' | 'persona' | 'model' | 'pipeline' | 'validators' | 'actions' | 'abtest' | 'knowledge'
+    'overview' | 'persona' | 'model' | 'pipeline' | 'validators' | 'actions' | 'skills' | 'abtest' | 'knowledge'
   >('overview');
   // A/B Test state
   const [abTests, setAbTests] = useState<ABTest[]>([]);
@@ -2097,6 +2097,7 @@ const AgentWorkforcePage = ({
                 'pipeline',
                 'validators',
                 'actions',
+                'skills',
                 'abtest',
                 'knowledge',
               ] as const
@@ -2117,6 +2118,8 @@ const AgentWorkforcePage = ({
                   ? 'Knowledge & Data'
                   : t === 'abtest'
                   ? 'A/B Test'
+                  : t === 'skills'
+                  ? 'Skills'
                   : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
@@ -3080,6 +3083,324 @@ const AgentWorkforcePage = ({
               </div>
             </div>
           )}
+
+          {/* === SKILLS TAB === */}
+          {configTab === 'skills' && (() => {
+            // ---- Skill data model ----
+            interface DESkill {
+              id: string;
+              name: string;
+              domain: string;
+              proficiency: number;
+              evidenceCount: number;
+              certified: boolean;
+              certifiedAt?: string;
+              certifiedBy?: string;
+              lastDemonstratedAt: string;
+              trend: 'improving' | 'stable' | 'declining';
+            }
+
+            const SKILL_LIBRARY: Record<string, { name: string; domain: string }[]> = {
+              Customer: [
+                { name: 'Refund Processing', domain: 'billing' },
+                { name: 'Account Troubleshooting', domain: 'technical' },
+                { name: 'Complaint De-escalation', domain: 'customer_support' },
+                { name: 'FAQ Resolution', domain: 'customer_support' },
+                { name: 'Product Knowledge', domain: 'customer_support' },
+                { name: 'Billing Inquiry Handling', domain: 'billing' },
+                { name: 'Password & Access Reset', domain: 'technical' },
+              ],
+              Internal: [
+                { name: 'Invoice Generation', domain: 'accounting' },
+                { name: 'Payment Reconciliation', domain: 'accounting' },
+                { name: 'Journal Entry Creation', domain: 'accounting' },
+                { name: 'Collections Follow-up', domain: 'billing' },
+                { name: 'Contract Analysis', domain: 'sales' },
+                { name: 'HR Policy Lookup', domain: 'hr' },
+                { name: 'Onboarding Checklist', domain: 'hr' },
+              ],
+            };
+
+            const deId = selectedAgent?.id || 'demo';
+            const storageKey = `dt_de_skills_${deId}`;
+            const stored2 = employees.find(e => e.id === deId);
+            const deCategory = stored2?.category ?? selectedAgent?.category ?? 'Customer';
+
+            // Seeded pseudo-random
+            const pseudoRand = (seed: number, min: number, max: number) => {
+              const x = Math.sin(seed) * 10000;
+              return Math.floor((x - Math.floor(x)) * (max - min + 1)) + min;
+            };
+            const charSum = (s: string) => s.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+
+            const initSkills = (): DESkill[] => {
+              const libKey = deCategory === 'Customer' ? 'Customer' : 'Internal';
+              const templates = SKILL_LIBRARY[libKey] || SKILL_LIBRARY['Customer'];
+              return templates.map((sk, i) => {
+                const seed = charSum(deId + sk.name);
+                const prof = pseudoRand(seed, 40, 95);
+                const evid = pseudoRand(seed + 1, 5, 120);
+                const trend: DESkill['trend'] = prof > 75 ? 'improving' : prof > 55 ? 'stable' : 'declining';
+                const daysAgo = pseudoRand(seed + 2, 0, 14);
+                const lastDemo = new Date(Date.now() - daysAgo * 86400000).toISOString();
+                return {
+                  id: `skill_${deId}_${i}`,
+                  name: sk.name,
+                  domain: sk.domain,
+                  proficiency: prof,
+                  evidenceCount: evid,
+                  certified: false,
+                  lastDemonstratedAt: lastDemo,
+                  trend,
+                };
+              });
+            };
+
+            const [skills, setSkills] = React.useState<DESkill[]>(() => {
+              try {
+                const saved = localStorage.getItem(storageKey);
+                return saved ? JSON.parse(saved) : initSkills();
+              } catch { return initSkills(); }
+            });
+
+            const saveSkills = (next: DESkill[]) => {
+              setSkills(next);
+              try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+            };
+
+            const [certifyingId, setCertifyingId] = React.useState<string | null>(null);
+            const [certifierName, setCertifierName] = React.useState(user?.name || 'Morgan Chen');
+            const [certNote, setCertNote] = React.useState('');
+            const [viewCertSkill, setViewCertSkill] = React.useState<DESkill | null>(null);
+            const [addingSkill, setAddingSkill] = React.useState(false);
+            const [newSkillName, setNewSkillName] = React.useState('');
+            const [newSkillDomain, setNewSkillDomain] = React.useState('customer_support');
+            const [recalculating, setRecalculating] = React.useState(false);
+            const [skillToast, setSkillToast] = React.useState<string | null>(null);
+
+            const showSkillToast = (msg: string) => {
+              setSkillToast(msg);
+              setTimeout(() => setSkillToast(null), 3000);
+            };
+
+            const domainColors: Record<string, string> = {
+              billing: 'bg-amber-500/20 text-amber-300',
+              technical: 'bg-blue-500/20 text-blue-300',
+              customer_support: 'bg-indigo-500/20 text-indigo-300',
+              accounting: 'bg-emerald-500/20 text-emerald-300',
+              sales: 'bg-purple-500/20 text-purple-300',
+              hr: 'bg-pink-500/20 text-pink-300',
+            };
+
+            const profColor = (p: number) =>
+              p >= 80 ? 'bg-emerald-500' : p >= 60 ? 'bg-blue-500' : p >= 40 ? 'bg-amber-500' : 'bg-red-500';
+
+            const relTime = (iso: string) => {
+              const diff = Date.now() - new Date(iso).getTime();
+              const days = Math.floor(diff / 86400000);
+              return days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days}d ago`;
+            };
+
+            const activeCount = skills.filter(s => s.proficiency > 60).length;
+            const certCount = skills.filter(s => s.certified).length;
+            const avgProf = skills.length > 0 ? Math.round(skills.reduce((a, s) => a + s.proficiency, 0) / skills.length) : 0;
+
+            return (
+              <div className="space-y-4">
+                {skillToast && (
+                  <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg">{skillToast}</div>
+                )}
+
+                {/* Summary cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Skills Active', value: String(activeCount) },
+                    { label: 'Certified', value: String(certCount) },
+                    { label: 'Avg Proficiency', value: `${avgProf}%` },
+                  ].map(s => (
+                    <div key={s.label} className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-center">
+                      <div className="text-xl font-bold text-white">{s.value}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Skill list */}
+                <div className="space-y-2">
+                  {skills.map(skill => (
+                    <div key={skill.id} className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-white">{skill.name}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${domainColors[skill.domain] || 'bg-slate-700 text-slate-300'}`}>
+                              {skill.domain.replace('_', ' ')}
+                            </span>
+                            {skill.certified && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                ✓ Certified {skill.certifiedAt ? new Date(skill.certifiedAt).toLocaleDateString() : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <div className="flex-1 bg-slate-700 rounded-full h-1.5 relative">
+                              <div className={`h-full rounded-full transition-all ${profColor(skill.proficiency)}`} style={{ width: `${skill.proficiency}%` }} />
+                            </div>
+                            <span className="text-xs font-mono text-white w-8 text-right">{skill.proficiency}%</span>
+                            <span className={`text-sm ${skill.trend === 'improving' ? 'text-emerald-400' : skill.trend === 'declining' ? 'text-red-400' : 'text-slate-500'}`}>
+                              {skill.trend === 'improving' ? '↑' : skill.trend === 'declining' ? '↓' : '→'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-xs text-slate-400">{skill.evidenceCount} convs</div>
+                          <div className="text-xs text-slate-600">{relTime(skill.lastDemonstratedAt)}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-2">
+                        {skill.certified ? (
+                          <button onClick={() => setViewCertSkill(skill)}
+                            className="text-xs px-2.5 py-1 rounded-lg border border-emerald-700 text-emerald-400 hover:bg-emerald-500/10 transition-all">
+                            View Certificate
+                          </button>
+                        ) : skill.proficiency >= 75 ? (
+                          <button onClick={() => { setCertifyingId(skill.id); setCertNote(''); }}
+                            className="text-xs px-2.5 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-indigo-500 hover:text-indigo-300 transition-all">
+                            Certify
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-600">Need 75% to certify</span>
+                        )}
+                      </div>
+
+                      {/* Inline certify form */}
+                      {certifyingId === skill.id && (
+                        <div className="mt-3 p-3 bg-slate-900 border border-slate-700 rounded-xl space-y-2">
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Certifier name</label>
+                            <input value={certifierName} onChange={e => setCertifierName(e.target.value)}
+                              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400 block mb-1">Certification note (optional)</label>
+                            <textarea value={certNote} onChange={e => setCertNote(e.target.value)} rows={2}
+                              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 resize-none" />
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => {
+                              const next = skills.map(s => s.id === skill.id ? { ...s, certified: true, certifiedAt: new Date().toISOString(), certifiedBy: certifierName } : s);
+                              saveSkills(next);
+                              setCertifyingId(null);
+                              showSkillToast(`✓ ${skill.name} certified`);
+                            }} className="px-3 py-1.5 text-xs font-medium text-white rounded-lg" style={{ backgroundColor: accentColor }}>
+                              Issue Certificate
+                            </button>
+                            <button onClick={() => setCertifyingId(null)} className="text-xs text-slate-400 hover:text-white px-2">Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add skill */}
+                <div>
+                  {!addingSkill ? (
+                    <button onClick={() => setAddingSkill(true)}
+                      className="w-full py-2 rounded-lg border border-dashed border-slate-600 text-slate-500 text-xs hover:border-indigo-500 hover:text-indigo-400 transition-all">
+                      + Add Skill
+                    </button>
+                  ) : (
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 space-y-2">
+                      <input value={newSkillName} onChange={e => setNewSkillName(e.target.value)}
+                        placeholder="Skill name"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none" />
+                      <select value={newSkillDomain} onChange={e => setNewSkillDomain(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
+                        {['customer_support', 'billing', 'technical', 'sales', 'hr', 'accounting'].map(d => (
+                          <option key={d} value={d}>{d.replace('_', ' ')}</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          if (!newSkillName.trim()) return;
+                          const newSkill: DESkill = {
+                            id: `skill_${deId}_custom_${Date.now()}`,
+                            name: newSkillName.trim(),
+                            domain: newSkillDomain,
+                            proficiency: 50,
+                            evidenceCount: 0,
+                            certified: false,
+                            lastDemonstratedAt: new Date().toISOString(),
+                            trend: 'stable',
+                          };
+                          saveSkills([...skills, newSkill]);
+                          setNewSkillName('');
+                          setAddingSkill(false);
+                          showSkillToast('Skill added');
+                        }} className="px-3 py-1.5 text-xs font-medium text-white rounded-lg" style={{ backgroundColor: accentColor }}>
+                          Add
+                        </button>
+                        <button onClick={() => { setAddingSkill(false); setNewSkillName(''); }} className="text-xs text-slate-400 hover:text-white px-2">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Recalculate button */}
+                <button onClick={async () => {
+                  setRecalculating(true);
+                  await new Promise(r => setTimeout(r, 1500));
+                  const next = skills.map(s => {
+                    const delta = (Math.random() > 0.5 ? 1 : -1) * (Math.floor(Math.random() * 6) + 3);
+                    const newP = Math.max(5, Math.min(99, s.proficiency + delta));
+                    return { ...s, proficiency: newP, trend: delta > 0 ? 'improving' as const : delta < 0 ? 'declining' as const : 'stable' as const };
+                  });
+                  saveSkills(next);
+                  setRecalculating(false);
+                  showSkillToast('Skills updated from 47 recent conversations.');
+                }}
+                  disabled={recalculating}
+                  className="w-full py-2 text-xs text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 rounded-xl transition-all disabled:opacity-50">
+                  {recalculating ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-3 h-3 border border-slate-600 border-t-indigo-400 rounded-full animate-spin" />
+                      Analyzing conversation history…
+                    </span>
+                  ) : 'Recalculate from conversations'}
+                </button>
+
+                {/* Certificate modal */}
+                {viewCertSkill && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setViewCertSkill(null)}>
+                    <div className="bg-slate-900 border-2 border-white/20 rounded-2xl p-8 w-full max-w-md shadow-2xl text-center" onClick={e => e.stopPropagation()}>
+                      <div className="text-xs text-slate-400 uppercase tracking-widest mb-2">DreamTeam AI</div>
+                      <h2 className="text-lg font-bold text-white mb-1">Certificate of Skill Mastery</h2>
+                      <div className="border-t border-white/10 my-4" />
+                      <p className="text-xs text-slate-400 mb-1">This certifies that</p>
+                      <p className="text-base font-semibold text-white mb-1">{selectedAgent?.name}</p>
+                      <p className="text-xs text-slate-400 mb-1">has demonstrated proficiency in</p>
+                      <p className="text-lg font-bold mb-4" style={{ color: accentColor }}>{viewCertSkill.name}</p>
+                      <div className="space-y-1 text-xs text-slate-400 mb-4">
+                        <div>Proficiency Score: <span className="text-white">{viewCertSkill.proficiency}/100</span></div>
+                        <div>Evidence: <span className="text-white">{viewCertSkill.evidenceCount} conversations</span></div>
+                        <div>Certified by: <span className="text-white">{viewCertSkill.certifiedBy || 'Admin'}</span></div>
+                        <div>Date: <span className="text-white">{viewCertSkill.certifiedAt ? new Date(viewCertSkill.certifiedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—'}</span></div>
+                      </div>
+                      <div className="flex gap-2 justify-center">
+                        <button onClick={() => { showSkillToast('Certificate downloaded'); setViewCertSkill(null); }}
+                          className="px-4 py-2 text-xs font-medium text-white rounded-xl" style={{ backgroundColor: accentColor }}>
+                          Download PDF
+                        </button>
+                        <button onClick={() => setViewCertSkill(null)} className="px-4 py-2 text-xs text-slate-400 hover:text-white">Close</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* === A/B TEST TAB === */}
           {configTab === 'abtest' && (() => {
