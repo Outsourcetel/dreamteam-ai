@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
@@ -38,7 +38,32 @@ interface NavSection {
   groups: NavGroup[];
 }
 
-function buildNav(companyId: CompanyId): NavSection[] {
+// Live badge counts: read the same localStorage state the pages persist,
+// falling back to the static companies.ts values when nothing is stored.
+export function computeLiveCounts(companyId: CompanyId): { humanTasks: number; kbGaps: number } {
+  const s = COMPANY_SUMMARY[companyId];
+  let humanTasks = s.humanTasks;
+  let kbGaps = s.kbGaps;
+  try {
+    const stored = localStorage.getItem(`dt_ops_tasks_${companyId}`);
+    if (stored) {
+      // Stored shape: Record<taskId, decidedStatus> — one entry per seed-pending task decided.
+      humanTasks = Math.max(0, s.humanTasks - Object.keys(JSON.parse(stored)).length);
+    }
+  } catch { /* fall back to static */ }
+  try {
+    const stored = localStorage.getItem(`dt_kb_gaps_${companyId}`);
+    if (stored) {
+      // Stored shape: Record<gapId, GapStatus> overrides; approved/retrained close a gap.
+      const overrides = JSON.parse(stored) as Record<string, string>;
+      const closed = Object.values(overrides).filter(v => v === 'approved' || v === 'retrained').length;
+      kbGaps = Math.max(0, s.kbGaps - closed);
+    }
+  } catch { /* fall back to static */ }
+  return { humanTasks, kbGaps };
+}
+
+function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: number }): NavSection[] {
   const isTCP = companyId === 'tcp';
   const s = COMPANY_SUMMARY[companyId];
 
@@ -134,7 +159,7 @@ function buildNav(companyId: CompanyId): NavSection[] {
       groups: [
         { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
         { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
-        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: s.kbGaps > 0 ? { text: `${s.kbGaps} gaps`, color: '#f59e0b' } : undefined },
+        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
         { id: 'kb_quality', label: 'Quality & Coverage', icon: '◎', page: 'knowledge_quality' },
       ],
     },
@@ -153,7 +178,7 @@ function buildNav(companyId: CompanyId): NavSection[] {
           label: 'Human Tasks',
           icon: '✋',
           page: 'ops_human_tasks',
-          badge: s.humanTasks > 0 ? { text: `${s.humanTasks} pending`, color: '#f59e0b' } : undefined,
+          badge: live.humanTasks > 0 ? { text: `${live.humanTasks} pending`, color: '#f59e0b' } : undefined,
         },
         { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
       ],
@@ -181,8 +206,23 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const { activeCompanyId, setActiveCompanyId, activeCompany } = useAuth();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['customer']));
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
+  const [liveCounts, setLiveCounts] = useState(() => computeLiveCounts(activeCompany.id));
 
-  const nav = buildNav(activeCompany.id);
+  const refreshCounts = useCallback(() => {
+    setLiveCounts(computeLiveCounts(activeCompanyId));
+  }, [activeCompanyId]);
+
+  useEffect(() => {
+    refreshCounts();
+    window.addEventListener('storage', refreshCounts);
+    window.addEventListener('dt-state-changed', refreshCounts);
+    return () => {
+      window.removeEventListener('storage', refreshCounts);
+      window.removeEventListener('dt-state-changed', refreshCounts);
+    };
+  }, [refreshCounts]);
+
+  const nav = buildNav(activeCompany.id, liveCounts);
 
   const toggleGroup = (id: string) => {
     setOpenGroups(prev => {

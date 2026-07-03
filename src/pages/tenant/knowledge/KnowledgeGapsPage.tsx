@@ -260,7 +260,10 @@ const KnowledgeGapsPage = () => {
   const setStatus = (id: string, s: GapStatus) => {
     const next = { ...overrides, [id]: s };
     setOverrides(next);
-    try { localStorage.setItem(lsKey, JSON.stringify(next)); } catch { /* noop */ }
+    try {
+      localStorage.setItem(lsKey, JSON.stringify(next));
+      window.dispatchEvent(new Event('dt-state-changed'));
+    } catch { /* noop */ }
   };
 
   const openGaps = gaps.filter(g => !['approved', 'retrained'].includes(statusOf(g)));

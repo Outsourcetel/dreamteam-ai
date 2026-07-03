@@ -217,6 +217,7 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
           if (seedTask && seedTask.status === 'pending' && t.status !== 'pending') decisions[t.id] = t.status;
         });
         localStorage.setItem(lsKey, JSON.stringify(decisions));
+        window.dispatchEvent(new Event('dt-state-changed'));
       } catch { /* noop */ }
       return next;
     });
