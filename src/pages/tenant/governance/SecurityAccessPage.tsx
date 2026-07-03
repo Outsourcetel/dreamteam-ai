@@ -34,7 +34,7 @@ interface HumanUser { name: string; email: string; role: string; lastActive: str
 
 const HUMAN_USERS: Record<CompanyId, HumanUser[]> = {
   tcp: [
-    { name: 'Morgan Chen', email: 'morgan.chen@tcpsoftware.com', role: 'tenant_owner', lastActive: '2 min ago', mfa: true },
+    { name: 'Priya Sharma', email: 'priya.sharma@tcpsoftware.com', role: 'tenant_owner', lastActive: '2 min ago', mfa: true },
     { name: 'K. Douglas', email: 'k.douglas@tcpsoftware.com', role: 'tenant_admin', lastActive: '35 min ago', mfa: true },
     { name: 'Taylor Smith', email: 'taylor.smith@tcpsoftware.com', role: 'tenant_manager', lastActive: '1 hr ago', mfa: true },
     { name: 'Drew Wilson', email: 'drew.wilson@tcpsoftware.com', role: 'tenant_user', lastActive: '1 day ago', mfa: false },

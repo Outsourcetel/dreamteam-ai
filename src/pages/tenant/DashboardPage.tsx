@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { COMPANY_SUMMARY } from '../../data/companies';
+import { computeLiveCounts } from '../../components/Sidebar';
 import type { Page } from '../../types';
 
 // ── Health config ────────────────────────────────────────────────
@@ -175,7 +176,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       risk: { label: 'Risk & Compliance', icon: '⚑', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Risk & Compliance', 'Legal', 'Quality'], alerts: 2 },
     },
     tasks: [
-      { id: 't1', type: 'review_gate', title: 'Partner review — TCP tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
+      { id: 't1', type: 'review_gate', title: 'Partner review — Crestline tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
       { id: 't2', type: 'approval_gate', title: 'Credit note approval', de: 'Morgan', detail: '$12,400', age: '1 hr', urgent: false },
       { id: 't3', type: 'escalation', title: 'GDPR data request — response overdue', de: 'Morgan', detail: '', age: '2 hrs', urgent: true },
       { id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Avery', detail: '', age: '3 hrs', urgent: false },
@@ -285,6 +286,7 @@ export default function DashboardPage({
   const { activeCompanyId, activeCompany } = useAuth();
   const data = COMPANY_DATA[activeCompanyId];
   const summary = COMPANY_SUMMARY[activeCompanyId];
+  const live = computeLiveCounts(activeCompanyId);
 
   const [healthConfig, setHealthConfig] = useState<HealthConfig>(DEFAULT_HEALTH_CONFIG);
   const [showHealthConfig, setShowHealthConfig] = useState(false);
@@ -370,9 +372,9 @@ export default function DashboardPage({
         <div className="grid grid-cols-5 gap-3">
           {([
             { icon: '⚡', value: `${summary.desActive}/${summary.desTotal}`, label: 'DEs Active', navPage: 'workforce_des' as Page, alert: false },
-            { icon: '✋', value: `${summary.humanTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: false },
+            { icon: '✋', value: `${live.humanTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: false },
             { icon: '◈', value: `${summary.aiResolution}%`, label: 'AI Resolution', navPage: 'intelligence_performance' as Page, alert: false },
-            { icon: '△', value: `${summary.kbGaps} detected`, label: 'KB Gaps', navPage: 'knowledge_gaps' as Page, alert: false },
+            { icon: '△', value: `${live.kbGaps} detected`, label: 'KB Gaps', navPage: 'knowledge_gaps' as Page, alert: false },
             { icon: '⚑', value: String(summary.alerts), label: 'Alerts', navPage: 'outcome_risk' as Page, alert: summary.alerts > 0 },
           ] as const).map((kpi) => (
             <button
@@ -522,7 +524,7 @@ export default function DashboardPage({
           <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
-                HUMAN TASKS — {summary.humanTasks} pending
+                HUMAN TASKS — {live.humanTasks} pending
               </span>
               <button
                 onClick={() => setPage('ops_human_tasks')}

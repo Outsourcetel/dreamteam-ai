@@ -40,7 +40,7 @@ const TCP_EVENTS: AuditEvent[] = [
   { id: 't12', timestamp: '2026-07-02 16:30', actor: 'K. Douglas (Security)', actorType: 'human', actionType: 'config_change', action: 'Guardrails updated v2.2→v2.3 — added SLA-tier restriction (Alex)', entity: 'Governance', outcome: 'Config change' },
   { id: 't13', timestamp: '2026-07-02 15:10', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved 8 tickets — batch shift', entity: 'Customer', outcome: 'Resolved' },
   { id: 't14', timestamp: '2026-07-02 15:00', actor: 'Casey', actorType: 'de', actionType: 'escalated', action: 'Flagged at-risk — Apex Systems', entity: 'Customer', outcome: 'Escalated to AE' },
-  { id: 't15', timestamp: '2026-07-02 14:00', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Leave request approved — M. Chen', entity: 'Workforce', outcome: 'Approved' },
+  { id: 't15', timestamp: '2026-07-02 14:00', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Leave request approved — P. Sharma', entity: 'Workforce', outcome: 'Approved' },
   { id: 't16', timestamp: '2026-07-02 11:20', actor: 'Renewal Manager', actorType: 'human', actionType: 'approval', action: 'Approved renewal terms — Northwind Labs (24 months)', entity: 'Customer', outcome: 'Approved' },
   { id: 't17', timestamp: '2026-07-02 10:05', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4802 — webhook configuration', entity: 'Customer', outcome: 'Resolved' },
   { id: 't18', timestamp: '2026-07-02 09:00', actor: 'Alex', actorType: 'de', actionType: 'escalated', action: 'KB gap flagged — "Webhook retry logic"', entity: 'Knowledge', outcome: 'Gap logged' },
@@ -56,7 +56,7 @@ const TCP_EVENTS: AuditEvent[] = [
 ]
 
 const PWC_EVENTS: AuditEvent[] = [
-  { id: 'p1', timestamp: '2026-07-03 14:05', actor: 'Avery', actorType: 'de', actionType: 'escalated', action: 'Completed Q2 corporate tax memo — TCP Corp', entity: 'Specialist', outcome: 'Sent to partner review' },
+  { id: 'p1', timestamp: '2026-07-03 14:05', actor: 'Avery', actorType: 'de', actionType: 'escalated', action: 'Completed Q2 corporate tax memo — Crestline Corp', entity: 'Specialist', outcome: 'Sent to partner review' },
   { id: 'p2', timestamp: '2026-07-03 14:00', actor: 'Morgan', actorType: 'de', actionType: 'escalated', action: 'GDPR request — overdue response escalated', entity: 'Customer', outcome: 'Escalated to partner' },
   { id: 'p3', timestamp: '2026-07-03 11:00', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'KYC completed — new engagement #E-2247', entity: 'Customer', outcome: 'Passed' },
   { id: 'p4', timestamp: '2026-07-03 10:15', actor: 'Engagement Partner', actorType: 'human', actionType: 'approval', action: 'Partner sign-off — engagement letter #E-2247', entity: 'Customer', outcome: 'Approved' },

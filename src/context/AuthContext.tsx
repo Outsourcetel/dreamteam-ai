@@ -36,7 +36,6 @@ interface AuthContextValue {
   currentPage: Page;
   sidebarCollapsed: boolean;
   godModeSession: GodModeSession | null;
-  showOnboarding: boolean;
   dbTenants: DBTenant[];
   dbStats: DbStats | null;
   currentTenant: Tenant | undefined;
@@ -50,7 +49,6 @@ interface AuthContextValue {
   handleSetPage: (p: Page) => void;
   setSidebarCollapsed: (v: boolean) => void;
   setGodModeSession: (s: GodModeSession | null) => void;
-  setShowOnboarding: (v: boolean) => void;
   refreshTenant: () => Promise<void>;
 }
 
@@ -61,7 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [godModeSession, setGodModeSession] = useState<GodModeSession | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [activeCompanyId, setActiveCompanyId] = useState<CompanyId>('tcp');
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
@@ -84,9 +81,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       setAuthedUser(au);
       const isPlatform = ['dt_super_admin','dt_god_access','dt_support','dt_billing'].includes(au.role) || layer === 'platform';
-      setCurrentPage(isPlatform ? 'platform_home' : 'dashboard');
-      if (!isPlatform) {
-        try { if (!(au.id && localStorage.getItem('dt_onboarded_' + au.id))) setShowOnboarding(true); } catch (e) {}
+      if (isPlatform) {
+        setCurrentPage('platform_home');
+      } else {
+        // First login for this tenant user → land on Company Setup once.
+        let firstLogin = false;
+        try {
+          if (au.id && !localStorage.getItem('dt_onboarded_' + au.id)) {
+            firstLogin = true;
+            localStorage.setItem('dt_onboarded_' + au.id, '1');
+          }
+        } catch (e) {}
+        setCurrentPage(firstLogin ? 'company_setup' : 'dashboard');
       }
     };
     (async () => {
@@ -171,8 +177,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(u.role)) {
       setCurrentPage('platform_home');
     } else {
-      setCurrentPage('dashboard');
-      try { if (!(u && u.id && localStorage.getItem('dt_onboarded_' + u.id))) setShowOnboarding(true); } catch (e) { setShowOnboarding(true); }
+      let firstLogin = false;
+      try {
+        if (u && u.id && !localStorage.getItem('dt_onboarded_' + u.id)) {
+          firstLogin = true;
+          localStorage.setItem('dt_onboarded_' + u.id, '1');
+        }
+      } catch (e) {}
+      setCurrentPage(firstLogin ? 'company_setup' : 'dashboard');
     }
   };
 
@@ -203,7 +215,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       currentPage,
       sidebarCollapsed,
       godModeSession,
-      showOnboarding,
       dbTenants,
       dbStats,
       currentTenant,
@@ -217,7 +228,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       handleSetPage,
       setSidebarCollapsed,
       setGodModeSession,
-      setShowOnboarding,
       refreshTenant,
     }}>
       {children}

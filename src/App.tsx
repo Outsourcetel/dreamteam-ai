@@ -3,7 +3,6 @@ import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components';
 import LoginPage from './pages/LoginPage';
-import OnboardingWizard from './pages/OnboardingWizard';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
@@ -136,7 +135,6 @@ function AppShell() {
     currentPage,
     sidebarCollapsed,
     godModeSession,
-    showOnboarding,
     dbTenants,
     dbStats,
     currentTenant,
@@ -147,7 +145,6 @@ function AppShell() {
     handleSetPage,
     setSidebarCollapsed,
     setGodModeSession,
-    setShowOnboarding,
   } = useAuth();
 
   if (!authedUser) return <LoginPage onLogin={handleLogin} />;
@@ -277,16 +274,6 @@ function AppShell() {
     <>
       <URLSync />
       <div className="flex h-screen bg-slate-950 overflow-hidden">
-        {showOnboarding && isTenantUser && (
-          <OnboardingWizard
-            onComplete={() => {
-              try { if (authedUser?.id) localStorage.setItem('dt_onboarded_' + authedUser.id, '1'); } catch (e) {}
-              setShowOnboarding(false);
-            }}
-            tenant={currentTenant}
-            user={authedUser}
-          />
-        )}
         <Sidebar
           page={currentPage}
           setPage={handleSetPage}

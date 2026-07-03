@@ -55,7 +55,7 @@ const TCP_ACTIVITY: ActivityRow[] = [
   { id: 'a24', type: 'config_change', de: 'Human', entity: 'Governance', hour: 'Yesterday', time: '16:30', text: 'Guardrails updated v2.2→v2.3 — added SLA-tier restriction (Alex), by K. Douglas' },
   { id: 'a25', type: 'resolved', de: 'Alex', entity: 'Customer', hour: 'Yesterday', time: '15:10', text: 'Alex resolved 8 tickets — batch shift', confidence: 88 },
   { id: 'a26', type: 'escalated', de: 'Casey', entity: 'Customer', hour: 'Yesterday', time: '15:00', text: 'Casey flagged at-risk — Apex Systems, escalated to AE' },
-  { id: 'a27', type: 'resolved', de: 'Riley', entity: 'Workforce', hour: 'Yesterday', time: '14:00', text: 'Riley approved leave request — M. Chen' },
+  { id: 'a27', type: 'resolved', de: 'Riley', entity: 'Workforce', hour: 'Yesterday', time: '14:00', text: 'Riley approved leave request — P. Sharma' },
   { id: 'a28', type: 'config_change', de: 'Human', entity: 'Workforce', hour: 'Yesterday', time: '11:20', text: 'Riley learning rate changed to Medium — by HR Manager' },
   { id: 'a29', type: 'kb_gap', de: 'Alex', entity: 'Knowledge', hour: 'Yesterday', time: '09:00', text: 'KB gap flagged — "Webhook retry logic" (initial detection)' },
   { id: 'a30', type: 'error', de: 'Riley', entity: 'Workforce', hour: 'Yesterday', time: '08:45', text: 'Recertification overdue — Riley flagged for recert' },

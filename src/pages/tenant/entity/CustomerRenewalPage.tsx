@@ -21,7 +21,7 @@ interface RenewalRow {
 }
 
 const INITIAL_RENEWALS: RenewalRow[] = [
-  { account: 'TCP Inc', arr: '$84K', arrNum: 84000, health: 72, renewalDate: 'Jul 31', status: 'Invoice sent' },
+  { account: 'Lakeshore Analytics', arr: '$84K', arrNum: 84000, health: 72, renewalDate: 'Jul 31', status: 'Invoice sent' },
   { account: 'Meridian Group', arr: '$156K', arrNum: 156000, health: 58, renewalDate: 'Aug 5', status: 'Pending generation' },
   { account: 'Apex Systems', arr: '$43K', arrNum: 43000, health: 34, renewalDate: 'Aug 12', status: 'Overdue — 8 days' },
   { account: 'Northfield Co', arr: '$210K', arrNum: 210000, health: 81, renewalDate: 'Aug 18', status: 'Paid ✓' },
@@ -31,7 +31,7 @@ const INITIAL_RENEWALS: RenewalRow[] = [
 const EXPANSION_OPPS = [
   { account: 'Northfield Co', opportunity: 'Enterprise tier upgrade', value: '$48K ARR uplift', signal: 'Usage at 92% of plan limit', owner: 'Casey' },
   { account: 'Harbor Tech', opportunity: 'Add-on: Analytics module', value: '$18K ARR uplift', signal: '3 analytics feature requests logged', owner: 'Casey' },
-  { account: 'TCP Inc', opportunity: 'Seat expansion (+40 seats)', value: '$22K ARR uplift', signal: 'New department onboarded last month', owner: 'Human (AE)' },
+  { account: 'Lakeshore Analytics', opportunity: 'Seat expansion (+40 seats)', value: '$22K ARR uplift', signal: 'New department onboarded last month', owner: 'Human (AE)' },
 ];
 
 const PWC_RENEWALS = [

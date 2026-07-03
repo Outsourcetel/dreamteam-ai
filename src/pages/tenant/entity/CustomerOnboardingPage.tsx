@@ -65,9 +65,9 @@ interface UploadMapping {
 const SEED_PROJECTS: OnboardingProject[] = [
   {
     id: 'proj-001',
-    client: 'TCP Inc',
+    client: 'Lakeshore Analytics',
     product: 'Humanity.com',
-    specialist: 'Morgan Chen',
+    specialist: 'Priya Sharma',
     status: 'in_progress',
     progress: 45,
     startDate: '2026-06-15',
@@ -117,7 +117,7 @@ const DEFAULT_STEPS: ChecklistStep[] = [
 ];
 
 const AUDIT_LOG: AuditEntry[] = [
-  { id: 'a1', timestamp: '2026-06-15 09:12', actor: 'DE', action: 'Project created', detail: 'Onboarding project initialized for TCP Inc / Humanity.com', status: 'auto' },
+  { id: 'a1', timestamp: '2026-06-15 09:12', actor: 'DE', action: 'Project created', detail: 'Onboarding project initialized for Lakeshore Analytics / Humanity.com', status: 'auto' },
   { id: 'a2', timestamp: '2026-06-15 09:15', actor: 'DE', action: 'Product framework loaded', detail: 'Loaded Humanity.com onboarding checklist — 10 steps identified', status: 'auto' },
   { id: 'a3', timestamp: '2026-06-16 10:30', actor: 'Human', action: 'Employee CSV uploaded', detail: 'employees_tcp.csv — 142 rows processed', status: 'approved' },
   { id: 'a4', timestamp: '2026-06-16 10:31', actor: 'DE', action: 'Column mapping proposed', detail: '8/10 columns auto-mapped, 2 required specialist review', status: 'auto' },
@@ -145,7 +145,7 @@ const SEED_CHAT: ChatMessage[] = [
   {
     id: 'c1',
     role: 'de',
-    text: "I've loaded the Humanity.com onboarding framework for TCP Inc. We have 10 steps to complete. You're currently at 45% — steps 1 and 2 are done.\n\nStep 3 (Positions) is in progress — I've auto-configured 5 positions from the employee data. Want me to continue with the remaining 3, or do you want to review what I've done first?",
+    text: "I've loaded the Humanity.com onboarding framework for Lakeshore Analytics. We have 10 steps to complete. You're currently at 45% — steps 1 and 2 are done.\n\nStep 3 (Positions) is in progress — I've auto-configured 5 positions from the employee data. Want me to continue with the remaining 3, or do you want to review what I've done first?",
     time: '09:12',
   },
   {
@@ -175,7 +175,7 @@ const SEED_CHAT: ChatMessage[] = [
 ];
 
 const PRODUCTS = ['Humanity.com', 'BambooHR', 'Zendesk', 'Salesforce', 'HubSpot', 'Other'];
-const SPECIALISTS = ['Morgan Chen', 'Taylor Smith', 'Jordan Lee', 'You'];
+const SPECIALISTS = ['Priya Sharma', 'Taylor Smith', 'Jordan Lee', 'You'];
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
   const [newProjectModal, setNewProjectModal] = useState(false);
   const [newClient, setNewClient] = useState('');
   const [newProduct, setNewProduct] = useState('');
-  const [newSpecialist, setNewSpecialist] = useState('Morgan Chen');
+  const [newSpecialist, setNewSpecialist] = useState('Priya Sharma');
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
 
   const [openStepId, setOpenStepId] = useState<string | null>(null);
@@ -900,7 +900,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         title: 'General Settings',
                         configStatus: 'complete',
                         items: [
-                          { label: 'Company name', value: 'TCP Inc' },
+                          { label: 'Company name', value: 'Lakeshore Analytics' },
                           { label: 'Time zone', value: 'GMT+0 (London)' },
                           { label: 'Week start day', value: 'Monday' },
                           { label: 'Currency', value: 'GBP £' },
