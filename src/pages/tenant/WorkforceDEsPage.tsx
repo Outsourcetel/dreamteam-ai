@@ -1470,7 +1470,7 @@ function TabAudit({ de }: { de: DEProfile }) {
 
 // ── Main Page ─────────────────────────────────────────────────────
 
-const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems & Data', 'Guardrails', 'Human Loop', 'Performance', 'Audit & Memory']
+const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit']
 
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
@@ -1563,7 +1563,7 @@ export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => vo
               <button
                 key={tab}
                 onClick={() => setActiveTab(i)}
-                className={`px-4 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? 'border-indigo-500 text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                className={`px-3 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? 'border-indigo-500 text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
               >
                 {tab}
               </button>

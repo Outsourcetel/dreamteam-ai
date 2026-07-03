@@ -61,16 +61,21 @@ export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) 
         <p className="text-xs text-slate-600 mt-0.5">{activeCompany.name} · {activeCompany.industry}</p>
       </div>
 
-      {/* No-DE callout */}
-      <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-500">◈</span>
-          <p className="text-xs text-slate-400">
-            No DE assigned yet — vendor operations handled by humans. Assign a DE from Workforce to automate sourcing and contract tracking.
-          </p>
+      {/* Automation opportunity callout */}
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex-wrap">
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          <span className="text-amber-400 mt-0.5">◈</span>
+          <div>
+            <p className="text-xs font-semibold text-amber-300">Automation opportunity</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {activeCompanyId === 'tcp'
+                ? 'Vendor operations run manually today — ~14 hrs/month of human effort across sourcing, contract tracking and renewals. Hiring a Vendor DE typically automates 70% of it. 3 contracts expire in the next 60 days — a DE would already be preparing renewal reviews.'
+                : 'Vendor operations run manually today — ~10 hrs/month of human effort across 8 active vendors. Hiring a Vendor DE typically automates 70% of it. 2 vendors are under quarterly review — a DE would already have the review packets prepared.'}
+            </p>
+          </div>
         </div>
-        <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">
-          Go to Workforce →
+        <button onClick={() => setPage('workforce_des')} className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">
+          Explore Vendor DE →
         </button>
       </div>
 

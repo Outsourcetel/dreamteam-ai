@@ -155,6 +155,22 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
       ],
     },
     {
+      title: 'SPECIALISTS',
+      groups: [
+        {
+          id: 'specialist_desk',
+          label: 'Specialist Desk',
+          icon: '◆',
+          children: [
+            { id: 'specialist_technical', label: 'Technical' },
+            { id: 'specialist_legal', label: 'Legal' },
+            { id: 'specialist_finance_deep', label: 'Finance', indicator: !isTCP ? { dot: true, color: '#14b8a6' } : undefined },
+            { id: 'specialist_people', label: 'People' },
+          ],
+        },
+      ],
+    },
+    {
       title: 'KNOWLEDGE',
       groups: [
         { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
@@ -197,6 +213,12 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         { id: 'compliance', label: 'Compliance & Guardrails', icon: '⚑', page: 'gov_compliance' },
         { id: 'audit', label: 'Audit Trail', icon: '◫', page: 'gov_audit' },
         { id: 'security', label: 'Security & Access', icon: '◉', page: 'gov_security' },
+      ],
+    },
+    {
+      title: 'SETUP',
+      groups: [
+        { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
       ],
     },
   ];

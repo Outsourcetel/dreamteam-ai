@@ -394,6 +394,21 @@ export default function DEChatDock() {
     return () => window.clearTimeout(t);
   }, [open]);
 
+  // Nudge is transient: auto-dismiss after 10s, and dismiss on navigation.
+  useEffect(() => {
+    if (!nudge) return;
+    const t = window.setTimeout(() => setNudge(false), 10000);
+    return () => window.clearTimeout(t);
+  }, [nudge]);
+
+  const nudgePageRef = useRef(currentPage);
+  useEffect(() => {
+    if (currentPage !== nudgePageRef.current) {
+      nudgePageRef.current = currentPage;
+      setNudge(false);
+    }
+  }, [currentPage]);
+
   // Autoscroll.
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
