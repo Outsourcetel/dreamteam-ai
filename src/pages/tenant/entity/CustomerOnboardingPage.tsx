@@ -65,9 +65,9 @@ interface UploadMapping {
 const SEED_PROJECTS: OnboardingProject[] = [
   {
     id: 'proj-001',
-    client: 'TCP Inc',
+    client: 'Lakeshore Analytics',
     product: 'Humanity.com',
-    specialist: 'Morgan Chen',
+    specialist: 'Priya Sharma',
     status: 'in_progress',
     progress: 45,
     startDate: '2026-06-15',
@@ -117,7 +117,7 @@ const DEFAULT_STEPS: ChecklistStep[] = [
 ];
 
 const AUDIT_LOG: AuditEntry[] = [
-  { id: 'a1', timestamp: '2026-06-15 09:12', actor: 'DE', action: 'Project created', detail: 'Onboarding project initialized for TCP Inc / Humanity.com', status: 'auto' },
+  { id: 'a1', timestamp: '2026-06-15 09:12', actor: 'DE', action: 'Project created', detail: 'Onboarding project initialized for Lakeshore Analytics / Humanity.com', status: 'auto' },
   { id: 'a2', timestamp: '2026-06-15 09:15', actor: 'DE', action: 'Product framework loaded', detail: 'Loaded Humanity.com onboarding checklist — 10 steps identified', status: 'auto' },
   { id: 'a3', timestamp: '2026-06-16 10:30', actor: 'Human', action: 'Employee CSV uploaded', detail: 'employees_tcp.csv — 142 rows processed', status: 'approved' },
   { id: 'a4', timestamp: '2026-06-16 10:31', actor: 'DE', action: 'Column mapping proposed', detail: '8/10 columns auto-mapped, 2 required specialist review', status: 'auto' },
@@ -125,7 +125,7 @@ const AUDIT_LOG: AuditEntry[] = [
   { id: 'a6', timestamp: '2026-06-16 10:36', actor: 'DE', action: '138 employees uploaded', detail: '3 skipped (missing email), 1 corrected (employment_type)', status: 'auto' },
   { id: 'a7', timestamp: '2026-06-17 14:00', actor: 'Human', action: 'Locations configured', detail: '4 locations created: London HQ, New York, Singapore, Remote', status: 'approved' },
   { id: 'a8', timestamp: '2026-06-18 09:00', actor: 'DE', action: 'Positions auto-configured', detail: '5 of 8 positions created from employee role data. 3 need review.', status: 'pending' },
-  { id: 'a9', timestamp: '2026-06-20 11:22', actor: 'DE', action: 'Leave rules proposed', detail: 'Matched TCP leave policy from HR handbook. 2 fields need clarification.', status: 'pending_review' },
+  { id: 'a9', timestamp: '2026-06-20 11:22', actor: 'DE', action: 'Leave rules proposed', detail: 'Matched Lakeshore leave policy from HR handbook. 2 fields need clarification.', status: 'pending_review' },
 ];
 
 const UPLOAD_MAPPINGS: UploadMapping[] = [
@@ -145,7 +145,7 @@ const SEED_CHAT: ChatMessage[] = [
   {
     id: 'c1',
     role: 'de',
-    text: "I've loaded the Humanity.com onboarding framework for TCP Inc. We have 10 steps to complete. You're currently at 45% — steps 1 and 2 are done.\n\nStep 3 (Positions) is in progress — I've auto-configured 5 positions from the employee data. Want me to continue with the remaining 3, or do you want to review what I've done first?",
+    text: "I've loaded the Humanity.com onboarding framework for Lakeshore Analytics. We have 10 steps to complete. You're currently at 45% — steps 1 and 2 are done.\n\nStep 3 (Positions) is in progress — I've auto-configured 5 positions from the employee data. Want me to continue with the remaining 3, or do you want to review what I've done first?",
     time: '09:12',
   },
   {
@@ -175,7 +175,7 @@ const SEED_CHAT: ChatMessage[] = [
 ];
 
 const PRODUCTS = ['Humanity.com', 'BambooHR', 'Zendesk', 'Salesforce', 'HubSpot', 'Other'];
-const SPECIALISTS = ['Morgan Chen', 'Taylor Smith', 'Jordan Lee', 'You'];
+const SPECIALISTS = ['Priya Sharma', 'Taylor Smith', 'Jordan Lee', 'You'];
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ function getStepStatusIcon(status: StepStatus): { icon: string; color: string } 
 function deReply(input: string): string {
   const lower = input.toLowerCase();
   if (lower.includes('leave')) {
-    return "Got it — checking Leave Rules (Step 4). I've already drafted a full configuration based on TCP's HR handbook. There are 2 items flagged for your review: the carryover cap and bereavement leave aren't specified in the uploaded documents. Would you like me to set standard defaults for those, or do you want to define them manually?";
+    return "Got it — checking Leave Rules (Step 4). I've already drafted a full configuration based on Lakeshore Analytics' HR handbook. There are 2 items flagged for your review: the carryover cap and bereavement leave aren't specified in the uploaded documents. Would you like me to set standard defaults for those, or do you want to define them manually?";
   }
   if (lower.includes('upload') || lower.includes('csv') || lower.includes('file')) {
     return "Employee data upload completed — 138 employees uploaded successfully, 3 skipped (missing email), 1 corrected (employment_type normalized to \"Part Time\"). The data is now live in Humanity.com. Want me to run a validation check to confirm all records look correct?";
@@ -214,7 +214,7 @@ function deReply(input: string): string {
     return "All 8 positions are configured in Humanity.com. I used the standard defaults for Temp Staff and Contractor, and set Operations Manager as non-shift at Grade 4 as you requested. Do you want me to move ahead to Step 4 (Leave Rules) now?";
   }
   if (lower.includes('next') || lower.includes('step')) {
-    return "The next pending step is Step 4 — Leave Rules Configuration. I've already drafted a proposal based on TCP's HR handbook. It's currently awaiting your review and approval before I can apply it. Want to go there now?";
+    return "The next pending step is Step 4 — Leave Rules Configuration. I've already drafted a proposal based on Lakeshore Analytics' HR handbook. It's currently awaiting your review and approval before I can apply it. Want to go there now?";
   }
   if (lower.includes('progress') || lower.includes('status') || lower.includes('complete')) {
     return "Current progress: 45% complete. Steps 1 (Employee Data) and 2 (Locations) are done. Step 3 (Positions) just completed. Step 4 (Leave Rules) is pending your review. Steps 5–10 haven't started yet. Estimated time to completion at current pace: ~3 days.";
@@ -234,7 +234,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
   const [newProjectModal, setNewProjectModal] = useState(false);
   const [newClient, setNewClient] = useState('');
   const [newProduct, setNewProduct] = useState('');
-  const [newSpecialist, setNewSpecialist] = useState('Morgan Chen');
+  const [newSpecialist, setNewSpecialist] = useState('Priya Sharma');
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
 
   const [openStepId, setOpenStepId] = useState<string | null>(null);
@@ -579,7 +579,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                             </div>
                             <div className="mt-4 p-3 rounded-lg bg-indigo-500/5 border border-indigo-500/20">
                               <div className="text-xs text-slate-300 font-medium mb-1">DE note</div>
-                              <div className="text-xs text-slate-400">I've matched TCP's leave policy from the HR handbook uploaded in step 1. The carryover cap and bereavement leave were not specified — please confirm or I can set standard defaults.</div>
+                              <div className="text-xs text-slate-400">I've matched Lakeshore Analytics' leave policy from the HR handbook uploaded in step 1. The carryover cap and bereavement leave were not specified — please confirm or I can set standard defaults.</div>
                             </div>
                             <div className="flex justify-end gap-2 mt-4">
                               <button className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">Request changes</button>
@@ -900,7 +900,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         title: 'General Settings',
                         configStatus: 'complete',
                         items: [
-                          { label: 'Company name', value: 'TCP Inc' },
+                          { label: 'Company name', value: 'Lakeshore Analytics' },
                           { label: 'Time zone', value: 'GMT+0 (London)' },
                           { label: 'Week start day', value: 'Monday' },
                           { label: 'Currency', value: 'GBP £' },

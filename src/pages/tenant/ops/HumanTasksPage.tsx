@@ -91,8 +91,8 @@ const TCP_TASKS: OpsTask[] = [
 
 const PWC_TASKS: OpsTask[] = [
   {
-    id: 't1', type: 'review_gate', title: 'Partner review — TCP tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true, status: 'pending',
-    context: 'Avery completed the Q2 corporate tax memo for TCP Corp. All memos require partner review before client delivery.',
+    id: 't1', type: 'review_gate', title: 'Partner review — Crestline tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true, status: 'pending',
+    context: 'Avery completed the Q2 corporate tax memo for Crestline Corp. All memos require partner review before client delivery.',
     reasoning: 'Positions supported by Checkpoint citations and IRS Notice 2026-14. One aggressive position flagged for partner attention (R&D credit stacking).',
     confidence: 91, relatedPage: 'outcome_delivery', relatedLabel: 'Practice Delivery', slaRemaining: '23h 46m of 1-day SLA',
   },

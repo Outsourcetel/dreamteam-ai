@@ -10,7 +10,7 @@ import type { Page } from '../../../types';
 // ============================================================
 
 const SEED_PROFILES = [
-  { id: 'p1', name: 'Morgan Chen' },
+  { id: 'p1', name: 'Priya Sharma' },
   { id: 'p2', name: 'Taylor Smith' },
   { id: 'p3', name: 'Jordan Lee' },
 ];
@@ -427,7 +427,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 
     const feedItems = [
       { type: 'resolved', time: '2 min ago', text: 'Query resolved by Alex — "How do I reset my password?"', confidence: 94 },
-      { type: 'escalated', time: '8 min ago', text: 'Escalated to Morgan Chen — "Invoice discrepancy on account #7712"', confidence: 61 },
+      { type: 'escalated', time: '8 min ago', text: 'Escalated to Priya Sharma — "Invoice discrepancy on account #7712"', confidence: 61 },
       { type: 'kb_added', time: '22 min ago', text: 'New article published: "How to update billing email"', author: 'Taylor Smith' },
       { type: 'resolved', time: '31 min ago', text: 'Query resolved — "What are your support hours?"', confidence: 88 },
       { type: 'sla_breach', time: '45 min ago', text: 'SLA breach — escalation unresolved after 67 minutes' },
@@ -526,7 +526,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <div className="text-xs text-amber-400 mb-2">↓ 12% escalate (below {threshold}%)</div>
             <div className="flex items-start gap-2 flex-wrap">
               {[
-                { label: 'Tier 1', detail: `${SEED_PROFILES.find(p => p.id === wizT1Assignee)?.name || 'Morgan Chen'} · In-app`, sub: 'Avg response: 8min' },
+                { label: 'Tier 1', detail: `${SEED_PROFILES.find(p => p.id === wizT1Assignee)?.name || 'Priya Sharma'} · In-app`, sub: 'Avg response: 8min' },
                 { label: 'Tier 2', detail: 'After 30min · Email', sub: '' },
                 { label: 'Human Reply', detail: '→ reply sent', sub: '' },
                 { label: 'Add to KB?', detail: '+ Suggestion shown', sub: '', link: true },

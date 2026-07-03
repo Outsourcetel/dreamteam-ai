@@ -62,7 +62,7 @@ const ACTIVITY: Record<CompanyId, ActivityItem[]> = {
     { stage: 'Support', time: '8 min ago', text: 'Alex escalated — API auth bug to L2 (Apex Systems)', tone: 'warn' },
     { stage: 'Renewal', time: '22 min ago', text: 'Casey sent renewal invoice — Harbor Tech $67K', tone: 'ok' },
     { stage: 'Success', time: '45 min ago', text: 'Casey flagged at-risk — Apex Systems (health: 34)', tone: 'alert' },
-    { stage: 'Onboarding', time: '1 hr ago', text: 'DE uploaded 138 employees to Humanity.com — TCP Inc project', tone: 'ok' },
+    { stage: 'Onboarding', time: '1 hr ago', text: 'DE uploaded 138 employees to Humanity.com — Lakeshore Analytics project', tone: 'ok' },
     { stage: 'Sales', time: '2 hrs ago', text: 'Meridian Group opportunity moved to Negotiation — $156K', tone: 'info' },
     { stage: 'BD', time: '3 hrs ago', text: 'New prospect qualified — Lakeside Retail (inbound demo request)', tone: 'info' },
     { stage: 'Renewal', time: '4 hrs ago', text: 'Casey generated Zuora invoice — Meridian Group renewal', tone: 'ok' },

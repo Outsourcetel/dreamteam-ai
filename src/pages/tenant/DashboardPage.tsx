@@ -175,7 +175,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       risk: { label: 'Risk & Compliance', icon: '⚑', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Risk & Compliance', 'Legal', 'Quality'], alerts: 2 },
     },
     tasks: [
-      { id: 't1', type: 'review_gate', title: 'Partner review — TCP tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
+      { id: 't1', type: 'review_gate', title: 'Partner review — Crestline tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
       { id: 't2', type: 'approval_gate', title: 'Credit note approval', de: 'Morgan', detail: '$12,400', age: '1 hr', urgent: false },
       { id: 't3', type: 'escalation', title: 'GDPR data request — response overdue', de: 'Morgan', detail: '', age: '2 hrs', urgent: true },
       { id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Avery', detail: '', age: '3 hrs', urgent: false },

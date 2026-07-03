@@ -252,18 +252,18 @@ interface Account {
 
 const ACCOUNTS: Record<CompanyId, Account[]> = {
   tcp: [
-    { name: 'Northfield Co', health: 81, arr: '$210K', csm: 'M. Chen', trend: 'up' },
-    { name: 'TCP Inc', health: 72, arr: '$84K', csm: 'M. Chen', trend: 'flat' },
+    { name: 'Northfield Co', health: 81, arr: '$210K', csm: 'P. Sharma', trend: 'up' },
+    { name: 'Lakeshore Analytics', health: 72, arr: '$84K', csm: 'P. Sharma', trend: 'flat' },
     { name: 'Harbor Tech', health: 61, arr: '$67K', csm: 'T. Smith', trend: 'up' },
     { name: 'Meridian Group', health: 58, arr: '$156K', csm: 'T. Smith', trend: 'down', note: 'Renewal at risk — invoice pending' },
-    { name: 'Brightline Studios', health: 76, arr: '$52K', csm: 'M. Chen', trend: 'up' },
+    { name: 'Brightline Studios', health: 76, arr: '$52K', csm: 'P. Sharma', trend: 'up' },
     { name: 'Kestrel Systems', health: 68, arr: '$91K', csm: 'J. Lee', trend: 'flat' },
     { name: 'Apex Systems', health: 34, arr: '$43K', csm: 'J. Lee', trend: 'down', note: 'Open P1 escalation — API auth failure' },
     { name: 'Silverpine Labs', health: 44, arr: '$38K', csm: 'T. Smith', trend: 'down', note: 'Usage dropped 40% in 30 days' },
-    { name: 'Crownfield Insurance', health: 39, arr: '$74K', csm: 'M. Chen', trend: 'down', note: 'Champion left the company' },
+    { name: 'Crownfield Insurance', health: 39, arr: '$74K', csm: 'P. Sharma', trend: 'down', note: 'Champion left the company' },
     { name: 'Oakhurst Retail', health: 83, arr: '$110K', csm: 'J. Lee', trend: 'up' },
     { name: 'Pinnacle Freight', health: 71, arr: '$66K', csm: 'T. Smith', trend: 'flat' },
-    { name: 'Waverly Health', health: 78, arr: '$95K', csm: 'M. Chen', trend: 'up' },
+    { name: 'Waverly Health', health: 78, arr: '$95K', csm: 'P. Sharma', trend: 'up' },
   ],
   pwc: [
     { name: 'Harbor Financial — Audit', health: 82, arr: '$310K', csm: 'D. Whitmore', trend: 'up' },

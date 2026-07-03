@@ -279,7 +279,7 @@ export const TCP_DES: DEProfile[] = [
     auditLog: [
       { id: 'a1', timestamp: '2026-07-03 13:00', action: 'Processed onboarding — new hire Jordan K.', outcome: 'Complete', type: 'resolved' },
       { id: 'a2', timestamp: '2026-07-03 10:00', action: 'Workday connector timeout', outcome: 'Error — retrying', type: 'error' },
-      { id: 'a3', timestamp: '2026-07-02 14:00', action: 'Leave request approved — M. Chen', outcome: 'Approved', type: 'resolved' },
+      { id: 'a3', timestamp: '2026-07-02 14:00', action: 'Leave request approved — P. Sharma', outcome: 'Approved', type: 'resolved' },
       { id: 'a4', timestamp: '2026-07-01 11:00', action: 'Recertification overdue — flagged', outcome: 'Needs recertification', type: 'error' },
     ],
   },
@@ -411,7 +411,7 @@ export const PWC_DES: DEProfile[] = [
       ],
     },
     auditLog: [
-      { id: 'a1', timestamp: '2026-07-03 14:05', action: 'Completed Q2 corporate tax memo — TCP Corp', outcome: 'Sent to partner review', type: 'escalated' },
+      { id: 'a1', timestamp: '2026-07-03 14:05', action: 'Completed Q2 corporate tax memo — Crestline Corp', outcome: 'Sent to partner review', type: 'escalated' },
       { id: 'a2', timestamp: '2026-07-03 09:00', action: 'Research — FATCA dual-national issue', outcome: 'KB gap logged', type: 'kb_gap' },
       { id: 'a3', timestamp: '2026-07-02 15:00', action: 'Memo completed — R&D credit analysis', outcome: 'Delivered', type: 'resolved' },
       { id: 'a4', timestamp: '2026-07-01 13:00', action: 'Reviewed IRS Notice 2026-14', outcome: 'Summary filed', type: 'resolved' },
