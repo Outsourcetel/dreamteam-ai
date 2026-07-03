@@ -99,7 +99,7 @@ export type TenantPage =
   | 'users'
   | 'playbooks';
 
-export type EndUserPage = 'chat' | 'history' | 'profile';
+export type EndUserPage = 'eu_chat';
 
 export type Page = PlatformPage | TenantPage | EndUserPage;
 
@@ -142,31 +142,6 @@ export interface Tenant {
 }
 
 // ---- Knowledge types ----
-
-export type KnowledgeTag = {
-  id: string;
-  label: string;
-  color: string;
-};
-
-export type KnowledgeSubSection = { id: string; label: string };
-export type KnowledgeSection = {
-  id: string;
-  label: string;
-  subsections: KnowledgeSubSection[];
-};
-export type KnowledgeModule = {
-  id: string;
-  label: string;
-  icon: string;
-  sections: KnowledgeSection[];
-};
-export type KnowledgeProduct = {
-  id: string;
-  label: string;
-  color: string;
-  modules: KnowledgeModule[];
-};
 
 export type KnowledgeItemType = 'article' | 'faq' | 'sop' | 'policy' | 'training';
 export type KnowledgeAudience = 'customer' | 'internal' | 'both';
@@ -235,44 +210,4 @@ export interface ImportedFile {
   audience: KnowledgeAudience;
   tags: string[];
   chunkCount: number;
-}
-
-export interface ValidationBot {
-  id: string;
-  name: string;
-  rule: string;
-  action: 'flag' | 'block' | 'escalate';
-}
-
-export interface PipelineStage {
-  id: string;
-  name: string;
-  type: string;
-  enabled: boolean;
-  config: Record<string, any>;
-}
-
-export interface AgentModelConfig {
-  provider: string;
-  model: string;
-  temperature: number;
-  maxTokens: number;
-  systemPrompt: string;
-  fallbackModel: string;
-}
-
-export interface AgentDef {
-  id: string;
-  name: string;
-  description: string;
-  audience: KnowledgeAudience;
-  status: 'active' | 'draft' | 'paused';
-  pipeline: PipelineStage[];
-  validators: ValidationBot[];
-  modelConfig: AgentModelConfig;
-  connectors: string[];
-  intents: string[];
-  confidenceThreshold: number;
-  autoResolveThreshold: number;
-  escalationThreshold: number;
 }

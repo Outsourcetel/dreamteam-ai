@@ -188,7 +188,6 @@ export const canAccessPage = (role: UserRole, page: Page): boolean => {
   const dtOnlyPages = [
     'platform_home',
     'platform_tenants',
-    'platform_tenant_detail',
     'platform_remote_access',
     'platform_health',
     'platform_revenue',

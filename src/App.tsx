@@ -29,7 +29,6 @@ import type { Page, PlatformPage } from './types';
 const PAGE_TO_URL: Record<string, string> = {
   platform_home:          '/platform',
   platform_tenants:       '/platform/tenants',
-  platform_tenant_detail: '/platform/tenant-detail',
   platform_remote_access: '/platform/remote-access',
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
@@ -58,8 +57,6 @@ const PAGE_TO_URL: Record<string, string> = {
   admin_audit:            '/security/audit',
   admin_compliance:       '/security/compliance',
   eu_chat:                '/chat',
-  eu_actions:             '/my-actions',
-  eu_tickets:             '/my-tickets',
   // Entities
   entity_customer:            '/customer',
   entity_customer_bd:         '/customer/bd',

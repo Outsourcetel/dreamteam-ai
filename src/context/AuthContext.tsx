@@ -4,12 +4,10 @@ import {
   fetchTenants,
   fetchTenantById,
   fetchKnowledgeArticles,
-  fetchConversations,
   fetchDashboardStats,
   fetchMyProfile,
   DBTenant,
   DBKnowledgeArticle,
-  DBConversation,
 } from '../lib/api';
 import type { AuthUser, Tenant, Page } from '../types';
 import { canAccessPage } from '../lib/mockData';
@@ -43,7 +41,6 @@ interface AuthContextValue {
   showOnboarding: boolean;
   dbTenants: DBTenant[];
   dbArticles: DBKnowledgeArticle[];
-  dbConversations: DBConversation[];
   dbStats: DbStats | null;
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
@@ -72,7 +69,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
-  const [dbConversations, setDbConversations] = useState<DBConversation[]>([]);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
@@ -120,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         if (!authedUser) {
-          setDbTenants([]); setDbArticles([]); setDbConversations([]); setDbStats(null);
+          setDbTenants([]); setDbArticles([]); setDbStats(null);
           return;
         }
         const profile = await fetchMyProfile();
@@ -131,15 +127,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!_cleanup) setDbTenants(t);
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
-          const [a, c, s, t] = await Promise.all([
+          const [a, s, t] = await Promise.all([
             fetchKnowledgeArticles(tid),
-            fetchConversations(tid),
             fetchDashboardStats(tid),
             fetchTenantById(tid),
           ]);
           if (!_cleanup) {
             setDbArticles(a);
-            setDbConversations(c);
             setDbStats(s as any);
             setDbCurrentTenant(t);
           }
@@ -206,7 +200,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentPage('dashboard');
     setDbTenants([]);
     setDbArticles([]);
-    setDbConversations([]);
     setDbStats(null);
     setDbCurrentTenant(null);
   };
@@ -220,7 +213,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       showOnboarding,
       dbTenants,
       dbArticles,
-      dbConversations,
       dbStats,
       currentTenant,
       isDTUser,
