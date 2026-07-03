@@ -35,9 +35,22 @@ Path: **Governance → Compliance & Guardrails**
 - Path: **Governance → Audit Trail** — find the **BLOCKED event**: Alex tried to commit an SLA outside standard tier and the guardrail stopped him. *"The system enforces, logs, and proves it."*
 - Path: **Intelligence → Self-Learning** — the validation gate is locked ON. Show Riley's proposed behavior awaiting human approval. *"DEs learn, but nothing they learn goes live without a human signing off."*
 
+### 4b. Story C½ — proof, not promises (4 min) — for compliance-minded rooms
+Path: **Intelligence → Proving Ground**
+- The eval harness: every DE has a golden-scenario suite; runs are event-triggered. *"No knowledge update or learned behavior ships untested."*
+- Show **the money row**: "Knowledge update #214 → 22/25 → Blocked, auto-rolled back, gap logged."
+- Click Riley: her recertification is *blocked by 2 failing scenarios* — expand one to show expected vs actual and the root cause (stale FY26 leave policy). *"Certification here means passing tests, not a date on a badge."*
+- Calibration panel: *"When Alex says 90%, he's right 87% of the time — future autonomy limits are gated on this, not on self-reported confidence."*
+- Be upfront: runs are simulated in this design preview; the harness design is the product.
+
+### 4c. The workforce is mixed (3 min)
+Path: **Digital Workforce → Workforce Roster**
+- One roster, two kinds of workers. Open **Priya Sharma**: her DE partners, what she gate-keeps, her weekly load — and the teaser: *"her approval load is up 40%; Casey's calibration supports raising the auto-approve limit."* That's the trust dial: autonomy earned with evidence, granted to relieve a person.
+- Flip to **Org view**: humans and DEs together under the entities they serve. *"This is the org chart of an AI-native company."*
+
 ### 5. Close — Human Tasks (3 min)
 Path: **Operations → Human Tasks**
-- *"Everything that needs a human lands here — approvals, reviews, escalations."* Approve the Meridian invoice live; show the SLA countdowns.
+- *"Everything that needs a human lands here — approvals, reviews, escalations."* Approve the Meridian invoice live; show the SLA countdowns — then flip to the Renewal page to show the invoice state updated everywhere. *"The pages talk to each other."*
 - End on Company Setup: *"This is day one for a new customer — pick your industry, activate functions, get DE hiring recommendations and your compliance template."*
 
 ## The 5-minute industry-switch encore (PWC)
