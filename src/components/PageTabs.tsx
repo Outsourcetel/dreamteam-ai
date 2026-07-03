@@ -8,7 +8,7 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
 
 export const ADMIN_TABS: { id: Page; label: string }[] = [
   { id: 'gov_security', label: 'Security & Access' },
-  { id: 'connectors', label: 'Data Connectors' },
+  { id: 'systems_connectors', label: 'Connectors' },
   { id: 'settings', label: 'Settings' },
 ];
 

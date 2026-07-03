@@ -10,15 +10,20 @@ import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage'
 import KnowledgeIngestionPage from './pages/tenant/knowledge/KnowledgeIngestionPage';
 import KnowledgeGapsPage from './pages/tenant/knowledge/KnowledgeGapsPage';
 import KnowledgeQualityPage from './pages/tenant/knowledge/KnowledgeQualityPage';
-import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import CompliancePage from './pages/tenant/governance/CompliancePage';
 import AuditTrailPage from './pages/tenant/governance/AuditTrailPage';
 import SecurityAccessPage from './pages/tenant/governance/SecurityAccessPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
-import PlaybooksPage from './pages/tenant/PlaybooksPage';
-import ApprovalsPage from './pages/tenant/ApprovalsPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
+import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
+import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
+import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
+import ActivityPage from './pages/tenant/ops/ActivityPage';
+import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
+import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
+import SpecialistsPage from './pages/tenant/SpecialistsPage';
+import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
 import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
@@ -38,10 +43,7 @@ const PAGE_TO_URL: Record<string, string> = {
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
   dashboard:              '/dashboard',
-  admin_approvals:        '/approvals',
   users:                  '/users',
-  playbooks:              '/playbooks',
-  connectors:             '/connectors',
   settings:               '/settings',
   eu_chat:                '/chat',
   // Entities
@@ -86,6 +88,7 @@ const PAGE_TO_URL: Record<string, string> = {
   ops_activity:    '/ops/activity',
   // Intelligence
   intelligence_performance: '/intelligence/performance',
+  intelligence_learning:    '/intelligence/learning',
   intelligence_insights:    '/intelligence/insights',
   // Governance
   gov_compliance: '/governance/compliance',
@@ -124,17 +127,6 @@ function URLSync() {
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
-}
-
-// ── Placeholder page for new routes ────────────────────────────
-function PlaceholderPage({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-center p-8">
-      <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">◈</div>
-      <h2 className="text-lg font-semibold text-slate-200 mb-2">{title}</h2>
-      <p className="text-sm text-slate-500 max-w-sm">{description}</p>
-    </div>
-  );
 }
 
 // ── Main authenticated shell ────────────────────────────────────
@@ -181,16 +173,10 @@ function AppShell() {
     switch (currentPage) {
       case 'dashboard':
         return <DashboardPage {...commonProps} dbStats={dbStats} />;
-      case 'connectors':
-        return <DataConnectorsPage {...commonProps} />;
       case 'settings':
         return <SettingsPage {...commonProps} />;
-      case 'admin_approvals':
-        return <ApprovalsPage {...commonProps} />;
       case 'eu_chat':
         return <EndUserChatPage {...commonProps} />;
-      case 'playbooks':
-        return <PlaybooksPage {...commonProps} />;
       case 'users':
         return <UserManagementPage {...commonProps} />;
       // ── Entity pages ──────────────────────────────────────────
@@ -237,10 +223,13 @@ function AppShell() {
         return <OutcomeRiskPage setPage={handleSetPage} />;
       // ── Specialist pages ──────────────────────────────────────
       case 'specialist_technical':
+        return <SpecialistsPage domain="technical" setPage={handleSetPage} />;
       case 'specialist_legal':
+        return <SpecialistsPage domain="legal" setPage={handleSetPage} />;
       case 'specialist_finance_deep':
+        return <SpecialistsPage domain="finance_deep" setPage={handleSetPage} />;
       case 'specialist_people':
-        return <PlaceholderPage title="Specialist Function" description="Deep-domain expertise called on demand by primary Customer DEs." />;
+        return <SpecialistsPage domain="people" setPage={handleSetPage} />;
       // ── Workforce ─────────────────────────────────────────────
       case 'workforce_des':
         return <WorkforceDEsPage setPage={handleSetPage} />;
@@ -255,19 +244,21 @@ function AppShell() {
         return <KnowledgeQualityPage />;
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
-        return <PlaceholderPage title="Connectors" description="All system integrations, bound to specific DEs with data access configuration." />;
+        return <ConnectorsPage setPage={handleSetPage} />;
       case 'systems_playbooks':
-        return <PlaceholderPage title="Playbooks" description="Workflow library: Process, Response, Escalation, Cross-function, Crisis, and Scheduled playbooks." />;
+        return <PlaybooksPage setPage={handleSetPage} />;
       // ── Operations ────────────────────────────────────────────
       case 'ops_human_tasks':
-        return <PlaceholderPage title="Human Tasks" description="Approval gates, review gates, escalations, overrides, and training feedback awaiting human action." />;
+        return <HumanTasksPage setPage={handleSetPage} />;
       case 'ops_activity':
-        return <PlaceholderPage title="Activity Log" description="Every DE action logged — filterable by entity, DE, action type, and outcome." />;
+        return <ActivityPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────
       case 'intelligence_performance':
-        return <PlaceholderPage title="Performance Analytics" description="DE resolution rates, accuracy, CSAT, escalation rates, and cost efficiency." />;
+        return <PerformancePage setPage={handleSetPage} />;
+      case 'intelligence_learning':
+        return <SelfLearningPage setPage={handleSetPage} />;
       case 'intelligence_insights':
-        return <PlaceholderPage title="Business Insights" description="Anomaly detection, trend analysis, gap reports, and retraining recommendations." />;
+        return <InsightsPage setPage={handleSetPage} />;
       // ── Governance ────────────────────────────────────────────
       case 'gov_compliance':
         return <CompliancePage setPage={handleSetPage} />;
@@ -276,7 +267,7 @@ function AppShell() {
       case 'gov_security':
         return <SecurityAccessPage />;
       case 'company_setup':
-        return <PlaceholderPage title="Company Setup" description="Configure your industry, activate functions, and set up your first Digital Employees." />;
+        return <CompanySetupPage setPage={handleSetPage} />;
       default:
         return <DashboardPage {...commonProps} />;
     }

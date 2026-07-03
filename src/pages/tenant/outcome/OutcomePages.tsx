@@ -620,7 +620,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
 
   const kpis = [
     { label: 'Compliance alerts', value: '2', sub: 'open — detailed below', color: 'text-red-300' },
-    { label: 'Guardrail violations', value: '0', sub: 'this month, all DEs', color: 'text-emerald-300' },
+    { label: 'Guardrail violations', value: isTcp ? '1' : '0', sub: isTcp ? 'blocked this month, all DEs' : 'this month, all DEs', color: isTcp ? 'text-amber-300' : 'text-emerald-300' },
     { label: 'Approval gates', value: '100%', sub: 'high-risk actions gated', color: 'text-emerald-300' },
     { label: 'Audit coverage', value: isTcp ? '100%' : '100%', sub: 'DE actions logged immutably', color: 'text-white' },
   ];
@@ -659,13 +659,28 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mt-2">
             <h3 className="text-sm font-semibold text-white mb-1">Guardrail violation log</h3>
             <p className="text-xs text-slate-500 mb-4">Every blocked or overridden DE action appears here</p>
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 flex items-center gap-3">
-              <span className="text-emerald-400 text-lg">✓</span>
-              <div>
-                <p className="text-sm text-emerald-300 font-medium">0 violations this month</p>
-                <p className="text-xs text-slate-400 mt-0.5">All DE actions stayed within configured guardrails and approval gates.</p>
+            {isTcp ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 flex items-start gap-3">
+                <span className="text-amber-400 text-lg">⚑</span>
+                <div>
+                  <p className="text-sm text-amber-300 font-medium">1 block this month</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    BLOCKED: Alex attempted SLA commitment outside standard tier — guardrail DE-R2 (2026-07-03 09:45). The guardrail worked as designed; no customer impact.
+                  </p>
+                  <button onClick={() => setPage('gov_audit')} className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                    View in Audit Trail →
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 flex items-center gap-3">
+                <span className="text-emerald-400 text-lg">✓</span>
+                <div>
+                  <p className="text-sm text-emerald-300 font-medium">0 violations this month</p>
+                  <p className="text-xs text-slate-400 mt-0.5">All DE actions stayed within configured guardrails and approval gates.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

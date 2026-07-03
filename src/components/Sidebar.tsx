@@ -162,6 +162,7 @@ function buildNav(companyId: CompanyId): NavSection[] {
       title: 'INTELLIGENCE',
       groups: [
         { id: 'performance', label: 'Performance', icon: '◈', page: 'intelligence_performance' },
+        { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
         { id: 'insights', label: 'Insights', icon: '◉', page: 'intelligence_insights' },
       ],
     },

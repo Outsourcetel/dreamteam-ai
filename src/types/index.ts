@@ -65,6 +65,7 @@ export type TenantPage =
 
   // ── Intelligence ──────────────────────────────────
   | 'intelligence_performance'  // DE analytics
+  | 'intelligence_learning'     // Org-level self-learning configuration
   | 'intelligence_insights'     // Business insights & anomalies
 
   // ── Governance ────────────────────────────────────
@@ -75,12 +76,9 @@ export type TenantPage =
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
 
-  // ── Legacy pages (kept pending migration) ─────────
-  | 'admin_approvals'
-  | 'connectors'
+  // ── Admin ─────────────────────────────────────────
   | 'settings'
-  | 'users'
-  | 'playbooks';
+  | 'users';
 
 export type EndUserPage = 'eu_chat';
 

@@ -176,7 +176,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
         </p>
         {setPage && (
           <button
-            onClick={() => setPage('playbooks')}
+            onClick={() => setPage('systems_playbooks')}
             className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
           >
             View Playbook →
