@@ -29,37 +29,3 @@ export const writeAuditLog = async (entry: AuditLogEntry): Promise<void> => {
     console.warn('[audit]', error.message);
   }
 };
-
-export interface DBauditLog {
-  id: string;
-  tenant_id: string | null;
-  actor_user_id: string | null;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  entity_name: string | null;
-  before_data: Record<string, unknown> | null;
-  after_data: Record<string, unknown> | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
-export const fetchAuditLogs = async (
-  tenantId: string,
-  opts?: { entity_type?: string; limit?: number }
-): Promise<DBauditLog[]> => {
-  let query = supabase
-    .from('audit_logs')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
-    .limit(opts?.limit ?? 200);
-
-  if (opts?.entity_type) {
-    query = query.eq('entity_type', opts.entity_type);
-  }
-
-  const { data, error } = await query;
-  if (error) { console.error('fetchAuditLogs:', error.message); return []; }
-  return (data as DBauditLog[]) ?? [];
-};

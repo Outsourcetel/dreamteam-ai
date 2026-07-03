@@ -84,23 +84,6 @@ export interface DBMessage {
   created_at: string;
 }
 
-export interface DBAgentAction {
-  id: string;
-  tenant_id: string;
-  conversation_id?: string;
-  agent_name: string;
-  action_type: string;
-  description?: string;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
-  confidence_score?: number;
-  requires_approval: boolean;
-  approved_by?: string;
-  approved_at?: string;
-  payload?: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  created_at: string;
-}
-
 // =====================================================
 // TENANT QUERIES
 // =====================================================
@@ -178,29 +161,6 @@ export const addMessage = async (
     .single();
   if (error) { console.error('addMessage:', error.message); return null; }
   return data;
-};
-
-// =====================================================
-// AGENT ACTIONS QUERIES
-// =====================================================
-export const fetchAgentActions = async (tenantId: string, limit = 50): Promise<DBAgentAction[]> => {
-  const { data, error } = await supabase
-    .from('agent_actions')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) { console.error('fetchAgentActions:', error.message); return []; }
-  return data ?? [];
-};
-
-export const approveAgentAction = async (id: string, approvedBy: string): Promise<boolean> => {
-  const { error } = await supabase
-    .from('agent_actions')
-    .update({ status: 'approved', approved_by: approvedBy, approved_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) { console.error('approveAgentAction:', error.message); return false; }
-  return true;
 };
 
 // =====================================================
@@ -290,10 +250,6 @@ export const fetchDashboardStats = async (tenantId: string) => {
     },
   };
 };
-
-// Alias
-export const createMessage = addMessage;
-
 
 // =====================================================
 // AGENT BRAIN (Option A: zero-cost, rule-based + KB retrieval)
@@ -452,27 +408,6 @@ export const draftAgentAction = async (
   };
 };
 
-// Run the full loop: persist conversation + user message + agent action.
-// Execute an approved action: mark executed and store result payload.
-// Reject a pending action with an audit reason.
-export const rejectAgentAction = async (
-  id: string,
-  rejectedBy: string,
-  reason?: string
-): Promise<boolean> => {
-  const { error } = await supabase
-    .from('agent_actions')
-    .update({
-      status: 'rejected',
-      approved_by: rejectedBy,
-      approved_at: new Date().toISOString(),
-      result: { rejected_at: new Date().toISOString(), reason: reason || 'declined by reviewer' },
-    })
-    .eq('id', id);
-  if (error) { console.error('rejectAgentAction:', error.message); return false; }
-  return true;
-};
-
 /* ===================== CUSTOMER PORTAL: ANSWER + AUDIT + ESCALATION ===================== */
 export interface PortalSource { id: string; title: string; }
 export interface PortalTurnResult {
@@ -565,190 +500,6 @@ export const runPortalTurn = async (
 // flip the escalation to resolved and re-open/resolve the linked conversation.
 
 // ============================================================
-// DIGITAL EMPLOYEES
-// ============================================================
-
-export interface DBDigitalEmployee {
-  id: string;
-  tenant_id: string;
-  catalog_id: string | null;
-  name: string;
-  persona_name: string | null;
-  description: string;
-  icon: string;
-  category: 'Customer' | 'Internal';
-  department: string;
-  workspace: string;
-  status: 'active' | 'idle' | 'disabled';
-  lifecycle_status: string;
-  trust_level: 'supervised' | 'established' | 'trusted' | 'autonomous';
-  capabilities: string[];
-  responsibilities: string[];
-  channels: string[];
-  knowledge_sources: string[];
-  tags: string[];
-  confidence_threshold: number;
-  required_approval: boolean;
-  skills: { name: string; proficiency: number; evidence?: string }[];
-  model_config: Record<string, unknown>;
-  tasks_this_month: number;
-  success_rate: number;
-  fte_equivalent: number | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export const fetchDigitalEmployees = async (tenantId: string): Promise<DBDigitalEmployee[]> => {
-  const { data, error } = await supabase
-    .from('digital_employees')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .not('lifecycle_status', 'in', '(retired,archived)')
-    .order('created_at', { ascending: true });
-  if (error) { console.error('fetchDigitalEmployees:', error.message); return []; }
-  return (data as DBDigitalEmployee[]) ?? [];
-};
-
-
-// ============================================================
-// PLAYBOOKS
-// ============================================================
-
-export interface DBPlaybook {
-  id: string;
-  tenant_id: string;
-  digital_employee_id: string | null;
-  parent_playbook_id: string | null;
-  name: string;
-  slug: string;
-  version: number;
-  domain: string;
-  business_objective: string;
-  owner_role: string | null;
-  risk_level: 'low' | 'medium' | 'high' | 'critical';
-  lifecycle_status: string;
-  is_base_playbook: boolean;
-  trigger_type: string;
-  capabilities_used: string[];
-  knowledge_collections: string[];
-  connector_requirements: string[];
-  human_approval_required: boolean;
-  approval_points: unknown[];
-  decision_rules: unknown[];
-  escalation_rules: unknown[];
-  exception_handlers: unknown[];
-  expected_outputs: unknown[];
-  kpis: { name: string; target: number; unit: string; current_value?: number }[];
-  estimated_duration_ms: number | null;
-  estimated_cost_usd: number | null;
-  tasks_this_month: number;
-  success_rate: number;
-  de_handled_rate: number;
-  certified_by: string | null;
-  certified_at: string | null;
-  next_review_due: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export const fetchPlaybooks = async (tenantId: string, filters?: {
-  domain?: string;
-  lifecycle_status?: string;
-  digital_employee_id?: string;
-}): Promise<DBPlaybook[]> => {
-  let q = supabase
-    .from('playbooks')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .not('lifecycle_status', 'in', '(retired)')
-    .order('created_at', { ascending: false });
-  if (filters?.domain) q = q.eq('domain', filters.domain);
-  if (filters?.lifecycle_status) q = q.eq('lifecycle_status', filters.lifecycle_status);
-  if (filters?.digital_employee_id) q = q.eq('digital_employee_id', filters.digital_employee_id);
-  const { data, error } = await q;
-  if (error) { console.error('fetchPlaybooks:', error.message); return []; }
-  return (data as DBPlaybook[]) ?? [];
-};
-
-export const createPlaybook = async (
-  tenantId: string,
-  pb: Omit<DBPlaybook, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
-): Promise<DBPlaybook | null> => {
-  const { data, error } = await supabase
-    .from('playbooks')
-    .insert({ ...pb, tenant_id: tenantId })
-    .select()
-    .single();
-  if (error) { console.error('createPlaybook:', error.message); return null; }
-  return data as DBPlaybook;
-};
-
-export const updatePlaybook = async (
-  id: string,
-  tenantId: string,
-  updates: Partial<Omit<DBPlaybook, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>>
-): Promise<boolean> => {
-  const { error } = await supabase
-    .from('playbooks')
-    .update(updates)
-    .eq('id', id)
-    .eq('tenant_id', tenantId);
-  if (error) { console.error('updatePlaybook:', error.message); return false; }
-  return true;
-};
-
-export const advancePlaybookLifecycle = async (
-  id: string,
-  tenantId: string,
-  newStatus: DBPlaybook['lifecycle_status'],
-  certifiedBy?: string
-): Promise<boolean> => {
-  const updates: Partial<DBPlaybook> = { lifecycle_status: newStatus };
-  if (newStatus === 'certified' && certifiedBy) {
-    updates.certified_by = certifiedBy;
-    updates.certified_at = new Date().toISOString();
-  }
-  return updatePlaybook(id, tenantId, updates);
-};
-
-export const fetchPlaybookSummary = async (tenantId: string) => {
-  const { data, error } = await supabase
-    .from('playbooks')
-    .select('lifecycle_status, domain, risk_level, de_handled_rate, tasks_this_month')
-    .eq('tenant_id', tenantId);
-  if (error || !data) return { total: 0, active: 0, domains: 0, avgHandledRate: 0, totalTasks: 0 };
-  const domains = new Set(data.map(p => p.domain).filter(Boolean));
-  return {
-    total: data.length,
-    active: data.filter(p => p.lifecycle_status === 'active').length,
-    domains: domains.size,
-    avgHandledRate: data.length ? Math.round(data.reduce((s, p) => s + Number(p.de_handled_rate ?? 0), 0) / data.length) : 0,
-    totalTasks: data.reduce((s, p) => s + (p.tasks_this_month ?? 0), 0),
-  };
-};
-
-// Assign a Playbook to a Digital Employee
-export const assignPlaybookToDE = async (
-  tenantId: string,
-  digitalEmployeeId: string,
-  playbookId: string,
-  isPrimary = false
-): Promise<boolean> => {
-  const { error } = await supabase
-    .from('de_playbook_assignments')
-    .upsert({
-      tenant_id: tenantId,
-      digital_employee_id: digitalEmployeeId,
-      playbook_id: playbookId,
-      is_primary: isPrimary,
-    }, { onConflict: 'digital_employee_id,playbook_id' });
-  if (error) { console.error('assignPlaybookToDE:', error.message); return false; }
-  return true;
-};
-
-// ============================================================
 // CONVERSATION MANAGEMENT (admin take-over + resolve)
 // ============================================================
 
@@ -779,65 +530,5 @@ export const submitCSAT = async (
     .eq('tenant_id', tenantId);
   if (error) console.error('submitCSAT:', error.message);
   return !error;
-};
-
-// ============================================================
-// ALERT EMAIL CONFIG
-// ============================================================
-
-// ============================================================
-// DE OUTBOUND EMAIL
-// ============================================================
-
-// ============================================================
-// CONNECTOR STORAGE (localStorage, frontend-only)
-// ============================================================
-
-const CONNECTOR_STORE_KEY = (tenantId: string) => `dt_connectors_${tenantId}`;
-
-export interface ConnectorConfig {
-  id: string;
-  tenantId: string;
-  name: string;
-  type: string;
-  status: 'connected' | 'testing' | 'error' | 'disconnected';
-  config: Record<string, string>;
-  lastSync: string | null;
-  recordCount: number;
-  errorMessage?: string;
-  createdAt: string;
-}
-
-export const loadConnectors = (tenantId: string): ConnectorConfig[] => {
-  try { return JSON.parse(localStorage.getItem(CONNECTOR_STORE_KEY(tenantId)) || '[]'); } catch { return []; }
-};
-
-export const saveConnectors = (tenantId: string, connectors: ConnectorConfig[]): void => {
-  try { localStorage.setItem(CONNECTOR_STORE_KEY(tenantId), JSON.stringify(connectors)); } catch {}
-};
-
-// TODO(oauth): implement real OAuth callback handler
-// When a provider redirects back with ?code=AUTH_CODE&state=CONNECTOR_ID:
-//   1. POST /api/oauth/callback with { code, connectorId, tenantId }
-//   2. Server exchanges code for access_token + refresh_token via provider token endpoint
-//   3. Tokens stored encrypted in Supabase connector_credentials table (never in localStorage)
-//   4. Return { ok: true, account: providerAccountLabel, scope: grantedScopes }
-//   5. Set connector status='connected', config.oauth_connected='true' in DB
-// Supported providers: salesforce, hubspot, zendesk, quickbooks, xero, chargebee
-// export const handleOAuthCallback = async (code: string, connectorId: string, tenantId: string) => { ... };
-
-export const testConnector = async (connector: ConnectorConfig): Promise<{ ok: boolean; error?: string; recordCount?: number }> => {
-  if (connector.type === 'rest_api' && connector.config.base_url) {
-    try {
-      const headers: Record<string, string> = {};
-      if (connector.config.auth_type === 'Bearer') headers['Authorization'] = `Bearer ${connector.config.auth_value}`;
-      else if (connector.config.auth_type === 'API Key') headers['X-API-Key'] = connector.config.auth_value;
-      const res = await fetch(connector.config.base_url, { headers, signal: AbortSignal.timeout(5000) });
-      return { ok: res.ok, recordCount: 0 };
-    } catch (e) { return { ok: false, error: String(e) }; }
-  }
-  // For all others: simulate success after 1.5s
-  await new Promise(r => setTimeout(r, 1500));
-  return { ok: true, recordCount: Math.floor(Math.random() * 50000) + 1000 };
 };
 
