@@ -42,7 +42,6 @@ const PAGE_TO_URL: Record<string, string> = {
   users:                  '/users',
   playbooks:              '/playbooks',
   security:               '/security',
-  integrations:           '/integrations',
   connectors:             '/connectors',
   settings:               '/settings',
   admin_overview:         '/security/overview',

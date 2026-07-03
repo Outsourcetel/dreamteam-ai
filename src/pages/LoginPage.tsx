@@ -104,14 +104,16 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
 
       // 3. Create the user profile
       if (tenantId) {
-        await supabase.from('profiles').insert({
-          user_id: userId,
-          tenant_id: tenantId,
-          full_name: suFullName.trim(),
-          role: 'tenant_owner',
-          layer: 'tenant',
-          is_active: true,
-        }).throwOnError().catch(() => {});
+        try {
+          await supabase.from('profiles').insert({
+            user_id: userId,
+            tenant_id: tenantId,
+            full_name: suFullName.trim(),
+            role: 'tenant_owner',
+            layer: 'tenant',
+            is_active: true,
+          }).throwOnError();
+        } catch { /* profile creation is best-effort at signup */ }
       }
 
       setSuSuccess(true);

@@ -13,6 +13,7 @@ export interface DBTenant {
   accent_color?: string;
   logo_url?: string;
   settings?: Record<string, unknown>;
+  monthly_token_budget?: number;
   created_at: string;
   updated_at: string;
 }
@@ -149,92 +150,12 @@ export const fetchMyProfile = async (): Promise<DBProfile | null> => {
   return data;
 };
 
-export const fetchTenantProfiles = async (tenantId: string): Promise<DBProfile[]> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false });
-  if (error) { console.error('fetchTenantProfiles:', error.message); return []; }
-  return data ?? [];
-};
-
 // =====================================================
 // KNOWLEDGE ARTICLE QUERIES
 // =====================================================
-export const fetchKnowledgeArticles = async (tenantId?: string): Promise<DBKnowledgeArticle[]> => {
-  let query = supabase
-    .from('knowledge_articles')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (tenantId) query = query.eq('tenant_id', tenantId);
-  const { data, error } = await query;
-  if (error) { console.error('fetchKnowledgeArticles:', error.message); return []; }
-  return data ?? [];
-};
-
-export const fetchKBStats = async (tenantId: string) => {
-  const { data, error } = await supabase
-    .from('knowledge_articles')
-    .select('status, audience, quality_score, freshness_score')
-    .eq('tenant_id', tenantId);
-  if (error || !data) return { total: 0, published: 0, draft: 0, avgQuality: 0, avgFreshness: 0 };
-  return {
-    total: data.length,
-    published: data.filter(a => a.status === 'published').length,
-    draft: data.filter(a => a.status === 'draft').length,
-    avgQuality: Math.round(data.reduce((s, a) => s + (a.quality_score ?? 0), 0) / (data.length || 1)),
-    avgFreshness: Math.round(data.reduce((s, a) => s + (a.freshness_score ?? 0), 0) / (data.length || 1)),
-  };
-};
-
-export const upsertKnowledgeArticle = async (
-  article: Partial<DBKnowledgeArticle> & { tenant_id: string; title: string; body: string }
-): Promise<DBKnowledgeArticle | null> => {
-  const { data, error } = await supabase
-    .from('knowledge_articles')
-    .upsert(article)
-    .select()
-    .single();
-  if (error) { console.error('upsertKnowledgeArticle:', error.message); return null; }
-  return data;
-};
-
-export const updateArticleStatus = async (id: string, status: DBKnowledgeArticle['status']): Promise<boolean> => {
-  const { error } = await supabase
-    .from('knowledge_articles')
-    .update({ status })
-    .eq('id', id);
-  if (error) { console.error('updateArticleStatus:', error.message); return false; }
-  return true;
-};
-
 // =====================================================
 // CONVERSATION QUERIES
 // =====================================================
-export const fetchConversations = async (tenantId?: string, status?: string): Promise<DBConversation[]> => {
-  let query = supabase
-    .from('conversations')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (tenantId) query = query.eq('tenant_id', tenantId);
-  if (status) query = query.eq('status', status);
-  const { data, error } = await query;
-  if (error) { console.error('fetchConversations:', error.message); return []; }
-  return data ?? [];
-};
-
-export const fetchConversationMessages = async (conversationId: string): Promise<DBMessage[]> => {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true });
-  if (error) { console.error('fetchConversationMessages:', error.message); return []; }
-  return data ?? [];
-};
-
 export const createConversation = async (
   conv: Partial<DBConversation> & { tenant_id: string; channel: DBConversation['channel'] }
 ): Promise<DBConversation | null> => {
@@ -315,17 +236,6 @@ export interface TenantUsage {
   year_month: string;
   tokens_used: number;
 }
-
-export const fetchTenantUsage = async (tenantId: string): Promise<TenantUsage[]> => {
-  const { data, error } = await supabase
-    .from('tenant_ai_usage')
-    .select('tenant_id, year_month, tokens_used')
-    .eq('tenant_id', tenantId)
-    .order('year_month', { ascending: false })
-    .limit(12);
-  if (error) { console.error('fetchTenantUsage:', error.message); return []; }
-  return data ?? [];
-};
 
 export const fetchAllTenantsUsage = async (): Promise<TenantUsage[]> => {
   const yearMonth = new Date().toISOString().slice(0, 7);
@@ -543,85 +453,7 @@ export const draftAgentAction = async (
 };
 
 // Run the full loop: persist conversation + user message + agent action.
-export const runAgentLoop = async (
-  tenantId: string,
-  query: string,
-  opts: { customerName?: string; audience?: 'customer' | 'internal' } = {}
-): Promise<{ action: DBAgentAction | null; draft: AgentDraft; conversationId: string | null }> => {
-  const audience = opts.audience || 'customer';
-  const draft = await draftAgentAction(tenantId, query, audience);
-
-  const conv = await createConversation({
-    tenant_id: tenantId,
-    channel: 'chat',
-    status: draft.requiresApproval ? 'pending' : 'open',
-    subject: query.slice(0, 120),
-    customer_name: opts.customerName || 'Web Visitor',
-    confidence_score: draft.confidence,
-  });
-  const conversationId = conv?.id || null;
-
-  if (conversationId) {
-    await addMessage({
-      conversation_id: conversationId,
-      tenant_id: tenantId,
-      role: 'user',
-      content: query,
-      requires_approval: false,
-    });
-    await addMessage({
-      conversation_id: conversationId,
-      tenant_id: tenantId,
-      role: 'agent',
-      content: draft.answer,
-      confidence_score: draft.confidence,
-      requires_approval: draft.requiresApproval,
-      sources: draft.sources,
-    });
-  }
-
-  const { data, error } = await supabase
-    .from('agent_actions')
-    .insert({
-      tenant_id: tenantId,
-      conversation_id: conversationId,
-      agent_name: draft.agentName,
-      action_type: draft.actionType,
-      description: draft.description,
-      status: draft.requiresApproval ? 'pending' : 'approved',
-      confidence_score: draft.confidence,
-      requires_approval: draft.requiresApproval,
-      payload: { query, answer: draft.answer, sources: draft.sources, audience },
-    })
-    .select()
-    .single();
-  if (error) {
-    console.error('runAgentLoop:', error.message);
-    return { action: null, draft, conversationId };
-  }
-  return { action: data as DBAgentAction, draft, conversationId };
-};
-
 // Execute an approved action: mark executed and store result payload.
-export const executeAgentAction = async (
-  id: string,
-  approvedBy: string
-): Promise<DBAgentAction | null> => {
-  const { data, error } = await supabase
-    .from('agent_actions')
-    .update({
-      status: 'executed',
-      approved_by: approvedBy,
-      approved_at: new Date().toISOString(),
-      result: { executed_at: new Date().toISOString(), delivered: true },
-    })
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) { console.error('executeAgentAction:', error.message); return null; }
-  return data as DBAgentAction;
-};
-
 // Reject a pending action with an audit reason.
 export const rejectAgentAction = async (
   id: string,
@@ -727,82 +559,10 @@ export const runPortalTurn = async (
 };
 
 /* Manual escalation triggered by the customer or agent (always-available path). */
-export const escalateConversation = async (
-  tenantId: string,
-  conversationId: string,
-  question: string,
-  opts?: { customerName?: string; confidence?: number; reason?: string },
-): Promise<{ ok: boolean; escalationId?: string; error?: string }> => {
-  const { data, error } = await supabase.from('escalations').insert({
-    tenant_id: tenantId, conversation_id: conversationId,
-    reason: opts?.reason ?? 'customer_request', question, status: 'open',
-  }).select().single();
-  if (error) { console.error('escalateConversation:', error.message); return { ok: false, error: error.message }; }
-  await supabase.from('conversations').update({ status: 'pending' }).eq('id', conversationId).eq('tenant_id', tenantId);
-  // Fire alert email non-blocking
-  triggerEscalationAlert(tenantId, conversationId, question, opts?.customerName, opts?.confidence, opts?.reason).catch(() => {});
-  return { ok: true, escalationId: (data as any).id };
-};
-
-export interface PortalEscalation { id: string; reason: string; question: string | null; confidence: number | null; status: string; created_at: string; conversation_id: string | null; }
-export const fetchEscalations = async (tenantId: string, status?: string): Promise<PortalEscalation[]> => {
-  let q = supabase.from('escalations').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-  if (status) q = q.eq('status', status);
-  const { data, error } = await q;
-  if (error) { console.error('fetchEscalations:', error.message); return []; }
-  return (data as PortalEscalation[]) || [];
-};
-
 
 // ----- human escalation inbox: claim + resolve (staff-facing, RLS-gated) -----
-export const claimEscalation = async (
-  escalationId: string,
-  assignedTo: string,
-): Promise<{ ok: boolean; error?: string }> => {
-  const { error } = await supabase
-    .from('escalations')
-    .update({ status: 'assigned', assigned_to: assignedTo })
-    .eq('id', escalationId)
-    .eq('status', 'open');
-  if (error) { console.error('claimEscalation', error.message); return { ok: false, error: error.message }; }
-  return { ok: true };
-};
-
 // Resolve an escalation: post the human reply into the conversation as an agent message,
 // flip the escalation to resolved and re-open/resolve the linked conversation.
-export const resolveEscalation = async (args: {
-  escalationId: string;
-  tenantId: string;
-  conversationId: string | null;
-  reply: string;
-  resolvedBy: string;
-}): Promise<{ ok: boolean; error?: string }> => {
-  const reply = (args.reply || '').trim();
-  if (!reply) return { ok: false, error: 'Reply is empty' };
-  // 1) post the human answer into the conversation thread
-  if (args.conversationId) {
-    const msg = await addMessage({
-      conversation_id: args.conversationId,
-      tenant_id: args.tenantId,
-      role: 'agent',
-      content: reply,
-      requires_approval: false,
-    } as Omit<DBMessage, 'id' | 'created_at'>);
-    if (!msg) return { ok: false, error: 'Could not post reply' };
-  }
-  // 2) mark escalation resolved
-  const { error: e1 } = await supabase
-    .from('escalations')
-    .update({ status: 'resolved', assigned_to: args.resolvedBy, resolved_at: new Date().toISOString() })
-    .eq('id', args.escalationId);
-  if (e1) { console.error('resolveEscalation', e1.message); return { ok: false, error: e1.message }; }
-  // 3) resolve the linked conversation
-  if (args.conversationId) {
-    await supabase.from('conversations').update({ status: 'resolved', resolution_type: 'human' }).eq('id', args.conversationId);
-  }
-  return { ok: true };
-};
-
 
 // ============================================================
 // DIGITAL EMPLOYEES
@@ -850,72 +610,6 @@ export const fetchDigitalEmployees = async (tenantId: string): Promise<DBDigital
   return (data as DBDigitalEmployee[]) ?? [];
 };
 
-export const fetchDigitalEmployeeById = async (id: string, tenantId: string): Promise<DBDigitalEmployee | null> => {
-  const { data, error } = await supabase
-    .from('digital_employees')
-    .select('*')
-    .eq('id', id)
-    .eq('tenant_id', tenantId)
-    .single();
-  if (error) { console.error('fetchDigitalEmployeeById:', error.message); return null; }
-  return data as DBDigitalEmployee;
-};
-
-export const createDigitalEmployee = async (
-  tenantId: string,
-  de: Omit<DBDigitalEmployee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
-): Promise<DBDigitalEmployee | null> => {
-  const { data, error } = await supabase
-    .from('digital_employees')
-    .insert({ ...de, tenant_id: tenantId })
-    .select()
-    .single();
-  if (error) { console.error('createDigitalEmployee:', error.message); return null; }
-  return data as DBDigitalEmployee;
-};
-
-export const updateDigitalEmployee = async (
-  id: string,
-  tenantId: string,
-  updates: Partial<Omit<DBDigitalEmployee, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>>
-): Promise<boolean> => {
-  const { error } = await supabase
-    .from('digital_employees')
-    .update(updates)
-    .eq('id', id)
-    .eq('tenant_id', tenantId);
-  if (error) { console.error('updateDigitalEmployee:', error.message); return false; }
-  return true;
-};
-
-export const retireDigitalEmployee = async (id: string, tenantId: string): Promise<boolean> => {
-  const { error } = await supabase
-    .from('digital_employees')
-    .update({ lifecycle_status: 'retired', status: 'disabled' })
-    .eq('id', id)
-    .eq('tenant_id', tenantId);
-  if (error) { console.error('retireDigitalEmployee:', error.message); return false; }
-  return true;
-};
-
-export const fetchDEPerformanceSummary = async (tenantId: string) => {
-  const { data, error } = await supabase
-    .from('digital_employees')
-    .select('status, category, trust_level, tasks_this_month, success_rate, fte_equivalent')
-    .eq('tenant_id', tenantId)
-    .not('lifecycle_status', 'in', '(retired,archived)');
-  if (error || !data) return { total: 0, active: 0, customer: 0, internal: 0, totalTasks: 0, avgSuccessRate: 0, totalFte: 0 };
-  return {
-    total: data.length,
-    active: data.filter(d => d.status === 'active').length,
-    customer: data.filter(d => d.category === 'Customer').length,
-    internal: data.filter(d => d.category === 'Internal').length,
-    totalTasks: data.reduce((s, d) => s + (d.tasks_this_month ?? 0), 0),
-    avgSuccessRate: data.length ? Math.round(data.reduce((s, d) => s + Number(d.success_rate ?? 0), 0) / data.length) : 0,
-    totalFte: data.reduce((s, d) => s + Number(d.fte_equivalent ?? 0), 0),
-  };
-};
-
 
 // ============================================================
 // PLAYBOOKS
@@ -938,7 +632,7 @@ export interface DBPlaybook {
   trigger_type: string;
   capabilities_used: string[];
   knowledge_collections: string[];
-  connector_requirements: unknown[];
+  connector_requirements: string[];
   human_approval_required: boolean;
   approval_points: unknown[];
   decision_rules: unknown[];
@@ -976,17 +670,6 @@ export const fetchPlaybooks = async (tenantId: string, filters?: {
   const { data, error } = await q;
   if (error) { console.error('fetchPlaybooks:', error.message); return []; }
   return (data as DBPlaybook[]) ?? [];
-};
-
-export const fetchPlaybookById = async (id: string, tenantId: string): Promise<DBPlaybook | null> => {
-  const { data, error } = await supabase
-    .from('playbooks')
-    .select('*')
-    .eq('id', id)
-    .eq('tenant_id', tenantId)
-    .single();
-  if (error) { console.error('fetchPlaybookById:', error.message); return null; }
-  return data as DBPlaybook;
 };
 
 export const createPlaybook = async (
@@ -1065,49 +748,9 @@ export const assignPlaybookToDE = async (
   return true;
 };
 
-export const fetchDEPlaybooks = async (tenantId: string, digitalEmployeeId: string): Promise<DBPlaybook[]> => {
-  const { data, error } = await supabase
-    .from('de_playbook_assignments')
-    .select('playbook_id, playbooks(*)')
-    .eq('tenant_id', tenantId)
-    .eq('digital_employee_id', digitalEmployeeId);
-  if (error) { console.error('fetchDEPlaybooks:', error.message); return []; }
-  return (data ?? []).map((row: any) => row.playbooks as DBPlaybook).filter(Boolean);
-};
-
 // ============================================================
 // CONVERSATION MANAGEMENT (admin take-over + resolve)
 // ============================================================
-
-export const resolveConversation = async (
-  tenantId: string,
-  conversationId: string,
-  humanReply: string,
-  resolvedBy?: string | null,
-): Promise<boolean> => {
-  const now = new Date().toISOString();
-  // Post the human reply message
-  const { error: msgErr } = await supabase.from('conversation_messages').insert({
-    conversation_id: conversationId,
-    tenant_id: tenantId,
-    role: 'agent',
-    content: humanReply,
-    requires_approval: false,
-    created_at: now,
-  });
-  if (msgErr) console.error('resolveConversation/insert:', msgErr.message);
-
-  // Mark conversation resolved
-  const { error: convErr } = await supabase.from('conversations').update({
-    status: 'resolved',
-    resolved_at: now,
-    assigned_to: resolvedBy ?? null,
-    resolution_type: 'human',
-  }).eq('id', conversationId).eq('tenant_id', tenantId);
-  if (convErr) console.error('resolveConversation/update:', convErr.message);
-
-  return !msgErr && !convErr;
-};
 
 export const updateTenantProfile = async (
   tenantId: string,
@@ -1118,25 +761,6 @@ export const updateTenantProfile = async (
     .eq('id', tenantId);
   if (error) console.error('updateTenantProfile:', error.message);
   return !error;
-};
-
-export const fetchConversationStats = async (tenantId: string) => {
-  const { data, error } = await supabase
-    .from('conversations')
-    .select('status, confidence_score, resolution_type, created_at')
-    .eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false })
-    .limit(500);
-  if (error || !data) return { total: 0, resolved: 0, escalated: 0, selfServed: 0, avgConfidence: 0 };
-  const total = data.length;
-  const resolved = data.filter(d => d.status === 'resolved').length;
-  const escalated = data.filter(d => d.status === 'escalated').length;
-  const selfServed = data.filter(d => d.resolution_type === 'ai' || (!d.resolution_type && d.status === 'resolved')).length;
-  const withConf = data.filter(d => d.confidence_score != null);
-  const avgConfidence = withConf.length
-    ? Math.round(withConf.reduce((s, d) => s + Number(d.confidence_score), 0) / withConf.length * 100)
-    : 0;
-  return { total, resolved, escalated, selfServed, avgConfidence };
 };
 
 // ============================================================
@@ -1161,86 +785,9 @@ export const submitCSAT = async (
 // ALERT EMAIL CONFIG
 // ============================================================
 
-export const saveAlertEmail = async (tenantId: string, email: string): Promise<boolean> => {
-  return savePlatformConfig({ [`alert_email_${tenantId}`]: email });
-};
-
-export const fetchAlertEmail = async (tenantId: string): Promise<string> => {
-  const { data } = await supabase
-    .from('platform_config')
-    .select('value')
-    .eq('key', `alert_email_${tenantId}`)
-    .maybeSingle();
-  return (data as any)?.value ?? '';
-};
-
-export const triggerEscalationAlert = async (
-  tenantId: string,
-  conversationId: string,
-  question: string,
-  customerName?: string,
-  confidence?: number,
-  reason?: string,
-): Promise<void> => {
-  try {
-    await supabase.functions.invoke('send-alert', {
-      body: {
-        tenant_id: tenantId,
-        type: 'escalation_alert',
-        payload: {
-          conversation_id: conversationId,
-          question,
-          customer_name: customerName ?? 'Customer',
-          confidence: confidence != null ? String(Math.round(confidence * 100)) : null,
-          reason: reason ?? 'low_confidence',
-          inbox_url: `${window.location.origin}/portal/escalations`,
-        },
-      },
-    });
-  } catch (e) {
-    console.error('triggerEscalationAlert (non-fatal):', e);
-  }
-};
-
 // ============================================================
 // DE OUTBOUND EMAIL
 // ============================================================
-
-export const sendDEEmail = async (params: {
-  tenantId: string;
-  deId?: string;
-  toEmail: string;
-  toName: string;
-  subject: string;
-  body: string;
-  attachmentUrl?: string;
-  templateType?: 'invoice' | 'reminder' | 'renewal' | 'general';
-}): Promise<{ ok: boolean; messageId?: string; error?: string }> => {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/send-alert`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseKey}` },
-      body: JSON.stringify({
-        tenant_id: params.tenantId,
-        type: 'de_outbound',
-        payload: {
-          to_email: params.toEmail,
-          to_name: params.toName,
-          subject: params.subject,
-          body: params.body,
-          de_id: params.deId,
-          template_type: params.templateType || 'general',
-        },
-      }),
-    });
-    const data = await res.json();
-    return { ok: res.ok, messageId: data.id, error: data.error };
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-};
 
 // ============================================================
 // CONNECTOR STORAGE (localStorage, frontend-only)
