@@ -2,6 +2,8 @@ import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { useDataMode } from '../../../lib/dataMode';
+import ImportCustomersModal from '../../../components/ImportCustomersModal';
 
 // ── Seed data (reconciled with src/data/companies.ts) ──────────
 
@@ -86,19 +88,39 @@ const healthDot = (h: AssignedDE['health']) =>
   h === 'green' ? 'bg-emerald-400' : h === 'amber' ? 'bg-amber-400' : 'bg-red-400';
 
 const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
-  const { activeCompanyId, activeCompany } = useAuth();
+  const { activeCompanyId, activeCompany, liveTenantName } = useAuth();
   const stages = JOURNEY_STAGES[activeCompanyId];
   const des = ASSIGNED_DES[activeCompanyId];
   const activity = ACTIVITY[activeCompanyId];
+  const dataMode = useDataMode();
+  const [showImport, setShowImport] = React.useState(false);
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Customer</h1>
-        <p className="text-slate-400 text-sm mt-1">One relationship, end-to-end — no handoffs</p>
-        <p className="text-xs text-slate-600 mt-0.5">{activeCompany.name} · {activeCompany.industry}</p>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Customer</h1>
+          <p className="text-slate-400 text-sm mt-1">One relationship, end-to-end — no handoffs</p>
+          <p className="text-xs text-slate-600 mt-0.5">
+            {dataMode === 'live' ? (liveTenantName || 'Your company') : `${activeCompany.name} · ${activeCompany.industry}`}
+          </p>
+          {dataMode === 'live' && (
+            <p className="text-[11px] text-slate-500 mt-1">Journey stages below show illustrative data — Support, Success, Renewal, and Human Tasks are live.</p>
+          )}
+        </div>
+        {dataMode === 'live' && (
+          <button
+            onClick={() => setShowImport(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+          >
+            + Import
+          </button>
+        )}
       </div>
+      {showImport && (
+        <ImportCustomersModal initialTab="accounts" onClose={() => setShowImport(false)} onImported={() => {}} />
+      )}
 
       {/* Journey bar */}
       <div className="mb-8">

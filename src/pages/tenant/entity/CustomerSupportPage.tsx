@@ -1,6 +1,11 @@
 import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
+import { useDataMode } from '../../../lib/dataMode';
+import { listTickets, updateTicket, CustomerApiError } from '../../../lib/customerApi';
+import type { SupportTicket, TicketStatus } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import ImportCustomersModal from '../../../components/ImportCustomersModal';
 
 // ============================================================
 // Support — Customer entity
@@ -29,7 +34,168 @@ interface SetupState {
   threshold?: number;
 }
 
+// ── LIVE mode: real support tickets from Supabase ──────────────
+const statusStyle = (s: TicketStatus) =>
+  s === 'open' ? 'bg-indigo-500/15 text-indigo-300'
+  : s === 'pending' ? 'bg-amber-500/15 text-amber-300'
+  : s === 'escalated' ? 'bg-rose-500/15 text-rose-300'
+  : 'bg-emerald-500/15 text-emerald-300';
+
+const priorityStyle = (p: string) =>
+  p === 'p1' ? 'text-rose-300' : p === 'p2' ? 'text-amber-300' : 'text-slate-400';
+
+function LiveCustomerSupport() {
+  const { liveTenantName } = useAuth();
+  const [tickets, setTickets] = React.useState<SupportTicket[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [missingTables, setMissingTables] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [showImport, setShowImport] = React.useState(false);
+  const [statusFilter, setStatusFilter] = React.useState<TicketStatus | 'all'>('all');
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTickets(await listTickets());
+      setMissingTables(false);
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load tickets.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { void refresh(); }, [refresh]);
+
+  const resolveTicket = async (t: SupportTicket) => {
+    try {
+      await updateTicket(t.id, { status: 'resolved', resolved_at: new Date().toISOString() });
+      void refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to update ticket.');
+    }
+  };
+
+  const open = tickets.filter(t => t.status === 'open').length;
+  const escalated = tickets.filter(t => t.status === 'escalated').length;
+  const resolved = tickets.filter(t => t.status === 'resolved').length;
+  const visible = statusFilter === 'all' ? tickets : tickets.filter(t => t.status === statusFilter);
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Support — Customer entity</h1>
+          <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live support queue</p>
+        </div>
+        {!missingTables && !loading && tickets.length > 0 && (
+          <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 hover:text-white transition-colors">
+            + Import CSV
+          </button>
+        )}
+      </div>
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={5} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : tickets.length === 0 ? (
+        <LiveEmptyState
+          icon="💬"
+          title="No support tickets yet"
+          body="Import your existing ticket backlog, or tickets will appear here as they're created."
+          primaryLabel="Import CSV"
+          onPrimary={() => setShowImport(true)}
+        />
+      ) : (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'Total tickets', value: tickets.length, color: 'text-white' },
+              { label: 'Open', value: open, color: open > 0 ? 'text-indigo-300' : 'text-emerald-300' },
+              { label: 'Escalated', value: escalated, color: escalated > 0 ? 'text-rose-300' : 'text-emerald-300' },
+              { label: 'Resolved', value: resolved, color: 'text-emerald-300' },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Filter */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {(['all', 'open', 'pending', 'escalated', 'resolved'] as const).map(f => (
+              <button key={f} onClick={() => setStatusFilter(f)}
+                className={`px-3 py-1.5 rounded-full text-xs transition-colors ${statusFilter === f ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}>
+                {f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-left">
+                    {['Subject', 'Priority', 'Status', 'Assignee', 'Confidence', 'Created', ''].map((h, i) => (
+                      <th key={i} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((t, i) => (
+                    <tr key={t.id} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === visible.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-white">{t.subject}</div>
+                        {t.body && <div className="text-xs text-slate-500 truncate max-w-md">{t.body}</div>}
+                      </td>
+                      <td className={`py-3 px-4 text-xs font-bold uppercase ${priorityStyle(t.priority)}`}>{t.priority}</td>
+                      <td className="py-3 px-4">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusStyle(t.status)}`}>{t.status}</span>
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-300">{t.assignee === 'de' ? 'Digital Employee' : 'Human'}</td>
+                      <td className="py-3 px-4 text-xs text-slate-400">{t.de_confidence != null ? `${t.de_confidence}%` : '—'}</td>
+                      <td className="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">{new Date(t.created_at).toLocaleDateString()}</td>
+                      <td className="py-3 px-4">
+                        {t.status !== 'resolved' && (
+                          <button onClick={() => void resolveTicket(t)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-300 transition-colors">
+                            Resolve
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {visible.length === 0 && (
+                    <tr><td colSpan={7} className="py-6 px-4 text-center text-xs text-slate-500">No tickets match this filter.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showImport && (
+        <ImportCustomersModal initialTab="tickets" onClose={() => setShowImport(false)} onImported={() => void refresh()} />
+      )}
+    </div>
+  );
+}
+
 const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveCustomerSupport />;
+  return <DemoCustomerSupportPage setPage={setPage} />;
+};
+
+const DemoCustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
   const accentColor = '#6366f1';
   const storageKey = 'dt_service_setup_cs_' + activeCompanyId;

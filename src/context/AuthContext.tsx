@@ -31,6 +31,13 @@ interface GodModeSession {
 
 export type { CompanyProfile, CompanyId } from '../data/companies';
 
+// The seeded demo tenant in Supabase. Users on this tenant (or the local dev
+// demo login) see the TCP/PWC demo story; every other tenant is a LIVE tenant.
+export const DEMO_TENANT_ID = 'a0000000-0000-0000-0000-000000000001';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type DataMode = 'demo' | 'live';
+
 interface AuthContextValue {
   authedUser: AuthUser | null;
   currentPage: Page;
@@ -44,6 +51,14 @@ interface AuthContextValue {
   activeCompanyId: CompanyId;
   setActiveCompanyId: (id: CompanyId) => void;
   activeCompany: CompanyProfile;
+  /** true when the logged-in user's tenant is a real (non-demo) tenant */
+  isLiveTenant: boolean;
+  /** live tenants can still explore the TCP/PWC demo story */
+  viewingDemo: boolean;
+  setViewingDemo: (v: boolean) => void;
+  /** 'live' → Customer-section pages read real Supabase data; 'demo' → seed data */
+  dataMode: DataMode;
+  liveTenantName: string | null;
   handleLogin: (u: AuthUser) => void;
   handleLogout: () => Promise<void>;
   handleSetPage: (p: Page) => void;
@@ -60,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [godModeSession, setGodModeSession] = useState<GodModeSession | null>(null);
   const [activeCompanyId, setActiveCompanyId] = useState<CompanyId>('tcp');
+  const [viewingDemo, setViewingDemo] = useState(false);
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
@@ -149,6 +165,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const activeCompany: CompanyProfile = COMPANIES_LOOKUP[activeCompanyId];
 
+  // ── Live vs demo mode ────────────────────────────────────────────
+  // Demo when: dev demo login, no tenant, non-UUID tenant, or the seeded
+  // demo tenant UUID. Live tenants can still opt into the demo story.
+  const userTenantId = authedUser?.tenantId as string | undefined;
+  const isLiveTenant = !!(
+    authedUser &&
+    authedUser.id !== 'dev-demo-user' &&
+    userTenantId &&
+    UUID_RE.test(userTenantId) &&
+    userTenantId.toLowerCase() !== DEMO_TENANT_ID
+  );
+  const dataMode: DataMode = isLiveTenant && !viewingDemo ? 'live' : 'demo';
+  const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;
+
   // Build a Tenant UI object from the DB record, falling back to the
   // god-mode override if a DT support agent is operating on behalf of a tenant.
   const currentTenant: Tenant | undefined =
@@ -201,7 +231,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = async () => {
+    // Clear the customerApi tenant cache so the next login re-resolves it.
+    try { (await import('../lib/customerApi')).clearTenantCache(); } catch { /* noop */ }
     await supabase.auth.signOut();
+    setViewingDemo(false);
     setAuthedUser(null as any);
     setCurrentPage('dashboard');
     setDbTenants([]);
@@ -223,6 +256,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       activeCompanyId,
       setActiveCompanyId,
       activeCompany,
+      isLiveTenant,
+      viewingDemo,
+      setViewingDemo,
+      dataMode,
+      liveTenantName,
       handleLogin,
       handleLogout,
       handleSetPage,

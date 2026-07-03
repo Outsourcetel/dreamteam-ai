@@ -229,7 +229,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const { activeCompanyId, setActiveCompanyId, activeCompany } = useAuth();
+  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, viewingDemo, setViewingDemo, liveTenantName } = useAuth();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['customer']));
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [liveCounts, setLiveCounts] = useState(() => computeLiveCounts(activeCompany.id));
@@ -318,23 +318,57 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           onClick={() => setShowCompanyPicker(!showCompanyPicker)}
           className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-slate-900 transition-colors group"
         >
-          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: activeCompany.badgeColor }}>
-            {activeCompany.badge}
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <div className="text-xs font-semibold text-slate-100 truncate">{activeCompany.name}</div>
-            <div className="text-[10px] text-slate-500 truncate">{activeCompany.industry}</div>
-          </div>
+          {isLiveTenant && !viewingDemo ? (
+            <>
+              <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-indigo-600">
+                {(liveTenantName || 'C')[0].toUpperCase()}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <div className="text-xs font-semibold text-slate-100 truncate">{liveTenantName || 'Your company'}</div>
+                <div className="text-[10px] text-emerald-400 truncate">Live workspace</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: activeCompany.badgeColor }}>
+                {activeCompany.badge}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <div className="text-xs font-semibold text-slate-100 truncate">{activeCompany.name}</div>
+                <div className="text-[10px] text-slate-500 truncate">{isLiveTenant ? 'Demo company' : activeCompany.industry}</div>
+              </div>
+            </>
+          )}
           <span className="text-slate-600 text-xs group-hover:text-slate-400">⌄</span>
         </button>
 
         {showCompanyPicker && (
           <div className="mt-1 bg-slate-900 rounded-lg border border-slate-700/50 overflow-hidden">
+            {isLiveTenant && (
+              <>
+                <button
+                  onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
+                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-800 transition-colors ${!viewingDemo ? 'bg-slate-800/50' : ''}`}
+                >
+                  <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
+                    {(liveTenantName || 'C')[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-slate-200">{liveTenantName || 'Your company'}</div>
+                    <div className="text-[10px] text-emerald-400">Live workspace</div>
+                  </div>
+                  {!viewingDemo && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
+                </button>
+                <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-slate-600 uppercase border-t border-slate-700/50">
+                  Demo companies
+                </div>
+              </>
+            )}
             {COMPANIES.map((c) => (
               <button
                 key={c.id}
-                onClick={() => { setActiveCompanyId(c.id); setShowCompanyPicker(false); }}
-                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-800 transition-colors ${c.id === activeCompanyId ? 'bg-slate-800/50' : ''}`}
+                onClick={() => { setActiveCompanyId(c.id); if (isLiveTenant) setViewingDemo(true); setShowCompanyPicker(false); }}
+                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-800 transition-colors ${c.id === activeCompanyId && (!isLiveTenant || viewingDemo) ? 'bg-slate-800/50' : ''}`}
               >
                 <div className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c.badgeColor }}>
                   {c.badge}
@@ -343,7 +377,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                   <div className="text-xs font-medium text-slate-200">{c.name}</div>
                   <div className="text-[10px] text-slate-500">{c.activeDEs} DEs active</div>
                 </div>
-                {c.id === activeCompanyId && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
+                {c.id === activeCompanyId && (!isLiveTenant || viewingDemo) && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
               </button>
             ))}
             <button

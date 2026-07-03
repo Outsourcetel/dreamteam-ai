@@ -5,6 +5,10 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
+import { useDataMode } from '../../../lib/dataMode';
+import { listHumanTasks, decideHumanTask, CustomerApiError } from '../../../lib/customerApi';
+import type { DBHumanTask } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -180,9 +184,209 @@ const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'training_feedback', label: 'Feedback' },
 ];
 
+// ── LIVE mode: real human_tasks from Supabase ─────────────────────
+
+function taskAge(iso: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'}`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
+  const [tasks, setTasks] = useState<DBHumanTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TaskType | 'all'>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTasks(await listHumanTasks());
+      setMissingTables(false);
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load tasks.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected') => {
+    setDeciding(true);
+    try {
+      await decideHumanTask(task, decision);
+      await refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to record decision.');
+    } finally {
+      setDeciding(false);
+    }
+  };
+
+  const pending = tasks.filter(t => t.status === 'pending');
+  const decidedCount = tasks.filter(t => t.status !== 'pending').length;
+  const approvedCount = tasks.filter(t => t.status === 'approved').length;
+  const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
+  const visible = tasks.filter(t => filter === 'all' || t.type === filter);
+  const selected = tasks.find(t => t.id === selectedId) ?? null;
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Human Tasks"
+        subtitle="The human command queue — approvals, reviews, escalations, and overrides raised by your Digital Employees"
+      />
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={4} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : tasks.length === 0 ? (
+        <LiveEmptyState
+          icon="✋"
+          title="No human tasks yet"
+          body="When a Digital Employee needs a human decision — like approving a renewal invoice over $10K — it shows up here."
+          primaryLabel="Go to Renewal & Expansion"
+          onPrimary={() => setPage('entity_customer_renewal')}
+        />
+      ) : (
+        <>
+          {/* Stats strip */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {[
+              { label: 'Pending', value: String(pending.length), color: pending.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
+              { label: 'Decided', value: String(decidedCount), color: 'text-white' },
+              { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-white' },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Filters */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {FILTERS.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-5 gap-4">
+            {/* Task list */}
+            <div className={`${selected ? 'col-span-3' : 'col-span-5'} space-y-1.5`}>
+              {visible.length === 0 && (
+                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                  <p className="text-slate-500 text-sm">No tasks match the current filter.</p>
+                </div>
+              )}
+              {visible.map(task => (
+                <button
+                  key={task.id}
+                  onClick={() => setSelectedId(task.id)}
+                  className={`w-full text-left grid grid-cols-[100px_1fr_70px_80px] gap-2 items-center px-3 py-2.5 rounded-xl border transition-colors ${
+                    selectedId === task.id ? 'border-indigo-500/50 bg-slate-800/60'
+                    : task.status !== 'pending' ? 'border-slate-800/60 bg-slate-900/40 opacity-70 hover:opacity-100'
+                    : 'border-slate-800 bg-slate-900 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
+                    {taskBadgeLabel(task.type)}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="text-xs text-slate-200 truncate block">{task.title}</span>
+                    {task.detail && <span className="text-[10px] text-slate-500">{task.detail}</span>}
+                  </div>
+                  <span className="text-xs text-slate-500">{taskAge(task.created_at)}</span>
+                  <span className="justify-self-end">{statusBadge(task.status as TaskStatus)}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Detail panel */}
+            {selected && (
+              <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-0">
+                <div className="flex items-center justify-between mb-3">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
+                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
+                </div>
+                <h3 className="text-sm font-semibold text-white mb-1">{selected.title}</h3>
+                {selected.detail && <p className="text-xs text-slate-400 mb-3">{selected.detail}</p>}
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                    <span className="text-slate-500">Source</span>
+                    <span className="text-slate-300">{selected.source === 'de' ? 'Digital Employee' : selected.source === 'chat' ? 'DE chat' : 'System'}</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                    <span className="text-slate-500">Raised</span>
+                    <span className="text-slate-300">{taskAge(selected.created_at)} ago</span>
+                  </div>
+                  {selected.related_table === 'renewal_invoices' && (
+                    <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                      <span className="text-slate-500">Related</span>
+                      <button onClick={() => setPage('entity_customer_renewal')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Renewal &amp; Expansion →</button>
+                    </div>
+                  )}
+                  {selected.status !== 'pending' && (
+                    <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                      <span className="text-slate-500">Decided</span>
+                      <span className="text-slate-300">{selected.decided_at ? new Date(selected.decided_at).toLocaleString() : '—'}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selected.status === 'pending' && (
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={() => void decide(selected, 'approved')} disabled={deciding}
+                      className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium py-2 transition-colors">
+                      {deciding ? '…' : 'Approve'}
+                    </button>
+                    <button onClick={() => void decide(selected, 'rejected')} disabled={deciding}
+                      className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 disabled:opacity-50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">
+                      Reject
+                    </button>
+                  </div>
+                )}
+                {selected.related_table === 'renewal_invoices' && selected.status === 'pending' && (
+                  <p className="mt-3 text-[11px] text-slate-500">Approving sends the invoice to the customer.</p>
+                )}
+                <p className="mt-3 text-[11px] text-slate-600">Decisions are timestamped and recorded in the activity log.</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveHumanTasks setPage={setPage} />;
+  return <DemoHumanTasksPage setPage={setPage} />;
+}
+
+function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const lsKey = `dt_ops_tasks_${activeCompanyId}`;
 

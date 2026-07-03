@@ -1,10 +1,24 @@
 # Prototype → Production Boundary
 
-**Purpose:** DreamTeam AI is currently a **design-validation prototype**. This document is the single source of truth for what is demo-only, what carries forward to the enterprise product, and what has to be true before we start the production build. Read this before building or selling anything.
+**Purpose:** DreamTeam AI is a **design-validation prototype with a production track underway**. This document is the single source of truth for what is demo-only, what carries forward to the enterprise product, and what is now live. Read this before building or selling anything.
 
 _Last updated: 2026-07-03_
 
 ---
+
+## 0. Production track status — Customer section (P1 SHIPPED)
+
+The Customer entity section is now a **real product** for real tenants, backed by Supabase:
+
+**P1 — data layer (done):**
+- Schema: `supabase/migrations/011_customer_entity.sql` — `customer_accounts`, `support_tickets`, `renewal_invoices`, `human_tasks`, `activity_events`. All tenant-scoped with RLS (profiles → tenant_id lookup), money in cents, `updated_at` triggers, tenant indexes. **Must be applied via Supabase SQL Editor** — the frontend degrades gracefully (provisioning notice) if it hasn't been.
+- API layer: `src/lib/customerApi.ts` — typed CRUD, invoice generation with a $10K human approval gate, `decideHumanTask` (persists decided_by, flips gated invoices to `sent`, appends activity), CSV import with a robust client-side parser (`parseCsv`).
+- Mode switching: `src/lib/dataMode.ts` + AuthContext — tenants other than the demo tenant (`a0000000-…0001`) or the dev demo login are **live**; the Sidebar company picker shows the real tenant as the primary workspace with TCP/PWC under a "Demo companies" divider so live users can still explore the demo story.
+- Live pages: Command Centre (real KPIs + activity feed), Customer Success (real accounts + Add/Import), Support (real tickets table + stats), Renewal & Expansion (real invoices, gated generation), Human Tasks (real approve/reject persisted to DB). Import modal: `src/components/ImportCustomersModal.tsx` (Accounts/Tickets tabs, paste or file, auto column mapping, per-row error report).
+
+**P2 — next:** real LLM Digital Employee acting on this data (ticket resolution drafts, renewal cadences), replacing the rule-based brain for live tenants.
+
+**Still design-preview even in live mode:** Business Development, Sales, Onboarding stages of the Customer journey; Vendors & Partners; Workforce entity; Outcomes pages; Knowledge/Intelligence/Governance sections; the Customer overview journey-stage stats.
 
 ## 1. What this codebase IS today
 
@@ -13,7 +27,7 @@ A polished frontend prototype used to:
 - Close product design decisions cheaply before they get expensive
 - Serve as the visual and interaction spec for the production build
 
-It is **not** a production system. Do not onboard a paying customer's real data onto it.
+The demo companies remain **not production**. Real customer data is supported only in the Customer-section live pages listed above, for real tenants, behind RLS.
 
 ## 2. Demo-only (will be REPLACED, do not invest in hardening)
 

@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
+import { useDataMode } from '../../../lib/dataMode';
+import {
+  listAccounts, listInvoices, generateInvoice, updateInvoice,
+  fmtMoneyK, CustomerApiError, INVOICE_APPROVAL_THRESHOLD_CENTS,
+} from '../../../lib/customerApi';
+import type { CustomerAccount, RenewalInvoice, InvoiceStatus } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Renewal & Expansion — Customer entity
@@ -355,7 +362,253 @@ function PwcRenewals() {
   );
 }
 
+// ── LIVE mode: real renewal invoices from Supabase ─────────────
+const invoiceStatusLabel: Record<InvoiceStatus, string> = {
+  pending_generation: 'Pending generation',
+  awaiting_approval: 'Awaiting approval',
+  sent: 'Invoice sent',
+  paid: 'Paid ✓',
+  overdue: 'Overdue',
+};
+
+const invoiceStatusClass: Record<InvoiceStatus, string> = {
+  pending_generation: 'text-slate-400',
+  awaiting_approval: 'text-amber-300',
+  sent: 'text-indigo-300',
+  paid: 'text-emerald-400',
+  overdue: 'text-rose-400',
+};
+
+function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
+  const { liveTenantName } = useAuth();
+  const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
+  const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [genModal, setGenModal] = useState<CustomerAccount | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [accts, invs] = await Promise.all([listAccounts(), listInvoices()]);
+      setAccounts(accts);
+      setInvoices(invs);
+      setMissingTables(false);
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load renewals.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const confirmGenerate = async () => {
+    if (!genModal) return;
+    setGenerating(true);
+    try {
+      const { gated } = await generateInvoice(genModal);
+      setGenModal(null);
+      showToast(gated
+        ? `Invoice for ${genModal.name} exceeds $10K — routed to Human Tasks for approval`
+        : `Invoice sent to ${genModal.name}`);
+      void refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to generate invoice.');
+      setGenModal(null);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const markPaid = async (inv: RenewalInvoice) => {
+    try {
+      await updateInvoice(inv.id, { status: 'paid' });
+      showToast('Invoice marked as paid');
+      void refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to update invoice.');
+    }
+  };
+
+  // Accounts with no live (non-paid) invoice can generate one.
+  const accountsWithOpenInvoice = new Set(invoices.filter(i => i.status !== 'paid').map(i => i.account_id));
+  const generatable = accounts.filter(a => a.status !== 'churned' && !accountsWithOpenInvoice.has(a.id));
+
+  const awaitingApproval = invoices.filter(i => i.status === 'awaiting_approval');
+  const outstandingCents = invoices.filter(i => i.status === 'sent' || i.status === 'overdue').reduce((s, i) => s + i.amount_cents, 0);
+  const paidCents = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount_cents, 0);
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer entity</h1>
+        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live renewal pipeline — invoices above $10K route through a human approval gate</p>
+      </div>
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={5} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : accounts.length === 0 ? (
+        <LiveEmptyState
+          icon="↻"
+          title="No accounts to renew yet"
+          body="Add or import your customer accounts first — renewals are generated from account ARR and renewal dates."
+          primaryLabel="Go to Customer Success"
+          onPrimary={() => setPage('entity_customer_success')}
+        />
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+          {/* Stat cards */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: 'Invoices outstanding', value: fmtMoneyK(outstandingCents), sub: `${invoices.filter(i => i.status === 'sent' || i.status === 'overdue').length} invoice(s)`, color: 'text-white' },
+              { label: 'Awaiting approval', value: String(awaitingApproval.length), sub: awaitingApproval.length > 0 ? fmtMoneyK(awaitingApproval.reduce((s, i) => s + i.amount_cents, 0)) : '—', color: awaitingApproval.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
+              { label: 'Collected', value: fmtMoneyK(paidCents), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: 'text-emerald-300' },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Invoices table */}
+          <h3 className="text-sm font-semibold text-white mb-3">Renewal invoices</h3>
+          {invoices.length === 0 ? (
+            <p className="text-xs text-slate-500 mb-5">No invoices yet — generate one from the accounts below.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-800 mb-6">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-left">
+                    {['Account', 'Amount', 'Status', 'Due date', 'Action'].map(h => (
+                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((inv, i) => (
+                    <tr key={inv.id} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === invoices.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className="py-3 px-4 font-medium text-white">{inv.customer_accounts?.name || '—'}</td>
+                      <td className="py-3 px-4 text-slate-300">{fmtMoneyK(inv.amount_cents)}</td>
+                      <td className="py-3 px-4">
+                        <span className={`text-xs ${invoiceStatusClass[inv.status]}`}>{invoiceStatusLabel[inv.status]}</span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">{inv.due_date || '—'}</td>
+                      <td className="py-3 px-4">
+                        {inv.status === 'awaiting_approval' ? (
+                          <button onClick={() => setPage('ops_human_tasks')} className="text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 transition-all">
+                            View approval →
+                          </button>
+                        ) : inv.status === 'sent' || inv.status === 'overdue' ? (
+                          <button onClick={() => void markPaid(inv)} className="text-xs px-3 py-1.5 rounded-lg border text-slate-300 border-slate-700 hover:border-emerald-500 hover:text-emerald-300 transition-all">
+                            Mark paid
+                          </button>
+                        ) : <span className="text-slate-600 text-xs">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Generate section */}
+          <h3 className="text-sm font-semibold text-white mb-1">Generate renewal invoices</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Accounts without an open invoice. Amounts above {fmtMoneyK(INVOICE_APPROVAL_THRESHOLD_CENTS)} require human approval before sending.
+          </p>
+          {generatable.length === 0 ? (
+            <p className="text-xs text-slate-500">Every active account already has an open invoice.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-left">
+                    {['Account', 'ARR', 'Renewal date', 'Action'].map(h => (
+                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {generatable.map((a, i) => (
+                    <tr key={a.id} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === generatable.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className="py-3 px-4 font-medium text-white">{a.name}</td>
+                      <td className="py-3 px-4 text-slate-300">{fmtMoneyK(a.arr_cents)}</td>
+                      <td className="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
+                      <td className="py-3 px-4">
+                        <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 transition-all">
+                          Generate Invoice
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Generate invoice modal */}
+      {genModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 className="text-white font-semibold mb-2">Generate renewal invoice</h3>
+            <p className="text-sm text-slate-300 mb-2">
+              Generate renewal invoice for <span className="text-white font-medium">{genModal.name}</span> —{' '}
+              <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
+            </p>
+            {genModal.arr_cents > INVOICE_APPROVAL_THRESHOLD_CENTS && (
+              <p className="text-xs text-amber-300 mb-4">Above the $10K threshold — will route to Human Tasks for approval before sending.</p>
+            )}
+            <div className="flex gap-3 mt-3">
+              <button onClick={() => void confirmGenerate()} disabled={generating}
+                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+                {generating ? 'Generating…' : 'Confirm'}
+              </button>
+              <button onClick={() => setGenModal(null)} className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-emerald-900/90 border-emerald-700/50 text-emerald-300">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveCustomerRenewal setPage={setPage} />;
+  return <DemoCustomerRenewalPage setPage={setPage} />;
+};
+
+const DemoCustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
   const isTcp = activeCompanyId === 'tcp';
 
