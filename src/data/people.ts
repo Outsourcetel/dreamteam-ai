@@ -87,6 +87,26 @@ export const TCP_PEOPLE: Person[] = [
     expertiseTags: ['HR policy', 'Leave management', 'Onboarding compliance'],
     consultedByDEs: 11, pendingItems: 1,
   },
+  {
+    id: 'jess-cooper', name: 'Jess Cooper', title: 'Account Executive', email: 'j.cooper@tcpsoftware.com',
+    team: 'Sales', avatarInitials: 'JC', color: 'bg-violet-500/20 text-violet-300', orgColumn: 'customer',
+    worksWith: [],
+    approves: ['Deal desk sign-off (Starter/Growth tiers)'],
+    weeklyLoad: { approvals: 1, escalations: 0, reviews: 4, avgResponseHrs: 2.8 },
+    loadTrend: 'flat',
+    expertiseTags: ['Enterprise deals', 'Negotiation', 'Pipeline hygiene'],
+    consultedByDEs: 0, pendingItems: 0,
+  },
+  {
+    id: 'sam-mitchell', name: 'Sam Mitchell', title: 'Account Executive', email: 's.mitchell@tcpsoftware.com',
+    team: 'Sales', avatarInitials: 'SM', color: 'bg-cyan-500/20 text-cyan-300', orgColumn: 'customer',
+    worksWith: [],
+    approves: ['Deal desk sign-off (Starter/Growth tiers)'],
+    weeklyLoad: { approvals: 1, escalations: 0, reviews: 5, avgResponseHrs: 3.4 },
+    loadTrend: 'flat',
+    expertiseTags: ['Outbound prospecting', 'Demos', 'Mid-market deals'],
+    consultedByDEs: 0, pendingItems: 0,
+  },
 ]
 
 export const PWC_PEOPLE: Person[] = [

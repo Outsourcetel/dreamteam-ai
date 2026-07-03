@@ -88,23 +88,34 @@ const SEED_OVERRIDES: Record<CompanyId, OverrideRow[]> = {
 }
 
 // ── Version history ────────────────────────────────────────────
-interface VersionRow { version: string; date: string; summary: string; changedBy: string }
+interface VersionRow { version: string; date: string; summary: string; changedBy: string; diff: { removed: string[]; added: string[] } }
 
 const VERSION_HISTORY: Record<CompanyId, VersionRow[]> = {
   tcp: [
-    { version: 'v2.3', date: '2026-05-01', summary: 'Alex — added "No SLA commitments not in standard tier" restriction', changedBy: 'K. Douglas (Security)' },
-    { version: 'v2.2', date: '2026-04-15', summary: 'Customer override added — free trial extension on churn risk', changedBy: 'CSM Lead' },
-    { version: 'v2.1', date: '2026-03-01', summary: 'Customer override added — never quote competitor pricing', changedBy: 'Admin' },
-    { version: 'v2.0', date: '2026-02-10', summary: 'Re-based on Technology / SaaS template v4.0 (from v3.8)', changedBy: 'System' },
-    { version: 'v1.8', date: '2026-04-01', summary: 'Casey — write-off limit raised to $2,500 with Finance approval gate', changedBy: 'Finance' },
-    { version: 'v1.5', date: '2026-01-15', summary: 'Riley — PII handling set to hash; content filter set to strict', changedBy: 'HR Director' },
+    { version: 'v2.3', date: '2026-05-01', summary: 'Alex — added "No SLA commitments not in standard tier" restriction', changedBy: 'K. Douglas (Security)',
+      diff: { removed: [], added: ['Alex › restrictions: "No SLA commitments not in standard tier" (blocking)'] } },
+    { version: 'v2.2', date: '2026-04-15', summary: 'Customer override added — free trial extension on churn risk', changedBy: 'CSM Lead',
+      diff: { removed: [], added: ['Overrides › allow: "Free trial extension allowed on churn risk" (applies to: Casey)'] } },
+    { version: 'v2.1', date: '2026-03-01', summary: 'Customer override added — never quote competitor pricing', changedBy: 'Admin',
+      diff: { removed: [], added: ['Overrides › restrict: "Never quote competitor pricing" (applies to: all DEs)'] } },
+    { version: 'v2.0', date: '2026-02-10', summary: 'Re-based on Technology / SaaS template v4.0 (from v3.8)', changedBy: 'System',
+      diff: { removed: ['Template base: Technology / SaaS v3.8'], added: ['Template base: Technology / SaaS v4.0', 'New template rule: "API data protection — no keys or tokens in DE output" (regulatory, locked)', 'All existing overrides re-validated against v4.0 — 0 conflicts'] } },
+    { version: 'v1.8', date: '2026-04-01', summary: 'Casey — write-off limit raised to $2,500 with Finance approval gate', changedBy: 'Finance',
+      diff: { removed: ['Casey › restrictions: "No write-offs >$1,000"'], added: ['Casey › restrictions: "No write-offs >$2,500" + approval gate: Finance Manager'] } },
+    { version: 'v1.5', date: '2026-01-15', summary: 'Riley — PII handling set to hash; content filter set to strict', changedBy: 'HR Director',
+      diff: { removed: ['Riley › PII handling: mask', 'Riley › content filter: standard'], added: ['Riley › PII handling: hash', 'Riley › content filter: strict'] } },
   ],
   pwc: [
-    { version: 'v3.1', date: '2026-05-01', summary: 'Morgan — added fee-adjustment restriction ($5,000 cap)', changedBy: 'Quality & Risk' },
-    { version: 'v3.0', date: '2026-02-10', summary: 'Customer override added — partner sign-off on commitments >$50K', changedBy: 'Risk' },
-    { version: 'v2.4', date: '2026-06-01', summary: 'Avery — PCAOB independence conflict rule added', changedBy: 'Quality & Risk' },
-    { version: 'v2.3', date: '2026-03-01', summary: 'Re-based on Financial Services template v6.2 (from v6.0)', changedBy: 'System' },
-    { version: 'v2.0', date: '2026-01-20', summary: 'All DEs — PII handling set to redact per firm policy', changedBy: 'Managing Partner' },
+    { version: 'v3.1', date: '2026-05-01', summary: 'Morgan — added fee-adjustment restriction ($5,000 cap)', changedBy: 'Quality & Risk',
+      diff: { removed: [], added: ['Morgan › restrictions: "No fee adjustments >$5,000" (blocking)'] } },
+    { version: 'v3.0', date: '2026-02-10', summary: 'Customer override added — partner sign-off on commitments >$50K', changedBy: 'Risk',
+      diff: { removed: [], added: ['Overrides › restrict: "Partner sign-off on client commitments >$50K" (applies to: all DEs)'] } },
+    { version: 'v2.4', date: '2026-06-01', summary: 'Avery — PCAOB independence conflict rule added', changedBy: 'Quality & Risk',
+      diff: { removed: [], added: ['Avery › restrictions: "No PCAOB independence conflicts" (regulatory, locked)'] } },
+    { version: 'v2.3', date: '2026-03-01', summary: 'Re-based on Financial Services template v6.2 (from v6.0)', changedBy: 'System',
+      diff: { removed: ['Template base: Financial Services v6.0'], added: ['Template base: Financial Services v6.2', 'New template rule: "Sanctions screening required before client onboarding" (regulatory, locked)'] } },
+    { version: 'v2.0', date: '2026-01-20', summary: 'All DEs — PII handling set to redact per firm policy', changedBy: 'Managing Partner',
+      diff: { removed: ['Morgan › PII handling: mask', 'Avery › PII handling: mask'], added: ['Morgan › PII handling: redact', 'Avery › PII handling: redact'] } },
   ],
 }
 
@@ -164,6 +175,7 @@ export default function CompliancePage({ setPage }: { setPage: (p: Page) => void
   const rules = TEMPLATE_RULES[companyId]
   const calendar = CALENDAR[companyId]
   const versions = VERSION_HISTORY[companyId]
+  const [openDiff, setOpenDiff] = useState<string | null>(null)
 
   const deRestrictionCount = des.reduce((n, d) => n + d.guardrails.deRestrictions.length, 0)
 
@@ -442,17 +454,41 @@ export default function CompliancePage({ setPage }: { setPage: (p: Page) => void
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
-              {versions.map(v => (
-                <tr key={`${v.version}-${v.date}`} className="hover:bg-slate-800/20 transition-colors">
-                  <td className={`${td} text-indigo-400 font-mono text-xs`}>{v.version}</td>
-                  <td className={`${td} text-slate-500 text-xs`}>{v.date}</td>
-                  <td className={`${td} text-slate-200 text-xs`}>{v.summary}</td>
-                  <td className={`${td} text-slate-400 text-xs`}>{v.changedBy}</td>
-                  <td className={`${td} text-right`}>
-                    <button className="text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:border-slate-500 transition-colors">Diff</button>
-                  </td>
-                </tr>
-              ))}
+              {versions.map(v => {
+                const key = `${v.version}-${v.date}`
+                const open = openDiff === key
+                return (
+                  <React.Fragment key={key}>
+                    <tr className="hover:bg-slate-800/20 transition-colors">
+                      <td className={`${td} text-indigo-400 font-mono text-xs`}>{v.version}</td>
+                      <td className={`${td} text-slate-500 text-xs`}>{v.date}</td>
+                      <td className={`${td} text-slate-200 text-xs`}>{v.summary}</td>
+                      <td className={`${td} text-slate-400 text-xs`}>{v.changedBy}</td>
+                      <td className={`${td} text-right`}>
+                        <button
+                          onClick={() => setOpenDiff(open ? null : key)}
+                          className={`text-xs px-2 py-1 rounded-lg border transition-colors ${open ? 'border-indigo-500 text-indigo-300' : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'}`}>
+                          {open ? 'Hide diff' : 'Diff'}
+                        </button>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={5} className="px-5 py-3 bg-slate-950/60">
+                          <div className="font-mono text-xs space-y-1">
+                            {v.diff.removed.map((line, i) => (
+                              <div key={`r${i}`} className="text-red-400/90 bg-red-500/5 rounded px-2 py-1">− {line}</div>
+                            ))}
+                            {v.diff.added.map((line, i) => (
+                              <div key={`a${i}`} className="text-emerald-400/90 bg-emerald-500/5 rounded px-2 py-1">+ {line}</div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
             </tbody>
           </table>
         </div>

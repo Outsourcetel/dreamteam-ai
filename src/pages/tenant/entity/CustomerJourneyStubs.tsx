@@ -154,7 +154,7 @@ interface Opportunity {
 
 const OPPORTUNITIES: Record<CompanyId, Opportunity[]> = {
   tcp: [
-    { name: 'Meridian Group — Enterprise', value: '$156K', stage: 'Negotiation', closeDate: 'Jul 18', owner: 'J. Cooper' },
+    { name: 'Ironbridge Systems — Enterprise', value: '$156K', stage: 'Negotiation', closeDate: 'Jul 18', owner: 'J. Cooper' },
     { name: 'Lakeside Retail — Growth', value: '$96K', stage: 'Proposal', closeDate: 'Jul 25', owner: 'S. Mitchell' },
     { name: 'Vertex Logistics — Growth', value: '$84K', stage: 'Demo', closeDate: 'Aug 1', owner: 'J. Cooper' },
     { name: 'Orchard Health — Enterprise', value: '$210K', stage: 'Proposal', closeDate: 'Aug 8', owner: 'S. Mitchell' },

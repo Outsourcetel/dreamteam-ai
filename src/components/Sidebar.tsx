@@ -153,7 +153,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
           label: 'Workforce Roster',
           icon: '⚡',
           page: 'workforce_des',
-          badge: { text: isTCP ? '3 DEs · 6 humans' : '2 DEs · 4 humans', color: '#22c55e' },
+          badge: { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
       ],
     },
