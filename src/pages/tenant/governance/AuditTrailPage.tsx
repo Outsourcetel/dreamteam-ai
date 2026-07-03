@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
+import type { Page } from '../../../types'
 import { PageHeader } from '../../../components/ui'
 
 // ═══════════════════════════════════════════════════════════════
@@ -26,14 +27,14 @@ interface AuditEvent {
 }
 
 const TCP_EVENTS: AuditEvent[] = [
-  { id: 't1', timestamp: '2026-07-03 14:22', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4821 — "How do I reset 2FA?"', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't2', timestamp: '2026-07-03 14:15', actor: 'CS Manager', actorType: 'human', actionType: 'approval', action: 'Approved invoice #4821 — Meridian Group $15,600', entity: 'Customer', outcome: 'Approved' },
+  { id: 't1', timestamp: '2026-07-03 14:22', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Alex resolved — "How do I reset 2FA?"', entity: 'Customer', outcome: 'Resolved' },
+  { id: 't2', timestamp: '2026-07-03 14:16', actor: 'Alex', actorType: 'de', actionType: 'escalated', action: 'Alex escalated — API auth bug to L2', entity: 'Customer', outcome: 'Escalated to L2' },
   { id: 't3', timestamp: '2026-07-03 14:10', actor: 'Casey', actorType: 'de', actionType: 'escalated', action: 'Generated invoice — Meridian Group $15,600', entity: 'Customer', outcome: 'Pending approval' },
-  { id: 't4', timestamp: '2026-07-03 13:58', actor: 'Alex', actorType: 'de', actionType: 'escalated', action: 'Escalated ticket #4819 — API auth bug', entity: 'Customer', outcome: 'Escalated to L2' },
-  { id: 't5', timestamp: '2026-07-03 13:30', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Processed onboarding — new hire Jordan K.', entity: 'Workforce', outcome: 'Complete' },
+  { id: 't4', timestamp: '2026-07-03 14:02', actor: 'Casey', actorType: 'de', actionType: 'resolved', action: 'Casey sent renewal invoice — Harbor Tech $67K', entity: 'Customer', outcome: 'Sent' },
+  { id: 't5', timestamp: '2026-07-03 13:00', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Riley processed onboarding — new hire Jordan K.', entity: 'Workforce', outcome: 'Complete' },
   { id: 't6', timestamp: '2026-07-03 12:15', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Submitted KB article — "Rate limiting guide"', entity: 'Knowledge', outcome: 'Pending review' },
   { id: 't7', timestamp: '2026-07-03 11:30', actor: 'Casey', actorType: 'de', actionType: 'resolved', action: 'Sent renewal email cadence — 3 accounts', entity: 'Customer', outcome: 'Sent' },
-  { id: 't8', timestamp: '2026-07-03 11:00', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4815 — billing question', entity: 'Customer', outcome: 'Resolved' },
+  { id: 't8', timestamp: '2026-07-03 11:47', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Alex resolved ticket #4815 — billing question', entity: 'Customer', outcome: 'Resolved' },
   { id: 't9', timestamp: '2026-07-03 10:40', actor: 'HR Manager', actorType: 'human', actionType: 'approval', action: 'Approved equipment provisioning for Jordan K.', entity: 'Workforce', outcome: 'Approved' },
   { id: 't10', timestamp: '2026-07-03 09:45', actor: 'Alex', actorType: 'de', actionType: 'guardrail_violation', action: 'BLOCKED: Alex attempted SLA commitment outside standard tier — guardrail DE-R2', entity: 'Customer', outcome: 'Blocked' },
   { id: 't11', timestamp: '2026-07-03 09:12', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4811 — password reset loop', entity: 'Customer', outcome: 'Resolved' },
@@ -121,7 +122,7 @@ const exportCsv = (events: AuditEvent[]) => {
   URL.revokeObjectURL(url)
 }
 
-export default function AuditTrailPage() {
+export default function AuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const events = activeCompanyId === 'tcp' ? TCP_EVENTS : PWC_EVENTS
   const deNames = DE_NAMES[activeCompanyId]
@@ -176,6 +177,12 @@ export default function AuditTrailPage() {
           </button>
         </div>
       </div>
+      <p className="-mt-3 mb-5 text-xs text-slate-500">
+        Immutable compliance record with hash-chain verification. For the live operational stream, see the{' '}
+        <button onClick={() => setPage && setPage('ops_activity')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+          Activity Log →
+        </button>
+      </p>
 
       {/* Stats strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">

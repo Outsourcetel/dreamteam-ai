@@ -9,7 +9,14 @@ import type { Page } from '../../../types';
 // Attributed to Casey (TCP) / Morgan (PWC).
 // ============================================================
 
-type RenewalStatus = 'Invoice sent' | 'Pending generation' | 'Overdue — 8 days' | 'Paid ✓' | 'Draft';
+type RenewalStatus =
+  | 'Invoice sent'
+  | 'Pending generation'
+  | 'Awaiting approval — $15,600'
+  | 'Invoice approved — sending'
+  | 'Overdue — 8 days'
+  | 'Paid ✓'
+  | 'Draft';
 
 interface RenewalRow {
   account: string;
@@ -20,12 +27,15 @@ interface RenewalRow {
   status: RenewalStatus;
 }
 
+// Meridian's $15,600 invoice is generated and sits in the Human Tasks approval
+// queue (task t1) — this table mirrors that state instead of contradicting it.
 const INITIAL_RENEWALS: RenewalRow[] = [
   { account: 'Lakeshore Analytics', arr: '$84K', arrNum: 84000, health: 72, renewalDate: 'Jul 31', status: 'Invoice sent' },
-  { account: 'Meridian Group', arr: '$156K', arrNum: 156000, health: 58, renewalDate: 'Aug 5', status: 'Pending generation' },
+  { account: 'Meridian Group', arr: '$156K', arrNum: 156000, health: 58, renewalDate: 'Aug 5', status: 'Awaiting approval — $15,600' },
   { account: 'Apex Systems', arr: '$43K', arrNum: 43000, health: 34, renewalDate: 'Aug 12', status: 'Overdue — 8 days' },
   { account: 'Northfield Co', arr: '$210K', arrNum: 210000, health: 81, renewalDate: 'Aug 18', status: 'Paid ✓' },
   { account: 'Harbor Tech', arr: '$67K', arrNum: 67000, health: 61, renewalDate: 'Aug 22', status: 'Draft' },
+  { account: 'Brightline Studios', arr: '$52K', arrNum: 52000, health: 76, renewalDate: 'Aug 28', status: 'Pending generation' },
 ];
 
 const EXPANSION_OPPS = [
@@ -45,8 +55,36 @@ function healthIndicator(score: number) {
   return '🔴';
 }
 
+// Reads the Human Tasks decisions overlay — task 't1' (tcp) is the Meridian
+// Group invoice approval. When approved there, this table reflects it live.
+function meridianDecision(): string | undefined {
+  try {
+    const stored = localStorage.getItem('dt_ops_tasks_tcp');
+    if (stored) return (JSON.parse(stored) as Record<string, string>)['t1'];
+  } catch { /* noop */ }
+  return undefined;
+}
+
+function applyMeridianDecision(rows: RenewalRow[]): RenewalRow[] {
+  if (meridianDecision() !== 'approved') return rows;
+  return rows.map(r => r.account === 'Meridian Group' && r.status === 'Awaiting approval — $15,600'
+    ? { ...r, status: 'Invoice approved — sending' as RenewalStatus }
+    : r);
+}
+
 function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
-  const [rows, setRows] = useState<RenewalRow[]>(INITIAL_RENEWALS);
+  const [rows, setRows] = useState<RenewalRow[]>(() => applyMeridianDecision(INITIAL_RENEWALS));
+
+  // Live sync with Human Tasks decisions.
+  useEffect(() => {
+    const refresh = () => setRows(prev => applyMeridianDecision(prev));
+    window.addEventListener('dt-state-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('dt-state-changed', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [invoiceModal, setInvoiceModal] = useState<{ account: string; arr: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,7 +98,9 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   const handleAction = (row: RenewalRow) => {
-    if (row.status === 'Pending generation') {
+    if (row.status === 'Awaiting approval — $15,600') {
+      if (setPage) setPage('ops_human_tasks');
+    } else if (row.status === 'Pending generation') {
       setInvoiceModal({ account: row.account, arr: row.arr });
     } else if (row.status === 'Draft') {
       setRows(prev => prev.map(r => r.account === row.account ? { ...r, status: 'Invoice sent' } : r));
@@ -83,6 +123,8 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
   const actionLabel = (status: RenewalStatus): string | null => {
     if (status === 'Invoice sent') return 'View';
     if (status === 'Pending generation') return 'Generate Invoice';
+    if (status === 'Awaiting approval — $15,600') return 'View approval →';
+    if (status === 'Invoice approved — sending') return null;
     if (status === 'Overdue — 8 days') return 'Escalate';
     if (status === 'Paid ✓') return null;
     if (status === 'Draft') return 'Send Invoice';
@@ -92,6 +134,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
   const actionStyle = (status: RenewalStatus): string => {
     if (status === 'Overdue — 8 days') return 'text-rose-400 border-rose-800/50 hover:border-rose-600';
     if (status === 'Pending generation') return 'text-indigo-300 border-indigo-800/50 hover:border-indigo-500';
+    if (status === 'Awaiting approval — $15,600') return 'text-amber-300 border-amber-800/50 hover:border-amber-500';
     return 'text-slate-300 border-slate-700 hover:border-slate-500';
   };
 
@@ -146,8 +189,9 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
                   <td className="py-3 px-4 text-slate-300">{row.renewalDate}</td>
                   <td className="py-3 px-4">
                     <span className={`text-xs ${
-                      row.status === 'Paid ✓' ? 'text-emerald-400' :
+                      row.status === 'Paid ✓' || row.status === 'Invoice approved — sending' ? 'text-emerald-400' :
                       row.status === 'Overdue — 8 days' ? 'text-rose-400' :
+                      row.status === 'Awaiting approval — $15,600' ? 'text-amber-300' :
                       row.status === 'Invoice sent' ? 'text-indigo-300' :
                       'text-slate-400'
                     }`}>{row.status}</span>

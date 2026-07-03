@@ -628,7 +628,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <OutcomeHeader
-        title="Risk & Compliance"
+        title="Risk Posture"
         metric="2 compliance alerts"
         trend="alert"
         legacy={isTcp ? ['Legal', 'Security', 'Compliance'] : ['Risk & Compliance', 'Legal', 'Quality']}

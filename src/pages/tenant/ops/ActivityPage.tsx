@@ -166,6 +166,12 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
         title="Activity Log"
         subtitle={`Org-wide live activity stream — ${rows.length} events across every Digital Employee, entity, and guardrail`}
       />
+      <p className="-mt-3 mb-5 text-xs text-slate-500">
+        Operational stream: what your workforce is doing right now. For the immutable compliance record, see the{' '}
+        <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+          Audit Trail →
+        </button>
+      </p>
 
       {/* Filters */}
       <div className="flex items-center gap-3 mb-6 flex-wrap">

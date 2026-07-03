@@ -49,6 +49,12 @@ export function deForPage(page: Page, companyId: CompanyId): DockDE {
   return morgan;
 }
 
+// No DE owns Vendors & Partners yet (either company) — the default DE fronts
+// the chat there, but the panel flags the area as unowned.
+export function isUnownedArea(page: Page): boolean {
+  return page.startsWith('entity_vendor');
+}
+
 // ── Messages & persistence ────────────────────────────────────────
 
 interface ChatAction { label: string; page: Page }
@@ -194,7 +200,7 @@ const PWC_INTENTS: Intent[] = [
   {
     deId: 'morgan', keywords: ['gdpr', 'data request', 'overdue'],
     text: "The GDPR data-subject request has breached its statutory 30-day deadline — I escalated it to Legal automatically with the compiled data export attached. It's marked OVERDUE in the Human Tasks queue and needs legal sign-off today.",
-    confidence: 89, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }, { label: 'Open Risk & Compliance →', page: 'outcome_risk' }],
+    confidence: 89, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }, { label: 'Open Risk Posture →', page: 'outcome_risk' }],
   },
   {
     deId: 'morgan', keywords: ['credit note', 'harbor financial', 'fee'],
@@ -204,7 +210,7 @@ const PWC_INTENTS: Intent[] = [
   {
     deId: 'morgan', keywords: ['sterling', 'new client', 'kyc'],
     text: 'Sterling Trust\'s advisory engagement letter ($48,000) was approved on 07-01 at standard terms. On KYC: the last sanctions screening hit — a partial name match on a beneficial owner — was cleared by Risk & Compliance on 06-28.',
-    confidence: 90, actions: [{ label: 'Open Risk & Compliance →', page: 'outcome_risk' }],
+    confidence: 90, actions: [{ label: 'Open Risk Posture →', page: 'outcome_risk' }],
   },
   {
     deId: 'morgan', keywords: ['discount', 'fee adjustment', 'waive', 'reduce the fee'], special: 'guardrail',
@@ -350,6 +356,7 @@ export default function DEChatDock() {
   const reduceMotion = useMemo(prefersReducedMotion, []);
 
   const de = deForPage(currentPage, activeCompanyId);
+  const unowned = isUnownedArea(currentPage);
 
   // Company switch → load that company's thread.
   useEffect(() => {
@@ -507,6 +514,22 @@ export default function DEChatDock() {
               ×
             </button>
           </div>
+
+          {/* Unowned-area banner */}
+          {unowned && (
+            <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex-shrink-0">
+              <p className="text-[11px] text-amber-300 leading-snug">
+                No DE owns Vendors &amp; Partners yet — {de.name} can answer generally or escalate to a human.
+                Hiring a Vendor DE would automate this area.{' '}
+                <button
+                  onClick={() => handleSetPage('workforce_des')}
+                  className="text-amber-200 underline underline-offset-2 hover:text-white transition-colors"
+                >
+                  Explore →
+                </button>
+              </p>
+            </div>
+          )}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">

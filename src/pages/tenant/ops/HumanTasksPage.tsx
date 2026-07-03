@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ interface OpsTask {
   slaRemaining: string;   // for pending tasks
   resolvedBy?: string;    // for historical tasks
   resolvedAt?: string;
+  viaChat?: boolean;      // raised from the DE chat dock
 }
 
 // ── Seed data — pending rows mirror DashboardPage task seeds EXACTLY ─
@@ -106,7 +108,7 @@ const PWC_TASKS: OpsTask[] = [
     id: 't3', type: 'escalation', title: 'GDPR data request — response overdue', de: 'Morgan', detail: '', age: '2 hrs', urgent: true, status: 'pending',
     context: 'A client data-subject request has passed its statutory deadline. Morgan escalated to Legal with the compiled data export ready for review.',
     reasoning: 'Statutory 30-day window breached; escalation rule fired automatically. Response draft attached, awaiting legal sign-off.',
-    relatedPage: 'outcome_risk', relatedLabel: 'Risk & Compliance', slaRemaining: 'OVERDUE — statutory deadline passed',
+    relatedPage: 'outcome_risk', relatedLabel: 'Risk Posture', slaRemaining: 'OVERDUE — statutory deadline passed',
   },
   {
     id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Avery', detail: '', age: '3 hrs', urgent: false, status: 'pending',
@@ -128,7 +130,7 @@ const PWC_TASKS: OpsTask[] = [
   {
     id: 'h3', type: 'escalation', title: 'KYC screening hit — new client entity', de: 'Morgan', detail: '', age: '5 days', urgent: false, status: 'completed',
     context: 'Sanctions screening returned a partial name match on a beneficial owner.', reasoning: 'Any screening hit routes to Risk & Compliance per playbook.',
-    relatedPage: 'outcome_risk', relatedLabel: 'Risk & Compliance', slaRemaining: '—', resolvedBy: 'Risk & Compliance', resolvedAt: '2026-06-28 11:10',
+    relatedPage: 'outcome_risk', relatedLabel: 'Risk Posture', slaRemaining: '—', resolvedBy: 'Risk & Compliance', resolvedAt: '2026-06-28 11:10',
   },
   {
     id: 'h4', type: 'override', title: 'Fee adjustment override — Harbor Financial', de: 'Morgan', detail: '$6,800 requested', age: '8 days', urgent: false, status: 'rejected',
@@ -184,15 +186,34 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
   const lsKey = `dt_ops_tasks_${activeCompanyId}`;
 
   const loadTasks = (): OpsTask[] => {
-    const seed = SEED_TASKS[activeCompanyId].map(t => ({ ...t }));
+    let seed = SEED_TASKS[activeCompanyId].map(t => ({ ...t }));
     try {
       const stored = localStorage.getItem(lsKey);
       if (stored) {
         const decisions = JSON.parse(stored) as Record<string, TaskStatus>;
-        return seed.map(t => decisions[t.id] ? { ...t, status: decisions[t.id], resolvedBy: t.resolvedBy ?? 'You', resolvedAt: t.resolvedAt ?? 'just now' } : t);
+        seed = seed.map(t => decisions[t.id] ? { ...t, status: decisions[t.id], resolvedBy: t.resolvedBy ?? 'You', resolvedAt: t.resolvedAt ?? 'just now' } : t);
       }
     } catch { /* noop */ }
-    return seed;
+    // Escalations raised from the DE chat dock — surfaced at the top of the queue.
+    const chatTasks: OpsTask[] = loadChatEscalations(activeCompanyId).map(e => ({
+      id: e.id,
+      type: 'review_gate' as TaskType,
+      title: e.title,
+      de: e.de,
+      detail: '',
+      age: chatEscalationAge(e.createdAt),
+      urgent: false,
+      status: e.status as TaskStatus,
+      context: `${e.de} escalated this conversation from the DE chat dock. The full chat transcript is attached for human review.`,
+      reasoning: 'The user asked for a human, or the DE could not answer confidently — escalation guardrail fired.',
+      relatedPage: 'workforce_des' as Page,
+      relatedLabel: `${e.de}'s profile`,
+      slaRemaining: e.status === 'pending' ? '1-day SLA' : '—',
+      resolvedBy: e.status === 'pending' ? undefined : 'You',
+      resolvedAt: e.status === 'pending' ? undefined : 'just now',
+      viaChat: true,
+    }));
+    return [...chatTasks, ...seed];
   };
 
   const [tasks, setTasks] = useState<OpsTask[]>(loadTasks);
@@ -207,7 +228,25 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
     setSelectedId(null);
   }, [activeCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refresh when other surfaces (chat dock, dashboard) mutate shared state.
+  useEffect(() => {
+    const refresh = () => setTasks(loadTasks());
+    window.addEventListener('dt-state-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('dt-state-changed', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [activeCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const decide = (id: string, status: 'approved' | 'rejected') => {
+    const target = tasks.find(t => t.id === id);
+    if (target?.viaChat) {
+      // Chat escalations persist their status inside dt_chat_escalations_*.
+      setChatEscalationStatus(activeCompanyId, id, status);
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status, resolvedBy: 'You', resolvedAt: 'just now' } : t));
+      return;
+    }
     setTasks(prev => {
       const next = prev.map(t => t.id === id ? { ...t, status, resolvedBy: 'You', resolvedAt: 'just now' } : t);
       try {
@@ -301,7 +340,12 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
                 {taskBadgeLabel(task.type)}
               </span>
               <div className="min-w-0">
-                <div className="text-xs text-slate-200 truncate">{task.title}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs text-slate-200 truncate">{task.title}</span>
+                  {task.viaChat && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 flex-shrink-0">via DE chat</span>
+                  )}
+                </div>
                 {task.detail && <div className="text-[10px] text-slate-500">{task.detail}</div>}
               </div>
               <span className="text-xs text-slate-400 truncate">{task.de}</span>
@@ -318,7 +362,12 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
               <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
             </div>
-            <h3 className="text-sm font-semibold text-white mb-1">{selected.title}</h3>
+            <h3 className="text-sm font-semibold text-white mb-1">
+              {selected.title}
+              {selected.viaChat && (
+                <span className="ml-2 align-middle text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300">via DE chat</span>
+              )}
+            </h3>
             {selected.detail && <p className="text-xs text-slate-400 mb-3">{selected.detail}</p>}
 
             <div className="space-y-3 text-xs">
@@ -353,13 +402,13 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
               )}
             </div>
 
-            {selected.status === 'pending' && (selected.type === 'approval_gate' || selected.type === 'override' || selected.type === 'training_feedback') && (
+            {selected.status === 'pending' && (selected.viaChat || selected.type === 'approval_gate' || selected.type === 'override' || selected.type === 'training_feedback') && (
               <div className="flex gap-2 mt-4">
                 <button onClick={() => decide(selected.id, 'approved')} className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2 transition-colors">Approve</button>
                 <button onClick={() => decide(selected.id, 'rejected')} className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">Reject</button>
               </div>
             )}
-            {selected.status === 'pending' && (selected.type === 'review_gate' || selected.type === 'escalation') && (
+            {selected.status === 'pending' && !selected.viaChat && (selected.type === 'review_gate' || selected.type === 'escalation') && (
               <p className="mt-4 text-[11px] text-slate-500">
                 {selected.type === 'review_gate' ? 'Review items are resolved in the linked work surface.' : 'Escalations are resolved by the receiving team; this queue tracks the SLA.'}
               </p>

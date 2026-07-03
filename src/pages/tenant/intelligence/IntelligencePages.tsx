@@ -252,7 +252,7 @@ const PWC_INSIGHTS: Insight[] = [
     kind: 'anomaly', severity: 'high',
     title: 'GDPR request breached statutory SLA',
     detail: 'One data-subject request passed the 30-day window before escalation. Recommend lowering the escalation trigger from day 24 to day 20.',
-    page: 'outcome_risk', pageLabel: 'Open Risk & Compliance',
+    page: 'outcome_risk', pageLabel: 'Open Risk Posture',
   },
   {
     kind: 'anomaly', severity: 'medium',

@@ -3,6 +3,7 @@ import type { Page } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';
+import { countPendingChatEscalations } from '../lib/chatEscalations';
 
 interface SidebarProps {
   page: Page;
@@ -51,6 +52,8 @@ export function computeLiveCounts(companyId: CompanyId): { humanTasks: number; k
       humanTasks = Math.max(0, s.humanTasks - Object.keys(JSON.parse(stored)).length);
     }
   } catch { /* fall back to static */ }
+  // Escalations raised from the DE chat dock count as pending human tasks too.
+  humanTasks += countPendingChatEscalations(companyId);
   try {
     const stored = localStorage.getItem(`dt_kb_gaps_${companyId}`);
     if (stored) {
@@ -135,15 +138,15 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         { id: 'financial', label: 'Financial Health', icon: '$', page: 'outcome_financial' },
         {
           id: 'risk',
-          label: 'Risk & Compliance',
-          icon: '⚑',
+          label: 'Risk Posture',
+          icon: '◬',
           page: 'outcome_risk',
           badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
         },
       ],
     },
     {
-      title: 'WORKFORCE',
+      title: 'DIGITAL WORKFORCE',
       groups: [
         {
           id: 'des',
@@ -176,7 +179,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
         { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
         { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
-        { id: 'kb_quality', label: 'Quality & Coverage', icon: '◎', page: 'knowledge_quality' },
+        { id: 'kb_quality', label: 'Quality & Coverage', icon: '✓', page: 'knowledge_quality' },
       ],
     },
     {
@@ -202,17 +205,17 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
     {
       title: 'INTELLIGENCE',
       groups: [
-        { id: 'performance', label: 'Performance', icon: '◈', page: 'intelligence_performance' },
+        { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
         { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
-        { id: 'insights', label: 'Insights', icon: '◉', page: 'intelligence_insights' },
+        { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
       ],
     },
     {
       title: 'GOVERNANCE',
       groups: [
         { id: 'compliance', label: 'Compliance & Guardrails', icon: '⚑', page: 'gov_compliance' },
-        { id: 'audit', label: 'Audit Trail', icon: '◫', page: 'gov_audit' },
-        { id: 'security', label: 'Security & Access', icon: '◉', page: 'gov_security' },
+        { id: 'audit', label: 'Audit Trail', icon: '▤', page: 'gov_audit' },
+        { id: 'security', label: 'Security & Access', icon: '⛨', page: 'gov_security' },
       ],
     },
     {
@@ -281,7 +284,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge Library' },
           { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
           { icon: '✋', page: 'ops_human_tasks' as Page, label: 'Human Tasks' },
-          { icon: '◈', page: 'intelligence_performance' as Page, label: 'Performance' },
+          { icon: '◔', page: 'intelligence_performance' as Page, label: 'Performance' },
           { icon: '⚑', page: 'gov_compliance' as Page, label: 'Compliance & Guardrails' },
         ]).map(item => (
           <button

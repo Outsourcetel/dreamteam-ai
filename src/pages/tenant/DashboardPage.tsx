@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { COMPANY_SUMMARY } from '../../data/companies';
 import { computeLiveCounts } from '../../components/Sidebar';
+import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
+import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 
 // ── Health config ────────────────────────────────────────────────
@@ -122,7 +124,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       revenue: { label: 'Revenue & Growth', icon: '↑', metric: '$2.1M pipeline', trend: 'up', page: 'outcome_revenue', legacy: ['Sales', 'Marketing'] },
       delivery: { label: 'Product & Engineering', icon: '◧', metric: '3 releases planned', trend: 'stable', page: 'outcome_delivery', legacy: ['Engineering', 'Product', 'QA'] },
       financial: { label: 'Financial Health', icon: '$', metric: '$248K AR outstanding', trend: 'warn', page: 'outcome_financial', legacy: ['Finance', 'Accounting'] },
-      risk: { label: 'Risk & Compliance', icon: '⚑', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Legal', 'Security', 'Compliance'], alerts: 2 },
+      risk: { label: 'Risk Posture', icon: '◬', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Legal', 'Security', 'Compliance'], alerts: 2 },
     },
     tasks: [
       { id: 't1', type: 'approval_gate', title: 'Invoice approval — Meridian Group', de: 'Casey', detail: '$15,600', age: '8 min', urgent: true },
@@ -173,7 +175,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       revenue: { label: 'Revenue & Growth', icon: '↑', metric: '$4.2M fees in progress', trend: 'up', page: 'outcome_revenue', legacy: ['Business Development', 'Engagement Mgmt'] },
       delivery: { label: 'Practice Delivery', icon: '◧', metric: '2 filings due Jul 15', trend: 'warn', page: 'outcome_delivery', legacy: ['Tax', 'Audit', 'Advisory'] },
       financial: { label: 'Financial Health', icon: '$', metric: '$890K WIP unbilled', trend: 'stable', page: 'outcome_financial', legacy: ['Finance', 'Billing & Collections'] },
-      risk: { label: 'Risk & Compliance', icon: '⚑', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Risk & Compliance', 'Legal', 'Quality'], alerts: 2 },
+      risk: { label: 'Risk Posture', icon: '◬', metric: '2 compliance alerts', trend: 'alert', page: 'outcome_risk', legacy: ['Risk & Compliance', 'Legal', 'Quality'], alerts: 2 },
     },
     tasks: [
       { id: 't1', type: 'review_gate', title: 'Partner review — Crestline tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
@@ -286,7 +288,34 @@ export default function DashboardPage({
   const { activeCompanyId, activeCompany } = useAuth();
   const data = COMPANY_DATA[activeCompanyId];
   const summary = COMPANY_SUMMARY[activeCompanyId];
+
+  // Live overlays — task decisions + chat escalations, refreshed on dt-state-changed.
+  const readDecisions = (): Record<string, string> => {
+    try {
+      const stored = localStorage.getItem(`dt_ops_tasks_${activeCompanyId}`);
+      if (stored) return JSON.parse(stored) as Record<string, string>;
+    } catch { /* noop */ }
+    return {};
+  };
+  const [decisions, setDecisions] = useState<Record<string, string>>(readDecisions);
+  const [chatEscs, setChatEscs] = useState<ChatEscalation[]>(() => loadChatEscalations(activeCompanyId));
+
+  useEffect(() => {
+    const refresh = () => {
+      setDecisions(readDecisions());
+      setChatEscs(loadChatEscalations(activeCompanyId));
+    };
+    refresh();
+    window.addEventListener('dt-state-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('dt-state-changed', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [activeCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const live = computeLiveCounts(activeCompanyId);
+  const pendingChatEscs = chatEscs.filter(e => e.status === 'pending');
 
   const [healthConfig, setHealthConfig] = useState<HealthConfig>(DEFAULT_HEALTH_CONFIG);
   const [showHealthConfig, setShowHealthConfig] = useState(false);
@@ -542,19 +571,52 @@ export default function DashboardPage({
                 <span className="text-[9px] text-slate-600 uppercase tracking-wider">Age</span>
                 <span />
               </div>
-              {data.tasks.map((task) => (
+              {/* Chat-dock escalations (pending) surface at the top of the queue */}
+              {pendingChatEscs.map((esc) => (
+                <div
+                  key={esc.id}
+                  className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors hover:bg-slate-800/50"
+                >
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle('review_gate')}`}>
+                    {taskBadgeLabel('review_gate')}
+                  </span>
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <span className="text-xs text-slate-200 truncate">{esc.title}</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 flex-shrink-0">via DE chat</span>
+                  </div>
+                  <span className="text-xs text-slate-400 truncate">{esc.de}</span>
+                  <span className="text-xs text-slate-500">{chatEscalationAge(esc.createdAt)}</span>
+                  <button
+                    onClick={() => setPage('ops_human_tasks')}
+                    className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                  >
+                    →
+                  </button>
+                </div>
+              ))}
+              {data.tasks.map((task) => {
+                const decided = decisions[task.id];
+                return (
                 <div
                   key={task.id}
                   className={`grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors ${
-                    task.urgent ? 'bg-amber-500/8' : 'hover:bg-slate-800/50'
+                    decided ? 'opacity-60 hover:opacity-100 hover:bg-slate-800/50' : task.urgent ? 'bg-amber-500/8' : 'hover:bg-slate-800/50'
                   }`}
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
                     {taskBadgeLabel(task.type)}
                   </span>
-                  <div className="min-w-0">
-                    <div className="text-xs text-slate-200 truncate">{task.title}</div>
-                    {task.detail && <div className="text-[10px] text-slate-500">{task.detail}</div>}
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-200 truncate">{task.title}</div>
+                      {task.detail && <div className="text-[10px] text-slate-500">{task.detail}</div>}
+                    </div>
+                    {decided === 'approved' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 flex-shrink-0">Approved</span>
+                    )}
+                    {decided === 'rejected' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 flex-shrink-0">Rejected</span>
+                    )}
                   </div>
                   <span className="text-xs text-slate-400 truncate">{task.de}</span>
                   <span className="text-xs text-slate-500">{task.age}</span>
@@ -565,7 +627,8 @@ export default function DashboardPage({
                     →
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

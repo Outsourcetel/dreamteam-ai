@@ -261,7 +261,7 @@ function AppShell() {
       case 'gov_compliance':
         return <CompliancePage setPage={handleSetPage} />;
       case 'gov_audit':
-        return <AuditTrailPage />;
+        return <AuditTrailPage setPage={handleSetPage} />;
       case 'gov_security':
         return <SecurityAccessPage />;
       case 'company_setup':
