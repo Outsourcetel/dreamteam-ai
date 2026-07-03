@@ -80,6 +80,6 @@ export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {
     alerts: 2,
     onboardingActive: 1,
     atRiskAccounts: 1,
-    renewalsDue: 4,
+    renewalsDue: 2,
   },
 };
