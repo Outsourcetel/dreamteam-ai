@@ -216,6 +216,14 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
                     Create your organization
                   </button>
                 </p>
+                {import.meta.env.DEV && (
+                  <button
+                    onClick={() => onLogin({ id: 'dev-demo-user', name: 'Demo User', email: 'demo@local.dev', role: 'tenant_admin', tenantId: 'demo-tenant' })}
+                    className="mt-3 text-xs text-slate-500 hover:text-slate-300 underline"
+                  >
+                    Enter demo (local dev only)
+                  </button>
+                )}
               </div>
             </>
           )}
