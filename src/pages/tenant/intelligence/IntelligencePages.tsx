@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { useDataMode } from '../../../lib/dataMode';
+import { fetchMonthlyUsage, MonthlyUsage } from '../../../lib/usageApi';
 import { PageHeader } from '../../../components/ui';
 import { COMPANY_SUMMARY } from '../../../data/companies';
 import { computeRoi, roiK } from '../../../data/roi';
@@ -62,12 +64,44 @@ function metricColor(kind: 'resolution' | 'confidence' | 'escalation' | 'error',
   return val > 10 ? 'text-red-400' : val > 4 ? 'text-amber-400' : 'text-emerald-400';
 }
 
+// ── Live usage strip (real usage_metrics, live tenants only) ──────
+
+function LiveUsageStrip() {
+  const [usage, setUsage] = useState<MonthlyUsage | null>(null);
+  useEffect(() => {
+    fetchMonthlyUsage().then(setUsage).catch(() => setUsage(null));
+  }, []);
+  if (!usage) return null;
+  const items = [
+    { label: 'Inquiries', value: usage.inquiries },
+    { label: 'Cache hits', value: usage.cache_hits },
+    { label: 'Escalations', value: usage.escalations },
+    { label: 'LLM calls', value: usage.llm_calls },
+  ];
+  return (
+    <div className="bg-slate-900 border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
+      <div className="flex items-center gap-4 flex-wrap">
+        <span className="text-[9px] font-bold tracking-widest text-indigo-400 uppercase">Live usage (this month)</span>
+        {items.map(m => (
+          <span key={m.label} className="text-xs text-slate-400">
+            {m.label} <span className="text-slate-200 font-semibold">{m.value.toLocaleString()}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1">
+        Real counters from your Digital Employee — recorded per inquiry by the answering service.
+      </p>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Performance
 // ══════════════════════════════════════════════════════════════════
 
 export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const des = METRICS[activeCompanyId];
   const bench = BENCHMARK[activeCompanyId];
   const summary = COMPANY_SUMMARY[activeCompanyId];
@@ -80,6 +114,9 @@ export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
         title="Performance Analytics"
         subtitle={`Org-level Digital Employee analytics — ${des.length} DEs · ${totalTasks.toLocaleString()} tasks this month · ${summary.aiResolution}% AI resolution`}
       />
+
+      {/* Live usage counters — real usage_metrics, live tenants only */}
+      {dataMode === 'live' && <LiveUsageStrip />}
 
       {/* Monthly value summary — same derivation as the dashboard bar (src/data/roi.ts) */}
       {(() => {

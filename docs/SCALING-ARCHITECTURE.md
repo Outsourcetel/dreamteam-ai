@@ -26,11 +26,12 @@ Rules that fall out of this:
 
 ## Sequencing (build triggers, not dates)
 
-1. **P2.5 — pgvector retrieval**: trigger = a pilot tenant exceeds ~50 documents or keyword retrieval visibly misses. (~1 migration + ingest step + query change.)
-2. **Account dimension (schema-only now)**: add nullable `account_id` columns + FK to a new `accounts-of-tenant` table in the NEXT migration touching these tables — retrofitting the column later across millions of rows is the expensive version. UI can ignore it until needed.
+1. **P2.5 — pgvector retrieval**: ✅ **SHIPPED** (migration 013). `knowledge_doc_chunks` (384-dim, HNSW) + `ingest-chunks` edge function (chunk ~1500 chars / 200 overlap, paragraph/sentence-aware). Embeddings are **free** — Supabase edge runtime's built-in `gte-small` model, no external API. `de-answer` retrieves vector-first via `match_doc_chunks` RPC (SECURITY DEFINER, tenant-guarded, account-first ranking) and falls back to keyword overlap when no embedded chunks exist. (Legacy 006 `knowledge_chunks` — 1536-dim, article-based — left untouched for the old article path.)
+2. **Account dimension (schema-only now)**: ✅ **SHIPPED** (migration 013). `customer_accounts` **reused** as the Tenant → Account level (it already is the tenant's customer list) — added `external_ref` + `tier`. Nullable `account_id` added to knowledge_docs, de_conversations, de_messages, activity_events, human_tasks (tickets/invoices already had it), all indexed. Retrieval scoping: account-matched rows rank above tenant-global (null account_id) rows.
 3. **End-user widget + tenant-token auth**: trigger = first design partner who wants their customers/employees asking questions (this is TCP's actual use case — likely early).
-4. **Queue + semantic cache + tiering**: trigger = any tenant crossing ~1K inquiries/day or LLM spend mattering.
-5. **Partitioning/replicas/K8s**: trigger = measured, not speculative. The 10-layer architecture keeps business logic portable.
+4. **Queue + semantic cache + tiering**: semantic cache ✅ **SHIPPED** (schema + read/write path, migration 013): `answer_cache` (384-dim HNSW), `match_cached_answer` RPC (distance < 0.15, account-first), invalidation via DB trigger on any knowledge_docs change, `hits` counter, `cached: true` "⚡ instant" chip in the chat dock. Cache **writes** stay dormant until an LLM key exists (writes happen only after a successful LLM answer). Queue + model tiering still pending their trigger.
+5. **Observability groundwork**: ✅ **SHIPPED** (migration 013). `usage_metrics` (tenant × day × metric) with SECURITY DEFINER write RPCs (`increment_metric` for authenticated callers, `increment_metric_tenant` service-role-only); `de-answer` records inquiries / cache_hits / escalations / llm_calls; the Performance page shows a live-mode "Live usage (this month)" strip.
+6. **Partitioning/replicas/K8s**: trigger = measured, not speculative. The 10-layer architecture keeps business logic portable.
 
 ## What we deliberately do NOT do
 - No LangChain/LangGraph — orchestration (Workforce Engine: routing, gates, guardrails, audit) is our own plain code and our core IP; LLM calls stay behind our thin provider-neutral interface.

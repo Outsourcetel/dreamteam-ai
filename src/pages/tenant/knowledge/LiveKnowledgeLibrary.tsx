@@ -3,6 +3,7 @@ import { PageHeader, th, td } from '../../../components/ui';
 import {
   KnowledgeDoc, listKnowledgeDocs, createKnowledgeDoc,
   updateKnowledgeDoc, deleteKnowledgeDoc,
+  DocChunkStatus, listChunkStatus, ingestDocChunks,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 
@@ -31,6 +32,8 @@ const LiveKnowledgeLibrary = () => {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [chunkStatus, setChunkStatus] = useState<Record<string, DocChunkStatus>>({});
+  const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
@@ -38,6 +41,7 @@ const LiveKnowledgeLibrary = () => {
     setError(null);
     try {
       setDocs(await listKnowledgeDocs());
+      setChunkStatus(await listChunkStatus());
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError(err instanceof Error ? err.message : String(err));
@@ -48,19 +52,49 @@ const LiveKnowledgeLibrary = () => {
 
   useEffect(() => { void load(); }, []);
 
+  // Fire-and-forget: chunk + embed a doc via the ingest-chunks edge
+  // function so Alex retrieves it semantically. Failure is non-fatal —
+  // the doc still works with keyword retrieval ("Keyword only" badge).
+  const index = (docId: string) => {
+    setIndexingIds(prev => new Set(prev).add(docId));
+    ingestDocChunks(docId)
+      .then(status => setChunkStatus(prev => ({ ...prev, [docId]: status })))
+      .catch(err => console.error('ingestDocChunks:', err))
+      .finally(() => setIndexingIds(prev => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      }));
+  };
+
+  const IndexBadge = ({ docId }: { docId: string }) => {
+    const s = chunkStatus[docId];
+    if (indexingIds.has(docId)) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">Indexing…</span>;
+    }
+    if (s && s.embedded > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {s.chunks} chunk{s.chunks === 1 ? '' : 's'}</span>;
+    }
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">Keyword only</span>;
+  };
+
   const save = async () => {
     if (!editor || !editor.title.trim() || !editor.content.trim() || saving) return;
     setSaving(true);
     setError(null);
     const tags = editor.tags.split(',').map(t => t.trim()).filter(Boolean);
     try {
+      let docId: string;
       if (editor.id) {
-        await updateKnowledgeDoc(editor.id, { title: editor.title.trim(), content: editor.content, tags });
+        const updated = await updateKnowledgeDoc(editor.id, { title: editor.title.trim(), content: editor.content, tags });
+        docId = updated.id;
       } else {
-        await createKnowledgeDoc({ title: editor.title.trim(), content: editor.content, source: 'paste', tags });
+        const created = await createKnowledgeDoc({ title: editor.title.trim(), content: editor.content, source: 'paste', tags });
+        docId = created.id;
       }
       setEditor(null);
       await load();
+      index(docId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -89,8 +123,9 @@ const LiveKnowledgeLibrary = () => {
     try {
       const text = await file.text();
       const title = file.name.replace(/\.(txt|md|markdown)$/i, '');
-      await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+      const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
       await load();
+      index(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -161,6 +196,7 @@ const LiveKnowledgeLibrary = () => {
                 <th className={th}>Preview</th>
                 <th className={th}>Tags</th>
                 <th className={th}>Source</th>
+                <th className={th}>Retrieval</th>
                 <th className={th}>Updated</th>
                 <th className={th}></th>
               </tr>
@@ -185,6 +221,7 @@ const LiveKnowledgeLibrary = () => {
                       {d.source}
                     </span>
                   </td>
+                  <td className={td}><IndexBadge docId={d.id} /></td>
                   <td className={`${td} text-xs text-slate-400`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>
                     <div className="flex gap-2 justify-end">

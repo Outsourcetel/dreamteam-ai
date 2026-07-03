@@ -74,6 +74,8 @@ interface ChatMsg {
   escalated?: boolean;
   /** live mode: honest error banners */
   notice?: 'llm_not_configured' | 'error';
+  /** live mode: answer served from the semantic answer cache */
+  cached?: boolean;
 }
 
 // ── LIVE mode (real tenant): the dock fronts the de-answer edge
@@ -488,6 +490,7 @@ export default function DEChatDock() {
         confidence: res.confidence,
         sources: res.sources,
         escalated: res.needs_escalation,
+        cached: res.cached,
         time: nowTime(),
       }]);
     } catch (err) {
@@ -650,6 +653,9 @@ export default function DEChatDock() {
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
                     {msg.sources && msg.sources.length > 0 && (
                       <div className="mt-1.5 text-[10px] text-slate-400">From: {msg.sources.join(', ')}</div>
+                    )}
+                    {msg.cached && (
+                      <div className="mt-1 text-[10px] text-teal-400/80" title="Served from the verified answer cache — no model call needed">⚡ instant</div>
                     )}
                     {msg.escalated && (
                       <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">

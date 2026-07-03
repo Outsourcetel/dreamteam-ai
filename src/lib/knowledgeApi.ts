@@ -81,6 +81,54 @@ export async function deleteKnowledgeDoc(id: string): Promise<void> {
   if (error) raise('deleteKnowledgeDoc', error);
 }
 
+// ── Chunking / embedding (ingest-chunks edge function) ────────────
+
+export interface DocChunkStatus {
+  chunks: number;
+  embedded: number;
+}
+
+/** Per-doc chunk/embedding counts, keyed by doc_id. Docs with no entry
+ *  have not been indexed yet (keyword-only retrieval). */
+export async function listChunkStatus(): Promise<Record<string, DocChunkStatus>> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('knowledge_doc_chunks')
+    .select('doc_id, chunk_index, embedding')
+    .eq('tenant_id', tid);
+  if (error) {
+    // Missing table (migration 013 not applied) is non-fatal — no badges.
+    console.error('listChunkStatus:', error.message);
+    return {};
+  }
+  const map: Record<string, DocChunkStatus> = {};
+  for (const row of data ?? []) {
+    const s = (map[row.doc_id] ??= { chunks: 0, embedded: 0 });
+    s.chunks += 1;
+    if (row.embedding != null) s.embedded += 1;
+  }
+  return map;
+}
+
+/** Fire the ingest-chunks edge function for a doc (chunk + embed).
+ *  Fire-and-forget friendly: resolves with the result, throws on failure. */
+export async function ingestDocChunks(docId: string): Promise<DocChunkStatus> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-chunks`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ doc_id: docId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new CustomerApiError(String(data.error ?? `HTTP ${res.status}`), false);
+  return { chunks: Number(data.chunks) || 0, embedded: Number(data.embedded) || 0 };
+}
+
 // ── de-answer edge function (the real DE brain) ───────────────────
 
 export interface DEAnswerResult {
@@ -90,6 +138,8 @@ export interface DEAnswerResult {
   sources: string[];
   needs_escalation: boolean;
   no_docs?: boolean;
+  /** answer served from the semantic answer cache (no LLM call) */
+  cached?: boolean;
 }
 
 export class DEAnswerError extends Error {
@@ -141,5 +191,6 @@ export async function askDE(
     sources: Array.isArray(data.sources) ? (data.sources as string[]) : [],
     needs_escalation: !!data.needs_escalation,
     no_docs: !!data.no_docs,
+    cached: !!data.cached,
   };
 }
