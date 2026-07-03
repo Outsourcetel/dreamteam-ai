@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { AuthUser, Tenant } from '../../types';
+import { useAuth } from '../../../context/AuthContext';
+import type { Page } from '../../../types';
+
+// ============================================================
+// Onboarding — Customer entity
+// AI onboarding co-pilot migrated from ImplementationWorkspacePage:
+// project sidebar, checklist, data upload with AI column mapping,
+// configuration review, audit trail, and DE assistant chat.
+// ============================================================
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -216,8 +224,8 @@ function deReply(input: string): string {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-const ImplementationWorkspacePage = ({ user: _user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
-  const _accent = tenant?.primaryColor || '#6366f1';
+const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
+  const { activeCompanyId, activeCompany } = useAuth();
 
   const [projects, setProjects] = useState<OnboardingProject[]>(SEED_PROJECTS);
   const [activeProject, setActiveProject] = useState<OnboardingProject | null>(null);
@@ -339,6 +347,30 @@ const ImplementationWorkspacePage = ({ user: _user, tenant }: { user?: AuthUser;
     return true;
   });
 
+  // PWC — Onboarding is a lighter function (engagement setup)
+  if (activeCompanyId !== 'tcp') {
+    return (
+      <div className="flex-1 flex flex-col overflow-auto bg-slate-950 p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-white">Onboarding — Customer entity</h1>
+          <p className="text-slate-400 text-sm mt-1">{activeCompany.name} · Client engagement setup</p>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">⚙</div>
+          <h2 className="text-lg font-semibold text-slate-200 mb-2">1 engagement setup in progress</h2>
+          <p className="text-sm text-slate-500 max-w-sm mb-5">
+            Harbor Financial — engagement setup is 60% complete. Morgan is verifying KYC documents
+            and preparing the engagement letter for partner review.
+          </p>
+          <div className="w-64 bg-slate-800 rounded-full h-1.5 mb-2">
+            <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: '60%' }} />
+          </div>
+          <p className="text-xs text-slate-600">Due 2026-07-20 · Handled by Morgan</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full bg-slate-950 overflow-hidden">
       {toastVisible && (
@@ -409,7 +441,7 @@ const ImplementationWorkspacePage = ({ user: _user, tenant }: { user?: AuthUser;
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 bg-slate-900 flex-shrink-0">
               <div className="flex items-center gap-2 text-sm flex-wrap">
-                <span className="text-slate-400">Implementation</span>
+                <span className="text-slate-400">Onboarding — Customer entity</span>
                 <span className="text-slate-600">/</span>
                 <span className="text-slate-300">{activeProject.client}</span>
                 <span className="text-slate-600">/</span>
@@ -1190,4 +1222,4 @@ const ImplementationWorkspacePage = ({ user: _user, tenant }: { user?: AuthUser;
   );
 };
 
-export default ImplementationWorkspacePage;
+export default CustomerOnboardingPage;

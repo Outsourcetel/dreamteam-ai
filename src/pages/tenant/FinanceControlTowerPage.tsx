@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import * as api from '../../lib/api';
 import type { AuthUser, Tenant } from '../../types';
 
@@ -49,211 +49,6 @@ function FinStat(props: any) {
   );
 }
 
-// ── Renewals Pipeline ──────────────────────────────────────────
-
-type RenewalStatus = 'Invoice sent' | 'Pending generation' | 'Overdue — 8 days' | 'Paid ✓' | 'Draft';
-
-interface RenewalRow {
-  account: string;
-  arr: string;
-  arrNum: number;
-  health: number;
-  renewalDate: string;
-  status: RenewalStatus;
-}
-
-const INITIAL_RENEWALS: RenewalRow[] = [
-  { account: 'TCP Inc', arr: '$84K', arrNum: 84000, health: 72, renewalDate: 'Jul 31', status: 'Invoice sent' },
-  { account: 'Meridian Group', arr: '$156K', arrNum: 156000, health: 58, renewalDate: 'Aug 5', status: 'Pending generation' },
-  { account: 'Apex Systems', arr: '$43K', arrNum: 43000, health: 34, renewalDate: 'Aug 12', status: 'Overdue — 8 days' },
-  { account: 'Northfield Co', arr: '$210K', arrNum: 210000, health: 81, renewalDate: 'Aug 18', status: 'Paid ✓' },
-  { account: 'Harbor Tech', arr: '$67K', arrNum: 67000, health: 61, renewalDate: 'Aug 22', status: 'Draft' },
-];
-
-function healthIndicator(score: number) {
-  if (score >= 70) return '🟢';
-  if (score >= 40) return '🟡';
-  return '🔴';
-}
-
-function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
-  const [rows, setRows] = useState<RenewalRow[]>(INITIAL_RENEWALS);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [invoiceModal, setInvoiceModal] = useState<{ account: string; arr: string } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ message, type });
-    toastTimer.current = setTimeout(() => setToast(null), 3500);
-  };
-
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
-
-  const handleAction = (row: RenewalRow) => {
-    if (row.status === 'Pending generation') {
-      setInvoiceModal({ account: row.account, arr: row.arr });
-    } else if (row.status === 'Draft') {
-      setRows(prev => prev.map(r => r.account === row.account ? { ...r, status: 'Invoice sent' } : r));
-      showToast(`Invoice emailed to billing@${row.account.toLowerCase().replace(/\s+/g, '')}.com`);
-    } else if (row.status === 'Overdue — 8 days') {
-      showToast(`CSM notified via Gainsight CTA for ${row.account}`);
-    } else if (row.status === 'Invoice sent') {
-      showToast(`Opening ${row.account} in Zuora…`);
-    }
-  };
-
-  const confirmGenerateInvoice = () => {
-    if (!invoiceModal) return;
-    const invId = 'INV-' + Math.floor(Math.random() * 900000 + 100000);
-    setRows(prev => prev.map(r => r.account === invoiceModal.account ? { ...r, status: 'Invoice sent' } : r));
-    setInvoiceModal(null);
-    showToast(`Invoice ${invId} created in Zuora`);
-  };
-
-  const actionLabel = (status: RenewalStatus): string | null => {
-    if (status === 'Invoice sent') return 'View';
-    if (status === 'Pending generation') return 'Generate Invoice';
-    if (status === 'Overdue — 8 days') return 'Escalate';
-    if (status === 'Paid ✓') return null;
-    if (status === 'Draft') return 'Send Invoice';
-    return null;
-  };
-
-  const actionStyle = (status: RenewalStatus): string => {
-    if (status === 'Overdue — 8 days') return 'text-rose-400 border-rose-800/50 hover:border-rose-600';
-    if (status === 'Pending generation') return 'text-indigo-300 border-indigo-800/50 hover:border-indigo-500';
-    return 'text-slate-300 border-slate-700 hover:border-slate-500';
-  };
-
-  return (
-    <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
-      {/* Title row */}
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
-        <div>
-          <h3 className="text-base font-semibold text-white">Renewals Pipeline</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Upcoming renewals detected via Zuora webhooks</p>
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span>Powered by</span>
-          <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300">💳 Zuora</span>
-          <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300">📊 Gainsight</span>
-        </div>
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        {[
-          { label: 'Renewals due in 30 days', value: '8 accounts', sub: '$1.2M ARR', color: 'text-white' },
-          { label: 'Invoices pending payment', value: '3', sub: '$248K', color: 'text-amber-300' },
-          { label: 'Renewed this month', value: '12', sub: '$890K', color: 'text-emerald-300' },
-        ].map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
-            <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-slate-800 text-left">
-              {['Account', 'ARR', 'Health', 'Renewal Date', 'Invoice Status', 'Action'].map(h => (
-                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => {
-              const btn = actionLabel(row.status);
-              return (
-                <tr key={row.account} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === rows.length - 1 ? 'border-b-0' : ''}`}>
-                  <td className="py-3 px-4 font-medium text-white">{row.account}</td>
-                  <td className="py-3 px-4 text-slate-300">{row.arr}</td>
-                  <td className="py-3 px-4 text-slate-300 whitespace-nowrap">{healthIndicator(row.health)} {row.health}</td>
-                  <td className="py-3 px-4 text-slate-300">{row.renewalDate}</td>
-                  <td className="py-3 px-4">
-                    <span className={`text-xs ${
-                      row.status === 'Paid ✓' ? 'text-emerald-400' :
-                      row.status === 'Overdue — 8 days' ? 'text-rose-400' :
-                      row.status === 'Invoice sent' ? 'text-indigo-300' :
-                      'text-slate-400'
-                    }`}>{row.status}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    {btn ? (
-                      <button
-                        onClick={() => handleAction(row)}
-                        className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${actionStyle(row.status)}`}
-                      >
-                        {btn}
-                      </button>
-                    ) : <span className="text-slate-600 text-xs">—</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer note */}
-      <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-        <p className="text-[11px] text-slate-500">
-          This pipeline is powered by the Customer Renewal Workflow playbook. Upcoming renewals are detected automatically via Zuora webhooks.
-        </p>
-        {setPage && (
-          <button
-            onClick={() => setPage('playbooks')}
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
-          >
-            View Playbook →
-          </button>
-        )}
-      </div>
-
-      {/* Generate Invoice Modal */}
-      {invoiceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-2">Generate Zuora Invoice</h3>
-            <p className="text-sm text-slate-300 mb-5">
-              Generate Zuora invoice for <span className="text-white font-medium">{invoiceModal.account}</span> — <span className="text-indigo-300 font-medium">{invoiceModal.arr}</span>?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={confirmGenerateInvoice}
-                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 transition-all"
-              >
-                Confirm
-              </button>
-              <button
-                onClick={() => setInvoiceModal(null)}
-                className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium transition-all ${
-          toast.type === 'success'
-            ? 'bg-emerald-900/90 border-emerald-700/50 text-emerald-300'
-            : 'bg-rose-900/90 border-rose-700/50 text-rose-300'
-        }`}>
-          {toast.message}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function FinanceControlTowerPage(props: any) {
   const { user, tenant, accentColor, setPage } = props;
@@ -410,7 +205,12 @@ function FinanceControlTowerPage(props: any) {
             <FinStat label="Unmatched bank lines" value={String(metrics.unmatched)} sub="Need reconciliation" tone={metrics.unmatched ? 'rose' : 'emerald'} />
             <FinStat label="Total exceptions" value={String(metrics.totalExceptions)} sub="Detected this close" />
           </div>
-          <RenewalsPipeline setPage={setPage} />
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-sm text-slate-400">The Renewals Pipeline now lives in the Customer entity.</p>
+            {setPage && (
+              <button onClick={() => setPage('entity_customer_renewal')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Go to Renewal &amp; Expansion →</button>
+            )}
+          </div>
         </>
       )}
 

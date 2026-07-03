@@ -8,18 +8,21 @@ import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeHubPage from './pages/tenant/KnowledgeHubPage';
 import KnowledgeDataPage from './pages/tenant/KnowledgeDataPage';
-import CustomerPortalPage from './pages/tenant/CustomerPortalPage';
 import SecurityPage from './pages/tenant/SecurityPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import FinanceControlTowerPage from './pages/tenant/FinanceControlTowerPage';
 import AuditLogPage from './pages/tenant/AuditLogPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
-import ImplementationWorkspacePage from './pages/tenant/ImplementationWorkspacePage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import ApprovalsPage from './pages/tenant/ApprovalsPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
+import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
+import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
+import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
+import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
+import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -32,7 +35,6 @@ const PAGE_TO_URL: Record<string, string> = {
   platform_revenue:       '/platform/revenue',
   dashboard:              '/dashboard',
   finance:                '/finance',
-  implementation:         '/implementation',
   audit_log:              '/audit-log',
   admin_approvals:        '/approvals',
   users:                  '/users',
@@ -50,14 +52,6 @@ const PAGE_TO_URL: Record<string, string> = {
   knowledge_taxonomy:     '/knowledge/taxonomy',
   knowledge_connectors:   '/knowledge/connectors',
   knowledge_files:        '/knowledge/files',
-  portal_overview:        '/portal/overview',
-  portal_conversations:   '/portal/conversations',
-  portal_actions:         '/portal/actions',
-  portal_approvals:       '/portal/approvals',
-  portal_tickets:         '/portal/tickets',
-  portal_escalations:     '/portal/escalations',
-  portal_settings:        '/portal/settings',
-  portal_email:           '/portal/email',
   hub_review:             '/knowledge/review',
   admin_overview:         '/security/overview',
   admin_rbac:             '/security/rbac',
@@ -122,7 +116,7 @@ const URL_TO_PAGE: Record<string, Page> = Object.fromEntries(
 );
 
 // Syncs the auth-context page state with the browser URL bidirectionally.
-// This lets every existing component keep calling setPage('portal_conversations')
+// This lets every existing component keep calling setPage('entity_customer_support')
 // while the browser URL stays updated and the back button works.
 function URLSync() {
   const { currentPage, handleSetPage } = useAuth();
@@ -226,23 +220,12 @@ function AppShell() {
       case 'hub_training':
       case 'hub_analytics':
         return <KnowledgeHubPage dbArticles={dbArticles} {...commonProps} subPage={currentPage as any} />;
-      case 'portal_overview':
-      case 'portal_conversations':
-      case 'portal_actions':
-      case 'portal_approvals':
-      case 'portal_tickets':
-      case 'portal_settings':
-      case 'portal_escalations':
-      case 'portal_email':
-        return <CustomerPortalPage {...commonProps} subPage={currentPage as any} />;
       case 'admin_approvals':
         return <ApprovalsPage {...commonProps} />;
       case 'eu_chat':
         return <EndUserChatPage {...commonProps} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
-      case 'implementation':
-        return <ImplementationWorkspacePage {...commonProps} />;
       case 'playbooks':
         return <PlaybooksPage {...commonProps} />;
       case 'audit_log':
@@ -251,19 +234,19 @@ function AppShell() {
         return <UserManagementPage {...commonProps} />;
       // ── Entity pages ──────────────────────────────────────────
       case 'entity_customer':
-        return <PlaceholderPage title="Customer Lifecycle" description="Full customer journey from Business Development through Renewal & Expansion." />;
+        return <CustomerOverviewPage setPage={handleSetPage} />;
       case 'entity_customer_bd':
-        return <PlaceholderPage title="Business Development" description="Prospect identification, outreach sequences, and qualification workflows." />;
+        return <CustomerBDPage setPage={handleSetPage} />;
       case 'entity_customer_sales':
-        return <PlaceholderPage title="Sales" description="Pipeline management, proposals, demos, and deal closing." />;
+        return <CustomerSalesPage setPage={handleSetPage} />;
       case 'entity_customer_onboarding':
-        return <PlaceholderPage title="Onboarding & Implementation" description="Client onboarding, product configuration, and go-live management." />;
+        return <CustomerOnboardingPage setPage={handleSetPage} />;
       case 'entity_customer_support':
-        return <PlaceholderPage title="Support" description="Ticket triage, knowledge-based resolution, and escalation management." />;
+        return <CustomerSupportPage setPage={handleSetPage} />;
       case 'entity_customer_success':
-        return <PlaceholderPage title="Customer Success" description="Health monitoring, QBR preparation, and at-risk account management." />;
+        return <CustomerSuccessPage setPage={handleSetPage} />;
       case 'entity_customer_renewal':
-        return <PlaceholderPage title="Renewal & Expansion" description="Renewal pipeline, invoice generation, and expansion opportunity identification." />;
+        return <CustomerRenewalPage setPage={handleSetPage} />;
       case 'entity_vendor':
       case 'entity_vendor_sourcing':
       case 'entity_vendor_contracts':

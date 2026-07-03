@@ -1531,8 +1531,8 @@ function buildChecklist(d: {
       label: 'Set up escalation alerts',
       description: 'Get an email when a customer is escalated to a human. Never miss an urgent query.',
       done: d.hasAlertEmail,
-      page: 'portal_settings',
-      cta: 'Go to Portal Settings',
+      page: 'entity_customer_support',
+      cta: 'Go to Support',
     },
     {
       id: 'team',

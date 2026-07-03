@@ -374,7 +374,7 @@ const EndUserChatPage = ({
             )}
             {setPage && (
               <button
-                onClick={() => setPage('portal_conversations')}
+                onClick={() => setPage('entity_customer_support')}
                 className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 transition-all"
               >
                 Admin view →

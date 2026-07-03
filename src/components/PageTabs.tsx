@@ -14,15 +14,8 @@ export const HUB_TABS: { id: Page; label: string }[] = [
 ];
 
 export const PORTAL_TABS: { id: Page; label: string }[] = [
-  { id: 'portal_overview', label: 'Overview' },
+  { id: 'entity_customer_support', label: 'Support Control Room' },
   { id: 'eu_chat', label: 'Customer View' },
-  { id: 'portal_conversations', label: 'Conversations' },
-  { id: 'portal_escalations', label: 'Escalations' },
-  { id: 'portal_actions', label: 'DE Actions' },
-  { id: 'portal_approvals', label: 'Approvals' },
-  { id: 'portal_tickets', label: 'Tickets' },
-  { id: 'portal_email', label: 'Email Inbox' },
-  { id: 'portal_settings', label: 'Settings' },
 ];
 
 export const ADMIN_TABS: { id: Page; label: string }[] = [
