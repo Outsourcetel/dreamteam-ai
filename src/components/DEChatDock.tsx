@@ -187,6 +187,12 @@ const TCP_INTENTS: Intent[] = [
     text: 'Workforce onboarding is back on track after the Workday connector sync outage was resolved by IT Ops on 06-29. All blocked onboarding tasks have cleared; the connector has run three consecutive clean syncs since.',
     confidence: 87, actions: [{ label: 'Open Workforce →', page: 'entity_workforce' }],
   },
+  // Any DE — playbook change lifecycle
+  {
+    deId: '*', keywords: ['playbook change', 'process change', 'update the playbook'],
+    text: "Playbook changes never apply directly. An edit forks a draft next to the published version, the draft runs against playbook-specific eval scenarios in the Proving Ground, and only a passing run unlocks publish — a failing scenario blocks the change from shipping. Right now the Renewal Lifecycle v3.3 draft (Day-5 firm reminder + usage-report attachment) is sitting at that gate.",
+    confidence: 93, actions: [{ label: 'Open Playbooks →', page: 'systems_playbooks' }, { label: 'Open Proving Ground →', page: 'intelligence_evals' }],
+  },
   // Any DE — who approves / human workload
   {
     deId: '*', keywords: ['who approves', 'priya', 'workload', 'team'],

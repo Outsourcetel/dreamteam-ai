@@ -61,7 +61,7 @@ interface RunRow {
   id: string;
   time: string;
   trigger: string;
-  triggerType: 'Nightly' | 'Knowledge publish' | 'Learned behavior' | 'Recertification' | 'Manual';
+  triggerType: 'Nightly' | 'Knowledge publish' | 'Learned behavior' | 'Recertification' | 'Manual' | 'Playbook publish';
   de: string;
   result: string;              // "23/25 passed" or status text
   duration: string;
@@ -209,10 +209,12 @@ const RUNS: Record<CompanyId, RunRow[]> = {
     { id: 'r9', time: '2026-06-27 02:00', trigger: 'Nightly regression', triggerType: 'Nightly', de: 'Riley', result: '18/20 passed', duration: '4m 15s', outcome: 'failed', note: 'Same 2 leave-policy failures — first detected here.' },
     { id: 'r10', time: '2026-06-25 11:40', trigger: 'Manual run — post-incident check (Workday sync)', triggerType: 'Manual', de: 'Riley', result: '20/20 passed', duration: '4m 30s', outcome: 'passed', note: 'Run before the FY26 policy staleness surfaced.' },
     { id: 'r11', time: '2026-06-24 15:00', trigger: 'Learned behavior — billing FAQ portal-link shortcut (Alex)', triggerType: 'Learned behavior', de: 'Alex', result: '25/25 passed', duration: '4m 51s', outcome: 'deployed' },
+    { id: 'r12', time: '2026-05-20 16:10', trigger: 'Playbook publish — Renewal Lifecycle v3.1→v3.2', triggerType: 'Playbook publish', de: 'Casey', result: '8/8 scenarios passed', duration: '2m 05s', outcome: 'deployed', note: 'Health-score routing change verified against playbook eval scenarios before publish.' },
   ],
   pwc: [
     { id: 'p1', time: '2026-07-03 01:30', trigger: 'Nightly regression', triggerType: 'Nightly', de: 'Morgan', result: '16/16 passed', duration: '3m 10s', outcome: 'passed' },
     { id: 'p2', time: '2026-07-02 16:40', trigger: 'Knowledge publish — regulatory update (IRS Notice 2026-14)', triggerType: 'Knowledge publish', de: 'Avery', result: '19/19 passed', duration: '4m 05s', outcome: 'deployed', note: 'Notice-driven positions verified before client-facing use.' },
+    { id: 'p2b', time: '2026-07-02 09:15', trigger: 'Playbook publish attempt — KYC & AML Response draft v2.2', triggerType: 'Playbook publish', de: 'Morgan', result: '5/6 passed', duration: '1m 55s', outcome: 'blocked', note: 'BLOCKED — "Sanctions-list match must hard-stop the flow" failed: draft step 4 allows continue-with-warning. The draft cannot publish until the scenario passes; published v2.1 stays live.' },
     { id: 'p3', time: '2026-07-02 01:30', trigger: 'Nightly regression', triggerType: 'Nightly', de: 'Avery', result: '19/19 passed', duration: '4m 00s', outcome: 'passed' },
     { id: 'p4', time: '2026-06-30 10:15', trigger: 'Manual run — KYC procedure drill', triggerType: 'Manual', de: 'Morgan', result: '16/16 passed', duration: '3m 08s', outcome: 'passed', note: 'Drill after the Sterling intake to confirm KYC hold behavior.' },
     { id: 'p5', time: '2026-06-28 16:00', trigger: 'Knowledge publish — FATCA dual-national gap article', triggerType: 'Knowledge publish', de: 'Avery', result: '19/19 passed', duration: '4m 02s', outcome: 'deployed', note: 'New FATCA scenario added to the suite from the gap resolution.' },
@@ -224,7 +226,7 @@ const RUNS: Record<CompanyId, RunRow[]> = {
 const OUTCOME_CHIP: Record<RunOutcome, { label: string; cls: string }> = {
   deployed: { label: 'Deployed', cls: 'bg-emerald-500/15 text-emerald-400' },
   passed:   { label: 'Passed', cls: 'bg-emerald-500/15 text-emerald-400' },
-  blocked:  { label: 'Blocked — rolled back', cls: 'bg-red-500/15 text-red-400' },
+  blocked:  { label: 'Blocked', cls: 'bg-red-500/15 text-red-400' },
   failed:   { label: 'Failed', cls: 'bg-red-500/15 text-red-400' },
   awaiting: { label: 'Awaiting validation', cls: 'bg-amber-500/15 text-amber-400' },
 };
@@ -235,6 +237,7 @@ const TRIGGER_CLS: Record<RunRow['triggerType'], string> = {
   'Learned behavior': 'bg-sky-500/15 text-sky-400',
   'Recertification': 'bg-amber-500/15 text-amber-400',
   'Manual': 'bg-slate-700/50 text-slate-400',
+  'Playbook publish': 'bg-purple-500/15 text-purple-400',
 };
 
 const CATEGORY_CLS: Record<ScenarioCategory, string> = {
@@ -247,10 +250,25 @@ const CATEGORY_CLS: Record<ScenarioCategory, string> = {
 
 // ── Page ──────────────────────────────────────────────────────────
 
+// Live playbook-publish runs appended by PlaybooksPage (dt_evals_playbook_*).
+function loadPlaybookRuns(companyId: CompanyId): RunRow[] {
+  try {
+    const raw = localStorage.getItem(`dt_evals_playbook_${companyId}`);
+    return raw ? (JSON.parse(raw) as RunRow[]) : [];
+  } catch { return []; }
+}
+
 export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const suites = SUITES[activeCompanyId];
-  const runs = RUNS[activeCompanyId];
+  const [playbookRuns, setPlaybookRuns] = useState<RunRow[]>(() => loadPlaybookRuns(activeCompanyId));
+  useEffect(() => {
+    const refresh = () => setPlaybookRuns(loadPlaybookRuns(activeCompanyId));
+    refresh();
+    window.addEventListener('dt-state-changed', refresh);
+    return () => window.removeEventListener('dt-state-changed', refresh);
+  }, [activeCompanyId]);
+  const runs = [...playbookRuns, ...RUNS[activeCompanyId]];
 
   const [selectedDeId, setSelectedDeId] = useState(suites[0].deId);
   const [expandedScenario, setExpandedScenario] = useState<string | null>(null);
@@ -314,7 +332,7 @@ export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => v
     <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
       <PageHeader
         title="Proving Ground"
-        subtitle="Every Digital Employee is continuously tested against golden scenarios. No knowledge update, learned behavior, or recertification ships without passing."
+        subtitle="Every Digital Employee is continuously tested against golden scenarios. No knowledge update, learned behavior, playbook change, or recertification ships without passing."
       />
       <p className="text-[11px] text-slate-600 -mt-4 mb-6">Design preview — runs are simulated.</p>
 
@@ -360,7 +378,7 @@ export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => v
       <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Run History — event-triggered</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Suites run automatically on knowledge publish, learned-behavior approval, recertification, and nightly. A failing run blocks deployment — nothing ships around it.</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Suites run automatically on knowledge publish, playbook publish, learned-behavior approval, recertification, and nightly. A failing run blocks deployment — nothing ships around it.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
