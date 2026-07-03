@@ -6,7 +6,7 @@ _Last updated: 2026-07-03_
 
 ---
 
-## 0. Production track status — Customer section (P1 SHIPPED)
+## 0. Production track status — Customer section (P1 + P2 SHIPPED)
 
 The Customer entity section is now a **real product** for real tenants, backed by Supabase:
 
@@ -16,7 +16,14 @@ The Customer entity section is now a **real product** for real tenants, backed b
 - Mode switching: `src/lib/dataMode.ts` + AuthContext — tenants other than the demo tenant (`a0000000-…0001`) or the dev demo login are **live**; the Sidebar company picker shows the real tenant as the primary workspace with TCP/PWC under a "Demo companies" divider so live users can still explore the demo story.
 - Live pages: Command Centre (real KPIs + activity feed), Customer Success (real accounts + Add/Import), Support (real tickets table + stats), Renewal & Expansion (real invoices, gated generation), Human Tasks (real approve/reject persisted to DB). Import modal: `src/components/ImportCustomersModal.tsx` (Accounts/Tickets tabs, paste or file, auto column mapping, per-row error report).
 
-**P2 — next:** real LLM Digital Employee acting on this data (ticket resolution drafts, renewal cadences), replacing the rule-based brain for live tenants.
+**P2 — real DE pipeline (done):**
+- Schema: `supabase/migrations/012_knowledge_docs.sql` — `knowledge_docs`, `de_conversations`, `de_messages`, RLS same pattern as 011. Applied and verified.
+- Brain: `supabase/functions/de-answer/index.ts` (deployed) — resolves tenant from the caller's JWT, retrieves the tenant's `knowledge_docs` by keyword overlap (top 3, ~6K char cap), calls Claude (`claude-sonnet-5`) with a grounded-only system prompt returning strict JSON `{answer, confidence, sources, needs_escalation}`, persists the conversation, and **auto-escalates** (real `human_tasks` row + `activity_events`) when confidence < 60 or the model asks for escalation.
+- Knowledge upload: Knowledge → Library in live mode is the tenant's real `knowledge_docs` (add/paste, .txt/.md upload, edit, delete) — `src/lib/knowledgeApi.ts`, `src/pages/tenant/knowledge/LiveKnowledgeLibrary.tsx`. Demo mode keeps the seeded 4D library.
+- Chat: `DEChatDock` in live mode fronts the real DE (Alex, Customer Support DE) — real confidence chip, "From: <doc titles>" sources line, true escalation banner linking to Human Tasks. Demo mode keeps the scripted intents.
+- **Activation:** the pipeline is deployed but dormant until the `ANTHROPIC_API_KEY` Edge Function secret is set — see `docs/ACTIVATE-DE.md`. Until then the dock shows an honest "DE brain not yet activated" notice.
+
+**P3 — next:** DE actions on the customer data itself (ticket resolution drafts, renewal cadences), embeddings-based retrieval, multi-turn context.
 
 **Still design-preview even in live mode:** Business Development, Sales, Onboarding stages of the Customer journey; Vendors & Partners; Workforce entity; Outcomes pages; Knowledge/Intelligence/Governance sections; the Customer overview journey-stage stats.
 

@@ -1,0 +1,264 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { PageHeader, th, td } from '../../../components/ui';
+import {
+  KnowledgeDoc, listKnowledgeDocs, createKnowledgeDoc,
+  updateKnowledgeDoc, deleteKnowledgeDoc,
+} from '../../../lib/knowledgeApi';
+import { CustomerApiError } from '../../../lib/customerApi';
+
+// ============================================================
+// Live Knowledge Library — the tenant's real knowledge_docs.
+// These documents are the ONLY thing Alex (Customer Support DE)
+// answers from, so the page is honest about that relationship.
+// ============================================================
+
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+
+interface EditorState {
+  id: string | null; // null = new doc
+  title: string;
+  content: string;
+  tags: string; // comma-separated in the input
+}
+
+const emptyEditor: EditorState = { id: null, title: '', content: '', tags: '' };
+
+const LiveKnowledgeLibrary = () => {
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [missingTables, setMissingTables] = useState(false);
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setDocs(await listKnowledgeDocs());
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const save = async () => {
+    if (!editor || !editor.title.trim() || !editor.content.trim() || saving) return;
+    setSaving(true);
+    setError(null);
+    const tags = editor.tags.split(',').map(t => t.trim()).filter(Boolean);
+    try {
+      if (editor.id) {
+        await updateKnowledgeDoc(editor.id, { title: editor.title.trim(), content: editor.content, tags });
+      } else {
+        await createKnowledgeDoc({ title: editor.title.trim(), content: editor.content, source: 'paste', tags });
+      }
+      setEditor(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setDeletingId(id);
+    setError(null);
+    try {
+      await deleteKnowledgeDoc(id);
+      setDocs(prev => prev.filter(d => d.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setError(null);
+    try {
+      const text = await file.text();
+      const title = file.name.replace(/\.(txt|md|markdown)$/i, '');
+      await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  if (missingTables) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+        <PageHeader title="Knowledge Library" subtitle="The documents Alex answers from." />
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
+          <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
+          <p className="text-xs text-slate-400">
+            The knowledge tables haven't been created yet (migration 012). Apply
+            <code className="mx-1 text-slate-300">supabase/migrations/012_knowledge_docs.sql</code>
+            in the Supabase SQL Editor, then reload.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <PageHeader title="Knowledge Library" subtitle="These documents are the only thing Alex answers from — keep them current." />
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
+      )}
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={() => setEditor({ ...emptyEditor })}
+          className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+        >
+          + Add document
+        </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+        >
+          Upload .txt / .md
+        </button>
+        <input ref={fileRef} type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" className="hidden" onChange={onFile} />
+        <span className="text-xs text-slate-500 ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
+      </div>
+
+      {/* Table / empty state */}
+      {loading ? (
+        <p className="text-sm text-slate-500 py-8 text-center">Loading documents…</p>
+      ) : docs.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center">
+          <p className="text-sm text-slate-300 font-medium mb-1">Alex answers from these documents — add your first</p>
+          <p className="text-xs text-slate-500 mb-4">Paste your FAQs, policies, product docs, or upload .txt/.md files. Alex will only answer what these documents support.</p>
+          <button
+            onClick={() => setEditor({ ...emptyEditor })}
+            className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+          >
+            + Add your first document
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+          <table className="w-full text-sm text-slate-300">
+            <thead className="bg-slate-900 border-b border-slate-800">
+              <tr>
+                <th className={th}>Title</th>
+                <th className={th}>Preview</th>
+                <th className={th}>Tags</th>
+                <th className={th}>Source</th>
+                <th className={th}>Updated</th>
+                <th className={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map(d => (
+                <tr key={d.id} className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                  <td className={`${td} text-white font-medium`}>{d.title}</td>
+                  <td className={`${td} text-xs text-slate-400 max-w-xs`}>
+                    <span className="line-clamp-2">{d.content.slice(0, 140)}{d.content.length > 140 ? '…' : ''}</span>
+                  </td>
+                  <td className={td}>
+                    <div className="flex flex-wrap gap-1">
+                      {d.tags.length === 0 && <span className="text-xs text-slate-600">—</span>}
+                      {d.tags.map(t => (
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{t}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className={td}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${d.source === 'upload' ? 'bg-teal-500/20 text-teal-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                      {d.source}
+                    </span>
+                  </td>
+                  <td className={`${td} text-xs text-slate-400`}>{fmtDate(d.updated_at)}</td>
+                  <td className={td}>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => setEditor({ id: d.id, title: d.title, content: d.content, tags: d.tags.join(', ') })}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => void remove(d.id)}
+                        disabled={deletingId === d.id}
+                        className="text-xs text-red-400/80 hover:text-red-300 disabled:opacity-40 transition-colors"
+                      >
+                        {deletingId === d.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Editor modal */}
+      {editor && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit document' : 'Add document'}</h2>
+            <label className="block text-xs text-slate-500 mb-1">Title</label>
+            <input
+              value={editor.title}
+              onChange={e => setEditor({ ...editor, title: e.target.value })}
+              placeholder="e.g. Refund policy"
+              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            />
+            <label className="block text-xs text-slate-500 mb-1">Content (plain text or Markdown)</label>
+            <textarea
+              value={editor.content}
+              onChange={e => setEditor({ ...editor, content: e.target.value })}
+              rows={10}
+              placeholder="Paste the document content Alex should answer from…"
+              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+            />
+            <label className="block text-xs text-slate-500 mb-1">Tags (comma-separated, optional)</label>
+            <input
+              value={editor.tags}
+              onChange={e => setEditor({ ...editor, tags: e.target.value })}
+              placeholder="billing, refunds"
+              className="w-full mb-5 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setEditor(null)}
+                disabled={saving}
+                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void save()}
+                disabled={saving || !editor.title.trim() || !editor.content.trim()}
+                className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+              >
+                {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default LiveKnowledgeLibrary;

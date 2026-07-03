@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
+import { askDE, DEAnswerError } from '../lib/knowledgeApi';
 
 // ============================================================
 // "Ask your DE" global chat dock — context-aware DE routing,
@@ -67,12 +68,29 @@ interface ChatMsg {
   confidence?: number;
   actions?: ChatAction[];
   time: string;
+  /** live mode: doc titles the answer was grounded in */
+  sources?: string[];
+  /** live mode: a real human_tasks escalation row was created */
+  escalated?: boolean;
+  /** live mode: honest error banners */
+  notice?: 'llm_not_configured' | 'error';
 }
 
-const threadKey = (c: CompanyId) => `dt_chat_thread_${c}`;
+// ── LIVE mode (real tenant): the dock fronts the de-answer edge
+//    function — real Claude answers grounded in knowledge_docs. ──
+
+const LIVE_DE: DockDE = { id: 'alex', name: 'Alex', role: 'Customer Support DE', color: 'bg-indigo-600' };
+
+const LIVE_SUGGESTIONS = [
+  'What do you know about our refund policy?',
+  'How do I contact support escalation?',
+  'What products or services do we document?',
+];
+
+const threadKey = (c: string) => `dt_chat_thread_${c}`;
 const escKey = (c: CompanyId) => `dt_chat_escalations_${c}`;
 
-function loadThread(companyId: CompanyId): ChatMsg[] {
+function loadThread(companyId: string): ChatMsg[] {
   try {
     const raw = localStorage.getItem(threadKey(companyId));
     if (raw) return JSON.parse(raw) as ChatMsg[];
@@ -80,7 +98,7 @@ function loadThread(companyId: CompanyId): ChatMsg[] {
   return [];
 }
 
-function saveThread(companyId: CompanyId, msgs: ChatMsg[]) {
+function saveThread(companyId: string, msgs: ChatMsg[]) {
   try {
     localStorage.setItem(threadKey(companyId), JSON.stringify(msgs.slice(-50)));
   } catch { /* noop */ }
@@ -362,9 +380,11 @@ const prefersReducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function DEChatDock() {
-  const { currentPage, activeCompanyId, handleSetPage } = useAuth();
+  const { currentPage, activeCompanyId, handleSetPage, dataMode } = useAuth();
+  const isLive = dataMode === 'live';
+  const threadId = isLive ? 'live' : activeCompanyId;
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMsg[]>(() => loadThread(activeCompanyId));
+  const [messages, setMessages] = useState<ChatMsg[]>(() => loadThread(threadId));
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -377,19 +397,20 @@ export default function DEChatDock() {
   const lastDeIdRef = useRef<string | null>(null);
   const reduceMotion = useMemo(prefersReducedMotion, []);
 
-  const de = deForPage(currentPage, activeCompanyId);
-  const unowned = isUnownedArea(currentPage);
+  const de = isLive ? LIVE_DE : deForPage(currentPage, activeCompanyId);
+  const unowned = !isLive && isUnownedArea(currentPage);
+  const conversationIdRef = useRef<string | null>(null);
 
-  // Company switch → load that company's thread.
+  // Company/mode switch → load that thread.
   useEffect(() => {
-    setMessages(loadThread(activeCompanyId));
+    setMessages(loadThread(threadId));
     lastDeIdRef.current = null;
-  }, [activeCompanyId]);
+  }, [threadId]);
 
   // Persist thread.
   useEffect(() => {
-    saveThread(activeCompanyId, messages);
-  }, [messages, activeCompanyId]);
+    saveThread(threadId, messages);
+  }, [messages, threadId]);
 
   // Pulse only briefly on first render per session.
   useEffect(() => {
@@ -415,7 +436,7 @@ export default function DEChatDock() {
   useEffect(() => {
     let shown = false;
     try { shown = !!sessionStorage.getItem('dt_chat_nudged'); } catch { /* noop */ }
-    if (shown || open) return;
+    if (shown || open || isLive) return;
     const t = window.setTimeout(() => {
       try { sessionStorage.setItem('dt_chat_nudged', '1'); } catch { /* noop */ }
       setNudge(true);
@@ -455,11 +476,45 @@ export default function DEChatDock() {
     }, delay);
   };
 
+  // Live mode: real DE turn via the de-answer edge function.
+  const sendLive = async (text: string) => {
+    setTyping(true);
+    try {
+      const res = await askDE(text, conversationIdRef.current);
+      if (res.conversation_id) conversationIdRef.current = res.conversation_id;
+      setMessages(prev => [...prev, {
+        id: uid(), role: 'de', deId: LIVE_DE.id,
+        text: res.answer,
+        confidence: res.confidence,
+        sources: res.sources,
+        escalated: res.needs_escalation,
+        time: nowTime(),
+      }]);
+    } catch (err) {
+      if (err instanceof DEAnswerError && err.code === 'llm_not_configured') {
+        setMessages(prev => [...prev, {
+          id: uid(), role: 'de', deId: LIVE_DE.id, notice: 'llm_not_configured',
+          text: 'DE brain not yet activated — an admin needs to add the Anthropic API key (Supabase → Edge Function secrets → ANTHROPIC_API_KEY). Until then I can\'t answer from your knowledge documents.',
+          time: nowTime(),
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: uid(), role: 'de', deId: LIVE_DE.id, notice: 'error',
+          text: 'I couldn\'t reach my answering service just now — that\'s a network or server issue on our side, not your question. Please try again in a moment.',
+          time: nowTime(),
+        }]);
+      }
+    } finally {
+      setTyping(false);
+    }
+  };
+
   const send = (raw?: string) => {
     const text = (raw ?? input).trim();
     if (!text || typing) return;
     setInput('');
     setMessages(prev => [...prev, { id: uid(), role: 'user', text, time: nowTime() }]);
+    if (isLive) { void sendLive(text); return; }
     postDEReply(de, getDEResponse(de.id, text, activeCompanyId));
   };
 
@@ -480,7 +535,8 @@ export default function DEChatDock() {
   const clearThread = () => {
     setMessages([]);
     setMenuOpen(false);
-    try { localStorage.removeItem(threadKey(activeCompanyId)); } catch { /* noop */ }
+    conversationIdRef.current = null;
+    try { localStorage.removeItem(threadKey(threadId)); } catch { /* noop */ }
   };
 
   const deById = (id?: string): DockDE =>
@@ -502,13 +558,18 @@ export default function DEChatDock() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                 {de.role}
               </div>
+              {isLive && (
+                <div className="text-[10px] text-slate-500 truncate">Answers grounded in your knowledge documents</div>
+              )}
             </div>
-            <button
-              onClick={() => { setOpen(false); handleSetPage('workforce_des'); }}
-              className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
-            >
-              View profile
-            </button>
+            {!isLive && (
+              <button
+                onClick={() => { setOpen(false); handleSetPage('workforce_des'); }}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
+              >
+                View profile
+              </button>
+            )}
             <div className="relative flex-shrink-0">
               <button
                 onClick={() => setMenuOpen(v => !v)}
@@ -561,7 +622,9 @@ export default function DEChatDock() {
                   {de.name[0]}
                 </div>
                 <p className="text-sm text-slate-300 font-medium">Ask {de.name} anything</p>
-                <p className="text-xs text-slate-500 mt-1">{de.role} · answers from live workspace data</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isLive ? `${de.role} · answers grounded in your knowledge documents` : `${de.role} · answers from live workspace data`}
+                </p>
               </div>
             )}
             {messages.map(msg => {
@@ -578,8 +641,27 @@ export default function DEChatDock() {
                       {msgDe.name[0]}
                     </div>
                   )}
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                  <div className={`max-w-[85%] rounded-xl px-3 py-2 ${
+                    msg.role === 'user' ? 'bg-indigo-600 text-white'
+                    : msg.notice === 'llm_not_configured' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
+                    : msg.notice === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-200'
+                    : 'bg-slate-800 text-slate-200'
+                  }`}>
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-1.5 text-[10px] text-slate-400">From: {msg.sources.join(', ')}</div>
+                    )}
+                    {msg.escalated && (
+                      <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
+                        I've escalated this to your team —{' '}
+                        <button
+                          onClick={() => handleSetPage('ops_human_tasks')}
+                          className="underline underline-offset-2 hover:text-white transition-colors"
+                        >
+                          view Human Tasks →
+                        </button>
+                      </div>
+                    )}
                     {msg.actions && msg.actions.length > 0 && (
                       <div className="mt-1.5 flex flex-col items-start gap-1">
                         {msg.actions.map(a => (
@@ -629,7 +711,7 @@ export default function DEChatDock() {
           {/* Suggestion chips (empty thread only) */}
           {messages.length === 0 && !typing && (
             <div className="px-3 py-2 border-t border-slate-700/50 flex gap-1 flex-wrap flex-shrink-0">
-              {(SUGGESTIONS[de.id] ?? []).map(s => (
+              {(isLive ? LIVE_SUGGESTIONS : SUGGESTIONS[de.id] ?? []).map(s => (
                 <button
                   key={s}
                   onClick={() => send(s)}

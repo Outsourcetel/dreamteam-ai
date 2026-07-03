@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
+import { useDataMode } from '../../../lib/dataMode';
+import LiveKnowledgeLibrary from './LiveKnowledgeLibrary';
 
 // ============================================================
 // Knowledge Library — the 4-dimension browser.
@@ -122,6 +124,12 @@ const FilterSelect = ({ label, value, onChange, options }: { label: string; valu
 );
 
 const KnowledgeLibraryPage = () => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveKnowledgeLibrary />;
+  return <DemoKnowledgeLibrary />;
+};
+
+const DemoKnowledgeLibrary = () => {
   const { activeCompanyId } = useAuth();
   const companyId = activeCompanyId as CompanyId;
   const articles = companyId === 'tcp' ? TCP_ARTICLES : PWC_ARTICLES;
