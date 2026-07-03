@@ -4,6 +4,7 @@ import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
+import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -397,7 +398,21 @@ export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void
               ) : (
                 <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
                   <span className="text-slate-500">Resolved</span>
-                  <span className="text-slate-300">{selected.resolvedBy} · {selected.resolvedAt}</span>
+                  {(() => {
+                    const person = selected.resolvedBy ? findPersonByName(activeCompanyId, selected.resolvedBy) : undefined;
+                    if (person) {
+                      return (
+                        <button
+                          onClick={() => { try { localStorage.setItem(ROSTER_SELECT_KEY, person.id); } catch { /* noop */ } setPage('workforce_des'); }}
+                          className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                          title={`${person.name} — ${person.title}`}
+                        >
+                          {selected.resolvedBy} · {selected.resolvedAt} →
+                        </button>
+                      );
+                    }
+                    return <span className="text-slate-300">{selected.resolvedBy} · {selected.resolvedAt}</span>;
+                  })()}
                 </div>
               )}
             </div>

@@ -37,14 +37,16 @@ const HUMAN_USERS: Record<CompanyId, HumanUser[]> = {
     { name: 'Priya Sharma', email: 'priya.sharma@tcpsoftware.com', role: 'tenant_owner', lastActive: '2 min ago', mfa: true },
     { name: 'K. Douglas', email: 'k.douglas@tcpsoftware.com', role: 'tenant_admin', lastActive: '35 min ago', mfa: true },
     { name: 'Taylor Smith', email: 'taylor.smith@tcpsoftware.com', role: 'tenant_manager', lastActive: '1 hr ago', mfa: true },
-    { name: 'Drew Wilson', email: 'drew.wilson@tcpsoftware.com', role: 'tenant_user', lastActive: '1 day ago', mfa: false },
-    { name: 'Sarah Martinez', email: 'sarah.martinez@tcpsoftware.com', role: 'tenant_user', lastActive: '3 days ago', mfa: true },
+    { name: 'Maya Osei', email: 'm.osei@tcpsoftware.com', role: 'tenant_manager', lastActive: '25 min ago', mfa: true },
+    { name: 'Jai Patel', email: 'j.patel@tcpsoftware.com', role: 'tenant_manager', lastActive: '3 hr ago', mfa: true },
+    { name: 'Jordan Lee', email: 'jordan.lee@tcpsoftware.com', role: 'tenant_user', lastActive: '1 day ago', mfa: false },
+    { name: 'Dana Whitfield', email: 'dana.whitfield@tcpsoftware.com', role: 'tenant_user', lastActive: '3 days ago', mfa: true },
   ],
   pwc: [
-    { name: 'J. Whitfield', email: 'j.whitfield@pwc.com', role: 'tenant_owner', lastActive: '10 min ago', mfa: true },
-    { name: 'A. Osei', email: 'a.osei@pwc.com', role: 'tenant_admin', lastActive: '1 hr ago', mfa: true },
-    { name: 'R. Tanaka', email: 'r.tanaka@pwc.com', role: 'tenant_manager', lastActive: '4 hr ago', mfa: true },
-    { name: 'L. Brennan', email: 'l.brennan@pwc.com', role: 'tenant_user', lastActive: '2 days ago', mfa: true },
+    { name: 'James Whitfield', email: 'j.whitfield@pwc.com', role: 'tenant_owner', lastActive: '10 min ago', mfa: true },
+    { name: 'Aisha Osei', email: 'a.osei@pwc.com', role: 'tenant_admin', lastActive: '1 hr ago', mfa: true },
+    { name: 'Rina Tanaka', email: 'r.tanaka@pwc.com', role: 'tenant_manager', lastActive: '4 hr ago', mfa: true },
+    { name: 'Liam Brennan', email: 'l.brennan@pwc.com', role: 'tenant_user', lastActive: '2 days ago', mfa: true },
   ],
 }
 

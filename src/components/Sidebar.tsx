@@ -150,10 +150,10 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
       groups: [
         {
           id: 'des',
-          label: 'Digital Employees',
+          label: 'Workforce Roster',
           icon: '⚡',
           page: 'workforce_des',
-          badge: { text: `${s.desActive} active`, color: '#22c55e' },
+          badge: { text: isTCP ? '3 DEs · 6 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
       ],
     },
@@ -281,7 +281,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         {([
           { icon: '⬡', page: 'dashboard' as Page, label: 'Command Centre' },
           { icon: '◎', page: 'entity_customer' as Page, label: 'Customer' },
-          { icon: '⚡', page: 'workforce_des' as Page, label: 'Digital Employees' },
+          { icon: '⚡', page: 'workforce_des' as Page, label: 'Workforce Roster' },
           { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge Library' },
           { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
           { icon: '✋', page: 'ops_human_tasks' as Page, label: 'Human Tasks' },

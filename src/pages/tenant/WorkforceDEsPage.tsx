@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import type { Page } from '../../types'
+import { getPeople, ROSTER_SELECT_KEY, type Person } from '../../data/people'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -135,10 +136,10 @@ export const TCP_DES: DEProfile[] = [
     },
     humanLoop: {
       touchpoints: [
-        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 500, escalateTo: 'CS Manager', slaDays: 1 },
-        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 65, escalateTo: 'Senior Support', slaDays: 1 },
+        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 500, escalateTo: 'Priya Sharma (VP Customer Operations)', slaDays: 1 },
+        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 65, escalateTo: 'Maya Osei (Support Lead)', slaDays: 1 },
         { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 55, escalateTo: 'L2 Engineering', slaDays: 2 },
-        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'CS Manager', slaDays: 1 },
+        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'Priya Sharma (VP Customer Operations)', slaDays: 1 },
         { type: 'training_feedback', label: 'Training Feedback', enabled: true, confidenceThreshold: 0, escalateTo: 'Training Team', slaDays: 5 },
       ],
     },
@@ -205,8 +206,8 @@ export const TCP_DES: DEProfile[] = [
     },
     humanLoop: {
       touchpoints: [
-        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 10000, escalateTo: 'Finance Manager', slaDays: 1 },
-        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 70, escalateTo: 'Renewal Manager', slaDays: 2 },
+        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 10000, escalateTo: 'Jai Patel (Finance Manager)', slaDays: 1 },
+        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 70, escalateTo: 'Taylor Smith (Senior CSM)', slaDays: 2 },
         { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 60, escalateTo: 'Account Executive', slaDays: 1 },
         { type: 'override', label: 'Override', enabled: false, confidenceThreshold: 0, escalateTo: 'VP Sales', slaDays: 1 },
         { type: 'training_feedback', label: 'Training Feedback', enabled: true, confidenceThreshold: 0, escalateTo: 'Training Team', slaDays: 5 },
@@ -269,9 +270,9 @@ export const TCP_DES: DEProfile[] = [
     },
     humanLoop: {
       touchpoints: [
-        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, escalateTo: 'HRBP', slaDays: 2 },
-        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 70, escalateTo: 'HR Manager', slaDays: 2 },
-        { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 60, escalateTo: 'HRBP', slaDays: 3 },
+        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, escalateTo: 'Dana Whitfield (HRBP)', slaDays: 2 },
+        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 70, escalateTo: 'Dana Whitfield (HRBP)', slaDays: 2 },
+        { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 60, escalateTo: 'Dana Whitfield (HRBP)', slaDays: 3 },
         { type: 'override', label: 'Override', enabled: false, confidenceThreshold: 0, escalateTo: 'HR Director', slaDays: 1 },
         { type: 'training_feedback', label: 'Training Feedback', enabled: true, confidenceThreshold: 0, escalateTo: 'Training Team', slaDays: 5 },
       ],
@@ -340,10 +341,10 @@ export const PWC_DES: DEProfile[] = [
     },
     humanLoop: {
       touchpoints: [
-        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 5000, escalateTo: 'Engagement Manager', slaDays: 1 },
-        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 72, escalateTo: 'Partner', slaDays: 1 },
-        { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 60, escalateTo: 'Risk & Compliance', slaDays: 1 },
-        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'Managing Partner', slaDays: 1 },
+        { type: 'approval_gate', label: 'Approval Gate', enabled: true, confidenceThreshold: 0, amountThreshold: 5000, escalateTo: 'Rina Tanaka (Engagement Manager)', slaDays: 1 },
+        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 72, escalateTo: 'James Whitfield (Managing Partner)', slaDays: 1 },
+        { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 60, escalateTo: 'Aisha Osei (Risk & Compliance)', slaDays: 1 },
+        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'James Whitfield (Managing Partner)', slaDays: 1 },
         { type: 'training_feedback', label: 'Training Feedback', enabled: true, confidenceThreshold: 0, escalateTo: 'Training Team', slaDays: 5 },
       ],
     },
@@ -403,10 +404,10 @@ export const PWC_DES: DEProfile[] = [
     },
     humanLoop: {
       touchpoints: [
-        { type: 'approval_gate', label: 'Approval Gate', enabled: false, confidenceThreshold: 0, escalateTo: 'Partner', slaDays: 1 },
-        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 85, escalateTo: 'Partner', slaDays: 1 },
+        { type: 'approval_gate', label: 'Approval Gate', enabled: false, confidenceThreshold: 0, escalateTo: 'James Whitfield (Managing Partner)', slaDays: 1 },
+        { type: 'review_gate', label: 'Review Gate', enabled: true, confidenceThreshold: 85, escalateTo: 'James Whitfield (Managing Partner)', slaDays: 1 },
         { type: 'escalation', label: 'Escalation', enabled: true, confidenceThreshold: 65, escalateTo: 'Senior Tax Manager', slaDays: 2 },
-        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'Managing Partner', slaDays: 1 },
+        { type: 'override', label: 'Override', enabled: true, confidenceThreshold: 0, escalateTo: 'James Whitfield (Managing Partner)', slaDays: 1 },
         { type: 'training_feedback', label: 'Training Feedback', enabled: true, confidenceThreshold: 0, escalateTo: 'Training Team', slaDays: 5 },
       ],
     },
@@ -1473,23 +1474,238 @@ function TabAudit({ de }: { de: DEProfile }) {
   )
 }
 
+// ── Human profile panel ────────────────────────────────────────────
+
+function TrendArrow({ trend }: { trend: 'up' | 'down' | 'flat' }) {
+  if (trend === 'up') return <span className="text-amber-400">↑</span>
+  if (trend === 'down') return <span className="text-emerald-400">↓</span>
+  return <span className="text-slate-500">→</span>
+}
+
+function HumanProfile({ person, des, onSelectDE, setPage }: {
+  person: Person
+  des: DEProfile[]
+  onSelectDE: (id: string) => void
+  setPage: (p: Page) => void
+}) {
+  const partners = des.filter(d => person.worksWith.includes(d.id))
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-4">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${person.color} border border-slate-700`}>
+          {person.avatarInitials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-base font-semibold text-slate-100">{person.name}</h2>
+            <span className="text-xs text-slate-400">{person.title}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">Human</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{person.team}</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{person.email}</p>
+        </div>
+      </div>
+
+      <div className="p-6 grid grid-cols-2 gap-6">
+        {/* Partnership */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Partnership — works with</p>
+          <div className="space-y-2">
+            {partners.map(de => (
+              <button key={de.id} onClick={() => onSelectDE(de.id)}
+                className="w-full flex items-center gap-3 bg-slate-950 hover:bg-slate-800/70 rounded-lg px-3 py-2.5 transition-colors text-left">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-sm">
+                  {de.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-200">{de.name}</p>
+                  <p className="text-xs text-slate-500">{de.role}</p>
+                </div>
+                <span className="text-xs text-indigo-400">Profile →</span>
+              </button>
+            ))}
+            {partners.length === 0 && <p className="text-sm text-slate-500">No DE partnerships yet.</p>}
+          </div>
+        </div>
+
+        {/* Gate duties */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Gate duties</p>
+            <button onClick={() => setPage('ops_human_tasks')} className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
+              {person.pendingItems} pending →
+            </button>
+          </div>
+          <div className="space-y-2">
+            {person.approves.map((a, i) => (
+              <div key={i} className="flex items-start gap-2 bg-slate-950 rounded-lg px-3 py-2">
+                <span className="text-indigo-400 text-xs mt-0.5">✋</span>
+                <span className="text-sm text-slate-300 leading-snug">{a}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* This week's load */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">This week's load</p>
+            <span className="text-sm"><TrendArrow trend={person.loadTrend} /></span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {[
+              { label: 'Approvals', value: person.weeklyLoad.approvals },
+              { label: 'Escalations', value: person.weeklyLoad.escalations },
+              { label: 'Reviews', value: person.weeklyLoad.reviews },
+              { label: 'Avg response', value: `${person.weeklyLoad.avgResponseHrs} hrs` },
+            ].map(m => (
+              <div key={m.label} className="bg-slate-950 rounded-lg px-3 py-2">
+                <p className="text-xs text-slate-500">{m.label}</p>
+                <p className="text-lg font-semibold text-slate-200">{m.value}</p>
+              </div>
+            ))}
+          </div>
+          {person.loadTrend === 'up' && person.loadInsight && (
+            <button onClick={() => setPage('intelligence_evals')}
+              className="w-full text-left bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 hover:bg-amber-500/15 transition-colors">
+              <p className="text-xs text-amber-300 leading-relaxed">{person.loadInsight}</p>
+            </button>
+          )}
+        </div>
+
+        {/* Expertise */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Expertise</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {person.expertiseTags.map(t => (
+              <span key={t} className="text-xs bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-slate-300">{t}</span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            Consulted by DEs <span className="text-slate-200 font-medium">{person.consultedByDEs} times</span> this month
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Org view ───────────────────────────────────────────────────────
+
+function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
+  des: DEProfile[]
+  people: Person[]
+  isTCP: boolean
+  onSelectDE: (id: string) => void
+  onSelectHuman: (id: string) => void
+  setPage: (p: Page) => void
+}) {
+  const columns: { key: DEEntity; label: string }[] = [
+    { key: 'customer', label: isTCP ? 'Customer' : 'Clients' },
+    { key: 'vendor', label: 'Vendors' },
+    { key: 'workforce', label: 'Workforce' },
+    { key: 'specialist', label: 'Specialists' },
+  ]
+  const shown = columns.filter(c =>
+    c.key === 'vendor' || des.some(d => d.entity === c.key) || people.some(p => p.orgColumn === c.key)
+  )
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <p className="text-xs text-slate-500 mb-4">How the mixed workforce maps onto the entities it serves — Digital Employees and humans, side by side.</p>
+      <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }}>
+        {shown.map(col => {
+          const colDEs = des.filter(d => d.entity === col.key)
+          const colHumans = people.filter(p => p.orgColumn === col.key)
+          return (
+            <div key={col.key} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 pb-2 border-b border-slate-800">{col.label}</p>
+              <div className="space-y-2">
+                {colDEs.map(de => (
+                  <button key={de.id} onClick={() => onSelectDE(de.id)}
+                    className="w-full flex items-center gap-2.5 bg-slate-950 hover:bg-slate-800/70 border border-slate-800 rounded-lg px-3 py-2 transition-colors text-left">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xs flex-shrink-0">
+                      {de.name[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <StatusDot status={de.status} />
+                        <span className="text-sm text-slate-200 truncate">{de.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 truncate">{de.role}</p>
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 flex-shrink-0">DE</span>
+                  </button>
+                ))}
+                {colHumans.map(p => (
+                  <button key={p.id} onClick={() => onSelectHuman(p.id)}
+                    className="w-full flex items-center gap-2.5 bg-slate-950 hover:bg-slate-800/70 border border-slate-800 rounded-lg px-3 py-2 transition-colors text-left">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-700 ${p.color}`}>
+                      {p.avatarInitials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-slate-200 truncate block">{p.name}</span>
+                      <p className="text-[11px] text-slate-500 truncate">{p.title}</p>
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 flex-shrink-0">H</span>
+                  </button>
+                ))}
+                {col.key === 'vendor' && colDEs.length === 0 && (
+                  <button onClick={() => setPage('entity_vendor')}
+                    className="w-full border border-dashed border-slate-700 rounded-lg px-3 py-3 text-left hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-colors">
+                    <p className="text-xs font-medium text-slate-400">No DE serving Vendors yet</p>
+                    <p className="text-[11px] text-indigo-400 mt-1">Automation opportunity →</p>
+                  </button>
+                )}
+                {colDEs.length === 0 && colHumans.length === 0 && col.key !== 'vendor' && (
+                  <p className="text-xs text-slate-600 py-2 text-center">—</p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────
 
 const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit']
 
+type RosterSelection = { kind: 'de' | 'human'; id: string }
+
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const des = activeCompanyId === 'tcp' ? TCP_DES : PWC_DES
-  const [selectedDEId, setSelectedDEId] = useState(des[0].id)
+  const people = getPeople(activeCompanyId)
+  const [selected, setSelected] = useState<RosterSelection>({ kind: 'de', id: des[0].id })
   const [activeTab, setActiveTab] = useState(0)
+  const [view, setView] = useState<'roster' | 'org'>('roster')
 
   useEffect(() => {
     const newDes = activeCompanyId === 'tcp' ? TCP_DES : PWC_DES
-    setSelectedDEId(newDes[0].id)
+    const newPeople = getPeople(activeCompanyId)
+    // Handoff from other pages (Human Tasks, etc.) — preselect a person.
+    let handoff: RosterSelection | null = null
+    try {
+      const raw = localStorage.getItem(ROSTER_SELECT_KEY)
+      if (raw) {
+        localStorage.removeItem(ROSTER_SELECT_KEY)
+        if (newPeople.some(p => p.id === raw)) handoff = { kind: 'human', id: raw }
+        else if (newDes.some(d => d.id === raw)) handoff = { kind: 'de', id: raw }
+      }
+    } catch { /* noop */ }
+    setSelected(handoff ?? { kind: 'de', id: newDes[0].id })
     setActiveTab(0)
   }, [activeCompanyId])
 
-  const selectedDE = des.find(d => d.id === selectedDEId) ?? des[0]
+  const selectedDE = selected.kind === 'de' ? (des.find(d => d.id === selected.id) ?? des[0]) : des[0]
+  const selectedHuman = selected.kind === 'human' ? people.find(p => p.id === selected.id) : undefined
+
+  const selectDE = (id: string) => { setSelected({ kind: 'de', id }); setActiveTab(0); setView('roster') }
+  const selectHuman = (id: string) => { setSelected({ kind: 'human', id }); setView('roster') }
 
   const renderTab = () => {
     switch (activeTab) {
@@ -1512,22 +1728,36 @@ export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => vo
       {/* Header */}
       <div className="flex-shrink-0 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">Digital Employees</h1>
-          <p className="text-xs text-slate-500 mt-0.5">{des.length} DEs · {des.filter(d => d.status === 'active').length} active</p>
+          <h1 className="text-lg font-semibold text-slate-100">Workforce</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Humans and Digital Employees — one team · {des.length} DEs · {people.length} humans</p>
         </div>
-        <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">+ New DE</button>
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 gap-0.5">
+            {(['roster', 'org'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                {v === 'roster' ? 'Roster' : 'Org view'}
+              </button>
+            ))}
+          </div>
+          <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">+ New DE</button>
+        </div>
       </div>
 
-      {/* Body: split panel */}
+      {view === 'org' ? (
+        <OrgView des={des} people={people} isTCP={activeCompanyId === 'tcp'} onSelectDE={selectDE} onSelectHuman={selectHuman} setPage={setPage} />
+      ) : (
+      /* Body: split panel */
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: DE roster */}
+        {/* Left: mixed roster */}
         <div className="w-60 flex-shrink-0 bg-slate-900 border-r border-slate-800 overflow-y-auto">
           <div className="p-3 space-y-1">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 pt-1 pb-1">Digital Employees ({des.length})</p>
             {des.map(de => (
               <button
                 key={de.id}
-                onClick={() => { setSelectedDEId(de.id); setActiveTab(0) }}
-                className={`w-full text-left rounded-xl p-3 transition-colors ${selectedDEId === de.id ? 'bg-slate-800 border border-slate-700' : 'hover:bg-slate-800/50'}`}
+                onClick={() => selectDE(de.id)}
+                className={`w-full text-left rounded-xl p-3 transition-colors ${selected.kind === 'de' && selected.id === de.id ? 'bg-slate-800 border border-slate-700' : 'hover:bg-slate-800/50'}`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <StatusDot status={de.status} />
@@ -1539,10 +1769,29 @@ export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => vo
                 </div>
               </button>
             ))}
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 pt-3 pb-1">Humans ({people.length})</p>
+            {people.map(p => (
+              <button
+                key={p.id}
+                onClick={() => selectHuman(p.id)}
+                className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 ${selected.kind === 'human' && selected.id === p.id ? 'bg-slate-800 border border-slate-700' : 'hover:bg-slate-800/50'}`}
+              >
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-700 ${p.color}`}>
+                  {p.avatarInitials}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-slate-100 truncate block">{p.name}</span>
+                  <p className="text-xs text-slate-400 leading-tight truncate">{p.title}</p>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Right: DE profile */}
+        {/* Right: DE profile or human profile */}
+        {selectedHuman ? (
+          <HumanProfile person={selectedHuman} des={des} onSelectDE={selectDE} setPage={setPage} />
+        ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* DE header */}
           <div className="flex-shrink-0 px-6 py-4 border-b border-slate-800 flex items-center gap-4">
@@ -1580,7 +1829,9 @@ export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => vo
             {renderTab()}
           </div>
         </div>
+        )}
       </div>
+      )}
     </div>
   )
 }

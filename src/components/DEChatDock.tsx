@@ -187,6 +187,12 @@ const TCP_INTENTS: Intent[] = [
     text: 'Workforce onboarding is back on track after the Workday connector sync outage was resolved by IT Ops on 06-29. All blocked onboarding tasks have cleared; the connector has run three consecutive clean syncs since.',
     confidence: 87, actions: [{ label: 'Open Workforce →', page: 'entity_workforce' }],
   },
+  // Any DE — who approves / human workload
+  {
+    deId: '*', keywords: ['who approves', 'priya', 'workload', 'team'],
+    text: "Priya Sharma (VP Customer Operations) is the busiest approver on the team — 9 approvals this week and trending up, alongside 2 escalations and 3 reviews. She gates billing adjustments over $500 and support overrides; Jai Patel (Finance) gates invoices over $10K. The full picture of who partners with which DE is on the Workforce Roster.",
+    confidence: 92, actions: [{ label: 'Open Workforce Roster →', page: 'workforce_des' }],
+  },
   // Any DE — human tasks summary
   {
     deId: '*', keywords: ['human task', 'waiting', 'approvals pending', 'queue', 'summary'],
