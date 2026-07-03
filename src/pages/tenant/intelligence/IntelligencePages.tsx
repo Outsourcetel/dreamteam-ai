@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader } from '../../../components/ui';
 import { COMPANY_SUMMARY } from '../../../data/companies';
+import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 
@@ -79,6 +80,25 @@ export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
         title="Performance Analytics"
         subtitle={`Org-level Digital Employee analytics — ${des.length} DEs · ${totalTasks.toLocaleString()} tasks this month · ${summary.aiResolution}% AI resolution`}
       />
+
+      {/* Monthly value summary — same derivation as the dashboard bar (src/data/roi.ts) */}
+      {(() => {
+        const roi = computeRoi(activeCompanyId);
+        return (
+          <div className="bg-slate-900 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4" title={roi.formula}>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Monthly value summary</span>
+              <span className="text-sm text-slate-200">
+                {roi.tasks.toLocaleString()} tasks · ~{roiK(roi.humanCost)} equivalent human cost · {roiK(roi.deCost)} DE cost —{' '}
+                <span className="text-emerald-300 font-semibold">{roi.savingsPct}% savings (~{roiK(roi.savings)})</span>
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Estimate vs human baseline: sum over each DE of tasks × cost-per-task, against the same tasks at the per-DE human baseline shown below. No precision beyond what this page already asserts.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Company benchmark row — reuses WorkforceDEsPage wording */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap mb-6">

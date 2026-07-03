@@ -420,6 +420,124 @@ const AR_AGING: Record<CompanyId, { bucket: string; amount: string; pct: number;
   ],
 };
 
+// ── AR aging drill-through data ─────────────────────────────────
+// TCP invoices sum EXACTLY to the aging buckets above:
+// Current $118K / 1–30 $62K / 31–60 $41K / 60+ $27K = $248K.
+// Apex Systems $43K matches the "overdue 8 days" renewal invoice;
+// dunning is paused per the approved exception treatment (open P1).
+
+type AgingBucketKey = 'current' | 'b1_30' | 'b31_60' | 'b60p';
+
+interface ArInvoice {
+  inv: string;
+  account: string;
+  amount: number;
+  issued: string;
+  due: string;
+  daysOverdue: number;
+  status: string;
+  cadence: string;
+  bucket: AgingBucketKey;
+}
+
+const TCP_AR_INVOICES: ArInvoice[] = [
+  { inv: 'INV-1042', account: 'Lakeshore Analytics', amount: 84000, issued: 'Jul 1', due: 'Jul 31', daysOverdue: 0, status: 'Invoice sent', cadence: 'Day-0 sent', bucket: 'current' },
+  { inv: 'INV-1043', account: 'Brightline Studios', amount: 22000, issued: 'Jun 28', due: 'Jul 28', daysOverdue: 0, status: 'Invoice sent', cadence: 'Day-0 sent', bucket: 'current' },
+  { inv: 'INV-1044', account: 'Harbor Tech', amount: 12000, issued: 'Jul 2', due: 'Aug 1', daysOverdue: 0, status: 'Invoice sent', cadence: 'Day-0 sent', bucket: 'current' },
+  { inv: 'INV-1029', account: 'Apex Systems', amount: 43000, issued: 'Jun 10', due: 'Jun 25', daysOverdue: 8, status: 'Overdue', cadence: 'Paused — open P1', bucket: 'b1_30' },
+  { inv: 'INV-1031', account: 'Meridian Group', amount: 19000, issued: 'Jun 5', due: 'Jun 20', daysOverdue: 13, status: 'Overdue', cadence: 'Day-7 reminder sent', bucket: 'b1_30' },
+  { inv: 'INV-1014', account: 'Summit Ridge Health', amount: 27500, issued: 'May 8', due: 'May 23', daysOverdue: 41, status: 'Overdue', cadence: 'Day-14 final notice sent', bucket: 'b31_60' },
+  { inv: 'INV-1017', account: 'Veldt Logistics', amount: 13500, issued: 'May 15', due: 'May 30', daysOverdue: 34, status: 'Overdue', cadence: 'Day-14 final notice sent', bucket: 'b31_60' },
+  { inv: 'INV-0991', account: 'Crestpoint Media', amount: 27000, issued: 'Apr 5', due: 'Apr 20', daysOverdue: 74, status: 'Overdue', cadence: 'Escalated — Taylor Smith', bucket: 'b60p' },
+];
+
+const TCP_BUCKET_KEYS: { key: AgingBucketKey; label: string }[] = [
+  { key: 'current', label: 'Current' },
+  { key: 'b1_30', label: '1–30 days' },
+  { key: 'b31_60', label: '31–60 days' },
+  { key: 'b60p', label: '60+ days' },
+];
+
+// PWC — engagement WIP rows sum EXACTLY to the WIP aging buckets:
+// Current $392K / 1–30 $248K / 31–60 $160K / 60+ $90K = $890K.
+// The Harbor Financial $120K row matches the open WIP-mismatch exception.
+interface WipRow {
+  engagement: string;
+  partner: string;
+  amount: number;
+  oldestEntry: string;
+  daysUnbilled: number;
+  status: string;
+  bucket: AgingBucketKey;
+}
+
+const PWC_WIP_ROWS: WipRow[] = [
+  { engagement: 'Harbor Financial — Audit (Jun fieldwork)', partner: 'D. Whitmore', amount: 240000, oldestEntry: 'Jun 20', daysUnbilled: 13, status: 'Accruing', bucket: 'current' },
+  { engagement: 'Sterling Group — Q2 Tax Filing', partner: 'L. Ahmed', amount: 92000, oldestEntry: 'Jun 24', daysUnbilled: 9, status: 'Bill at filing (Jul 15)', bucket: 'current' },
+  { engagement: 'Beacon Capital — Q2 Tax Filing', partner: 'L. Ahmed', amount: 60000, oldestEntry: 'Jun 26', daysUnbilled: 7, status: 'Bill at filing (Jul 15)', bucket: 'current' },
+  { engagement: 'Harbor Financial — Audit (May fieldwork)', partner: 'D. Whitmore', amount: 120000, oldestEntry: 'May 12', daysUnbilled: 22, status: 'Exception — ahead of billing schedule', bucket: 'b1_30' },
+  { engagement: 'Crestview Holdings — Advisory (Phase 2)', partner: 'D. Whitmore', amount: 128000, oldestEntry: 'May 20', daysUnbilled: 18, status: 'Interim bill drafted', bucket: 'b1_30' },
+  { engagement: 'Crestview Holdings — Advisory (Phase 1)', partner: 'D. Whitmore', amount: 95000, oldestEntry: 'Apr 28', daysUnbilled: 46, status: 'Awaiting milestone sign-off', bucket: 'b31_60' },
+  { engagement: 'Sterling Group — Tax Compliance (retainer)', partner: 'L. Ahmed', amount: 65000, oldestEntry: 'Apr 22', daysUnbilled: 52, status: 'Awaiting client PO', bucket: 'b31_60' },
+  { engagement: 'Beacon Capital — Advisory (scope dispute)', partner: 'D. Whitmore', amount: 62000, oldestEntry: 'Mar 10', daysUnbilled: 78, status: 'On hold — partner review', bucket: 'b60p' },
+  { engagement: 'Sterling Group — prior-year true-up', partner: 'L. Ahmed', amount: 28000, oldestEntry: 'Mar 18', daysUnbilled: 70, status: 'Write-off candidate', bucket: 'b60p' },
+];
+
+// ── Collections cadence (TCP) ────────────────────────────────────
+// Steps mirror the Customer Renewal Lifecycle playbook:
+// Day-0 invoice → Day-7 reminder → Day-14 final notice → escalate to human.
+const CADENCE_STEPS = ['Day-0 invoice', 'Day-7 reminder', 'Day-14 final notice', 'Escalate to human'];
+
+interface CadenceRow {
+  account: string;
+  inv: string;
+  amount: string;
+  completed: number;          // steps fully executed (0..4)
+  currentLabel: string;       // annotation on the current/next step
+  paused?: boolean;
+}
+
+const TCP_CADENCE_ROWS: CadenceRow[] = [
+  { account: 'Apex Systems', inv: 'INV-1029', amount: '$43,000', completed: 2, currentLabel: 'Paused — dunning held until P1 resolved (per approved exception)', paused: true },
+  { account: 'Meridian Group', inv: 'INV-1031', amount: '$19,000', completed: 2, currentLabel: 'Day-14 final notice queued (sends Jul 4)' },
+  { account: 'Summit Ridge Health', inv: 'INV-1014', amount: '$27,500', completed: 3, currentLabel: 'Escalation pending — CSM to be assigned' },
+  { account: 'Crestpoint Media', inv: 'INV-0991', amount: '$27,000', completed: 4, currentLabel: 'With Taylor Smith (Senior CSM) since Jun 12' },
+];
+
+const fmtUsd = (n: number) => '$' + n.toLocaleString('en-US');
+
+// ── Accounts payable (TCP) ───────────────────────────────────────
+// Bills sum EXACTLY to the $74K "AP due / next 30 days" KPI.
+// Vendors match the Vendor entity contracts (AWS, Twilio, DataDog,
+// Salesforce, Zendesk, Workday). Approver: Jai Patel for >$5K.
+// The DataDog $3,500 bill is the same one flagged as a possible
+// duplicate in the exceptions queue.
+interface ApBill {
+  vendor: string;
+  inv: string;
+  desc: string;
+  amount: number;
+  due: string;
+  status: 'Scheduled' | 'Needs approval' | 'On hold';
+  approver: string;
+  duplicate?: boolean;
+}
+
+const TCP_AP_BILLS: ApBill[] = [
+  { vendor: 'Twilio', inv: 'TW-88412', desc: 'Q3 usage commit', amount: 8500, due: 'Jul 12', status: 'Scheduled', approver: 'Jai Patel' },
+  { vendor: 'DataDog', inv: 'DD-2214-B', desc: 'June observability', amount: 3500, due: 'Jul 14', status: 'On hold', approver: '—', duplicate: true },
+  { vendor: 'AWS', inv: 'AWS-70233', desc: 'Monthly usage', amount: 8000, due: 'Jul 15', status: 'Scheduled', approver: 'Jai Patel' },
+  { vendor: 'AWS', inv: 'AWS-70251', desc: 'Enterprise support (annual installment)', amount: 12000, due: 'Jul 22', status: 'Needs approval', approver: 'Jai Patel' },
+  { vendor: 'Zendesk', inv: 'ZD-5531', desc: 'Q3 subscription', amount: 11750, due: 'Jul 25', status: 'Scheduled', approver: 'Jai Patel' },
+  { vendor: 'Salesforce', inv: 'SF-99120', desc: 'Q3 subscription', amount: 22000, due: 'Jul 28', status: 'Needs approval', approver: 'Jai Patel' },
+  { vendor: 'Workday', inv: 'WD-3308', desc: 'Q3 subscription', amount: 8250, due: 'Jul 31', status: 'Scheduled', approver: 'Jai Patel' },
+];
+
+const apStatusBadge = (s: ApBill['status']) =>
+  s === 'Scheduled' ? 'bg-slate-700/50 text-slate-300'
+  : s === 'Needs approval' ? 'bg-amber-500/15 text-amber-300'
+  : 'bg-rose-500/15 text-rose-300';
+
 const exToneBadge = (tone: FinException['tone']) =>
   tone === 'rose' ? 'bg-rose-500/15 text-rose-300' : tone === 'amber' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300';
 
@@ -429,6 +547,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
   const [resolved, setResolved] = useState<Record<string, 'approved' | 'rejected'>>({});
   const [selected, setSelected] = useState<FinException | null>(null);
   const [toast, setToast] = useState('');
+  const [bucketFilter, setBucketFilter] = useState<AgingBucketKey | 'all'>('all');
 
   const exceptions = EXCEPTIONS[activeCompanyId];
   const aging = AR_AGING[activeCompanyId];
@@ -478,18 +597,28 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
           <h3 className="text-sm font-semibold text-white mb-1">{isTcp ? 'AR aging — $248K' : 'WIP unbilled aging — $890K'}</h3>
           <p className="text-xs text-slate-500 mb-4">{isTcp ? 'Outstanding receivables by bucket' : 'Unbilled work-in-progress by age'}</p>
           <div className="space-y-3">
-            {aging.map(a => (
-              <div key={a.bucket}>
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-slate-400">{a.bucket}</span>
-                  <span className="text-white font-medium">{a.amount}</span>
-                </div>
-                <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full ${a.color}`} style={{ width: `${a.pct}%` }} />
-                </div>
-              </div>
-            ))}
+            {aging.map((a, i) => {
+              const key = TCP_BUCKET_KEYS[i].key;
+              const active = bucketFilter === key;
+              return (
+                <button
+                  key={a.bucket}
+                  onClick={() => setBucketFilter(active ? 'all' : key)}
+                  className={`w-full text-left rounded-lg px-2 py-1.5 -mx-2 transition-colors ${active ? 'bg-slate-800/80 ring-1 ring-indigo-500/40' : 'hover:bg-slate-800/40'}`}
+                  title={`Click to ${active ? 'clear the filter' : `drill into ${a.bucket}`}`}
+                >
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className={active ? 'text-indigo-300' : 'text-slate-400'}>{a.bucket}</span>
+                    <span className="text-white font-medium">{a.amount} <span className="text-slate-600">›</span></span>
+                  </div>
+                  <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${a.color}`} style={{ width: `${a.pct}%` }} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
+          <p className="mt-3 text-[11px] text-slate-500">Click a bucket to drill into {isTcp ? 'its invoices' : 'engagement WIP'} below.</p>
           {isTcp && (
             <button onClick={() => setPage('entity_customer_renewal')} className="mt-4 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               Renewal invoices live in the Customer entity →
@@ -546,6 +675,157 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
           </div>
         </div>
       </div>
+
+      {/* ── AR / WIP drill-through ── */}
+      <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white">
+              {isTcp ? 'Invoice detail' : 'Engagement WIP detail'}
+              {bucketFilter !== 'all' && (
+                <span className="ml-2 text-xs font-normal text-indigo-300">
+                  — {TCP_BUCKET_KEYS.find(b => b.key === bucketFilter)?.label} bucket
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isTcp ? 'Every open receivable behind the aging buckets — rows sum to each bucket exactly' : 'Unbilled WIP by engagement — rows sum to each aging bucket exactly'}
+            </p>
+          </div>
+          {bucketFilter !== 'all' && (
+            <button onClick={() => setBucketFilter('all')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Show all buckets ×</button>
+          )}
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-slate-800">
+                {(isTcp
+                  ? ['Invoice #', 'Account', 'Amount', 'Issued', 'Due', 'Days overdue', 'Status', 'Cadence stage']
+                  : ['Engagement', 'Partner', 'WIP amount', 'Oldest entry', 'Days unbilled', 'Status']
+                ).map(h => <th key={h} className={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {isTcp
+                ? TCP_AR_INVOICES.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
+                    <tr key={r.inv} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.inv}</td>
+                      <td className={`${td} font-medium text-white`}>{r.account}</td>
+                      <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
+                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.issued}</td>
+                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.due}</td>
+                      <td className={`${td} text-xs ${r.daysOverdue > 30 ? 'text-rose-300' : r.daysOverdue > 0 ? 'text-amber-300' : 'text-slate-500'}`}>{r.daysOverdue > 0 ? r.daysOverdue : '—'}</td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${r.status === 'Overdue' ? 'bg-rose-500/15 text-rose-300' : 'bg-indigo-500/15 text-indigo-300'}`}>{r.status}</span></td>
+                      <td className={`${td} text-xs text-slate-400`}>{r.cadence}</td>
+                    </tr>
+                  ))
+                : PWC_WIP_ROWS.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
+                    <tr key={r.engagement} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className={`${td} font-medium text-white`}>{r.engagement}</td>
+                      <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.partner}</td>
+                      <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
+                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.oldestEntry}</td>
+                      <td className={`${td} text-xs ${r.daysUnbilled > 60 ? 'text-rose-300' : r.daysUnbilled > 30 ? 'text-amber-300' : 'text-slate-500'}`}>{r.daysUnbilled}</td>
+                      <td className={`${td} text-xs text-slate-400`}>{r.status}</td>
+                    </tr>
+                  ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">
+          {isTcp
+            ? 'Apex Systems dunning is paused per the approved exception treatment (open P1). Renewal invoices live in the Customer entity.'
+            : 'The Harbor Financial $120K row is the same WIP flagged in the exceptions queue (ahead of billing schedule).'}
+        </p>
+      </div>
+
+      {/* ── Collections — cadence status (TCP) ── */}
+      {isTcp && (
+        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <h3 className="text-sm font-semibold text-white mb-1">Collections — cadence status</h3>
+          <p className="text-xs text-slate-500 mb-4">Where each overdue invoice sits in Casey&apos;s dunning cadence</p>
+          <div className="space-y-4">
+            {TCP_CADENCE_ROWS.map(row => (
+              <div key={row.inv} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-white">{row.account}</span>
+                    <span className="text-xs text-slate-500">{row.inv} · {row.amount}</span>
+                    {row.paused && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">DUNNING PAUSED</span>}
+                  </div>
+                  <button onClick={() => setPage('entity_customer_renewal')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Account renewal →</button>
+                </div>
+                <div className="flex items-center gap-0 overflow-x-auto pb-1">
+                  {CADENCE_STEPS.map((step, i) => {
+                    const done = i < row.completed;
+                    const isCurrent = i === row.completed && row.completed < CADENCE_STEPS.length;
+                    return (
+                      <React.Fragment key={step}>
+                        {i > 0 && <div className={`h-px w-6 flex-shrink-0 ${done || isCurrent ? 'bg-indigo-500/50' : 'bg-slate-700'}`} />}
+                        <div className={`flex items-center gap-1.5 text-[11px] whitespace-nowrap px-2 py-1 rounded-lg border flex-shrink-0 ${
+                          done ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'
+                          : isCurrent ? (row.paused ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300')
+                          : 'border-slate-800 bg-slate-900 text-slate-600'
+                        }`}>
+                          <span>{done ? '✓' : isCurrent ? (row.paused ? '⏸' : '←') : '○'}</span>
+                          <span>{step}</span>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">{row.currentLabel}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-[11px] text-slate-500">Cadence steps come from the Renewal Lifecycle Playbook (Day-0 invoice → Day-7 reminder → Day-14 final notice → human escalation).</p>
+            <button onClick={() => setPage('systems_playbooks')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">View Playbook →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Accounts payable (TCP) ── */}
+      {isTcp && (
+        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <h3 className="text-sm font-semibold text-white mb-1">Accounts payable — $74K due in 30 days</h3>
+          <p className="text-xs text-slate-500 mb-4">Vendor bills behind the AP KPI — sums to $74,000 exactly · approver Jai Patel (Finance Manager) for bills over $5K</p>
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800">
+                  {['Vendor', 'Invoice #', 'Description', 'Amount', 'Due', 'Status', 'Approver'].map(h => <th key={h} className={th}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {TCP_AP_BILLS.map((b, i) => (
+                  <tr key={b.inv} className={`border-b border-slate-800/60 transition-colors ${b.duplicate ? 'bg-rose-500/5 hover:bg-rose-500/10' : 'hover:bg-slate-800/30'} ${i === TCP_AP_BILLS.length - 1 ? 'border-b-0' : ''}`}>
+                    <td className={`${td} font-medium text-white`}>{b.vendor}</td>
+                    <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{b.inv}</td>
+                    <td className={`${td} text-slate-400 text-xs`}>
+                      {b.desc}
+                      {b.duplicate && (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 whitespace-nowrap">Possible duplicate — see exceptions queue</span>
+                      )}
+                    </td>
+                    <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(b.amount)}</td>
+                    <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{b.due}</td>
+                    <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${apStatusBadge(b.status)}`}>{b.status}</span></td>
+                    <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{b.approver}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-3 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs text-slate-400">
+              <span className="text-slate-300 font-medium">No DE owns AP today</span> — bills are scheduled and approved by humans. A Vendor DE would automate 3-way matching (PO ↔ receipt ↔ invoice) and duplicate detection.
+            </p>
+            <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">Explore →</button>
+          </div>
+        </div>
+      )}
 
       <ContributingDEs
         setPage={setPage}

@@ -49,6 +49,19 @@ const PWC_RENEWALS = [
   { engagement: 'Sterling Group — Tax Compliance', fees: '$85K', partner: 'L. Ahmed', renewalDate: 'Sep 1', status: 'Reminder queued' },
 ];
 
+// Compact dunning-cadence stage per account — mirrors the
+// "Collections — cadence status" section on Financial Health
+// (steps from the Renewal Lifecycle Playbook: Day-0 → Day-7 → Day-14 → escalate).
+const CADENCE_STAGE: Record<string, { label: string; cls: string }> = {
+  'Lakeshore Analytics': { label: 'Day-0 ✓', cls: 'text-indigo-300' },
+  'Apex Systems': { label: 'Paused (P1)', cls: 'text-amber-300' },
+};
+
+function cadenceStage(row: RenewalRow): { label: string; cls: string } {
+  if (row.status === 'Paid ✓' || row.status === 'Invoice approved — sending') return { label: '—', cls: 'text-slate-600' };
+  return CADENCE_STAGE[row.account] ?? { label: '—', cls: 'text-slate-600' };
+}
+
 function healthIndicator(score: number) {
   if (score >= 70) return '🟢';
   if (score >= 40) return '🟡';
@@ -173,7 +186,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-slate-800 text-left">
-              {['Account', 'ARR', 'Health', 'Renewal Date', 'Invoice Status', 'Action'].map(h => (
+              {['Account', 'ARR', 'Health', 'Renewal Date', 'Invoice Status', 'Cadence', 'Action'].map(h => (
                 <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
               ))}
             </tr>
@@ -195,6 +208,9 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
                       row.status === 'Invoice sent' ? 'text-indigo-300' :
                       'text-slate-400'
                     }`}>{row.status}</span>
+                  </td>
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    {(() => { const c = cadenceStage(row); return <span className={`text-xs ${c.cls}`}>{c.label}</span>; })()}
                   </td>
                   <td className="py-3 px-4">
                     {btn ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { COMPANY_SUMMARY } from '../../data/companies';
+import { computeRoi, roiK } from '../../data/roi';
 import { computeLiveCounts } from '../../components/Sidebar';
 import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
 import type { ChatEscalation } from '../../lib/chatEscalations';
@@ -419,6 +420,27 @@ export default function DashboardPage({
             </button>
           ))}
         </div>
+
+        {/* Value rollup — derived from Performance page numbers (src/data/roi.ts) */}
+        {(() => {
+          const roi = computeRoi(activeCompanyId);
+          return (
+            <button
+              onClick={() => setPage('intelligence_performance')}
+              title={roi.formula}
+              className="w-full -mt-3 bg-slate-900 border border-emerald-500/25 hover:border-emerald-500/50 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap text-left transition-all"
+            >
+              <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase flex-shrink-0">Value this month</span>
+              <span className="text-sm text-slate-200">
+                {roi.tasks.toLocaleString()} tasks · ~{roiK(roi.humanCost)} equivalent human cost · {roiK(roi.deCost)} DE cost —{' '}
+                <span className="text-emerald-300 font-semibold">{roi.savingsPct}% savings (~{roiK(roi.savings)})</span>
+              </span>
+              <span className="text-[11px] text-slate-500 ml-auto flex-shrink-0">
+                estimate vs human baseline · how is this calculated? →
+              </span>
+            </button>
+          );
+        })()}
 
         {/* Entities */}
         <div>
