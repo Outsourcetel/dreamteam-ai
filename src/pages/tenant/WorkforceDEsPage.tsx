@@ -47,7 +47,7 @@ interface AuditEntry {
   id: string; timestamp: string; action: string; outcome: string; type: 'resolved' | 'escalated' | 'kb_gap' | 'error' | 'config_change'
 }
 
-interface DEProfile {
+export interface DEProfile {
   id: string
   name: string
   role: string
@@ -76,7 +76,7 @@ interface DEProfile {
 
 // ── Seed Data ─────────────────────────────────────────────────────
 
-const TCP_DES: DEProfile[] = [
+export const TCP_DES: DEProfile[] = [
   {
     id: 'alex', name: 'Alex', role: 'Customer Support DE', entity: 'customer',
     status: 'active', confidence: 91, escalationRate: 12, resolutionRate: 88, avgResponseTime: '1.2 min', errorRate: 2,
@@ -285,7 +285,7 @@ const TCP_DES: DEProfile[] = [
   },
 ]
 
-const PWC_DES: DEProfile[] = [
+export const PWC_DES: DEProfile[] = [
   {
     id: 'morgan', name: 'Morgan', role: 'Client Relations DE', entity: 'customer',
     status: 'active', confidence: 87, escalationRate: 10, resolutionRate: 85, avgResponseTime: '2.8 min', errorRate: 2,

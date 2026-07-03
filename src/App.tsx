@@ -10,10 +10,11 @@ import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage'
 import KnowledgeIngestionPage from './pages/tenant/knowledge/KnowledgeIngestionPage';
 import KnowledgeGapsPage from './pages/tenant/knowledge/KnowledgeGapsPage';
 import KnowledgeQualityPage from './pages/tenant/knowledge/KnowledgeQualityPage';
-import SecurityPage from './pages/tenant/SecurityPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
-import AuditLogPage from './pages/tenant/AuditLogPage';
+import CompliancePage from './pages/tenant/governance/CompliancePage';
+import AuditTrailPage from './pages/tenant/governance/AuditTrailPage';
+import SecurityAccessPage from './pages/tenant/governance/SecurityAccessPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import ApprovalsPage from './pages/tenant/ApprovalsPage';
@@ -37,17 +38,11 @@ const PAGE_TO_URL: Record<string, string> = {
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
   dashboard:              '/dashboard',
-  audit_log:              '/audit-log',
   admin_approvals:        '/approvals',
   users:                  '/users',
   playbooks:              '/playbooks',
-  security:               '/security',
   connectors:             '/connectors',
   settings:               '/settings',
-  admin_overview:         '/security/overview',
-  admin_rbac:             '/security/rbac',
-  admin_audit:            '/security/audit',
-  admin_compliance:       '/security/compliance',
   eu_chat:                '/chat',
   // Entities
   entity_customer:            '/customer',
@@ -186,12 +181,6 @@ function AppShell() {
     switch (currentPage) {
       case 'dashboard':
         return <DashboardPage {...commonProps} dbStats={dbStats} />;
-      case 'security':
-      case 'admin_overview':
-      case 'admin_rbac':
-      case 'admin_audit':
-      case 'admin_compliance':
-        return <SecurityPage {...commonProps} />;
       case 'connectors':
         return <DataConnectorsPage {...commonProps} />;
       case 'settings':
@@ -202,8 +191,6 @@ function AppShell() {
         return <EndUserChatPage {...commonProps} />;
       case 'playbooks':
         return <PlaybooksPage {...commonProps} />;
-      case 'audit_log':
-        return <AuditLogPage {...commonProps} />;
       case 'users':
         return <UserManagementPage {...commonProps} />;
       // ── Entity pages ──────────────────────────────────────────
@@ -283,11 +270,11 @@ function AppShell() {
         return <PlaceholderPage title="Business Insights" description="Anomaly detection, trend analysis, gap reports, and retraining recommendations." />;
       // ── Governance ────────────────────────────────────────────
       case 'gov_compliance':
-        return <PlaceholderPage title="Compliance & Guardrails" description="Industry compliance templates, organisational guardrails, and DE-level restrictions." />;
+        return <CompliancePage setPage={handleSetPage} />;
       case 'gov_audit':
-        return <PlaceholderPage title="Audit Trail" description="Immutable log of all DE actions, human approvals, and system events." />;
+        return <AuditTrailPage />;
       case 'gov_security':
-        return <PlaceholderPage title="Security & Access" description="Platform RBAC, SSO, API keys, and session management." />;
+        return <SecurityAccessPage />;
       case 'company_setup':
         return <PlaceholderPage title="Company Setup" description="Configure your industry, activate functions, and set up your first Digital Employees." />;
       default:

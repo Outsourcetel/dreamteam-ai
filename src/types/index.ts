@@ -75,16 +75,10 @@ export type TenantPage =
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
 
-  // ── Legacy pages (kept pending Phase-4 migration) ─
-  | 'security'
-  | 'admin_overview'
-  | 'admin_rbac'
+  // ── Legacy pages (kept pending migration) ─────────
   | 'admin_approvals'
-  | 'admin_audit'
-  | 'admin_compliance'
   | 'connectors'
   | 'settings'
-  | 'audit_log'
   | 'users'
   | 'playbooks';
 

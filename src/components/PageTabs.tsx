@@ -7,7 +7,7 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
 ];
 
 export const ADMIN_TABS: { id: Page; label: string }[] = [
-  { id: 'security', label: 'Security & RBAC' },
+  { id: 'gov_security', label: 'Security & Access' },
   { id: 'connectors', label: 'Data Connectors' },
   { id: 'settings', label: 'Settings' },
 ];
