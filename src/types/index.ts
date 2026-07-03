@@ -94,7 +94,6 @@ export type TenantPage =
   | 'knowledge_taxonomy'
   | 'knowledge_connectors'
   | 'knowledge_files'
-  | 'finance'
   | 'audit_log'
   | 'users'
   | 'playbooks';

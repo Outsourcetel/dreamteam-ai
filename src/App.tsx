@@ -11,7 +11,6 @@ import KnowledgeDataPage from './pages/tenant/KnowledgeDataPage';
 import SecurityPage from './pages/tenant/SecurityPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
-import FinanceControlTowerPage from './pages/tenant/FinanceControlTowerPage';
 import AuditLogPage from './pages/tenant/AuditLogPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
@@ -23,6 +22,9 @@ import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
 import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
+import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
+import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
+import { OutcomeRevenuePage, OutcomeDeliveryPage, OutcomeFinancialPage, OutcomeRiskPage } from './pages/tenant/outcome/OutcomePages';
 import type { Page, PlatformPage } from './types';
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
@@ -33,7 +35,6 @@ const PAGE_TO_URL: Record<string, string> = {
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
   dashboard:              '/dashboard',
-  finance:                '/finance',
   audit_log:              '/audit-log',
   admin_approvals:        '/approvals',
   users:                  '/users',
@@ -221,8 +222,6 @@ function AppShell() {
         return <ApprovalsPage {...commonProps} />;
       case 'eu_chat':
         return <EndUserChatPage {...commonProps} />;
-      case 'finance':
-        return <FinanceControlTowerPage {...commonProps} />;
       case 'playbooks':
         return <PlaybooksPage {...commonProps} />;
       case 'audit_log':
@@ -245,25 +244,32 @@ function AppShell() {
       case 'entity_customer_renewal':
         return <CustomerRenewalPage setPage={handleSetPage} />;
       case 'entity_vendor':
+        return <VendorOverviewPage setPage={handleSetPage} />;
       case 'entity_vendor_sourcing':
+        return <VendorSourcingPage setPage={handleSetPage} />;
       case 'entity_vendor_contracts':
+        return <VendorContractsPage setPage={handleSetPage} />;
       case 'entity_vendor_management':
-        return <PlaceholderPage title="Vendors & Partners" description="Supplier sourcing, contract management, and relationship oversight." />;
+        return <VendorManagementPage setPage={handleSetPage} />;
       case 'entity_workforce':
+        return <WorkforceOverviewPage setPage={handleSetPage} />;
       case 'entity_workforce_talent':
+        return <WorkforceTalentPage setPage={handleSetPage} />;
       case 'entity_workforce_onboarding':
+        return <WorkforceOnboardingPage setPage={handleSetPage} />;
       case 'entity_workforce_development':
+        return <WorkforceDevelopmentPage setPage={handleSetPage} />;
       case 'entity_workforce_payroll':
-        return <PlaceholderPage title="Workforce" description="Talent acquisition, onboarding, performance, and payroll management." />;
+        return <WorkforcePayrollPage setPage={handleSetPage} />;
       // ── Outcome pages ─────────────────────────────────────────
       case 'outcome_revenue':
-        return <PlaceholderPage title="Revenue & Growth" description="Pipeline health, conversion rates, retention metrics, and expansion revenue." />;
+        return <OutcomeRevenuePage setPage={handleSetPage} />;
       case 'outcome_delivery':
-        return <PlaceholderPage title="Product & Engineering" description="Roadmap, development, release management, and incident response." />;
+        return <OutcomeDeliveryPage setPage={handleSetPage} />;
       case 'outcome_financial':
-        return <PlaceholderPage title="Financial Health" description="AP/AR, cash flow, budgeting, revenue recognition, and financial reporting." />;
+        return <OutcomeFinancialPage setPage={handleSetPage} />;
       case 'outcome_risk':
-        return <PlaceholderPage title="Risk & Compliance" description="Regulatory compliance, risk assessment, and guardrail management." />;
+        return <OutcomeRiskPage setPage={handleSetPage} />;
       // ── Specialist pages ──────────────────────────────────────
       case 'specialist_technical':
       case 'specialist_legal':
