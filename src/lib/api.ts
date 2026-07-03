@@ -1515,7 +1515,7 @@ function buildChecklist(d: {
       label: 'Activate a Digital Employee',
       description: 'Hire and activate at least one DE to start serving customers.',
       done: d.des > 0,
-      page: 'agents',
+      page: 'workforce_des',
       cta: 'Go to Workforce',
     },
     {

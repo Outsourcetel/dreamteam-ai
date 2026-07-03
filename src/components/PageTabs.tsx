@@ -25,14 +25,8 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'portal_settings', label: 'Settings' },
 ];
 
-export const AGENT_TABS: { id: Page; label: string }[] = [
-  { id: 'agents', label: 'Digital Employees' },
-  { id: 'swarm', label: 'Workforce Engine' },
-];
-
 export const ADMIN_TABS: { id: Page; label: string }[] = [
   { id: 'security', label: 'Security & RBAC' },
-  { id: 'integrations', label: 'Integrations' },
   { id: 'connectors', label: 'Data Connectors' },
   { id: 'settings', label: 'Settings' },
 ];

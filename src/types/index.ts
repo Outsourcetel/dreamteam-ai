@@ -47,8 +47,7 @@ export type TenantPage =
   | 'specialist_people'
 
   // ── Workforce (DE management) ─────────────────────
-  | 'workforce_des'             // Digital Employees roster
-  | 'workforce_de_profile'      // Individual DE profile (all 10 tabs)
+  | 'workforce_des'             // Digital Employees roster (incl. individual profiles)
 
   // ── Knowledge ─────────────────────────────────────
   | 'knowledge_library'         // Knowledge library
@@ -76,12 +75,7 @@ export type TenantPage =
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
 
-  // ── Legacy pages (kept for backward compatibility) ─
-  | 'agents'
-  | 'agent_overview'
-  | 'agent_builder'
-  | 'agent_testing'
-  | 'agent_deployments'
+  // ── Legacy pages (kept pending Phase-4 migration) ─
   | 'hub_overview'
   | 'hub_articles'
   | 'hub_review'
@@ -96,15 +90,12 @@ export type TenantPage =
   | 'portal_escalations'
   | 'portal_settings'
   | 'portal_email'
-  | 'insight'
-  | 'swarm'
   | 'security'
   | 'admin_overview'
   | 'admin_rbac'
   | 'admin_approvals'
   | 'admin_audit'
   | 'admin_compliance'
-  | 'integrations'
   | 'connectors'
   | 'settings'
   | 'knowledge_data'
@@ -112,14 +103,7 @@ export type TenantPage =
   | 'knowledge_connectors'
   | 'knowledge_files'
   | 'finance'
-  | 'revenue'
-  | 'hr'
-  | 'cs'
   | 'implementation'
-  | 'marketplace'
-  | 'control_fabric'
-  | 'capabilities'
-  | 'intelligence'
   | 'audit_log'
   | 'users'
   | 'playbooks';

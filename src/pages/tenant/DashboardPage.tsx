@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { COMPANY_SUMMARY } from '../../data/companies';
 import type { Page } from '../../types';
 
 // ── Health config ────────────────────────────────────────────────
@@ -73,14 +74,6 @@ interface ActivityItem {
 }
 
 interface CompanyData {
-  kpis: {
-    des_active: number;
-    des_total: number;
-    human_tasks: number;
-    ai_resolution: number;
-    kb_gaps: number;
-    alerts: number;
-  };
   entities: {
     customer: EntityData;
     vendor: EntityData;
@@ -98,21 +91,20 @@ interface CompanyData {
 
 const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
   tcp: {
-    kpis: { des_active: 8, des_total: 8, human_tasks: 7, ai_resolution: 87, kb_gaps: 5, alerts: 2 },
     entities: {
       customer: {
         label: 'Customer', icon: '◎',
-        des: ['Alex', 'Jamie', 'Taylor', 'Jordan', 'Morgan', 'Casey'],
+        des: ['Alex', 'Casey'],
         metric: '47 open tickets', metricPage: 'entity_customer_support',
-        health: 'active', humanTasks: 5,
+        health: 'active', humanTasks: 4,
         legacy: ['Customer Support', 'Sales', 'Customer Success', 'Account Mgmt'],
         subPage: 'entity_customer',
       },
       vendor: {
         label: 'Vendors & Partners', icon: '◈',
-        des: ['Sam'],
-        metric: '3 contracts expiring', metricPage: 'entity_vendor_contracts',
-        health: 'degraded', humanTasks: 1,
+        des: [],
+        metric: 'No DE assigned', metricPage: 'entity_vendor',
+        health: 'degraded', humanTasks: 0,
         legacy: ['Procurement', 'Vendor Management'],
         subPage: 'entity_vendor',
       },
@@ -136,25 +128,24 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       { id: 't2', type: 'escalation', title: 'Complex bug — API auth failure', de: 'Alex', detail: 'Apex Systems', age: '23 min', urgent: true },
       { id: 't3', type: 'review_gate', title: 'KB article review — Rate limiting guide', de: 'Alex', detail: '', age: '1 hr', urgent: false },
       { id: 't4', type: 'approval_gate', title: 'Contract renewal — Harbor Tech', de: 'Casey', detail: '$67,000', age: '2 hrs', urgent: false },
-      { id: 't5', type: 'training_feedback', title: 'DE response flagged for review', de: 'Taylor', detail: '', age: '3 hrs', urgent: false },
+      { id: 't5', type: 'training_feedback', title: 'DE response flagged for review', de: 'Riley', detail: '', age: '3 hrs', urgent: false },
     ],
     activity: [
       { type: 'resolved', time: '2 min ago', text: 'Alex resolved — "How do I reset 2FA?"', confidence: 94 },
       { type: 'escalated', time: '8 min ago', text: 'Alex escalated — API auth bug to L2', confidence: 58 },
       { type: 'kb_gap', time: '15 min ago', text: 'Gap detected — "Webhook retry logic" (23 queries)' },
       { type: 'resolved', time: '22 min ago', text: 'Casey sent renewal invoice — Harbor Tech $67K' },
-      { type: 'resolved', time: '31 min ago', text: 'Jordan completed onboarding — TCP client #4' },
-      { type: 'escalated', time: '45 min ago', text: 'Morgan flagged at-risk — Apex Systems (health: 34)', confidence: 34 },
-      { type: 'resolved', time: '1 hr ago', text: 'Taylor qualified lead — Northfield Co', confidence: 91 },
+      { type: 'resolved', time: '31 min ago', text: 'Riley completed onboarding checklist — new hire #4' },
+      { type: 'escalated', time: '45 min ago', text: 'Casey flagged at-risk — Apex Systems (health: 34)', confidence: 34 },
+      { type: 'resolved', time: '1 hr ago', text: 'Alex resolved 3 tickets — billing questions', confidence: 91 },
       { type: 'error', time: '2 hrs ago', text: 'Riley: Workday connector timeout — retrying' },
     ],
   },
   pwc: {
-    kpis: { des_active: 6, des_total: 6, human_tasks: 4, ai_resolution: 79, kb_gaps: 3, alerts: 2 },
     entities: {
       customer: {
         label: 'Clients', icon: '◎',
-        des: ['Morgan', 'Blake'],
+        des: ['Morgan'],
         metric: '4 active engagements', metricPage: 'entity_customer',
         health: 'active', humanTasks: 2,
         legacy: ['Client Relations', 'Business Development', 'Client Services'],
@@ -170,7 +161,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
       },
       workforce: {
         label: 'Workforce', icon: '◉',
-        des: ['Quinn'],
+        des: [],
         metric: '1 role open', metricPage: 'entity_workforce_talent',
         health: 'active', humanTasks: 0,
         legacy: ['Human Resources'],
@@ -185,16 +176,16 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
     },
     tasks: [
       { id: 't1', type: 'review_gate', title: 'Partner review — TCP tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true },
-      { id: 't2', type: 'approval_gate', title: 'Credit note approval', de: 'Quinn', detail: '$12,400', age: '1 hr', urgent: false },
+      { id: 't2', type: 'approval_gate', title: 'Credit note approval', de: 'Morgan', detail: '$12,400', age: '1 hr', urgent: false },
       { id: 't3', type: 'escalation', title: 'GDPR data request — response overdue', de: 'Morgan', detail: '', age: '2 hrs', urgent: true },
-      { id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Casey', detail: '', age: '3 hrs', urgent: false },
+      { id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Avery', detail: '', age: '3 hrs', urgent: false },
     ],
     activity: [
       { type: 'resolved', time: '5 min ago', text: 'Avery completed tax research — Q2 corp memo', confidence: 91 },
       { type: 'escalated', time: '14 min ago', text: 'Avery escalated memo to partner review' },
       { type: 'kb_gap', time: '30 min ago', text: 'Gap detected — "FATCA filing for dual-nationals"' },
-      { type: 'resolved', time: '45 min ago', text: 'Blake completed KYC — new client onboarding' },
-      { type: 'resolved', time: '1 hr ago', text: 'Casey reviewed 14 workpapers — Harbor Financial', confidence: 88 },
+      { type: 'resolved', time: '45 min ago', text: 'Morgan completed KYC — new client onboarding' },
+      { type: 'resolved', time: '1 hr ago', text: 'Avery reviewed 14 workpapers — Harbor Financial', confidence: 88 },
       { type: 'error', time: '2 hrs ago', text: 'GDPR response overdue — escalated to human' },
     ],
   },
@@ -293,6 +284,7 @@ export default function DashboardPage({
 }) {
   const { activeCompanyId, activeCompany } = useAuth();
   const data = COMPANY_DATA[activeCompanyId];
+  const summary = COMPANY_SUMMARY[activeCompanyId];
 
   const [healthConfig, setHealthConfig] = useState<HealthConfig>(DEFAULT_HEALTH_CONFIG);
   const [showHealthConfig, setShowHealthConfig] = useState(false);
@@ -377,11 +369,11 @@ export default function DashboardPage({
         {/* KPI row */}
         <div className="grid grid-cols-5 gap-3">
           {([
-            { icon: '⚡', value: `${data.kpis.des_active}/${data.kpis.des_total}`, label: 'DEs Active', navPage: 'workforce_des' as Page, alert: false },
-            { icon: '✋', value: `${data.kpis.human_tasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: false },
-            { icon: '◈', value: `${data.kpis.ai_resolution}%`, label: 'AI Resolution', navPage: 'intelligence_performance' as Page, alert: false },
-            { icon: '△', value: `${data.kpis.kb_gaps} detected`, label: 'KB Gaps', navPage: 'knowledge_gaps' as Page, alert: false },
-            { icon: '⚑', value: String(data.kpis.alerts), label: 'Alerts', navPage: 'outcome_risk' as Page, alert: data.kpis.alerts > 0 },
+            { icon: '⚡', value: `${summary.desActive}/${summary.desTotal}`, label: 'DEs Active', navPage: 'workforce_des' as Page, alert: false },
+            { icon: '✋', value: `${summary.humanTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: false },
+            { icon: '◈', value: `${summary.aiResolution}%`, label: 'AI Resolution', navPage: 'intelligence_performance' as Page, alert: false },
+            { icon: '△', value: `${summary.kbGaps} detected`, label: 'KB Gaps', navPage: 'knowledge_gaps' as Page, alert: false },
+            { icon: '⚑', value: String(summary.alerts), label: 'Alerts', navPage: 'outcome_risk' as Page, alert: summary.alerts > 0 },
           ] as const).map((kpi) => (
             <button
               key={kpi.label}
@@ -530,7 +522,7 @@ export default function DashboardPage({
           <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
-                HUMAN TASKS — {data.kpis.human_tasks} pending
+                HUMAN TASKS — {summary.humanTasks} pending
               </span>
               <button
                 onClick={() => setPage('ops_human_tasks')}

@@ -632,7 +632,7 @@ const CustomerPortalPage = ({
       <button onClick={() => setPage('hub_articles' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
         <span>◈</span> Knowledge Hub
       </button>
-      <button onClick={() => setPage('agents' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
+      <button onClick={() => setPage('workforce_des' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
         <span>⚡</span> Configure DE
       </button>
       <button onClick={() => setPage('portal_settings' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
@@ -1044,7 +1044,7 @@ const CustomerPortalPage = ({
               <div className={`w-2 h-2 rounded-full ${configuredDE?.status === 'active' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
               <p className="text-sm font-semibold text-white truncate">{deName}</p>
             </div>
-            <button onClick={() => setPage('agents' as Page)} className="text-xs text-indigo-400 hover:text-indigo-300">View DE →</button>
+            <button onClick={() => setPage('workforce_des' as Page)} className="text-xs text-indigo-400 hover:text-indigo-300">View DE →</button>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
             <p className="text-xs text-slate-500 mb-1">KB Health</p>

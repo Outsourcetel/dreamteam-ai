@@ -8,7 +8,7 @@ import {
   mockKnowledgeItems,
   mockImportedFiles,
   registeredConnectors,
-} from './AgentWorkforcePage';
+} from '../../data/knowledgeSeed';
 
 const HUB_TABS: { id: Page; label: string }[] = [
   { id: 'hub_overview', label: 'Overview' },

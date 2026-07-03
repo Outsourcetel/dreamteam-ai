@@ -6,27 +6,16 @@ import LoginPage from './pages/LoginPage';
 import OnboardingWizard from './pages/OnboardingWizard';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
-import AgentWorkforcePage from './pages/tenant/AgentWorkforcePage';
 import KnowledgeHubPage from './pages/tenant/KnowledgeHubPage';
 import KnowledgeDataPage from './pages/tenant/KnowledgeDataPage';
 import CustomerPortalPage from './pages/tenant/CustomerPortalPage';
-import InsightEnginePage from './pages/tenant/InsightEnginePage';
-import SwarmPage from './pages/tenant/SwarmPage';
 import SecurityPage from './pages/tenant/SecurityPage';
-import IntegrationsPage from './pages/tenant/IntegrationsPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import FinanceControlTowerPage from './pages/tenant/FinanceControlTowerPage';
-import RevenueWorkspacePage from './pages/tenant/RevenueWorkspacePage';
-import HRWorkspacePage from './pages/tenant/HRWorkspacePage';
 import AuditLogPage from './pages/tenant/AuditLogPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
-import CSWorkspacePage from './pages/tenant/CSWorkspacePage';
 import ImplementationWorkspacePage from './pages/tenant/ImplementationWorkspacePage';
-import ConnectorMarketplacePage from './pages/tenant/ConnectorMarketplacePage';
-import ControlFabricPage from './pages/tenant/ControlFabricPage';
-import CapabilitiesPage from './pages/tenant/CapabilitiesPage';
-import IntelligencePlatformPage from './pages/tenant/IntelligencePlatformPage';
 import PlaybooksPage from './pages/tenant/PlaybooksPage';
 import ApprovalsPage from './pages/tenant/ApprovalsPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
@@ -42,18 +31,8 @@ const PAGE_TO_URL: Record<string, string> = {
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
   dashboard:              '/dashboard',
-  agents:                 '/agents',
-  swarm:                  '/swarm',
-  insight:                '/insight',
   finance:                '/finance',
-  revenue:                '/revenue',
-  hr:                     '/hr',
-  cs:                     '/customer-success',
   implementation:         '/implementation',
-  marketplace:            '/marketplace',
-  control_fabric:         '/control-fabric',
-  capabilities:           '/capabilities',
-  intelligence:           '/intelligence',
   audit_log:              '/audit-log',
   admin_approvals:        '/approvals',
   users:                  '/users',
@@ -64,7 +43,7 @@ const PAGE_TO_URL: Record<string, string> = {
   settings:               '/settings',
   hub_overview:           '/knowledge/overview',
   hub_articles:           '/knowledge/articles',
-  hub_ingestion:          '/knowledge/ingestion',
+  hub_ingestion:          '/knowledge/hub-ingestion',
   hub_training:           '/knowledge/training',
   hub_analytics:          '/knowledge/analytics',
   knowledge_data:         '/knowledge/data',
@@ -80,14 +59,10 @@ const PAGE_TO_URL: Record<string, string> = {
   portal_settings:        '/portal/settings',
   portal_email:           '/portal/email',
   hub_review:             '/knowledge/review',
-  admin_overview:         '/security',
+  admin_overview:         '/security/overview',
   admin_rbac:             '/security/rbac',
   admin_audit:            '/security/audit',
   admin_compliance:       '/security/compliance',
-  agent_overview:         '/agents',
-  agent_builder:          '/agents/builder',
-  agent_testing:          '/agents/testing',
-  agent_deployments:      '/agents/deployments',
   eu_chat:                '/chat',
   eu_actions:             '/my-actions',
   eu_tickets:             '/my-tickets',
@@ -120,7 +95,6 @@ const PAGE_TO_URL: Record<string, string> = {
   specialist_people:       '/specialist/people',
   // Workforce (DEs)
   workforce_des:       '/workforce/des',
-  workforce_de_profile:'/workforce/de-profile',
   // Knowledge
   knowledge_library:   '/knowledge/library',
   knowledge_ingestion: '/knowledge/ingestion',
@@ -230,24 +204,12 @@ function AppShell() {
     switch (currentPage) {
       case 'dashboard':
         return <DashboardPage {...commonProps} dbStats={dbStats} />;
-      case 'agents':
-      case 'agent_overview':
-      case 'agent_builder':
-      case 'agent_testing':
-      case 'agent_deployments':
-        return <AgentWorkforcePage {...commonProps} />;
-      case 'swarm':
-        return <SwarmPage tenant={currentTenant} />;
-      case 'insight':
-        return <InsightEnginePage {...commonProps} />;
       case 'security':
       case 'admin_overview':
       case 'admin_rbac':
       case 'admin_audit':
       case 'admin_compliance':
         return <SecurityPage {...commonProps} />;
-      case 'integrations':
-        return <IntegrationsPage {...commonProps} />;
       case 'connectors':
         return <DataConnectorsPage {...commonProps} />;
       case 'settings':
@@ -279,22 +241,8 @@ function AppShell() {
         return <EndUserChatPage {...commonProps} />;
       case 'finance':
         return <FinanceControlTowerPage {...commonProps} />;
-      case 'revenue':
-        return <RevenueWorkspacePage {...commonProps} />;
-      case 'hr':
-        return <HRWorkspacePage {...commonProps} />;
-      case 'cs':
-        return <CSWorkspacePage {...commonProps} />;
       case 'implementation':
         return <ImplementationWorkspacePage {...commonProps} />;
-      case 'marketplace':
-        return <ConnectorMarketplacePage {...commonProps} />;
-      case 'control_fabric':
-        return <ControlFabricPage />;
-      case 'capabilities':
-        return <CapabilitiesPage />;
-      case 'intelligence':
-        return <IntelligencePlatformPage />;
       case 'playbooks':
         return <PlaybooksPage {...commonProps} />;
       case 'audit_log':
@@ -345,8 +293,6 @@ function AppShell() {
       // ── Workforce ─────────────────────────────────────────────
       case 'workforce_des':
         return <WorkforceDEsPage setPage={handleSetPage} />;
-      case 'workforce_de_profile':
-        return <PlaceholderPage title="DE Profile" description="Full Digital Employee configuration: Identity, Training, Knowledge, SOPs, Playbooks, Systems, Guardrails, Human Loop, Performance, Audit." />;
       // ── Knowledge ─────────────────────────────────────────────
       case 'knowledge_library':
         return <PlaceholderPage title="Knowledge Library" description="All knowledge organised by entity, audience, type, and confidence level." />;

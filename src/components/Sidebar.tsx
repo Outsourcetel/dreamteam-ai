@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import type { Page } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
+import type { CompanyId } from '../data/companies';
 
 interface SidebarProps {
   page: Page;
@@ -13,28 +15,6 @@ interface SidebarProps {
   exitGodMode?: () => void;
   onLogout: () => void;
 }
-
-// ── Company seed data (for picker UI only — source of truth is context) ────
-const COMPANIES = [
-  {
-    id: 'tcp' as const,
-    name: 'TCP Software',
-    industry: 'Technology / SaaS',
-    badge: 'TECH',
-    badgeColor: '#6366f1',
-    activeFunctions: 6,
-    activeDEs: 8,
-  },
-  {
-    id: 'pwc' as const,
-    name: 'PWC',
-    industry: 'Financial Services',
-    badge: 'FIN',
-    badgeColor: '#0ea5e9',
-    activeFunctions: 5,
-    activeDEs: 6,
-  },
-];
 
 // ── Nav structure ────────────────────────────────────────────────
 interface SubItem {
@@ -58,8 +38,9 @@ interface NavSection {
   groups: NavGroup[];
 }
 
-function buildNav(companyId: string): NavSection[] {
+function buildNav(companyId: CompanyId): NavSection[] {
   const isTCP = companyId === 'tcp';
+  const s = COMPANY_SUMMARY[companyId];
 
   return [
     {
@@ -84,11 +65,11 @@ function buildNav(companyId: string): NavSection[] {
           defaultOpen: true,
           children: [
             { id: 'entity_customer_bd', label: 'Business Development', indicator: { dot: true, color: '#6366f1' } },
-            { id: 'entity_customer_sales', label: 'Sales', indicator: { count: 12, color: '#6366f1' } },
-            { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: { count: 2, color: '#f59e0b' } },
-            { id: 'entity_customer_support', label: 'Support', indicator: { count: 47, color: '#22c55e' } },
-            { id: 'entity_customer_success', label: 'Customer Success', indicator: { count: 3, color: '#ef4444' } },
-            { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: { count: 8, color: '#f59e0b' } },
+            { id: 'entity_customer_sales', label: 'Sales', indicator: s.salesPipeline !== undefined ? { count: s.salesPipeline, color: '#6366f1' } : undefined },
+            { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: s.onboardingActive !== undefined ? { count: s.onboardingActive, color: '#f59e0b' } : undefined },
+            { id: 'entity_customer_support', label: 'Support', indicator: s.supportTickets !== undefined ? { count: s.supportTickets, color: '#22c55e' } : undefined },
+            { id: 'entity_customer_success', label: 'Customer Success', indicator: s.atRiskAccounts !== undefined ? { count: s.atRiskAccounts, color: '#ef4444' } : undefined },
+            { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: s.renewalsDue !== undefined ? { count: s.renewalsDue, color: '#f59e0b' } : undefined },
           ],
         },
         {
@@ -132,7 +113,7 @@ function buildNav(companyId: string): NavSection[] {
           label: 'Risk & Compliance',
           icon: '⚑',
           page: 'outcome_risk',
-          badge: { text: '2 alerts', color: '#ef4444' },
+          badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
         },
       ],
     },
@@ -144,7 +125,7 @@ function buildNav(companyId: string): NavSection[] {
           label: 'Digital Employees',
           icon: '⚡',
           page: 'workforce_des',
-          badge: { text: isTCP ? '8 active' : '6 active', color: '#22c55e' },
+          badge: { text: `${s.desActive} active`, color: '#22c55e' },
         },
       ],
     },
@@ -153,7 +134,7 @@ function buildNav(companyId: string): NavSection[] {
       groups: [
         { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
         { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
-        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: { text: '5 gaps', color: '#f59e0b' } },
+        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: s.kbGaps > 0 ? { text: `${s.kbGaps} gaps`, color: '#f59e0b' } : undefined },
         { id: 'kb_quality', label: 'Quality & Coverage', icon: '◎', page: 'knowledge_quality' },
       ],
     },
@@ -172,7 +153,7 @@ function buildNav(companyId: string): NavSection[] {
           label: 'Human Tasks',
           icon: '✋',
           page: 'ops_human_tasks',
-          badge: { text: '7 pending', color: '#f59e0b' },
+          badge: s.humanTasks > 0 ? { text: `${s.humanTasks} pending`, color: '#f59e0b' } : undefined,
         },
         { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
       ],
@@ -230,10 +211,28 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           {activeCompany.badge}
         </div>
         <div className="w-px h-4 bg-slate-800" />
-        {['⬡', '◎', '⚡', '◫', '⟷', '✋', '◈', '⚑'].map((icon, i) => (
-          <div key={i} className="w-8 h-8 rounded-lg bg-slate-900 text-slate-500 flex items-center justify-center text-xs cursor-pointer hover:text-white hover:bg-slate-800">
-            {icon}
-          </div>
+        {([
+          { icon: '⬡', page: 'dashboard' as Page, label: 'Command Centre' },
+          { icon: '◎', page: 'entity_customer' as Page, label: 'Customer' },
+          { icon: '⚡', page: 'workforce_des' as Page, label: 'Digital Employees' },
+          { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge Library' },
+          { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
+          { icon: '✋', page: 'ops_human_tasks' as Page, label: 'Human Tasks' },
+          { icon: '◈', page: 'intelligence_performance' as Page, label: 'Performance' },
+          { icon: '⚑', page: 'gov_compliance' as Page, label: 'Compliance & Guardrails' },
+        ]).map(item => (
+          <button
+            key={item.page}
+            title={item.label}
+            onClick={() => setPage(item.page)}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${
+              page === item.page
+                ? 'bg-indigo-500/20 text-indigo-300'
+                : 'bg-slate-900 text-slate-500 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            {item.icon}
+          </button>
         ))}
         <div className="flex-1" />
         <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-slate-900 text-slate-500 hover:text-white text-xs flex items-center justify-center">

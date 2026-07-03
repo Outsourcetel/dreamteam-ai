@@ -13,6 +13,8 @@ import {
 } from '../lib/api';
 import type { AuthUser, Tenant, Page } from '../types';
 import { canAccessPage } from '../lib/mockData';
+import { COMPANIES_LOOKUP } from '../data/companies';
+import type { CompanyProfile, CompanyId } from '../data/companies';
 
 interface DbStats {
   totalConversations: number;
@@ -31,19 +33,7 @@ interface GodModeSession {
   operator: AuthUser;
 }
 
-export interface CompanyProfile {
-  id: 'tcp' | 'pwc';
-  name: string;
-  industry: string;
-  badge: string;
-  badgeColor: string;
-  activeDEs: number;
-}
-
-export const COMPANIES_LOOKUP: Record<'tcp' | 'pwc', CompanyProfile> = {
-  tcp: { id: 'tcp', name: 'TCP Software', industry: 'Technology / SaaS', badge: 'TECH', badgeColor: '#6366f1', activeDEs: 8 },
-  pwc: { id: 'pwc', name: 'PWC', industry: 'Financial Services', badge: 'FIN', badgeColor: '#0ea5e9', activeDEs: 6 },
-};
+export type { CompanyProfile, CompanyId } from '../data/companies';
 
 interface AuthContextValue {
   authedUser: AuthUser | null;
@@ -58,8 +48,8 @@ interface AuthContextValue {
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
   isTenantUser: boolean;
-  activeCompanyId: 'tcp' | 'pwc';
-  setActiveCompanyId: (id: 'tcp' | 'pwc') => void;
+  activeCompanyId: CompanyId;
+  setActiveCompanyId: (id: CompanyId) => void;
   activeCompany: CompanyProfile;
   handleLogin: (u: AuthUser) => void;
   handleLogout: () => Promise<void>;
@@ -78,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [godModeSession, setGodModeSession] = useState<GodModeSession | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [activeCompanyId, setActiveCompanyId] = useState<'tcp' | 'pwc'>('tcp');
+  const [activeCompanyId, setActiveCompanyId] = useState<CompanyId>('tcp');
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
