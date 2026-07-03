@@ -3,6 +3,11 @@ import type { AuthUser, Tenant, Page } from '../../types';
 import { PageTabs, ADMIN_TABS } from '../../components';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { useDataMode } from '../../lib/dataMode';
+import {
+  generateWidgetKey, fetchWidgetKeys, revokeWidgetKey, fetchEndUserSessions,
+  WIDGET_ASK_URL, type WidgetKeyRow, type EndUserSessionRow,
+} from '../../lib/widgetApi';
 
 const INDUSTRIES = [
   'Technology', 'Financial Services', 'Healthcare', 'Retail & E-commerce',
@@ -24,7 +29,8 @@ const SettingsPage = ({
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
   const { refreshTenant } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
-  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'billing' | 'security'>('general');
+  const dataMode = useDataMode();
+  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>('general');
 
   // General tab
   const [orgName, setOrgName] = useState(tenant?.name || '');
@@ -43,6 +49,14 @@ const SettingsPage = ({
   const [googleSet, setGoogleSet] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+
+  // Widget & API tab
+  const [widgetKeys, setWidgetKeys] = useState<WidgetKeyRow[]>([]);
+  const [endUserSessions, setEndUserSessions] = useState<EndUserSessionRow[]>([]);
+  const [newKeyLabel, setNewKeyLabel] = useState('');
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [keyGenBusy, setKeyGenBusy] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   // Usage tab
   const [tenants, setTenants] = useState<any[]>([]);
@@ -64,6 +78,12 @@ const SettingsPage = ({
         hasPlatformConfigKey('OPENAI_API_KEY'),
         hasPlatformConfigKey('GOOGLE_AI_KEY'),
       ]).then(([a, o, g]) => { setAnthropicSet(a); setOpenaiSet(o); setGoogleSet(g); });
+    }
+    if (activeTab === 'widget' && dataMode === 'live' && tenant?.id) {
+      Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
+        setWidgetKeys(ks);
+        setEndUserSessions(ss);
+      });
     }
     if (activeTab === 'usage') {
       Promise.all([fetchTenants(), fetchAllTenantsUsage()]).then(([ts, usage]) => {
@@ -124,6 +144,46 @@ const SettingsPage = ({
     setUsageMap(map);
   };
 
+  const handleGenerateKey = async () => {
+    if (!tenant?.id || keyGenBusy) return;
+    setKeyGenBusy(true);
+    const plaintext = await generateWidgetKey(tenant.id, newKeyLabel || 'Default key');
+    setKeyGenBusy(false);
+    if (plaintext) {
+      setGeneratedKey(plaintext);
+      setKeyCopied(false);
+      setNewKeyLabel('');
+      setWidgetKeys(await fetchWidgetKeys(tenant.id));
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!tenant?.id) return;
+    await revokeWidgetKey(id);
+    setWidgetKeys(await fetchWidgetKeys(tenant.id));
+  };
+
+  const handleCopyKey = async () => {
+    if (!generatedKey) return;
+    try {
+      await navigator.clipboard.writeText(generatedKey);
+      setKeyCopied(true);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const embedSnippet = `<script src="${window.location.origin}/widget.js"></script>
+<script>
+  DreamTeamWidget.init({
+    key: 'dtw_YOUR_WIDGET_KEY',
+    apiUrl: '${WIDGET_ASK_URL}',
+    accountRef: 'YOUR_CUSTOMER_ID', endUserRef: 'EMPLOYEE_ID', displayName: 'Jane Doe',
+  });
+</script>`;
+
+  const tabList = (dataMode === 'live'
+    ? ['general', 'ai_engine', 'usage', 'widget', 'billing', 'security']
+    : ['general', 'ai_engine', 'usage', 'billing', 'security']) as Array<typeof activeTab>;
+
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
@@ -134,7 +194,7 @@ const SettingsPage = ({
         </p>
       </div>
       <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6 overflow-x-auto w-fit">
-        {(['general', 'ai_engine', 'usage', 'billing', 'security'] as const).map((t) => (
+        {tabList.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
@@ -143,7 +203,7 @@ const SettingsPage = ({
             }`}
             style={activeTab === t ? { backgroundColor: accentColor } : {}}
           >
-            {t === 'ai_engine' ? 'AI Engine' : t === 'usage' ? 'Usage & Budgets' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'ai_engine' ? 'AI Engine' : t === 'usage' ? 'Usage & Budgets' : t === 'widget' ? 'Widget & API' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -385,6 +445,122 @@ const SettingsPage = ({
                   );
                 })}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Widget & API (live mode only) ─────────────────────────── */}
+      {activeTab === 'widget' && (
+        <div className="max-w-3xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">Widget Keys</h2>
+            <p className="text-xs text-slate-400 mb-4">
+              Publishable keys for embedding the "Ask Alex" widget in your product. Keys can only ask
+              questions — they can never read or change data. We store only a hash; the key is shown once.
+            </p>
+
+            {generatedKey && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 mb-4">
+                <div className="text-xs font-semibold text-emerald-400 mb-2">
+                  New key generated — copy it now, it will not be shown again
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs text-white font-mono bg-slate-800 rounded-lg px-3 py-2 break-all">{generatedKey}</code>
+                  <button
+                    onClick={handleCopyKey}
+                    className="px-3 py-2 text-xs text-white rounded-lg flex-shrink-0"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {keyCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mb-5">
+              <input
+                value={newKeyLabel}
+                onChange={e => setNewKeyLabel(e.target.value)}
+                placeholder="Key label (e.g. Production portal)"
+                className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                onClick={handleGenerateKey}
+                disabled={keyGenBusy}
+                className="px-5 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-50 flex-shrink-0"
+                style={{ backgroundColor: accentColor }}
+              >
+                {keyGenBusy ? 'Generating…' : 'Generate key'}
+              </button>
+            </div>
+
+            {widgetKeys.length === 0 ? (
+              <div className="text-xs text-slate-600 py-3 text-center">No widget keys yet — generate one to embed the widget.</div>
+            ) : (
+              <div className="space-y-2">
+                {widgetKeys.map(k => (
+                  <div key={k.id} className="flex items-center justify-between gap-3 bg-slate-800/50 rounded-xl px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="text-sm text-white font-medium truncate">
+                        {k.label}
+                        {!k.active && <span className="ml-2 text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded">Revoked</span>}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Created {new Date(k.created_at).toLocaleDateString()} · {k.request_count} requests ·
+                        {k.last_used_at ? ` last used ${new Date(k.last_used_at).toLocaleString()}` : ' never used'}
+                      </div>
+                    </div>
+                    {k.active && (
+                      <button
+                        onClick={() => handleRevokeKey(k.id)}
+                        className="px-3 py-1.5 text-xs font-medium text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 flex-shrink-0"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">Embed Snippet</h2>
+            <p className="text-xs text-slate-400 mb-3">
+              Paste into your product, replacing the placeholders. Full reference:{' '}
+              <a href="https://github.com/Outsourcetel/dreamteam-ai/blob/main/docs/WIDGET-EMBED.md" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">docs/WIDGET-EMBED.md</a>
+              {' '}· try it on the <a href="/widget-demo.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">demo page</a>.
+            </p>
+            <pre className="text-xs text-slate-300 font-mono bg-slate-800 rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">End-User Activity</h2>
+            <p className="text-xs text-slate-400 mb-3">Recent end users who asked questions through the widget.</p>
+            {endUserSessions.length === 0 ? (
+              <div className="text-xs text-slate-600 py-3 text-center">No end-user activity yet.</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 text-left">
+                    <th className="pb-2 font-medium">Account</th>
+                    <th className="pb-2 font-medium">Name</th>
+                    <th className="pb-2 font-medium">First seen</th>
+                    <th className="pb-2 font-medium">Last seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {endUserSessions.map(s => (
+                    <tr key={s.id} className="border-t border-slate-800 text-slate-300">
+                      <td className="py-2 font-mono">{s.account_external_ref || '—'}</td>
+                      <td className="py-2">{s.display_name || s.end_user_ref || '—'}</td>
+                      <td className="py-2 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
+                      <td className="py-2 text-slate-500">{new Date(s.last_seen_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>

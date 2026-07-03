@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acme Inc — Customer Portal (demo)</title>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f6f8; color: #1a202c; }
+  header { background: #0f172a; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header .logo { font-weight: 700; font-size: 18px; }
+  header .logo span { color: #38bdf8; }
+  main { max-width: 860px; margin: 40px auto; padding: 0 24px; }
+  .card { background: #fff; border: 1px solid #e5e8ee; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  p.sub { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+  .setup { background: #eef2ff; border: 1px solid #c7d2fe; }
+  .setup label { font-size: 12px; font-weight: 600; color: #475569; display: block; margin: 10px 0 4px; }
+  .setup input { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: monospace; }
+  .setup button { margin-top: 14px; background: #6366f1; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .setup .note { font-size: 12px; color: #64748b; margin-top: 8px; }
+  .fake-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+  .fake-row:last-child { border-bottom: none; }
+  .pill { background: #dcfce7; color: #15803d; font-size: 11px; padding: 2px 8px; border-radius: 99px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Acme<span>Portal</span></div>
+  <div style="font-size:13px;color:#94a3b8;">TCP customer portal (demo) · logged in as Jane Doe — Account #4821</div>
+</header>
+<main>
+  <h1>Welcome back, Jane</h1>
+  <p class="sub">This static page pretends to be a TCP business customer's portal. The "Ask Alex" bubble in the corner is the DreamTeam embedded widget.</p>
+
+  <div class="card setup">
+    <strong style="font-size:14px;">Demo setup — activate the widget</strong>
+    <label for="wkey">Widget key (generate one in DreamTeam → Settings → Widget &amp; API)</label>
+    <input id="wkey" placeholder="dtw_…" autocomplete="off">
+    <button onclick="activateWidget()">Load widget</button>
+    <div class="note">The key is publishable — it can only ask questions, never read or change data.</div>
+  </div>
+
+  <div class="card">
+    <strong style="font-size:14px;">Your recent orders</strong>
+    <div class="fake-row"><span>Order #10422 — 3× Enterprise licences</span><span class="pill">Fulfilled</span></div>
+    <div class="fake-row"><span>Order #10391 — Support plan renewal</span><span class="pill">Fulfilled</span></div>
+    <div class="fake-row"><span>Order #10358 — Onboarding package</span><span class="pill">Fulfilled</span></div>
+  </div>
+</main>
+
+<script src="/widget.js"></script>
+<script>
+  function activateWidget() {
+    var key = document.getElementById('wkey').value.trim();
+    if (!key) { alert('Paste a widget key first.'); return; }
+    DreamTeamWidget.init({
+      key: key,
+      apiUrl: 'https://rfsvmhcqeiyrxivbmpel.supabase.co/functions/v1/widget-ask',
+      accountRef: 'acct-4821',
+      endUserRef: 'jane-doe-demo',
+      displayName: 'Jane Doe',
+      accent: '#6366f1',
+    });
+    document.querySelector('.setup').style.display = 'none';
+  }
+</script>
+</body>
+</html>
