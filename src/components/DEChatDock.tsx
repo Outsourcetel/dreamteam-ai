@@ -283,16 +283,18 @@ export function getDEResponse(deId: string, text: string, companyId: CompanyId):
     };
   }
 
-  // Prefer the active DE's intents, then any-DE, then other DEs' intents.
+  // Guardrail intents always win over informational matches, then prefer
+  // the active DE's intents, then any-DE, then other DEs' intents.
   const table = INTENTS[companyId];
   const scored = table
     .map(intent => ({
       intent,
+      guard: intent.special === 'guardrail' ? 1 : 0,
       hits: intent.keywords.filter(k => q.includes(k)).length,
       own: intent.deId === deId ? 2 : intent.deId === '*' ? 1 : 0,
     }))
     .filter(s => s.hits > 0)
-    .sort((a, b) => b.hits - a.hits || b.own - a.own);
+    .sort((a, b) => b.guard - a.guard || b.hits - a.hits || b.own - a.own);
 
   if (scored.length > 0) {
     const { intent } = scored[0];
