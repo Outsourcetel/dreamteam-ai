@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components';
+import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
@@ -305,6 +306,7 @@ function AppShell() {
           )}
           {renderPage()}
         </main>
+        {authedUser && !isDTUser && <DEChatDock />}
       </div>
     </>
   );
