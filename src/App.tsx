@@ -6,8 +6,10 @@ import LoginPage from './pages/LoginPage';
 import OnboardingWizard from './pages/OnboardingWizard';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
-import KnowledgeHubPage from './pages/tenant/KnowledgeHubPage';
-import KnowledgeDataPage from './pages/tenant/KnowledgeDataPage';
+import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
+import KnowledgeIngestionPage from './pages/tenant/knowledge/KnowledgeIngestionPage';
+import KnowledgeGapsPage from './pages/tenant/knowledge/KnowledgeGapsPage';
+import KnowledgeQualityPage from './pages/tenant/knowledge/KnowledgeQualityPage';
 import SecurityPage from './pages/tenant/SecurityPage';
 import DataConnectorsPage from './pages/tenant/DataConnectorsPage';
 import SettingsPage from './pages/tenant/SettingsPage';
@@ -43,16 +45,6 @@ const PAGE_TO_URL: Record<string, string> = {
   integrations:           '/integrations',
   connectors:             '/connectors',
   settings:               '/settings',
-  hub_overview:           '/knowledge/overview',
-  hub_articles:           '/knowledge/articles',
-  hub_ingestion:          '/knowledge/hub-ingestion',
-  hub_training:           '/knowledge/training',
-  hub_analytics:          '/knowledge/analytics',
-  knowledge_data:         '/knowledge/data',
-  knowledge_taxonomy:     '/knowledge/taxonomy',
-  knowledge_connectors:   '/knowledge/connectors',
-  knowledge_files:        '/knowledge/files',
-  hub_review:             '/knowledge/review',
   admin_overview:         '/security/overview',
   admin_rbac:             '/security/rbac',
   admin_audit:            '/security/audit',
@@ -160,7 +152,6 @@ function AppShell() {
     godModeSession,
     showOnboarding,
     dbTenants,
-    dbArticles,
     dbStats,
     currentTenant,
     isDTUser,
@@ -206,18 +197,6 @@ function AppShell() {
         return <DataConnectorsPage {...commonProps} />;
       case 'settings':
         return <SettingsPage {...commonProps} />;
-      case 'knowledge_data':
-      case 'knowledge_taxonomy':
-      case 'knowledge_connectors':
-      case 'knowledge_files':
-        return <KnowledgeDataPage {...commonProps} />;
-      case 'hub_overview':
-      case 'hub_articles':
-      case 'hub_review':
-      case 'hub_ingestion':
-      case 'hub_training':
-      case 'hub_analytics':
-        return <KnowledgeHubPage dbArticles={dbArticles} {...commonProps} subPage={currentPage as any} />;
       case 'admin_approvals':
         return <ApprovalsPage {...commonProps} />;
       case 'eu_chat':
@@ -281,13 +260,13 @@ function AppShell() {
         return <WorkforceDEsPage setPage={handleSetPage} />;
       // ── Knowledge ─────────────────────────────────────────────
       case 'knowledge_library':
-        return <PlaceholderPage title="Knowledge Library" description="All knowledge organised by entity, audience, type, and confidence level." />;
+        return <KnowledgeLibraryPage />;
       case 'knowledge_ingestion':
-        return <PlaceholderPage title="Ingestion & Sources" description="Connect knowledge sources, ingest documents, and configure processing." />;
+        return <KnowledgeIngestionPage />;
       case 'knowledge_gaps':
-        return <PlaceholderPage title="Gap Detection" description="Real-time gap signals from DE queries and human escalations. Internal Resolution Agent drafts articles from historical solutions." />;
+        return <KnowledgeGapsPage />;
       case 'knowledge_quality':
-        return <PlaceholderPage title="Quality & Coverage" description="Knowledge freshness, confidence calibration, and coverage per DE role." />;
+        return <KnowledgeQualityPage />;
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
         return <PlaceholderPage title="Connectors" description="All system integrations, bound to specific DEs with data access configuration." />;

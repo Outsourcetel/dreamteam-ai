@@ -104,7 +104,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 text-xs text-amber-400 border border-amber-500/30">
         <span>⚠</span> Escalations ({crEscCount})
       </span>
-      <button onClick={() => setPage('hub_articles' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
+      <button onClick={() => setPage('knowledge_library' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
         <span>◈</span> Knowledge Hub
       </button>
       <button onClick={() => setPage('workforce_des' as Page)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 border border-slate-700 transition-colors">
@@ -533,7 +533,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
               ].map((node, i) => (
                 <React.Fragment key={i}>
                   <div
-                    onClick={() => node.link ? setPage('hub_articles' as Page) : undefined}
+                    onClick={() => node.link ? setPage('knowledge_library' as Page) : undefined}
                     className={`flex-shrink-0 px-3 py-2 rounded-lg border border-slate-800 bg-slate-950 ${node.link ? 'cursor-pointer hover:border-indigo-500/50' : ''}`}>
                     <p className="text-xs font-semibold text-slate-300">{node.label}</p>
                     <p className="text-xs text-slate-500">{node.detail}</p>
@@ -576,7 +576,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
                   <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-slate-800">
                     <span className="text-slate-400 truncate flex-1">{a.title}</span>
                     <span className="text-slate-500 ml-2">Last updated {a.days}d ago</span>
-                    <button onClick={() => setPage('hub_articles' as Page)} className="ml-2 text-indigo-400 hover:text-indigo-300">Review →</button>
+                    <button onClick={() => setPage('knowledge_library' as Page)} className="ml-2 text-indigo-400 hover:text-indigo-300">Review →</button>
                   </div>
                 ))}
               </div>
@@ -588,7 +588,7 @@ const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
                 <div key={i} className="flex items-center justify-between text-xs py-1 border-b border-slate-800">
                   <span className="text-slate-300">{g.topic}</span>
                   <span className="text-slate-500">{g.count} queries</span>
-                  <button onClick={() => setPage('hub_articles' as Page)} className="ml-2 text-emerald-400 hover:text-emerald-300">Add article →</button>
+                  <button onClick={() => setPage('knowledge_library' as Page)} className="ml-2 text-emerald-400 hover:text-emerald-300">Add article →</button>
                 </div>
               ))}
             </div>

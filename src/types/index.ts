@@ -76,12 +76,6 @@ export type TenantPage =
   | 'company_setup'
 
   // ── Legacy pages (kept pending Phase-4 migration) ─
-  | 'hub_overview'
-  | 'hub_articles'
-  | 'hub_review'
-  | 'hub_ingestion'
-  | 'hub_training'
-  | 'hub_analytics'
   | 'security'
   | 'admin_overview'
   | 'admin_rbac'
@@ -90,10 +84,6 @@ export type TenantPage =
   | 'admin_compliance'
   | 'connectors'
   | 'settings'
-  | 'knowledge_data'
-  | 'knowledge_taxonomy'
-  | 'knowledge_connectors'
-  | 'knowledge_files'
   | 'audit_log'
   | 'users'
   | 'playbooks';

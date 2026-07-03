@@ -3,11 +3,9 @@ import { supabase } from '../supabase';
 import {
   fetchTenants,
   fetchTenantById,
-  fetchKnowledgeArticles,
   fetchDashboardStats,
   fetchMyProfile,
   DBTenant,
-  DBKnowledgeArticle,
 } from '../lib/api';
 import type { AuthUser, Tenant, Page } from '../types';
 import { canAccessPage } from '../lib/mockData';
@@ -40,7 +38,6 @@ interface AuthContextValue {
   godModeSession: GodModeSession | null;
   showOnboarding: boolean;
   dbTenants: DBTenant[];
-  dbArticles: DBKnowledgeArticle[];
   dbStats: DbStats | null;
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
@@ -68,7 +65,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeCompanyId, setActiveCompanyId] = useState<CompanyId>('tcp');
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
-  const [dbArticles, setDbArticles] = useState<DBKnowledgeArticle[]>([]);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
@@ -116,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         if (!authedUser) {
-          setDbTenants([]); setDbArticles([]); setDbStats(null);
+          setDbTenants([]); setDbStats(null);
           return;
         }
         const profile = await fetchMyProfile();
@@ -127,13 +123,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!_cleanup) setDbTenants(t);
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
-          const [a, s, t] = await Promise.all([
-            fetchKnowledgeArticles(tid),
+          const [s, t] = await Promise.all([
             fetchDashboardStats(tid),
             fetchTenantById(tid),
           ]);
           if (!_cleanup) {
-            setDbArticles(a);
             setDbStats(s as any);
             setDbCurrentTenant(t);
           }
@@ -199,7 +193,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthedUser(null as any);
     setCurrentPage('dashboard');
     setDbTenants([]);
-    setDbArticles([]);
     setDbStats(null);
     setDbCurrentTenant(null);
   };
@@ -212,7 +205,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       godModeSession,
       showOnboarding,
       dbTenants,
-      dbArticles,
       dbStats,
       currentTenant,
       isDTUser,

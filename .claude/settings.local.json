@@ -162,7 +162,8 @@
       "Bash(curl -s -X POST \"https://api.vercel.com/v13/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -H \"Authorization: Bearer $\\(cat \"D:\\\\Dream Team AI\\\\.vercel-token\"\\)\" -H \"Content-Type: application/json\" -d '{\"name\":\"dreamteam-ai\",\"project\":\"prj_6KW8R0iQmZuvmb2G9JvGVDZ0PnoN\",\"target\":\"production\",\"gitSource\":{\"type\":\"github\",\"repoId\":1277034187,\"ref\":\"main\",\"sha\":\"bd5ce600ed75bc51e1188051f42e6022fe78208d\"}}')",
       "Bash(curl -s -X POST https://api.vercel.com/v13/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2 -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"name\":\"dreamteam-ai\",\"project\":\"prj_6KW8R0iQmZuvmb2G9JvGVDZ0PnoN\",\"gitSource\":{\"type\":\"github\",\"repoId\":1277034187,\"ref\":\"main\",\"sha\":\"47de49f8e85c20e0e811eeca59e0560cf7b99811\"},\"target\":\"production\"}')",
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('id'\\), d.get\\('readyState'\\), d.get\\('url'\\), d.get\\('error'\\)\\)\")",
-      "Bash(curl -s -X POST \"https://api.vercel.com/v2/deployments/dpl_6bYBWVq32xRbyPEr6HJh2b8daHAD/aliases?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -H \"Authorization: Bearer $\\(cat .vercel-token\\)\" -H \"Content-Type: application/json\" -d '{\"alias\":\"dreamteam-ai-five.vercel.app\"}')"
+      "Bash(curl -s -X POST \"https://api.vercel.com/v2/deployments/dpl_6bYBWVq32xRbyPEr6HJh2b8daHAD/aliases?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -H \"Authorization: Bearer $\\(cat .vercel-token\\)\" -H \"Content-Type: application/json\" -d '{\"alias\":\"dreamteam-ai-five.vercel.app\"}')",
+      "Bash(node -e ' *)"
     ]
   }
 }

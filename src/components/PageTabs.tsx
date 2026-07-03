@@ -1,18 +1,6 @@
 import React from 'react';
 import type { Page } from '../types';
 
-export const HUB_TABS: { id: Page; label: string }[] = [
-  { id: 'hub_overview', label: 'Overview' },
-  { id: 'hub_articles', label: 'Articles' },
-  { id: 'hub_review', label: 'Review Queue' },
-  { id: 'knowledge_taxonomy', label: 'Taxonomy' },
-  { id: 'hub_ingestion', label: 'Ingestion' },
-  { id: 'knowledge_connectors', label: 'Connectors' },
-  { id: 'knowledge_files', label: 'Files' },
-  { id: 'hub_training', label: 'Training' },
-  { id: 'hub_analytics', label: 'Analytics' },
-];
-
 export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'entity_customer_support', label: 'Support Control Room' },
   { id: 'eu_chat', label: 'Customer View' },
