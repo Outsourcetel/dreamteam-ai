@@ -278,6 +278,10 @@ export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => vo
                     <p className="text-slate-300 leading-relaxed">{p.evidence}</p>
                   </div>
                 </div>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  Eval prepared: 3 scenarios will verify this behavior in the Proving Ground before it ships.{' '}
+                  <button onClick={() => setPage('intelligence_evals')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Open Proving Ground →</button>
+                </p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => decide(p.id, 'approved')} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">Approve</button>
                   <button onClick={() => decide(p.id, 'rejected')} className="bg-red-600/30 hover:bg-red-600/50 text-red-400 text-sm px-4 py-1.5 rounded-lg border border-red-500/30 transition-colors">Reject</button>

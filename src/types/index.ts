@@ -66,6 +66,7 @@ export type TenantPage =
   // ── Intelligence ──────────────────────────────────
   | 'intelligence_performance'  // DE analytics
   | 'intelligence_learning'     // Org-level self-learning configuration
+  | 'intelligence_evals'        // Proving Ground — DE eval harness
   | 'intelligence_insights'     // Business insights & anomalies
 
   // ── Governance ────────────────────────────────────

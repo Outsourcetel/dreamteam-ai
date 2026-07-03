@@ -683,7 +683,7 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
 
 // ── Tab 2: Training ────────────────────────────────────────────────
 
-function TabTraining({ de }: { de: DEProfile }) {
+function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => void }) {
   const modules = TRAINING_MODULES[de.id] ?? []
   const [lastTrained, setLastTrained] = useState(de.lastTrained)
   const [nextRecert, setNextRecert] = useState(de.nextRecert)
@@ -702,8 +702,13 @@ function TabTraining({ de }: { de: DEProfile }) {
             {de.trainingStatus === 'certified' ? 'Certified' : de.trainingStatus === 'in_training' ? 'In Training' : 'Needs Recertification'}
           </p>
           <p className="text-xs text-slate-400 mt-0.5">
-            {de.trainingStatus === 'needs_recert' ? `Recertification was due on ${de.nextRecert}. Action required.` : 'All required modules passed.'}
+            {de.trainingStatus === 'needs_recert'
+              ? `Recertification was due on ${de.nextRecert} — 2 failing scenarios in the eval suite, see Proving Ground.`
+              : 'All required modules passed. Certification is backed by a passing eval suite.'}
           </p>
+          <button onClick={() => setPage('intelligence_evals')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-1">
+            View eval suite →
+          </button>
         </div>
       </div>
 
@@ -1489,7 +1494,7 @@ export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => vo
   const renderTab = () => {
     switch (activeTab) {
       case 0: return <TabProfile de={selectedDE} companyId={activeCompanyId} />
-      case 1: return <TabTraining de={selectedDE} />
+      case 1: return <TabTraining de={selectedDE} setPage={setPage} />
       case 2: return <TabKnowledge de={selectedDE} />
       case 3: return <TabSOPs de={selectedDE} />
       case 4: return <TabPlaybooks de={selectedDE} />

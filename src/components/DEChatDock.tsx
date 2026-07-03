@@ -178,6 +178,11 @@ const TCP_INTENTS: Intent[] = [
     confidence: 76, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
   },
   {
+    deId: 'riley', keywords: ['proving ground', 'eval', 'recertification', 'recert'],
+    text: "My recertification is blocked in the Proving Ground — 2 of my 20 golden scenarios are failing, both leave-policy questions where I answer from the stale FY25 policy at high confidence. The root cause is the HR Policies collection (last verified 2026-01-10). Until those scenarios pass, I stay uncertified.",
+    confidence: 88, actions: [{ label: 'Open Proving Ground →', page: 'intelligence_evals' }],
+  },
+  {
     deId: 'riley', keywords: ['onboarding', 'new hire', 'workday'],
     text: 'Workforce onboarding is back on track after the Workday connector sync outage was resolved by IT Ops on 06-29. All blocked onboarding tasks have cleared; the connector has run three consecutive clean syncs since.',
     confidence: 87, actions: [{ label: 'Open Workforce →', page: 'entity_workforce' }],
@@ -227,6 +232,11 @@ const PWC_INTENTS: Intent[] = [
     deId: 'avery', keywords: ['fatca', 'knowledge gap', 'gap'],
     text: "FATCA reporting is my biggest knowledge gap — I deflect those questions to humans because my source coverage there is thin. It's logged in Gap Detection along with 2 other open gaps for this practice.",
     confidence: 84, actions: [{ label: 'View Gap Detection →', page: 'knowledge_gaps' }],
+  },
+  {
+    deId: 'avery', keywords: ['proving ground', 'eval', 'test suite', 'tested'],
+    text: "My eval suite in the Proving Ground is green — 19/19 golden scenarios passing, including the FATCA dual-national scenario added when that knowledge gap was resolved. Every regulatory update I ingest (like IRS Notice 2026-14) re-runs the suite before anything reaches a client-facing answer.",
+    confidence: 92, actions: [{ label: 'Open Proving Ground →', page: 'intelligence_evals' }],
   },
   {
     deId: 'avery', keywords: ['workpaper', 'audit', 'depreciation'],

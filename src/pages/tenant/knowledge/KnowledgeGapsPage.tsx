@@ -234,7 +234,7 @@ const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
 const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' } as const;
 
 const KnowledgeGapsPage = () => {
-  const { activeCompanyId } = useAuth();
+  const { activeCompanyId, handleSetPage } = useAuth();
   const companyId = activeCompanyId as CompanyId;
   const gaps = companyId === 'tcp' ? TCP_GAPS : PWC_GAPS;
   const summary = COMPANY_SUMMARY[companyId];
@@ -480,6 +480,10 @@ const KnowledgeGapsPage = () => {
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">5 · Retrain status</p>
                   <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3">
                     <p className="text-xs text-indigo-300">{selected.retrainedNote ?? `Retrained: ${selected.de} ✓`}</p>
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Published articles are added to the owning DE's eval suite.{' '}
+                      <button onClick={() => handleSetPage('intelligence_evals')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Open Proving Ground →</button>
+                    </p>
                   </div>
                 </>
               )}

@@ -206,6 +206,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
       title: 'INTELLIGENCE',
       groups: [
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
+        { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
         { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
         { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
       ],

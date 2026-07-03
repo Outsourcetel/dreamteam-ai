@@ -22,6 +22,7 @@ import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
 import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
+import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
 import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
@@ -89,6 +90,7 @@ const PAGE_TO_URL: Record<string, string> = {
   // Intelligence
   intelligence_performance: '/intelligence/performance',
   intelligence_learning:    '/intelligence/learning',
+  intelligence_evals:       '/intelligence/proving-ground',
   intelligence_insights:    '/intelligence/insights',
   // Governance
   gov_compliance: '/governance/compliance',
@@ -255,6 +257,8 @@ function AppShell() {
         return <PerformancePage setPage={handleSetPage} />;
       case 'intelligence_learning':
         return <SelfLearningPage setPage={handleSetPage} />;
+      case 'intelligence_evals':
+        return <ProvingGroundPage setPage={handleSetPage} />;
       case 'intelligence_insights':
         return <InsightsPage setPage={handleSetPage} />;
       // ── Governance ────────────────────────────────────────────
