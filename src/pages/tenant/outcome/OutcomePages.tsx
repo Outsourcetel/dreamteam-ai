@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { th, td } from '../../../components/ui';
 
 // ============================================================
 // Outcome pages — cross-entity metric lenses.
@@ -14,8 +15,6 @@ import type { CompanyId } from '../../../data/companies';
 // review UI from the retired FinanceControlTowerPage.
 // ============================================================
 
-const th = 'py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium text-left';
-const td = 'py-3 px-4';
 
 type Trend = 'up' | 'stable' | 'warn' | 'alert';
 

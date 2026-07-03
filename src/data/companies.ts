@@ -14,7 +14,6 @@ export interface CompanyProfile {
   industry: string;
   badge: string;
   badgeColor: string;
-  activeFunctions: number;
   activeDEs: number;
 }
 
@@ -25,7 +24,6 @@ export const COMPANIES: CompanyProfile[] = [
     industry: 'Technology / SaaS',
     badge: 'TECH',
     badgeColor: '#6366f1',
-    activeFunctions: 6,
     activeDEs: 3,
   },
   {
@@ -34,7 +32,6 @@ export const COMPANIES: CompanyProfile[] = [
     industry: 'Financial Services',
     badge: 'FIN',
     badgeColor: '#0ea5e9',
-    activeFunctions: 5,
     activeDEs: 2,
   },
 ];

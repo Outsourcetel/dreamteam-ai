@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { PageHeader, th, td } from '../../../components/ui';
 
 // ============================================================
 // Workforce entity pages: Overview, Talent, Onboarding,
@@ -10,17 +11,7 @@ import type { CompanyId } from '../../../data/companies';
 // workforce DE — consistent with WorkforceDEsPage roster.
 // ============================================================
 
-const th = 'py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium text-left';
-const td = 'py-3 px-4';
 
-function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="mb-6">
-      <h1 className="text-2xl font-bold text-white">{title}</h1>
-      <p className="text-slate-400 text-sm mt-1">{subtitle}</p>
-    </div>
-  );
-}
 
 // ── Overview ───────────────────────────────────────────────────
 
