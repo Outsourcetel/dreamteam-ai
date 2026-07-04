@@ -21,6 +21,8 @@ export interface CustomerAccount {
   notes: string;
   created_at: string;
   updated_at: string;
+  /** transparent computed-health breakdown (migration 021); null until first compute */
+  health_components?: import('./successApi').HealthComponents | null;
 }
 
 export type TicketStatus = 'open' | 'pending' | 'resolved' | 'escalated';

@@ -257,7 +257,7 @@ export function runsForDefinition(runs: PlaybookRun[], definitionId: string): Pl
 export const DISPATCH_MODE: 'cron' | 'opportunistic' = 'cron';
 
 export type ScheduleCadence = 'daily' | 'weekly' | 'monthly';
-export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority';
+export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority' | 'account_at_risk';
 
 export interface PlaybookSchedule {
   id: string;
@@ -279,7 +279,7 @@ export interface PlaybookEventRule {
   tenant_id: string;
   definition_id: string;
   event_key: EventKey;
-  params: { overdue_days?: number; priority?: string };
+  params: { overdue_days?: number; priority?: string; min_arr_cents?: number };
   cooldown_hours: number;
   active: boolean;
   last_fired_at: string | null;
@@ -312,6 +312,10 @@ export const EVENT_META: Record<EventKey, { label: string; description: string }
     label: 'High-priority ticket synced',
     description: 'Fires when a high-priority ticket lands from the Zendesk sync. Per-ticket cooldown dedup.',
   },
+  account_at_risk: {
+    label: 'Account flips to at-risk',
+    description: 'Fires when computed health drops an account below the at-risk threshold. Optional minimum ARR filter. Per-account cooldown dedup.',
+  },
 };
 
 export function describeSchedule(s: PlaybookSchedule): string {
@@ -323,6 +327,10 @@ export function describeSchedule(s: PlaybookSchedule): string {
 
 export function describeEventRule(r: PlaybookEventRule): string {
   if (r.event_key === 'invoice_overdue') return `on invoice overdue ${r.params.overdue_days ?? 7}+ days`;
+  if (r.event_key === 'account_at_risk') {
+    const min = r.params.min_arr_cents ?? 0;
+    return min > 0 ? `on account at-risk (ARR ≥ $${Math.round(min / 100).toLocaleString()})` : 'on account at-risk';
+  }
   return `on ${r.params.priority ?? 'p1'} ticket synced`;
 }
 

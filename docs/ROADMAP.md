@@ -39,6 +39,17 @@ Fills the `trigger_type` slots reserved in R6. Migration 020: `playbook_schedule
 **Honest notes:** friendly cadences only, not cron expressions; two event keys in v1; events are *polled* on the 5-minute tick, not pushed; `all_eligible` targeting = accounts with a renewal date within N days (default 60). E2E verified: due schedule → fire `started` → run completed; overdue sent invoice → event fire → run; second dispatch inside cooldown → `skipped_dedup`; audit chain intact after all fires.
 **Moves scores:** Engine 9→9.5 — playbooks now run without a human pressing the button, inside the same judgment machinery.
 
+## Lifecycle completion
+
+### Customer Success — end-to-end  ✅ **SHIPPED**
+Migration 021. Health is **computed from real signals** (open/pending tickets, escalations, overdue sent invoices, activity recency), never hand-entered: each account carries a transparent `health_components` breakdown ("Tickets −10 · Escalations −15 · Overdue invoice −21 · Activity −20"), weights and at-risk/healthy thresholds are tenant-configurable (`health_score_config`), and status flips active↔at_risk automatically (churned never touched; ONE audit event per flip, not per recompute). The payoff loop: new `account_at_risk` event key on the R7 trigger machinery — an account sitting at-risk fires a playbook automatically (optional min-ARR filter, per-account cooldown dedup). Recompute paths: nightly via the existing pg_cron dispatcher (24h staleness check on every 5-min tick, runs BEFORE dispatch so a flip fires the same cycle), opportunistic on Success page load (>1h stale), and a "Recompute now" button. Success page rebuilt: header stats (accounts / at-risk / avg health / ARR at risk), breakdown popovers, account signal drawer with run-playbook, collapsible scoring config. **Honest:** no health history in v1 (latest breakdown only); recency reads from `activity_events` only.
+
+### Onboarding — next
+Won-deal handoff → structured onboarding checklist playbooks on the same trigger machinery.
+
+### BD / Sales — connector-first
+Pipeline lives in the tenant's CRM (SoR principle); DreamTeam reads via connectors rather than rebuilding a CRM. Demo pages stay demo until a connector lands.
+
 ## Sequencing
 R2, R4, R5 build in parallel now (R4+R5 fully testable pre-key; R2 testable to credential boundary). R3 follows immediately after (shares de-answer surface). R1 executes the moment the key arrives and re-tests everything the others shipped. Then: **pressure-test rescore** against this scorecard.
 

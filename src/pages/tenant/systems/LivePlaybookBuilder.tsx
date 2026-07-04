@@ -370,6 +370,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   const [eventKey, setEventKey] = useState<EventKey>('invoice_overdue');
   const [overdueDays, setOverdueDays] = useState(7);
   const [priority, setPriority] = useState('p1');
+  const [minArr, setMinArr] = useState(0); // dollars; 0 = any ARR
   const [cooldown, setCooldown] = useState(24);
 
   const guard = async (fn: () => Promise<unknown>) => {
@@ -390,7 +391,9 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 
   const addRule = () => guard(() => createEventRule({
     definition_id: def.id, event_key: eventKey,
-    params: eventKey === 'invoice_overdue' ? { overdue_days: overdueDays } : { priority },
+    params: eventKey === 'invoice_overdue' ? { overdue_days: overdueDays }
+      : eventKey === 'account_at_risk' ? { min_arr_cents: Math.max(0, Math.round(minArr)) * 100 }
+      : { priority },
     cooldown_hours: cooldown,
   }));
 
@@ -475,6 +478,12 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 overdue by
                 <input className={inputCls + ' !w-16'} type="number" min={1} max={90} value={overdueDays} onChange={e => setOverdueDays(Number(e.target.value))} />
                 days
+              </label>
+            ) : eventKey === 'account_at_risk' ? (
+              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                min ARR $
+                <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minArr} onChange={e => setMinArr(Number(e.target.value))} />
+                (0 = any)
               </label>
             ) : (
               <select className={selectCls + ' !w-28'} value={priority} onChange={e => setPriority(e.target.value)}>

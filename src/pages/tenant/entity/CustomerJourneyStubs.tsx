@@ -1,13 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import { useDataMode } from '../../../lib/dataMode';
-import { listAccounts, createAccount, fmtMoneyK, CustomerApiError } from '../../../lib/customerApi';
-import type { CustomerAccount } from '../../../lib/customerApi';
-import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
-import ImportCustomersModal from '../../../components/ImportCustomersModal';
+import CustomerSuccessLive from './CustomerSuccessLive';
 
 // ============================================================
 // Customer journey pages: Business Development, Sales, Success.
@@ -282,180 +279,9 @@ const healthColor = (h: number) => (h >= 70 ? 'bg-emerald-500' : h >= 45 ? 'bg-a
 const healthText = (h: number) => (h >= 70 ? 'text-emerald-300' : h >= 45 ? 'text-amber-300' : 'text-red-300');
 const trendIcon = (t: Account['trend']) => (t === 'up' ? '↑' : t === 'down' ? '↓' : '→');
 
-// ── LIVE mode: real accounts from Supabase ─────────────────────
-function LiveCustomerSuccess() {
-  const { liveTenantName } = useAuth();
-  const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [missingTables, setMissingTables] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showImport, setShowImport] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newArr, setNewArr] = useState('');
-  const [newCsm, setNewCsm] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setAccounts(await listAccounts());
-      setMissingTables(false);
-    } catch (err) {
-      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
-      else setError((err as Error)?.message || 'Failed to load accounts.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  const addAccount = async () => {
-    if (!newName.trim()) return;
-    setSaving(true);
-    try {
-      await createAccount({
-        name: newName.trim(),
-        arr_cents: Math.round((parseFloat(newArr) || 0) * 100),
-        csm: newCsm.trim(),
-      });
-      setShowAdd(false);
-      setNewName(''); setNewArr(''); setNewCsm('');
-      void refresh();
-    } catch (err) {
-      setError((err as Error)?.message || 'Failed to add account.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const atRisk = accounts.filter(a => a.status === 'at_risk' || a.health_score < 45);
-
-  return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <PageHeader
-          title="Customer Success — Customer Lifecycle"
-          subtitle={`${liveTenantName || 'Your company'} · ${accounts.length} account${accounts.length === 1 ? '' : 's'} · ${atRisk.length} at risk`}
-        />
-        {!missingTables && !loading && accounts.length > 0 && (
-          <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 hover:text-white transition-colors">
-              + Import CSV
-            </button>
-            <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
-              + Add account
-            </button>
-          </div>
-        )}
-      </div>
-
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
-
-      {loading ? (
-        <LiveLoadingSkeleton rows={5} />
-      ) : missingTables ? (
-        <MissingTablesNotice />
-      ) : accounts.length === 0 ? (
-        <LiveEmptyState
-          icon="◎"
-          title="No accounts yet"
-          body="Bring your customer accounts into DreamTeam so your Digital Employees can monitor health, renewals, and support in one place."
-          primaryLabel="Import CSV"
-          onPrimary={() => setShowImport(true)}
-          secondaryLabel="Add account"
-          onSecondary={() => setShowAdd(true)}
-        />
-      ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-          <h3 className="text-sm font-semibold text-white mb-3">Account health</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  {['Account', 'Health', 'ARR', 'CSM', 'Status', 'Renewal'].map(h => <th key={h} className={th}>{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((a, i) => {
-                  const risk = a.status === 'at_risk' || a.health_score < 45;
-                  return (
-                    <tr key={a.id} className={`border-b border-slate-800/60 transition-colors ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-800/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
-                      <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
-                      <td className={td}>
-                        <div className="flex items-center gap-2 min-w-[110px]">
-                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${healthColor(a.health_score)}`} style={{ width: `${a.health_score}%` }} />
-                          </div>
-                          <span className={`text-xs font-medium w-6 text-right ${healthText(a.health_score)}`}>{a.health_score}</span>
-                        </div>
-                      </td>
-                      <td className={`${td} text-slate-300 text-xs`}>{fmtMoneyK(a.arr_cents)}</td>
-                      <td className={`${td} text-slate-400 text-xs`}>{a.csm || '—'}</td>
-                      <td className={td}>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          a.status === 'churned' ? 'bg-slate-700/50 text-slate-400'
-                          : a.status === 'at_risk' ? 'bg-red-500/15 text-red-300'
-                          : 'bg-emerald-500/15 text-emerald-300'
-                        }`}>{a.status.replace('_', ' ')}</span>
-                      </td>
-                      <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>{a.renewal_date || '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Add account modal */}
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-4">Add account</h3>
-            <div className="space-y-3 mb-5">
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Account name</label>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Acme Corp"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">ARR ($/year)</label>
-                <input value={newArr} onChange={e => setNewArr(e.target.value)} placeholder="84000" type="number"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">CSM</label>
-                <input value={newCsm} onChange={e => setNewCsm(e.target.value)} placeholder="P. Sharma"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={addAccount} disabled={saving || !newName.trim()}
-                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
-                {saving ? 'Saving…' : 'Add account'}
-              </button>
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showImport && (
-        <ImportCustomersModal initialTab="accounts" onClose={() => setShowImport(false)} onImported={() => void refresh()} />
-      )}
-    </div>
-  );
-}
-
 export const CustomerSuccessPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveCustomerSuccess />;
+  if (dataMode === 'live') return <CustomerSuccessLive />;
   return <DemoCustomerSuccess setPage={setPage} />;
 };
 
