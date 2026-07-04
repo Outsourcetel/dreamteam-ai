@@ -28,8 +28,13 @@ Move renewal_v1 orchestration from browser (`playbookApi.ts`) into a `playbook-e
 `de_autonomy` config per tenant per action type: auto-approve invoice ≤ $X at confidence ≥ Y%; answer-confidence floor per channel (dock vs widget). Enforced in generateInvoice/playbook gate now, in de-answer/widget-ask on activation. Live UI on the DE profile (first live DE-profile surface) with the evidence line ("94% of Casey's invoices approved unchanged — raise the limit?") fed from audit_events. Productizes learnings #3/#5.
 **Moves scores:** Engine 8→8.5, Features 7→7.5.
 
+## R6 — Tenant playbook builder  ✅ **SHIPPED**
+Tenants compose playbooks from typed step primitives (`check_account`, `generate_invoice`, `human_approval`, `guardrail_check`, `connector_action`, `update_record`, `log_activity`, `complete`) in a builder UI (Playbooks live mode). Definitions (`playbook_definitions`, migration 019) are validated server-side on publish (structured errors: unknown primitive, bad params, >20 steps, gate-ordering rules) and snapshotted into immutable `playbook_versions` — runs execute the snapshot via the generalized `playbook-execute` executor, never the live draft. Guardrail + trust-dial composition applies to every generated invoice exactly as in renewal_v1.
+**Honest notes:** manual trigger only in v1 — `schedule`/`event` trigger types are reserved columns, not wired. Human-gate resume is split: `resume_playbook_on_task` advances post-gate steps it can do natively in SQL (guardrail_check / update_record / log_activity / complete); a post-gate `connector_action` needs HTTP, so the RPC parks the run in `resume_pending` and `decideHumanTask` fires the edge function's `advance` to finish it. `connector_action` degrades honestly — no connected connector / no target ref → step recorded `skipped`, run continues. `update_record` is a whitelisted status flip only. Legacy `renewal_v1` runs untouched (regression-verified).
+**Moves scores:** Engine 8.5→9, Features 7.5→8.
+
 ## Sequencing
 R2, R4, R5 build in parallel now (R4+R5 fully testable pre-key; R2 testable to credential boundary). R3 follows immediately after (shares de-answer surface). R1 executes the moment the key arrives and re-tests everything the others shipped. Then: **pressure-test rescore** against this scorecard.
 
 ## Explicitly deferred (triggers unchanged)
-Queue/tiering (volume), tenant playbook builder (after R4), LLM-judge guardrails (after R1 economics), Trust & Architecture page (first security review), PDF/DOCX ingestion (first tenant needing it), signed widget JWTs (first embedded pilot).
+Queue/tiering (volume), ~~tenant playbook builder (after R4)~~ **shipped as R6**, LLM-judge guardrails (after R1 economics), Trust & Architecture page (first security review), PDF/DOCX ingestion (first tenant needing it), signed widget JWTs (first embedded pilot).
