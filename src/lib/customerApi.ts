@@ -272,17 +272,29 @@ export async function updateInvoice(
 
 /**
  * Generate a renewal invoice for an account. The approval threshold is the
- * tenant's require_approval_over_cents guardrail rule (fallback $10K).
- * Above threshold: status 'awaiting_approval' + a human_task; below they go
- * straight to 'sent'. A guardrail_check audit event is recorded either way.
+ * tenant's require_approval_over_cents guardrail rule (fallback $10K),
+ * composed with the trust dial (de_autonomy 'invoice_auto_send').
+ *
+ * COMPOSITION RULE (R5): autonomy NARROWS within guardrails, never
+ * overrides them. Auto-send happens ONLY when BOTH:
+ *   (a) the guardrail allows it (amount <= approval threshold), AND
+ *   (b) no autonomy row exists, OR it is enabled with amount <= its max.
+ * Every other case routes to human approval. A guardrail_check audit
+ * event records the full composition either way.
  */
 export async function generateInvoice(
   account: Pick<CustomerAccount, 'id' | 'name' | 'arr_cents' | 'renewal_date'>
 ): Promise<{ invoice: RenewalInvoice; gated: boolean; task: DBHumanTask | null; thresholdCents: number }> {
   const tid = await requireTenantId();
   const { getApprovalThresholdCents, appendAuditEvent } = await import('./guardrailApi');
+  const { getInvoiceAutonomy } = await import('./autonomyApi');
   const { cents: thresholdCents, fromRule } = await getApprovalThresholdCents();
-  const gated = account.arr_cents > thresholdCents;
+  const autonomy = await getInvoiceAutonomy();
+  const guardrailAllows = account.arr_cents <= thresholdCents;
+  const autonomyAllows = !autonomy ||
+    (autonomy.enabled && autonomy.max_amount_cents !== null && account.arr_cents <= autonomy.max_amount_cents);
+  const gated = !(guardrailAllows && autonomyAllows);
+  const underTrustDial = !gated && !!autonomy && autonomy.enabled;
   const { data, error } = await supabase
     .from('renewal_invoices')
     .insert({
@@ -313,17 +325,23 @@ export async function generateInvoice(
     actor_type: 'de',
     event_type: gated ? 'escalated' : 'resolved',
     text: gated
-      ? `Renewal invoice for ${account.name} (${fmtMoney(account.arr_cents)}) exceeds the ${fmtMoney(thresholdCents)} threshold — routed to human approval`
-      : `Renewal invoice sent — ${account.name} (${fmtMoney(account.arr_cents)})`,
+      ? `Renewal invoice for ${account.name} (${fmtMoney(account.arr_cents)}) requires human approval — ${guardrailAllows ? 'trust dial gate' : `exceeds the ${fmtMoney(thresholdCents)} threshold`}`
+      : `Renewal invoice sent — ${account.name} (${fmtMoney(account.arr_cents)})${underTrustDial ? ' · auto-approved under trust dial' : ''}`,
   });
   await appendAuditEvent({
     actor: 'Renewal DE', actor_type: 'de', category: 'guardrail_check',
     action: gated
-      ? `Guardrail GATED — invoice ${fmtMoney(account.arr_cents)} for ${account.name} exceeds approval threshold ${fmtMoney(thresholdCents)}; routed to human approval`
-      : `Guardrail passed — invoice ${fmtMoney(account.arr_cents)} for ${account.name} under approval threshold ${fmtMoney(thresholdCents)}; auto-sent`,
+      ? `Guardrail GATED — invoice ${fmtMoney(account.arr_cents)} for ${account.name}: ${guardrailAllows ? `under ${fmtMoney(thresholdCents)} threshold but trust dial requires approval` : `exceeds approval threshold ${fmtMoney(thresholdCents)}`}; routed to human approval`
+      : underTrustDial
+        ? `Guardrail passed — invoice ${fmtMoney(account.arr_cents)} for ${account.name} auto-approved under trust dial (≤ ${fmtMoney(autonomy!.max_amount_cents!)}) within ${fmtMoney(thresholdCents)} guardrail; auto-sent`
+        : `Guardrail passed — invoice ${fmtMoney(account.arr_cents)} for ${account.name} under approval threshold ${fmtMoney(thresholdCents)}; auto-sent`,
     detail: {
       invoice_id: invoice.id, account: account.name, amount_cents: account.arr_cents,
-      threshold_cents: thresholdCents, threshold_from_rule: fromRule, result: gated ? 'gated' : 'passed',
+      threshold_cents: thresholdCents, threshold_from_rule: fromRule,
+      autonomy_rule_id: autonomy?.id ?? null, autonomy_enabled: autonomy?.enabled ?? null,
+      autonomy_max_cents: autonomy?.max_amount_cents ?? null,
+      composition: 'autonomy_narrows_within_guardrails',
+      result: gated ? 'gated' : 'passed',
     },
   });
   await appendAuditEvent({

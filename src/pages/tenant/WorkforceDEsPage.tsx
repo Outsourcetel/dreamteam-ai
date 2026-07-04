@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import type { Page } from '../../types'
 import { getPeople, ROSTER_SELECT_KEY, type Person } from '../../data/people'
+import { useDataMode } from '../../lib/dataMode'
+import LiveWorkforceDEs from './LiveWorkforceDEs'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -1677,6 +1679,12 @@ const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems'
 type RosterSelection = { kind: 'de' | 'human'; id: string }
 
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode()
+  if (dataMode === 'live') return <LiveWorkforceDEs setPage={setPage} />
+  return <DemoWorkforceDEsPage setPage={setPage} />
+}
+
+function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const des = activeCompanyId === 'tcp' ? TCP_DES : PWC_DES
   const people = getPeople(activeCompanyId)

@@ -400,6 +400,7 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-white">{acct}</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">{run.playbook_key}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300" title="Executed by the playbook-execute edge function — the run survives closed tabs">server-run</span>
         </div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
           run.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300'

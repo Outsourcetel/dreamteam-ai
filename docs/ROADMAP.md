@@ -3,7 +3,7 @@
 _Formalized 2026-07-04 from the on-target scorecard (overall ~6.8/10). Companion to [PROTOTYPE-PRODUCTION-BOUNDARY.md](PROTOTYPE-PRODUCTION-BOUNDARY.md) and [SCALING-ARCHITECTURE.md](SCALING-ARCHITECTURE.md). Governing doctrine: DEs act like employees across existing systems of record, inside the judgment machinery (Workforce Engine). Every item below deepens the machinery — nothing decorates._
 
 ## R1 — Activation & E2E proof  `blocked on: founder's Anthropic API key`
-Set ANTHROPIC_API_KEY edge secret → full end-to-end test: knowledge upload → grounded answer w/ sources → guardrail violation blocked + escalated → immutable audit chain verified → widget path → cache write confirmed. Fix known gap: widget-ask pre-LLM usage_metrics not incrementing.
+Set ANTHROPIC_API_KEY edge secret → full end-to-end test: knowledge upload → grounded answer w/ sources → guardrail violation blocked + escalated → immutable audit chain verified → widget path → cache write confirmed. Fix known gap: widget-ask pre-LLM usage_metrics not incrementing. TODO(R1-activation): wire the `de_autonomy` answer-confidence floors (`answer_dock` / `answer_widget`, stored by R5 migration 016 and configurable on the trust dial) into de-answer and widget-ask — dormant until the key.
 **Moves scores:** Trust 4→5, Live depth 6.5→7.5.
 
 ## R2 — Systems-of-Record connector layer v1  ✅ **SHIPPED**
