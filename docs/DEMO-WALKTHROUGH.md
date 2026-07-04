@@ -16,7 +16,7 @@
 - Click the ⚙ Health Config to show that even "what counts as a healthy DE" is customer-configurable.
 
 ### 2. Story A — one customer relationship, end-to-end (5 min)
-Path: **Customer → overview journey bar → Support**
+Path: **Customer Lifecycle → overview journey bar → Support**
 - The journey bar: BD → Sales → Onboarding → Support → Success → Renewal. *"One DE owns the customer across all of this. No handoffs, no context loss."*
 - In Support: Alex's control room, 47 tickets, live queue.
 - **Follow the Apex Systems thread:** Support shows the escalated API auth bug → back to Command Centre activity feed (same incident) → Outcomes → Product & Engineering shows it as the open P1 → Customer Success shows Apex flagged at-risk (health 34) → Renewal shows Casey's pipeline. *"Five pages, one consistent story — because it's one relationship, not five departments' tickets."*
@@ -44,7 +44,7 @@ Path: **Intelligence → Proving Ground**
 - Be upfront: runs are simulated in this design preview; the harness design is the product.
 
 ### 4c. The workforce is mixed (3 min)
-Path: **Digital Workforce → Workforce Roster**
+Path: **Workforce HQ → Roster**
 - One roster, two kinds of workers. Open **Priya Sharma**: her DE partners, what she gate-keeps, her weekly load — and the teaser: *"her approval load is up 40%; Casey's calibration supports raising the auto-approve limit."* That's the trust dial: autonomy earned with evidence, granted to relieve a person.
 - Flip to **Org view**: humans and DEs together under the entities they serve. *"This is the org chart of an AI-native company."*
 

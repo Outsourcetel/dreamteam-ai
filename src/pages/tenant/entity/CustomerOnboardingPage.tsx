@@ -3,7 +3,7 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 
 // ============================================================
-// Onboarding — Customer entity
+// Onboarding — Customer Lifecycle
 // AI onboarding co-pilot migrated from ImplementationWorkspacePage:
 // project sidebar, checklist, data upload with AI column mapping,
 // configuration review, audit trail, and DE assistant chat.
@@ -352,7 +352,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
     return (
       <div className="flex-1 flex flex-col overflow-auto bg-slate-950 p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Onboarding — Customer entity</h1>
+          <h1 className="text-2xl font-bold text-white">Onboarding — Customer Lifecycle</h1>
           <p className="text-slate-400 text-sm mt-1">{activeCompany.name} · Client engagement setup</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -441,7 +441,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 bg-slate-900 flex-shrink-0">
               <div className="flex items-center gap-2 text-sm flex-wrap">
-                <span className="text-slate-400">Onboarding — Customer entity</span>
+                <span className="text-slate-400">Onboarding — Customer Lifecycle</span>
                 <span className="text-slate-600">/</span>
                 <span className="text-slate-300">{activeProject.client}</span>
                 <span className="text-slate-600">/</span>

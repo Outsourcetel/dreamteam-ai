@@ -62,7 +62,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Workforce</h1>
+        <h1 className="text-2xl font-bold text-white">Our People</h1>
         <p className="text-slate-400 text-sm mt-1">The humans and their DE partner</p>
         <p className="text-xs text-slate-600 mt-0.5">{activeCompany.name} · {activeCompany.industry}</p>
       </div>
@@ -178,7 +178,7 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
-        title="Talent — Workforce entity"
+        title="Talent — Our People"
         subtitle={`${roles.length} open role${roles.length === 1 ? '' : 's'} — pipeline tracked from sourcing to offer`}
       />
 
@@ -261,7 +261,7 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
   if (!isTcp) {
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
-        <PageHeader title="Onboarding — Workforce entity" subtitle="New-hire onboarding checklists and progress" />
+        <PageHeader title="Onboarding — Our People" subtitle="New-hire onboarding checklists and progress" />
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center">
           <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">⚙</div>
           <p className="text-sm font-medium text-slate-300 mb-1">No onboarding in progress</p>
@@ -273,7 +273,7 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageHeader title="Onboarding — Workforce entity" subtitle="1 new hire onboarding this week — Riley runs the checklist, humans own the judgment calls" />
+      <PageHeader title="Onboarding — Our People" subtitle="1 new hire onboarding this week — Riley runs the checklist, humans own the judgment calls" />
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 max-w-3xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -338,7 +338,7 @@ export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: 
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageHeader title="Performance & Development — Workforce entity" subtitle="Review cycles, skills coverage, and development plans" />
+      <PageHeader title="Performance & Development — Our People" subtitle="Review cycles, skills coverage, and development plans" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 h-fit">
@@ -415,7 +415,7 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageHeader title="Payroll & Benefits — Workforce entity" subtitle="Payroll runs, benefits enrollment, and approval gates" />
+      <PageHeader title="Payroll & Benefits — Our People" subtitle="Payroll runs, benefits enrollment, and approval gates" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Next payroll run */}
@@ -461,7 +461,7 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
           </p>
           {setPage && (
             <button onClick={() => setPage(isTcp ? 'workforce_des' : 'entity_workforce')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-              {isTcp ? 'View approval-gate config →' : 'Back to Workforce overview →'}
+              {isTcp ? 'View approval-gate config →' : 'Back to Our People overview →'}
             </button>
           )}
         </div>

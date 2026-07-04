@@ -104,7 +104,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
   tcp: {
     entities: {
       customer: {
-        label: 'Customer', icon: '◎',
+        label: 'Customer Lifecycle', icon: '◎',
         des: ['Alex', 'Casey'],
         metric: '47 open tickets', metricPage: 'entity_customer_support',
         health: 'active', humanTasks: 4,
@@ -120,7 +120,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
         subPage: 'entity_vendor',
       },
       workforce: {
-        label: 'Workforce', icon: '◉',
+        label: 'Our People', icon: '◉',
         des: ['Riley'],
         metric: '2 open roles', metricPage: 'entity_workforce_talent',
         health: 'active', humanTasks: 1,
@@ -171,7 +171,7 @@ const COMPANY_DATA: Record<'tcp' | 'pwc', CompanyData> = {
         subPage: 'entity_vendor',
       },
       workforce: {
-        label: 'Workforce', icon: '◉',
+        label: 'Our People', icon: '◉',
         des: [],
         metric: '1 role open', metricPage: 'entity_workforce_talent',
         health: 'active', humanTasks: 0,
@@ -383,14 +383,14 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
             {/* Customer entity card */}
             <div>
               <div className="text-[9px] font-bold tracking-widest text-slate-600 uppercase mb-3">
-                ENTITIES — what we serve
+                WHO WE SERVE
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-sm">◎</span>
-                      <span className="text-sm font-semibold text-white">Customer</span>
+                      <span className="text-sm font-semibold text-white">Customer Lifecycle</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1">
@@ -430,7 +430,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 {/* Placeholder entities until they enter the production track */}
                 {[
                   { label: 'Vendors & Partners', icon: '◈', page: 'entity_vendor' as Page },
-                  { label: 'Workforce', icon: '◉', page: 'entity_workforce' as Page },
+                  { label: 'Our People', icon: '◉', page: 'entity_workforce' as Page },
                 ].map(e => (
                   <div key={e.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3 opacity-70">
                     <div className="flex items-center justify-between">
@@ -721,7 +721,7 @@ function DemoDashboardPage({
         {/* Entities */}
         <div>
           <div className="text-[9px] font-bold tracking-widest text-slate-600 uppercase mb-3">
-            ENTITIES — what we serve
+            WHO WE SERVE
           </div>
           <div className="grid grid-cols-3 gap-4">
             {entityList.map((entity) => (

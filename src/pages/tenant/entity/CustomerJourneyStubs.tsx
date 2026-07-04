@@ -82,7 +82,7 @@ export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => v
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
-        title="Business Development — Customer entity"
+        title="Business Development — Customer Lifecycle"
         subtitle={isTcp ? '14 active prospects moving toward Sales' : `6 active pursuits across ${activeCompany.name} practice areas`}
       />
 
@@ -195,7 +195,7 @@ export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) =
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
-        title="Sales — Customer entity"
+        title="Sales — Customer Lifecycle"
         subtitle={isTcp ? 'Pipeline management, proposals, demos, and deal closing' : `Proposals in flight across ${activeCompany.name} practice areas`}
       />
 
@@ -337,7 +337,7 @@ function LiveCustomerSuccess() {
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
-          title="Customer Success — Customer entity"
+          title="Customer Success — Customer Lifecycle"
           subtitle={`${liveTenantName || 'Your company'} · ${accounts.length} account${accounts.length === 1 ? '' : 's'} · ${atRisk.length} at risk`}
         />
         {!missingTables && !loading && accounts.length > 0 && (
@@ -468,7 +468,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
-        title="Customer Success — Customer entity"
+        title="Customer Success — Customer Lifecycle"
         subtitle={isTcp
           ? `12 accounts monitored — ${atRisk.length} at-risk flagged by Casey`
           : `4 active engagements monitored for ${activeCompany.name}`}

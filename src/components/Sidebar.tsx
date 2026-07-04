@@ -83,11 +83,11 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
       ],
     },
     {
-      title: 'ENTITIES',
+      title: 'WHO WE SERVE',
       groups: [
         {
           id: 'customer',
-          label: 'Customer',
+          label: 'Customer Lifecycle',
           icon: '◎',
           page: 'entity_customer',
           defaultOpen: true,
@@ -113,7 +113,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         },
         {
           id: 'workforce_entity',
-          label: 'Workforce',
+          label: 'Our People',
           icon: '◉',
           page: 'entity_workforce',
           children: [
@@ -146,11 +146,11 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
       ],
     },
     {
-      title: 'DIGITAL WORKFORCE',
+      title: 'WORKFORCE HQ',
       groups: [
         {
           id: 'des',
-          label: 'Workforce Roster',
+          label: 'Roster',
           icon: '⚡',
           page: 'workforce_des',
           badge: { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
@@ -281,8 +281,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         <div className="w-px h-4 bg-slate-800" />
         {([
           { icon: '⬡', page: 'dashboard' as Page, label: 'Command Centre' },
-          { icon: '◎', page: 'entity_customer' as Page, label: 'Customer' },
-          { icon: '⚡', page: 'workforce_des' as Page, label: 'Workforce Roster' },
+          { icon: '◎', page: 'entity_customer' as Page, label: 'Customer Lifecycle' },
+          { icon: '⚡', page: 'workforce_des' as Page, label: 'Roster' },
           { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge Library' },
           { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
           { icon: '✋', page: 'ops_human_tasks' as Page, label: 'Human Tasks' },

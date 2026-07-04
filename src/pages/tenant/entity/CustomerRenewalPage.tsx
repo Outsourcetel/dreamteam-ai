@@ -13,7 +13,7 @@ import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
-// Renewal & Expansion — Customer entity
+// Renewal & Expansion — Customer Lifecycle
 // RenewalsPipeline migrated from FinanceControlTowerPage
 // (Zuora/Gainsight renewal table + Generate Invoice modal).
 // Attributed to Casey (TCP) / Morgan (PWC).
@@ -541,7 +541,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer entity</h1>
+        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer Lifecycle</h1>
         <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live renewal pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
@@ -720,7 +720,7 @@ const DemoCustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) =>
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer entity</h1>
+        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer Lifecycle</h1>
         <p className="text-slate-400 text-sm mt-1">
           {isTcp
             ? 'Casey manages the full renewal lifecycle — invoices via Zuora, cadences via Gainsight, and expansion signals'

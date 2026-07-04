@@ -85,7 +85,7 @@ export const TCP_DES: DEProfile[] = [
     status: 'active', confidence: 91, escalationRate: 12, resolutionRate: 88, avgResponseTime: '1.2 min', errorRate: 2,
     trainingStatus: 'certified', lastTrained: '2026-05-14', nextRecert: '2026-11-14',
     language: 'English', timezone: 'UTC-5 (EST)', channels: ['Chat', 'Email', 'API'],
-    description: 'Handles all inbound customer support requests — tickets, troubleshooting, documentation lookup, and escalation routing. Primary DE for the Customer entity.',
+    description: 'Handles all inbound customer support requests — tickets, troubleshooting, documentation lookup, and escalation routing. Primary DE for Customer Lifecycle.',
     knowledge: {
       collections: [
         { name: 'Product Docs', accessLevel: 'read', coverage: 94 },
@@ -1606,7 +1606,7 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
   const columns: { key: DEEntity; label: string }[] = [
     { key: 'customer', label: isTCP ? 'Customer' : 'Clients' },
     { key: 'vendor', label: 'Vendors' },
-    { key: 'workforce', label: 'Workforce' },
+    { key: 'workforce', label: 'Our People' },
     { key: 'specialist', label: 'Specialists' },
   ]
   const shown = columns.filter(c =>
@@ -1736,7 +1736,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Header */}
       <div className="flex-shrink-0 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">Workforce</h1>
+          <h1 className="text-lg font-semibold text-slate-100">Workforce HQ</h1>
           <p className="text-xs text-slate-500 mt-0.5">Humans and Digital Employees — one team · {des.length} DEs · {people.length} humans</p>
         </div>
         <div className="flex items-center gap-3">

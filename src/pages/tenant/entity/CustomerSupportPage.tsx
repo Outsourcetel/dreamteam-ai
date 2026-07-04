@@ -8,7 +8,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 import ImportCustomersModal from '../../../components/ImportCustomersModal';
 
 // ============================================================
-// Support — Customer entity
+// Support — Customer Lifecycle
 // Migrated from CustomerPortalPage (portal_overview): Service
 // Control Room + Setup Wizard, attributed to Alex (TCP).
 // PWC has no active Support function → empty state.
@@ -87,7 +87,7 @@ function LiveCustomerSupport() {
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Support — Customer entity</h1>
+          <h1 className="text-2xl font-bold text-white">Support — Customer Lifecycle</h1>
           <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live support queue</p>
         </div>
         {!missingTables && !loading && tickets.length > 0 && (
@@ -250,7 +250,7 @@ const DemoCustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) =>
     return (
       <div className="flex-1 flex flex-col overflow-auto bg-slate-950 p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Support — Customer entity</h1>
+          <h1 className="text-2xl font-bold text-white">Support — Customer Lifecycle</h1>
           <p className="text-slate-400 text-sm mt-1">{activeCompany.name} · Client support function</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -816,7 +816,7 @@ const DemoCustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) =>
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-5">
-        <h1 className="text-2xl font-bold text-white">Support — Customer entity</h1>
+        <h1 className="text-2xl font-bold text-white">Support — Customer Lifecycle</h1>
         <p className="text-slate-400 text-sm mt-1">Alex serves your customers 24/7 — answering questions, resolving issues, and taking action on their behalf</p>
       </div>
       <OverviewActionBar />

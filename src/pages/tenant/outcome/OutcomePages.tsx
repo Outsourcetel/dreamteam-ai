@@ -621,7 +621,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
           <p className="mt-3 text-[11px] text-slate-500">Click a bucket to drill into {isTcp ? 'its invoices' : 'engagement WIP'} below.</p>
           {isTcp && (
             <button onClick={() => setPage('entity_customer_renewal')} className="mt-4 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-              Renewal invoices live in the Customer entity →
+              Renewal invoices live in Customer Lifecycle →
             </button>
           )}
         </div>
@@ -735,7 +735,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
         </div>
         <p className="mt-3 text-[11px] text-slate-500">
           {isTcp
-            ? 'Apex Systems dunning is paused per the approved exception treatment (open P1). Renewal invoices live in the Customer entity.'
+            ? 'Apex Systems dunning is paused per the approved exception treatment (open P1). Renewal invoices live in Customer Lifecycle.'
             : 'The Harbor Financial $120K row is the same WIP flagged in the exceptions queue (ahead of billing schedule).'}
         </p>
       </div>

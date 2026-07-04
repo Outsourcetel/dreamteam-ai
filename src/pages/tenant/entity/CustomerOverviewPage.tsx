@@ -100,7 +100,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Customer</h1>
+          <h1 className="text-2xl font-bold text-white">Customer Lifecycle</h1>
           <p className="text-slate-400 text-sm mt-1">One relationship, end-to-end — no handoffs</p>
           <p className="text-xs text-slate-600 mt-0.5">
             {dataMode === 'live' ? (liveTenantName || 'Your company') : `${activeCompany.name} · ${activeCompany.industry}`}
