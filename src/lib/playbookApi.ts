@@ -17,7 +17,7 @@ import { supabase } from '../supabase';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import type { CustomerAccount } from './customerApi';
 
-export type RunStatus = 'running' | 'waiting_approval' | 'completed' | 'cancelled';
+export type RunStatus = 'running' | 'waiting_approval' | 'resume_pending' | 'completed' | 'cancelled' | 'failed';
 export type StepStatus = 'pending' | 'done' | 'waiting' | 'skipped' | 'failed' | 'cancelled';
 
 export interface RunStep {
@@ -39,6 +39,10 @@ export interface PlaybookRun {
   waiting_task_id: string | null;
   created_at: string;
   updated_at: string;
+  /** R6: set for definition-based runs (legacy renewal_v1 runs keep these null) */
+  definition_id?: string | null;
+  definition_version?: number | null;
+  context?: Record<string, unknown>;
 }
 
 export const RENEWAL_STEP_DEFS: Array<{ key: string; label: string }> = [
@@ -132,11 +136,25 @@ export async function resumeRunForTask(
   taskId: string,
   decision: 'approved' | 'rejected',
 ): Promise<void> {
-  const { error } = await supabase.rpc('resume_playbook_on_task', {
+  const { data, error } = await supabase.rpc('resume_playbook_on_task', {
     p_task_id: taskId,
     p_decision: decision,
   });
-  if (!error) { notify(); return; }
+  if (!error) {
+    // R6 split: the SQL resume parks definition runs at connector steps
+    // ('resume_pending' + needs_http) — the edge function finishes those.
+    if ((data as { needs_http?: boolean } | null)?.needs_http) {
+      try {
+        await supabase.functions.invoke('playbook-execute', {
+          body: { action: 'advance', run_id: (data as { run_id: string }).run_id },
+        });
+      } catch (err) {
+        console.error('resumeRunForTask http advance:', err);
+      }
+    }
+    notify();
+    return;
+  }
   // PGRST202 / 42883: function not found — migration 016 not applied yet.
   console.warn('resume_playbook_on_task RPC unavailable, falling back to edge advance:', error.message);
   try {
