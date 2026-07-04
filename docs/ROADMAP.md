@@ -6,13 +6,13 @@ _Formalized 2026-07-04 from the on-target scorecard (overall ~6.8/10). Companion
 Set ANTHROPIC_API_KEY edge secret → full end-to-end test: knowledge upload → grounded answer w/ sources → guardrail violation blocked + escalated → immutable audit chain verified → widget path → cache write confirmed. Fix known gap: widget-ask pre-LLM usage_metrics not incrementing.
 **Moves scores:** Trust 4→5, Live depth 6.5→7.5.
 
-## R2 — Systems-of-Record connector layer v1  `buildable now`
+## R2 — Systems-of-Record connector layer v1  ✅ **SHIPPED**
 The doctrine-critical gap (scored 2/10). Connector framework implementing the SoR principle:
-- `connectors` + `connector_objects` schema: per-object mode `sync` (cached working copy, TTL/webhook refresh) vs `read_through` (fetched at action time, never persisted); per-action write-back bindings; credentials encrypted, scoped per tenant (per-DE scoping next).
-- **Zendesk connector v1**: sync tickets → support_tickets working cache; read_through ticket detail; write-back "add internal note / update status".
-- Renewal playbook gains an optional write-back step slot (invoice lands in the SoR when a billing connector exists).
-- Live Connectors page: connect flow (tenant pastes their API token), object-mode table, sync status, last-sync, disconnect.
-**Testable to the credential boundary without a Zendesk account; founder can connect a free Zendesk trial to prove end-to-end.**
+- ✅ Schema (migration 017): `connectors` + `connector_objects` (per-object mode `sync` vs `read_through`) + `connector_actions` (write-back registry) + `connector_secrets` — service-role-only credential table written via SECURITY DEFINER RPC, never client-readable (Vault/KMS encryption is the hardening step; per-DE scoping next). `support_tickets` gained `source`+`external_ref` as the working-cache key.
+- ✅ **Zendesk connector v1** (`connector-zendesk` edge fn, deployed): test / sync_tickets (incremental pull, 300-ticket cap per run, upsert into support_tickets) / read_ticket read-through (nothing persisted except the audit event) / write_back `add_internal_note`+`update_status`. Audit categories `connector_sync`/`connector_action` added.
+- ✅ Live Connectors page: connect flow (Test & Save), object-mode table w/ intervals, write-back toggles, sync now, read-through demo, disconnect w/ credential purge. Zendesk source chip on live Support tickets.
+- ⏸ Renewal playbook write-back step slot: deferred to the first billing connector (Zuora) — nothing to bind yet.
+**Verified to the credential boundary (fake creds return structured `zendesk_auth_failed`, proving the full path to Zendesk's door); founder connects a free Zendesk trial to prove end-to-end.**
 **Moves scores:** SoR layer 2→5.
 
 ## R3 — Live Proving Ground v1  `buildable now, runs dormant until key`

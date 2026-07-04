@@ -153,7 +153,14 @@ function LiveCustomerSupport() {
                   {visible.map((t, i) => (
                     <tr key={t.id} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === visible.length - 1 ? 'border-b-0' : ''}`}>
                       <td className="py-3 px-4">
-                        <div className="font-medium text-white">{t.subject}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-white">{t.subject}</span>
+                          {t.source === 'zendesk' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-700/30 flex-shrink-0" title={`Synced from Zendesk${t.external_ref ? ` — ticket #${t.external_ref}` : ''} (Zendesk remains the system of record)`}>
+                              Zendesk
+                            </span>
+                          )}
+                        </div>
                         {t.body && <div className="text-xs text-slate-500 truncate max-w-md">{t.body}</div>}
                       </td>
                       <td className={`py-3 px-4 text-xs font-bold uppercase ${priorityStyle(t.priority)}`}>{t.priority}</td>

@@ -38,6 +38,10 @@ export interface SupportTicket {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+  /** SoR origin (migration 017): 'native' or a connector provider e.g. 'zendesk' */
+  source?: string;
+  /** the SoR's own id for synced tickets (e.g. Zendesk ticket id) */
+  external_ref?: string | null;
 }
 
 export type InvoiceStatus = 'pending_generation' | 'awaiting_approval' | 'sent' | 'paid' | 'overdue';
