@@ -5,6 +5,7 @@ import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import { useDataMode } from '../../../lib/dataMode';
 import CustomerSuccessLive from './CustomerSuccessLive';
+import { CustomerBDLive, CustomerSalesLive } from './PipelineLive';
 
 // ============================================================
 // Customer journey pages: Business Development, Sales, Success.
@@ -70,6 +71,12 @@ const stageBadge = (stage: string) => {
 };
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <CustomerBDLive />;
+  return <DemoCustomerBD />;
+};
+
+const DemoCustomerBD = () => {
   const { activeCompanyId, activeCompany } = useAuth();
   const prospects = PROSPECTS[activeCompanyId];
   const funnel = FUNNEL[activeCompanyId];
@@ -184,6 +191,12 @@ const oppStageBadge = (stage: string) => {
 };
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <CustomerSalesLive />;
+  return <DemoCustomerSales />;
+};
+
+const DemoCustomerSales = () => {
   const { activeCompanyId, activeCompany } = useAuth();
   const opps = OPPORTUNITIES[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';

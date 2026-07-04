@@ -16,6 +16,8 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 import { getProjectForAccount } from '../../../lib/onboardingApi';
 import type { OnboardingProject } from '../../../lib/onboardingApi';
 import ImportCustomersModal from '../../../components/ImportCustomersModal';
+import { listWonOpportunitiesForAccount } from '../../../lib/pipelineApi';
+import type { Opportunity as PipelineOpportunity } from '../../../lib/pipelineApi';
 
 // ============================================================
 // Customer Success — LIVE (migration 021).
@@ -72,6 +74,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 }) {
   const [signals, setSignals] = useState<AccountSignals | null>(null);
   const [onboarding, setOnboarding] = useState<OnboardingProject | null>(null);
+  const [wonOpps, setWonOpps] = useState<PipelineOpportunity[]>([]);
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [selDef, setSelDef] = useState('');
   const [running, setRunning] = useState(false);
@@ -86,6 +89,8 @@ function AccountDrawer({ account, onClose, onChanged }: {
         setDefs(d.filter(x => x.status === 'published'));
         // best-effort: onboarding tables may not be provisioned yet (022)
         try { setOnboarding(await getProjectForAccount(account.id)); } catch { /* noop */ }
+        // best-effort: pipeline tables may not be provisioned yet (023)
+        try { setWonOpps(await listWonOpportunitiesForAccount(account.id)); } catch { /* noop */ }
       } catch (e) { setErr((e as Error).message); }
     })();
   }, [account.id]);
@@ -126,6 +131,19 @@ function AccountDrawer({ account, onClose, onChanged }: {
           <p className="text-xs text-slate-400">{describeComponents(c)}</p>
           <p className="text-[10px] text-slate-600 mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
+
+        {wonOpps.length > 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4">
+            <p className="text-[11px] font-semibold text-white mb-1">Won from pipeline</p>
+            {wonOpps.map(o => (
+              <p key={o.id} className="text-xs text-slate-400">
+                {o.name} · {o.amount_cents != null ? fmtMoneyK(o.amount_cents) : '—'}
+                {o.closed_at && <span className="text-slate-600"> · won {new Date(o.closed_at).toLocaleDateString()}</span>}
+              </p>
+            ))}
+            <p className="text-[10px] text-slate-600 mt-1">Sales → Customer handoff</p>
+          </div>
+        )}
 
         {onboarding && (
           <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4 flex items-center justify-between gap-2">
