@@ -140,6 +140,10 @@ export interface DEAnswerResult {
   no_docs?: boolean;
   /** answer served from the semantic answer cache (no LLM call) */
   cached?: boolean;
+  /** the answer was withheld by a tenant guardrail rule (P3) */
+  blocked?: boolean;
+  /** the guardrail rule text that blocked the answer */
+  blocked_rule?: string;
 }
 
 export class DEAnswerError extends Error {
@@ -192,5 +196,7 @@ export async function askDE(
     needs_escalation: !!data.needs_escalation,
     no_docs: !!data.no_docs,
     cached: !!data.cached,
+    blocked: !!data.blocked,
+    blocked_rule: typeof data.rule === 'string' ? data.rule : undefined,
   };
 }

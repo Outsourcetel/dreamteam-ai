@@ -237,7 +237,9 @@ export async function updateTicket(
 
 // ── Renewal invoices ──────────────────────────────────────────────
 
-/** Invoices above this amount route through a human approval gate. */
+/** Fallback approval gate when the tenant has no
+ *  require_approval_over_cents guardrail rule (P3: the live threshold
+ *  is read from guardrail_rules via getApprovalThresholdCents). */
 export const INVOICE_APPROVAL_THRESHOLD_CENTS = 10_000 * 100; // $10K
 
 export async function listInvoices(): Promise<RenewalInvoice[]> {
@@ -265,15 +267,18 @@ export async function updateInvoice(
 }
 
 /**
- * Generate a renewal invoice for an account. Amounts above the $10K
- * threshold are gated: status 'awaiting_approval' + a human_task; below
- * threshold they go straight to 'sent'. An activity event is always logged.
+ * Generate a renewal invoice for an account. The approval threshold is the
+ * tenant's require_approval_over_cents guardrail rule (fallback $10K).
+ * Above threshold: status 'awaiting_approval' + a human_task; below they go
+ * straight to 'sent'. A guardrail_check audit event is recorded either way.
  */
 export async function generateInvoice(
   account: Pick<CustomerAccount, 'id' | 'name' | 'arr_cents' | 'renewal_date'>
-): Promise<{ invoice: RenewalInvoice; gated: boolean }> {
+): Promise<{ invoice: RenewalInvoice; gated: boolean; task: DBHumanTask | null; thresholdCents: number }> {
   const tid = await requireTenantId();
-  const gated = account.arr_cents > INVOICE_APPROVAL_THRESHOLD_CENTS;
+  const { getApprovalThresholdCents, appendAuditEvent } = await import('./guardrailApi');
+  const { cents: thresholdCents, fromRule } = await getApprovalThresholdCents();
+  const gated = account.arr_cents > thresholdCents;
   const { data, error } = await supabase
     .from('renewal_invoices')
     .insert({
@@ -288,8 +293,9 @@ export async function generateInvoice(
   if (error) raise('generateInvoice', error);
   const invoice = data as RenewalInvoice;
 
+  let task: DBHumanTask | null = null;
   if (gated) {
-    await createHumanTask({
+    task = await createHumanTask({
       type: 'approval_gate',
       title: `Invoice approval — ${account.name}`,
       detail: fmtMoney(account.arr_cents),
@@ -303,10 +309,25 @@ export async function generateInvoice(
     actor_type: 'de',
     event_type: gated ? 'escalated' : 'resolved',
     text: gated
-      ? `Renewal invoice for ${account.name} (${fmtMoney(account.arr_cents)}) exceeds the $10K threshold — routed to human approval`
+      ? `Renewal invoice for ${account.name} (${fmtMoney(account.arr_cents)}) exceeds the ${fmtMoney(thresholdCents)} threshold — routed to human approval`
       : `Renewal invoice sent — ${account.name} (${fmtMoney(account.arr_cents)})`,
   });
-  return { invoice, gated };
+  await appendAuditEvent({
+    actor: 'Renewal DE', actor_type: 'de', category: 'guardrail_check',
+    action: gated
+      ? `Guardrail GATED — invoice ${fmtMoney(account.arr_cents)} for ${account.name} exceeds approval threshold ${fmtMoney(thresholdCents)}; routed to human approval`
+      : `Guardrail passed — invoice ${fmtMoney(account.arr_cents)} for ${account.name} under approval threshold ${fmtMoney(thresholdCents)}; auto-sent`,
+    detail: {
+      invoice_id: invoice.id, account: account.name, amount_cents: account.arr_cents,
+      threshold_cents: thresholdCents, threshold_from_rule: fromRule, result: gated ? 'gated' : 'passed',
+    },
+  });
+  await appendAuditEvent({
+    actor: 'Renewal DE', actor_type: 'de', category: 'invoice',
+    action: `Renewal invoice generated — ${account.name} (${fmtMoney(account.arr_cents)}), status ${invoice.status}`,
+    detail: { invoice_id: invoice.id, account: account.name, amount_cents: account.arr_cents, status: invoice.status },
+  });
+  return { invoice, gated, task, thresholdCents };
 }
 
 // ── Human tasks ───────────────────────────────────────────────────
@@ -372,6 +393,19 @@ export async function decideHumanTask(
     event_type: 'approval',
     text: `${decision === 'approved' ? 'Approved' : 'Rejected'} — ${task.title}`,
   });
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'approval',
+    action: `${decision === 'approved' ? 'Approved' : 'Rejected'} — ${task.title}${task.detail ? ` (${task.detail})` : ''}`,
+    detail: { task_id: task.id, task_type: task.type, decision, related_table: task.related_table, related_id: task.related_id },
+  });
+  // If a playbook run is paused on this approval, advance or cancel it.
+  try {
+    const { resumeRunForTask } = await import('./playbookApi');
+    await resumeRunForTask(task.id, decision);
+  } catch (err) {
+    console.error('playbook resume hook:', err);
+  }
   return data as DBHumanTask;
 }
 

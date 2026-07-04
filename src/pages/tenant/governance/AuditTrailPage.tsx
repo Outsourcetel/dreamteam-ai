@@ -1,8 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import type { Page } from '../../../types'
 import { PageHeader } from '../../../components/ui'
+import { useDataMode } from '../../../lib/dataMode'
+import { CustomerApiError } from '../../../lib/customerApi'
+import { listAuditEvents, verifyAuditChain } from '../../../lib/guardrailApi'
+import type { AuditEvent as LiveAuditEvent, AuditCategory, ChainVerification } from '../../../lib/guardrailApi'
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Audit Trail (gov_audit)
@@ -122,7 +127,191 @@ const exportCsv = (events: AuditEvent[]) => {
   URL.revokeObjectURL(url)
 }
 
+// ═══════════════════════════════════════════════════════════════
+// LIVE mode — real audit_events: INSERT-only, hash-chained rows
+// written through the append_audit_event() RPC. "Verify chain"
+// asks the database to recompute every hash server-side.
+// ═══════════════════════════════════════════════════════════════
+
+const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }> = {
+  resolved: { label: 'Resolved', style: 'bg-emerald-500/15 text-emerald-300' },
+  escalated: { label: 'Escalated', style: 'bg-amber-500/15 text-amber-300' },
+  approval: { label: 'Approval', style: 'bg-blue-500/15 text-blue-300' },
+  guardrail_check: { label: 'Guardrail check', style: 'bg-indigo-500/15 text-indigo-300' },
+  guardrail_block: { label: 'Guardrail block', style: 'bg-red-500/15 text-red-300' },
+  config_change: { label: 'Config change', style: 'bg-indigo-500/15 text-indigo-300' },
+  playbook_step: { label: 'Playbook step', style: 'bg-violet-500/15 text-violet-300' },
+  invoice: { label: 'Invoice', style: 'bg-teal-500/15 text-teal-300' },
+}
+
+function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
+  const [events, setEvents] = useState<LiveAuditEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [missingTables, setMissingTables] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState<'all' | AuditCategory>('all')
+  const [actorFilter, setActorFilter] = useState('all')
+  const [verifying, setVerifying] = useState(false)
+  const [verification, setVerification] = useState<ChainVerification | null>(null)
+
+  const refresh = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setEvents(await listAuditEvents(200))
+      setMissingTables(false)
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
+      else setError((err as Error)?.message || 'Failed to load audit events.')
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => {
+    void refresh()
+    const onChange = () => void refresh()
+    window.addEventListener('dt-state-changed', onChange)
+    return () => window.removeEventListener('dt-state-changed', onChange)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const verify = async () => {
+    setVerifying(true)
+    setError(null)
+    try { setVerification(await verifyAuditChain()) }
+    catch (err) { setError((err as Error)?.message || 'Chain verification failed.') }
+    finally { setVerifying(false) }
+  }
+
+  const actors = Array.from(new Set(events.map(e => e.actor)))
+  const filtered = events.filter(e =>
+    (categoryFilter === 'all' || e.category === categoryFilter) &&
+    (actorFilter === 'all' || e.actor === actorFilter)
+  )
+  // Chain position: events arrive newest-first; oldest is #1.
+  const positionById = new Map(events.map((e, i) => [e.id, events.length - i]))
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Audit Trail"
+        subtitle="Immutable, hash-chained record of every DE action, guardrail check, human approval, and playbook step — records can only be appended, never edited or deleted"
+      />
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={5} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : events.length === 0 ? (
+        <LiveEmptyState
+          icon="⛓"
+          title="No audit events yet"
+          body="Every guardrail check, invoice, approval, and playbook step your Digital Employees perform is appended here as a hash-chained, immutable record."
+          primaryLabel="Go to Renewal & Expansion"
+          onPrimary={() => setPage?.('entity_customer_renewal')}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-3 mb-6">
+            {[
+              { label: 'Events (latest 200)', value: String(events.length), color: 'text-white' },
+              { label: 'Guardrail blocks', value: String(events.filter(e => e.category === 'guardrail_block').length), color: events.some(e => e.category === 'guardrail_block') ? 'text-red-300' : 'text-emerald-300' },
+              { label: 'Approvals', value: String(events.filter(e => e.category === 'approval').length), color: 'text-blue-300' },
+              {
+                label: 'Chain integrity',
+                value: verification ? (verification.intact ? `Intact (${verification.checked})` : 'BROKEN') : 'Not verified',
+                color: verification ? (verification.intact ? 'text-emerald-300' : 'text-red-300') : 'text-slate-400',
+              },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as 'all' | AuditCategory)}
+              className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              <option value="all">All categories</option>
+              {(Object.keys(LIVE_CATEGORY_META) as AuditCategory[]).map(c => (
+                <option key={c} value={c}>{LIVE_CATEGORY_META[c].label}</option>
+              ))}
+            </select>
+            <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              <option value="all">All actors</option>
+              {actors.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <div className="flex-1" />
+            <button onClick={() => void verify()} disabled={verifying}
+              className="text-xs px-3 py-1.5 rounded-lg border border-emerald-700/50 text-emerald-300 hover:border-emerald-500 disabled:opacity-50 transition-colors">
+              {verifying ? 'Verifying…' : '⛓ Verify chain'}
+            </button>
+          </div>
+
+          {verification && (
+            <div className={`mb-4 rounded-xl border px-4 py-3 text-xs ${verification.intact
+              ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300'
+              : 'border-red-800/50 bg-red-500/10 text-red-300'}`}>
+              {verification.intact
+                ? `Chain intact — all ${verification.checked} events recomputed and verified server-side.`
+                : `Chain BROKEN after ${verification.checked} verified events (record ${verification.broken_at ?? 'unknown'}). This should be impossible unless the database was tampered with directly.`}
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 divide-y divide-slate-800/60">
+            {filtered.map(e => (
+              <div key={e.id} className="grid grid-cols-12 gap-3 px-5 py-3">
+                <div className="col-span-2 text-xs text-slate-500 pt-0.5 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</div>
+                <div className="col-span-2 flex items-start gap-2">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
+                    e.actor_type === 'de' ? 'bg-indigo-500/20 text-indigo-300 font-bold'
+                    : e.actor_type === 'human' ? 'bg-slate-700 text-slate-300'
+                    : 'bg-slate-800 text-slate-500'
+                  }`}>{e.actor_type === 'de' ? e.actor.slice(0, 2).toUpperCase() : e.actor_type === 'human' ? '◉' : '⊟'}</span>
+                  <div>
+                    <p className="text-xs text-slate-200">{e.actor}</p>
+                    <p className="text-[10px] text-slate-600 capitalize">{e.actor_type === 'de' ? 'Digital Employee' : e.actor_type}</p>
+                  </div>
+                </div>
+                <div className="col-span-6">
+                  <p className={`text-xs leading-snug ${e.category === 'guardrail_block' ? 'text-red-300' : 'text-slate-300'}`}>{e.action}</p>
+                  <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${LIVE_CATEGORY_META[e.category]?.style ?? 'bg-slate-800 text-slate-400'}`}>
+                    {LIVE_CATEGORY_META[e.category]?.label ?? e.category}
+                  </span>
+                </div>
+                <div className="col-span-2 text-right pt-0.5">
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 whitespace-nowrap font-mono"
+                    title={`Chain position #${positionById.get(e.id)} — hash ${e.hash}\nprev ${e.prev_hash || '(genesis)'}`}
+                  >
+                    ⛓ #{positionById.get(e.id)} · {e.hash.slice(0, 8)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="py-12 text-center text-slate-600 text-sm">No events match your filters.</div>
+            )}
+          </div>
+
+          <p className="mt-4 text-xs text-slate-600 text-center">
+            hash = sha256(prev_hash + tenant + action + detail + timestamp), computed inside the database. UPDATE and DELETE raise an exception — even for administrators.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function AuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
+  const dataMode = useDataMode()
+  if (dataMode === 'live') return <LiveAuditTrail setPage={setPage} />
+  return <DemoAuditTrailPage setPage={setPage} />
+}
+
+function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const events = activeCompanyId === 'tcp' ? TCP_EVENTS : PWC_EVENTS
   const deNames = DE_NAMES[activeCompanyId]

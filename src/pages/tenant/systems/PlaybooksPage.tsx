@@ -3,6 +3,11 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { useDataMode } from '../../../lib/dataMode';
+import { CustomerApiError } from '../../../lib/customerApi';
+import { listPlaybookRuns, RENEWAL_STEP_DEFS } from '../../../lib/playbookApi';
+import type { PlaybookRun } from '../../../lib/playbookApi';
+import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Playbooks — versioned draft → eval → publish lifecycle.
@@ -449,7 +454,132 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
 
 type ViewMode = 'published' | 'draft';
 
+// ═══════════════════════════════════════════════════════════════
+// LIVE mode — one real production playbook: renewal_v1, executed
+// end-to-end against real tables with a human approval gate.
+// ═══════════════════════════════════════════════════════════════
+
+function LivePlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
+  const [runs, setRuns] = useState<PlaybookRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setRuns(await listPlaybookRuns());
+      setMissingTables(false);
+      setError(null);
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load playbook runs.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void refresh();
+    const onChange = () => void refresh();
+    window.addEventListener('dt-state-changed', onChange);
+    return () => window.removeEventListener('dt-state-changed', onChange);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Playbooks"
+        subtitle="1 production playbook · the full demo library (draft → eval → publish) is available in demo mode"
+      />
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={3} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : (
+        <>
+          {/* The one real playbook */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 mb-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-white">Renewal Lifecycle</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">PRODUCTION</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">renewal_v1</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Check account → generate invoice → guardrail check → human approval (when gated) → send → record. Every step lands in the immutable audit trail.
+                </p>
+              </div>
+              <button onClick={() => setPage('entity_customer_renewal')}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+                Run from Renewal &amp; Expansion →
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {RENEWAL_STEP_DEFS.map((s, i) => (
+                <span key={s.key} className="text-[11px] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+                  {i + 1}. {s.label}{s.key === 'human_approval' ? ' 🤝' : ''}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">
+              Honest v1: steps are orchestrated client-side and persisted to the database — a server-side executor is the production hardening step.
+            </p>
+          </div>
+
+          {/* Runs history */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+            <h3 className="text-sm font-semibold text-white mb-3">Run history</h3>
+            {runs.length === 0 ? (
+              <p className="text-xs text-slate-500">No runs yet — start one from Renewal &amp; Expansion.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-800">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-left">
+                      {['Started', 'Playbook', 'Account', 'Status', 'Progress'].map(h => <th key={h} className={th}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runs.map(r => {
+                      const done = r.steps.filter(s => s.status === 'done' || s.status === 'skipped').length;
+                      const acct = (r.steps[0]?.detail || '').split(' · ')[0] || '—';
+                      return (
+                        <tr key={r.id} className="border-b border-slate-800/60 last:border-b-0">
+                          <td className={`${td} text-xs text-slate-500 whitespace-nowrap`}>{new Date(r.created_at).toLocaleString()}</td>
+                          <td className={`${td} text-xs font-mono text-slate-300`}>{r.playbook_key}</td>
+                          <td className={`${td} text-xs text-slate-200`}>{acct}</td>
+                          <td className={td}>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              r.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300'
+                              : r.status === 'waiting_approval' ? 'bg-amber-500/15 text-amber-300'
+                              : r.status === 'cancelled' ? 'bg-red-500/15 text-red-300'
+                              : 'bg-indigo-500/15 text-indigo-300'
+                            }`}>{r.status === 'waiting_approval' ? 'waiting on human' : r.status}</span>
+                          </td>
+                          <td className={`${td} text-xs text-slate-400`}>{done}/{r.steps.length} steps</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function PlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LivePlaybooksPage setPage={setPage} />;
+  return <DemoPlaybooksPage setPage={setPage} />;
+}
+
+function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
 
   // Published overrides (promoted drafts) + draft overrides (null = dismissed/promoted seed draft)

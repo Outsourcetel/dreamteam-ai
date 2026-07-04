@@ -1,9 +1,236 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
 import { TCP_DES, PWC_DES } from '../WorkforceDEsPage'
+import { useDataMode } from '../../../lib/dataMode'
+import { CustomerApiError } from '../../../lib/customerApi'
+import {
+  listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
+} from '../../../lib/guardrailApi'
+import type { GuardrailRule, GuardrailRuleType } from '../../../lib/guardrailApi'
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE mode — real tenant guardrail_rules: enforced in the real
+// path (invoice approval threshold now; DE answer checks in the
+// de-answer/widget-ask edge functions). Every change is recorded
+// in the immutable audit trail.
+// ═══════════════════════════════════════════════════════════════
+
+const RULE_TYPE_META: Record<GuardrailRuleType, { label: string; hint: string }> = {
+  blocked_topic: { label: 'Blocked topic', hint: 'DE answers matching this topic are withheld and escalated' },
+  blocked_phrase: { label: 'Blocked phrase', hint: 'DE answers containing these phrases are withheld and escalated' },
+  require_approval_over_cents: { label: 'Approval threshold', hint: 'Invoices above this amount route to Human Tasks' },
+  max_discount_pct: { label: 'Discount cap', hint: 'Maximum discount without human approval' },
+}
+
+function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
+  const [rules, setRules] = useState<GuardrailRule[]>([])
+  const [loading, setLoading] = useState(true)
+  const [missingTables, setMissingTables] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState<{ rule: string; rule_type: GuardrailRuleType; pattern: string; threshold: string; severity: 'blocking' | 'warning' }>(
+    { rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking' })
+
+  const refresh = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setRules(await listGuardrailRules())
+      setMissingTables(false)
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
+      else setError((err as Error)?.message || 'Failed to load guardrails.')
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { void refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true)
+    setError(null)
+    try { await fn(); await refresh() }
+    catch (err) { setError((err as Error)?.message || 'Operation failed.') }
+    finally { setBusy(false) }
+  }
+
+  const submitAdd = () => run(async () => {
+    const isMoney = form.rule_type === 'require_approval_over_cents'
+    const isPct = form.rule_type === 'max_discount_pct'
+    await addGuardrailRule({
+      rule: form.rule.trim(),
+      rule_type: form.rule_type,
+      pattern: (!isMoney && !isPct && form.pattern.trim()) ? form.pattern.trim() : null,
+      threshold: isMoney ? Math.round(Number(form.threshold) * 100) || null : isPct ? Math.round(Number(form.threshold)) || null : null,
+      severity: form.severity,
+    })
+    setShowAdd(false)
+    setForm({ rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking' })
+  })
+
+  const active = rules.filter(r => r.active)
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Compliance & Guardrails"
+        subtitle="Real guardrails, enforced in the real path — invoice approvals check them now; DE answers are checked at generation time. Every change lands in the immutable audit trail."
+      />
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={4} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : rules.length === 0 ? (
+        <LiveEmptyState
+          icon="🛡"
+          title="No guardrails yet"
+          body="Install a sensible starter set — a $10K invoice approval threshold, blocked legal-commitment phrases, a blocked legal-advice topic, and a 20% discount cap. You can edit or deactivate any of them."
+          primaryLabel={busy ? 'Installing…' : 'Install starter guardrails'}
+          onPrimary={() => { if (!busy) void run(() => installStarterGuardrails()) }}
+          secondaryLabel="Add a custom rule"
+          onSecondary={() => setShowAdd(true)}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {[
+              { label: 'Active rules', value: String(active.length), color: 'text-white' },
+              { label: 'Blocking', value: String(active.filter(r => r.severity === 'blocking').length), color: 'text-red-300' },
+              { label: 'Enforcement', value: 'Live', color: 'text-emerald-300' },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-white">Guardrail rules</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Checked on every invoice generation and every DE answer</p>
+              </div>
+              <button onClick={() => setShowAdd(v => !v)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+                + Add rule
+              </button>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-left">
+                    {['Rule', 'Type', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
+                      <th key={h} className={th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules.map(r => (
+                    <tr key={r.id} className={`border-b border-slate-800/60 last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
+                      <td className={`${td} text-slate-200 text-xs`}>{r.rule}</td>
+                      <td className={td}>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{RULE_TYPE_META[r.rule_type].label}</span>
+                      </td>
+                      <td className={`${td} text-xs text-slate-400 font-mono`}>
+                        {r.rule_type === 'require_approval_over_cents' && r.threshold != null ? `$${Math.round(r.threshold / 100).toLocaleString()}`
+                          : r.rule_type === 'max_discount_pct' && r.threshold != null ? `${r.threshold}%`
+                          : r.pattern || '—'}
+                      </td>
+                      <td className={td}><SeverityBadge severity={r.severity} /></td>
+                      <td className={`${td} text-xs text-indigo-400 font-mono`}>v{r.version}</td>
+                      <td className={td}>
+                        <Toggle enabled={r.active} disabled={busy}
+                          onChange={(v) => void run(() => updateGuardrailRule(r, { active: v }))} />
+                      </td>
+                      <td className={`${td} text-right`}>
+                        <span className="text-[10px] text-slate-600">{new Date(r.updated_at).toLocaleDateString()}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-[11px] text-slate-500">
+              The approval-threshold rule replaces the built-in $10K gate on renewal invoices. Blocked phrases/topics are checked against every DE answer before it reaches the user (simple pattern matching, v1) — matches are withheld, escalated to Human Tasks, and recorded as a guardrail block in the{' '}
+              <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">audit trail</button>.
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Add rule form */}
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAdd(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[440px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-white mb-4">Add guardrail rule</h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1">Rule (plain English)</label>
+                <input value={form.rule} onChange={e => setForm(f => ({ ...f, rule: e.target.value }))}
+                  placeholder='e.g. "Never quote competitor pricing"'
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1">Type</label>
+                  <select value={form.rule_type} onChange={e => setForm(f => ({ ...f, rule_type: e.target.value as GuardrailRuleType }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    {(Object.keys(RULE_TYPE_META) as GuardrailRuleType[]).map(t => (
+                      <option key={t} value={t}>{RULE_TYPE_META[t].label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Severity</label>
+                  <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value as 'blocking' | 'warning' }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    <option value="blocking">Blocking</option>
+                    <option value="warning">Warning</option>
+                  </select>
+                </div>
+              </div>
+              {(form.rule_type === 'blocked_phrase' || form.rule_type === 'blocked_topic') ? (
+                <div>
+                  <label className="block text-slate-400 mb-1">Patterns (separate alternatives with |)</label>
+                  <input value={form.pattern} onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
+                    placeholder="guarantee|we promise|legally binding"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    {form.rule_type === 'require_approval_over_cents' ? 'Threshold (dollars)' : 'Max discount (%)'}
+                  </label>
+                  <input value={form.threshold} onChange={e => setForm(f => ({ ...f, threshold: e.target.value }))}
+                    placeholder={form.rule_type === 'require_approval_over_cents' ? '10000' : '20'} inputMode="numeric"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500">{RULE_TYPE_META[form.rule_type].hint}.</p>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setShowAdd(false)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
+              <button onClick={submitAdd} disabled={busy || !form.rule.trim()}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors">
+                {busy ? 'Saving…' : 'Add rule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Compliance & Guardrails (gov_compliance)
@@ -168,6 +395,12 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
 // ── Page ───────────────────────────────────────────────────────
 
 export default function CompliancePage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode()
+  if (dataMode === 'live') return <LiveCompliancePage setPage={setPage} />
+  return <DemoCompliancePage setPage={setPage} />
+}
+
+function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const companyId = activeCompanyId
   const des = companyId === 'tcp' ? TCP_DES : PWC_DES

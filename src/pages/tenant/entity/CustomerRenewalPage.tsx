@@ -7,6 +7,9 @@ import {
   fmtMoneyK, CustomerApiError, INVOICE_APPROVAL_THRESHOLD_CENTS,
 } from '../../../lib/customerApi';
 import type { CustomerAccount, RenewalInvoice, InvoiceStatus } from '../../../lib/customerApi';
+import { getApprovalThresholdCents } from '../../../lib/guardrailApi';
+import { startRenewalRun, listPlaybookRuns } from '../../../lib/playbookApi';
+import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -379,16 +382,74 @@ const invoiceStatusClass: Record<InvoiceStatus, string> = {
   overdue: 'text-rose-400',
 };
 
+// ── Playbook run step timeline (live) ─────────────────────────
+const stepChip: Record<RunStep['status'], { label: string; cls: string }> = {
+  pending: { label: 'pending', cls: 'bg-slate-800 text-slate-500' },
+  done: { label: 'done', cls: 'bg-emerald-500/15 text-emerald-300' },
+  waiting: { label: 'waiting on human', cls: 'bg-amber-500/15 text-amber-300' },
+  skipped: { label: 'skipped', cls: 'bg-slate-800 text-slate-400' },
+  failed: { label: 'failed', cls: 'bg-red-500/15 text-red-300' },
+  cancelled: { label: 'cancelled', cls: 'bg-red-500/15 text-red-300' },
+};
+
+function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) => void }) {
+  const acct = (run.steps[0]?.detail || '').split(' · ')[0] || 'Account';
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-white">{acct}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">{run.playbook_key}</span>
+        </div>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+          run.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300'
+          : run.status === 'waiting_approval' ? 'bg-amber-500/15 text-amber-300'
+          : run.status === 'cancelled' ? 'bg-red-500/15 text-red-300'
+          : 'bg-indigo-500/15 text-indigo-300'
+        }`}>{run.status === 'waiting_approval' ? 'waiting on human' : run.status}</span>
+      </div>
+      <ol className="space-y-1.5">
+        {run.steps.map((s, i) => (
+          <li key={s.key} className="flex items-start gap-2 text-xs">
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
+              s.status === 'done' ? 'bg-emerald-500/20 text-emerald-300'
+              : s.status === 'waiting' ? 'bg-amber-500/20 text-amber-300'
+              : s.status === 'cancelled' || s.status === 'failed' ? 'bg-red-500/20 text-red-300'
+              : 'bg-slate-800 text-slate-500'
+            }`}>{s.status === 'done' ? '✓' : i + 1}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={s.status === 'pending' ? 'text-slate-500' : 'text-slate-200'}>{s.label}</span>
+                <span className={`text-[9px] px-1.5 py-px rounded ${stepChip[s.status].cls}`}>{stepChip[s.status].label}</span>
+              </div>
+              {s.detail && <p className="text-[10px] text-slate-500 mt-0.5">{s.detail}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {run.status === 'waiting_approval' && (
+        <button onClick={() => setPage('ops_human_tasks')}
+          className="mt-3 text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 transition-all">
+          Decide in Human Tasks →
+        </button>
+      )}
+    </div>
+  );
+}
+
 function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
+  const [runs, setRuns] = useState<PlaybookRun[]>([]);
+  const [thresholdCents, setThresholdCents] = useState(INVOICE_APPROVAL_THRESHOLD_CENTS);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [genModal, setGenModal] = useState<CustomerAccount | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [runningId, setRunningId] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (message: string) => {
@@ -402,10 +463,13 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
     setLoading(true);
     setError(null);
     try {
-      const [accts, invs] = await Promise.all([listAccounts(), listInvoices()]);
+      const [accts, invs, thr] = await Promise.all([listAccounts(), listInvoices(), getApprovalThresholdCents()]);
       setAccounts(accts);
       setInvoices(invs);
+      setThresholdCents(thr.cents);
       setMissingTables(false);
+      // Playbook runs are additive P3 — tolerate a missing table quietly.
+      try { setRuns(await listPlaybookRuns()); } catch { setRuns([]); }
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError((err as Error)?.message || 'Failed to load renewals.');
@@ -415,6 +479,27 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const onChange = () => void refresh();
+    window.addEventListener('dt-state-changed', onChange);
+    return () => window.removeEventListener('dt-state-changed', onChange);
+  }, [refresh]);
+
+  const runPlaybook = async (account: CustomerAccount) => {
+    setRunningId(account.id);
+    setError(null);
+    try {
+      const run = await startRenewalRun(account);
+      showToast(run.status === 'waiting_approval'
+        ? `Renewal playbook paused at the human gate — invoice for ${account.name} awaits approval`
+        : `Renewal playbook completed for ${account.name} — invoice sent`);
+      void refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Playbook run failed.');
+    } finally {
+      setRunningId(null);
+    }
+  };
 
   const confirmGenerate = async () => {
     if (!genModal) return;
@@ -423,7 +508,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
       const { gated } = await generateInvoice(genModal);
       setGenModal(null);
       showToast(gated
-        ? `Invoice for ${genModal.name} exceeds $10K — routed to Human Tasks for approval`
+        ? `Invoice for ${genModal.name} exceeds ${fmtMoneyK(thresholdCents)} — routed to Human Tasks for approval`
         : `Invoice sent to ${genModal.name}`);
       void refresh();
     } catch (err) {
@@ -456,7 +541,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer entity</h1>
-        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live renewal pipeline — invoices above $10K route through a human approval gate</p>
+        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live renewal pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -534,7 +619,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           {/* Generate section */}
           <h3 className="text-sm font-semibold text-white mb-1">Generate renewal invoices</h3>
           <p className="text-xs text-slate-500 mb-3">
-            Accounts without an open invoice. Amounts above {fmtMoneyK(INVOICE_APPROVAL_THRESHOLD_CENTS)} require human approval before sending.
+            Accounts without an open invoice. Amounts above {fmtMoneyK(thresholdCents)} require human approval before sending. "Run playbook" executes the full renewal_v1 flow — check → invoice → guardrail → human gate → send — with every step audited.
           </p>
           {generatable.length === 0 ? (
             <p className="text-xs text-slate-500">Every active account already has an open invoice.</p>
@@ -555,14 +640,33 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                       <td className="py-3 px-4 text-slate-300">{fmtMoneyK(a.arr_cents)}</td>
                       <td className="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
                       <td className="py-3 px-4">
-                        <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 transition-all">
-                          Generate Invoice
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 transition-all">
+                            Generate Invoice
+                          </button>
+                          <button onClick={() => void runPlaybook(a)} disabled={runningId !== null}
+                            className="text-xs px-3 py-1.5 rounded-lg border text-violet-300 border-violet-800/50 hover:border-violet-500 disabled:opacity-50 transition-all whitespace-nowrap">
+                            {runningId === a.id ? 'Running…' : '▶ Run playbook'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Playbook runs */}
+          {runs.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-white mb-1">Renewal playbook runs</h3>
+              <p className="text-xs text-slate-500 mb-3">
+                Live step timeline — runs pause at the human gate when an invoice exceeds the guardrail threshold, and resume when the approval is decided.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {runs.slice(0, 6).map(r => <RunTimeline key={r.id} run={r} setPage={setPage} />)}
+              </div>
             </div>
           )}
         </div>
@@ -577,8 +681,8 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
               Generate renewal invoice for <span className="text-white font-medium">{genModal.name}</span> —{' '}
               <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
             </p>
-            {genModal.arr_cents > INVOICE_APPROVAL_THRESHOLD_CENTS && (
-              <p className="text-xs text-amber-300 mb-4">Above the $10K threshold — will route to Human Tasks for approval before sending.</p>
+            {genModal.arr_cents > thresholdCents && (
+              <p className="text-xs text-amber-300 mb-4">Above the {fmtMoneyK(thresholdCents)} guardrail threshold — will route to Human Tasks for approval before sending.</p>
             )}
             <div className="flex gap-3 mt-3">
               <button onClick={() => void confirmGenerate()} disabled={generating}

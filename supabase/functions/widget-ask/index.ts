@@ -94,6 +94,48 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
     .map((s) => s.d);
 }
 
+// ── Guardrail check (P3, honest v1: case-insensitive pattern match) ──
+interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
+
+// deno-lint-ignore no-explicit-any
+async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string): Promise<GuardrailRule | null> {
+  try {
+    const { data: rules } = await admin
+      .from('guardrail_rules')
+      .select('id, rule, rule_type, pattern, applies_to')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .eq('severity', 'blocking')
+      .in('rule_type', ['blocked_phrase', 'blocked_topic']);
+    if (!Array.isArray(rules)) return null;
+    const text = answer.toLowerCase();
+    for (const r of rules as GuardrailRule[]) {
+      if (!r.pattern) continue;
+      for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
+        let hit = false;
+        try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
+        if (hit) return r;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error('guardrail check failed (fail-open):', e);
+    return null;
+  }
+}
+
+const GUARDRAIL_BLOCK_MESSAGE =
+  "I can't help with that — it's outside my guardrails. I've escalated to a human.";
+
+// deno-lint-ignore no-explicit-any
+async function auditEvent(admin: any, tenantId: string, actor: string, actorType: string, action: string, category: string, detail: Record<string, unknown>) {
+  const { error } = await admin.rpc('append_audit_event', {
+    p_tenant_id: tenantId, p_actor: actor, p_actor_type: actorType,
+    p_action: action, p_category: category, p_detail: detail,
+  });
+  if (error) console.error('append_audit_event:', error.message);
+}
+
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
 
 function parseModelJson(raw: string): DEAnswer {
@@ -301,6 +343,46 @@ ${context}`;
     const raw: string = data.content?.[0]?.text ?? '';
     const parsed = parseModelJson(raw);
 
+    // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
+    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);
+    if (blockedBy) {
+      const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
+      const who = endUserTag || 'end user';
+      if (convId) {
+        await admin.from('de_messages').insert({
+          tenant_id: tenantId, conversation_id: convId, role: 'assistant',
+          content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true,
+        });
+      }
+      await admin.from('human_tasks').insert({
+        tenant_id: tenantId,
+        type: 'escalation',
+        source: 'de',
+        title: `Guardrail block (widget · ${who}) — ${truncated}`,
+        detail: `Widget answer blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        related_table: convId ? 'de_conversations' : null,
+        related_id: convId,
+      });
+      await admin.from('activity_events').insert({
+        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'escalated',
+        text: `Widget answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
+        confidence: parsed.confidence,
+      });
+      await auditEvent(admin, tenantId, 'Alex', 'de',
+        `BLOCKED — widget answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
+        'guardrail_block',
+        { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated, channel: 'widget' });
+      return json({
+        conversation_id: convId,
+        blocked: true,
+        rule: blockedBy.rule,
+        answer: GUARDRAIL_BLOCK_MESSAGE,
+        confidence: 0,
+        sources: [],
+        needs_escalation: true,
+      });
+    }
+
     const escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
 
     if (convId) {
@@ -327,12 +409,18 @@ ${context}`;
         text: `Widget question from ${who} escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
+      await auditEvent(admin, tenantId, 'Alex', 'de',
+        `Widget question from ${who} escalated to human review — "${truncated}"`,
+        'escalated', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
     } else {
       await admin.from('activity_events').insert({
         tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'resolved',
         text: `Answered a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
         confidence: parsed.confidence,
       });
+      await auditEvent(admin, tenantId, 'Alex', 'de',
+        `Resolved a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
+        'resolved', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
     }
 
     return json({

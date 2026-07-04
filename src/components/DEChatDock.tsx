@@ -76,6 +76,10 @@ interface ChatMsg {
   notice?: 'llm_not_configured' | 'error';
   /** live mode: answer served from the semantic answer cache */
   cached?: boolean;
+  /** live mode: answer withheld by a tenant guardrail rule (P3) */
+  blocked?: boolean;
+  /** live mode: the guardrail rule text that blocked the answer */
+  blockedRule?: string;
 }
 
 // ── LIVE mode (real tenant): the dock fronts the de-answer edge
@@ -491,6 +495,8 @@ export default function DEChatDock() {
         sources: res.sources,
         escalated: res.needs_escalation,
         cached: res.cached,
+        blocked: res.blocked,
+        blockedRule: res.blocked_rule,
         time: nowTime(),
       }]);
     } catch (err) {
@@ -657,7 +663,12 @@ export default function DEChatDock() {
                     {msg.cached && (
                       <div className="mt-1 text-[10px] text-teal-400/80" title="Served from the verified answer cache — no model call needed">⚡ instant</div>
                     )}
-                    {msg.escalated && (
+                    {msg.blocked && (
+                      <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
+                        🛡 Guardrail block{msg.blockedRule ? ` — "${msg.blockedRule}"` : ''}. The draft answer was withheld and recorded in the audit trail.
+                      </div>
+                    )}
+                    {msg.escalated && !msg.blocked && (
                       <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
                         I've escalated this to your team —{' '}
                         <button
