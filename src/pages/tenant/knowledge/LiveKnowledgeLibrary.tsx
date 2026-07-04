@@ -6,6 +6,8 @@ import {
   DocChunkStatus, listChunkStatus, ingestDocChunks,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
+import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
+import type { Page } from '../../../types';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -24,7 +26,7 @@ interface EditorState {
 
 const emptyEditor: EditorState = { id: null, title: '', content: '', tags: '' };
 
-const LiveKnowledgeLibrary = () => {
+const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,29 @@ const LiveKnowledgeLibrary = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [chunkStatus, setChunkStatus] = useState<Record<string, DocChunkStatus>>({});
   const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
+  // Eval gate (R3): when the tenant's latest finished eval run FAILED,
+  // publishes ask for an explicit, audited override. Client-side soft
+  // gate v1 — the server-side hard gate is the hardening step.
+  const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  /** Runs `publish` directly when the gate is clear; otherwise opens the
+   *  override dialog. `docTitle` is used for the audit entry on override. */
+  const withEvalGate = async (docTitle: string, publish: () => Promise<void>) => {
+    const gate = await getEvalGate();
+    if (gate?.status === 'failed') {
+      setGateConfirm({
+        gate,
+        proceed: () => {
+          setGateConfirm(null);
+          void auditEvalGateOverride(gate, docTitle);
+          void publish();
+        },
+      });
+      return;
+    }
+    await publish();
+  };
 
   const load = async () => {
     setLoading(true);
@@ -80,6 +104,11 @@ const LiveKnowledgeLibrary = () => {
 
   const save = async () => {
     if (!editor || !editor.title.trim() || !editor.content.trim() || saving) return;
+    await withEvalGate(editor.title.trim(), doSave);
+  };
+
+  const doSave = async () => {
+    if (!editor || saving) return;
     setSaving(true);
     setError(null);
     const tags = editor.tags.split(',').map(t => t.trim()).filter(Boolean);
@@ -120,15 +149,17 @@ const LiveKnowledgeLibrary = () => {
     e.target.value = '';
     if (!file) return;
     setError(null);
-    try {
-      const text = await file.text();
-      const title = file.name.replace(/\.(txt|md|markdown)$/i, '');
-      const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
-      await load();
-      index(created.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    const title = file.name.replace(/\.(txt|md|markdown)$/i, '');
+    await withEvalGate(title, async () => {
+      try {
+        const text = await file.text();
+        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+        await load();
+        index(created.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    });
   };
 
   if (missingTables) {
@@ -289,6 +320,44 @@ const LiveKnowledgeLibrary = () => {
                 className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Eval gate override dialog (R3) */}
+      {gateConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setGateConfirm(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-900 border border-red-500/40 rounded-2xl p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white mb-2">Publishing gated by the Proving Ground</h2>
+            <p className="text-sm text-slate-300 mb-1">
+              Last eval run failed ({gateConfirm.gate.passed}/{gateConfirm.gate.total} passed). Publishing may worsen answers.
+            </p>
+            <p className="text-xs text-slate-500 mb-5">
+              Publishing anyway is allowed but recorded in the audit trail. Recommended: review the failing questions first.
+            </p>
+            <div className="flex justify-end gap-2">
+              {setPage && (
+                <button
+                  onClick={() => { setGateConfirm(null); setPage('intelligence_evals'); }}
+                  className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors mr-auto"
+                >
+                  View Proving Ground
+                </button>
+              )}
+              <button
+                onClick={() => setGateConfirm(null)}
+                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={gateConfirm.proceed}
+                className="text-sm px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors"
+              >
+                Publish anyway
               </button>
             </div>
           </div>

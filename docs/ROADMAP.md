@@ -15,8 +15,9 @@ The doctrine-critical gap (scored 2/10). Connector framework implementing the So
 **Verified to the credential boundary (fake creds return structured `zendesk_auth_failed`, proving the full path to Zendesk's door); founder connects a free Zendesk trial to prove end-to-end.**
 **Moves scores:** SoR layer 2→5.
 
-## R3 — Live Proving Ground v1  `buildable now, runs dormant until key`
-Golden Q&A pairs per tenant (`golden_qa`), eval runner edge function that asks the live DE each question and grades answer-contains-expected + confidence calibration; `eval_runs` history; **knowledge publishes blocked on regression** (ingest-chunks gated by last eval status, tenant-overridable). Live Proving Ground page: suite editor, run history, pass/fail detail. Operationalizes DE-machinery learning #9 (verify claims — "done" is not evidence).
+## R3 — Live Proving Ground v1  `SHIPPED — runs dormant until key`
+Golden Q&A pairs per tenant (`golden_qa`), eval runner edge function that asks the live DE each question and grades answer-contains-expected + confidence calibration; `eval_runs` history; **knowledge publishes gated on regression** (tenant-overridable, override audited). Live Proving Ground page: suite editor, starter-suite generator, run history, pass/fail detail. Operationalizes DE-machinery learning #9 (verify claims — "done" is not evidence).
+**Shipped notes:** migration 018 + `eval-run` edge function (JWT-forwarding to de-answer verified; `blocked_llm` honest-dormant path verified live) + `src/lib/evalApi.ts` + `LiveProvingGround.tsx` + eval-gate dialog in LiveKnowledgeLibrary. Grader v1 is fragment matching (LLM-judge grading is the upgrade); gate is client-side soft (server-side hard gate in ingest-chunks is the hardening step).
 **Moves scores:** Trust 4→6 (with R1 active).
 
 ## R4 — Server-side playbook executor  `buildable now`

@@ -3,6 +3,8 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { useDataMode } from '../../../lib/dataMode';
+import LiveProvingGround from './LiveProvingGround';
 
 // ============================================================
 // Proving Ground — the DE evaluation harness. Trust is not
@@ -259,6 +261,12 @@ function loadPlaybookRuns(companyId: CompanyId): RunRow[] {
 }
 
 export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveProvingGround />;
+  return <DemoProvingGround setPage={setPage} />;
+}
+
+function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const suites = SUITES[activeCompanyId];
   const [playbookRuns, setPlaybookRuns] = useState<RunRow[]>(() => loadPlaybookRuns(activeCompanyId));

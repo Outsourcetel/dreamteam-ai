@@ -235,7 +235,7 @@ function AppShell() {
         return <WorkforceDEsPage setPage={handleSetPage} />;
       // ── Knowledge ─────────────────────────────────────────────
       case 'knowledge_library':
-        return <KnowledgeLibraryPage />;
+        return <KnowledgeLibraryPage setPage={handleSetPage} />;
       case 'knowledge_ingestion':
         return <KnowledgeIngestionPage />;
       case 'knowledge_gaps':
