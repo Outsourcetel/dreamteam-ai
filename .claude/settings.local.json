@@ -289,6 +289,9 @@
       "Bash(git restore *)",
       "Bash(curl -s -X POST https://api.vercel.com/v13/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2 -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{ *)",
       "Bash(curl -s 'https://api.vercel.com/v6/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2&projectId=prj_6KW8R0iQmZuvmb2G9JvGVDZ0PnoN&limit=1' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+<<<<<<< Updated upstream
+      "Bash(git -c user.email=bkhan@outsourcetel.com -c user.name=bkhan-saas commit -m 'docs: formal production roadmap R1-R5 from on-target scorecard — connectors, live proving ground, server executor, trust dial, activation *)"
+=======
       "Bash(git -c user.email=bkhan@outsourcetel.com -c user.name=bkhan-saas commit -m 'docs: formal production roadmap R1-R5 from on-target scorecard — connectors, live proving ground, server executor, trust dial, activation *)",
       "Bash(curl -s -X POST https://api.supabase.com/v1/projects/rfsvmhcqeiyrxivbmpel/database/query -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d @/tmp/q.json)",
       "Bash(python -c \"import json,sys;print\\(json.dumps\\({'query':open\\('supabase/migrations/016_executor_trust_dial.sql',encoding='utf-8'\\).read\\(\\)}\\)\\)\")",
@@ -330,10 +333,15 @@
       "PowerShell($t=\\(Get-Content \"D:\\\\Dream Team AI\\\\.vercel-token\" -Raw\\).Trim\\(\\); $body = ConvertTo-Json @{name=\"dreamteam-ai\"; project=\"prj_6KW8R0iQmZuvmb2G9JvGVDZ0PnoN\"; target=\"production\"; gitSource=@{type=\"github\"; repoId=1277034187; ref=\"main\"; sha=\"7f1071af359d2ae7d0d2bd55b24a650bb74bbf4c\"}} -Depth 4 -Compress; $r = Invoke-RestMethod -Method Post -Uri \"https://api.vercel.com/v13/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -Headers @{Authorization=\"Bearer $t\"} -ContentType \"application/json\" -Body $body; Write-Output \"$\\($r.id\\) $\\($r.readyState\\)\")",
       "PowerShell($t=\\(Get-Content \"D:\\\\Dream Team AI\\\\.vercel-token\" -Raw\\).Trim\\(\\); $i=0; do { Start-Sleep -Seconds 15; $r = Invoke-RestMethod -Uri \"https://api.vercel.com/v13/deployments/dpl_E3ARWJiwXgswt2cTUk22CQE4zPE5?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -Headers @{Authorization=\"Bearer $t\"}; $i++; Write-Output \"$i $\\($r.readyState\\)\" } while \\($r.readyState -in @\\('INITIALIZING','BUILDING','QUEUED','UPLOADING','DEPLOYING'\\) -and $i -lt 30\\); Write-Output \"final: $\\($r.readyState\\) $\\($r.url\\)\")",
       "PowerShell($tok = \\(Get-Content \"D:\\\\Dream Team AI\\\\.vercel-token\" -Raw\\).Trim\\(\\); $body = @{ name = \"dreamteam-ai\"; project = \"prj_6KW8R0iQmZuvmb2G9JvGVDZ0PnoN\"; target = \"production\"; gitSource = @{ type = \"github\"; repoId = 1277034187; ref = \"main\"; sha = \"b61423cbb43412b57fde65874b8a785780e3040a\" } } | ConvertTo-Json -Depth 4; $r = Invoke-RestMethod -Method Post -Uri \"https://api.vercel.com/v13/deployments?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -Headers @{ Authorization = \"Bearer $tok\" } -ContentType \"application/json\" -Body \\([Text.Encoding]::UTF8.GetBytes\\($body\\)\\); \"$\\($r.id\\) $\\($r.readyState\\)\")",
+<<<<<<< Updated upstream
+      "PowerShell($tok = \\(Get-Content \"D:\\\\Dream Team AI\\\\.vercel-token\" -Raw\\).Trim\\(\\); for \\($i=0; $i -lt 30; $i++\\) { Start-Sleep -Seconds 15; $r = Invoke-RestMethod -Uri \"https://api.vercel.com/v13/deployments/dpl_EmgNA31wqbBP3eG4jDvug3eYSnxX?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -Headers @{ Authorization = \"Bearer $tok\" }; if \\($r.readyState -in @\\(\"READY\",\"ERROR\",\"CANCELED\"\\)\\) { \"$\\($r.readyState\\) $\\($r.url\\)\"; break } }; if \\($r.readyState -notin @\\(\"READY\",\"ERROR\",\"CANCELED\"\\)\\) { \"still $\\($r.readyState\\)\" })"
+>>>>>>> Stashed changes
+=======
       "PowerShell($tok = \\(Get-Content \"D:\\\\Dream Team AI\\\\.vercel-token\" -Raw\\).Trim\\(\\); for \\($i=0; $i -lt 30; $i++\\) { Start-Sleep -Seconds 15; $r = Invoke-RestMethod -Uri \"https://api.vercel.com/v13/deployments/dpl_EmgNA31wqbBP3eG4jDvug3eYSnxX?teamId=team_k1lPliHFcCqvXrbzb3WAFwA2\" -Headers @{ Authorization = \"Bearer $tok\" }; if \\($r.readyState -in @\\(\"READY\",\"ERROR\",\"CANCELED\"\\)\\) { \"$\\($r.readyState\\) $\\($r.url\\)\"; break } }; if \\($r.readyState -notin @\\(\"READY\",\"ERROR\",\"CANCELED\"\\)\\) { \"still $\\($r.readyState\\)\" })",
       "Bash(git -c user.email=\"bkhan@outsourcetel.com\" -c user.name=\"bkhan-saas\" commit -m \"merge: R6 playbook builder\")",
       "Bash(ls src/pages/tenant/systems/LivePlaybookBuilder.tsx)",
       "Bash(ls supabase/migrations/019*)"
+>>>>>>> Stashed changes
     ],
     "defaultMode": "dontAsk"
   }

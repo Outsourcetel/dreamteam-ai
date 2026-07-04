@@ -13,6 +13,14 @@
  *   { action: 'validate', definition_id | steps }                    — dry validation
  *   { action: 'advance',  run_id | task_id }                         — resume waiting/parked run
  *   { action: 'cancel',   run_id }
+ *   { action: 'dispatch' }  — R7: process due scheduled/event triggers.
+ *     Auth: x-dispatch-secret header (pg_cron via pg_net, Vault-held
+ *     secret), service-role key, or any tenant user (opportunistic
+ *     dispatch scoped to THEIR tenant when the Playbooks page loads).
+ *     Calls dispatch_due_triggers() (SQL: due schedules + event matches
+ *     → 'pending_start' fire rows with cooldown dedup), then turns each
+ *     pending fire into a real definition run and stamps the fire row
+ *     started/error. Audit: playbook_step with detail.kind='trigger_fire'.
  *
  * ── R6 STEP-PRIMITIVE REGISTRY ──────────────────────────────────────
  * A playbook definition is an ordered array of typed step objects:
@@ -578,6 +586,54 @@ async function executeDefinitionSteps(
   return { status: 'completed' };
 }
 
+// ── Definition-run starter — shared by 'start' and 'dispatch' (R7) ──
+
+interface StartDefResult { run_id?: string; status: string; task_id?: string; error?: string; http?: number }
+
+async function startDefinitionRunServer(
+  admin: SupabaseClient, tenantId: string, definitionId: string, accountId: string,
+): Promise<StartDefResult> {
+  const { data: def } = await admin.from('playbook_definitions')
+    .select('*').eq('id', definitionId).eq('tenant_id', tenantId).maybeSingle();
+  if (!def) return { status: 'error', error: 'definition_not_found', http: 404 };
+  if (def.status !== 'published') return { status: 'error', error: 'definition_not_published', http: 400 };
+
+  // Runs execute the IMMUTABLE published snapshot, never the live draft.
+  const { data: snapshot } = await admin.from('playbook_versions')
+    .select('version, steps').eq('definition_id', def.id)
+    .order('version', { ascending: false }).limit(1).maybeSingle();
+  if (!snapshot) return { status: 'error', error: 'no_published_version', http: 400 };
+
+  const errors = validateSteps(snapshot.steps);
+  if (errors.length > 0) return { status: 'error', error: 'invalid_definition', http: 422 };
+
+  const steps: RunStep[] = (snapshot.steps as DefStep[]).map((s) => ({
+    key: s.key,
+    label: s.label || PRIMITIVE_LABELS[s.key] || s.key,
+    status: 'pending', at: null, detail: '',
+    params: s.params ?? {},
+  }));
+  const context: RunContext = { account_id: accountId };
+  const { data: runRow, error: runErr } = await admin
+    .from('playbook_runs')
+    .insert({
+      tenant_id: tenantId, playbook_key: def.key, account_id: accountId,
+      status: 'running', current_step: 0, steps, context,
+      definition_id: def.id, definition_version: snapshot.version,
+    })
+    .select().single();
+  if (runErr || !runRow) return { status: 'error', error: runErr?.message ?? 'run insert failed', http: 500 };
+
+  const run: DefRunRow = {
+    id: runRow.id, tenant_id: tenantId, account_id: accountId,
+    status: 'running', current_step: 0, steps, waiting_task_id: null,
+    context, definition_id: def.id, definition_version: snapshot.version,
+    playbook_key: def.key,
+  };
+  const result = await executeDefinitionSteps(admin, run, 0);
+  return { run_id: run.id, status: result.status, task_id: result.task_id };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 
 serve(async (req) => {
@@ -586,7 +642,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const action = body?.action;
-    if (!['start', 'advance', 'cancel', 'publish', 'validate'].includes(action)) {
+    if (!['start', 'advance', 'cancel', 'publish', 'validate', 'dispatch'].includes(action)) {
       return json({ error: 'invalid action' }, 400);
     }
 
@@ -600,6 +656,82 @@ serve(async (req) => {
     const jwt = authHeader.replace(/^Bearer\s+/i, '');
     let tenantId: string | null = null;
     let userId: string | null = null;
+
+    // ── R7 dispatch: three callers, three scopes ──
+    //   pg_cron via pg_net (x-dispatch-secret, Vault-held)  → all tenants
+    //   service-role key                                    → all tenants
+    //   tenant user JWT (opportunistic page-load dispatch)  → their tenant only
+    if (action === 'dispatch') {
+      const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+      const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+      let scopeTenant: string | null = null;
+      let caller = 'cron';
+      if (dispatchSecret && headerSecret === dispatchSecret) {
+        caller = 'cron';
+      } else if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+        caller = 'service_role';
+      } else {
+        const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+        if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+        const { data: profile } = await admin
+          .from('profiles').select('tenant_id').eq('user_id', userData.user.id).single();
+        if (!profile?.tenant_id) return json({ error: 'no_tenant' }, 403);
+        scopeTenant = profile.tenant_id;
+        caller = 'opportunistic';
+      }
+
+      // 1) SQL trigger evaluation: due schedules + event matches → pending fires.
+      const { data: dispatchRes, error: dispErr } = await admin.rpc('dispatch_due_triggers', {
+        p_tenant_id: scopeTenant,
+      });
+      if (dispErr) return json({ error: dispErr.message }, 500);
+
+      // 2) Turn pending fires into real runs (includes stale fires from
+      //    a previously crashed processor — the fire log is the queue).
+      let firesQuery = admin.from('playbook_trigger_fires')
+        .select('*').eq('status', 'pending_start')
+        .order('fired_at', { ascending: true }).limit(25);
+      if (scopeTenant) firesQuery = firesQuery.eq('tenant_id', scopeTenant);
+      const { data: fires } = await firesQuery;
+
+      const processed: Array<{ fire_id: string; run_id?: string; status: string }> = [];
+      for (const fire of fires ?? []) {
+        let outcome: StartDefResult;
+        if (!fire.definition_id || !fire.target_account_id) {
+          outcome = { status: 'error', error: 'fire missing definition or target account' };
+        } else {
+          outcome = await startDefinitionRunServer(admin, fire.tenant_id, fire.definition_id, fire.target_account_id);
+        }
+        const ok = !!outcome.run_id;
+        await admin.from('playbook_trigger_fires').update({
+          status: ok ? 'started' : 'error',
+          run_id: outcome.run_id ?? null,
+          detail: ok
+            ? `${fire.detail} → run ${outcome.status}`.slice(0, 500)
+            : `${fire.detail} → ${outcome.error ?? 'start failed'}`.slice(0, 500),
+        }).eq('id', fire.id);
+        await audit(admin, fire.tenant_id,
+          ok
+            ? `Trigger fired (${fire.source}) — playbook run started automatically (${outcome.status})`
+            : `Trigger fire FAILED (${fire.source}) — ${outcome.error ?? 'start failed'}`,
+          'playbook_step',
+          {
+            kind: 'trigger_fire', fire_id: fire.id, source: fire.source,
+            schedule_id: fire.schedule_id, event_rule_id: fire.event_rule_id,
+            definition_id: fire.definition_id, target_account_id: fire.target_account_id,
+            target_ref: fire.target_ref, run_id: outcome.run_id ?? null,
+            result: ok ? 'started' : 'error', dispatched_by: caller,
+          },
+          'Playbook DE');
+        processed.push({ fire_id: fire.id, run_id: outcome.run_id, status: ok ? 'started' : 'error' });
+      }
+
+      return json({
+        dispatched: true, caller, scope: scopeTenant ?? 'all',
+        evaluation: dispatchRes, processed_fires: processed.length, fires: processed,
+      });
+    }
+
     if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
       tenantId = body?.tenant_id ?? null;
       if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
@@ -669,49 +801,13 @@ serve(async (req) => {
     // start
     // ────────────────────────────────────────────────────────────
     if (action === 'start') {
-      // ── R6: definition-based start ──
+      // ── R6: definition-based start (shared helper since R7) ──
       if (body?.definition_id) {
         const accountId = body?.account_id;
         if (!accountId) return json({ error: 'account_id required' }, 400);
-        const { data: def } = await admin.from('playbook_definitions')
-          .select('*').eq('id', body.definition_id).eq('tenant_id', tenantId).maybeSingle();
-        if (!def) return json({ error: 'definition_not_found' }, 404);
-        if (def.status !== 'published') return json({ error: 'definition_not_published' }, 400);
-
-        // Runs execute the IMMUTABLE published snapshot, never the live draft.
-        const { data: snapshot } = await admin.from('playbook_versions')
-          .select('version, steps').eq('definition_id', def.id)
-          .order('version', { ascending: false }).limit(1).maybeSingle();
-        if (!snapshot) return json({ error: 'no_published_version' }, 400);
-
-        const errors = validateSteps(snapshot.steps);
-        if (errors.length > 0) return json({ error: 'invalid_definition', errors }, 422);
-
-        const steps: RunStep[] = (snapshot.steps as DefStep[]).map((s) => ({
-          key: s.key,
-          label: s.label || PRIMITIVE_LABELS[s.key] || s.key,
-          status: 'pending', at: null, detail: '',
-          params: s.params ?? {},
-        }));
-        const context: RunContext = { account_id: accountId };
-        const { data: runRow, error: runErr } = await admin
-          .from('playbook_runs')
-          .insert({
-            tenant_id: tenantId, playbook_key: def.key, account_id: accountId,
-            status: 'running', current_step: 0, steps, context,
-            definition_id: def.id, definition_version: snapshot.version,
-          })
-          .select().single();
-        if (runErr || !runRow) return json({ error: runErr?.message ?? 'run insert failed' }, 500);
-
-        const run: DefRunRow = {
-          id: runRow.id, tenant_id: tenantId, account_id: accountId,
-          status: 'running', current_step: 0, steps, waiting_task_id: null,
-          context, definition_id: def.id, definition_version: snapshot.version,
-          playbook_key: def.key,
-        };
-        const result = await executeDefinitionSteps(admin, run, 0);
-        return json({ run_id: run.id, status: result.status, task_id: result.task_id, steps: run.steps });
+        const result = await startDefinitionRunServer(admin, tenantId, body.definition_id, accountId);
+        if (result.error) return json({ error: result.error }, result.http ?? 500);
+        return json({ run_id: result.run_id, status: result.status, task_id: result.task_id });
       }
 
       // ── LEGACY: renewal_v1 (unchanged behavior — regression-protected) ──

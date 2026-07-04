@@ -243,3 +243,215 @@ export async function startDefinitionRun(definitionId: string, accountId: string
 export function runsForDefinition(runs: PlaybookRun[], definitionId: string): PlaybookRun[] {
   return runs.filter(r => (r as PlaybookRun & { definition_id?: string | null }).definition_id === definitionId);
 }
+
+// ============================================================
+// R7 — Scheduled & event triggers.
+//
+// DISPATCH MODE on this deployment (verified): pg_cron + pg_net + Vault
+// are all live on the project — a pg_cron job ('playbook-dispatch-5min')
+// invokes the dispatcher every 5 minutes, always-on. The app ALSO fires
+// an opportunistic dispatch when the Playbooks page loads (backup path,
+// scoped server-side to the caller's tenant).
+// ============================================================
+
+export const DISPATCH_MODE: 'cron' | 'opportunistic' = 'cron';
+
+export type ScheduleCadence = 'daily' | 'weekly' | 'monthly';
+export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority';
+
+export interface PlaybookSchedule {
+  id: string;
+  tenant_id: string;
+  definition_id: string;
+  cadence: ScheduleCadence;
+  run_at_hour: number;
+  weekly_day: number | null;
+  monthly_day: number | null;
+  account_selector: { mode: 'all_eligible' | 'single'; account_id?: string; renewal_within_days?: number };
+  active: boolean;
+  last_fired_at: string | null;
+  next_fire_at: string | null;
+  created_at: string;
+}
+
+export interface PlaybookEventRule {
+  id: string;
+  tenant_id: string;
+  definition_id: string;
+  event_key: EventKey;
+  params: { overdue_days?: number; priority?: string };
+  cooldown_hours: number;
+  active: boolean;
+  last_fired_at: string | null;
+  created_at: string;
+}
+
+export interface PlaybookTriggerFire {
+  id: string;
+  tenant_id: string;
+  source: 'schedule' | 'event';
+  schedule_id: string | null;
+  event_rule_id: string | null;
+  definition_id: string | null;
+  target_account_id: string | null;
+  target_ref: string | null;
+  run_id: string | null;
+  status: 'pending_start' | 'started' | 'skipped_dedup' | 'error';
+  detail: string;
+  fired_at: string;
+}
+
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+export const EVENT_META: Record<EventKey, { label: string; description: string }> = {
+  invoice_overdue: {
+    label: 'Invoice overdue',
+    description: 'Fires for each sent invoice past its due date by N days (default 7). Per-invoice cooldown dedup.',
+  },
+  ticket_synced_high_priority: {
+    label: 'High-priority ticket synced',
+    description: 'Fires when a high-priority ticket lands from the Zendesk sync. Per-ticket cooldown dedup.',
+  },
+};
+
+export function describeSchedule(s: PlaybookSchedule): string {
+  const hh = `${String(s.run_at_hour).padStart(2, '0')}:00 UTC`;
+  if (s.cadence === 'daily') return `daily ${hh}`;
+  if (s.cadence === 'weekly') return `${WEEKDAYS[s.weekly_day ?? 1]}s ${hh}`;
+  return `monthly day ${s.monthly_day ?? 1} · ${hh}`;
+}
+
+export function describeEventRule(r: PlaybookEventRule): string {
+  if (r.event_key === 'invoice_overdue') return `on invoice overdue ${r.params.overdue_days ?? 7}+ days`;
+  return `on ${r.params.priority ?? 'p1'} ticket synced`;
+}
+
+// ── Schedules CRUD ────────────────────────────────────────────────
+
+export async function listSchedules(): Promise<PlaybookSchedule[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('playbook_schedules').select('*').eq('tenant_id', tid)
+    .order('created_at', { ascending: false });
+  if (error) raise('listSchedules', error);
+  return (data ?? []) as PlaybookSchedule[];
+}
+
+export async function createSchedule(input: {
+  definition_id: string; cadence: ScheduleCadence; run_at_hour: number;
+  weekly_day?: number | null; monthly_day?: number | null;
+  account_selector: PlaybookSchedule['account_selector'];
+}): Promise<PlaybookSchedule> {
+  const tid = await requireTenantId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('playbook_schedules')
+    .insert({
+      tenant_id: tid, definition_id: input.definition_id, cadence: input.cadence,
+      run_at_hour: input.run_at_hour, weekly_day: input.weekly_day ?? null,
+      monthly_day: input.monthly_day ?? null, account_selector: input.account_selector,
+      created_by: user?.id ?? null,
+    })
+    .select().single();
+  if (error) raise('createSchedule', error);
+  const sched = data as PlaybookSchedule;
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Playbook schedule created — ${describeSchedule(sched)}`,
+    detail: { kind: 'playbook_trigger', trigger: 'schedule', schedule_id: sched.id, definition_id: input.definition_id },
+  });
+  notify();
+  return sched;
+}
+
+export async function setScheduleActive(id: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('playbook_schedules').update({ active }).eq('id', id);
+  if (error) raise('setScheduleActive', error);
+  notify();
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  const { error } = await supabase.from('playbook_schedules').delete().eq('id', id);
+  if (error) raise('deleteSchedule', error);
+  notify();
+}
+
+// ── Event rules CRUD ──────────────────────────────────────────────
+
+export async function listEventRules(): Promise<PlaybookEventRule[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('playbook_event_rules').select('*').eq('tenant_id', tid)
+    .order('created_at', { ascending: false });
+  if (error) raise('listEventRules', error);
+  return (data ?? []) as PlaybookEventRule[];
+}
+
+export async function createEventRule(input: {
+  definition_id: string; event_key: EventKey;
+  params: PlaybookEventRule['params']; cooldown_hours: number;
+}): Promise<PlaybookEventRule> {
+  const tid = await requireTenantId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('playbook_event_rules')
+    .insert({
+      tenant_id: tid, definition_id: input.definition_id, event_key: input.event_key,
+      params: input.params, cooldown_hours: input.cooldown_hours, created_by: user?.id ?? null,
+    })
+    .select().single();
+  if (error) raise('createEventRule', error);
+  const rule = data as PlaybookEventRule;
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Playbook event rule created — ${describeEventRule(rule)} (cooldown ${rule.cooldown_hours}h)`,
+    detail: { kind: 'playbook_trigger', trigger: 'event', event_rule_id: rule.id, definition_id: input.definition_id },
+  });
+  notify();
+  return rule;
+}
+
+export async function setEventRuleActive(id: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('playbook_event_rules').update({ active }).eq('id', id);
+  if (error) raise('setEventRuleActive', error);
+  notify();
+}
+
+export async function deleteEventRule(id: string): Promise<void> {
+  const { error } = await supabase.from('playbook_event_rules').delete().eq('id', id);
+  if (error) raise('deleteEventRule', error);
+  notify();
+}
+
+// ── Fires log + opportunistic dispatch ────────────────────────────
+
+export async function listTriggerFires(definitionId?: string): Promise<PlaybookTriggerFire[]> {
+  const tid = await requireTenantId();
+  let q = supabase.from('playbook_trigger_fires').select('*').eq('tenant_id', tid)
+    .order('fired_at', { ascending: false }).limit(50);
+  if (definitionId) q = q.eq('definition_id', definitionId);
+  const { data, error } = await q;
+  if (error) raise('listTriggerFires', error);
+  return (data ?? []) as PlaybookTriggerFire[];
+}
+
+/**
+ * Opportunistic dispatch — the backup path behind the pg_cron primary.
+ * Server scopes the evaluation to the caller's tenant. Fire-and-forget:
+ * failures are swallowed (cron will catch up within 5 minutes anyway).
+ */
+export async function dispatchTriggersOpportunistic(): Promise<{ processed: number } | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('playbook-execute', {
+      body: { action: 'dispatch' },
+    });
+    if (error) return null;
+    const res = data as { processed_fires?: number };
+    if ((res?.processed_fires ?? 0) > 0) notify();
+    return { processed: res?.processed_fires ?? 0 };
+  } catch {
+    return null;
+  }
+}

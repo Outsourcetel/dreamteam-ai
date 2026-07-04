@@ -217,6 +217,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         { id: 'compliance', label: 'Compliance & Guardrails', icon: '⚑', page: 'gov_compliance' },
         { id: 'audit', label: 'Audit Trail', icon: '▤', page: 'gov_audit' },
         { id: 'security', label: 'Security & Access', icon: '⛨', page: 'gov_security' },
+        { id: 'trust', label: 'Trust & Architecture', icon: '▣', page: 'gov_trust' },
       ],
     },
     {

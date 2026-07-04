@@ -73,6 +73,7 @@ export type TenantPage =
   | 'gov_compliance'            // Industry guardrails & compliance templates
   | 'gov_audit'                 // Immutable audit trail
   | 'gov_security'              // Access, SSO, API keys, sessions
+  | 'gov_trust'                 // Trust & Architecture — security-review posture
 
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
