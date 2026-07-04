@@ -9,8 +9,15 @@ import {
   PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST,
   validateStepsClient, listDefinitions, createDefinition, updateDefinition,
   publishDefinition, startDefinitionRun,
+  DISPATCH_MODE, WEEKDAYS, EVENT_META, describeSchedule, describeEventRule,
+  listSchedules, createSchedule, setScheduleActive, deleteSchedule,
+  listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
+  listTriggerFires, dispatchTriggersOpportunistic,
 } from '../../../lib/playbookBuilderApi';
-import type { PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError } from '../../../lib/playbookBuilderApi';
+import type {
+  PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError,
+  PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
+} from '../../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -324,6 +331,232 @@ function Builder({ initial, onDone, onCancel }: {
   );
 }
 
+// ── R7: Triggers section (schedules + event rules + fires log) ────
+
+function fireChip(status: PlaybookTriggerFire['status']) {
+  const map: Record<string, string> = {
+    started: 'bg-emerald-500/15 text-emerald-300',
+    pending_start: 'bg-indigo-500/15 text-indigo-300',
+    skipped_dedup: 'bg-slate-700 text-slate-400',
+    error: 'bg-red-500/15 text-red-300',
+  };
+  const label = status === 'skipped_dedup' ? 'deduped' : status === 'pending_start' ? 'pending' : status;
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status]}`}>{label}</span>;
+}
+
+function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, onOpenRun }: {
+  def: PlaybookDefinition;
+  schedules: PlaybookSchedule[];
+  rules: PlaybookEventRule[];
+  fires: PlaybookTriggerFire[];
+  accounts: CustomerAccount[];
+  onChanged: () => void;
+  onOpenRun: (runId: string) => void;
+}) {
+  const [adding, setAdding] = useState<'schedule' | 'event' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // schedule form
+  const [cadence, setCadence] = useState<ScheduleCadence>('daily');
+  const [hour, setHour] = useState(9);
+  const [weeklyDay, setWeeklyDay] = useState(1);
+  const [monthlyDay, setMonthlyDay] = useState(1);
+  const [selMode, setSelMode] = useState<'all_eligible' | 'single'>('all_eligible');
+  const [selAccount, setSelAccount] = useState('');
+  const [withinDays, setWithinDays] = useState(60);
+
+  // event form
+  const [eventKey, setEventKey] = useState<EventKey>('invoice_overdue');
+  const [overdueDays, setOverdueDays] = useState(7);
+  const [priority, setPriority] = useState('p1');
+  const [cooldown, setCooldown] = useState(24);
+
+  const guard = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setErr(null);
+    try { await fn(); onChanged(); setAdding(null); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const addSchedule = () => guard(() => createSchedule({
+    definition_id: def.id, cadence, run_at_hour: hour,
+    weekly_day: cadence === 'weekly' ? weeklyDay : null,
+    monthly_day: cadence === 'monthly' ? monthlyDay : null,
+    account_selector: selMode === 'single'
+      ? { mode: 'single', account_id: selAccount }
+      : { mode: 'all_eligible', renewal_within_days: withinDays },
+  }));
+
+  const addRule = () => guard(() => createEventRule({
+    definition_id: def.id, event_key: eventKey,
+    params: eventKey === 'invoice_overdue' ? { overdue_days: overdueDays } : { priority },
+    cooldown_hours: cooldown,
+  }));
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-5">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+        <h3 className="text-sm font-semibold text-white">Triggers</h3>
+        <div className="flex gap-2">
+          <button onClick={() => setAdding(adding === 'schedule' ? null : 'schedule')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            ⏰ Add schedule
+          </button>
+          <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            ⚡ Add event rule
+          </button>
+        </div>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        {DISPATCH_MODE === 'cron'
+          ? 'Dispatcher runs server-side every 5 minutes (pg_cron) — triggers fire even with every browser closed.'
+          : 'Scheduled triggers fire when the workspace is active — always-on dispatch arrives with infrastructure cron.'}
+      </p>
+      {def.status !== 'published' && (
+        <p className="text-[11px] text-amber-400 mb-3">This playbook is not published — triggers will not start runs until it is.</p>
+      )}
+      {err && <p className="text-[11px] text-rose-400 mb-2">✗ {err}</p>}
+
+      {adding === 'schedule' && (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-2">
+          <div className="flex gap-2 flex-wrap items-center">
+            <select className={selectCls + ' !w-32'} value={cadence} onChange={e => setCadence(e.target.value as ScheduleCadence)}>
+              <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+            </select>
+            {cadence === 'weekly' && (
+              <select className={selectCls + ' !w-36'} value={weeklyDay} onChange={e => setWeeklyDay(Number(e.target.value))}>
+                {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+              </select>
+            )}
+            {cadence === 'monthly' && (
+              <select className={selectCls + ' !w-32'} value={monthlyDay} onChange={e => setMonthlyDay(Number(e.target.value))}>
+                {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <option key={d} value={d}>day {d}</option>)}
+              </select>
+            )}
+            <select className={selectCls + ' !w-32'} value={hour} onChange={e => setHour(Number(e.target.value))}>
+              {Array.from({ length: 24 }, (_, i) => i).map(h => <option key={h} value={h}>{String(h).padStart(2, '0')}:00 UTC</option>)}
+            </select>
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <select className={selectCls + ' !w-56'} value={selMode} onChange={e => setSelMode(e.target.value as 'all_eligible' | 'single')}>
+              <option value="all_eligible">All accounts nearing renewal</option>
+              <option value="single">A single account</option>
+            </select>
+            {selMode === 'single' ? (
+              <select className={selectCls + ' !w-56'} value={selAccount} onChange={e => setSelAccount(e.target.value)}>
+                <option value="">Pick an account…</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            ) : (
+              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                renewal within
+                <input className={inputCls + ' !w-16'} type="number" min={1} max={365} value={withinDays} onChange={e => setWithinDays(Number(e.target.value))} />
+                days
+              </label>
+            )}
+          </div>
+          <button onClick={() => void addSchedule()} disabled={busy || (selMode === 'single' && !selAccount)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+            {busy ? 'Adding…' : 'Add schedule'}
+          </button>
+        </div>
+      )}
+
+      {adding === 'event' && (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-2">
+          <div className="flex gap-2 flex-wrap items-center">
+            <select className={selectCls + ' !w-64'} value={eventKey} onChange={e => setEventKey(e.target.value as EventKey)}>
+              {(Object.keys(EVENT_META) as EventKey[]).map(k => <option key={k} value={k}>{EVENT_META[k].label}</option>)}
+            </select>
+            {eventKey === 'invoice_overdue' ? (
+              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                overdue by
+                <input className={inputCls + ' !w-16'} type="number" min={1} max={90} value={overdueDays} onChange={e => setOverdueDays(Number(e.target.value))} />
+                days
+              </label>
+            ) : (
+              <select className={selectCls + ' !w-28'} value={priority} onChange={e => setPriority(e.target.value)}>
+                <option value="p1">p1</option><option value="p2">p2</option>
+              </select>
+            )}
+            <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              cooldown
+              <input className={inputCls + ' !w-16'} type="number" min={1} max={720} value={cooldown} onChange={e => setCooldown(Number(e.target.value))} />
+              h per target
+            </label>
+          </div>
+          <p className="text-[10px] text-slate-600">{EVENT_META[eventKey].description}</p>
+          <button onClick={() => void addRule()} disabled={busy}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+            {busy ? 'Adding…' : 'Add event rule'}
+          </button>
+        </div>
+      )}
+
+      {/* Existing triggers */}
+      {schedules.length === 0 && rules.length === 0 ? (
+        <p className="text-xs text-slate-500 mb-2">No triggers — this playbook only runs manually.</p>
+      ) : (
+        <div className="space-y-1.5 mb-3">
+          {schedules.map(s => (
+            <div key={s.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-950/50 flex-wrap">
+              <span className="text-slate-300">⏰ {describeSchedule(s)}</span>
+              <span className="text-[10px] text-slate-600">
+                {s.account_selector.mode === 'single' ? 'single account' : `renewals within ${s.account_selector.renewal_within_days ?? 60}d`}
+              </span>
+              {s.active && s.next_fire_at && (
+                <span className="text-[10px] text-indigo-300">next fire {new Date(s.next_fire_at).toLocaleString()}</span>
+              )}
+              {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">paused</span>}
+              <span className="ml-auto flex gap-2">
+                <button onClick={() => guard(() => setScheduleActive(s.id, !s.active))}
+                  className="text-[11px] text-slate-500 hover:text-slate-300">{s.active ? 'pause' : 'resume'}</button>
+                <button onClick={() => guard(() => deleteSchedule(s.id))}
+                  className="text-[11px] text-slate-600 hover:text-rose-400">delete</button>
+              </span>
+            </div>
+          ))}
+          {rules.map(r => (
+            <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-950/50 flex-wrap">
+              <span className="text-slate-300">⚡ {describeEventRule(r)}</span>
+              <span className="text-[10px] text-slate-600">cooldown {r.cooldown_hours}h per target</span>
+              {!r.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">paused</span>}
+              <span className="ml-auto flex gap-2">
+                <button onClick={() => guard(() => setEventRuleActive(r.id, !r.active))}
+                  className="text-[11px] text-slate-500 hover:text-slate-300">{r.active ? 'pause' : 'resume'}</button>
+                <button onClick={() => guard(() => deleteEventRule(r.id))}
+                  className="text-[11px] text-slate-600 hover:text-rose-400">delete</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fires history */}
+      {fires.length > 0 && (
+        <div>
+          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">Trigger fires</p>
+          <div className="space-y-1">
+            {fires.slice(0, 10).map(f => (
+              <div key={f.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded-lg bg-slate-950/40 flex-wrap">
+                <span className="text-slate-500 whitespace-nowrap">{new Date(f.fired_at).toLocaleString()}</span>
+                <span className="text-slate-400">{f.source === 'schedule' ? '⏰' : '⚡'}</span>
+                {fireChip(f.status)}
+                <span className="text-slate-500 truncate max-w-[24rem]">{f.detail}</span>
+                {f.run_id && (
+                  <button onClick={() => onOpenRun(f.run_id!)} className="ml-auto text-indigo-400 hover:text-indigo-300 whitespace-nowrap">view run →</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) => void }) {
@@ -341,10 +574,18 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   const [starting, setStarting] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
 
+  const [schedules, setSchedules] = useState<PlaybookSchedule[]>([]);
+  const [eventRules, setEventRules] = useState<PlaybookEventRule[]>([]);
+  const [fires, setFires] = useState<PlaybookTriggerFire[]>([]);
+
   const refresh = async () => {
     try {
-      const [d, r, a] = await Promise.all([listDefinitions(), listPlaybookRuns(), listAccounts()]);
+      const [d, r, a, s, er, f] = await Promise.all([
+        listDefinitions(), listPlaybookRuns(), listAccounts(),
+        listSchedules(), listEventRules(), listTriggerFires(),
+      ]);
       setDefs(d); setRuns(r); setAccounts(a);
+      setSchedules(s); setEventRules(er); setFires(f);
       setMissingTables(false); setError(null);
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -353,6 +594,9 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   };
   useEffect(() => {
     void refresh();
+    // R7 opportunistic dispatch — the backup path behind the pg_cron
+    // primary. Fire-and-forget; a refresh follows if anything fired.
+    void dispatchTriggersOpportunistic();
     const onChange = () => void refresh();
     window.addEventListener('dt-state-changed', onChange);
     return () => window.removeEventListener('dt-state-changed', onChange);
@@ -462,6 +706,17 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             )}
           </div>
 
+          {/* R7 Triggers */}
+          <TriggersSection
+            def={selectedDef}
+            schedules={schedules.filter(s => s.definition_id === selectedDef.id)}
+            rules={eventRules.filter(r => r.definition_id === selectedDef.id)}
+            fires={fires.filter(f => f.definition_id === selectedDef.id)}
+            accounts={accounts}
+            onChanged={() => void refresh()}
+            onOpenRun={(runId) => setOpenRunId(runId)}
+          />
+
           {/* Run history for this definition */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <h3 className="text-sm font-semibold text-white mb-3">Runs</h3>
@@ -512,7 +767,17 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                       <td className={td}>{statusChip(d.status)}</td>
                       <td className={`${td} text-xs font-mono text-slate-400`}>{d.status === 'published' ? `v${d.version}` : '—'}</td>
                       <td className={`${td} text-xs text-slate-400`}>{d.steps.length}{d.steps.some(s => s.key === 'human_approval') ? ' · human gate' : ''}</td>
-                      <td className={`${td} text-xs text-slate-500`}>manual</td>
+                      <td className={`${td} text-xs text-slate-500`}>
+                        <span className="flex flex-wrap gap-1">
+                          {schedules.filter(s => s.definition_id === d.id && s.active).map(s => (
+                            <span key={s.id} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 whitespace-nowrap">⏰ {describeSchedule(s)}</span>
+                          ))}
+                          {eventRules.filter(r => r.definition_id === d.id && r.active).map(r => (
+                            <span key={r.id} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 whitespace-nowrap">⚡ {describeEventRule(r)}</span>
+                          ))}
+                          {!schedules.some(s => s.definition_id === d.id && s.active) && !eventRules.some(r => r.definition_id === d.id && r.active) && 'manual'}
+                        </span>
+                      </td>
                       <td className={`${td} text-xs text-slate-400`}>{runs.filter(r => r.definition_id === d.id).length}</td>
                     </tr>
                   ))}
