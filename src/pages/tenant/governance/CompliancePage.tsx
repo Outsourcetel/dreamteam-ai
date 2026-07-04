@@ -672,9 +672,14 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Version History</p>
-            <button onClick={() => setPage('gov_audit')} className="text-xs text-slate-500">
-              Every guardrail change is versioned and auditable — <span className="text-indigo-400 hover:text-indigo-300">see Audit Trail →</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setPage('gov_audit')} className="text-xs text-slate-500">
+                Every guardrail change is versioned and auditable — <span className="text-indigo-400 hover:text-indigo-300">see Audit Trail →</span>
+              </button>
+              <button onClick={() => setPage('gov_trust')} className="text-xs text-indigo-400 hover:text-indigo-300">
+                Trust &amp; Architecture →
+              </button>
+            </div>
           </div>
           <table className="w-full text-sm">
             <thead>

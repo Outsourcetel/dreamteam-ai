@@ -77,7 +77,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
 }
 
 export default function SecurityAccessPage() {
-  const { activeCompanyId } = useAuth()
+  const { activeCompanyId, handleSetPage } = useAuth()
   const companyId = activeCompanyId
   const users = HUMAN_USERS[companyId]
   const apiKeys = API_KEYS[companyId]
@@ -112,10 +112,16 @@ export default function SecurityAccessPage() {
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
-      <PageHeader
-        title="Security & Access"
-        subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
-      />
+      <div className="flex items-start justify-between gap-4">
+        <PageHeader
+          title="Security & Access"
+          subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
+        />
+        <button onClick={() => handleSetPage('gov_trust')}
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
+          Trust &amp; Architecture →
+        </button>
+      </div>
 
       <div className="space-y-6">
         {/* ── RBAC permission matrix ── */}
