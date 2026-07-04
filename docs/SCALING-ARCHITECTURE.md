@@ -37,3 +37,16 @@ Rules that fall out of this:
 - No LangChain/LangGraph — orchestration (Workforce Engine: routing, gates, guardrails, audit) is our own plain code and our core IP; LLM calls stay behind our thin provider-neutral interface.
 - No per-end-user accounts, ever.
 - No premature infra: every row in the table above has a trigger; nothing is built on speculation.
+
+## The Systems-of-Record principle (founder doctrine, 2026-07-04)
+
+**DreamTeam never replaces a system of record — it sits on top of all of them.** Zendesk stays the ticket SoR, Zuora stays billing, Workday stays HR. DreamTeam is the work layer: Digital Employees acting across those systems within grounded rules, SOPs, protocols, playbooks, workflows, checkpoints, approvals, and confidence thresholds — to minimize human effort.
+
+Two data modes, chosen per use case:
+1. **Ingest mode** — pull → store → sort → learn → understand → update → upgrade → guardrail → secure. Used where persistent understanding compounds value: knowledge docs, embeddings, learned behaviors, gap detection.
+2. **Pass-through mode** — access the SoR at action time for context/data/knowledge, act on it, store **nothing but the audit record**. Used where storing would merely duplicate the SoR.
+
+Consequences:
+- Our live tables (`customer_accounts`, `support_tickets`, `renewal_invoices`) are a **working cache / action workspace**, never a competing record. When connectors go live, sync direction is SoR → cache for context, and actions write **back into the SoR** (invoice generated IN Zuora; ticket updated IN Zendesk), with our side keeping the decision trail.
+- Our permanent, proprietary data is the **judgment layer** no SoR has: audit chain, playbook runs, guardrail decisions, approvals, confidence records, learned knowledge. That is the IP.
+- Connector design (future): each connector declares per-object mode — `sync` (cached, TTL/webhook-refreshed) or `read_through` (fetched at action time, never persisted) — and per-action write-back bindings. Credentials scoped per DE per system, per the existing DE Systems model.
