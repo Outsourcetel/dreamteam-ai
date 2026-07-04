@@ -23,7 +23,13 @@ The Customer entity section is now a **real product** for real tenants, backed b
 - Chat: `DEChatDock` in live mode fronts the real DE (Alex, Customer Support DE) — real confidence chip, "From: <doc titles>" sources line, true escalation banner linking to Human Tasks. Demo mode keeps the scripted intents.
 - **Activation:** the pipeline is deployed but dormant until the `ANTHROPIC_API_KEY` Edge Function secret is set — see `docs/ACTIVATE-DE.md`. Until then the dock shows an honest "DE brain not yet activated" notice.
 
-**P3 — next:** DE actions on the customer data itself (ticket resolution drafts, renewal cadences), embeddings-based retrieval, multi-turn context.
+**P2.5 — scale foundation (done):** account dimension (4-level tenancy), pgvector chunk retrieval with free edge embeddings, semantic answer cache, usage metrics, end-user widget surface (widget keys + public widget-ask + embeddable widget.js). See SCALING-ARCHITECTURE.md.
+
+**P3 — COMMITTED SCOPE: the Workforce Engine.** Answering questions is a Support DE's first duty — but what separates a Digital Employee from a chatbot is the employee machinery around it. Nothing ships in production P3 that a chatbot competitor could also claim. The minimum set:
+1. **Guardrail enforcement in the real path** — tenant-configurable rules checked against every DE output/action; BLOCKED events recorded. (Control Fabric made real.)
+2. **One real playbook executed end-to-end** — renewal flow: trigger → generate invoice → guardrail check → human gate → send → record. The DE *does work*, not just answers.
+3. **Real immutable audit events** for both.
+Deferred behind these: more channels, more integrations, retrieval polish.
 
 **Still design-preview even in live mode:** Business Development, Sales, Onboarding stages of the Customer journey; Vendors & Partners; Workforce entity; Outcomes pages; Knowledge/Intelligence/Governance sections; the Customer overview journey-stage stats.
 
