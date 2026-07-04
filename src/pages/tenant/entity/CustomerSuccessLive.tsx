@@ -13,6 +13,8 @@ import type { HealthWeights, HealthThresholds, AccountSignals, HealthComponents 
 import { listDefinitions, startDefinitionRun } from '../../../lib/playbookBuilderApi';
 import type { PlaybookDefinition } from '../../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import { getProjectForAccount } from '../../../lib/onboardingApi';
+import type { OnboardingProject } from '../../../lib/onboardingApi';
 import ImportCustomersModal from '../../../components/ImportCustomersModal';
 
 // ============================================================
@@ -69,6 +71,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
   account: CustomerAccount; onClose: () => void; onChanged: () => void;
 }) {
   const [signals, setSignals] = useState<AccountSignals | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingProject | null>(null);
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [selDef, setSelDef] = useState('');
   const [running, setRunning] = useState(false);
@@ -81,6 +84,8 @@ function AccountDrawer({ account, onClose, onChanged }: {
         const [s, d] = await Promise.all([getAccountSignals(account.id), listDefinitions()]);
         setSignals(s);
         setDefs(d.filter(x => x.status === 'published'));
+        // best-effort: onboarding tables may not be provisioned yet (022)
+        try { setOnboarding(await getProjectForAccount(account.id)); } catch { /* noop */ }
       } catch (e) { setErr((e as Error).message); }
     })();
   }, [account.id]);
@@ -121,6 +126,16 @@ function AccountDrawer({ account, onClose, onChanged }: {
           <p className="text-xs text-slate-400">{describeComponents(c)}</p>
           <p className="text-[10px] text-slate-600 mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
+
+        {onboarding && (
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold text-white">Onboarding project</p>
+              <p className="text-xs text-slate-400">{onboarding.name} · {onboarding.status.replace('_', ' ')} · {onboarding.progress_pct}%</p>
+            </div>
+            <span className="text-[10px] text-slate-600 whitespace-nowrap">Customer → Onboarding</span>
+          </div>
+        )}
 
         {!signals ? <LiveLoadingSkeleton rows={3} /> : (
           <>

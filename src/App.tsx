@@ -31,11 +31,21 @@ import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
+import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
+import { useDataMode } from './lib/dataMode';
 import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
 import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
 import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
 import { OutcomeRevenuePage, OutcomeDeliveryPage, OutcomeFinancialPage, OutcomeRiskPage } from './pages/tenant/outcome/OutcomePages';
 import type { Page, PlatformPage } from './types';
+
+// Live tenants get the real onboarding workspace (migration 022);
+// demo companies keep the co-pilot design preview.
+const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) => {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <CustomerOnboardingLive setPage={setPage} />;
+  return <CustomerOnboardingPage setPage={setPage} />;
+};
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
 const PAGE_TO_URL: Record<string, string> = {
@@ -189,7 +199,7 @@ function AppShell() {
       case 'entity_customer_sales':
         return <CustomerSalesPage setPage={handleSetPage} />;
       case 'entity_customer_onboarding':
-        return <CustomerOnboardingPage setPage={handleSetPage} />;
+        return <CustomerOnboardingRoute setPage={handleSetPage} />;
       case 'entity_customer_support':
         return <CustomerSupportPage setPage={handleSetPage} />;
       case 'entity_customer_success':

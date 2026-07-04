@@ -430,6 +430,16 @@ export async function decideHumanTask(
   } catch (err) {
     console.error('playbook resume hook:', err);
   }
+  // If this task gates an onboarding sign-off item, resolve it (alongside
+  // the playbook hook, never replacing it — migration 022).
+  if (task.related_table === 'onboarding_projects') {
+    try {
+      const { resolveOnboardingSignoff } = await import('./onboardingApi');
+      await resolveOnboardingSignoff(task.id, decision);
+    } catch (err) {
+      console.error('onboarding signoff hook:', err);
+    }
+  }
   return data as DBHumanTask;
 }
 
