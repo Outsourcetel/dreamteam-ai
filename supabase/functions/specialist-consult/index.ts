@@ -145,6 +145,39 @@ async function audit(
   if (error) console.error('audit:', error.message);
 }
 
+// ── Migration 034: proactive-poll helpers ──
+
+/** Deterministic confidence (mirrors compute_inquiry_confidence in SQL
+ *  exactly, in case the RPC round-trip is skipped) — kept identical to
+ *  the SQL formula so the number shown never disagrees with the SQL
+ *  triage function that gates on it. Called client-side here only to
+ *  pass into decide_inquiry_triage as a single source of truth; the
+ *  SQL function does not recompute it, it trusts this input, exactly
+ *  like getApprovalThresholdCents/generateInvoice trust the amount
+ *  the caller already knows. */
+function computeConfidenceFallback(inputs: Record<string, unknown>): number {
+  const num = (v: unknown) => typeof v === 'number' ? v : 0;
+  const bool = (v: unknown) => v === true;
+  const raw = 40
+    + Math.min(24, 8 * num(inputs.knowledge_hits))
+    + Math.min(24, 8 * num(inputs.history_corroborations))
+    + (bool(inputs.account_context_found) ? 12 : 0)
+    - 15 * num(inputs.systems_failed)
+    - 15 * num(inputs.systems_denied_no_access);
+  return Math.max(0, Math.min(97, Math.round(raw)));
+}
+
+async function upsertWatch(admin: SupabaseClient, tenantId: string, connectorId: string, ref: string) {
+  const { error } = await admin.rpc('upsert_inbox_watch_state', {
+    p_tenant_id: tenantId, p_connector_id: connectorId, p_external_ref: ref, p_timestamp: new Date().toISOString(),
+  });
+  if (error) console.error('upsert_inbox_watch_state:', error.message);
+}
+async function touchWatch(admin: SupabaseClient, tenantId: string, connectorId: string) {
+  const { error } = await admin.rpc('touch_inbox_watch_state', { p_tenant_id: tenantId, p_connector_id: connectorId });
+  if (error) console.error('touch_inbox_watch_state:', error.message);
+}
+
 interface ParsedAnswer { answer: string; confidence: number; citations: string[]; needs_escalation: boolean }
 function parseModelJson(raw: string): ParsedAnswer {
   let text = raw.trim();
@@ -242,6 +275,421 @@ function buildScribePayload(
   return { ok: false, error: 'unsupported_action_key' };
 }
 
+// ════════════════════════════════════════════════════════════════
+// runResolveInquiry — the EVIDENCE PIPELINE (v4: CATEGORY CONTRACTS),
+// extracted (migration 034) so BOTH the human-invoked 'resolve_inquiry'
+// HTTP action and the proactive 'poll_support_inbox' action share the
+// exact same pipeline byte-for-byte — no parallel implementation.
+//
+// subjectKind/subjectId control WHOSE data_access_grants are enforced
+// on every category_op call (migration 029, default-deny). The
+// human-invoked path always passes the Technical Specialist (unchanged
+// behavior); the proactive path passes whichever DE/specialist
+// poll_support_inbox_targets resolved as having 'search' access to the
+// connector that has new tickets — so a revoked grant produces the
+// SAME denied_no_access steps a human-invoked run would see, honestly.
+// ════════════════════════════════════════════════════════════════
+interface RunResolveInquiryResult {
+  evidence_run_id: string; status: string;
+  steps: unknown[]; confidence_inputs: Record<string, unknown>;
+  answer_status: string; answer: string | null; note?: string;
+}
+async function runResolveInquiry(
+  admin: SupabaseClient, tenantId: string, inquiry: string, accountRef: string | null,
+  opts: { profileKey?: string; deId?: string | null; subjectKind?: 'de' | 'specialist'; subjectId?: string | null } = {},
+): Promise<RunResolveInquiryResult> {
+  const { data: prof2 } = await admin.from('specialist_profiles')
+    .select('id, name').eq('tenant_id', tenantId)
+    .eq('key', String(opts.profileKey ?? 'technical')).maybeSingle();
+
+  // Default subject: the Technical Specialist (unchanged behavior for
+  // the human-invoked path). The proactive path overrides this with
+  // whichever subject actually holds the access grant.
+  const subjectKind: 'de' | 'specialist' = opts.subjectKind ?? 'specialist';
+  const subjectId: string | null = opts.subjectKind ? (opts.subjectId ?? null) : (prof2?.id ?? null);
+
+  const { data: runRow, error: runErr } = await admin.from('evidence_runs').insert({
+    tenant_id: tenantId, specialist_id: prof2?.id ?? null,
+    de_id: opts.deId ?? (subjectKind === 'de' ? subjectId : null),
+    inquiry, account_ref: accountRef, status: 'running',
+  }).select('id').single();
+  if (runErr || !runRow) throw new Error(runErr?.message ?? 'evidence_run insert failed');
+  const runId2 = runRow.id as string;
+
+  interface Citation { system: string; ref: string; title: string; url: string | null; snippet: string }
+  interface EvidenceStep {
+    kind: string; system: string; query: string;
+    outcome: 'ok' | 'skipped_not_connected' | 'failed' | 'denied_no_access';
+    summary: string; item_count: number; latency_ms: number; citations: Citation[];
+    category?: string; op?: string; provider?: string;
+  }
+  const steps: EvidenceStep[] = [];
+  const actorName = prof2?.name ?? 'Technical Specialist';
+
+  const recordStep = async (s: EvidenceStep) => {
+    steps.push(s);
+    await audit(admin, tenantId, actorName,
+      `Evidence step ${steps.length} (${s.kind}) on ${s.system} — ${s.outcome}: ${s.summary}`,
+      'evidence_step',
+      { kind: 'evidence_step', evidence_run_id: runId2, step: s.kind, system: s.system, outcome: s.outcome, item_count: s.item_count, latency_ms: s.latency_ms, category: s.category ?? null, op: s.op ?? null, provider: s.provider ?? null });
+  };
+
+  interface HubItemLite { external_ref: string; title: string; snippet: string; url: string | null }
+  // CATEGORY CONTRACT: the pipeline speaks canonical ops; the hub
+  // translates to whatever provider the customer actually runs.
+  const callCategoryOp = async (connectorId: string, op: string, params: Record<string, unknown>) => {
+    const started = Date.now();
+    try {
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        },
+        body: JSON.stringify({
+          action: 'category_op', connector_id: connectorId, tenant_id: tenantId, op, params,
+          // DATA ACCESS GRANTS: every evidence call runs AS the
+          // resolved subject — the hub enforces default-deny grants.
+          subject_kind: subjectKind, subject_id: subjectId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return {
+        ok: !!data.ok, items: (data.items ?? []) as HubItemLite[],
+        error: data.error as string | null,
+        denied: data.error === 'access_denied',
+        denial: (data.denial ?? null) as { needed?: string; has?: string | null } | null,
+        ms: Date.now() - started,
+      };
+    } catch (e) {
+      return { ok: false, items: [] as HubItemLite[], error: String(e).slice(0, 140), denied: false, denial: null, ms: Date.now() - started };
+    }
+  };
+  // Plain-language denial summary for the evidence trail.
+  const denialSummary = (denial: { needed?: string; has?: string | null } | null) =>
+    `No access — blocked by your data access rules: the ${subjectKind === 'de' ? 'DE' : 'specialist'} needs "${denial?.needed ?? 'access'}" permission on this system${denial?.has ? ` and has only "${denial.has}"` : ' and has no grant'}. An admin can change this under Governance → Data Access.`;
+  // Pass-through compromise: persist metadata + ≤200-char snippet only.
+  const toCitations = (system: string, items: HubItemLite[]): Citation[] =>
+    items.slice(0, 5).map((i) => ({ system, ref: i.external_ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
+
+  const { data: allConns } = await admin.from('connectors')
+    .select('id, provider, display_name, category, status, access_mode')
+    .eq('tenant_id', tenantId);
+  const conns = (allConns ?? []).filter((c) => c.status !== 'disconnected');
+  const byCategory = (category: string) => conns.filter((c) => c.category === category);
+  const label = (c: { provider: string; display_name: string }) => c.display_name || c.provider;
+
+  // ── Step 1: account context — product_system.search_records, else crm.search_accounts ──
+  const productConn = byCategory('product_system')[0] ?? null;
+  const crmConn = byCategory('crm')[0] ?? null;
+  const acctConn = productConn ?? crmConn;
+  const acctOp = productConn ? 'search_records' : 'search_accounts';
+  const acctCategory = productConn ? 'product_system' : 'crm';
+  if (!acctConn) {
+    await recordStep({ kind: 'account_context', system: 'product system / CRM', query: accountRef ?? '', outcome: 'skipped_not_connected', summary: 'No product system or CRM connected — skipped honestly. Connect one to check account configuration.', item_count: 0, latency_ms: 0, citations: [] });
+  } else if (!accountRef) {
+    await recordStep({ kind: 'account_context', system: label(acctConn), query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — account-configuration lookup skipped.', item_count: 0, latency_ms: 0, citations: [], category: acctCategory, op: acctOp, provider: acctConn.provider });
+  } else {
+    const r = await callCategoryOp(acctConn.id, acctOp, { query: accountRef });
+    await recordStep({
+      kind: 'account_context', system: label(acctConn), query: accountRef,
+      outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
+      category: acctCategory, op: acctOp, provider: acctConn.provider,
+      summary: r.ok
+        ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" via ${acctCategory}.${acctOp} — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(acctConn)}.`)
+        : r.denied ? denialSummary(r.denial)
+        : `Live lookup failed: ${r.error}`,
+      item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(acctConn), r.items),
+    });
+  }
+
+  // ── Step 2: knowledge — internal chunks first ──
+  {
+    const started = Date.now();
+    const kCitations: Citation[] = [];
+    let kCount = 0;
+    const qEmb = await embedText(inquiry);
+    if (qEmb) {
+      // KNOWLEDGE SCOPES (030): this step runs AS the resolved subject.
+      const { data: chunks } = await admin.rpc('match_doc_chunks', {
+        p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmb, p_match_count: 5,
+        p_subject_kind: subjectId ? subjectKind : null, p_subject_id: subjectId,
+      });
+      for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
+        const { data: doc } = await admin.from('knowledge_docs').select('title').eq('id', c.doc_id).maybeSingle();
+        kCitations.push({ system: 'DreamTeam knowledge', ref: String(c.doc_id), title: doc?.title ?? 'Knowledge document', url: null, snippet: String(c.content ?? '').slice(0, 200) });
+        kCount++;
+      }
+    }
+    if (kCount === 0) {
+      const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+        p_tenant_id: tenantId,
+        p_subject_kind: subjectId ? subjectKind : null, p_subject_id: subjectId,
+      });
+      for (const d of rankDocs(inquiry, (docs ?? []) as KDoc[])) {
+        kCitations.push({ system: 'DreamTeam knowledge', ref: d.id, title: d.title, url: null, snippet: d.content.slice(0, 200) });
+        kCount++;
+      }
+    }
+    await recordStep({
+      kind: 'knowledge_search', system: 'DreamTeam knowledge', query: inquiry,
+      outcome: 'ok',
+      summary: kCount > 0 ? `${kCount} relevant passage(s) found in uploaded/ingested knowledge.` : 'No knowledge passages matched — knowledge base may need content.',
+      item_count: kCount, latency_ms: Date.now() - started, citations: kCitations,
+    });
+  }
+
+  // ── Step 2b: knowledge_base connectors — knowledge_base.search_articles ──
+  const kbConns = byCategory('knowledge_base');
+  if (kbConns.length === 0) {
+    await recordStep({ kind: 'knowledge_search', system: 'external knowledge (knowledge base)', query: inquiry, outcome: 'skipped_not_connected', summary: 'No knowledge-base system connected — skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+  } else {
+    for (const kc of kbConns) {
+      const r = await callCategoryOp(kc.id, 'search_articles', { query: inquiry });
+      await recordStep({
+        kind: 'knowledge_search', system: label(kc), query: inquiry,
+        outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
+        category: 'knowledge_base', op: 'search_articles', provider: kc.provider,
+        summary: r.ok ? `${r.items.length} matching article(s) fetched live via knowledge_base.search_articles (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).`
+          : r.denied ? denialSummary(r.denial)
+          : `Search failed: ${r.error}`,
+        item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(kc), r.items),
+      });
+    }
+  }
+
+  // ── Step 3: history check — helpdesk.search_tickets + crm.search_conversations ──
+  const histTargets = [
+    ...byCategory('helpdesk').map((c) => ({ conn: c, category: 'helpdesk', op: 'search_tickets' })),
+    ...byCategory('crm').map((c) => ({ conn: c, category: 'crm', op: 'search_conversations' })),
+  ];
+  let historyMatches = 0;
+  if (histTargets.length === 0) {
+    await recordStep({ kind: 'history_check', system: 'helpdesk / CRM', query: inquiry, outcome: 'skipped_not_connected', summary: 'No helpdesk or CRM connected — cannot verify against past cases; skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+  } else {
+    for (const { conn: hc, category, op } of histTargets) {
+      const r = await callCategoryOp(hc.id, op, { query: inquiry });
+      historyMatches += r.ok ? r.items.length : 0;
+      await recordStep({
+        kind: 'history_check', system: label(hc), query: inquiry,
+        outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
+        category, op, provider: hc.provider,
+        summary: r.ok
+          ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found via ${category}.${op} — resolutions cited below for confidence.` : `No similar past cases via ${category}.${op} — this looks new; lower confidence.`)
+          : r.denied ? denialSummary(r.denial)
+          : `History search failed: ${r.error}`,
+        item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(hc), r.items),
+      });
+    }
+  }
+
+  // ── Step 4: compose the evidence bundle ──
+  const allCitations = steps.flatMap((s) => s.citations);
+  const knowledgeHits = steps.filter((s) => s.kind === 'knowledge_search').reduce((n, s) => n + s.item_count, 0);
+  const accountFound = steps.some((s) => s.kind === 'account_context' && s.outcome === 'ok' && s.item_count > 0);
+  const confidenceInputs = {
+    knowledge_hits: knowledgeHits,
+    history_corroborations: historyMatches,
+    account_context_found: accountFound,
+    systems_consulted: steps.filter((s) => s.outcome === 'ok').length,
+    systems_skipped_not_connected: steps.filter((s) => s.outcome === 'skipped_not_connected').length,
+    systems_failed: steps.filter((s) => s.outcome === 'failed').length,
+    systems_denied_no_access: steps.filter((s) => s.outcome === 'denied_no_access').length,
+  };
+  await recordStep({
+    kind: 'compose', system: 'DreamTeam', query: inquiry, outcome: 'ok',
+    summary: `Evidence bundle assembled: ${allCitations.length} citation(s) across ${new Set(allCitations.map((c) => c.system)).size} system(s); ${knowledgeHits} knowledge hit(s), ${historyMatches} past-case corroboration(s), account context ${accountFound ? 'found' : 'not found'}.`,
+    item_count: allCitations.length, latency_ms: 0, citations: [],
+  });
+
+  // LLM answer step — dormant-honest, same gate as consult.
+  const answerStatus = Deno.env.get('ANTHROPIC_API_KEY') ? 'answered' : 'llm_not_configured';
+  let answerText: string | null = null;
+  if (answerStatus === 'answered') {
+    const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
+    const res2 = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: 1024,
+        system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
+        messages: [{ role: 'user', content: inquiry }],
+      }),
+    });
+    if (res2.ok) {
+      const d2 = await res2.json();
+      answerText = String(d2.content?.[0]?.text ?? '');
+    }
+  }
+
+  await admin.from('evidence_runs').update({
+    status: 'complete', steps, confidence_inputs: confidenceInputs,
+    answer_status: answerText ? 'answered' : 'llm_not_configured',
+    answer: answerText, completed_at: new Date().toISOString(),
+  }).eq('id', runId2);
+
+  return {
+    evidence_run_id: runId2, status: 'complete', steps,
+    confidence_inputs: confidenceInputs,
+    answer_status: answerText ? 'answered' : 'llm_not_configured',
+    answer: answerText,
+    note: answerText ? undefined : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+// handlePollSupportInbox — action: poll_support_inbox, THE PROACTIVE
+// TRIGGER (migration 034, gap-analysis Tier 0 item 3). No human clicks
+// "resolve an inquiry" here: a new support ticket is noticed and
+// evaluated unprompted, using the EXACT SAME evidence pipeline
+// (runResolveInquiry) the human-invoked path uses, then triaged with
+// the SAME guardrail+trust composition generateInvoice uses for
+// invoices (decide_inquiry_triage, SQL, migration 034) — never a
+// parallel confidence system.
+//
+// Callers: pg_cron (via invoke_playbook_dispatch, x-dispatch-secret)
+// → all tenants; service-role key + body.tenant_id → one tenant. No
+// tenant-JWT path — this is a system trigger, not a user action
+// (mirrors playbook-execute's 'dispatch' cron-only scoping).
+//
+// Per qualifying (connector, subject) pair:
+//   1. list_recent on the connector, AS the resolved subject
+//      (data_access_grants enforced — connector-hub denies if the
+//      grant was revoked since poll_support_inbox_targets ran).
+//   2. Diff against inbox_watch_state — only genuinely new items
+//      (by external_ref) are processed; idempotent upsert after.
+//   3. runResolveInquiry AS that subject (real evidence pipeline).
+//   4. decide_inquiry_triage (SQL) → would_auto_send / needs_review /
+//      blocked_guardrail, recorded via record_inquiry_decision
+//      (creates an inquiry_review human_task on needs_review).
+//   5. Every decision audited (category 'inquiry_triage').
+// A tenant/connector with no qualifying access grant is an honest
+// no-op (poll_support_inbox_targets yields no rows for it) — NOT a
+// silent skip, since nothing was denied; it was never attempted.
+// ════════════════════════════════════════════════════════════════
+async function handlePollSupportInbox(
+  admin: SupabaseClient, req: Request, jwt: string, body: Record<string, unknown>,
+): Promise<Response> {
+  // Auth: cron (x-dispatch-secret) OR service-role — never a plain
+  // tenant JWT (system trigger, same scoping discipline as
+  // playbook-execute's dispatch action).
+  const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+  const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+  const isCron = !!dispatchSecret && headerSecret === dispatchSecret;
+  const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!isCron && !isServiceRole) return json({ error: 'unauthorized' }, 401);
+
+  const scopeTenant: string | null = isServiceRole ? ((body?.tenant_id as string) ?? null) : null;
+  const results: Array<{ connector_id: string; new_items: number; decisions: Record<string, number> }> = [];
+
+  const { data: targets } = await admin.rpc('poll_support_inbox_targets', { p_tenant_id: scopeTenant });
+  for (const t of (targets ?? []) as Array<{
+    tenant_id: string; connector_id: string; connector_provider: string; connector_display_name: string;
+    subject_kind: 'de' | 'specialist'; subject_id: string; subject_name: string;
+    last_seen_external_ref: string | null; last_seen_timestamp: string | null;
+  }>) {
+    const connLabel = t.connector_display_name || t.connector_provider;
+    const decisionCounts: Record<string, number> = {};
+    try {
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        },
+        body: JSON.stringify({
+          action: 'list_recent', connector_id: t.connector_id, tenant_id: t.tenant_id,
+          subject_kind: t.subject_kind, subject_id: t.subject_id,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.error === 'access_denied') {
+        // Grant revoked between poll_support_inbox_targets and now —
+        // honest, audited, not a silent drop. A minimal evidence_runs
+        // row is created (no steps ran — access was denied before any
+        // evidence gathering) so this shows up as a card in the "DE at
+        // Work" queue, not just the audit trail — the founder brief
+        // asks for skipped_no_access to be a visible decision badge.
+        const denialNote = `Access denied — ${connLabel} access was revoked before this poll could check it. No ticket data was read.`;
+        const { data: stubRun } = await admin.from('evidence_runs').insert({
+          tenant_id: t.tenant_id,
+          specialist_id: t.subject_kind === 'specialist' ? t.subject_id : null,
+          de_id: t.subject_kind === 'de' ? t.subject_id : null,
+          inquiry: `(proactive poll on ${connLabel} — access denied before evidence gathering)`,
+          status: 'complete', steps: [], confidence_inputs: {},
+        }).select('id').single();
+        await audit(admin, t.tenant_id, t.subject_name,
+          `Proactive poll skipped — access to ${connLabel} was revoked; no ticket processed.`,
+          'access_control',
+          { kind: 'proactive_poll', connector_id: t.connector_id, subject_kind: t.subject_kind, subject_id: t.subject_id, reason: 'access_denied' });
+        if (stubRun?.id) {
+          await admin.rpc('record_inquiry_decision', {
+            p_tenant_id: t.tenant_id, p_evidence_run_id: stubRun.id,
+            p_connector_id: t.connector_id, p_external_ref: null,
+            p_source: 'proactive_trigger', p_decision: 'skipped_no_access',
+            p_confidence: null, p_guardrail_rule_id: null, p_trust_level: null,
+            p_reasoning: denialNote, p_inquiry_title: `Access check — ${connLabel}`,
+          });
+        }
+        await touchWatch(admin, t.tenant_id, t.connector_id);
+        results.push({ connector_id: t.connector_id, new_items: 0, decisions: { skipped_no_access: 1 } });
+        continue;
+      }
+      const items = (data?.items ?? []) as Array<{ ref: string; title: string; snippet: string; url: string | null }>;
+      // list_recent returns newest-first (every adapter's contract).
+      // "New" = everything strictly before the last-seen ref in that
+      // order. First-ever poll for a connector (no cursor yet): cap at
+      // 5 so a connector with a long backlog can't flood the queue on
+      // its first tick — the cursor then advances normally from there.
+      const seenRef = t.last_seen_external_ref;
+      const newest = items[0]?.ref ?? null;
+      let toProcess: typeof items;
+      if (!seenRef) {
+        toProcess = items.slice(0, 5);
+      } else {
+        const seenIdx = items.findIndex((x) => x.ref === seenRef);
+        toProcess = seenIdx === -1 ? items : items.slice(0, seenIdx);
+      }
+
+      for (const item of toProcess) {
+        const inquiryText = `${item.title}${item.snippet ? ` — ${item.snippet}` : ''}`.slice(0, 2000);
+        const result = await runResolveInquiry(admin, t.tenant_id, inquiryText, null, {
+          subjectKind: t.subject_kind, subjectId: t.subject_id,
+        });
+        const confidence = computeConfidenceFallback(result.confidence_inputs);
+        const { data: triage } = await admin.rpc('decide_inquiry_triage', {
+          p_tenant_id: t.tenant_id, p_inquiry: inquiryText, p_confidence: confidence,
+        });
+        const decision = triage?.decision ?? 'needs_review';
+        await admin.rpc('record_inquiry_decision', {
+          p_tenant_id: t.tenant_id, p_evidence_run_id: result.evidence_run_id,
+          p_connector_id: t.connector_id, p_external_ref: item.ref,
+          p_source: 'proactive_trigger', p_decision: decision,
+          p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
+          p_trust_level: triage?.trust_level ?? null, p_reasoning: triage?.reasoning ?? '',
+          p_inquiry_title: item.title,
+        });
+        await audit(admin, t.tenant_id, t.subject_name,
+          `Proactive triage — "${item.title.slice(0, 80)}" via ${connLabel}: ${decision}`,
+          'inquiry_triage',
+          { kind: 'proactive_poll', connector_id: t.connector_id, external_ref: item.ref, evidence_run_id: result.evidence_run_id, decision, confidence, reasoning: triage?.reasoning ?? '' });
+        decisionCounts[decision] = (decisionCounts[decision] ?? 0) + 1;
+      }
+
+      if (newest) await upsertWatch(admin, t.tenant_id, t.connector_id, newest);
+      else await touchWatch(admin, t.tenant_id, t.connector_id);
+      results.push({ connector_id: t.connector_id, new_items: toProcess.length, decisions: decisionCounts });
+    } catch (e) {
+      console.error('poll_support_inbox connector error:', t.connector_id, e);
+      results.push({ connector_id: t.connector_id, new_items: 0, decisions: { error: 1 } });
+    }
+  }
+
+  return json({ ok: true, targets: (targets ?? []).length, results });
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -256,6 +704,17 @@ serve(async (req) => {
 
     // ── Auth: caller JWT → tenant, or service-role key + body.tenant_id ──
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+
+    // action: poll_support_inbox is a SYSTEM TRIGGER (pg_cron, all
+    // tenants) and authenticates itself via x-dispatch-secret — it has
+    // no single tenantId until it resolves targets per-row, so it
+    // skips the standard per-request tenant resolution below (mirrors
+    // playbook-execute's 'dispatch' action, which does the same for
+    // the same reason). Every other action requires a resolved tenant.
+    if (action === 'poll_support_inbox') {
+      return await handlePollSupportInbox(admin, req, jwt, body);
+    }
+
     let tenantId: string | null = null;
     if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
       tenantId = body?.tenant_id ?? null;
@@ -298,238 +757,58 @@ serve(async (req) => {
       const accountRef = String(body.account_ref ?? '').trim() || null;
       if (!inquiry) return json({ error: 'inquiry_required' }, 400);
 
+      try {
+        const result = await runResolveInquiry(admin, tenantId!, inquiry, accountRef, {
+          profileKey: String(body.profile_key ?? 'technical'),
+          deId: typeof body.de_id === 'string' ? body.de_id : null,
+          // Human-invoked path: unchanged default (Technical Specialist subject).
+        });
+        return json(result);
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // action: simulate_inquiry — DEMO-SAFE MANUAL TRIGGER. Lets a
+    // human inject a test inquiry to watch the SAME pipeline + triage
+    // composition run RIGHT NOW, without a real connector having new
+    // data. VISIBLY tagged source='manual_simulation' in both the
+    // evidence_run_decisions row and the audit trail — never
+    // conflated with the genuine automatic path (source=
+    // 'proactive_trigger'). This proves the mechanism honestly; it is
+    // NOT a claim that automation is running against real tickets.
+    // ════════════════════════════════════════════════════════════
+    if (action === 'simulate_inquiry') {
+      const inquiry = String(body.inquiry ?? '').trim();
+      if (!inquiry) return json({ error: 'inquiry_required' }, 400);
       const { data: prof2 } = await admin.from('specialist_profiles')
-        .select('id, name').eq('tenant_id', tenantId)
-        .eq('key', String(body.profile_key ?? 'technical')).maybeSingle();
-
-      const { data: runRow, error: runErr } = await admin.from('evidence_runs').insert({
-        tenant_id: tenantId, specialist_id: prof2?.id ?? null,
-        de_id: typeof body.de_id === 'string' ? body.de_id : null,
-        inquiry, account_ref: accountRef, status: 'running',
-      }).select('id').single();
-      if (runErr || !runRow) return json({ error: runErr?.message ?? 'evidence_run insert failed' }, 500);
-      const runId2 = runRow.id as string;
-
-      interface Citation { system: string; ref: string; title: string; url: string | null; snippet: string }
-      interface EvidenceStep {
-        kind: string; system: string; query: string;
-        outcome: 'ok' | 'skipped_not_connected' | 'failed' | 'denied_no_access';
-        summary: string; item_count: number; latency_ms: number; citations: Citation[];
-        category?: string; op?: string; provider?: string;
-      }
-      const steps: EvidenceStep[] = [];
-      const actorName = prof2?.name ?? 'Technical Specialist';
-
-      const recordStep = async (s: EvidenceStep) => {
-        steps.push(s);
-        await audit(admin, tenantId!, actorName,
-          `Evidence step ${steps.length} (${s.kind}) on ${s.system} — ${s.outcome}: ${s.summary}`,
-          'evidence_step',
-          { kind: 'evidence_step', evidence_run_id: runId2, step: s.kind, system: s.system, outcome: s.outcome, item_count: s.item_count, latency_ms: s.latency_ms, category: s.category ?? null, op: s.op ?? null, provider: s.provider ?? null });
-      };
-
-      interface HubItemLite { external_ref: string; title: string; snippet: string; url: string | null }
-      // CATEGORY CONTRACT: the pipeline speaks canonical ops; the hub
-      // translates to whatever provider the customer actually runs.
-      const callCategoryOp = async (connectorId: string, op: string, params: Record<string, unknown>) => {
-        const started = Date.now();
-        try {
-          const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-              'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-            },
-            body: JSON.stringify({
-              action: 'category_op', connector_id: connectorId, tenant_id: tenantId, op, params,
-              // DATA ACCESS GRANTS: every evidence call runs AS the
-              // specialist subject — the hub enforces default-deny grants.
-              subject_kind: 'specialist', subject_id: prof2?.id ?? null,
-            }),
-          });
-          const data = await res.json().catch(() => ({}));
-          return {
-            ok: !!data.ok, items: (data.items ?? []) as HubItemLite[],
-            error: data.error as string | null,
-            denied: data.error === 'access_denied',
-            denial: (data.denial ?? null) as { needed?: string; has?: string | null } | null,
-            ms: Date.now() - started,
-          };
-        } catch (e) {
-          return { ok: false, items: [] as HubItemLite[], error: String(e).slice(0, 140), denied: false, denial: null, ms: Date.now() - started };
-        }
-      };
-      // Plain-language denial summary for the evidence trail.
-      const denialSummary = (denial: { needed?: string; has?: string | null } | null) =>
-        `No access — blocked by your data access rules: the specialist needs "${denial?.needed ?? 'access'}" permission on this system${denial?.has ? ` and has only "${denial.has}"` : ' and has no grant'}. An admin can change this under Governance → Data Access.`;
-      // Pass-through compromise: persist metadata + ≤200-char snippet only.
-      const toCitations = (system: string, items: HubItemLite[]): Citation[] =>
-        items.slice(0, 5).map((i) => ({ system, ref: i.external_ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
-
-      const { data: allConns } = await admin.from('connectors')
-        .select('id, provider, display_name, category, status, access_mode')
-        .eq('tenant_id', tenantId);
-      const conns = (allConns ?? []).filter((c) => c.status !== 'disconnected');
-      const byCategory = (category: string) => conns.filter((c) => c.category === category);
-      const label = (c: { provider: string; display_name: string }) => c.display_name || c.provider;
-
-      // ── Step 1: account context — product_system.search_records, else crm.search_accounts ──
-      const productConn = byCategory('product_system')[0] ?? null;
-      const crmConn = byCategory('crm')[0] ?? null;
-      const acctConn = productConn ?? crmConn;
-      const acctOp = productConn ? 'search_records' : 'search_accounts';
-      const acctCategory = productConn ? 'product_system' : 'crm';
-      if (!acctConn) {
-        await recordStep({ kind: 'account_context', system: 'product system / CRM', query: accountRef ?? '', outcome: 'skipped_not_connected', summary: 'No product system or CRM connected — skipped honestly. Connect one to check account configuration.', item_count: 0, latency_ms: 0, citations: [] });
-      } else if (!accountRef) {
-        await recordStep({ kind: 'account_context', system: label(acctConn), query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — account-configuration lookup skipped.', item_count: 0, latency_ms: 0, citations: [], category: acctCategory, op: acctOp, provider: acctConn.provider });
-      } else {
-        const r = await callCategoryOp(acctConn.id, acctOp, { query: accountRef });
-        await recordStep({
-          kind: 'account_context', system: label(acctConn), query: accountRef,
-          outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
-          category: acctCategory, op: acctOp, provider: acctConn.provider,
-          summary: r.ok
-            ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" via ${acctCategory}.${acctOp} — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(acctConn)}.`)
-            : r.denied ? denialSummary(r.denial)
-            : `Live lookup failed: ${r.error}`,
-          item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(acctConn), r.items),
+        .select('id, name').eq('tenant_id', tenantId).eq('key', 'technical').maybeSingle();
+      try {
+        const result = await runResolveInquiry(admin, tenantId!, inquiry, String(body.account_ref ?? '').trim() || null, {
+          subjectKind: 'specialist', subjectId: prof2?.id ?? null,
         });
-      }
-
-      // ── Step 2: knowledge — internal chunks first ──
-      {
-        const started = Date.now();
-        const kCitations: Citation[] = [];
-        let kCount = 0;
-        const qEmb = await embedText(inquiry);
-        if (qEmb) {
-          // KNOWLEDGE SCOPES (030): this step runs AS the specialist subject.
-          const { data: chunks } = await admin.rpc('match_doc_chunks', {
-            p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmb, p_match_count: 5,
-            p_subject_kind: prof2?.id ? 'specialist' : null, p_subject_id: prof2?.id ?? null,
-          });
-          for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
-            const { data: doc } = await admin.from('knowledge_docs').select('title').eq('id', c.doc_id).maybeSingle();
-            kCitations.push({ system: 'DreamTeam knowledge', ref: String(c.doc_id), title: doc?.title ?? 'Knowledge document', url: null, snippet: String(c.content ?? '').slice(0, 200) });
-            kCount++;
-          }
-        }
-        if (kCount === 0) {
-          const { data: docs } = await admin.rpc('visible_knowledge_docs', {
-            p_tenant_id: tenantId,
-            p_subject_kind: prof2?.id ? 'specialist' : null, p_subject_id: prof2?.id ?? null,
-          });
-          for (const d of rankDocs(inquiry, (docs ?? []) as KDoc[])) {
-            kCitations.push({ system: 'DreamTeam knowledge', ref: d.id, title: d.title, url: null, snippet: d.content.slice(0, 200) });
-            kCount++;
-          }
-        }
-        await recordStep({
-          kind: 'knowledge_search', system: 'DreamTeam knowledge', query: inquiry,
-          outcome: 'ok',
-          summary: kCount > 0 ? `${kCount} relevant passage(s) found in uploaded/ingested knowledge.` : 'No knowledge passages matched — knowledge base may need content.',
-          item_count: kCount, latency_ms: Date.now() - started, citations: kCitations,
+        const confidence = computeConfidenceFallback(result.confidence_inputs);
+        const { data: triage } = await admin.rpc('decide_inquiry_triage', {
+          p_tenant_id: tenantId, p_inquiry: inquiry, p_confidence: confidence,
         });
-      }
-
-      // ── Step 2b: knowledge_base connectors — knowledge_base.search_articles ──
-      const kbConns = byCategory('knowledge_base');
-      if (kbConns.length === 0) {
-        await recordStep({ kind: 'knowledge_search', system: 'external knowledge (knowledge base)', query: inquiry, outcome: 'skipped_not_connected', summary: 'No knowledge-base system connected — skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
-      } else {
-        for (const kc of kbConns) {
-          const r = await callCategoryOp(kc.id, 'search_articles', { query: inquiry });
-          await recordStep({
-            kind: 'knowledge_search', system: label(kc), query: inquiry,
-            outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
-            category: 'knowledge_base', op: 'search_articles', provider: kc.provider,
-            summary: r.ok ? `${r.items.length} matching article(s) fetched live via knowledge_base.search_articles (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).`
-              : r.denied ? denialSummary(r.denial)
-              : `Search failed: ${r.error}`,
-            item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(kc), r.items),
-          });
-        }
-      }
-
-      // ── Step 3: history check — helpdesk.search_tickets + crm.search_conversations ──
-      const histTargets = [
-        ...byCategory('helpdesk').map((c) => ({ conn: c, category: 'helpdesk', op: 'search_tickets' })),
-        ...byCategory('crm').map((c) => ({ conn: c, category: 'crm', op: 'search_conversations' })),
-      ];
-      let historyMatches = 0;
-      if (histTargets.length === 0) {
-        await recordStep({ kind: 'history_check', system: 'helpdesk / CRM', query: inquiry, outcome: 'skipped_not_connected', summary: 'No helpdesk or CRM connected — cannot verify against past cases; skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
-      } else {
-        for (const { conn: hc, category, op } of histTargets) {
-          const r = await callCategoryOp(hc.id, op, { query: inquiry });
-          historyMatches += r.ok ? r.items.length : 0;
-          await recordStep({
-            kind: 'history_check', system: label(hc), query: inquiry,
-            outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
-            category, op, provider: hc.provider,
-            summary: r.ok
-              ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found via ${category}.${op} — resolutions cited below for confidence.` : `No similar past cases via ${category}.${op} — this looks new; lower confidence.`)
-              : r.denied ? denialSummary(r.denial)
-              : `History search failed: ${r.error}`,
-            item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(hc), r.items),
-          });
-        }
-      }
-
-      // ── Step 4: compose the evidence bundle ──
-      const allCitations = steps.flatMap((s) => s.citations);
-      const knowledgeHits = steps.filter((s) => s.kind === 'knowledge_search').reduce((n, s) => n + s.item_count, 0);
-      const accountFound = steps.some((s) => s.kind === 'account_context' && s.outcome === 'ok' && s.item_count > 0);
-      const confidenceInputs = {
-        knowledge_hits: knowledgeHits,
-        history_corroborations: historyMatches,
-        account_context_found: accountFound,
-        systems_consulted: steps.filter((s) => s.outcome === 'ok').length,
-        systems_skipped_not_connected: steps.filter((s) => s.outcome === 'skipped_not_connected').length,
-        systems_failed: steps.filter((s) => s.outcome === 'failed').length,
-        systems_denied_no_access: steps.filter((s) => s.outcome === 'denied_no_access').length,
-      };
-      await recordStep({
-        kind: 'compose', system: 'DreamTeam', query: inquiry, outcome: 'ok',
-        summary: `Evidence bundle assembled: ${allCitations.length} citation(s) across ${new Set(allCitations.map((c) => c.system)).size} system(s); ${knowledgeHits} knowledge hit(s), ${historyMatches} past-case corroboration(s), account context ${accountFound ? 'found' : 'not found'}.`,
-        item_count: allCitations.length, latency_ms: 0, citations: [],
-      });
-
-      // LLM answer step — dormant-honest, same gate as consult.
-      const answerStatus = Deno.env.get('ANTHROPIC_API_KEY') ? 'answered' : 'llm_not_configured';
-      let answerText: string | null = null;
-      if (answerStatus === 'answered') {
-        const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
-        const res2 = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({
-            model: MODEL, max_tokens: 1024,
-            system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
-            messages: [{ role: 'user', content: inquiry }],
-          }),
+        const decision = triage?.decision ?? 'needs_review';
+        const rec = await admin.rpc('record_inquiry_decision', {
+          p_tenant_id: tenantId, p_evidence_run_id: result.evidence_run_id,
+          p_connector_id: null, p_external_ref: null,
+          p_source: 'manual_simulation', p_decision: decision,
+          p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
+          p_trust_level: triage?.trust_level ?? null, p_reasoning: triage?.reasoning ?? '',
+          p_inquiry_title: inquiry,
         });
-        if (res2.ok) {
-          const d2 = await res2.json();
-          answerText = String(d2.content?.[0]?.text ?? '');
-        }
+        await audit(admin, tenantId!, prof2?.name ?? 'Technical Specialist',
+          `SIMULATION — "${inquiry.slice(0, 80)}": ${decision} (not a real ticket — demo/test trigger)`,
+          'inquiry_triage',
+          { kind: 'manual_simulation', evidence_run_id: result.evidence_run_id, decision, confidence, reasoning: triage?.reasoning ?? '' });
+        return json({ ...result, decision, confidence, reasoning: triage?.reasoning ?? '', human_task_id: rec.data?.human_task_id ?? null, simulated: true });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 500);
       }
-
-      await admin.from('evidence_runs').update({
-        status: 'complete', steps, confidence_inputs: confidenceInputs,
-        answer_status: answerText ? 'answered' : 'llm_not_configured',
-        answer: answerText, completed_at: new Date().toISOString(),
-      }).eq('id', runId2);
-
-      return json({
-        evidence_run_id: runId2, status: 'complete', steps,
-        confidence_inputs: confidenceInputs,
-        answer_status: answerText ? 'answered' : 'llm_not_configured',
-        answer: answerText,
-        note: answerText ? undefined : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
-      });
     }
 
     // ════════════════════════════════════════════════════════════

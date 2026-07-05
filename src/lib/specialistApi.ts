@@ -397,6 +397,78 @@ export async function listEvidenceRuns(limit = 20): Promise<EvidenceRun[]> {
   return (data ?? []) as EvidenceRun[];
 }
 
+// ── Proactive triage (migration 034) — "DE at work" live queue ────
+//
+// Reuses the SAME evidence pipeline (resolveInquiry above) and the
+// SAME guardrail+trust composition generateInvoice uses for invoices —
+// no parallel confidence system. Every row here is a DECISION on top
+// of an evidence_runs row: would the DE have auto-sent, does it need
+// a human, was it blocked by a guardrail, or was it skipped because
+// the DE/specialist has no access grant to that system.
+
+export type InquiryDecisionSource = 'manual' | 'proactive_trigger' | 'manual_simulation';
+export type InquiryDecisionKind = 'would_auto_send' | 'needs_review' | 'blocked_guardrail' | 'skipped_no_access';
+
+export interface EvidenceRunDecision {
+  id: string;
+  tenant_id: string;
+  evidence_run_id: string;
+  connector_id: string | null;
+  external_ref: string | null;
+  source: InquiryDecisionSource;
+  decision: InquiryDecisionKind;
+  confidence: number | null;
+  guardrail_rule_id: string | null;
+  trust_level: number | null;
+  reasoning: string;
+  human_task_id: string | null;
+  created_at: string;
+}
+
+/** Live "DE at work" feed: evidence_runs joined with their decision
+ *  (when one exists — human-invoked resolve_inquiry runs have none,
+ *  honestly, since a human reading the answer IS the decision there). */
+export interface DEActivityRow {
+  evidence_run: EvidenceRun;
+  decision: EvidenceRunDecision | null;
+}
+
+export async function listDEActivity(limit = 30): Promise<DEActivityRow[]> {
+  const tid = await requireTenantId();
+  const [{ data: runs, error: runErr }, { data: decisions, error: decErr }] = await Promise.all([
+    supabase.from('evidence_runs').select('*').eq('tenant_id', tid)
+      .order('created_at', { ascending: false }).limit(limit),
+    supabase.from('evidence_run_decisions').select('*').eq('tenant_id', tid)
+      .order('created_at', { ascending: false }).limit(limit),
+  ]);
+  if (runErr) raise('listDEActivity (evidence_runs)', runErr);
+  if (decErr) raise('listDEActivity (evidence_run_decisions)', decErr);
+  const byRun = new Map<string, EvidenceRunDecision>();
+  for (const d of (decisions ?? []) as EvidenceRunDecision[]) byRun.set(d.evidence_run_id, d);
+  return ((runs ?? []) as EvidenceRun[]).map((r) => ({ evidence_run: r, decision: byRun.get(r.id) ?? null }));
+}
+
+export interface SimulateInquiryResult extends ResolveInquiryResult {
+  decision?: InquiryDecisionKind;
+  confidence?: number;
+  reasoning?: string;
+  human_task_id?: string | null;
+  simulated?: boolean;
+}
+
+/** DEMO-SAFE MANUAL TRIGGER — "Simulate an incoming inquiry". Runs the
+ *  exact same pipeline + triage composition RIGHT NOW so the mechanism
+ *  can be watched without waiting for a real connector to have new
+ *  data. ALWAYS tagged source='manual_simulation' — never conflated
+ *  with the genuine automatic path (source='proactive_trigger'). */
+export async function simulateInquiry(inquiry: string, accountRef?: string): Promise<SimulateInquiryResult> {
+  const res = await invokeSpecialist<SimulateInquiryResult>({
+    action: 'simulate_inquiry', inquiry, account_ref: accountRef ?? '',
+  });
+  notify();
+  return res;
+}
+
 // ── Media library ─────────────────────────────────────────────────
 
 const EXTRACTABLE = /\.(txt|md|markdown)$/i;

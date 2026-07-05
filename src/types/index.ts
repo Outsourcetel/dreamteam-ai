@@ -62,6 +62,7 @@ export type TenantPage =
   // ── Operations ────────────────────────────────────
   | 'ops_human_tasks'           // Approval gates, escalations, review
   | 'ops_activity'              // Activity log
+  | 'ops_de_activity'           // Live "DE at work" queue — proactive triage (migration 034)
 
   // ── Intelligence ──────────────────────────────────
   | 'intelligence_performance'  // DE analytics

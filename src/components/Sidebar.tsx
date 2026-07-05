@@ -200,6 +200,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
           badge: live.humanTasks > 0 ? { text: `${live.humanTasks} pending`, color: '#f59e0b' } : undefined,
         },
         { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
+        { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
       ],
     },
     {

@@ -22,6 +22,7 @@ import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
+import DEActivityPage from './pages/tenant/ops/DEActivityPage';
 import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
 import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
@@ -99,6 +100,7 @@ const PAGE_TO_URL: Record<string, string> = {
   // Operations
   ops_human_tasks: '/ops/tasks',
   ops_activity:    '/ops/activity',
+  ops_de_activity: '/ops/de-activity',
   // Intelligence
   intelligence_performance: '/intelligence/performance',
   intelligence_learning:    '/intelligence/learning',
@@ -266,6 +268,8 @@ function AppShell() {
         return <HumanTasksPage setPage={handleSetPage} />;
       case 'ops_activity':
         return <ActivityPage setPage={handleSetPage} />;
+      case 'ops_de_activity':
+        return <DEActivityPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────
       case 'intelligence_performance':
         return <PerformancePage setPage={handleSetPage} />;
