@@ -7,9 +7,10 @@ import {
   ConsultResult, SourceType, AccessMode, QualityFlag,
   ACCESS_MODE_MATRIX, ACCESS_MODE_LABELS,
   getProfile, installTechnicalSpecialist, updateProfile,
-  listSources, addSource, updateSource, removeSource, testMcpSource,
+  listSources, addSource, updateSource, removeSource, mcpHandshake,
   listMedia, uploadMedia, raiseQualityFlag, deleteMedia, updateMedia,
   consult, listConsultations, listScribeRequests, createScribeRequest,
+  resolveInquiry, listEvidenceRuns, EvidenceRun, EvidenceStep, ResolveInquiryResult,
 } from '../../lib/specialistApi';
 import type { Page } from '../../types';
 
@@ -17,7 +18,7 @@ import type { Page } from '../../types';
 // Technical Specialist — LIVE (migration 024).
 // Charter + sources (per-customer access modes) + media library +
 // consultation console + Scribe queue. Honest about what's dormant:
-// the LLM answer path (ANTHROPIC_API_KEY), full MCP sessions, and
+// the LLM answer path (ANTHROPIC_API_KEY) and
 // pdf/video content extraction.
 // ============================================================
 
@@ -144,7 +145,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
             <input className={inputCls} placeholder="Auth header name (optional, e.g. Authorization)" value={s.auth_header} onChange={e => setS({ ...s, auth_header: e.target.value })} />
             <input className={inputCls} type="password" placeholder="Auth header value (stored server-side only)" value={s.secret} onChange={e => setS({ ...s, secret: e.target.value })} />
           </div>
-          <p className="text-[11px] text-amber-400/90">v1 is registration + connectivity test only — full MCP session support is a connection upgrade (honest label, no pretending).</p>
+          <p className="text-[11px] text-slate-500">Real MCP client: after adding, run Handshake to connect and list the server's tools. Failures are shown honestly.</p>
         </div>
       )}
       {s.source_type === 'link' && (
@@ -159,6 +160,92 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
       <button className={btnPrimary} disabled={saving || !canSave} onClick={() => void submit()}>
         {saving ? 'Adding…' : '+ Add source'}
       </button>
+    </div>
+  );
+}
+
+// ── Evidence trail renderer ───────────────────────────────────────
+
+const STEP_ICON: Record<string, string> = {
+  account_context: '🏢', knowledge_search: '📚', history_check: '🕓', mcp_tool: '🔧', compose: '🧾',
+};
+const STEP_LABEL: Record<string, string> = {
+  account_context: 'Account configuration',
+  knowledge_search: 'Knowledge',
+  history_check: 'Past cases',
+  mcp_tool: 'MCP tool',
+  compose: 'Evidence bundle',
+};
+const OUTCOME_CHIP: Record<string, [string, string]> = {
+  ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-slate-700 text-slate-300'],
+  failed: ['Failed', 'bg-red-500/20 text-red-400'],
+};
+
+function EvidenceTrail({ steps, confidence, answerStatus, answer, note }: {
+  steps: EvidenceStep[];
+  confidence?: EvidenceRun['confidence_inputs'];
+  answerStatus?: string;
+  answer?: string | null;
+  note?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <div className="space-y-2.5">
+        {steps.map((s, i) => {
+          const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-800 text-slate-400'];
+          return (
+            <div key={i} className="flex gap-2.5">
+              <span className="text-base leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-white">{STEP_LABEL[s.kind] ?? s.kind}</span>
+                  <span className="text-[11px] text-slate-500">{s.system}</span>
+                  <Chip label={ol} cls={oc} />
+                  {s.latency_ms > 0 && <span className="text-[10px] text-slate-600">{s.latency_ms}ms</span>}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">{s.summary}</p>
+                {(s.citations ?? []).length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    {s.citations.map((c, j) => (
+                      <div key={j} className="text-[11px] text-slate-500 pl-2 border-l border-slate-800">
+                        <span className="text-slate-300">{c.title}</span>
+                        <span className="text-slate-600"> · {c.system} · ref {c.ref}</span>
+                        {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 ml-1">↗</a>}
+                        {c.snippet && <span className="block text-slate-500 truncate">{c.snippet}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {confidence && (
+        <div className="mt-3 pt-3 border-t border-slate-800 flex gap-2 flex-wrap">
+          <Chip label={`${confidence.knowledge_hits ?? 0} knowledge hits`} cls="bg-indigo-500/15 text-indigo-300" />
+          <Chip label={`${confidence.history_corroborations ?? 0} past-case corroborations`} cls="bg-teal-500/15 text-teal-300" />
+          <Chip label={confidence.account_context_found ? 'account context found' : 'no account context'}
+            cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'} />
+          {(confidence.systems_skipped_not_connected ?? 0) > 0 && (
+            <Chip label={`${confidence.systems_skipped_not_connected} system(s) not connected`} cls="bg-amber-500/15 text-amber-300" />
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 pt-3 border-t border-slate-800">
+        <p className="text-[11px] font-medium text-slate-400 mb-1">What Alex would answer from</p>
+        {answerStatus === 'answered' && answer ? (
+          <p className="text-xs text-slate-200 whitespace-pre-wrap">{answer}</p>
+        ) : (
+          <p className="text-[11px] text-amber-300">
+            Awaiting LLM activation — the evidence above is gathered and cited today; the written answer unlocks when the brain (ANTHROPIC_API_KEY) is switched on.
+            {note ? '' : ''}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -187,6 +274,13 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const [flagNote, setFlagNote] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [inquiry, setInquiry] = useState('');
+  const [inquiryAccount, setInquiryAccount] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [lastRun, setLastRun] = useState<ResolveInquiryResult | null>(null);
+  const [pastRuns, setPastRuns] = useState<EvidenceRun[]>([]);
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
+
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [lastResult, setLastResult] = useState<ConsultResult | null>(null);
@@ -213,6 +307,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           listScribeRequests(prof.id), listConnectors().catch(() => [] as Connector[]),
         ]);
         setSources(src); setMedia(med); setConsultations(cons); setScribe(scr); setConnectors(conn);
+        setPastRuns(await listEvidenceRuns().catch(() => [] as EvidenceRun[]));
       }
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -257,6 +352,19 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       setMedia(await listMedia(profile.id));
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setUploading(false); }
+  };
+
+  const runInquiry = async () => {
+    if (!inquiry.trim() || resolving) return;
+    setResolving(true);
+    setError(null);
+    setLastRun(null);
+    try {
+      const res = await resolveInquiry(inquiry.trim(), inquiryAccount.trim() || undefined);
+      setLastRun(res);
+      setPastRuns(await listEvidenceRuns().catch(() => [] as EvidenceRun[]));
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setResolving(false); }
   };
 
   const ask = async () => {
@@ -391,8 +499,13 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                         : src.access_mode === 'fetch_only' ? 'bg-teal-500/20 text-teal-300'
                         : 'bg-slate-700 text-slate-300'} />
                     {src.source_type === 'mcp_server' && (
-                      src.config.last_test
-                        ? <Chip label={src.config.last_test.ok ? `reachable (${src.config.last_test.note})` : `unreachable (${src.config.last_test.note})`}
+                      src.config.mcp?.last_handshake
+                        ? <Chip label={src.config.mcp.last_handshake.ok
+                              ? `handshake ok — ${src.config.mcp.server_info?.name ?? 'server'} · ${src.config.mcp.tool_count ?? 0} tools`
+                              : `handshake failed (${src.config.mcp.last_handshake.stage ?? 'connect'})`}
+                            cls={src.config.mcp.last_handshake.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'} />
+                        : src.config.last_test
+                        ? <Chip label={src.config.last_test.ok ? `pinged (${src.config.last_test.note})` : `unreachable (${src.config.last_test.note})`}
                             cls={src.config.last_test.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'} />
                         : <Chip label="untested" cls="bg-amber-500/20 text-amber-400" />
                     )}
@@ -400,7 +513,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                   <p className="text-[11px] text-slate-500 truncate">
                     {src.source_type === 'knowledge' && (src.config.tags?.length ? `tags: ${src.config.tags.join(', ')}` : 'all knowledge docs')}
                     {src.source_type === 'connector' && `connector ${connectors.find(c => c.id === src.config.connector_id)?.display_name ?? src.config.connector_id ?? '—'}`}
-                    {src.source_type === 'mcp_server' && `${src.config.endpoint ?? ''} · registered — full MCP session upgrade pending`}
+                    {src.source_type === 'mcp_server' && `${src.config.endpoint ?? ''}${src.config.mcp?.last_handshake?.ok ? ` · tools: ${(src.config.mcp.tools ?? []).slice(0, 5).map(t => t.name).join(', ')}${(src.config.mcp.tool_count ?? 0) > 5 ? '…' : ''}` : ' · run Handshake to list this server\'s tools'}`}
                     {src.source_type === 'link' && (src.config.url ?? '')}
                     {src.source_type === 'media' && 'this profile\'s media library'}
                   </p>
@@ -409,12 +522,15 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                   <button className="text-xs text-teal-400 hover:text-teal-300" disabled={testingId === src.id}
                     onClick={() => {
                       setTestingId(src.id);
-                      void testMcpSource(src.id)
-                        .then(() => listSources(profile.id).then(setSources))
+                      void mcpHandshake(src.id)
+                        .then(r => {
+                          if (!r.ok) setError(`MCP handshake failed at ${r.stage ?? 'connect'}: ${r.error ?? 'unknown'} — recorded honestly.`);
+                          return listSources(profile.id).then(setSources);
+                        })
                         .catch(err => setError(err instanceof Error ? err.message : String(err)))
                         .finally(() => setTestingId(null));
                     }}>
-                    {testingId === src.id ? 'Testing…' : 'Test'}
+                    {testingId === src.id ? 'Handshaking…' : 'Handshake'}
                   </button>
                 )}
                 <button className="text-xs text-slate-400 hover:text-white"
@@ -471,6 +587,48 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Resolve an inquiry — the evidence pipeline */}
+      <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-5 mb-6">
+        <h3 className="text-sm font-semibold text-white mb-1">Resolve an inquiry — evidence first</h3>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Before answering a customer, the specialist gathers evidence in order: account configuration from your product system,
+          your knowledge, then past cases in your support desk / CRM. Systems that aren't connected are skipped honestly — never faked.
+        </p>
+        <div className="flex gap-2 mb-3 flex-wrap">
+          <input className={inputCls + ' flex-1 min-w-[240px]'} placeholder="Customer inquiry, e.g. 'SSO login fails after the latest update'"
+            value={inquiry} onChange={e => setInquiry(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void runInquiry(); }} />
+          <input className={inputCls + ' !w-52'} placeholder="Account name (optional)" value={inquiryAccount} onChange={e => setInquiryAccount(e.target.value)} />
+          <button className={btnPrimary} disabled={resolving || !inquiry.trim()} onClick={() => void runInquiry()}>
+            {resolving ? 'Gathering evidence…' : 'Run'}
+          </button>
+        </div>
+
+        {lastRun && <EvidenceTrail steps={lastRun.steps ?? []} confidence={lastRun.confidence_inputs} answerStatus={lastRun.answer_status} answer={lastRun.answer ?? null} note={lastRun.note} />}
+
+        {pastRuns.length > 0 && (
+          <>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mt-4 mb-2">Past evidence runs</p>
+            <div className="space-y-1.5">
+              {pastRuns.map(r => (
+                <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                  <button className="w-full flex items-center gap-2 px-3 py-2 text-left" onClick={() => setExpandedRun(expandedRun === r.id ? null : r.id)}>
+                    <span className="text-xs text-slate-300 flex-1 truncate">{r.inquiry}</span>
+                    {r.account_ref && <Chip label={r.account_ref} />}
+                    <Chip label={`${(r.steps ?? []).filter(s => s.outcome === 'ok').length}/${(r.steps ?? []).length} steps ok`} cls="bg-teal-500/15 text-teal-300" />
+                    <span className="text-[10px] text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</span>
+                  </button>
+                  {expandedRun === r.id && (
+                    <div className="px-3 pb-3">
+                      <EvidenceTrail steps={r.steps ?? []} confidence={r.confidence_inputs} answerStatus={r.answer_status} answer={r.answer} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 

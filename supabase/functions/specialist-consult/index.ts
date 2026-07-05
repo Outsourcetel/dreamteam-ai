@@ -270,6 +270,228 @@ serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════
+    // action: resolve_inquiry — the EVIDENCE PIPELINE (v3).
+    //
+    // For a customer inquiry, walk the connected systems by ROLE:
+    //   1. account_context  — product_system (or crm) connector →
+    //                         what is this account's configuration?
+    //   2. knowledge_search — internal knowledge chunks (embeddings,
+    //                         keyword fallback) + read-through search
+    //                         on knowledge_base-role connectors
+    //   3. history_check    — support_desk/crm-role connectors →
+    //                         similar past cases + resolution snippets
+    //   4. compose          — evidence bundle + confidence inputs;
+    //                         the LLM answer step stays dormant-honest
+    //
+    // Every step is honest: ok | skipped_not_connected | failed. The
+    // whole run persists to evidence_runs; each step is audited.
+    // PASS-THROUGH COMPROMISE (documented): for read-through systems
+    // we persist ONLY citation metadata — title, ref, url, snippet
+    // capped at 200 chars — never full payloads.
+    // ════════════════════════════════════════════════════════════
+    if (action === 'resolve_inquiry') {
+      const inquiry = String(body.inquiry ?? '').trim();
+      const accountRef = String(body.account_ref ?? '').trim() || null;
+      if (!inquiry) return json({ error: 'inquiry_required' }, 400);
+
+      const { data: prof2 } = await admin.from('specialist_profiles')
+        .select('id, name').eq('tenant_id', tenantId)
+        .eq('key', String(body.profile_key ?? 'technical')).maybeSingle();
+
+      const { data: runRow, error: runErr } = await admin.from('evidence_runs').insert({
+        tenant_id: tenantId, specialist_id: prof2?.id ?? null,
+        de_id: typeof body.de_id === 'string' ? body.de_id : null,
+        inquiry, account_ref: accountRef, status: 'running',
+      }).select('id').single();
+      if (runErr || !runRow) return json({ error: runErr?.message ?? 'evidence_run insert failed' }, 500);
+      const runId2 = runRow.id as string;
+
+      interface Citation { system: string; ref: string; title: string; url: string | null; snippet: string }
+      interface EvidenceStep {
+        kind: string; system: string; query: string;
+        outcome: 'ok' | 'skipped_not_connected' | 'failed';
+        summary: string; item_count: number; latency_ms: number; citations: Citation[];
+      }
+      const steps: EvidenceStep[] = [];
+      const actorName = prof2?.name ?? 'Technical Specialist';
+
+      const recordStep = async (s: EvidenceStep) => {
+        steps.push(s);
+        await audit(admin, tenantId!, actorName,
+          `Evidence step ${steps.length} (${s.kind}) on ${s.system} — ${s.outcome}: ${s.summary}`,
+          'evidence_step',
+          { kind: 'evidence_step', evidence_run_id: runId2, step: s.kind, system: s.system, outcome: s.outcome, item_count: s.item_count, latency_ms: s.latency_ms });
+      };
+
+      interface HubItemLite { ref: string; type: string; title: string; snippet: string; url: string | null }
+      const callHub = async (connectorId: string, hubAction: string, extra: Record<string, unknown>) => {
+        const started = Date.now();
+        try {
+          const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+            },
+            body: JSON.stringify({ action: hubAction, connector_id: connectorId, tenant_id: tenantId, ...extra }),
+          });
+          const data = await res.json().catch(() => ({}));
+          return { ok: !!data.ok, items: (data.items ?? []) as HubItemLite[], error: data.error as string | null, ms: Date.now() - started };
+        } catch (e) {
+          return { ok: false, items: [] as HubItemLite[], error: String(e).slice(0, 140), ms: Date.now() - started };
+        }
+      };
+      // Pass-through compromise: persist metadata + ≤200-char snippet only.
+      const toCitations = (system: string, items: HubItemLite[]): Citation[] =>
+        items.slice(0, 5).map((i) => ({ system, ref: i.ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
+
+      const { data: allConns } = await admin.from('connectors')
+        .select('id, provider, display_name, role, status, access_mode')
+        .eq('tenant_id', tenantId);
+      const conns = (allConns ?? []).filter((c) => c.status !== 'disconnected');
+      const byRole = (role: string) => conns.filter((c) => c.role === role);
+      const label = (c: { provider: string; display_name: string }) => c.display_name || c.provider;
+
+      // ── Step 1: account context (product_system, else crm) ──
+      const productConn = byRole('product_system')[0] ?? null;
+      if (!productConn) {
+        await recordStep({ kind: 'account_context', system: 'product system', query: accountRef ?? '', outcome: 'skipped_not_connected', summary: 'No product system connected — skipped honestly. Connect the customer product API to check account configuration.', item_count: 0, latency_ms: 0, citations: [] });
+      } else if (!accountRef) {
+        await recordStep({ kind: 'account_context', system: label(productConn), query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — account-configuration lookup skipped.', item_count: 0, latency_ms: 0, citations: [] });
+      } else {
+        const r = await callHub(productConn.id, 'search', { query: accountRef });
+        await recordStep({
+          kind: 'account_context', system: label(productConn), query: accountRef,
+          outcome: r.ok ? 'ok' : 'failed',
+          summary: r.ok
+            ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(productConn)}.`)
+            : `Live lookup failed: ${r.error}`,
+          item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(productConn), r.items),
+        });
+      }
+
+      // ── Step 2: knowledge — internal chunks first ──
+      {
+        const started = Date.now();
+        const kCitations: Citation[] = [];
+        let kCount = 0;
+        const qEmb = await embedText(inquiry);
+        if (qEmb) {
+          const { data: chunks } = await admin.rpc('match_doc_chunks', {
+            p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmb, p_match_count: 5,
+          });
+          for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
+            const { data: doc } = await admin.from('knowledge_docs').select('title').eq('id', c.doc_id).maybeSingle();
+            kCitations.push({ system: 'DreamTeam knowledge', ref: String(c.doc_id), title: doc?.title ?? 'Knowledge document', url: null, snippet: String(c.content ?? '').slice(0, 200) });
+            kCount++;
+          }
+        }
+        if (kCount === 0) {
+          const { data: docs } = await admin.from('knowledge_docs').select('id, title, content, tags').eq('tenant_id', tenantId);
+          for (const d of rankDocs(inquiry, (docs ?? []) as KDoc[])) {
+            kCitations.push({ system: 'DreamTeam knowledge', ref: d.id, title: d.title, url: null, snippet: d.content.slice(0, 200) });
+            kCount++;
+          }
+        }
+        await recordStep({
+          kind: 'knowledge_search', system: 'DreamTeam knowledge', query: inquiry,
+          outcome: 'ok',
+          summary: kCount > 0 ? `${kCount} relevant passage(s) found in uploaded/ingested knowledge.` : 'No knowledge passages matched — knowledge base may need content.',
+          item_count: kCount, latency_ms: Date.now() - started, citations: kCitations,
+        });
+      }
+
+      // ── Step 2b: knowledge-base connectors (read-through search) ──
+      const kbConns = byRole('knowledge_base');
+      if (kbConns.length === 0) {
+        await recordStep({ kind: 'knowledge_search', system: 'external knowledge (Confluence / help center)', query: inquiry, outcome: 'skipped_not_connected', summary: 'No knowledge-base system connected — skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+      } else {
+        for (const kc of kbConns) {
+          const r = await callHub(kc.id, 'search', { query: inquiry });
+          await recordStep({
+            kind: 'knowledge_search', system: label(kc), query: inquiry,
+            outcome: r.ok ? 'ok' : 'failed',
+            summary: r.ok ? `${r.items.length} matching document(s) fetched live (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).` : `Search failed: ${r.error}`,
+            item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(kc), r.items),
+          });
+        }
+      }
+
+      // ── Step 3: history check (support_desk + crm) ──
+      const histConns = [...byRole('support_desk'), ...byRole('crm')];
+      let historyMatches = 0;
+      if (histConns.length === 0) {
+        await recordStep({ kind: 'history_check', system: 'support desk / CRM', query: inquiry, outcome: 'skipped_not_connected', summary: 'No support desk or CRM connected — cannot verify against past cases; skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+      } else {
+        for (const hc of histConns) {
+          const r = await callHub(hc.id, 'search', { query: inquiry });
+          historyMatches += r.ok ? r.items.length : 0;
+          await recordStep({
+            kind: 'history_check', system: label(hc), query: inquiry,
+            outcome: r.ok ? 'ok' : 'failed',
+            summary: r.ok
+              ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found — resolutions cited below for confidence.` : 'No similar past cases — this looks new; lower confidence.')
+              : `History search failed: ${r.error}`,
+            item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(hc), r.items),
+          });
+        }
+      }
+
+      // ── Step 4: compose the evidence bundle ──
+      const allCitations = steps.flatMap((s) => s.citations);
+      const knowledgeHits = steps.filter((s) => s.kind === 'knowledge_search').reduce((n, s) => n + s.item_count, 0);
+      const accountFound = steps.some((s) => s.kind === 'account_context' && s.outcome === 'ok' && s.item_count > 0);
+      const confidenceInputs = {
+        knowledge_hits: knowledgeHits,
+        history_corroborations: historyMatches,
+        account_context_found: accountFound,
+        systems_consulted: steps.filter((s) => s.outcome === 'ok').length,
+        systems_skipped_not_connected: steps.filter((s) => s.outcome === 'skipped_not_connected').length,
+        systems_failed: steps.filter((s) => s.outcome === 'failed').length,
+      };
+      await recordStep({
+        kind: 'compose', system: 'DreamTeam', query: inquiry, outcome: 'ok',
+        summary: `Evidence bundle assembled: ${allCitations.length} citation(s) across ${new Set(allCitations.map((c) => c.system)).size} system(s); ${knowledgeHits} knowledge hit(s), ${historyMatches} past-case corroboration(s), account context ${accountFound ? 'found' : 'not found'}.`,
+        item_count: allCitations.length, latency_ms: 0, citations: [],
+      });
+
+      // LLM answer step — dormant-honest, same gate as consult.
+      const answerStatus = Deno.env.get('ANTHROPIC_API_KEY') ? 'answered' : 'llm_not_configured';
+      let answerText: string | null = null;
+      if (answerStatus === 'answered') {
+        const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
+        const res2 = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: MODEL, max_tokens: 1024,
+            system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
+            messages: [{ role: 'user', content: inquiry }],
+          }),
+        });
+        if (res2.ok) {
+          const d2 = await res2.json();
+          answerText = String(d2.content?.[0]?.text ?? '');
+        }
+      }
+
+      await admin.from('evidence_runs').update({
+        status: 'complete', steps, confidence_inputs: confidenceInputs,
+        answer_status: answerText ? 'answered' : 'llm_not_configured',
+        answer: answerText, completed_at: new Date().toISOString(),
+      }).eq('id', runId2);
+
+      return json({
+        evidence_run_id: runId2, status: 'complete', steps,
+        confidence_inputs: confidenceInputs,
+        answer_status: answerText ? 'answered' : 'llm_not_configured',
+        answer: answerText,
+        note: answerText ? undefined : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════
     // action: mcp_test — reachability ping only (honest v1)
     // ════════════════════════════════════════════════════════════
     if (action === 'mcp_test') {

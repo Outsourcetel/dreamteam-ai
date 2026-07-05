@@ -14,8 +14,12 @@ import { getSessionTenantId, CustomerApiError, isMissingTableError } from './cus
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export type ConnectorProvider = 'zendesk';
+export type ConnectorProvider =
+  | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
+  | 'generic_rest' | 'sharepoint';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
+export type ConnectorRole = 'product_system' | 'crm' | 'support_desk' | 'knowledge_base' | 'other';
+export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
 export interface Connector {
   id: string;
@@ -24,11 +28,117 @@ export interface Connector {
   display_name: string;
   base_url: string;
   status: ConnectorStatus;
+  role: ConnectorRole;
+  access_mode: ConnectorAccessMode;
+  config: Record<string, unknown>;
   last_sync_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export const CONNECTOR_ROLE_LABELS: Record<ConnectorRole, string> = {
+  product_system: 'Product system — where account configuration lives',
+  crm: 'CRM — customers, deals, history',
+  support_desk: 'Support desk — tickets & past conversations',
+  knowledge_base: 'Knowledge base — docs & help articles',
+  other: 'Other',
+};
+
+export const ACCESS_MODE_EXPLAIN: Record<ConnectorAccessMode, string> = {
+  ingest: 'Ingest: DreamTeam keeps a searchable working copy of knowledge content. Your system stays the source of truth.',
+  fetch_only: 'Fetch-only: we look at your data to answer, we never store it. Only the citation trail (title, reference, short snippet) is kept.',
+};
+
+/** Per-provider setup metadata: credential fields + how to get them. */
+export interface ProviderField { key: string; label: string; placeholder: string; secret: boolean }
+export interface ProviderMeta {
+  label: string;
+  tagline: string;
+  defaultRole: ConnectorRole;
+  baseUrlLabel: string;
+  baseUrlPlaceholder: string;
+  fields: ProviderField[];        // stored server-side via set_connector_secret; never readable back
+  help: string;                    // plain-language "how to get credentials"
+  knowledgeSync: boolean;          // provider can ingest articles/pages
+  implemented: boolean;
+}
+
+export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'sharepoint', ProviderMeta> = {
+  zendesk: {
+    label: 'Zendesk', tagline: 'Support desk — tickets, past conversations, help center',
+    defaultRole: 'support_desk',
+    baseUrlLabel: 'Zendesk URL', baseUrlPlaceholder: 'https://acme.zendesk.com',
+    fields: [
+      { key: 'email', label: 'Admin email', placeholder: 'admin@acme.com', secret: false },
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
+    knowledgeSync: true, implemented: true,
+  },
+  salesforce: {
+    label: 'Salesforce', tagline: 'CRM — accounts, cases, knowledge articles',
+    defaultRole: 'crm',
+    baseUrlLabel: 'Instance URL', baseUrlPlaceholder: 'https://yourorg.my.salesforce.com',
+    fields: [
+      { key: 'client_id', label: 'Connected app Consumer Key', placeholder: '3MVG9…', secret: false },
+      { key: 'client_secret', label: 'Consumer Secret', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Free option: sign up for a Salesforce Developer Edition at developer.salesforce.com/signup. Then Setup → App Manager → New Connected App → enable OAuth, add the "Client Credentials Flow", assign a run-as user, and copy the Consumer Key & Secret.',
+    knowledgeSync: true, implemented: true,
+  },
+  confluence: {
+    label: 'Confluence', tagline: 'Knowledge base — pages & documentation',
+    defaultRole: 'knowledge_base',
+    baseUrlLabel: 'Atlassian site URL', baseUrlPlaceholder: 'https://acme.atlassian.net',
+    fields: [
+      { key: 'email', label: 'Atlassian account email', placeholder: 'you@acme.com', secret: false },
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Create a free API token at id.atlassian.com → Security → Create API token. Use it with the email of the same Atlassian account.',
+    knowledgeSync: true, implemented: true,
+  },
+  jira: {
+    label: 'Jira', tagline: 'Issue tracker — bugs, past fixes, project history',
+    defaultRole: 'support_desk',
+    baseUrlLabel: 'Atlassian site URL', baseUrlPlaceholder: 'https://acme.atlassian.net',
+    fields: [
+      { key: 'email', label: 'Atlassian account email', placeholder: 'you@acme.com', secret: false },
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Same credentials as Confluence: a free API token from id.atlassian.com → Security → Create API token, plus your account email.',
+    knowledgeSync: false, implemented: true,
+  },
+  intercom: {
+    label: 'Intercom', tagline: 'Customer messaging — conversations & help articles',
+    defaultRole: 'support_desk',
+    baseUrlLabel: 'API base URL', baseUrlPlaceholder: 'https://api.intercom.io',
+    fields: [
+      { key: 'access_token', label: 'Access token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Intercom: Settings → Integrations → Developer Hub → New app → the Access Token is on the Authentication page. A free developer workspace works for testing.',
+    knowledgeSync: true, implemented: true,
+  },
+  generic_rest: {
+    label: 'Your product API', tagline: 'Any REST API — connect your own product with zero code',
+    defaultRole: 'product_system',
+    baseUrlLabel: 'API base URL', baseUrlPlaceholder: 'https://api.yourproduct.com',
+    fields: [
+      { key: 'header_name', label: 'Auth header name (optional)', placeholder: 'Authorization', secret: false },
+      { key: 'header_value', label: 'Auth header value (optional)', placeholder: 'Bearer …', secret: true },
+    ],
+    help: 'Point DreamTeam at any JSON REST API: give it a search endpoint (path + query parameter) and optionally a record endpoint (path with {ref}). If the API needs a key, add the header it expects — stored server-side, never shown again.',
+    knowledgeSync: false, implemented: true,
+  },
+  sharepoint: {
+    label: 'SharePoint', tagline: 'Documents — registered now, adapter coming',
+    defaultRole: 'knowledge_base',
+    baseUrlLabel: 'Site URL', baseUrlPlaceholder: 'https://acme.sharepoint.com/sites/kb',
+    fields: [],
+    help: 'SharePoint can be registered today so it appears in your system map, but its adapter is not built yet — every call returns an honest "not implemented" until it ships.',
+    knowledgeSync: false, implemented: false,
+  },
+};
 
 export type ConnectorObjectType = 'ticket' | 'user' | 'organization';
 export type ConnectorObjectMode = 'sync' | 'read_through';
@@ -253,7 +363,121 @@ export async function deleteConnector(connectorId: string): Promise<void> {
   if (error) raise('deleteConnector', error);
 }
 
-// ── Edge function invocation ──────────────────────────────────────
+// ── Connector Hub: generic connect flow + read-through actions ────
+
+export interface HubItem {
+  ref: string;
+  type: string;
+  title: string;
+  snippet: string;
+  url: string | null;
+  raw?: unknown; // returned live, never persisted
+}
+
+export interface ConnectProviderInput {
+  provider: ConnectorProvider;
+  displayName: string;
+  baseUrl: string;
+  role: ConnectorRole;
+  accessMode: ConnectorAccessMode;
+  /** Credential fields (PROVIDERS[provider].fields) — sent to the
+   *  server-side secret store via RPC; the client can never read them back. */
+  secrets: Record<string, string>;
+  /** generic_rest endpoint templates */
+  config?: Record<string, unknown>;
+}
+
+export async function connectProvider(
+  input: ConnectProviderInput,
+): Promise<{ connector: Connector; test: { ok: boolean; error?: string; detail?: string } }> {
+  const tid = await requireTenantId();
+  const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
+  const { data, error } = await supabase
+    .from('connectors')
+    .insert({
+      tenant_id: tid,
+      provider: input.provider,
+      display_name: input.displayName.trim() || PROVIDERS[input.provider].label,
+      base_url: baseUrl,
+      role: input.role,
+      access_mode: input.accessMode,
+      config: input.config ?? {},
+      status: 'disconnected',
+    })
+    .select()
+    .single();
+  if (error) raise('connectProvider', error);
+  const connector = data as Connector;
+
+  const secretEntries = Object.entries(input.secrets).filter(([, v]) => v.trim());
+  if (secretEntries.length > 0) {
+    const { error: secretErr } = await supabase.rpc('set_connector_secret', {
+      p_connector_id: connector.id,
+      p_secret: JSON.stringify(Object.fromEntries(secretEntries.map(([k, v]) => [k, v.trim()]))),
+    });
+    if (secretErr) raise('set_connector_secret', secretErr);
+  }
+
+  // Zendesk keeps its object/action registries (sync + write-back path).
+  if (input.provider === 'zendesk') {
+    await supabase.from('connector_objects').insert([
+      { connector_id: connector.id, object_type: 'ticket', mode: input.accessMode === 'ingest' ? 'sync' : 'read_through', sync_interval_mins: 60, enabled: true },
+      { connector_id: connector.id, object_type: 'user', mode: 'read_through', enabled: true },
+      { connector_id: connector.id, object_type: 'organization', mode: 'read_through', enabled: true },
+    ]);
+    await supabase.from('connector_actions').insert([
+      { connector_id: connector.id, action_key: 'add_internal_note', enabled: true },
+      { connector_id: connector.id, action_key: 'update_status', enabled: true },
+    ]);
+  }
+
+  const test = PROVIDERS[input.provider].implemented
+    ? await invokeHub<{ ok: boolean; error?: string; detail?: string }>({ action: 'test', connector_id: connector.id })
+    : { ok: false, error: 'not_implemented' };
+
+  const { data: fresh } = await supabase
+    .from('connectors').select('*').eq('id', connector.id).single();
+  return { connector: (fresh ?? connector) as Connector, test };
+}
+
+export async function hubTest(connectorId: string): Promise<{ ok: boolean; error?: string; detail?: string }> {
+  return invokeHub({ action: 'test', connector_id: connectorId });
+}
+
+/** Read-through search: fetched live, returned, nothing persisted but audit. */
+export async function hubSearch(connectorId: string, query: string): Promise<{ ok: boolean; items: HubItem[]; error?: string; latency_ms?: number }> {
+  return invokeHub({ action: 'search', connector_id: connectorId, query });
+}
+
+export async function hubFetchRecord(connectorId: string, recordType: string, externalRef: string): Promise<{ ok: boolean; items: HubItem[]; error?: string }> {
+  return invokeHub({ action: 'fetch_record', connector_id: connectorId, record_type: recordType, external_ref: externalRef });
+}
+
+/** Knowledge ingest (server-side REFUSES this for fetch-only connectors). */
+export async function hubSync(connectorId: string): Promise<{ ok: boolean; upserted?: number; chunked?: number; embedded?: number; error?: string; detail?: string }> {
+  return invokeHub({ action: 'sync', connector_id: connectorId });
+}
+
+async function invokeHub<T = Record<string, unknown>>(
+  body: Record<string, unknown>,
+): Promise<T & { ok: boolean; error?: string; items: HubItem[] }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connector-hub`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);
+  return { items: [], ...data, ok: !!data.ok } as T & { ok: boolean; error?: string; items: HubItem[] };
+}
+
+// ── Edge function invocation (legacy zendesk fn — sync/write-back) ─
 
 async function invokeConnector<T = Record<string, unknown>>(
   body: Record<string, unknown>,

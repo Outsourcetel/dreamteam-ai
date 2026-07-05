@@ -66,6 +66,12 @@ export interface SpecialistSource {
     title?: string;
     note?: string;
     last_test?: McpTestResult;
+    mcp?: {
+      server_info?: { name?: string; version?: string; protocolVersion?: string };
+      tools?: Array<{ name: string; description: string }>;
+      tool_count?: number;
+      last_handshake?: { ok: boolean; at: string; latency_ms?: number; error?: string; stage?: string };
+    };
   };
   enabled: boolean;
   created_at: string;
@@ -293,8 +299,102 @@ export async function removeSource(source: SpecialistSource): Promise<void> {
   notify();
 }
 
-export async function testMcpSource(sourceId: string): Promise<{ ok: boolean; status: number; note: string; upgrade_note?: string; error?: string }> {
-  return invokeSpecialist({ action: 'mcp_test', source_id: sourceId });
+export interface McpHandshakeResult {
+  ok: boolean;
+  server_info?: { name?: string; version?: string; protocolVersion?: string };
+  tools?: Array<{ name: string; description: string }>;
+  latency_ms?: number;
+  error?: string;
+  stage?: string;
+}
+
+/** Real MCP handshake (Streamable HTTP): initialize → tools/list.
+ *  The tool inventory is stored on the source row (config.mcp). */
+export async function mcpHandshake(sourceId: string): Promise<McpHandshakeResult> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp-client`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ action: 'handshake', source_id: sourceId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);
+  notify();
+  return data as McpHandshakeResult;
+}
+
+// ── Evidence pipeline ─────────────────────────────────────────────
+
+export type EvidenceOutcome = 'ok' | 'skipped_not_connected' | 'failed';
+export interface EvidenceCitation { system: string; ref: string; title: string; url: string | null; snippet: string }
+export interface EvidenceStep {
+  kind: 'account_context' | 'knowledge_search' | 'history_check' | 'mcp_tool' | 'compose';
+  system: string;
+  query: string;
+  outcome: EvidenceOutcome;
+  summary: string;
+  item_count: number;
+  latency_ms: number;
+  citations: EvidenceCitation[];
+}
+export interface EvidenceRun {
+  id: string;
+  tenant_id: string;
+  de_id: string | null;
+  specialist_id: string | null;
+  inquiry: string;
+  account_ref: string | null;
+  status: 'running' | 'complete' | 'failed';
+  steps: EvidenceStep[];
+  confidence_inputs: {
+    knowledge_hits?: number;
+    history_corroborations?: number;
+    account_context_found?: boolean;
+    systems_consulted?: number;
+    systems_skipped_not_connected?: number;
+    systems_failed?: number;
+  };
+  answer_status: 'llm_not_configured' | 'answered' | 'blocked' | 'error';
+  answer: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface ResolveInquiryResult {
+  evidence_run_id?: string;
+  status?: string;
+  steps?: EvidenceStep[];
+  confidence_inputs?: EvidenceRun['confidence_inputs'];
+  answer_status?: string;
+  answer?: string | null;
+  note?: string;
+  error?: string;
+}
+
+/** Run the evidence pipeline for a customer inquiry:
+ *  account context → knowledge → past-case verification → evidence bundle. */
+export async function resolveInquiry(inquiry: string, accountRef?: string): Promise<ResolveInquiryResult> {
+  const res = await invokeSpecialist<ResolveInquiryResult>({
+    action: 'resolve_inquiry', inquiry, account_ref: accountRef ?? '',
+    profile_key: 'technical',
+  });
+  notify();
+  return res;
+}
+
+export async function listEvidenceRuns(limit = 20): Promise<EvidenceRun[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('evidence_runs').select('*')
+    .eq('tenant_id', tid)
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) raise('listEvidenceRuns', error);
+  return (data ?? []) as EvidenceRun[];
 }
 
 // ── Media library ─────────────────────────────────────────────────
