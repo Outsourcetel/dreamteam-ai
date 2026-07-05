@@ -14,11 +14,13 @@ import { getSessionTenantId, CustomerApiError, isMissingTableError } from './cus
 
 // ── Types ─────────────────────────────────────────────────────────
 
+import type { SystemCategory, CanonicalItem, ConnectorHealth } from './categoryContracts';
+import { computeHealth } from './categoryContracts';
+
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
   | 'generic_rest' | 'sharepoint';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
-export type ConnectorRole = 'product_system' | 'crm' | 'support_desk' | 'knowledge_base' | 'other';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
 export interface Connector {
@@ -28,22 +30,25 @@ export interface Connector {
   display_name: string;
   base_url: string;
   status: ConnectorStatus;
-  role: ConnectorRole;
+  /** Category contract (migration 027) — what KIND of system this is; the app speaks category ops. */
+  category: SystemCategory;
   access_mode: ConnectorAccessMode;
   config: Record<string, unknown>;
+  /** {canonical_field: source_field} applied at normalization time. */
+  field_map: Record<string, string>;
+  // Call-driven health (migration 027)
+  last_ok_at: string | null;
+  last_error_at: string | null;
+  consecutive_failures: number;
   last_sync_at: string | null;
   last_error: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export const CONNECTOR_ROLE_LABELS: Record<ConnectorRole, string> = {
-  product_system: 'Product system — where account configuration lives',
-  crm: 'CRM — customers, deals, history',
-  support_desk: 'Support desk — tickets & past conversations',
-  knowledge_base: 'Knowledge base — docs & help articles',
-  other: 'Other',
-};
+export function connectorHealth(c: Connector): ConnectorHealth {
+  return computeHealth(c);
+}
 
 export const ACCESS_MODE_EXPLAIN: Record<ConnectorAccessMode, string> = {
   ingest: 'Ingest: DreamTeam keeps a searchable working copy of knowledge content. Your system stays the source of truth.',
@@ -55,7 +60,7 @@ export interface ProviderField { key: string; label: string; placeholder: string
 export interface ProviderMeta {
   label: string;
   tagline: string;
-  defaultRole: ConnectorRole;
+  defaultCategory: SystemCategory;
   baseUrlLabel: string;
   baseUrlPlaceholder: string;
   fields: ProviderField[];        // stored server-side via set_connector_secret; never readable back
@@ -67,7 +72,7 @@ export interface ProviderMeta {
 export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'sharepoint', ProviderMeta> = {
   zendesk: {
     label: 'Zendesk', tagline: 'Support desk — tickets, past conversations, help center',
-    defaultRole: 'support_desk',
+    defaultCategory: 'helpdesk',
     baseUrlLabel: 'Zendesk URL', baseUrlPlaceholder: 'https://acme.zendesk.com',
     fields: [
       { key: 'email', label: 'Admin email', placeholder: 'admin@acme.com', secret: false },
@@ -78,7 +83,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   salesforce: {
     label: 'Salesforce', tagline: 'CRM — accounts, cases, knowledge articles',
-    defaultRole: 'crm',
+    defaultCategory: 'crm',
     baseUrlLabel: 'Instance URL', baseUrlPlaceholder: 'https://yourorg.my.salesforce.com',
     fields: [
       { key: 'client_id', label: 'Connected app Consumer Key', placeholder: '3MVG9…', secret: false },
@@ -89,7 +94,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   confluence: {
     label: 'Confluence', tagline: 'Knowledge base — pages & documentation',
-    defaultRole: 'knowledge_base',
+    defaultCategory: 'knowledge_base',
     baseUrlLabel: 'Atlassian site URL', baseUrlPlaceholder: 'https://acme.atlassian.net',
     fields: [
       { key: 'email', label: 'Atlassian account email', placeholder: 'you@acme.com', secret: false },
@@ -100,7 +105,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   jira: {
     label: 'Jira', tagline: 'Issue tracker — bugs, past fixes, project history',
-    defaultRole: 'support_desk',
+    defaultCategory: 'helpdesk',
     baseUrlLabel: 'Atlassian site URL', baseUrlPlaceholder: 'https://acme.atlassian.net',
     fields: [
       { key: 'email', label: 'Atlassian account email', placeholder: 'you@acme.com', secret: false },
@@ -111,7 +116,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   intercom: {
     label: 'Intercom', tagline: 'Customer messaging — conversations & help articles',
-    defaultRole: 'support_desk',
+    defaultCategory: 'helpdesk',
     baseUrlLabel: 'API base URL', baseUrlPlaceholder: 'https://api.intercom.io',
     fields: [
       { key: 'access_token', label: 'Access token', placeholder: '••••••••', secret: true },
@@ -121,7 +126,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   generic_rest: {
     label: 'Your product API', tagline: 'Any REST API — connect your own product with zero code',
-    defaultRole: 'product_system',
+    defaultCategory: 'product_system',
     baseUrlLabel: 'API base URL', baseUrlPlaceholder: 'https://api.yourproduct.com',
     fields: [
       { key: 'header_name', label: 'Auth header name (optional)', placeholder: 'Authorization', secret: false },
@@ -132,7 +137,7 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
   },
   sharepoint: {
     label: 'SharePoint', tagline: 'Documents — registered now, adapter coming',
-    defaultRole: 'knowledge_base',
+    defaultCategory: 'knowledge_base',
     baseUrlLabel: 'Site URL', baseUrlPlaceholder: 'https://acme.sharepoint.com/sites/kb',
     fields: [],
     help: 'SharePoint can be registered today so it appears in your system map, but its adapter is not built yet — every call returns an honest "not implemented" until it ships.',
@@ -378,7 +383,7 @@ export interface ConnectProviderInput {
   provider: ConnectorProvider;
   displayName: string;
   baseUrl: string;
-  role: ConnectorRole;
+  category: SystemCategory;
   accessMode: ConnectorAccessMode;
   /** Credential fields (PROVIDERS[provider].fields) — sent to the
    *  server-side secret store via RPC; the client can never read them back. */
@@ -399,7 +404,7 @@ export async function connectProvider(
       provider: input.provider,
       display_name: input.displayName.trim() || PROVIDERS[input.provider].label,
       base_url: baseUrl,
-      role: input.role,
+      category: input.category,
       access_mode: input.accessMode,
       config: input.config ?? {},
       status: 'disconnected',
@@ -456,6 +461,47 @@ export async function hubFetchRecord(connectorId: string, recordType: string, ex
 /** Knowledge ingest (server-side REFUSES this for fetch-only connectors). */
 export async function hubSync(connectorId: string): Promise<{ ok: boolean; upserted?: number; chunked?: number; embedded?: number; error?: string; detail?: string }> {
   return invokeHub({ action: 'sync', connector_id: connectorId });
+}
+
+// ── Category contract (migration 027) ─────────────────────────────
+
+/** THE CATEGORY CONTRACT: run a canonical category op ({query} or
+ *  {external_ref}) — the hub validates legality against the connector's
+ *  category and translates to the provider adapter. Read-through. */
+export async function hubCategoryOp(
+  connectorId: string,
+  op: string,
+  params: { query?: string; external_ref?: string },
+): Promise<{ ok: boolean; items: CanonicalItem[]; category?: string; op?: string; object?: string; error?: string; detail?: string; health?: ConnectorHealth; latency_ms?: number; legal_ops?: string[] }> {
+  const r = await invokeHub({ action: 'category_op', connector_id: connectorId, op, params });
+  return r as unknown as { ok: boolean; items: CanonicalItem[]; error?: string };
+}
+
+/** Call-driven health check: runs test() and updates last_ok_at / failures. */
+export async function hubHealthCheck(connectorId: string): Promise<{ ok: boolean; health?: ConnectorHealth; error?: string; detail?: string; checked_at?: string }> {
+  return invokeHub({ action: 'health_check', connector_id: connectorId });
+}
+
+/** Save the customer's field mapping ({canonical_field: source_field}). */
+export async function updateConnectorFieldMap(
+  connectorId: string,
+  fieldMap: Record<string, string>,
+): Promise<Connector> {
+  const clean = Object.fromEntries(Object.entries(fieldMap).filter(([, v]) => v.trim()));
+  const { data, error } = await supabase
+    .from('connectors')
+    .update({ field_map: clean })
+    .eq('id', connectorId)
+    .select()
+    .single();
+  if (error) raise('updateConnectorFieldMap', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Connector field mapping updated — ${Object.keys(clean).length} canonical field(s) mapped`,
+    detail: { connector_id: connectorId, field_map: clean },
+  });
+  return data as Connector;
 }
 
 async function invokeHub<T = Record<string, unknown>>(

@@ -50,3 +50,33 @@ Consequences:
 - Our live tables (`customer_accounts`, `support_tickets`, `renewal_invoices`) are a **working cache / action workspace**, never a competing record. When connectors go live, sync direction is SoR → cache for context, and actions write **back into the SoR** (invoice generated IN Zuora; ticket updated IN Zendesk), with our side keeping the decision trail.
 - Our permanent, proprietary data is the **judgment layer** no SoR has: audit chain, playbook runs, guardrail decisions, approvals, confidence records, learned knowledge. That is the IP.
 - Connector design (future): each connector declares per-object mode — `sync` (cached, TTL/webhook-refreshed) or `read_through` (fetched at action time, never persisted) — and per-action write-back bindings. Credentials scoped per DE per system, per the existing DE Systems model.
+
+## Connector Scale Strategy (category contracts + the 5-rung ladder, 2026-07-05)
+
+**The problem at scale:** customers run thousands of different systems. Building a bespoke adapter per system never converges. The answer is two-fold: a stable *contract* the app codes against, and a *ladder* of connection methods ordered by leverage.
+
+### Category contracts (shipped — migration 027)
+The app talks in system CATEGORIES, never providers. Each category defines canonical objects and operations — the whole contract lives in ONE module (`supabase/functions/_shared/categoryContracts.ts`, browser mirror `src/lib/categoryContracts.ts`):
+
+| Category | Canonical objects | Canonical ops |
+|---|---|---|
+| crm | account, contact, opportunity, conversation | search_accounts, get_account, search_conversations, search_opportunities |
+| helpdesk | ticket, article | search_tickets, get_ticket, search_articles |
+| knowledge_base | article/page | search_articles, get_article |
+| erp_financials | invoice, payment, purchase_order | search_invoices, get_invoice |
+| billing | subscription, invoice, usage | get_subscription, search_invoices |
+| payroll_hcm | employee, payrun, time_off | get_employee, search_time_off |
+| pos | order, product | search_orders, get_order |
+| product_system | record (generic) | get_record, search_records |
+
+Consumers (evidence pipeline, playbook connector steps) say `helpdesk.search_tickets`; the hub's `category_op` action validates legality (`op_not_legal_for_category`), translates to whichever provider adapter the customer actually runs (`op_not_supported` when it honestly can't), and returns canonical-shaped items (id, external_ref, url, title, snippet, raw_fields pass-through) with the customer's `field_map` applied. Swapping Zendesk for Intercom is a connector change, zero consumer changes.
+
+### The 5-rung connection ladder (product doctrine, shown in the wizard)
+1. **MCP server** — if the system publishes one, register it (mcp-client is live). Highest leverage: the vendor maintains the integration.
+2. **Aggregator** (Merge/Apideck class) — one integration covering hundreds of long-tail systems. **Deliberately NOT integrated yet** — visible in product as "Available on request". Build trigger: first paying tenant with long-tail needs.
+3. **Named adapter** — Salesforce, Zendesk, Confluence, Jira, Intercom (built); more only when a tenant brings one.
+4. **Customer's own API via Generic REST** — endpoints config binds category ops to their paths (`config.endpoints.category_ops`), zero code.
+5. **File import** — no API at all: upload into Knowledge.
+
+### Connector health (call-driven, shipped)
+Every hub call updates `last_ok_at` / `last_error_at` / `consecutive_failures`; health is computed (healthy / degraded 1–2 failures / down 3+ / never_connected), surfaced as a badge with the honest last error, plus an on-demand `health_check` action. **No cron by design** — scheduled health checks arrive with the first paying tenant (same trigger discipline as everything else in this doc).

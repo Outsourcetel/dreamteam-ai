@@ -201,11 +201,27 @@ function validateSteps(steps: unknown): ValidationError[] {
         }
         break;
       case 'connector_action': {
-        if (p.provider !== 'zendesk') {
-          errs.push({ index: i, code: 'bad_params', message: 'connector_action.provider must be "zendesk" (v1).' });
-        }
-        if (p.op !== 'add_internal_note' && p.op !== 'update_status') {
-          errs.push({ index: i, code: 'bad_params', message: 'connector_action.op must be "add_internal_note" or "update_status".' });
+        // TWO FORMS (compat shim, documented):
+        //   legacy write-back: { provider: 'zendesk', op: add_internal_note|update_status, ... }
+        //   category op (027): { category, op, query_template? | ref_template? }
+        //     — provider-agnostic read-through via connector-hub category_op;
+        //       the hub enforces op legality (op_not_legal_for_category) at
+        //       run time, so validation here checks shape only.
+        if (typeof p.category === 'string' && p.category) {
+          const cats = ['crm', 'helpdesk', 'knowledge_base', 'erp_financials', 'billing', 'payroll_hcm', 'pos', 'product_system', 'other'];
+          if (!cats.includes(p.category as string)) {
+            errs.push({ index: i, code: 'bad_params', message: `connector_action.category must be one of: ${cats.join(', ')}.` });
+          }
+          if (typeof p.op !== 'string' || !(p.op as string).trim()) {
+            errs.push({ index: i, code: 'bad_params', message: 'connector_action (category form) needs an op, e.g. "search_tickets".' });
+          }
+        } else {
+          if (p.provider !== 'zendesk') {
+            errs.push({ index: i, code: 'bad_params', message: 'connector_action needs either a category (category-op form) or provider "zendesk" (legacy write-back form).' });
+          }
+          if (p.op !== 'add_internal_note' && p.op !== 'update_status') {
+            errs.push({ index: i, code: 'bad_params', message: 'connector_action.op must be "add_internal_note" or "update_status" (legacy write-back form).' });
+          }
         }
         break;
       }
@@ -475,6 +491,57 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'connector_action': {
+          // ── Category-op form (migration 027): provider-agnostic
+          // read-through via connector-hub category_op. The step names
+          // a CATEGORY + canonical op; the hub picks the adapter and
+          // enforces op legality. Read-only — write-back stays on the
+          // legacy zendesk form below.
+          if (typeof params.category === 'string' && params.category) {
+            const category = params.category as string;
+            const op = String(params.op ?? '');
+            const { data: catConn } = await admin
+              .from('connectors').select('id, provider, display_name, status')
+              .eq('tenant_id', tenantId).eq('category', category).neq('status', 'disconnected')
+              .limit(1).maybeSingle();
+            if (!catConn) {
+              step.status = 'skipped'; step.at = now();
+              step.detail = `skipped: no connected ${category} system for this workspace`;
+              break;
+            }
+            const opParams: Record<string, unknown> = {};
+            if (params.query_template) opParams.query = renderTemplate(params.query_template as string, ctx, run.id).trim();
+            if (params.ref_template) opParams.external_ref = renderTemplate(params.ref_template as string, ctx, run.id).trim();
+            try {
+              const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                  'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+                },
+                body: JSON.stringify({ action: 'category_op', connector_id: catConn.id, tenant_id: tenantId, op, params: opParams }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (data.ok) {
+                step.status = 'done'; step.at = now();
+                step.detail = `${category}.${op} on ${catConn.display_name || catConn.provider} → ${(data.items ?? []).length} item(s), read-through`;
+                await audit(admin, tenantId,
+                  `Playbook [${acct()}] — category op ${category}.${op} on ${catConn.display_name || catConn.provider} (${(data.items ?? []).length} item(s), read-through, not persisted)`,
+                  'connector_action',
+                  { run_id: run.id, definition_id: run.definition_id, connector_id: catConn.id, category, op, provider: catConn.provider, item_count: (data.items ?? []).length },
+                  'Playbook DE');
+              } else {
+                step.status = 'skipped'; step.at = now();
+                step.detail = `skipped: ${category}.${op} failed honestly (${data.error ?? `HTTP ${res.status}`})`;
+              }
+            } catch (e) {
+              step.status = 'skipped'; step.at = now();
+              step.detail = `skipped: connector-hub call failed (${String(e).slice(0, 120)})`;
+            }
+            break;
+          }
+
+          // ── Legacy zendesk write-back form (kept working — compat shim) ──
           // HONEST DEGRADATION: every missing prerequisite records a skip and continues.
           const { data: connector } = await admin
             .from('connectors').select('id, base_url, status')

@@ -270,18 +270,22 @@ serve(async (req) => {
     }
 
     // ════════════════════════════════════════════════════════════
-    // action: resolve_inquiry — the EVIDENCE PIPELINE (v3).
+    // action: resolve_inquiry — the EVIDENCE PIPELINE (v4:
+    // CATEGORY CONTRACTS — provider-agnostic, migration 027).
     //
-    // For a customer inquiry, walk the connected systems by ROLE:
-    //   1. account_context  — product_system (or crm) connector →
-    //                         what is this account's configuration?
+    // For a customer inquiry, walk the connected systems by CATEGORY,
+    // speaking canonical category ops (the hub translates to whatever
+    // provider the customer actually runs):
+    //   1. account_context  — product_system.search_records
+    //                         (else crm.search_accounts)
     //   2. knowledge_search — internal knowledge chunks (embeddings,
-    //                         keyword fallback) + read-through search
-    //                         on knowledge_base-role connectors
-    //   3. history_check    — support_desk/crm-role connectors →
-    //                         similar past cases + resolution snippets
+    //                         keyword fallback) + knowledge_base
+    //                         connectors via search_articles
+    //   3. history_check    — helpdesk.search_tickets +
+    //                         crm.search_conversations
     //   4. compose          — evidence bundle + confidence inputs;
     //                         the LLM answer step stays dormant-honest
+    // Every evidence step records category + op + provider.
     //
     // Every step is honest: ok | skipped_not_connected | failed. The
     // whole run persists to evidence_runs; each step is audited.
@@ -311,6 +315,7 @@ serve(async (req) => {
         kind: string; system: string; query: string;
         outcome: 'ok' | 'skipped_not_connected' | 'failed';
         summary: string; item_count: number; latency_ms: number; citations: Citation[];
+        category?: string; op?: string; provider?: string;
       }
       const steps: EvidenceStep[] = [];
       const actorName = prof2?.name ?? 'Technical Specialist';
@@ -320,11 +325,13 @@ serve(async (req) => {
         await audit(admin, tenantId!, actorName,
           `Evidence step ${steps.length} (${s.kind}) on ${s.system} — ${s.outcome}: ${s.summary}`,
           'evidence_step',
-          { kind: 'evidence_step', evidence_run_id: runId2, step: s.kind, system: s.system, outcome: s.outcome, item_count: s.item_count, latency_ms: s.latency_ms });
+          { kind: 'evidence_step', evidence_run_id: runId2, step: s.kind, system: s.system, outcome: s.outcome, item_count: s.item_count, latency_ms: s.latency_ms, category: s.category ?? null, op: s.op ?? null, provider: s.provider ?? null });
       };
 
-      interface HubItemLite { ref: string; type: string; title: string; snippet: string; url: string | null }
-      const callHub = async (connectorId: string, hubAction: string, extra: Record<string, unknown>) => {
+      interface HubItemLite { external_ref: string; title: string; snippet: string; url: string | null }
+      // CATEGORY CONTRACT: the pipeline speaks canonical ops; the hub
+      // translates to whatever provider the customer actually runs.
+      const callCategoryOp = async (connectorId: string, op: string, params: Record<string, unknown>) => {
         const started = Date.now();
         try {
           const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
@@ -334,7 +341,7 @@ serve(async (req) => {
               'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
               'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
             },
-            body: JSON.stringify({ action: hubAction, connector_id: connectorId, tenant_id: tenantId, ...extra }),
+            body: JSON.stringify({ action: 'category_op', connector_id: connectorId, tenant_id: tenantId, op, params }),
           });
           const data = await res.json().catch(() => ({}));
           return { ok: !!data.ok, items: (data.items ?? []) as HubItemLite[], error: data.error as string | null, ms: Date.now() - started };
@@ -344,30 +351,35 @@ serve(async (req) => {
       };
       // Pass-through compromise: persist metadata + ≤200-char snippet only.
       const toCitations = (system: string, items: HubItemLite[]): Citation[] =>
-        items.slice(0, 5).map((i) => ({ system, ref: i.ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
+        items.slice(0, 5).map((i) => ({ system, ref: i.external_ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
 
       const { data: allConns } = await admin.from('connectors')
-        .select('id, provider, display_name, role, status, access_mode')
+        .select('id, provider, display_name, category, status, access_mode')
         .eq('tenant_id', tenantId);
       const conns = (allConns ?? []).filter((c) => c.status !== 'disconnected');
-      const byRole = (role: string) => conns.filter((c) => c.role === role);
+      const byCategory = (category: string) => conns.filter((c) => c.category === category);
       const label = (c: { provider: string; display_name: string }) => c.display_name || c.provider;
 
-      // ── Step 1: account context (product_system, else crm) ──
-      const productConn = byRole('product_system')[0] ?? null;
-      if (!productConn) {
-        await recordStep({ kind: 'account_context', system: 'product system', query: accountRef ?? '', outcome: 'skipped_not_connected', summary: 'No product system connected — skipped honestly. Connect the customer product API to check account configuration.', item_count: 0, latency_ms: 0, citations: [] });
+      // ── Step 1: account context — product_system.search_records, else crm.search_accounts ──
+      const productConn = byCategory('product_system')[0] ?? null;
+      const crmConn = byCategory('crm')[0] ?? null;
+      const acctConn = productConn ?? crmConn;
+      const acctOp = productConn ? 'search_records' : 'search_accounts';
+      const acctCategory = productConn ? 'product_system' : 'crm';
+      if (!acctConn) {
+        await recordStep({ kind: 'account_context', system: 'product system / CRM', query: accountRef ?? '', outcome: 'skipped_not_connected', summary: 'No product system or CRM connected — skipped honestly. Connect one to check account configuration.', item_count: 0, latency_ms: 0, citations: [] });
       } else if (!accountRef) {
-        await recordStep({ kind: 'account_context', system: label(productConn), query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — account-configuration lookup skipped.', item_count: 0, latency_ms: 0, citations: [] });
+        await recordStep({ kind: 'account_context', system: label(acctConn), query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — account-configuration lookup skipped.', item_count: 0, latency_ms: 0, citations: [], category: acctCategory, op: acctOp, provider: acctConn.provider });
       } else {
-        const r = await callHub(productConn.id, 'search', { query: accountRef });
+        const r = await callCategoryOp(acctConn.id, acctOp, { query: accountRef });
         await recordStep({
-          kind: 'account_context', system: label(productConn), query: accountRef,
+          kind: 'account_context', system: label(acctConn), query: accountRef,
           outcome: r.ok ? 'ok' : 'failed',
+          category: acctCategory, op: acctOp, provider: acctConn.provider,
           summary: r.ok
-            ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(productConn)}.`)
+            ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" via ${acctCategory}.${acctOp} — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(acctConn)}.`)
             : `Live lookup failed: ${r.error}`,
-          item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(productConn), r.items),
+          item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(acctConn), r.items),
         });
       }
 
@@ -402,36 +414,41 @@ serve(async (req) => {
         });
       }
 
-      // ── Step 2b: knowledge-base connectors (read-through search) ──
-      const kbConns = byRole('knowledge_base');
+      // ── Step 2b: knowledge_base connectors — knowledge_base.search_articles ──
+      const kbConns = byCategory('knowledge_base');
       if (kbConns.length === 0) {
-        await recordStep({ kind: 'knowledge_search', system: 'external knowledge (Confluence / help center)', query: inquiry, outcome: 'skipped_not_connected', summary: 'No knowledge-base system connected — skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+        await recordStep({ kind: 'knowledge_search', system: 'external knowledge (knowledge base)', query: inquiry, outcome: 'skipped_not_connected', summary: 'No knowledge-base system connected — skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
       } else {
         for (const kc of kbConns) {
-          const r = await callHub(kc.id, 'search', { query: inquiry });
+          const r = await callCategoryOp(kc.id, 'search_articles', { query: inquiry });
           await recordStep({
             kind: 'knowledge_search', system: label(kc), query: inquiry,
             outcome: r.ok ? 'ok' : 'failed',
-            summary: r.ok ? `${r.items.length} matching document(s) fetched live (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).` : `Search failed: ${r.error}`,
+            category: 'knowledge_base', op: 'search_articles', provider: kc.provider,
+            summary: r.ok ? `${r.items.length} matching article(s) fetched live via knowledge_base.search_articles (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).` : `Search failed: ${r.error}`,
             item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(kc), r.items),
           });
         }
       }
 
-      // ── Step 3: history check (support_desk + crm) ──
-      const histConns = [...byRole('support_desk'), ...byRole('crm')];
+      // ── Step 3: history check — helpdesk.search_tickets + crm.search_conversations ──
+      const histTargets = [
+        ...byCategory('helpdesk').map((c) => ({ conn: c, category: 'helpdesk', op: 'search_tickets' })),
+        ...byCategory('crm').map((c) => ({ conn: c, category: 'crm', op: 'search_conversations' })),
+      ];
       let historyMatches = 0;
-      if (histConns.length === 0) {
-        await recordStep({ kind: 'history_check', system: 'support desk / CRM', query: inquiry, outcome: 'skipped_not_connected', summary: 'No support desk or CRM connected — cannot verify against past cases; skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
+      if (histTargets.length === 0) {
+        await recordStep({ kind: 'history_check', system: 'helpdesk / CRM', query: inquiry, outcome: 'skipped_not_connected', summary: 'No helpdesk or CRM connected — cannot verify against past cases; skipped honestly.', item_count: 0, latency_ms: 0, citations: [] });
       } else {
-        for (const hc of histConns) {
-          const r = await callHub(hc.id, 'search', { query: inquiry });
+        for (const { conn: hc, category, op } of histTargets) {
+          const r = await callCategoryOp(hc.id, op, { query: inquiry });
           historyMatches += r.ok ? r.items.length : 0;
           await recordStep({
             kind: 'history_check', system: label(hc), query: inquiry,
             outcome: r.ok ? 'ok' : 'failed',
+            category, op, provider: hc.provider,
             summary: r.ok
-              ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found — resolutions cited below for confidence.` : 'No similar past cases — this looks new; lower confidence.')
+              ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found via ${category}.${op} — resolutions cited below for confidence.` : `No similar past cases via ${category}.${op} — this looks new; lower confidence.`)
               : `History search failed: ${r.error}`,
             item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(hc), r.items),
           });

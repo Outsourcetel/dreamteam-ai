@@ -12,6 +12,18 @@
  *                   except the audit event.
  *   fetch_record  — { record_type, external_ref } → one record, read-through
  *   list_recent   — { record_type? } → recent items, read-through
+ *   category_op   — THE CATEGORY CONTRACT (migration 027): the app
+ *                   speaks category language ({op, params}); the op is
+ *                   validated against the connector's category
+ *                   (op_not_legal_for_category), translated to the
+ *                   provider adapter (op_not_supported when the
+ *                   provider honestly can't), results normalized to
+ *                   the canonical shape with the customer's field_map
+ *                   applied. Read-through: nothing persisted but audit.
+ *   health_check  — runs test() and updates call-driven health fields
+ *                   (last_ok_at / last_error_at / consecutive_failures;
+ *                   health computed: healthy/degraded/down/never_connected).
+ *                   Every other action also updates health on its way out.
  *   sync          — knowledge-capable providers (confluence, intercom,
  *                   salesforce knowledge, zendesk help center) ingest
  *                   articles/pages into knowledge_docs (source='connector',
@@ -33,6 +45,9 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  SystemCategory, CanonicalItem, getCategoryOp, legalOps, computeHealth,
+} from '../_shared/categoryContracts.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -371,8 +386,10 @@ const genericRest = {
   },
   endpoints(c: Ctx) { return ((c.config.endpoints ?? {}) as Record<string, Record<string, string>>); },
   pick(obj: Record<string, unknown>, field: string | undefined, fallbacks: string[]): unknown {
-    if (field && obj[field] !== undefined) return obj[field];
-    for (const f of fallbacks) if (obj[f] !== undefined) return obj[f];
+    // Scalars only — objects/arrays would stringify to "[object Object]".
+    const scalar = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+    if (field && scalar(obj[field])) return obj[field];
+    for (const f of fallbacks) if (scalar(obj[f])) return obj[f];
     return undefined;
   },
   dig(body: unknown, path: string | undefined): unknown {
@@ -394,6 +411,10 @@ const genericRest = {
   async search(c: Ctx, query: string): Promise<AdapterResult> {
     const ep = this.endpoints(c).search;
     if (!ep?.path) return { ok: false, error: 'no_search_endpoint_configured' };
+    return this.searchEp(c, ep, query);
+  },
+  /** Run a search against an arbitrary endpoint binding (used by category ops). */
+  async searchEp(c: Ctx, ep: Record<string, string>, query: string): Promise<AdapterResult> {
     const sep = ep.path.includes('?') ? '&' : '?';
     const url = `${c.baseUrl}${ep.path}${ep.query_param ? `${sep}${ep.query_param}=${encodeURIComponent(query)}` : ''}`;
     const r = await httpJson(url, { method: ep.method ?? 'GET', headers: this.hdrs(c) });
@@ -415,6 +436,10 @@ const genericRest = {
   async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
     const ep = this.endpoints(c).record;
     if (!ep?.path_template) return { ok: false, error: 'no_record_endpoint_configured' };
+    return this.recordEp(c, ep, ref);
+  },
+  /** Fetch one record via an arbitrary endpoint binding (used by category ops). */
+  async recordEp(c: Ctx, ep: Record<string, string>, ref: string): Promise<AdapterResult> {
     const r = await httpJson(`${c.baseUrl}${ep.path_template.replace('{ref}', encodeURIComponent(ref))}`, { headers: this.hdrs(c) });
     if (!r.ok) return { ok: false, error: r.error };
     const o = (r.body ?? {}) as Record<string, unknown>;
@@ -435,6 +460,164 @@ const genericRest = {
 // ════════════════════════════════════════════════════════════════
 
 const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom']);
+
+// ════════════════════════════════════════════════════════════════
+// CATEGORY CONTRACT translation layer — the app talks in canonical
+// category ops; this table translates each (provider, op) to the
+// provider adapter. An op the provider cannot honestly serve is
+// simply absent → structured `op_not_supported`.
+// generic_rest is special: a customer binds category ops to their own
+// API paths via config.endpoints.category_ops[op]; search_*/get_* ops
+// fall back to the generic search/record endpoints when unbound.
+// ════════════════════════════════════════════════════════════════
+
+interface OpParams { query?: string; external_ref?: string }
+type OpTranslator = (c: Ctx, p: OpParams) => Promise<AdapterResult>;
+
+const sfSoqlItems = (
+  records: Array<Record<string, unknown>>, instance: string | undefined,
+  sobject: string, type: string,
+  titleOf: (r: Record<string, unknown>) => string,
+  snippetOf: (r: Record<string, unknown>) => string,
+): HubItem[] => records.map((r) => ({
+  ref: String(r.Id), type,
+  title: clip(titleOf(r), 160), snippet: clip(snippetOf(r), 400),
+  url: instance ? `${instance}/lightning/r/${sobject}/${r.Id}/view` : null, raw: r,
+}));
+
+const soqlSafe = (q: string) => q.replace(/['\\%_]/g, ' ').trim().slice(0, 80);
+
+const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
+  salesforce: {
+    // crm
+    search_accounts: async (c, p) => {
+      const r = await salesforce.soql(c, `SELECT Id, Name, Industry, Description FROM Account WHERE Name LIKE '%${soqlSafe(p.query ?? '')}%' LIMIT 10`);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: sfSoqlItems(r.records, r.instance, 'Account', 'account', (x) => String(x.Name ?? ''), (x) => `${x.Industry ?? ''} ${x.Description ?? ''}`) };
+    },
+    get_account: (c, p) => salesforce.fetchRecord(c, 'account', p.external_ref ?? ''),
+    search_conversations: async (c, p) => {
+      const s = soqlSafe(p.query ?? '');
+      const r = await salesforce.soql(c, `SELECT Id, CaseNumber, Subject, Description, Status FROM Case WHERE Subject LIKE '%${s}%' OR Description LIKE '%${s}%' ORDER BY LastModifiedDate DESC LIMIT 10`);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: sfSoqlItems(r.records, r.instance, 'Case', 'conversation', (x) => `Case ${x.CaseNumber}: ${x.Subject ?? ''}`, (x) => String(x.Description ?? '')) };
+    },
+    search_opportunities: async (c, p) => {
+      const r = await salesforce.soql(c, `SELECT Id, Name, StageName, Amount, CloseDate FROM Opportunity WHERE Name LIKE '%${soqlSafe(p.query ?? '')}%' ORDER BY LastModifiedDate DESC LIMIT 10`);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: sfSoqlItems(r.records, r.instance, 'Opportunity', 'opportunity', (x) => String(x.Name ?? ''), (x) => `Stage: ${x.StageName ?? '?'} · Amount: ${x.Amount ?? '?'} · Close: ${x.CloseDate ?? '?'}`) };
+    },
+    // knowledge_base (Knowledge__kav — absent in many orgs; honest error then)
+    search_articles: async (c, p) => {
+      const r = await salesforce.soql(c, `SELECT Id, Title, Summary, UrlName FROM Knowledge__kav WHERE PublishStatus='Online' AND Title LIKE '%${soqlSafe(p.query ?? '')}%' LIMIT 10`);
+      if (!r.ok) return { ok: false, error: r.error ?? 'knowledge_not_available_in_org' };
+      return { ok: true, items: sfSoqlItems(r.records, undefined, 'Knowledge__kav', 'article', (x) => String(x.Title ?? ''), (x) => String(x.Summary ?? '')) };
+    },
+    get_article: async (c, p) => {
+      const r = await salesforce.soql(c, `SELECT Id, Title, Summary FROM Knowledge__kav WHERE Id='${soqlSafe(p.external_ref ?? '')}' LIMIT 1`);
+      if (!r.ok) return { ok: false, error: r.error ?? 'knowledge_not_available_in_org' };
+      return { ok: true, items: sfSoqlItems(r.records, undefined, 'Knowledge__kav', 'article', (x) => String(x.Title ?? ''), (x) => String(x.Summary ?? '')) };
+    },
+  },
+  zendesk: {
+    search_tickets: (c, p) => zendesk.search(c, p.query ?? ''),
+    get_ticket: (c, p) => zendesk.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+    search_articles: async (c, p) => {
+      const r = await httpJson(`${c.baseUrl}/api/v2/help_center/articles/search.json?query=${encodeURIComponent(p.query ?? '')}&per_page=10`,
+        { headers: { Authorization: zendesk.auth(c) } });
+      if (!r.ok) return { ok: false, error: r.error };
+      const arts = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
+      return { ok: true, items: arts.map((a) => ({ ref: String(a.id), type: 'article', title: clip(a.title, 160), snippet: clip(stripHtml(String(a.body ?? '')), 400), url: a.html_url ? String(a.html_url) : null, raw: a })) };
+    },
+  },
+  jira: {
+    search_tickets: (c, p) => jira.search(c, p.query ?? ''),
+    get_ticket: (c, p) => jira.fetchRecord(c, 'issue', p.external_ref ?? ''),
+  },
+  intercom: {
+    search_tickets: async (c, p) => {
+      // conversations only — articles come via search_articles
+      const conv = await httpJson(`${c.baseUrl}/conversations/search`, {
+        method: 'POST', headers: intercom.hdrs(c),
+        body: JSON.stringify({ query: { field: 'source.body', operator: '~', value: p.query ?? '' }, pagination: { per_page: 10 } }),
+      });
+      if (!conv.ok) return { ok: false, error: conv.error };
+      const convs = ((conv.body as { conversations?: Array<Record<string, unknown>> })?.conversations) ?? [];
+      return {
+        ok: true,
+        items: convs.map((cv) => {
+          const src = (cv.source ?? {}) as Record<string, unknown>;
+          return { ref: String(cv.id), type: 'ticket', title: clip(src.subject || `Conversation ${cv.id}`, 160), snippet: clip(stripHtml(String(src.body ?? '')), 400), url: null, raw: cv };
+        }),
+      };
+    },
+    get_ticket: (c, p) => intercom.fetchRecord(c, 'conversation', p.external_ref ?? ''),
+    search_articles: async (c, p) => {
+      const a = await httpJson(`${c.baseUrl}/articles/search?phrase=${encodeURIComponent(p.query ?? '')}`, { headers: intercom.hdrs(c) });
+      if (!a.ok) return { ok: false, error: a.error };
+      const arts = ((a.body as { data?: { articles?: Array<Record<string, unknown>> } })?.data?.articles) ?? [];
+      return { ok: true, items: arts.slice(0, 10).map((art) => ({ ref: String(art.id), type: 'article', title: clip(art.title, 160), snippet: clip(stripHtml(String(art.body ?? '')), 400), url: art.url ? String(art.url) : null, raw: art })) };
+    },
+    get_article: (c, p) => intercom.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
+  confluence: {
+    search_articles: (c, p) => confluence.search(c, p.query ?? ''),
+    get_article: (c, p) => confluence.fetchRecord(c, 'page', p.external_ref ?? ''),
+  },
+};
+
+/**
+ * generic_rest category-op resolution:
+ *   1. explicit binding config.endpoints.category_ops[op] — a customer
+ *      binds any category op to their own API path
+ *   2. fallback: search-kind ops → the generic search endpoint,
+ *      get-kind ops → the generic record endpoint
+ */
+function genericRestOp(c: Ctx, opDef: { op: string; kind: 'search' | 'get' }, p: OpParams): Promise<AdapterResult> | null {
+  const eps = genericRest.endpoints(c) as Record<string, Record<string, string>> & { category_ops?: Record<string, Record<string, string>> };
+  const bound = (eps.category_ops ?? {})[opDef.op];
+  if (bound) {
+    if (opDef.kind === 'get') {
+      if (!bound.path_template) return null;
+      return genericRest.recordEp(c, bound, p.external_ref ?? '');
+    }
+    if (!bound.path) return null;
+    return genericRest.searchEp(c, bound, p.query ?? '');
+  }
+  if (opDef.kind === 'get' && eps.record?.path_template) return genericRest.recordEp(c, eps.record, p.external_ref ?? '');
+  if (opDef.kind === 'search' && eps.search?.path) return genericRest.searchEp(c, eps.search, p.query ?? '');
+  return null;
+}
+
+/** Normalize HubItems → canonical shape, applying the connector's field_map
+ *  ({canonical_field: source_field}) against the raw payload. */
+function toCanonical(
+  items: HubItem[], objectName: string,
+  connector: { display_name: string; provider: string; base_url: string; field_map?: Record<string, string> | null },
+): CanonicalItem[] {
+  const fmap = (connector.field_map ?? {}) as Record<string, string>;
+  const mapped = (raw: Record<string, unknown> | null, canonical: string, fallback: string) => {
+    const src = fmap[canonical];
+    if (src && raw && raw[src] !== undefined && raw[src] !== null) return String(raw[src]);
+    return fallback;
+  };
+  return items.map((i) => {
+    const raw = (i.raw && typeof i.raw === 'object') ? i.raw as Record<string, unknown> : null;
+    const externalRef = mapped(raw, 'external_ref', i.ref);
+    const urlMapped = fmap.url && raw && raw[fmap.url] ? String(raw[fmap.url]) : i.url;
+    return {
+      id: externalRef,
+      external_ref: externalRef,
+      url: urlMapped,
+      title: clip(mapped(raw, 'title', i.title), 160),
+      snippet: clip(mapped(raw, 'snippet', i.snippet), 400),
+      object: objectName,
+      source_system: connector.display_name || connector.provider,
+      source_provider: connector.provider,
+      raw_fields: i.raw, // pass-through, returned live, NEVER persisted
+    };
+  });
+}
 
 async function embedText(text: string): Promise<number[] | null> {
   try {
@@ -545,12 +728,100 @@ serve(async (req) => {
     const setStatus = (status: string, lastError: string | null) =>
       admin.from('connectors').update({ status, last_error: lastError }).eq('id', connectorId);
 
+    // ── Call-driven health: every adapter-backed call updates it.
+    // Success resets consecutive_failures; failure increments and
+    // stores the honest error. No cron — health is call-driven
+    // (scheduled checks arrive with the first paying tenant).
+    let failures = Number(connector.consecutive_failures ?? 0);
+    const recordHealth = async (ok: boolean, error?: string | null) => {
+      const now = new Date().toISOString();
+      if (ok) {
+        failures = 0;
+        await admin.from('connectors').update({ last_ok_at: now, consecutive_failures: 0 }).eq('id', connectorId);
+      } else {
+        failures += 1;
+        await admin.from('connectors').update({
+          last_error_at: now, last_error: (error ?? 'unknown_error').slice(0, 300),
+          consecutive_failures: failures,
+        }).eq('id', connectorId);
+      }
+      return computeHealth({ last_ok_at: ok ? now : connector.last_ok_at, last_error_at: ok ? connector.last_error_at : now, consecutive_failures: failures });
+    };
+
     // ════════ test ════════
     if (action === 'test') {
       const r: TestResult = await adapter.test(ctx);
       await setStatus(r.ok ? 'connected' : 'error', r.ok ? null : (r.error ?? 'test_failed'));
+      const health = await recordHealth(r.ok, r.error);
       if (r.ok) await audit('config_change', `Connector test succeeded — ${connector.provider} at ${ctx.baseUrl}${r.detail ? ` (${r.detail})` : ''}`, { result: 'connected' });
-      return json({ ok: r.ok, error: r.error ?? null, detail: r.detail ?? null });
+      return json({ ok: r.ok, error: r.error ?? null, detail: r.detail ?? null, health });
+    }
+
+    // ════════ health_check — run test() and update call-driven health ════════
+    if (action === 'health_check') {
+      const started = Date.now();
+      const r: TestResult = await adapter.test(ctx);
+      const health = await recordHealth(r.ok, r.error);
+      await audit('connector_action',
+        `Health check on ${connector.provider} — ${r.ok ? 'healthy' : `failed: ${r.error}`} (${Date.now() - started}ms) → ${health}`,
+        { hub_action: 'health_check', ok: r.ok, error: r.error ?? null, health, latency_ms: Date.now() - started });
+      return json({ ok: r.ok, health, error: r.error ?? null, detail: r.detail ?? null, checked_at: new Date().toISOString() });
+    }
+
+    // ════════ category_op — the CATEGORY CONTRACT entry point ════════
+    // The app speaks category language (helpdesk.search_tickets); this
+    // validates the op against the connector's category, translates to
+    // the provider adapter, and returns canonical-shaped results.
+    if (action === 'category_op') {
+      const op = String(payload.op ?? '').trim();
+      if (!op) return json({ error: 'op_required' }, 400);
+      const category = String(connector.category ?? 'other') as SystemCategory;
+      const opDef = getCategoryOp(category, op);
+      if (!opDef) {
+        return json({
+          ok: false, error: 'op_not_legal_for_category',
+          detail: `"${op}" is not a ${category} operation. Legal ops for ${category}: ${legalOps(category).join(', ')}.`,
+          category, legal_ops: legalOps(category),
+        }, 200);
+      }
+      const p: OpParams = {
+        query: typeof payload.params?.query === 'string' ? payload.params.query : undefined,
+        external_ref: typeof payload.params?.external_ref === 'string' ? payload.params.external_ref : undefined,
+      };
+      if (opDef.kind === 'search' && !p.query?.trim()) return json({ error: 'params.query_required' }, 400);
+      if (opDef.kind === 'get' && !p.external_ref?.trim()) return json({ error: 'params.external_ref_required' }, 400);
+
+      const started = Date.now();
+      let r: AdapterResult | null = null;
+      if (connector.provider === 'generic_rest') {
+        r = await (genericRestOp(ctx, opDef, p) ?? Promise.resolve(null));
+        if (r === null) {
+          return json({
+            ok: false, error: 'op_not_supported',
+            detail: `This API has no endpoint bound for "${op}". Bind one under config.endpoints.category_ops.${op} (or configure the generic search/record endpoints).`,
+            category, op,
+          }, 200);
+        }
+      } else {
+        const translator = PROVIDER_OP_TRANSLATORS[connector.provider]?.[op];
+        if (!translator) {
+          return json({
+            ok: false, error: 'op_not_supported',
+            detail: `${connector.provider} has no adapter for "${op}" — documented honestly, no pretending.`,
+            category, op,
+          }, 200);
+        }
+        r = await translator(ctx, p);
+      }
+      const ms = Date.now() - started;
+      const health = await recordHealth(r.ok, r.error);
+      const items = r.ok ? toCanonical(r.items ?? [], opDef.object, connector) : [];
+      await audit('connector_action',
+        r.ok
+          ? `Category op ${category}.${op} on ${connector.provider} — ${items.length} ${opDef.object}(s) fetched live in ${ms}ms, not persisted`
+          : `Category op ${category}.${op} on ${connector.provider} FAILED — ${r.error} (recorded honestly)`,
+        { mode: 'read_through', hub_action: 'category_op', category, op, ok: r.ok, error: r.error ?? null, item_count: items.length, latency_ms: ms, health, persisted: false });
+      return json({ ok: r.ok, category, op, object: opDef.object, items, error: r.error ?? null, latency_ms: ms, health, persisted: false });
     }
 
     // ════════ search / fetch_record / list_recent — READ-THROUGH ════════
@@ -569,13 +840,14 @@ serve(async (req) => {
         r = await adapter.listRecent(ctx);
       }
       const ms = Date.now() - started;
+      const health = await recordHealth(r.ok, r.error);
       // Read-through contract: NOTHING persisted but the audit event.
       await audit('connector_sync',
         r.ok
           ? `Read-through ${action} on ${connector.provider} — ${r.items?.length ?? 0} item(s) fetched live in ${ms}ms, not persisted`
           : `Read-through ${action} on ${connector.provider} FAILED — ${r.error} (recorded honestly)`,
         { mode: 'read_through', hub_action: action, ok: r.ok, error: r.error ?? null, item_count: r.items?.length ?? 0, latency_ms: ms, persisted: false });
-      return json({ ok: r.ok, items: r.items ?? [], error: r.error ?? null, latency_ms: ms, persisted: false });
+      return json({ ok: r.ok, items: r.items ?? [], error: r.error ?? null, latency_ms: ms, health, persisted: false });
     }
 
     // ════════ sync — knowledge ingest (REFUSED for fetch_only) ════════
@@ -594,8 +866,10 @@ serve(async (req) => {
       const r: SyncResult = await adapter.syncDocs(ctx);
       if (!r.ok) {
         await setStatus('error', r.error ?? 'sync_failed');
+        await recordHealth(false, r.error ?? 'sync_failed');
         return json({ ok: false, error: r.error ?? 'sync_failed' }, 200);
       }
+      await recordHealth(true);
       let upserted = 0, chunked = 0, embedded = 0;
       const errors: string[] = [];
       for (const doc of (r.docs ?? []).slice(0, 50)) {

@@ -3,13 +3,18 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 import { CustomerApiError } from '../../../lib/customerApi';
 import {
   Connector, ConnectorObject, ConnectorAction, ConnectorObjectMode,
-  ConnectorProvider, ConnectorRole, ConnectorAccessMode, HubItem,
-  PROVIDERS, CONNECTOR_ROLE_LABELS, ACCESS_MODE_EXPLAIN,
+  ConnectorProvider, ConnectorAccessMode, HubItem,
+  PROVIDERS, ACCESS_MODE_EXPLAIN,
   listConnectors, listConnectorObjects, listConnectorActions,
   connectProvider, hubTest, hubSearch, hubSync, syncTickets,
+  hubHealthCheck, updateConnectorFieldMap, connectorHealth,
   updateConnectorObject, updateConnectorAction, disconnectConnector,
   connectorErrorLabel, fmtSince,
 } from '../../../lib/connectorApi';
+import {
+  SystemCategory, CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT,
+  MAPPABLE_FIELDS, MAPPABLE_FIELD_HELP, HEALTH_LABELS, ConnectorHealth,
+} from '../../../lib/categoryContracts';
 
 // ============================================================
 // Live Connectors page — Multi-System Connector Hub.
@@ -41,10 +46,33 @@ const ACTION_LABELS: Record<string, string> = {
   add_internal_note: 'Add internal note',
   update_status: 'Update ticket status',
 };
-const ROLE_SHORT: Record<ConnectorRole, string> = {
-  product_system: 'Product system', crm: 'CRM', support_desk: 'Support desk',
-  knowledge_base: 'Knowledge base', other: 'Other',
-};
+function healthBadge(c: Connector) {
+  const h: ConnectorHealth = connectorHealth(c);
+  const map: Record<ConnectorHealth, [string, string, string]> = {
+    healthy: ['bg-emerald-400', 'text-emerald-400', 'Healthy'],
+    degraded: ['bg-amber-400', 'text-amber-400', 'Degraded'],
+    down: ['bg-red-400', 'text-red-400', 'Down'],
+    never_connected: ['bg-slate-600', 'text-slate-500', 'Never checked'],
+  };
+  const [dot, text, label] = map[h];
+  const checked = c.last_ok_at || c.last_error_at;
+  return (
+    <span className="flex items-center gap-1.5" title={HEALTH_LABELS[h]}>
+      <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
+      <span className={`text-xs ${text}`}>{label}</span>
+      {checked && <span className="text-[10px] text-slate-600">· checked {fmtSince(checked)}</span>}
+    </span>
+  );
+}
+
+// ── The 5-rung connection ladder (product doctrine) ───────────────
+const CONNECTION_LADDER: { rung: string; how: string; note?: string }[] = [
+  { rung: '1. Does it have an MCP server?', how: 'If your system publishes an MCP server, register it under Specialist sources — the most direct route.' },
+  { rung: '2. Aggregator', how: 'One connection that covers hundreds of long-tail systems.', note: 'Available on request — built when the first customer needs it.' },
+  { rung: '3. Named adapter', how: 'Salesforce, Zendesk, Confluence, Jira, Intercom — pick it below and connect with credentials.' },
+  { rung: '4. Your own API', how: 'Any JSON REST API via "Your product API" — bind your endpoints, zero code.' },
+  { rung: '5. File import', how: 'No API at all? Upload documents into Knowledge and DreamTeam works from those.' },
+];
 const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   zendesk: '🎫', salesforce: '☁️', confluence: '📘', jira: '🧩',
   intercom: '💬', generic_rest: '🔌', sharepoint: '📁',
@@ -56,10 +84,11 @@ const selectCls = 'bg-slate-950 border border-slate-700 rounded-lg text-xs text-
 // ── Connect wizard ────────────────────────────────────────────────
 
 function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg: string) => void }) {
+  // Category FIRST (what kind of system), provider second (which brand).
+  const [category, setCategory] = useState<SystemCategory | null>(null);
   const [provider, setProvider] = useState<ConnectorProvider | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<ConnectorRole>('other');
   const [accessMode, setAccessMode] = useState<ConnectorAccessMode>('fetch_only');
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   // generic_rest endpoint config
@@ -74,7 +103,7 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
 
   const pick = (p: ConnectorProvider) => {
     setProvider(p);
-    setRole(PROVIDERS[p].defaultRole);
+    if (!category) setCategory(PROVIDERS[p].defaultCategory);
     setAccessMode(PROVIDERS[p].knowledgeSync ? 'ingest' : 'fetch_only');
     setSecrets({});
     setErr(null);
@@ -94,7 +123,7 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
         },
       } : {};
       const { test } = await connectProvider({
-        provider, displayName: name, baseUrl, role, accessMode, secrets, config,
+        provider, displayName: name, baseUrl, category: category ?? PROVIDERS[provider].defaultCategory, accessMode, secrets, config,
       });
       onDone(test.ok
         ? `${meta.label} connected — credentials verified live${test.detail ? ` (${test.detail})` : ''}.`
@@ -112,19 +141,53 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
       <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
         <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
-          {!provider ? (
+          {!category ? (
             <>
-              <h2 className="text-sm font-semibold text-white mb-1">Connect a system</h2>
-              <p className="text-xs text-slate-500 mb-4">Your systems stay yours — DreamTeam works on top of them. Pick what you want your Digital Employees to be able to consult.</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(Object.keys(PROVIDERS) as ConnectorProvider[]).map(p => (
-                  <button key={p} onClick={() => pick(p)}
-                    className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-950/50 border-slate-800/60'}`}>
-                    <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
-                    {!PROVIDERS[p].implemented && <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
+              <h2 className="text-sm font-semibold text-white mb-1">Connect a system — what kind is it?</h2>
+              <p className="text-xs text-slate-500 mb-4">DreamTeam speaks in system categories: your Digital Employees ask "the helpdesk" or "the CRM" — whichever brand you actually run answers. Pick the category first.</p>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {CATEGORIES.map(cat => (
+                  <button key={cat} onClick={() => setCategory(cat)}
+                    className="text-left rounded-xl border p-3 transition-colors bg-slate-950 border-slate-800 hover:border-indigo-500/50">
+                    <p className="text-sm font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{CATEGORY_LABELS[cat]}</p>
                   </button>
                 ))}
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                <p className="text-[11px] font-medium text-slate-400 mb-2">How DreamTeam connects to anything — the 5-rung ladder</p>
+                <div className="space-y-1.5">
+                  {CONNECTION_LADDER.map(l => (
+                    <div key={l.rung} className="flex items-start gap-2">
+                      <span className="text-[11px] font-medium text-slate-300 flex-shrink-0">{l.rung}</span>
+                      <span className="text-[11px] text-slate-500">{l.how}{l.note && <span className="text-amber-400"> {l.note}</span>}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button onClick={onClose} className="mt-4 text-xs text-slate-400 hover:text-white">Cancel</button>
+            </>
+          ) : !provider ? (
+            <>
+              <button onClick={() => setCategory(null)} className="text-xs text-slate-500 hover:text-white mb-2">← Categories</button>
+              <h2 className="text-sm font-semibold text-white mb-1">Which system is your {CATEGORY_SHORT[category]}?</h2>
+              <p className="text-xs text-slate-500 mb-4">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(PROVIDERS) as ConnectorProvider[])
+                  .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
+                  .map(p => (
+                    <button key={p} onClick={() => pick(p)}
+                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-950/50 border-slate-800/60'}`}>
+                      <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
+                      {!PROVIDERS[p].implemented && <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
+                    </button>
+                  ))}
+                <div className="text-left rounded-xl border border-dashed border-slate-800 p-3 bg-slate-950/40">
+                  <p className="text-sm font-semibold text-slate-400">🔗 Aggregator (hundreds of systems)</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">One connection covering the long tail of niche tools.</p>
+                  <p className="text-[10px] text-amber-400 mt-1">Available on request — built when the first customer needs it (honest, not pretend-integrated).</p>
+                </div>
               </div>
               <button onClick={onClose} className="mt-4 text-xs text-slate-400 hover:text-white">Cancel</button>
             </>
@@ -182,13 +245,13 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
                 )}
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">What is this system to your business?</label>
-                  <select value={role} onChange={e => setRole(e.target.value as ConnectorRole)} className={selectCls + ' w-full !py-2 !text-sm'}>
-                    {(Object.keys(CONNECTOR_ROLE_LABELS) as ConnectorRole[]).map(r => (
-                      <option key={r} value={r}>{CONNECTOR_ROLE_LABELS[r]}</option>
+                  <label className="block text-xs text-slate-400 mb-1">System category</label>
+                  <select value={category} onChange={e => setCategory(e.target.value as SystemCategory)} className={selectCls + ' w-full !py-2 !text-sm'}>
+                    {CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-slate-600 mt-1">The evidence pipeline routes by this: product systems answer "how is this account configured?", knowledge bases answer "what do our docs say?", support desks answer "have we solved this before?".</p>
+                  <p className="text-[11px] text-slate-600 mt-1">The category decides what your Digital Employees may ask this system (its canonical operations): CRMs answer "who is this customer?", helpdesks answer "have we solved this before?", knowledge bases answer "what do our docs say?".</p>
                 </div>
 
                 <div>
@@ -226,6 +289,36 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
   );
 }
 
+// ── Field-map editor (plain-language key-value mapping) ──────────
+function FieldMapEditor({ connector, onSave, isBusy }: {
+  connector: Connector;
+  onSave: (map: Record<string, string>) => void;
+  isBusy: boolean;
+}) {
+  const [map, setMap] = useState<Record<string, string>>({ ...(connector.field_map ?? {}) });
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4">
+      <p className="text-[11px] font-medium text-slate-400 mb-1">Field mapping — tell DreamTeam what your fields are called</p>
+      <p className="text-[11px] text-slate-600 mb-3">If your system uses different field names, map them here. Leave a field empty to keep the sensible default.</p>
+      <div className="space-y-2">
+        {MAPPABLE_FIELDS.map(f => (
+          <div key={f} className="flex items-center gap-2">
+            <span className="text-xs text-slate-300 w-28 flex-shrink-0 font-mono">{f}</span>
+            <input value={map[f] ?? ''} onChange={e => setMap(m => ({ ...m, [f]: e.target.value }))}
+              placeholder="your field name (optional)"
+              className="bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 px-2 py-1.5 w-52" />
+            <span className="text-[10px] text-slate-600">{MAPPABLE_FIELD_HELP[f]}</span>
+          </div>
+        ))}
+      </div>
+      <button disabled={isBusy} onClick={() => onSave(map)}
+        className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+        Save mapping
+      </button>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function LiveConnectorsPage() {
@@ -239,6 +332,7 @@ export default function LiveConnectorsPage() {
 
   const [showConnect, setShowConnect] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [fieldMapFor, setFieldMapFor] = useState<string | null>(null);
 
   // Read-through search demo
   const [rtQuery, setRtQuery] = useState('');
@@ -278,6 +372,27 @@ export default function LiveConnectorsPage() {
     try {
       const r = await hubTest(c.id);
       showToast(r.ok ? `Connection healthy${r.detail ? ` — ${r.detail}` : ''}.` : `Test failed: ${connectorErrorLabel(r.error)}`);
+      await load();
+    } finally { setBusy(null); }
+  };
+
+  const doHealthCheck = async (c: Connector) => {
+    setBusy(c.id);
+    try {
+      const r = await hubHealthCheck(c.id);
+      showToast(r.ok
+        ? 'Health check passed — this system is answering.'
+        : `Health check failed: ${connectorErrorLabel(r.error)} — recorded honestly (${r.health ?? 'degraded'}).`);
+      await load();
+    } finally { setBusy(null); }
+  };
+
+  const saveFieldMap = async (c: Connector, map: Record<string, string>) => {
+    setBusy(c.id);
+    try {
+      await updateConnectorFieldMap(c.id, map);
+      showToast('Field mapping saved — applied the next time this system is read.');
+      setFieldMapFor(null);
       await load();
     } finally { setBusy(null); }
   };
@@ -405,18 +520,25 @@ export default function LiveConnectorsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-base font-semibold text-white">{PROVIDER_ICON[c.provider]} {c.display_name || meta?.label || c.provider}</h2>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{ROLE_SHORT[c.role] ?? c.role}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[c.category] ?? c.category}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-500/15 text-teal-300' : 'bg-purple-500/15 text-purple-300'}`}>
                         {c.access_mode === 'fetch_only' ? 'fetch-only · never stored' : 'ingest · working copy'}
                       </span>
                       {statusChip(c.status)}
+                      {healthBadge(c)}
                     </div>
                     <p className="text-xs text-slate-500 mt-1">{c.base_url} · last sync {fmtSince(c.last_sync_at)}</p>
-                    {c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
+                    {connectorHealth(c) !== 'healthy' && c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Test connection
+                    </button>
+                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                      Run health check
+                    </button>
+                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                      Field mapping
                     </button>
                     {meta?.knowledgeSync && (
                       <button disabled={isBusy} onClick={() => void doKnowledgeSync(c)}
@@ -438,6 +560,10 @@ export default function LiveConnectorsPage() {
 
                 {!meta?.implemented && (
                   <p className="text-xs text-amber-400 mb-3">Registered, but this system's adapter is not built yet — every call returns an honest "not implemented" until it ships.</p>
+                )}
+
+                {fieldMapFor === c.id && (
+                  <FieldMapEditor connector={c} isBusy={isBusy} onSave={(m) => void saveFieldMap(c, m)} />
                 )}
 
                 {/* Zendesk-only: per-object mode + write-back registry */}
