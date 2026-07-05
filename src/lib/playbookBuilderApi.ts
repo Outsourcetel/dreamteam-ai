@@ -17,7 +17,7 @@ import type { PlaybookRun } from './playbookApi';
 
 export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
-  | 'connector_action' | 'update_record' | 'log_activity' | 'complete';
+  | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist' | 'complete';
 
 export interface DefinitionStep {
   key: PrimitiveKey;
@@ -54,6 +54,9 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'log_activity', label: 'Log activity', gate: false,
     defaultParams: { text_template: 'Playbook completed for {{account.name}} — invoice {{invoice.amount}}' },
     description: 'Writes a line to the activity feed. Supports templates.' },
+  { key: 'consult_specialist', label: 'Consult specialist', gate: false,
+    defaultParams: { profile_key: 'technical', question_template: 'Review this run for {{account.name}} — any technical risks?', min_confidence: 60, on_low: 'escalate' },
+    description: 'Consults a Specialist (Technical v1) server-side. Recorded in the consultation log. Below the confidence floor → escalate to a human or continue (your choice). Dormant LLM → step skipped honestly.' },
   { key: 'complete', label: 'Complete', gate: false, defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
@@ -104,6 +107,14 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
     }
     if (s.key === 'log_activity' && !(typeof p.text_template === 'string' && p.text_template.trim())) {
       errs.push({ index: i, code: 'bad_params', message: 'Log activity needs a message template.' });
+    }
+    if (s.key === 'consult_specialist') {
+      if (!(typeof p.profile_key === 'string' && p.profile_key.trim())) {
+        errs.push({ index: i, code: 'bad_params', message: 'Consult specialist needs a profile key (e.g. technical).' });
+      }
+      if (!(typeof p.question_template === 'string' && p.question_template.trim())) {
+        errs.push({ index: i, code: 'bad_params', message: 'Consult specialist needs a question template.' });
+      }
     }
     if (s.key === 'complete') completeCount++;
   });

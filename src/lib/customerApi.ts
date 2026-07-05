@@ -440,6 +440,16 @@ export async function decideHumanTask(
       console.error('onboarding signoff hook:', err);
     }
   }
+  // Hook #3 (additive, guarded — migration 024): if this task gates a
+  // Scribe write-back, execute (approve) or reject it server-side.
+  if (task.related_table === 'scribe_requests') {
+    try {
+      const { resolveScribeRequest } = await import('./specialistApi');
+      await resolveScribeRequest(task.id, decision);
+    } catch (err) {
+      console.error('scribe resolution hook:', err);
+    }
+  }
   return data as DBHumanTask;
 }
 

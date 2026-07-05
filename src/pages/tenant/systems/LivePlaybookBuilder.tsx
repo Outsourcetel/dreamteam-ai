@@ -141,6 +141,29 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
         <input className={inputCls} placeholder="Activity message template" value={String(p.text_template ?? '')}
           onChange={e => set('text_template', e.target.value)} />
       );
+    case 'consult_specialist':
+      return (
+        <div className="space-y-2">
+          <div className="flex gap-2 flex-wrap">
+            <select className={selectCls + ' !w-40'} value={String(p.profile_key ?? 'technical')} onChange={e => set('profile_key', e.target.value)}>
+              <option value="technical">Technical</option>
+              <option value="legal">Legal</option>
+              <option value="finance">Finance</option>
+              <option value="people">People</option>
+            </select>
+            <input className={inputCls + ' !w-32'} type="number" min={0} max={100} placeholder="Min confidence"
+              value={typeof p.min_confidence === 'number' ? p.min_confidence : 60}
+              onChange={e => set('min_confidence', Math.max(0, Math.min(100, Number(e.target.value))))} />
+            <select className={selectCls + ' !w-44'} value={String(p.on_low ?? 'escalate')} onChange={e => set('on_low', e.target.value)}>
+              <option value="escalate">Below floor → escalate</option>
+              <option value="continue">Below floor → continue</option>
+            </select>
+          </div>
+          <input className={inputCls} placeholder="Question template" value={String(p.question_template ?? '')}
+            onChange={e => set('question_template', e.target.value)} />
+          <p className="text-[10px] text-slate-600">Missing/paused profile or dormant specialist brain → step records as skipped (honest degradation); escalation still fires when chosen.</p>
+        </div>
+      );
     case 'guardrail_check':
       return <p className="text-[11px] text-slate-500">Re-checks the invoice approval threshold and records the result in the audit chain.</p>;
     default:

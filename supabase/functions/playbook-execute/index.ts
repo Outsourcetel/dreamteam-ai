@@ -132,7 +132,7 @@ const fmtMoney = (cents: number) => '$' + Math.round(cents / 100).toLocaleString
 
 const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
-  'connector_action', 'update_record', 'log_activity', 'complete',
+  'connector_action', 'update_record', 'log_activity', 'consult_specialist', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -143,6 +143,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   connector_action: 'Connector action',
   update_record: 'Update record',
   log_activity: 'Log activity',
+  consult_specialist: 'Consult specialist',
   complete: 'Complete',
 };
 
@@ -226,6 +227,23 @@ function validateSteps(steps: unknown): ValidationError[] {
           errs.push({ index: i, code: 'bad_params', message: 'log_activity needs a non-empty text_template.' });
         }
         break;
+      case 'consult_specialist': {
+        // Profile existence/active is TENANT RUNTIME STATE, not definition
+        // shape — checked at execution time (honest skip), warn-only here.
+        if (typeof p.profile_key !== 'string' || !p.profile_key.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist needs a profile_key (e.g. "technical").' });
+        }
+        if (typeof p.question_template !== 'string' || !p.question_template.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist needs a question_template.' });
+        }
+        if (p.min_confidence !== undefined && (typeof p.min_confidence !== 'number' || p.min_confidence < 0 || p.min_confidence > 100)) {
+          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist.min_confidence must be 0-100.' });
+        }
+        if (p.on_low !== undefined && p.on_low !== 'escalate' && p.on_low !== 'continue') {
+          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist.on_low must be "escalate" or "continue".' });
+        }
+        break;
+      }
       case 'complete':
         completeCount++;
         break;
@@ -544,6 +562,85 @@ async function executeDefinitionSteps(
           });
           step.status = 'done'; step.at = now(); step.detail = text;
           break;
+        }
+
+        // ────────────────────────────────────────────────
+        case 'consult_specialist': {
+          // Server-side consult via the specialist-consult function
+          // (service path). HONEST DEGRADATION: missing/paused profile or
+          // dormant LLM → step recorded skipped; on_low='escalate' creates
+          // an escalation task either way — the run never silently loses
+          // a low-confidence signal.
+          const profileKey = String(params.profile_key ?? 'technical');
+          const minConfidence = typeof params.min_confidence === 'number' ? params.min_confidence : 60;
+          const onLow = params.on_low === 'continue' ? 'continue' : 'escalate';
+          const questionText = renderTemplate(String(params.question_template ?? ''), ctx, run.id).trim()
+            || `Specialist review for ${acct()}`;
+
+          const escalateTask = async (why: string) => {
+            await admin.from('human_tasks').insert({
+              tenant_id: tenantId, type: 'escalation', source: 'de',
+              title: `Specialist consult needs a human — ${acct()}`,
+              detail: `Playbook step "Consult specialist" (${profileKey}): ${why}. Question: ${questionText.slice(0, 300)}`,
+              related_table: 'playbook_runs', related_id: run.id,
+            });
+          };
+
+          let consultRes: Record<string, unknown> | null = null;
+          try {
+            const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/specialist-consult`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                action: 'consult', tenant_id: tenantId, profile_key: profileKey,
+                question: questionText, requested_by: 'playbook', run_id: run.id,
+                context: { account_name: ctx.account_name ?? null },
+              }),
+            });
+            consultRes = await r.json().catch(() => null);
+          } catch (e) {
+            consultRes = { error: `consult call failed: ${String(e).slice(0, 120)}` };
+          }
+
+          const errKey = String(consultRes?.error ?? '');
+          if (errKey === 'llm_not_configured') {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'skipped: specialist brain not activated (ANTHROPIC_API_KEY) — retrieval recorded in the consultation log';
+            if (onLow === 'escalate') {
+              await escalateTask('specialist brain not activated — routed to a human instead');
+              step.detail += '; escalation task created';
+            }
+          } else if (errKey === 'profile_not_found' || errKey === 'profile_paused') {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `skipped: specialist profile "${profileKey}" ${errKey === 'profile_paused' ? 'is paused' : 'is not installed'} for this workspace`;
+            if (onLow === 'escalate') {
+              await escalateTask(`profile ${errKey === 'profile_paused' ? 'paused' : 'missing'}`);
+              step.detail += '; escalation task created';
+            }
+          } else if (errKey) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `skipped: consult failed (${errKey.slice(0, 120)})`;
+          } else {
+            const confidence = Number(consultRes?.confidence ?? 0);
+            const low = confidence < minConfidence || !!consultRes?.needs_escalation;
+            step.status = 'done'; step.at = now();
+            step.detail = `Specialist (${profileKey}) answered — confidence ${confidence}%${low ? ` (below floor ${minConfidence}%)` : ''}`;
+            if (low && onLow === 'escalate') {
+              await escalateTask(`confidence ${confidence}% below the ${minConfidence}% floor`);
+              step.detail += '; escalation task created';
+            }
+            ctx.last_consultation_id = consultRes?.consultation_id ?? null;
+          }
+          await stepAudit(i, {
+            profile_key: profileKey,
+            consultation_id: (consultRes?.consultation_id as string | null) ?? null,
+            min_confidence: minConfidence, on_low: onLow,
+          });
+          await saveRun(admin, run);
+          continue; // audit appended above
         }
 
         // ────────────────────────────────────────────────

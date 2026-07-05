@@ -1,6 +1,8 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useDataMode } from '../../lib/dataMode';
 import { PageHeader, th, td } from '../../components/ui';
+import SpecialistLive from './SpecialistLive';
 import type { Page } from '../../types';
 import type { CompanyId } from '../../data/companies';
 
@@ -137,6 +139,39 @@ const DOMAINS: Record<CompanyId, Record<SpecialistDomain, DomainData>> = { tcp: 
 
 export default function SpecialistsPage({ domain, setPage }: { domain: SpecialistDomain; setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
+
+  // ── LIVE branch (migration 024): Technical is the proven install;
+  // other domains reuse the same framework — honest "coming" card.
+  if (dataMode === 'live') {
+    if (domain === 'technical') return <SpecialistLive setPage={setPage} />;
+    const names: Record<SpecialistDomain, string> = {
+      technical: 'Technical', legal: 'Legal', finance_deep: 'Finance', people: 'People',
+    };
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <PageHeader
+          title={`${names[domain]} Specialist`}
+          subtitle="Specialists are consulted on demand by primary DEs — configurable sources, grounded answers, gated write-backs"
+        />
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center max-w-2xl">
+          <p className="text-sm text-slate-300 font-medium mb-1">Configure coming — install pattern proven on Technical</p>
+          <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+            The {names[domain]} Specialist reuses the exact framework shipped with the Technical Specialist:
+            profile charter, per-source access modes (ingest / fetch-only / reference), media library with quality flags,
+            grounded consultations, and the always-gated Scribe. It's configuration, not new machinery.
+          </p>
+          <button
+            onClick={() => setPage('specialist_technical')}
+            className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+          >
+            Open the Technical Specialist →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const data = DOMAINS[activeCompanyId][domain];
   const hasDedicatedDE = activeCompanyId === 'pwc' && domain === 'finance_deep';
 

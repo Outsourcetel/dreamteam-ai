@@ -50,6 +50,17 @@ Migration 022. The founder's original use case: implementation projects run agai
 ### BD + Sales — end-to-end  ✅ **SHIPPED**
 Migration 023. The final lifecycle stage — **and the loop now closes: ALL Customer Lifecycle stages (BD → Sales → Onboarding → Success → Renewal) are live product ✅.** The pipeline is a **working cache, not a CRM** (SoR principle): `source` + `external_ref` on every opportunity, CSV import labeled bootstrap, native mode for tenants without a CRM. Guarded stage transitions (won/lost only via close RPCs; lost requires a reason; stage_history + audit on close), `close_opportunity_won` = the lifecycle handoff (account created/linked + optional onboarding kickoff via the 022 machinery), `opportunity_won` event key on the R7 trigger machinery (welcome/kickoff plays fire automatically, per-opportunity cooldown), `pipeline_summary` win-rate view. One opportunities table, two lenses: BD (prospect → qualify) and Sales (qualified → won/lost, table + stage select). **Honest:** owner free-text v1; ARR = deal amount on won; no drag-drop kanban. **The CRM connector (Salesforce/HubSpot) is the sync upgrade — trigger: the first tenant that already runs a CRM.**
 
+## Specialist system
+
+### Technical Specialist v1  ✅ **SHIPPED**
+Migration 024 + `specialist-consult` edge function. Consulted when completing tasks; highly configurable. Per-source **access modes are the customer's storage choice**, enforced by a DB constraint matrix: ingest (stored/indexed), fetch-only (read at consult time, never persisted), reference (registered + cited). Sources: tag-scoped knowledge, connectors (ingest = synced cache, fetch-only = live read-through), MCP servers (registration + connectivity ping v1 — honest "full MCP session upgrade pending"), links, and a media library (quality flags, .txt/.md extracted instantly, pdf/video honest `extracted=false`). Consultations are recorded with citations; the LLM answer path is dormant-honest behind `ANTHROPIC_API_KEY` (retrieval plumbing verifiable now). `consult_specialist` playbook primitive with confidence floor + escalate/continue. **Scribe sub-specialist:** write-backs are structurally grounded — FK-required consultation, server-side whitelisted payload templates (no model free text), always human-gated, audited with the citation chain.
+
+### Legal / Finance / People specialists  `config reuse`
+The framework is generic — installing another domain is a charter seed + sources config, not new machinery. Trigger: first tenant needing one.
+
+### Specialist upgrades  `deferred with triggers`
+Full MCP client sessions (trigger: first tenant with a real MCP server), pdf/docx/video/image content extraction (trigger: R1 activation + first tenant media corpus), Scribe trust-dial expansion beyond always-gated (trigger: earned trust — clean gated write history).
+
 ## Sequencing
 R2, R4, R5 build in parallel now (R4+R5 fully testable pre-key; R2 testable to credential boundary). R3 follows immediately after (shares de-answer surface). R1 executes the moment the key arrives and re-tests everything the others shipped. Then: **pressure-test rescore** against this scorecard.
 
