@@ -274,11 +274,19 @@ serve(async (req) => {
       });
     }
 
-    // ── Retrieval ──
-    const { data: docs } = await admin
-      .from('knowledge_docs')
-      .select('id, title, content, tags')
-      .eq('tenant_id', tenantId);
+    // ── Retrieval — KNOWLEDGE SCOPES (migration 030): the widget runs
+    // AS the tenant's answering DE (first DE — the 025/029 fallback
+    // pattern; the public payload can NOT pick a subject). Scoped docs
+    // are only retrievable when that DE is listed in their scopes.
+    const { data: firstDe } = await admin.from('digital_employees')
+      .select('id').eq('tenant_id', tenantId)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle();
+    const subjectDeId: string | null = firstDe?.id ?? null;
+    const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+      p_tenant_id: tenantId,
+      p_subject_kind: subjectDeId ? 'de' : null,
+      p_subject_id: subjectDeId,
+    });
 
     if (!docs || docs.length === 0) {
       const answer = "I don't have anything to answer from yet — the team is still setting up my knowledge base. Please check back soon.";

@@ -405,8 +405,10 @@ serve(async (req) => {
         let kCount = 0;
         const qEmb = await embedText(inquiry);
         if (qEmb) {
+          // KNOWLEDGE SCOPES (030): this step runs AS the specialist subject.
           const { data: chunks } = await admin.rpc('match_doc_chunks', {
             p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmb, p_match_count: 5,
+            p_subject_kind: prof2?.id ? 'specialist' : null, p_subject_id: prof2?.id ?? null,
           });
           for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
             const { data: doc } = await admin.from('knowledge_docs').select('title').eq('id', c.doc_id).maybeSingle();
@@ -415,7 +417,10 @@ serve(async (req) => {
           }
         }
         if (kCount === 0) {
-          const { data: docs } = await admin.from('knowledge_docs').select('id, title, content, tags').eq('tenant_id', tenantId);
+          const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+            p_tenant_id: tenantId,
+            p_subject_kind: prof2?.id ? 'specialist' : null, p_subject_id: prof2?.id ?? null,
+          });
           for (const d of rankDocs(inquiry, (docs ?? []) as KDoc[])) {
             kCitations.push({ system: 'DreamTeam knowledge', ref: d.id, title: d.title, url: null, snippet: d.content.slice(0, 200) });
             kCount++;
@@ -758,17 +763,21 @@ serve(async (req) => {
 
       if (src.source_type === 'knowledge') {
         // Tag-scoped knowledge_docs (customer chose ingest — it's ours to search).
+        // KNOWLEDGE SCOPES (030): docs are first filtered by doc-level
+        // visibility for THIS specialist subject; tag scoping applies ON TOP.
         const tags: string[] = Array.isArray(cfg.tags) ? (cfg.tags as string[]) : [];
-        let q = admin.from('knowledge_docs').select('id, title, content, tags').eq('tenant_id', tenantId);
-        if (tags.length > 0) q = q.overlaps('tags', tags);
-        const { data: docs } = await q;
-        const scoped = (docs ?? []) as KDoc[];
+        const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+          p_tenant_id: tenantId, p_subject_kind: 'specialist', p_subject_id: prof.id,
+        });
+        const scoped = ((docs ?? []) as KDoc[]).filter((d) =>
+          tags.length === 0 || (d.tags ?? []).some((t) => tags.includes(t)));
         const titles: string[] = [];
         let added = 0;
         if (qEmbedding && scoped.length > 0) {
           const { data: chunks } = await admin.rpc('match_doc_chunks', {
             p_tenant_id: tenantId, p_account_id: null,
             p_query_embedding: qEmbedding, p_match_count: 8,
+            p_subject_kind: 'specialist', p_subject_id: prof.id,
           });
           const scopedIds = new Set(scoped.map((d) => d.id));
           const titleById = new Map(scoped.map((d) => [d.id, d.title]));

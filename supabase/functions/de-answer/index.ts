@@ -67,7 +67,7 @@ function tokenize(s: string): string[] {
     .filter((w) => w.length > 2 && !STOPWORDS.has(w));
 }
 
-interface KDoc { id: string; title: string; content: string; tags: string[] }
+interface KDoc { id: string; title: string; content: string; tags: string[]; visibility?: string }
 
 function rankDocs(question: string, docs: KDoc[]): KDoc[] {
   const qTokens = [...new Set(tokenize(question))];
@@ -163,7 +163,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { question, conversation_id } = await req.json();
+    const { question, conversation_id, de_id } = await req.json();
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
@@ -189,6 +189,23 @@ serve(async (req) => {
     const { data: tenant } = await admin
       .from('tenants').select('name').eq('id', tenantId).single();
     const tenantName = tenant?.name ?? 'your company';
+
+    // ── KNOWLEDGE SCOPES (migration 030): resolve the answering DE
+    // subject. Optional body.de_id (must be in-tenant); default = the
+    // tenant's first DE (the 025/029 fallback pattern). Retrieval RPCs
+    // filter scoped docs server-side by this subject.
+    let subjectDeId: string | null = null;
+    if (typeof de_id === 'string' && de_id) {
+      const { data: reqDe } = await admin.from('digital_employees')
+        .select('id').eq('id', de_id).eq('tenant_id', tenantId).maybeSingle();
+      if (!reqDe) return json({ error: 'de_not_in_tenant' }, 403);
+      subjectDeId = reqDe.id;
+    } else {
+      const { data: firstDe } = await admin.from('digital_employees')
+        .select('id').eq('tenant_id', tenantId)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
+      subjectDeId = firstDe?.id ?? null;
+    }
 
     // ── Conversation (create if needed) + persist the user message ──
     let convId: string | null = typeof conversation_id === 'string' ? conversation_id : null;
@@ -245,11 +262,12 @@ serve(async (req) => {
       }
     }
 
-    // ── Retrieval ──
-    const { data: docs } = await admin
-      .from('knowledge_docs')
-      .select('id, title, content, tags')
-      .eq('tenant_id', tenantId);
+    // ── Retrieval — subject-aware (scoped docs only for listed subjects) ──
+    const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+      p_tenant_id: tenantId,
+      p_subject_kind: subjectDeId ? 'de' : null,
+      p_subject_id: subjectDeId,
+    });
 
     if (!docs || docs.length === 0) {
       const answer = "I don't have any knowledge documents yet — upload some in Knowledge → Library and I'll answer from them.";
@@ -269,12 +287,17 @@ serve(async (req) => {
     // fall back to keyword overlap when no embedded chunks exist.
     let used = 0;
     const contextParts: string[] = [];
+    // Answers derived from SCOPED docs must never enter the tenant-wide
+    // answer cache (a later caller could be a different subject).
+    let scopedContentUsed = false;
     if (qEmbedding) {
       const { data: chunks, error: matchErr } = await admin.rpc('match_doc_chunks', {
         p_tenant_id: tenantId,
         p_account_id: null,
         p_query_embedding: qEmbedding,
         p_match_count: 5,
+        p_subject_kind: subjectDeId ? 'de' : null,
+        p_subject_id: subjectDeId,
       });
       if (matchErr) console.error('match_doc_chunks:', matchErr.message);
       if (Array.isArray(chunks) && chunks.length > 0) {
@@ -286,6 +309,7 @@ serve(async (req) => {
           const title = titleById.get(c.doc_id) ?? 'Knowledge document';
           contextParts.push(`[Document: ${title}]\n${body}`);
           used += body.length + title.length;
+          if (c.visibility === 'scoped') scopedContentUsed = true;
         }
       }
     }
@@ -297,6 +321,7 @@ serve(async (req) => {
         const body = d.content.slice(0, budget);
         contextParts.push(`[Document: ${d.title}]\n${body}`);
         used += body.length + d.title.length;
+        if (d.visibility === 'scoped') scopedContentUsed = true;
       }
     }
     const context = contextParts.length > 0
@@ -379,8 +404,9 @@ ${context}`;
 
     const escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
 
-    // ── Semantic cache write (only good, non-escalated answers) ──
-    if (qEmbedding && !escalate) {
+    // ── Semantic cache write (only good, non-escalated answers; never
+    // answers built from scoped docs — the cache is tenant-wide) ──
+    if (qEmbedding && !escalate && !scopedContentUsed) {
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,

@@ -14,6 +14,11 @@ export interface KnowledgeDoc {
   content: string;
   source: 'upload' | 'paste';
   tags: string[];
+  /** Per-DE knowledge scopes (migration 030): 'tenant' = every DE and
+   *  specialist answers from this doc; 'scoped' = only the subjects in
+   *  knowledge_doc_scopes retrieve it (enforced server-side in the
+   *  retrieval RPCs, not here). */
+  visibility: 'tenant' | 'scoped';
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +76,65 @@ export async function deleteKnowledgeDoc(id: string): Promise<void> {
     .eq('id', id)
     .eq('tenant_id', tid);
   if (error) raise('deleteKnowledgeDoc', error);
+}
+
+// ── Knowledge scopes (migration 030) ──────────────────────────────
+
+/** A machine subject a doc can be scoped to — same subject model as
+ *  data_access_grants (migration 029). */
+export interface ScopeSubject {
+  kind: 'de' | 'specialist';
+  id: string;
+  name: string;
+}
+
+/** All scopeable subjects in the tenant: Digital Employees + Specialists. */
+export async function listScopeSubjects(): Promise<ScopeSubject[]> {
+  const tid = await requireTenantId();
+  const [des, specs] = await Promise.all([
+    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).order('created_at'),
+    supabase.from('specialist_profiles').select('id, name').eq('tenant_id', tid).order('created_at'),
+  ]);
+  if (des.error) raise('listScopeSubjects', des.error);
+  const out: ScopeSubject[] = (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.name }));
+  // specialist_profiles may not exist on older workspaces — non-fatal
+  if (!specs.error) out.push(...(specs.data ?? []).map(s => ({ kind: 'specialist' as const, id: s.id, name: s.name })));
+  return out;
+}
+
+/** Current scopes per doc, keyed by doc_id. Docs with no entry are tenant-wide. */
+export async function listDocScopes(): Promise<Record<string, { kind: 'de' | 'specialist'; id: string }[]>> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('knowledge_doc_scopes')
+    .select('doc_id, subject_kind, subject_id')
+    .eq('tenant_id', tid);
+  if (error) {
+    // Missing table (migration 030 not applied) is non-fatal — no scoping UI data.
+    console.error('listDocScopes:', error.message);
+    return {};
+  }
+  const map: Record<string, { kind: 'de' | 'specialist'; id: string }[]> = {};
+  for (const row of data ?? []) {
+    (map[row.doc_id] ??= []).push({ kind: row.subject_kind, id: row.subject_id });
+  }
+  return map;
+}
+
+/** Replace a doc's scope list via the audited SECURITY DEFINER RPC.
+ *  Empty list = back to tenant-wide. Returns the resulting visibility. */
+export async function setDocScope(
+  docId: string,
+  subjects: { kind: 'de' | 'specialist'; id: string }[]
+): Promise<'tenant' | 'scoped'> {
+  const { data, error } = await supabase.rpc('set_doc_scope', {
+    p_doc_id: docId,
+    p_subjects: subjects,
+  });
+  if (error) raise('setDocScope', error);
+  const res = data as { ok: boolean; error?: string; detail?: string; visibility?: string };
+  if (!res?.ok) throw new CustomerApiError(res?.detail ?? res?.error ?? 'scope change rejected', false);
+  return (res.visibility as 'tenant' | 'scoped') ?? 'tenant';
 }
 
 // ── Chunking / embedding (ingest-chunks edge function) ────────────

@@ -4,6 +4,7 @@ import {
   KnowledgeDoc, listKnowledgeDocs, createKnowledgeDoc,
   updateKnowledgeDoc, deleteKnowledgeDoc,
   DocChunkStatus, listChunkStatus, ingestDocChunks,
+  ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
@@ -36,6 +37,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [chunkStatus, setChunkStatus] = useState<Record<string, DocChunkStatus>>({});
   const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
+  // Per-DE knowledge scopes (migration 030)
+  const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
+  const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
+  const [scopeDoc, setScopeDoc] = useState<KnowledgeDoc | null>(null); // doc whose scope modal is open
+  const [scopeSel, setScopeSel] = useState<Set<string>>(new Set());   // "kind:id" keys
+  const [scopeSaving, setScopeSaving] = useState(false);
   // Eval gate (R3): when the tenant's latest finished eval run FAILED,
   // publishes ask for an explicit, audited override. Client-side soft
   // gate v1 — the server-side hard gate is the hardening step.
@@ -66,6 +73,8 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     try {
       setDocs(await listKnowledgeDocs());
       setChunkStatus(await listChunkStatus());
+      setDocScopes(await listDocScopes());
+      try { setSubjects(await listScopeSubjects()); } catch { /* non-fatal — scoping UI disabled */ }
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError(err instanceof Error ? err.message : String(err));
@@ -100,6 +109,48 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {s.chunks} chunk{s.chunks === 1 ? '' : 's'}</span>;
     }
     return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">Keyword only</span>;
+  };
+
+  // ── Scope modal (Who can use this) ──
+  const skey = (s: { kind: string; id: string }) => `${s.kind}:${s.id}`;
+
+  const openScope = (doc: KnowledgeDoc) => {
+    setScopeDoc(doc);
+    setScopeSel(new Set((docScopes[doc.id] ?? []).map(skey)));
+  };
+
+  const saveScope = async () => {
+    if (!scopeDoc || scopeSaving) return;
+    setScopeSaving(true);
+    setError(null);
+    try {
+      const chosen = subjects.filter(s => scopeSel.has(skey(s))).map(s => ({ kind: s.kind, id: s.id }));
+      await setDocScope(scopeDoc.id, chosen);
+      setScopeDoc(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScopeSaving(false);
+    }
+  };
+
+  const ScopeBadge = ({ doc }: { doc: KnowledgeDoc }) => {
+    const n = (docScopes[doc.id] ?? []).length;
+    const scoped = doc.visibility === 'scoped' && n > 0;
+    return (
+      <button
+        onClick={() => openScope(doc)}
+        title={scoped
+          ? 'Only the selected team members use this document when answering — click to change'
+          : 'All digital employees and specialists use this document — click to limit it'}
+        className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${scoped
+          ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+          : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+      >
+        {scoped ? `Scoped · ${n}` : 'All digital employees'}
+      </button>
+    );
   };
 
   const save = async () => {
@@ -228,6 +279,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 <th className={th}>Tags</th>
                 <th className={th}>Source</th>
                 <th className={th}>Retrieval</th>
+                <th className={th}>Who can use this</th>
                 <th className={th}>Updated</th>
                 <th className={th}></th>
               </tr>
@@ -253,6 +305,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     </span>
                   </td>
                   <td className={td}><IndexBadge docId={d.id} /></td>
+                  <td className={td}><ScopeBadge doc={d} /></td>
                   <td className={`${td} text-xs text-slate-400`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>
                     <div className="flex gap-2 justify-end">
@@ -320,6 +373,68 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scope modal — Who can use this document (migration 030) */}
+      {scopeDoc && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !scopeSaving && setScopeDoc(null)}>
+          <div className="absolute inset-0 bg-black/60" />
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white mb-1">Who can use this document?</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              “{scopeDoc.title}” — by default every digital employee and specialist answers from it.
+              Select team members to limit it: <span className="text-slate-400">only selected team members
+              will use this document when answering.</span> Leave everything unticked for everyone.
+            </p>
+            {subjects.length === 0 ? (
+              <p className="text-sm text-slate-500 mb-4">No digital employees or specialists in this workspace yet.</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto mb-4 space-y-1">
+                {subjects.map(s => {
+                  const k = skey(s);
+                  const checked = scopeSel.has(k);
+                  return (
+                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800/60 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setScopeSel(prev => {
+                          const next = new Set(prev);
+                          if (next.has(k)) next.delete(k); else next.add(k);
+                          return next;
+                        })}
+                        className="accent-indigo-500"
+                      />
+                      <span className="text-sm text-slate-200">{s.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ml-auto ${s.kind === 'de' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-teal-500/15 text-teal-300'}`}>
+                        {s.kind === 'de' ? 'Digital Employee' : 'Specialist'}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-600 mb-4">
+              Changes are enforced when answering (server-side) and recorded in the audit trail.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setScopeDoc(null)}
+                disabled={scopeSaving}
+                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void saveScope()}
+                disabled={scopeSaving}
+                className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+              >
+                {scopeSaving ? 'Saving…' : scopeSel.size > 0 ? `Limit to ${scopeSel.size} selected` : 'Allow everyone'}
               </button>
             </div>
           </div>
