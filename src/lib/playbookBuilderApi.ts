@@ -260,19 +260,13 @@ export interface PlaybookDefinition {
   updated_at: string;
 }
 
-import { raise, requireTenantId } from './liveShared';
+import { raise, requireTenantId, listTenantRows } from './liveShared';
 
 
 const notify = () => { try { window.dispatchEvent(new Event('dt-state-changed')); } catch { /* noop */ } };
 
 export async function listDefinitions(): Promise<PlaybookDefinition[]> {
-  const tid = await requireTenantId();
-  const { data, error } = await supabase
-    .from('playbook_definitions').select('*')
-    .eq('tenant_id', tid)
-    .order('created_at', { ascending: false });
-  if (error) raise('listDefinitions', error);
-  return (data ?? []) as PlaybookDefinition[];
+  return listTenantRows<PlaybookDefinition>('playbook_definitions', 'created_at', false, 'listDefinitions');
 }
 
 export async function createDefinition(input: {

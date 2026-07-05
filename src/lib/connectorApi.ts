@@ -199,20 +199,13 @@ export interface ReadThroughResult {
 
 // ── Errors / tenant plumbing (mirrors customerApi) ────────────────
 
-import { raise, requireTenantId } from './liveShared';
+import { raise, requireTenantId, listTenantRows } from './liveShared';
 
 
 // ── Connector CRUD ────────────────────────────────────────────────
 
 export async function listConnectors(): Promise<Connector[]> {
-  const tid = await requireTenantId();
-  const { data, error } = await supabase
-    .from('connectors')
-    .select('*')
-    .eq('tenant_id', tid)
-    .order('created_at', { ascending: true });
-  if (error) raise('listConnectors', error);
-  return (data ?? []) as Connector[];
+  return listTenantRows<Connector>('connectors', 'created_at', true, 'listConnectors');
 }
 
 export async function listConnectorObjects(connectorId: string): Promise<ConnectorObject[]> {

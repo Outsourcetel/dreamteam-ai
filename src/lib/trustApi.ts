@@ -12,7 +12,7 @@
 // guardrails (composition rule, migration 016 — untouched).
 // ============================================================
 import { supabase } from '../supabase';
-import { raise, requireTenantId } from './liveShared';
+import { raise, requireTenantId, listTenantRows } from './liveShared';
 
 export type TrustCategory = 'invoice_auto_send' | 'answer_dock' | 'answer_widget';
 
@@ -71,14 +71,7 @@ export function trustLevelSettings(category: TrustCategory, level: number): {
 export const TRUST_LEVEL_LABELS = ['Human-gated', 'Level 1', 'Level 2', 'Level 3'];
 
 export async function listTrustPolicies(): Promise<TrustPolicy[]> {
-  const tid = await requireTenantId();
-  const { data, error } = await supabase
-    .from('trust_policies')
-    .select('*')
-    .eq('tenant_id', tid)
-    .order('action_category', { ascending: true });
-  if (error) raise('listTrustPolicies', error);
-  return (data ?? []) as TrustPolicy[];
+  return listTenantRows<TrustPolicy>('trust_policies', 'action_category', true, 'listTrustPolicies');
 }
 
 /** Seed default policies for the caller's tenant (idempotent; the
