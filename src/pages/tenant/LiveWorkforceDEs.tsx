@@ -8,6 +8,12 @@ import {
   AUTONOMY_ACTION_META,
 } from '../../lib/autonomyApi';
 import type { DEAutonomy, AutonomyActionType, ApprovalEvidence } from '../../lib/autonomyApi';
+import {
+  listTrustPolicies, seedTrustPolicies, computeTrustEvidence, requestTrustPromotion,
+  listTrustHistory, trustLevelSettings, TRUST_LEVEL_LABELS,
+} from '../../lib/trustApi';
+import type { TrustPolicy, TrustEvidence, TrustHistoryEvent, TrustCategory } from '../../lib/trustApi';
+import { appendAuditEvent } from '../../lib/guardrailApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 
 // ============================================================
@@ -46,6 +52,32 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
+  // Earned trust
+  const [policies, setPolicies] = useState<Record<string, TrustPolicy>>({});
+  const [trustEvidence, setTrustEvidence] = useState<Record<string, TrustEvidence>>({});
+  const [trustHistory, setTrustHistory] = useState<TrustHistoryEvent[]>([]);
+  const [trustError, setTrustError] = useState<string | null>(null);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [requestedId, setRequestedId] = useState<string | null>(null);
+
+  const refreshTrust = useCallback(async () => {
+    try {
+      let list = await listTrustPolicies();
+      if (list.length === 0) list = await seedTrustPolicies();
+      const byCat: Record<string, TrustPolicy> = {};
+      for (const p of list) byCat[p.action_category] = p;
+      setPolicies(byCat);
+      const ev: Record<string, TrustEvidence> = {};
+      await Promise.all(list.map(async p => {
+        try { ev[p.action_category] = await computeTrustEvidence(p.action_category, p.de_id); } catch { /* per-card */ }
+      }));
+      setTrustEvidence(ev);
+      try { setTrustHistory(await listTrustHistory(8)); } catch { setTrustHistory([]); }
+      setTrustError(null);
+    } catch (err) {
+      setTrustError((err as Error)?.message || 'Failed to load earned trust.');
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -59,15 +91,42 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
       setDrafts(Object.fromEntries(ACTION_ORDER.map(t => [t, draftFrom(byType[t])])));
       setMissingTables(false);
       try { setEvidence(await getApprovalEvidence()); } catch { setEvidence(null); }
+      void refreshTrust();
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError((err as Error)?.message || 'Failed to load the trust dial.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshTrust]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  /** Does a dial setting exceed what's been EARNED for its category? */
+  const exceedsEarned = useCallback((type: AutonomyActionType, enabled: boolean, maxCents: number | null, minConf: number | null): boolean => {
+    const policy = policies[type];
+    if (!policy || !enabled) return false;
+    const earned = trustLevelSettings(type as TrustCategory, policy.current_level);
+    if (!earned.enabled) return true;
+    if (earned.max_amount_cents !== null && (maxCents ?? Infinity) > earned.max_amount_cents) return true;
+    if (earned.min_confidence !== null && (minConf ?? 0) < earned.min_confidence) return true;
+    return false;
+  }, [policies]);
+
+  const requestPromotion = async (policy: TrustPolicy) => {
+    setRequestingId(policy.id);
+    setTrustError(null);
+    try {
+      await requestTrustPromotion(policy.id);
+      setRequestedId(policy.id);
+      setTimeout(() => setRequestedId(k => (k === policy.id ? null : k)), 4000);
+      await refreshTrust();
+    } catch (err) {
+      setTrustError((err as Error)?.message || 'Promotion request failed.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   const save = async (type: AutonomyActionType) => {
     const d = drafts[type];
@@ -83,6 +142,22 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
         min_confidence: meta.unit === 'confidence' && d.confidence.trim() !== ''
           ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
       });
+      // Manual raise above the earned level → recorded as an override so
+      // the earned path stays the celebrated one (still guardrail-capped).
+      if (exceedsEarned(type, row.enabled, row.max_amount_cents, row.min_confidence)) {
+        try {
+          await appendAuditEvent({
+            actor: 'You', actor_type: 'human', category: 'config_change',
+            action: `Manual trust override — ${meta.label} set above the earned level`,
+            detail: {
+              kind: 'trust_manual_override', action_category: type,
+              earned_level: policies[type]?.current_level ?? 0,
+              enabled: row.enabled, max_amount_cents: row.max_amount_cents, min_confidence: row.min_confidence,
+              composition: 'autonomy_narrows_within_guardrails',
+            },
+          });
+        } catch { /* audit best-effort; upsert already audited */ }
+      }
       setRows(prev => ({ ...prev, [type]: row }));
       setDrafts(prev => ({ ...prev, [type]: draftFrom(row) }));
       setSavedKey(type);
@@ -156,6 +231,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm text-slate-200 font-medium">{meta.label}</span>
+                          {rows[type] && exceedsEarned(type, rows[type].enabled, rows[type].max_amount_cents, rows[type].min_confidence) && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="This dial is set above the level the DE has earned from evidence. Still capped by guardrails.">
+                              Manual override
+                            </span>
+                          )}
                           {meta.dormant && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500" title="Stored now; enforced when the DE brain is activated (R1)">
                               dormant until activation
@@ -212,6 +292,108 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
                 View Audit Trail →
               </button>
+            </p>
+          </div>
+
+          {/* Earned Trust */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+            <div className="mb-1 flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-semibold text-white">Earned trust</h3>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-5">
+              Alex earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
+              A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
+            </p>
+
+            {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
+
+            <div className="space-y-4">
+              {ACTION_ORDER.map(type => {
+                const policy = policies[type];
+                const ev = trustEvidence[type];
+                if (!policy) return null;
+                const meta = AUTONOMY_ACTION_META[type];
+                return (
+                  <div key={type} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-slate-200 font-medium">{meta.label}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
+                            {TRUST_LEVEL_LABELS[policy.current_level] ?? `Level ${policy.current_level}`}
+                          </span>
+                          {ev?.eligible && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Eligible for promotion</span>
+                          )}
+                          {policy.pending_task_id && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Awaiting approval</span>
+                          )}
+                        </div>
+                      </div>
+                      {ev && !ev.at_max_level && (
+                        <button
+                          onClick={() => void requestPromotion(policy)}
+                          disabled={!ev.eligible || requestingId !== null || policy.pending_task_id !== null}
+                          className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
+                          title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
+                        >
+                          {requestingId === policy.id ? 'Requesting…' : requestedId === policy.id ? 'Requested ✓' : `Request promotion to ${TRUST_LEVEL_LABELS[policy.target_level]}`}
+                        </button>
+                      )}
+                    </div>
+
+                    {ev ? (
+                      <div className="mt-3 space-y-2">
+                        {ev.criteria.map(c => {
+                          const pct = c.required > 0 ? Math.min(100, Math.round((Number(c.actual) / Number(c.required)) * 100)) : 100;
+                          const inverse = c.key === 'guardrail_blocks';
+                          return (
+                            <div key={c.key} className="flex items-center gap-3">
+                              <div className="w-44 flex-shrink-0 text-[11px] text-slate-400">{c.label}</div>
+                              <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                                  style={{ width: `${inverse ? (c.met ? 100 : 100) : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
+                                />
+                              </div>
+                              <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-slate-500'}`} title={c.detail}>
+                                {c.met ? '✓ ' : ''}{c.detail}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-[11px] text-slate-500">Evidence not available yet.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {trustHistory.length > 0 && (
+              <div className="mt-5">
+                <h4 className="text-xs font-semibold text-slate-300 mb-2">Promotion history</h4>
+                <ul className="space-y-1.5">
+                  {trustHistory.map(h => (
+                    <li key={h.id} className="text-[11px] text-slate-500 flex items-start gap-2">
+                      <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        h.kind === 'trust_promoted' ? 'bg-emerald-500' :
+                        h.kind === 'trust_demoted' ? 'bg-rose-500' :
+                        h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
+                      }`} />
+                      <span className="flex-1">{h.action}</span>
+                      <span className="flex-shrink-0 text-slate-600">{new Date(h.created_at).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <p className="mt-4 text-[11px] text-slate-500">
+              Evidence is computed on the server from the Proving Ground, human reviews, and the guardrail record — never asserted by the browser.
+              Promotions and demotions are recorded on the immutable audit trail.
             </p>
           </div>
         </div>

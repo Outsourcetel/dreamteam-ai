@@ -12,7 +12,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback';
+type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice';
 type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed';
 
 interface OpsTask {
@@ -153,6 +153,8 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'review_gate') return 'bg-blue-500/20 text-blue-300';
   if (type === 'escalation') return 'bg-red-500/20 text-red-300';
   if (type === 'override') return 'bg-amber-500/20 text-amber-300';
+  if (type === 'trust_promotion') return 'bg-emerald-500/20 text-emerald-300';
+  if (type === 'trust_demotion_notice') return 'bg-rose-500/20 text-rose-300';
   return 'bg-slate-700 text-slate-400';
 }
 
@@ -161,6 +163,8 @@ function taskBadgeLabel(type: TaskType): string {
   if (type === 'review_gate') return 'REVIEW';
   if (type === 'escalation') return 'ESCALATION';
   if (type === 'override') return 'OVERRIDE';
+  if (type === 'trust_promotion') return 'TRUST ▲';
+  if (type === 'trust_demotion_notice') return 'TRUST ▼';
   return 'FEEDBACK';
 }
 

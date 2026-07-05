@@ -61,7 +61,7 @@ export interface RenewalInvoice {
   customer_accounts?: { name: string; health_score: number } | null;
 }
 
-export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback';
+export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice';
 export interface DBHumanTask {
   id: string;
   tenant_id: string;
@@ -448,6 +448,19 @@ export async function decideHumanTask(
       await resolveScribeRequest(task.id, decision);
     } catch (err) {
       console.error('scribe resolution hook:', err);
+    }
+  }
+  // Hook #4 (additive, guarded — migration 025): if this task gates an
+  // earned-trust promotion, apply it server-side. The RPC re-verifies
+  // evidence is STILL eligible at apply time and blocks self-approval;
+  // a stale/self-approval rejection throws so the UI can explain it.
+  if (task.type === 'trust_promotion') {
+    try {
+      const { resolveTrustPromotion } = await import('./trustApi');
+      await resolveTrustPromotion(task.id, decision);
+    } catch (err) {
+      console.error('trust promotion hook:', err);
+      throw err;
     }
   }
   return data as DBHumanTask;
