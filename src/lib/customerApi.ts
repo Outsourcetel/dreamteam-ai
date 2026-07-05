@@ -61,7 +61,7 @@ export interface RenewalInvoice {
   customer_accounts?: { name: string; health_score: number } | null;
 }
 
-export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist';
+export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision';
 export interface ChecklistItemState { text: string; done: boolean }
 export interface DBHumanTask {
   id: string;
@@ -479,6 +479,19 @@ export async function decideHumanTask(
       await resolveTrustPromotion(task.id, decision);
     } catch (err) {
       console.error('trust promotion hook:', err);
+      throw err;
+    }
+  }
+  // Hook #5 (additive, guarded — migration 032): if this task gates a
+  // proposed knowledge revision, approve (apply + re-embed) or reject it
+  // server-side. Approve creates a NEW knowledge_docs version (never a
+  // destructive overwrite); reject leaves the knowledge base untouched.
+  if (task.related_table === 'knowledge_revision_requests' && task.related_id) {
+    try {
+      const { resolveKnowledgeRevision } = await import('./knowledgeApi');
+      await resolveKnowledgeRevision(task.related_id, decision);
+    } catch (err) {
+      console.error('knowledge revision hook:', err);
       throw err;
     }
   }

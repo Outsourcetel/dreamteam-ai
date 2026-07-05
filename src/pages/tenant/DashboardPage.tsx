@@ -42,7 +42,7 @@ const DEFAULT_HEALTH_CONFIG: HealthConfig = {
 
 type EntityHealth = 'active' | 'degraded' | 'at_risk' | 'offline';
 type OutcomeTrend = 'up' | 'stable' | 'warn' | 'alert';
-type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist';
+type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision';
 type ActivityType = 'resolved' | 'escalated' | 'kb_gap' | 'error';
 
 interface EntityData {
@@ -251,6 +251,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'review_gate') return 'bg-blue-500/20 text-blue-300';
   if (type === 'escalation') return 'bg-red-500/20 text-red-300';
   if (type === 'override') return 'bg-amber-500/20 text-amber-300';
+  if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   return 'bg-slate-700 text-slate-400';
 }
 
@@ -259,6 +260,7 @@ function taskBadgeLabel(type: TaskType): string {
   if (type === 'review_gate') return 'REVIEW';
   if (type === 'escalation') return 'ESCALATION';
   if (type === 'override') return 'OVERRIDE';
+  if (type === 'knowledge_revision') return 'KNOWLEDGE';
   return 'FEEDBACK';
 }
 

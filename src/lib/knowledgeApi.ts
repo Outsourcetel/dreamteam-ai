@@ -19,6 +19,11 @@ export interface KnowledgeDoc {
    *  knowledge_doc_scopes retrieve it (enforced server-side in the
    *  retrieval RPCs, not here). */
   visibility: 'tenant' | 'scoped';
+  /** Simple version chain (migration 032): a revision APPLY inserts a new
+   *  row pointing back at the doc it superseded — history is preserved,
+   *  never destructively overwritten. */
+  previous_version_id: string | null;
+  is_current: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -34,9 +39,31 @@ export async function listKnowledgeDocs(): Promise<KnowledgeDoc[]> {
     .from('knowledge_docs')
     .select('*')
     .eq('tenant_id', tid)
+    // Superseded versions (migration 032) stay in the table for history
+    // but never show as if they were a separate, current document.
+    .eq('is_current', true)
     .order('updated_at', { ascending: false });
   if (error) raise('listKnowledgeDocs', error);
   return data ?? [];
+}
+
+/** The version chain for one doc lineage, newest first — walks
+ *  previous_version_id back to the original upload/paste. */
+export async function listDocVersionHistory(docId: string): Promise<KnowledgeDoc[]> {
+  const tid = await requireTenantId();
+  const chain: KnowledgeDoc[] = [];
+  let cursor: string | null = docId;
+  let guard = 0;
+  while (cursor && guard < 50) {
+    guard++;
+    const { data, error } = await supabase
+      .from('knowledge_docs').select('*').eq('id', cursor).eq('tenant_id', tid).maybeSingle();
+    if (error) raise('listDocVersionHistory', error);
+    if (!data) break;
+    chain.push(data as KnowledgeDoc);
+    cursor = (data as KnowledgeDoc).previous_version_id;
+  }
+  return chain;
 }
 
 export async function createKnowledgeDoc(
@@ -255,4 +282,111 @@ export async function askDE(
     blocked: !!data.blocked,
     blocked_rule: typeof data.rule === 'string' ? data.rule : undefined,
   };
+}
+
+// ============================================================
+// Knowledge Feedback Loop (migration 032) — a human verdict on a
+// resolved inquiry's evidence, human-gated knowledge revision
+// requests, re-embedding on apply. Closes the loop: DE resolves an
+// inquiry → human verifies accuracy → knowledge base gets corrected
+// → with a human gate before any knowledge changes.
+// ============================================================
+
+export type EvidenceVerdict = 'accurate' | 'needs_improvement' | 'inaccurate';
+
+export interface EvidenceFeedback {
+  id: string;
+  tenant_id: string;
+  evidence_run_id: string;
+  reviewer_user_id: string | null;
+  verdict: EvidenceVerdict;
+  notes: string;
+  created_at: string;
+}
+
+export interface KnowledgeRevisionRequest {
+  id: string;
+  tenant_id: string;
+  source_doc_id: string | null;
+  evidence_run_id: string;
+  feedback_id: string;
+  proposed_title: string;
+  proposed_body_md: string;
+  status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'applied';
+  created_by: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  applied_doc_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Submit a human verdict on one evidence run's gathered evidence/answer.
+ *  'accurate' records feedback only. 'needs_improvement' / 'inaccurate'
+ *  ALSO auto-creates a pending knowledge_revision_requests row + a
+ *  human_tasks row (type 'knowledge_revision') — server-side, in one
+ *  transaction (see submit_evidence_feedback, migration 032). */
+export async function submitEvidenceFeedback(
+  evidenceRunId: string,
+  verdict: EvidenceVerdict,
+  notes = ''
+): Promise<{ ok: boolean; feedback_id?: string; revision_request_id?: string | null; task_id?: string | null; error?: string }> {
+  const { data, error } = await supabase.rpc('submit_evidence_feedback', {
+    p_evidence_run_id: evidenceRunId, p_verdict: verdict, p_notes: notes,
+  });
+  if (error) raise('submitEvidenceFeedback', error);
+  return data as { ok: boolean; feedback_id?: string; revision_request_id?: string | null; task_id?: string | null; error?: string };
+}
+
+export async function listEvidenceFeedback(evidenceRunId: string): Promise<EvidenceFeedback[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('evidence_feedback').select('*')
+    .eq('tenant_id', tid).eq('evidence_run_id', evidenceRunId)
+    .order('created_at', { ascending: false });
+  if (error) raise('listEvidenceFeedback', error);
+  return (data ?? []) as EvidenceFeedback[];
+}
+
+export async function listKnowledgeRevisionRequests(
+  status?: KnowledgeRevisionRequest['status']
+): Promise<KnowledgeRevisionRequest[]> {
+  const tid = await requireTenantId();
+  let q = supabase.from('knowledge_revision_requests').select('*').eq('tenant_id', tid);
+  if (status) q = q.eq('status', status);
+  const { data, error } = await q.order('created_at', { ascending: false });
+  if (error) raise('listKnowledgeRevisionRequests', error);
+  return (data ?? []) as KnowledgeRevisionRequest[];
+}
+
+/** Approve (apply_knowledge_revision) or reject (reject_knowledge_revision)
+ *  a pending knowledge revision. Called by decideHumanTask's hook #5 when
+ *  the gating human_tasks row is of type 'knowledge_revision'.
+ *  On approve: a NEW knowledge_docs version is inserted (previous_version_id
+ *  links back — never a destructive overwrite), then re-run through the
+ *  SAME ingest-chunks embedding path every other doc uses so the improved
+ *  content is retrievable immediately. */
+export async function resolveKnowledgeRevision(
+  requestId: string,
+  decision: 'approved' | 'rejected',
+  reason = ''
+): Promise<{ ok: boolean; new_doc_id?: string | null; error?: string }> {
+  if (decision === 'rejected') {
+    const { data, error } = await supabase.rpc('reject_knowledge_revision', {
+      p_request_id: requestId, p_reason: reason,
+    });
+    if (error) raise('resolveKnowledgeRevision (reject)', error);
+    return data as { ok: boolean; error?: string };
+  }
+  const { data, error } = await supabase.rpc('apply_knowledge_revision', { p_request_id: requestId });
+  if (error) raise('resolveKnowledgeRevision (apply)', error);
+  const result = data as { ok: boolean; new_doc_id?: string; previous_doc_id?: string | null; error?: string };
+  if (result?.ok && result.new_doc_id) {
+    // Re-embed the new version through the existing chunk/embed path so the
+    // improved content is retrievable right away — same path every other
+    // knowledge doc goes through, not a special case.
+    try { await ingestDocChunks(result.new_doc_id); }
+    catch (err) { console.error('knowledge revision re-embed:', err); }
+  }
+  return result;
 }

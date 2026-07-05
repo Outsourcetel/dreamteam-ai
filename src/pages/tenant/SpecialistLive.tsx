@@ -12,6 +12,9 @@ import {
   consult, listConsultations, listScribeRequests, createScribeRequest,
   resolveInquiry, listEvidenceRuns, EvidenceRun, EvidenceStep, ResolveInquiryResult,
 } from '../../lib/specialistApi';
+import {
+  submitEvidenceFeedback, listEvidenceFeedback, EvidenceFeedback, EvidenceVerdict,
+} from '../../lib/knowledgeApi';
 import type { Page } from '../../types';
 
 // ============================================================
@@ -183,12 +186,103 @@ const OUTCOME_CHIP: Record<string, [string, string]> = {
   denied_no_access: ['No access — blocked by your data access rules', 'bg-rose-500/20 text-rose-300'],
 };
 
-function EvidenceTrail({ steps, confidence, answerStatus, answer, note }: {
+const VERDICT_OPTIONS: { key: EvidenceVerdict; label: string; cls: string }[] = [
+  { key: 'accurate', label: 'Accurate', cls: 'bg-emerald-600 hover:bg-emerald-500 text-white' },
+  { key: 'needs_improvement', label: 'Needs improvement', cls: 'bg-amber-600 hover:bg-amber-500 text-white' },
+  { key: 'inaccurate', label: 'Inaccurate', cls: 'bg-red-600 hover:bg-red-500 text-white' },
+];
+
+/** "Was this evidence accurate?" verdict control — the human-in-the-loop
+ *  entry point for the Knowledge Feedback Loop (migration 032). Verdicts
+ *  of 'needs_improvement' / 'inaccurate' auto-create a pending knowledge
+ *  revision request + a human task, server-side (submit_evidence_feedback).
+ *  'accurate' records feedback only — no revision, no task. */
+function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId: string; onSubmitted?: () => void }) {
+  const [picked, setPicked] = useState<EvidenceVerdict | null>(null);
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; revision_request_id?: string | null; error?: string } | null>(null);
+  const [past, setPast] = useState<EvidenceFeedback[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    listEvidenceFeedback(evidenceRunId).then((f) => { if (live) setPast(f); }).catch(() => {});
+    return () => { live = false; };
+  }, [evidenceRunId]);
+
+  const submit = async () => {
+    if (!picked || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await submitEvidenceFeedback(evidenceRunId, picked, notes.trim());
+      setResult(res);
+      setPast(await listEvidenceFeedback(evidenceRunId).catch(() => past));
+      onSubmitted?.();
+    } catch (err) {
+      setResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (past.length > 0 && !picked) {
+    const latest = past[0];
+    return (
+      <div className="mt-3 pt-3 border-t border-slate-800">
+        <p className="text-[11px] font-medium text-slate-400 mb-1">Reviewer verdict</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Chip label={latest.verdict.replace('_', ' ')}
+            cls={latest.verdict === 'accurate' ? 'bg-emerald-500/20 text-emerald-400' : latest.verdict === 'needs_improvement' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'} />
+          {latest.notes && <span className="text-[11px] text-slate-500">"{latest.notes}"</span>}
+        </div>
+        {latest.verdict !== 'accurate' && (
+          <p className="text-[10px] text-teal-400 mt-1">A knowledge revision request was drafted for human review — see Knowledge → Library → Revisions.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-800">
+      <p className="text-[11px] font-medium text-slate-400 mb-1.5">Was this evidence accurate?</p>
+      <div className="flex gap-1.5 flex-wrap mb-2">
+        {VERDICT_OPTIONS.map((v) => (
+          <button key={v.key}
+            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${picked === v.key ? v.cls : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+            onClick={() => setPicked(v.key)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {picked && (
+        <div className="flex gap-2">
+          <input className={inputCls + ' flex-1'} placeholder="Optional note (e.g. what should be added or fixed)"
+            value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <button className={btnPrimary} disabled={submitting} onClick={() => void submit()}>
+            {submitting ? 'Submitting…' : 'Submit'}
+          </button>
+        </div>
+      )}
+      {result && (
+        result.ok ? (
+          <p className="text-[11px] text-emerald-400 mt-1.5">
+            Feedback recorded.{result.revision_request_id ? ' A knowledge revision request was drafted and sent for human approval.' : ''}
+          </p>
+        ) : (
+          <p className="text-[11px] text-red-400 mt-1.5">Could not submit: {result.error}</p>
+        )
+      )}
+    </div>
+  );
+}
+
+function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidenceRunId }: {
   steps: EvidenceStep[];
   confidence?: EvidenceRun['confidence_inputs'];
   answerStatus?: string;
   answer?: string | null;
   note?: string;
+  evidenceRunId?: string;
 }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
@@ -247,6 +341,8 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note }: {
           </p>
         )}
       </div>
+
+      {evidenceRunId && <EvidenceVerdictControl evidenceRunId={evidenceRunId} />}
     </div>
   );
 }
@@ -607,7 +703,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           </button>
         </div>
 
-        {lastRun && <EvidenceTrail steps={lastRun.steps ?? []} confidence={lastRun.confidence_inputs} answerStatus={lastRun.answer_status} answer={lastRun.answer ?? null} note={lastRun.note} />}
+        {lastRun && <EvidenceTrail steps={lastRun.steps ?? []} confidence={lastRun.confidence_inputs} answerStatus={lastRun.answer_status} answer={lastRun.answer ?? null} note={lastRun.note} evidenceRunId={lastRun.evidence_run_id} />}
 
         {pastRuns.length > 0 && (
           <>
@@ -623,7 +719,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                   </button>
                   {expandedRun === r.id && (
                     <div className="px-3 pb-3">
-                      <EvidenceTrail steps={r.steps ?? []} confidence={r.confidence_inputs} answerStatus={r.answer_status} answer={r.answer} />
+                      <EvidenceTrail steps={r.steps ?? []} confidence={r.confidence_inputs} answerStatus={r.answer_status} answer={r.answer} evidenceRunId={r.id} />
                     </div>
                   )}
                 </div>

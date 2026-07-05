@@ -5,6 +5,7 @@ import {
   updateKnowledgeDoc, deleteKnowledgeDoc,
   DocChunkStatus, listChunkStatus, ingestDocChunks,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
+  KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
@@ -48,6 +49,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // gate v1 — the server-side hard gate is the hardening step.
   const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Knowledge Feedback Loop (migration 032): pending revision requests
+  // drafted from evidence-run feedback, awaiting human approve/reject.
+  const [revisions, setRevisions] = useState<KnowledgeRevisionRequest[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [decidingRevisionId, setDecidingRevisionId] = useState<string | null>(null);
+  const [expandedRevisionId, setExpandedRevisionId] = useState<string | null>(null);
 
   /** Runs `publish` directly when the gate is clear; otherwise opens the
    *  override dialog. `docTitle` is used for the audit entry on override. */
@@ -83,7 +90,29 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  const loadRevisions = async () => {
+    setRevisionsLoading(true);
+    try { setRevisions(await listKnowledgeRevisionRequests('pending_approval')); }
+    catch { /* non-fatal — panel just shows empty */ }
+    finally { setRevisionsLoading(false); }
+  };
+
+  useEffect(() => { void load(); void loadRevisions(); }, []);
+
+  const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
+    setDecidingRevisionId(r.id);
+    setError(null);
+    try {
+      const res = await resolveKnowledgeRevision(r.id, decision);
+      if (res && res.ok === false) throw new Error(res.error ?? 'Could not decide revision');
+      await loadRevisions();
+      if (decision === 'approved') await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDecidingRevisionId(null);
+    }
+  };
 
   // Fire-and-forget: chunk + embed a doc via the ingest-chunks edge
   // function so Alex retrieves it semantically. Failure is non-fatal —
@@ -328,6 +357,79 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Knowledge Revisions — human-gated updates drafted from evidence
+          feedback (migration 032). Diff-like view: current doc content
+          vs. the server-assembled proposed content, plus the evidence
+          run + reviewer note that triggered the draft. */}
+      {(revisions.length > 0 || revisionsLoading) && (
+        <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+          <h3 className="text-sm font-semibold text-white mb-1">Knowledge Revisions — pending your approval</h3>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Drafted automatically when a reviewer marked resolved-inquiry evidence "needs improvement" or "inaccurate."
+            Nothing changes in the knowledge base until you approve here.
+          </p>
+          {revisionsLoading ? (
+            <p className="text-xs text-slate-500">Loading…</p>
+          ) : (
+            <div className="space-y-2">
+              {revisions.map((r) => {
+                const currentDoc = docs.find(d => d.id === r.source_doc_id);
+                const expanded = expandedRevisionId === r.id;
+                return (
+                  <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                    <button
+                      className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                      onClick={() => setExpandedRevisionId(expanded ? null : r.id)}
+                    >
+                      <span className="text-xs text-white font-medium flex-1 truncate">{r.proposed_title}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-indigo-500/20 text-indigo-300' : 'bg-teal-500/20 text-teal-300'}`}>
+                        {r.source_doc_id ? 'Edit to existing doc' : 'New doc proposed'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</span>
+                    </button>
+                    {expanded && (
+                      <div className="px-3 pb-3 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">Current</p>
+                            <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                              {currentDoc ? currentDoc.content : '(no existing document — this proposes a brand-new one)'}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                            <p className="text-[10px] font-medium text-emerald-400 uppercase tracking-wider mb-1">Proposed</p>
+                            <p className="text-xs text-slate-200 whitespace-pre-wrap max-h-48 overflow-y-auto">{r.proposed_body_md}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500">
+                          Triggered by evidence run <span className="text-slate-400">{r.evidence_run_id}</span> · drafted server-side from the current document, the evidence run's gaps, and the reviewer's note — never free-form model text.
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => void decideRevision(r, 'rejected')}
+                            disabled={decidingRevisionId === r.id}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
+                          >
+                            {decidingRevisionId === r.id ? 'Working…' : 'Reject'}
+                          </button>
+                          <button
+                            onClick={() => void decideRevision(r, 'approved')}
+                            disabled={decidingRevisionId === r.id}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white transition-colors"
+                          >
+                            {decidingRevisionId === r.id ? 'Working…' : 'Approve & apply'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
