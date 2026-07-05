@@ -31,6 +31,27 @@
  *                   path ingest-chunks uses. REFUSED server-side when the
  *                   connector's access_mode is 'fetch_only' (the customer
  *                   said "never store"); that refusal is the doctrine.
+ *   preview_action — THE GENERALIZED ACTION LAYER (migration 035), preview
+ *                   half: { action_key, params, subject_kind?, subject_id? }
+ *                   → resolves the action_definition, validates params,
+ *                   RENDERS the exact request (method/URL/body) via
+ *                   renderAction (template provider) or a native
+ *                   provider's preview branch — WITHOUT calling the
+ *                   external system. Returns a plain-language receipt
+ *                   preview ("This will change ticket #4521's status
+ *                   from Open to Resolved"). No side effects beyond a
+ *                   lightweight action_executions row (mode='preview').
+ *   execute_action — the execute half. Order: (1) data_access_grants
+ *                   write_back check (resolve_access, same as Scribe),
+ *                   (2) decide_action_execution (destructive-always-
+ *                   gates, THEN guardrail-always-wins, THEN trust-
+ *                   narrows-within-it — same composition family as
+ *                   generateInvoice/decide_inquiry_triage), (3) on
+ *                   auto-execute or human-approved re-entry: actually
+ *                   calls the external system and records a plain-
+ *                   language RECEIPT (never raw JSON) on the audit
+ *                   event, the action_executions row, and the
+ *                   human_task if one existed.
  *
  * Auth: caller JWT → tenant, or service-role key + body.tenant_id
  * (evidence pipeline path). Credentials come from connector_secrets
@@ -56,8 +77,8 @@ import {
   SystemCategory, CanonicalItem, getCategoryOp, legalOps, computeHealth,
 } from '../_shared/categoryContracts.ts';
 import {
-  AdapterDefinition, AUTH_META, validateAdapterDefinition,
-  walkPath, renderTemplate, renderBody,
+  AdapterDefinition, AdapterActionBinding, AUTH_META, validateAdapterDefinition,
+  walkPath, renderTemplate, renderBody, renderAction,
 } from '../_shared/adapterTemplates.ts';
 
 const CORS = {
@@ -154,6 +175,86 @@ const zendesk = {
     if (!r.ok) return { ok: false, error: r.error };
     const arts = (r.body as { articles?: Array<Record<string, unknown>> })?.articles ?? [];
     return { ok: true, docs: arts.map((a) => ({ external_ref: `zendesk:${a.id}`, title: clip(a.title, 200), content: stripHtml(String(a.body ?? '')), url: a.html_url ? String(a.html_url) : null })) };
+  },
+};
+
+// ════════════════════════════════════════════════════════════════
+// NATIVE ACTION EXECUTORS — the GENERALIZED ACTION LAYER's write-side
+// counterpart to the read-side adapter objects above. A native
+// provider's action_definition.execution = { execution_key } names one
+// of these branches (as opposed to provider='template', which renders
+// through adapter_templates.actions + renderAction). Each executor
+// implements BOTH halves — render() for preview (no fetch) and run()
+// for execute (actually calls out) — sharing the exact same request-
+// building code so preview and execute can never drift.
+// ════════════════════════════════════════════════════════════════
+interface ActionRenderResult { ok: boolean; method?: string; url?: string; body?: unknown; error?: string; detail?: string }
+interface ActionRunResult { ok: boolean; status?: number; raw?: unknown; error?: string; detail?: string; receipt?: string }
+
+interface NativeAction {
+  render(c: Ctx, params: Record<string, string>): ActionRenderResult;
+  run(c: Ctx, params: Record<string, string>): Promise<ActionRunResult>;
+}
+
+const ZENDESK_STATUS_VALUES = ['open', 'pending', 'hold', 'solved'];
+
+const zendeskActions: Record<string, NativeAction> = {
+  zendesk_add_internal_note: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket number) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'PUT',
+        url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}.json`,
+        body: { ticket: { comment: { body: p.note, public: false } } },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: zendesk.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added an internal note to ticket #${p.external_ref} (not visible to the customer).` };
+    },
+  },
+  zendesk_update_status: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket number) is required.' };
+      if (!ZENDESK_STATUS_VALUES.includes(p.status)) return { ok: false, error: 'param_invalid', detail: `status must be one of: ${ZENDESK_STATUS_VALUES.join(', ')}.` };
+      return {
+        ok: true, method: 'PUT',
+        url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}.json`,
+        body: { ticket: { status: p.status } },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      // Fetch current status first so the receipt can say "from X to Y".
+      const before = await zendesk.fetchRecord(c, 'ticket', p.external_ref);
+      const prevStatus = before.ok ? String((before.items?.[0]?.raw as Record<string, unknown> | undefined)?.status ?? 'unknown') : 'unknown';
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: zendesk.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Updated ticket #${p.external_ref}'s status from ${prevStatus} to ${p.status}.` };
+    },
+  },
+  zendesk_reply_to_ticket: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket number) is required.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'reply body text is required.' };
+      return {
+        ok: true, method: 'PUT',
+        url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}.json`,
+        body: { ticket: { comment: { body: p.body, public: true } } },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: zendesk.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Posted a public reply on ticket #${p.external_ref} — the customer will see it.` };
+    },
   },
 };
 
@@ -691,6 +792,137 @@ function templateAdapter(t: TemplateExec) {
 // ════════════════════════════════════════════════════════════════
 
 const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom']);
+
+// ════════════════════════════════════════════════════════════════
+// THE GENERALIZED ACTION LAYER (migration 035) — resolve + render +
+// run any action_definitions row, mirroring resolveTemplate/
+// templateAdapter's shape for the write side. A registered action is
+// either provider='template' (rendered via adapter_templates.actions +
+// renderAction — reuses the EXACT variable-substitution engine the
+// read-side ops use) or a named provider (execution.execution_key
+// names a NativeAction implemented in this file, e.g. zendeskActions).
+// ════════════════════════════════════════════════════════════════
+interface ActionDefRow {
+  id: string; scope: string; tenant_id: string | null; category: string;
+  action_key: string; label: string; description: string;
+  provider: string; template_id: string | null;
+  param_schema: Array<{ name: string; type: string; required?: boolean; help?: string }>;
+  risk: { destructive: boolean; idempotent: boolean };
+  execution: Record<string, unknown>;
+  status: string;
+}
+
+async function resolveActionDefinition(
+  admin: SupabaseClient, tenantId: string, connectorCategory: string, actionKey: string,
+): Promise<{ ok: true; def: ActionDefRow } | { ok: false; error: string; detail?: string }> {
+  // Tenant-scope row wins over platform-scope for the same category+key.
+  const { data: rows } = await admin.from('action_definitions')
+    .select('*')
+    .eq('category', connectorCategory).eq('action_key', actionKey).eq('status', 'active')
+    .or(`scope.eq.platform,tenant_id.eq.${tenantId}`);
+  const list = (rows ?? []) as ActionDefRow[];
+  const tenantRow = list.find((r) => r.scope === 'tenant' && r.tenant_id === tenantId);
+  const platformRow = list.find((r) => r.scope === 'platform');
+  const def = tenantRow ?? platformRow;
+  if (!def) {
+    return { ok: false, error: 'action_not_registered', detail: `No active action "${actionKey}" is registered for the ${connectorCategory} category.` };
+  }
+  return { ok: true, def };
+}
+
+function validateActionParams(
+  def: ActionDefRow, params: Record<string, unknown>,
+): { ok: true; values: Record<string, string> } | { ok: false; error: string; detail: string } {
+  const values: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const p of def.param_schema ?? []) {
+    const v = params[p.name];
+    if (v === undefined || v === null || v === '') {
+      if (p.required) missing.push(p.name);
+      continue;
+    }
+    values[p.name] = String(v);
+  }
+  if (missing.length) {
+    return { ok: false, error: 'params_missing', detail: `Missing required param(s): ${missing.join(', ')}.` };
+  }
+  return { ok: true, values };
+}
+
+/** Plain-language RECEIPT PREVIEW — "This will change ticket #4521's
+ *  status from Open to Resolved" — never a raw JSON diff. Generic
+ *  fallback covers any action_definition; the two seeded Zendesk
+ *  actions get a slightly friendlier phrasing since their param names
+ *  are known ahead of time. */
+function plainLanguagePreview(def: ActionDefRow, values: Record<string, string>): string {
+  if (def.action_key === 'update_status' && values.external_ref && values.status) {
+    return `This will change ticket #${values.external_ref}'s status to ${values.status}.`;
+  }
+  if (def.action_key === 'add_internal_note' && values.external_ref) {
+    return `This will add an internal note to ticket #${values.external_ref} (not visible to the customer).`;
+  }
+  if (def.action_key === 'reply_to_ticket' && values.external_ref) {
+    return `This will post a PUBLIC reply on ticket #${values.external_ref} — the customer will see it immediately.`;
+  }
+  const parts = Object.entries(values).map(([k, v]) => `${k}=${String(v).slice(0, 80)}`).join(', ');
+  return `This will run "${def.label}"${parts ? ` with ${parts}` : ''}.`;
+}
+
+interface ActionRenderOutcome { ok: boolean; method?: string; url?: string; body?: unknown; error?: string; detail?: string }
+
+/** Render (never call out) — shared by preview_action AND the first
+ *  half of execute_action, so the two can never show different requests. */
+async function renderRegisteredAction(
+  admin: SupabaseClient, def: ActionDefRow, ctx: Ctx, values: Record<string, string>,
+): Promise<ActionRenderOutcome> {
+  if (def.provider === 'template') {
+    if (!def.template_id) return { ok: false, error: 'template_not_linked' };
+    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', def.template_id).maybeSingle();
+    const adef = tpl?.definition as AdapterDefinition | undefined;
+    const binding: AdapterActionBinding | undefined = adef?.actions?.[def.action_key];
+    if (!binding) return { ok: false, error: 'action_not_bound', detail: `The linked template has no action binding for "${def.action_key}".` };
+    const vars = (ctx.config?.template_vars ?? {}) as Record<string, string>;
+    const rendered = renderAction(adef!.base_url_template, binding, vars, values);
+    if (!rendered.ok) return { ok: false, error: rendered.error ?? 'var_missing', detail: `Missing variable(s): ${(rendered.missing ?? []).join(', ')}` };
+    return { ok: true, method: rendered.method, url: rendered.url, body: rendered.body ? JSON.parse(rendered.body) : undefined };
+  }
+  // Native provider — execution.execution_key names a NativeAction.
+  const executionKey = String(def.execution?.execution_key ?? '');
+  const native = zendeskActions[executionKey];
+  if (!native) return { ok: false, error: 'execution_not_implemented', detail: `No native execution path for "${executionKey}".` };
+  const r = native.render(ctx, values);
+  return r;
+}
+
+/** Actually run (calls the external system) — used only by execute_action
+ *  after all gates pass, never by preview_action. */
+async function runRegisteredAction(
+  admin: SupabaseClient, def: ActionDefRow, ctx: Ctx, values: Record<string, string>,
+): Promise<ActionRunResult & { url?: string }> {
+  if (def.provider === 'template') {
+    if (!def.template_id) return { ok: false, error: 'template_not_linked' };
+    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', def.template_id).maybeSingle();
+    const adef = tpl?.definition as AdapterDefinition | undefined;
+    const binding: AdapterActionBinding | undefined = adef?.actions?.[def.action_key];
+    if (!binding) return { ok: false, error: 'action_not_bound' };
+    const vars = (ctx.config?.template_vars ?? {}) as Record<string, string>;
+    const rendered = renderAction(adef!.base_url_template, binding, vars, values);
+    if (!rendered.ok) return { ok: false, error: rendered.error ?? 'var_missing', detail: `Missing variable(s): ${(rendered.missing ?? []).join(', ')}` };
+    const auth = await templateAuthHeaders({ def: adef!, vars, secret: ctx.secret });
+    if (!auth.ok) return { ok: false, error: auth.error, detail: auth.detail };
+    const headers = { ...auth.headers, ...(rendered.body ? { 'Content-Type': 'application/json' } : {}) };
+    const res = await httpJson(rendered.url!, { method: rendered.method, headers, body: rendered.body });
+    if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body, url: rendered.url };
+    return {
+      ok: true, status: res.status, raw: res.body, url: rendered.url,
+      receipt: `${def.label} succeeded (HTTP ${res.status}) against ${rendered.url}.`,
+    };
+  }
+  const executionKey = String(def.execution?.execution_key ?? '');
+  const native = zendeskActions[executionKey];
+  if (!native) return { ok: false, error: 'execution_not_implemented' };
+  return native.run(ctx, values);
+}
 
 // ════════════════════════════════════════════════════════════════
 // CATEGORY CONTRACT translation layer — the app talks in canonical
@@ -1265,6 +1497,164 @@ serve(async (req) => {
         `Knowledge sync from ${connector.provider} — ${upserted} doc(s) ingested into knowledge (source=connector), ${chunked} chunks, ${embedded} embedded`,
         { upserted, chunked, embedded, errors: errors.slice(0, 5) });
       return json({ ok: true, upserted, chunked, embedded, errors });
+    }
+
+    // ════════ preview_action — THE GENERALIZED ACTION LAYER, preview ════════
+    // Resolves the action_definition, validates params, RENDERS the exact
+    // request (method/URL/body) WITHOUT calling the external system.
+    // Returns a plain-language receipt PREVIEW. No side effects beyond a
+    // lightweight action_executions row (mode='preview') for traceability.
+    if (action === 'preview_action') {
+      const actionKey = String(payload.action_key ?? '').trim();
+      if (!actionKey) return json({ error: 'action_key_required' }, 400);
+      const category = String(connector.category ?? 'other');
+
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
+      if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
+      const def = resolved.def;
+
+      const params = (payload.params ?? {}) as Record<string, unknown>;
+      const validated = validateActionParams(def, params);
+      if (!validated.ok) return json({ ok: false, error: validated.error, detail: validated.detail }, 200);
+
+      const rendered = await renderRegisteredAction(admin, def, ctx, validated.values);
+      if (!rendered.ok) {
+        return json({ ok: false, error: rendered.error, detail: rendered.detail, action_key: actionKey, label: def.label }, 200);
+      }
+
+      const summary = plainLanguagePreview(def, validated.values);
+      await admin.rpc('record_action_execution', {
+        p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
+        p_subject_kind: subjectKind, p_subject_id: subjectId,
+        p_mode: 'preview', p_params: validated.values, p_decision: 'previewed',
+        p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: null,
+        p_request_summary: summary, p_receipt: null, p_result: null,
+        p_task_title: null, p_task_detail: null,
+      });
+      await audit('connector_action',
+        `Action PREVIEWED — ${def.label} on ${connector.display_name || connector.provider} — ${summary} (nothing sent)`,
+        { kind: 'action_preview', action_definition_id: def.id, action_key: actionKey, category, method: rendered.method, url: rendered.url, persisted: false });
+
+      return json({
+        ok: true, action_key: actionKey, label: def.label,
+        preview: { method: rendered.method, url: rendered.url, body: rendered.body ?? null },
+        receipt_preview: summary,
+        risk: def.risk, persisted: false,
+      });
+    }
+
+    // ════════ execute_action — THE GENERALIZED ACTION LAYER, execute ════════
+    // 1. data_access_grants write_back check (resolve_access — same as Scribe).
+    // 2. decide_action_execution: destructive-always-gates (checked FIRST,
+    //    unconditionally) -> guardrail-always-wins -> trust-narrows-within-it.
+    // 3. auto-execute or (when payload.approved_task_id is supplied, meaning
+    //    a human already approved the gated task) actually call the
+    //    external system and record a plain-language RECEIPT.
+    if (action === 'execute_action') {
+      const actionKey = String(payload.action_key ?? '').trim();
+      if (!actionKey) return json({ error: 'action_key_required' }, 400);
+      const category = String(connector.category ?? 'other');
+
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
+      if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
+      const def = resolved.def;
+
+      const params = (payload.params ?? {}) as Record<string, unknown>;
+      const validated = validateActionParams(def, params);
+      if (!validated.ok) return json({ ok: false, error: validated.error, detail: validated.detail }, 200);
+
+      // ── 1. Data access grants: write_back is necessary, never sufficient. ──
+      if (subjectKind && subjectId) {
+        const { data: verdict } = await admin.rpc('resolve_access', {
+          p_tenant_id: tenantId, p_subject_kind: subjectKind, p_subject_id: subjectId,
+          p_connector_id: connectorId, p_needed: 'write_back',
+        });
+        const v = verdict as { allowed: boolean; has: string | null; reason: string };
+        if (!v.allowed) {
+          await admin.rpc('append_audit_event', {
+            p_tenant_id: tenantId, p_actor: `${subjectKind === 'de' ? 'DE' : 'Specialist'} ${subjectId.slice(0, 8)}`, p_actor_type: 'de',
+            p_action: `Action REFUSED by data access rules — ${def.label} on ${connector.display_name || connector.provider} (needs write_back, has ${v.has ?? 'no grant'})`,
+            p_category: 'access_control',
+            p_detail: { kind: 'data_access_denied', action_key: actionKey, connector_id: connectorId, needed: 'write_back', has: v.has, reason: v.reason },
+          });
+          return json({
+            ok: false, error: 'access_denied',
+            detail: `This ${subjectKind === 'de' ? 'digital employee' : 'specialist'} does not have write-back permission on that system${v.has ? ` (it has only "${v.has}")` : ''}. An admin can grant it under Governance → Data Access.`,
+          }, 200);
+        }
+      }
+
+      // The plain-language summary needs only the definition + validated
+      // values — computed BEFORE any rendering/gating so it is available
+      // for the human_task detail even when the action is gated (a
+      // destructive action must be gated WITHOUT ever attempting to
+      // render or call the external system first).
+      const summary = plainLanguagePreview(def, validated.values);
+      const dedupeKey = def.risk.idempotent ? null : `${def.id}:${JSON.stringify(validated.values)}`;
+
+      // Already-approved re-entry: a human_task tied to a prior
+      // human_gated_* execution row was just approved; the caller
+      // (resolveActionExecution) passes the row id to execute directly,
+      // skipping decide_action_execution (it already ran once).
+      const approvedExecutionId = typeof payload.approved_execution_id === 'string' ? payload.approved_execution_id : null;
+
+      if (!approvedExecutionId) {
+        // ── 2. THE COMPOSITION: destructive-always-gates, THEN guardrail,
+        //    THEN trust — decide_action_execution implements all three in
+        //    that exact order (see migration 035 for the SQL).
+        const { data: decisionRaw } = await admin.rpc('decide_action_execution', {
+          p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
+        });
+        const decision = decisionRaw as { decision: string; guardrail_rule_id: string | null; guardrail_rule: string | null; trust_level: number | null; reasoning: string };
+
+        if (decision.decision !== 'auto_executed') {
+          // Gated — create the human_task, do NOT call the external system.
+          const taskTitle = `Approve action — ${def.label} (${connector.display_name || connector.provider})`;
+          const taskDetail = `${decision.reasoning} Preview: ${summary}`;
+          const { data: rec } = await admin.rpc('record_action_execution', {
+            p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
+            p_subject_kind: subjectKind, p_subject_id: subjectId,
+            p_mode: 'execute', p_params: validated.values, p_decision: decision.decision,
+            p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
+            p_request_summary: summary, p_receipt: null, p_result: null,
+            p_task_title: taskTitle, p_task_detail: taskDetail,
+          });
+          await audit('approval',
+            `Action GATED — ${def.label} on ${connector.display_name || connector.provider}: ${decision.reasoning}`,
+            { kind: 'action_gated', action_definition_id: def.id, action_key: actionKey, category, decision: decision.decision, guardrail_rule_id: decision.guardrail_rule_id, task_id: (rec as { task_id?: string })?.task_id ?? null });
+          return json({
+            ok: true, gated: true, decision: decision.decision, reasoning: decision.reasoning,
+            task_id: (rec as { task_id?: string })?.task_id ?? null,
+            execution_id: (rec as { id?: string })?.id ?? null,
+            receipt_preview: summary,
+          });
+        }
+      }
+
+      // ── 3. Auto-execute (or human-approved re-entry) — actually call. ──
+      const outcome = await runRegisteredAction(admin, def, ctx, validated.values);
+      const finalDecision = approvedExecutionId ? 'executed_after_approval' : 'auto_executed';
+      const { data: rec2 } = await admin.rpc('record_action_execution', {
+        p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
+        p_subject_kind: subjectKind, p_subject_id: subjectId,
+        p_mode: 'execute', p_params: validated.values,
+        p_decision: outcome.ok ? finalDecision : 'failed',
+        p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
+        p_request_summary: summary, p_receipt: outcome.receipt ?? null,
+        p_result: { ok: outcome.ok, status: outcome.status ?? null, error: outcome.error ?? null },
+        p_task_title: null, p_task_detail: null,
+      });
+      await audit('connector_action',
+        outcome.ok
+          ? `Action EXECUTED — ${outcome.receipt ?? def.label}`
+          : `Action FAILED — ${def.label} on ${connector.display_name || connector.provider}: ${outcome.error} (recorded honestly)`,
+        { kind: 'action_execution', action_definition_id: def.id, action_key: actionKey, category, ok: outcome.ok, receipt: outcome.receipt ?? null, error: outcome.error ?? null });
+
+      return json({
+        ok: outcome.ok, gated: false, receipt: outcome.receipt ?? null,
+        error: outcome.error ?? null, detail: outcome.detail ?? null,
+        execution_id: (rec2 as { id?: string })?.id ?? null,
+      });
     }
 
     return json({ error: 'unknown_action' }, 400);

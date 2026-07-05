@@ -47,6 +47,15 @@
  *                                                       no connected connector / disabled action /
  *                                                       no target ref → step recorded 'skipped',
  *                                                       run continues.
+ *                     { action_category, action_key,
+ *                       param_templates? }            — THE GENERALIZED ACTION LAYER (migration 035):
+ *                                                       targets any registered action_definition (read
+ *                                                       OR write, any category) via connector-hub's
+ *                                                       execute_action — access grants, destructive-
+ *                                                       always-gates, guardrail, trust dial all apply
+ *                                                       exactly as they do outside playbooks. Lets a
+ *                                                       playbook "read something, then act on it" for
+ *                                                       any connected category, not just helpdesk.
  *   update_record     { table: 'renewal_invoices'|'support_tickets',
  *                       set: { status } }             — WHITELISTED status flips only
  *                                                       (see UPDATE_WHITELIST). Target id comes from
@@ -283,13 +292,24 @@ function validateSteps(steps: unknown): ValidationError[] {
         }
         break;
       case 'connector_action': {
-        // TWO FORMS (compat shim, documented):
+        // THREE FORMS (compat shim, documented):
         //   legacy write-back: { provider: 'zendesk', op: add_internal_note|update_status, ... }
         //   category op (027): { category, op, query_template? | ref_template? }
         //     — provider-agnostic read-through via connector-hub category_op;
         //       the hub enforces op legality (op_not_legal_for_category) at
         //       run time, so validation here checks shape only.
-        if (typeof p.category === 'string' && p.category) {
+        //   action_key (035, THE GENERALIZED ACTION LAYER): { action_category,
+        //     action_key, param_templates? } — targets ANY registered
+        //     action_definition (read OR write) via connector-hub's
+        //     execute_action, which itself enforces access grants +
+        //     destructive-always-gates + guardrail + trust. Validation here
+        //     checks shape only — the hub resolves whether the action
+        //     actually exists at run time (honest op_not_registered otherwise).
+        if (typeof p.action_key === 'string' && p.action_key && typeof p.category !== 'string') {
+          if (typeof p.action_category !== 'string' || !(p.action_category as string).trim()) {
+            errs.push({ index: i, code: 'bad_params', message: 'connector_action (action_key form) needs action_category (which connected category to target).' });
+          }
+        } else if (typeof p.category === 'string' && p.category) {
           const cats = ['crm', 'helpdesk', 'knowledge_base', 'erp_financials', 'billing', 'payroll_hcm', 'pos', 'product_system', 'other'];
           if (!cats.includes(p.category as string)) {
             errs.push({ index: i, code: 'bad_params', message: `connector_action.category must be one of: ${cats.join(', ')}.` });
@@ -299,7 +319,7 @@ function validateSteps(steps: unknown): ValidationError[] {
           }
         } else {
           if (p.provider !== 'zendesk') {
-            errs.push({ index: i, code: 'bad_params', message: 'connector_action needs either a category (category-op form) or provider "zendesk" (legacy write-back form).' });
+            errs.push({ index: i, code: 'bad_params', message: 'connector_action needs a category (category-op form), an action_key + action_category (generalized action form), or provider "zendesk" (legacy write-back form).' });
           }
           if (p.op !== 'add_internal_note' && p.op !== 'update_status') {
             errs.push({ index: i, code: 'bad_params', message: 'connector_action.op must be "add_internal_note" or "update_status" (legacy write-back form).' });
@@ -798,8 +818,11 @@ async function executeDefinitionSteps(
         case 'connector_action': {
           if (run.preview) {
             const p = params as Record<string, unknown>;
+            const label = typeof p.action_key === 'string' && typeof p.category !== 'string'
+              ? `${String(p.action_category ?? 'connector')} action "${p.action_key}"`
+              : `${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')}`;
             step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (simulated, no external call, nothing persisted)`;
+            step.detail = `PREVIEW — would call ${label} (simulated, no external call, nothing persisted)`;
             await stepAudit(i); await saveRun(admin, run);
             continue;
           }
@@ -890,6 +913,79 @@ async function executeDefinitionSteps(
             } catch (e) {
               step.status = 'skipped'; step.at = now();
               step.detail = `skipped: connector-hub call failed (${String(e).slice(0, 120)})`;
+            }
+            break;
+          }
+
+          // ── action_key form (migration 035, THE GENERALIZED ACTION
+          // LAYER): a step can target ANY registered action_definition —
+          // not just the two legacy Zendesk write-backs below. This is
+          // what lets a playbook "read something, then act on it" for
+          // any connected category, not only helpdesk. Reuses
+          // connector-hub's execute_action end to end (data access
+          // grants, destructive-always-gates, guardrail-always-wins,
+          // trust-narrows-within-it, receipts) — the step executor
+          // itself does no gating logic; it just calls the same
+          // generalized path a human or Scribe flow would call.
+          if (typeof params.action_key === 'string' && params.action_key) {
+            const actionCategory = String(params.action_category ?? '');
+            const actionKey = params.action_key as string;
+            const { data: actConn } = await admin
+              .from('connectors').select('id, provider, display_name, category, status')
+              .eq('tenant_id', tenantId)
+              .eq(actionCategory ? 'category' : 'id', actionCategory || '00000000-0000-0000-0000-000000000000')
+              .neq('status', 'disconnected')
+              .limit(1).maybeSingle();
+            if (!actConn) {
+              step.status = 'skipped'; step.at = now();
+              step.detail = `skipped: no connected ${actionCategory || 'target'} system for action "${actionKey}"`;
+              break;
+            }
+            const actionParams: Record<string, unknown> = {};
+            const templates = (params.param_templates ?? {}) as Record<string, string>;
+            for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id).trim();
+            try {
+              const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                  'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+                },
+                body: JSON.stringify({
+                  action: 'execute_action', connector_id: actConn.id, tenant_id: tenantId,
+                  action_key: actionKey, params: actionParams,
+                  ...(runDeId ? { subject_kind: 'de', subject_id: runDeId } : {}),
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (data.error === 'access_denied') {
+                return await failDenied(actionKey,
+                  `the ${runDeId ? 'assigned DE' : 'DE'} needs write-back permission on ${actConn.display_name || actConn.provider} and ${data.detail ?? 'has no grant'}.`);
+              }
+              if (data.ok && data.gated) {
+                step.status = 'done'; step.at = now();
+                step.detail = `Action "${actionKey}" on ${actConn.display_name || actConn.provider} — ${data.reasoning ?? 'awaiting human approval'} (task created)`;
+                await audit(admin, tenantId,
+                  `Playbook [${acct()}] — action "${actionKey}" on ${actConn.display_name || actConn.provider} routed to a human: ${data.reasoning ?? ''}`,
+                  'connector_action',
+                  { run_id: run.id, definition_id: run.definition_id, connector_id: actConn.id, action_key: actionKey, decision: data.decision, task_id: data.task_id ?? null },
+                  'Playbook DE');
+              } else if (data.ok) {
+                step.status = 'done'; step.at = now();
+                step.detail = data.receipt ?? `Action "${actionKey}" executed on ${actConn.display_name || actConn.provider}`;
+                await audit(admin, tenantId,
+                  `Playbook [${acct()}] — ${data.receipt ?? `action "${actionKey}" executed`}`,
+                  'connector_action',
+                  { run_id: run.id, definition_id: run.definition_id, connector_id: actConn.id, action_key: actionKey, receipt: data.receipt ?? null },
+                  'Playbook DE');
+              } else {
+                step.status = 'skipped'; step.at = now();
+                step.detail = `skipped: action "${actionKey}" failed honestly (${data.error ?? data.detail ?? `HTTP ${res.status}`})`;
+              }
+            } catch (e) {
+              step.status = 'skipped'; step.at = now();
+              step.detail = `skipped: connector-hub action call failed (${String(e).slice(0, 120)})`;
             }
             break;
           }

@@ -170,7 +170,7 @@ export interface ConnectorObject {
   updated_at: string;
 }
 
-export type ConnectorActionKey = 'add_internal_note' | 'update_status';
+export type ConnectorActionKey = 'add_internal_note' | 'update_status' | 'reply_to_ticket';
 
 export interface ConnectorAction {
   id: string;
@@ -505,6 +505,111 @@ export async function updateConnectorFieldMap(
     detail: { connector_id: connectorId, field_map: clean },
   });
   return data as Connector;
+}
+
+// ── THE GENERALIZED ACTION LAYER (migration 035) ──────────────────
+// The write-side sibling of hubCategoryOp: any registered
+// action_definition — not a narrow whitelisted enum — can be
+// previewed or executed against a connector. Risk annotations (MCP
+// tool-annotation vocabulary: destructive/idempotent) travel with the
+// definition so the UI can show "always requires approval" /
+// "currently auto-executes once trusted" honestly.
+
+export interface ActionDefinition {
+  id: string;
+  scope: 'platform' | 'tenant';
+  tenant_id: string | null;
+  category: SystemCategory;
+  action_key: string;
+  label: string;
+  description: string;
+  provider: string;
+  template_id: string | null;
+  param_schema: Array<{ name: string; type: string; required?: boolean; help?: string }>;
+  risk: { destructive: boolean; idempotent: boolean };
+  execution: Record<string, unknown>;
+  status: 'active' | 'disabled';
+  created_at: string;
+  updated_at: string;
+}
+
+/** All actions registered for a category (platform + this tenant's own). */
+export async function listActionDefinitions(category?: SystemCategory): Promise<ActionDefinition[]> {
+  const tid = await requireTenantId();
+  let q = supabase.from('action_definitions').select('*')
+    .eq('status', 'active')
+    .or(`scope.eq.platform,tenant_id.eq.${tid}`);
+  if (category) q = q.eq('category', category);
+  const { data, error } = await q.order('label', { ascending: true });
+  if (error) raise('listActionDefinitions', error);
+  return (data ?? []) as ActionDefinition[];
+}
+
+export interface ActionPreviewResult {
+  ok: boolean;
+  action_key?: string;
+  label?: string;
+  preview?: { method?: string; url?: string; body?: unknown };
+  receipt_preview?: string;
+  risk?: { destructive: boolean; idempotent: boolean };
+  error?: string;
+  detail?: string;
+}
+
+/** Render the exact request WITHOUT calling the external system. */
+export async function previewAction(
+  connectorId: string, actionKey: string, params: Record<string, unknown>,
+): Promise<ActionPreviewResult> {
+  return invokeHub({ action: 'preview_action', connector_id: connectorId, action_key: actionKey, params }) as unknown as Promise<ActionPreviewResult>;
+}
+
+export interface ActionExecuteResult {
+  ok: boolean;
+  gated?: boolean;
+  decision?: string;
+  reasoning?: string;
+  task_id?: string | null;
+  execution_id?: string | null;
+  receipt?: string | null;
+  receipt_preview?: string;
+  error?: string;
+  detail?: string;
+}
+
+/** Execute a registered action. Enforces write_back access, then the
+ *  destructive-always-gates / guardrail / trust composition; on
+ *  auto-execute or (approvedExecutionId set) human-approved re-entry,
+ *  actually calls the external system and returns a plain-language receipt. */
+export async function executeAction(
+  connectorId: string, actionKey: string, params: Record<string, unknown>,
+  opts?: { subjectKind?: 'de' | 'specialist'; subjectId?: string; approvedExecutionId?: string },
+): Promise<ActionExecuteResult> {
+  return invokeHub({
+    action: 'execute_action', connector_id: connectorId, action_key: actionKey, params,
+    subject_kind: opts?.subjectKind, subject_id: opts?.subjectId,
+    approved_execution_id: opts?.approvedExecutionId,
+  }) as unknown as Promise<ActionExecuteResult>;
+}
+
+/**
+ * decideHumanTask hook target for 'action_approval' tasks: given the
+ * task, find its pending action_executions row and re-execute with
+ * approved_execution_id set (skips decide_action_execution — it
+ * already ran once — and goes straight to calling the external
+ * system). Rejection just leaves the row as-is (already recorded
+ * human_gated_* — no further write needed); the task itself is marked
+ * rejected by decideHumanTask before this hook runs.
+ */
+export async function resolveActionExecution(
+  taskId: string, decision: 'approved' | 'rejected',
+): Promise<void> {
+  if (decision === 'rejected') return; // nothing further to execute
+  const { data: exec, error } = await supabase.rpc('resolve_action_execution_for_task', { p_task_id: taskId });
+  if (error || !exec) { console.warn('resolveActionExecution: no pending execution for task', taskId); return; }
+  const row = exec as { id: string; action_definition_id: string; connector_id: string; params: Record<string, unknown> };
+  const { data: def } = await supabase.from('action_definitions').select('action_key').eq('id', row.action_definition_id).maybeSingle();
+  if (!def) { console.warn('resolveActionExecution: action_definition missing', row.action_definition_id); return; }
+  await executeAction(row.connector_id, def.action_key as string, row.params, { approvedExecutionId: row.id });
 }
 
 async function invokeHub<T = Record<string, unknown>>(

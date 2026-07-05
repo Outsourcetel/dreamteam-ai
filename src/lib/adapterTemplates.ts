@@ -88,13 +88,40 @@ export interface AdapterOpBinding {
   single_item?: boolean;
 }
 
+/**
+ * AdapterActionBinding — the WRITE-side sibling of AdapterOpBinding
+ * (migration 035, the Generalized Action Layer). Ops are read-only
+ * (GET/POST-for-search); actions carry bodies and mutate the SoR
+ * (POST/PUT/PATCH/DELETE). Reuses the EXACT SAME renderTemplate/
+ * renderBody/walkPath machinery — only the placeholder vocabulary
+ * widens from {query}/{ref} to an arbitrary param map declared by the
+ * action_definition's param_schema (e.g. {external_ref}, {status},
+ * {note}, or any tenant-defined field name).
+ *
+ * response is OPTIONAL and, when present, is read-only metadata about
+ * how to pull an id/status out of the write response for the receipt —
+ * actions do not return a list of canonical items the way ops do.
+ */
+export interface AdapterActionBinding {
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** supports any declared param name (e.g. {external_ref}) and {var} */
+  path_template: string;
+  query_params?: Record<string, string>;
+  /** JSON body; string values anywhere in it support placeholders */
+  body_template?: Record<string, unknown>;
+  /** optional: where to find a confirming id/status in the response, for the receipt */
+  response?: { id_path?: string; status_path?: string };
+}
+
 export interface AdapterDefinition {
   auth: AdapterAuth;
   /** e.g. "https://{subdomain}.example.com/api/v2" */
   base_url_template: string;
   variables?: AdapterVar[];
-  /** category op → HTTP binding */
+  /** category op → HTTP binding (READ side) */
   ops: Record<string, AdapterOpBinding>;
+  /** action_key → HTTP binding (WRITE side, migration 035) */
+  actions?: Record<string, AdapterActionBinding>;
   /** which op proves the connection works (+ a default param for it) */
   test_op?: { op: string; params?: Record<string, string> };
 }
@@ -131,6 +158,43 @@ function opPlaceholders(op: AdapterOpBinding): string[] {
   };
   walk(op.body_template ?? {});
   return out;
+}
+
+const ACTION_METHODS: AdapterActionBinding['method'][] = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+function actionPlaceholders(a: AdapterActionBinding): string[] {
+  const out = [...placeholdersIn(a.path_template)];
+  for (const v of Object.values(a.query_params ?? {})) out.push(...placeholdersIn(v));
+  const walk = (node: unknown) => {
+    if (typeof node === 'string') out.push(...placeholdersIn(node));
+    else if (Array.isArray(node)) node.forEach(walk);
+    else if (node && typeof node === 'object') Object.values(node).forEach(walk);
+  };
+  walk(a.body_template ?? {});
+  return out;
+}
+
+/**
+ * Validate one action binding against its declared params (from
+ * action_definitions.param_schema — name/type/required/help per
+ * param). Unlike ops (whose placeholder vocabulary is the fixed
+ * {query}/{ref} pair), an action's legal placeholders are whatever the
+ * caller declares as params, plus any template {var}. This is the
+ * write-side twin of the `ops` validation loop in
+ * validateAdapterDefinition, kept separate so a template author can
+ * validate an action binding against a specific action's param list.
+ */
+export function validateActionBinding(
+  name: string, a: AdapterActionBinding, paramNames: string[], declaredVars: Set<string>,
+): string[] {
+  const errors: string[] = [];
+  if (!ACTION_METHODS.includes(a.method)) errors.push(`${name}: method must be one of ${ACTION_METHODS.join(', ')}.`);
+  if (!a.path_template?.startsWith('/')) errors.push(`${name}: path_template must start with "/" (it is appended to the base URL).`);
+  const legalPlaceholders = new Set([...paramNames, ...declaredVars]);
+  for (const ph of actionPlaceholders(a)) {
+    if (!legalPlaceholders.has(ph)) errors.push(`${name} uses {${ph}} but that is neither a declared param nor a template variable.`);
+  }
+  return errors;
 }
 
 /** Validate a definition against its category. Returns plain-language errors. */
@@ -257,4 +321,47 @@ export function renderBody(node: unknown, values: Record<string, string>, missin
     return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, renderBody(v, values, missing)]));
   }
   return node;
+}
+
+/**
+ * renderAction — pure rendering (NO fetch) of an action binding into
+ * a concrete { method, url, body } given the connector's base URL, its
+ * template variables, and the caller's params. Used by BOTH
+ * preview_action (render only, never call out) and execute_action
+ * (render, then actually fetch) so preview and execute can never drift.
+ */
+export interface RenderedAction {
+  ok: boolean;
+  method?: string;
+  url?: string;
+  body?: string;
+  missing?: string[];
+  error?: string;
+}
+export function renderAction(
+  baseUrlTemplate: string, binding: AdapterActionBinding, vars: Record<string, string>, params: Record<string, string>,
+): RenderedAction {
+  const values = { ...vars, ...params };
+  const missing: string[] = [];
+  const base = renderTemplate(baseUrlTemplate, values);
+  missing.push(...base.missing);
+  const path = renderTemplate(binding.path_template, values, true);
+  missing.push(...path.missing);
+  const qp = new URLSearchParams();
+  for (const [k, v] of Object.entries(binding.query_params ?? {})) {
+    const rv = renderTemplate(v, values);
+    missing.push(...rv.missing);
+    qp.set(k, rv.out);
+  }
+  let bodyStr: string | undefined;
+  if (binding.body_template) {
+    bodyStr = JSON.stringify(renderBody(binding.body_template, values, missing));
+  }
+  const realMissing = [...new Set(missing)];
+  if (realMissing.length) {
+    return { ok: false, error: 'var_missing', missing: realMissing };
+  }
+  const qs = qp.toString();
+  const url = `${base.out.replace(/\/+$/, '')}${path.out}${qs ? (path.out.includes('?') ? '&' : '?') + qs : ''}`;
+  return { ok: true, method: binding.method, url, body: bodyStr };
 }

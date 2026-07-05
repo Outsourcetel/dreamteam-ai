@@ -272,6 +272,15 @@ function buildScribePayload(
     }
     return { ok: true, payload: { status } };
   }
+  if (actionKey === 'reply_to_ticket') {
+    // Public reply — the customer sees this. Still server-composed from
+    // the consultation only, never caller-supplied free text (same
+    // structural anti-hallucination guarantee as add_internal_note).
+    const body = consultation.answer
+      ? consultation.answer.slice(0, 1600)
+      : `Thanks for your patience — we're looking into this and will follow up shortly. (Consultation ${consultation.id} recorded without a written answer yet — LLM dormant.)`;
+    return { ok: true, payload: { body } };
+  }
   return { ok: false, error: 'unsupported_action_key' };
 }
 
@@ -976,8 +985,13 @@ serve(async (req) => {
         outcome = { ok: false, error: 'action_disabled_in_registry' };
       } else {
         const p = (reqRow.payload ?? {}) as Record<string, unknown>;
+        // reply_to_ticket (migration 035, THE GENERALIZED ACTION LAYER)
+        // added ADDITIVELY alongside the two original keys — backward
+        // compatible, nothing about add_internal_note/update_status changed.
         const zdBody = reqRow.action_key === 'add_internal_note'
           ? { ticket: { comment: { body: String(p.note ?? ''), public: false } } }
+          : reqRow.action_key === 'reply_to_ticket'
+          ? { ticket: { comment: { body: String(p.body ?? ''), public: true } } }
           : { ticket: { status: String(p.status ?? 'open') } };
         const r = await zendeskFetch(admin, reqRow.connector_id, tenantId,
           `/api/v2/tickets/${encodeURIComponent(reqRow.external_ref)}.json`,

@@ -12,7 +12,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision';
+type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision' | 'inquiry_review' | 'action_approval';
 type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed';
 
 interface OpsTask {
@@ -157,6 +157,8 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'trust_demotion_notice') return 'bg-rose-500/20 text-rose-300';
   if (type === 'checklist') return 'bg-teal-500/20 text-teal-300';
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
+  if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
+  if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
   return 'bg-slate-700 text-slate-400';
 }
 
@@ -169,6 +171,8 @@ function taskBadgeLabel(type: TaskType): string {
   if (type === 'trust_demotion_notice') return 'TRUST ▼';
   if (type === 'checklist') return 'CHECKLIST';
   if (type === 'knowledge_revision') return 'KNOWLEDGE';
+  if (type === 'inquiry_review') return 'INQUIRY';
+  if (type === 'action_approval') return 'ACTION';
   return 'FEEDBACK';
 }
 

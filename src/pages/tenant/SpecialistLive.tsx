@@ -13,6 +13,9 @@ import {
   resolveInquiry, listEvidenceRuns, EvidenceRun, EvidenceStep, ResolveInquiryResult,
 } from '../../lib/specialistApi';
 import {
+  listActionDefinitions, previewAction, ActionDefinition, ActionPreviewResult,
+} from '../../lib/connectorApi';
+import {
   submitEvidenceFeedback, listEvidenceFeedback, EvidenceFeedback, EvidenceVerdict,
 } from '../../lib/knowledgeApi';
 import type { Page } from '../../types';
@@ -386,10 +389,20 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const [scribe, setScribe] = useState<ScribeRequest[]>([]);
   const [scribeFor, setScribeFor] = useState<SpecConsultation | null>(null);
   const [scribeRef, setScribeRef] = useState('');
-  const [scribeAction, setScribeAction] = useState<'add_internal_note' | 'update_status'>('add_internal_note');
+  const [scribeAction, setScribeAction] = useState<'add_internal_note' | 'update_status' | 'reply_to_ticket'>('add_internal_note');
   const [scribeStatus, setScribeStatus] = useState<'open' | 'pending' | 'hold' | 'solved'>('pending');
   const [scribeConnector, setScribeConnector] = useState('');
   const [creatingScribe, setCreatingScribe] = useState(false);
+
+  // ── THE GENERALIZED ACTION LAYER (migration 035): the action picker
+  // shows every registered action_definition for the helpdesk category
+  // (platform + this tenant's own), not just the two narrow legacy keys.
+  // Preview renders the exact request + a plain-language receipt preview
+  // WITHOUT calling out — reuses the same preview/receipt concept as the
+  // playbook dry-run mode.
+  const [actionDefs, setActionDefs] = useState<ActionDefinition[]>([]);
+  const [scribePreview, setScribePreview] = useState<ActionPreviewResult | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -399,11 +412,13 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       setProfile(prof);
       if (prof) {
         setCharter(prof.charter);
-        const [src, med, cons, scr, conn] = await Promise.all([
+        const [src, med, cons, scr, conn, actDefs] = await Promise.all([
           listSources(prof.id), listMedia(prof.id), listConsultations(prof.id),
           listScribeRequests(prof.id), listConnectors().catch(() => [] as Connector[]),
+          listActionDefinitions('helpdesk').catch(() => [] as ActionDefinition[]),
         ]);
         setSources(src); setMedia(med); setConsultations(cons); setScribe(scr); setConnectors(conn);
+        setActionDefs(actDefs);
         setPastRuns(await listEvidenceRuns().catch(() => [] as EvidenceRun[]));
       }
     } catch (err) {
@@ -488,12 +503,34 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       });
       if (res.error) setError(res.error);
       else {
-        setScribeFor(null); setScribeRef('');
+        setScribeFor(null); setScribeRef(''); setScribePreview(null);
         if (profile) setScribe(await listScribeRequests(profile.id));
       }
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setCreatingScribe(false); }
   };
+
+  /** THE GENERALIZED ACTION LAYER — preview the exact request + a
+   *  plain-language receipt preview WITHOUT calling the external
+   *  system. Uses the registered action_definition for whichever key
+   *  is selected (covers the two legacy keys AND the new
+   *  reply_to_ticket action identically — one generic call). */
+  const runScribePreview = async () => {
+    if (!scribeConnector || !scribeRef.trim() || previewing) return;
+    setPreviewing(true);
+    setScribePreview(null);
+    try {
+      const params: Record<string, unknown> = { external_ref: scribeRef.trim() };
+      if (scribeAction === 'update_status') params.status = scribeStatus;
+      if (scribeAction === 'reply_to_ticket') params.body = `[Preview only — Scribe posts the grounded consultation text on send]`;
+      if (scribeAction === 'add_internal_note') params.note = `[Preview only — Scribe composes the note text from consultation ${scribeFor?.id.slice(0, 8)}… on send]`;
+      const res = await previewAction(scribeConnector, scribeAction, params);
+      setScribePreview(res);
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setPreviewing(false); }
+  };
+
+  const actionDefFor = (key: string) => actionDefs.find(d => d.action_key === key);
 
   if (missingTables) {
     return (
@@ -810,7 +847,9 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             {scribe.map(r => (
               <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="text-xs font-medium text-white">{r.action_key === 'add_internal_note' ? 'Internal note' : 'Status update'} → ticket #{r.external_ref}</span>
+                  <span className="text-xs font-medium text-white">
+                    {r.action_key === 'add_internal_note' ? 'Internal note' : r.action_key === 'reply_to_ticket' ? 'Public reply' : 'Status update'} → ticket #{r.external_ref}
+                  </span>
                   <Chip label={r.status.replace('_', ' ')} cls={STATUS_CHIP[r.status]} />
                   <span className="text-[10px] text-slate-500">consultation {r.consultation_id.slice(0, 8)}…</span>
                 </div>
@@ -850,11 +889,14 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         </div>
       )}
 
-      {/* Scribe create modal */}
+      {/* Scribe create modal — THE GENERALIZED ACTION LAYER's action
+          picker: any registered action_definition for this connector's
+          category, not a hardcoded two-item list. Risk badges use the
+          MCP tool-annotation vocabulary (destructive/idempotent). */}
       {scribeFor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setScribeFor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-white mb-1">Scribe write-back</h2>
             <p className="text-xs text-slate-500 mb-4">
               Grounded in consultation <span className="font-mono">{scribeFor.id.slice(0, 8)}…</span>. The payload is built server-side from
@@ -864,25 +906,61 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
               <p className="text-xs text-amber-400 mb-4">No connectors configured — connect a system first.</p>
             ) : (
               <>
-                <select className={selectCls + ' w-full mb-3'} value={scribeConnector} onChange={e => setScribeConnector(e.target.value)}>
+                <select className={selectCls + ' w-full mb-3'} value={scribeConnector} onChange={e => { setScribeConnector(e.target.value); setScribePreview(null); }}>
                   {connectors.map(c => <option key={c.id} value={c.id}>{c.display_name || c.provider} — {c.base_url}</option>)}
                 </select>
-                <div className="flex gap-2 mb-3">
-                  <select className={selectCls} value={scribeAction} onChange={e => setScribeAction(e.target.value as 'add_internal_note' | 'update_status')}>
-                    <option value="add_internal_note">Add internal note (from consultation)</option>
-                    <option value="update_status">Update status (whitelisted enum)</option>
+                <div className="flex gap-2 mb-2">
+                  <select className={selectCls} value={scribeAction} onChange={e => { setScribeAction(e.target.value as 'add_internal_note' | 'update_status' | 'reply_to_ticket'); setScribePreview(null); }}>
+                    {actionDefs.length > 0 ? actionDefs.map(d => (
+                      <option key={d.action_key} value={d.action_key}>{d.label}</option>
+                    )) : (
+                      <>
+                        <option value="add_internal_note">Add internal note (from consultation)</option>
+                        <option value="update_status">Update status (whitelisted enum)</option>
+                      </>
+                    )}
                   </select>
                   {scribeAction === 'update_status' && (
-                    <select className={selectCls} value={scribeStatus} onChange={e => setScribeStatus(e.target.value as 'open' | 'pending' | 'hold' | 'solved')}>
+                    <select className={selectCls} value={scribeStatus} onChange={e => { setScribeStatus(e.target.value as 'open' | 'pending' | 'hold' | 'solved'); setScribePreview(null); }}>
                       {['open', 'pending', 'hold', 'solved'].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   )}
                 </div>
-                <input className={inputCls + ' mb-4'} placeholder="Target ticket ref (e.g. 12345)" value={scribeRef} onChange={e => setScribeRef(e.target.value)} />
+                {/* Risk badges — MCP tool-annotation vocabulary (destructive/idempotent) */}
+                {actionDefFor(scribeAction) && (
+                  <div className="flex items-center gap-2 mb-3">
+                    {actionDefFor(scribeAction)!.risk.destructive ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-300 border border-red-500/30">Always requires approval</span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Currently auto-executes once trusted</span>
+                    )}
+                    {actionDefFor(scribeAction)!.risk.idempotent && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Safe to retry</span>
+                    )}
+                    <span className="text-[10px] text-slate-600">{actionDefFor(scribeAction)!.description}</span>
+                  </div>
+                )}
+                <input className={inputCls + ' mb-3'} placeholder="Target ticket ref (e.g. 12345)" value={scribeRef} onChange={e => { setScribeRef(e.target.value); setScribePreview(null); }} />
+
+                <button className={btnGhost + ' w-full mb-3'} disabled={previewing || !scribeConnector || !scribeRef.trim()} onClick={() => void runScribePreview()}>
+                  {previewing ? 'Rendering preview…' : 'Preview — see the exact request (nothing sent)'}
+                </button>
+                {scribePreview && (
+                  <div className={`rounded-lg border px-3 py-2 mb-4 text-xs ${scribePreview.ok ? 'border-indigo-500/30 bg-indigo-500/5 text-indigo-200' : 'border-red-500/30 bg-red-500/5 text-red-300'}`}>
+                    {scribePreview.ok ? (
+                      <>
+                        <p className="font-medium mb-1">{scribePreview.receipt_preview}</p>
+                        <p className="font-mono text-[10px] text-slate-500 truncate">{scribePreview.preview?.method} {scribePreview.preview?.url}</p>
+                      </>
+                    ) : (
+                      <p>{scribePreview.detail ?? scribePreview.error}</p>
+                    )}
+                  </div>
+                )}
               </>
             )}
             <div className="flex justify-end gap-2">
-              <button className={btnGhost} onClick={() => setScribeFor(null)}>Cancel</button>
+              <button className={btnGhost} onClick={() => { setScribeFor(null); setScribePreview(null); }}>Cancel</button>
               <button className={btnPrimary} disabled={creatingScribe || !scribeConnector || !scribeRef.trim()} onClick={() => void submitScribe()}>
                 {creatingScribe ? 'Creating…' : 'Create gated request'}
               </button>

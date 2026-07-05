@@ -146,7 +146,7 @@ export interface ScribeRequest {
   profile_id: string;
   consultation_id: string;
   connector_id: string;
-  action_key: 'add_internal_note' | 'update_status';
+  action_key: 'add_internal_note' | 'update_status' | 'reply_to_ticket';
   external_ref: string;
   payload: Record<string, unknown>;
   payload_source: 'consultation_citation';
@@ -630,7 +630,7 @@ export async function listConsultations(profileId: string, limit = 30): Promise<
 export async function createScribeRequest(input: {
   consultation_id: string;
   connector_id: string;
-  action_key: 'add_internal_note' | 'update_status';
+  action_key: 'add_internal_note' | 'update_status' | 'reply_to_ticket';
   external_ref: string;
   status_value?: 'open' | 'pending' | 'hold' | 'solved';
 }): Promise<{ ok?: boolean; request_id?: string; task_id?: string; payload?: Record<string, unknown>; error?: string }> {

@@ -61,7 +61,7 @@ export interface RenewalInvoice {
   customer_accounts?: { name: string; health_score: number } | null;
 }
 
-export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision';
+export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision' | 'inquiry_review' | 'action_approval';
 export interface ChecklistItemState { text: string; done: boolean }
 export interface DBHumanTask {
   id: string;
@@ -492,6 +492,23 @@ export async function decideHumanTask(
       await resolveKnowledgeRevision(task.related_id, decision);
     } catch (err) {
       console.error('knowledge revision hook:', err);
+      throw err;
+    }
+  }
+  // Hook #3 extension (additive, guarded — migration 035, THE
+  // GENERALIZED ACTION LAYER): if this task gates a pending action
+  // execution (destructive-always-gated or trust-gated), approve
+  // (actually call the external system + record a plain-language
+  // receipt) or reject it server-side. Grouped with hook #3 (Scribe)
+  // rather than a new hook number — both resolve a "write to a
+  // connected system" gate, just via the generalized action path
+  // instead of the narrow Scribe action_key path.
+  if (task.type === 'action_approval') {
+    try {
+      const { resolveActionExecution } = await import('./connectorApi');
+      await resolveActionExecution(task.id, decision);
+    } catch (err) {
+      console.error('action execution hook:', err);
       throw err;
     }
   }
