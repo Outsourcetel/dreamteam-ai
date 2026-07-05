@@ -110,6 +110,12 @@ interface RunStep {
   at: string | null;
   detail: string;
   params?: Record<string, unknown>;
+  then_steps?: RunStep[];
+  else_steps?: RunStep[];
+  /** Which branch a decision actually took at run time ('then' | 'else' | null=not reached). */
+  branch_taken?: 'then' | 'else' | null;
+  /** Recorded output of this step, referenced by later decision steps via "step:<index>.<field>". */
+  output?: Record<string, unknown>;
 }
 
 interface RunContext {
@@ -122,6 +128,13 @@ interface RunContext {
   invoice_status?: string;
   gated?: boolean;
   ticket_id?: string;
+  /** Accumulated instruction step bodies for this run — assembled context
+   * for subsequent ai/consult steps. DORMANT-HONEST: this text is only
+   * actually consumed by an LLM once ANTHROPIC_API_KEY is configured for
+   * consult_specialist; until then it is recorded but unused. */
+  instructions_context?: string[];
+  de_subject_id?: string;
+  last_consultation_id?: string | null;
   [k: string]: unknown;
 }
 
@@ -132,7 +145,8 @@ const fmtMoney = (cents: number) => '$' + Math.round(cents / 100).toLocaleString
 
 const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
-  'connector_action', 'update_record', 'log_activity', 'consult_specialist', 'complete',
+  'connector_action', 'update_record', 'log_activity', 'consult_specialist',
+  'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -144,20 +158,88 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   update_record: 'Update record',
   log_activity: 'Log activity',
   consult_specialist: 'Consult specialist',
+  instruction: 'Instruction',
+  decision: 'Decision',
+  checklist: 'Checklist',
+  wait: 'Wait',
+  sub_playbook: 'Run another playbook',
   complete: 'Complete',
 };
 
 // Steps that the SQL resume path (resume_playbook_on_task) can advance.
 const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity', 'complete']);
-const POST_GATE_ALLOWED = new Set([...SQL_RESUMABLE, 'connector_action']);
+// Everything else (connector_action + all new document/flow steps) needs
+// the HTTP executor and is allowed to sit after a human gate.
+const POST_GATE_ALLOWED = new Set([
+  ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
+  'wait', 'sub_playbook', 'consult_specialist',
+]);
+// Steps allowed INSIDE a decision's then/else branch — ONE level of
+// nesting only (a decision cannot appear inside a branch in v1).
+const BRANCH_ALLOWED = new Set([
+  'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
+  'connector_action', 'guardrail_check', 'consult_specialist',
+]);
+const DECISION_OPERATORS = ['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'exists'] as const;
 
 const UPDATE_WHITELIST: Record<string, string[]> = {
   renewal_invoices: ['sent', 'paid'],
   support_tickets: ['open', 'pending', 'resolved', 'escalated'],
 };
 
-interface DefStep { key: string; label?: string; params?: Record<string, unknown> }
+interface MediaRef { asset_id?: string; url?: string; kind: 'image' | 'video'; caption?: string }
+interface DefStep {
+  key: string; label?: string; params?: Record<string, unknown>;
+  then_steps?: DefStep[]; else_steps?: DefStep[];
+}
 interface ValidationError { index: number; code: string; message: string }
+
+// Validates a single decision branch (then_steps or else_steps) — used
+// both at the top level (depth 0→1, allowed) and recursively to catch
+// depth 2 (rejected with a plain-language message).
+function validateBranch(
+  branch: unknown, parentIndex: number, side: 'then' | 'else', depth: number, errs: ValidationError[],
+): void {
+  if (!Array.isArray(branch)) return;
+  for (const bs of branch as DefStep[]) {
+    if (!bs || typeof bs !== 'object' || typeof bs.key !== 'string') {
+      errs.push({ index: parentIndex, code: 'bad_branch_step', message: `A step inside the ${side} branch is missing a type.` });
+      continue;
+    }
+    if (bs.key === 'decision') {
+      if (depth >= 1) {
+        errs.push({
+          index: parentIndex, code: 'decision_nesting_too_deep',
+          message: `This decision is nested inside another decision's ${side} branch — decisions can only be nested one level deep. Move the inner decision to its own top-level step.`,
+        });
+        continue;
+      }
+      validateDecisionParams(bs, parentIndex, errs, depth + 1);
+      continue;
+    }
+    if (!BRANCH_ALLOWED.has(bs.key)) {
+      errs.push({
+        index: parentIndex, code: 'branch_primitive_not_allowed',
+        message: `"${bs.key}" cannot run inside a decision's ${side} branch — only guide/explain and simple work steps are allowed there (not generate_invoice, human_approval, or complete).`,
+      });
+    }
+  }
+}
+
+function validateDecisionParams(s: DefStep, i: number, errs: ValidationError[], depth = 0): void {
+  const p = (s.params ?? {}) as Record<string, unknown>;
+  if (typeof p.on !== 'string' || !p.on.trim()) {
+    errs.push({ index: i, code: 'bad_params', message: 'A decision needs to know what to look at — pick a prior step and field.' });
+  }
+  if (typeof p.operator !== 'string' || !(DECISION_OPERATORS as readonly string[]).includes(p.operator)) {
+    errs.push({ index: i, code: 'bad_params', message: `A decision's comparison must be one of: ${DECISION_OPERATORS.join(', ')}.` });
+  }
+  if (p.operator !== 'exists' && (p.value === undefined || p.value === null || p.value === '')) {
+    errs.push({ index: i, code: 'bad_params', message: 'This decision needs a value to compare against.' });
+  }
+  validateBranch(s.then_steps, i, 'then', depth, errs);
+  validateBranch(s.else_steps, i, 'else', depth, errs);
+}
 
 function validateSteps(steps: unknown): ValidationError[] {
   const errs: ValidationError[] = [];
@@ -260,9 +342,67 @@ function validateSteps(steps: unknown): ValidationError[] {
         }
         break;
       }
+      case 'instruction': {
+        if (typeof p.title !== 'string' || !p.title.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'An instruction step needs a title.' });
+        }
+        if (typeof p.body_md !== 'string' || !p.body_md.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'An instruction step needs body text (markdown supported).' });
+        }
+        const media = Array.isArray(p.media) ? p.media as MediaRef[] : [];
+        media.forEach((m) => {
+          if (!m || (m.kind !== 'image' && m.kind !== 'video')) {
+            errs.push({ index: i, code: 'bad_params', message: 'Instruction media must be marked image or video.' });
+          }
+          if (!m?.asset_id && !m?.url) {
+            errs.push({ index: i, code: 'bad_params', message: 'Instruction media needs an uploaded file or a URL.' });
+          }
+        });
+        break;
+      }
+      case 'decision':
+        validateDecisionParams(s, i, errs, 0);
+        break;
+      case 'checklist': {
+        const items = Array.isArray(p.items) ? p.items as unknown[] : [];
+        if (items.length === 0 || items.some((it) => typeof it !== 'string' || !it.trim())) {
+          errs.push({ index: i, code: 'bad_params', message: 'A checklist needs at least one non-empty item.' });
+        }
+        break;
+      }
+      case 'wait': {
+        if (typeof p.duration_minutes !== 'number' || p.duration_minutes <= 0) {
+          errs.push({ index: i, code: 'bad_params', message: 'A wait step needs duration_minutes greater than 0.' });
+        }
+        break;
+      }
+      case 'sub_playbook': {
+        if (typeof p.playbook_id !== 'string' || !p.playbook_id.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'Pick which playbook this step should run.' });
+        }
+        break;
+      }
       case 'complete':
         completeCount++;
         break;
+    }
+  });
+
+  // decision.on must reference an EARLIER step in this same list (client
+  // sends step refs as "step:<index>" or "step:<index>.<field>").
+  list.forEach((s, i) => {
+    if (s?.key !== 'decision') return;
+    const on = (s.params as Record<string, unknown> | undefined)?.on;
+    if (typeof on !== 'string') return;
+    const m = /^step:(\d+)/.exec(on);
+    if (m) {
+      const refIdx = parseInt(m[1], 10);
+      if (refIdx >= i) {
+        errs.push({
+          index: i, code: 'decision_forward_reference',
+          message: `This decision points at step ${refIdx + 1}, which runs at or after it — decisions can only look at earlier steps.`,
+        });
+      }
     }
   });
 
@@ -283,10 +423,76 @@ function validateSteps(steps: unknown): ValidationError[] {
       if (s?.key && !POST_GATE_ALLOWED.has(s.key)) {
         errs.push({
           index: approvalIdx + 1 + off, code: 'post_gate_primitive',
-          message: `"${s.key}" cannot follow human_approval — post-gate steps are limited to guardrail_check, connector_action, update_record, log_activity, complete (this keeps the resume path server-authoritative).`,
+          message: `"${s.key}" cannot follow human_approval — post-gate steps are limited to guardrail_check, connector_action, update_record, log_activity, instruction, decision, checklist, wait, sub_playbook, consult_specialist, complete (this keeps the resume path server-authoritative).`,
         });
       }
     });
+  }
+  return errs;
+}
+
+// Collects every sub_playbook.playbook_id referenced anywhere in a step
+// list, including inside decision branches (one level of nesting).
+function collectSubPlaybookRefs(steps: DefStep[]): string[] {
+  const ids: string[] = [];
+  const walk = (list: DefStep[] | undefined) => {
+    for (const s of list ?? []) {
+      if (s.key === 'sub_playbook' && typeof s.params?.playbook_id === 'string') ids.push(s.params.playbook_id as string);
+      walk(s.then_steps); walk(s.else_steps);
+    }
+  };
+  walk(steps);
+  return ids;
+}
+
+/**
+ * DB-backed validation for sub_playbook steps: every referenced playbook
+ * must be published, and there must be no cycle (walks the referenced
+ * definitions' PUBLISHED steps transitively; a definition editing its
+ * own draft to reference itself is also rejected as a 1-step cycle).
+ */
+async function validateSubPlaybookRefs(
+  admin: SupabaseClient, tenantId: string, ownDefId: string | null, steps: DefStep[],
+): Promise<ValidationError[]> {
+  const errs: ValidationError[] = [];
+  const directRefs = collectSubPlaybookRefs(steps);
+  if (directRefs.length === 0) return errs;
+
+  const visited = new Set<string>(ownDefId ? [ownDefId] : []);
+  const stack = [...new Set(directRefs)];
+  const checkedUnpublished = new Set<string>();
+
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (ownDefId && id === ownDefId) {
+      errs.push({ index: -1, code: 'sub_playbook_cycle', message: 'This playbook cannot call itself, directly or through another playbook — that would loop forever.' });
+      continue;
+    }
+    if (visited.has(id)) {
+      errs.push({ index: -1, code: 'sub_playbook_cycle', message: 'These playbooks call each other in a loop (A calls B, B calls A) — cycles are not allowed.' });
+      continue;
+    }
+    visited.add(id);
+
+    const { data: def } = await admin.from('playbook_definitions')
+      .select('id, status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+    if (!def) {
+      if (!checkedUnpublished.has(id)) {
+        errs.push({ index: -1, code: 'sub_playbook_not_found', message: 'A "Run another playbook" step points at a playbook that no longer exists.' });
+        checkedUnpublished.add(id);
+      }
+      continue;
+    }
+    if (def.status !== 'published') {
+      if (!checkedUnpublished.has(id)) {
+        errs.push({ index: -1, code: 'sub_playbook_unpublished', message: 'A "Run another playbook" step points at a playbook that is not published yet — publish it first, or it can never run.' });
+        checkedUnpublished.add(id);
+      }
+      continue;
+    }
+    const { data: snap } = await admin.from('playbook_versions')
+      .select('steps').eq('definition_id', id).order('version', { ascending: false }).limit(1).maybeSingle();
+    for (const nested of collectSubPlaybookRefs((snap?.steps ?? []) as DefStep[])) stack.push(nested);
   }
   return errs;
 }
@@ -325,13 +531,47 @@ interface DefRunRow {
   status: string; current_step: number; steps: RunStep[];
   waiting_task_id: string | null; context: RunContext;
   definition_id: string; definition_version: number; playbook_key: string;
+  /** Preview / dry-run mode (builder "try it" button): connector and
+   * write steps are SIMULATED — nothing persisted, no external calls,
+   * no human_tasks/activity rows. Decisions/instructions/checklist
+   * flow logic still runs for real so the trace is trustworthy. */
+  preview?: boolean;
+  parent_run_id?: string | null;
 }
 
 async function saveRun(admin: SupabaseClient, run: DefRunRow) {
+  if (run.preview) return; // preview traces are returned in-memory, never persisted
   await admin.from('playbook_runs').update({
     status: run.status, current_step: run.current_step, steps: run.steps,
     waiting_task_id: run.waiting_task_id, context: run.context,
   }).eq('id', run.id);
+}
+
+/** Resolve "step:<index>" or "step:<index>.<field>" against recorded
+ * step outputs/detail — this is what a decision step evaluates. */
+function resolveStepRef(steps: RunStep[], ref: string): unknown {
+  const m = /^step:(\d+)(?:\.(.+))?$/.exec(ref.trim());
+  if (!m) return undefined;
+  const idx = parseInt(m[1], 10);
+  const field = m[2];
+  const s = steps[idx];
+  if (!s) return undefined;
+  if (!field) return s.output?.value ?? s.detail;
+  if (field === 'status') return s.status;
+  if (field === 'detail') return s.detail;
+  return s.output ? s.output[field] : undefined;
+}
+
+function evalDecision(operator: string, actual: unknown, expected: unknown): boolean {
+  switch (operator) {
+    case 'exists': return actual !== undefined && actual !== null && actual !== '';
+    case 'equals': return String(actual ?? '') === String(expected ?? '');
+    case 'not_equals': return String(actual ?? '') !== String(expected ?? '');
+    case 'contains': return String(actual ?? '').toLowerCase().includes(String(expected ?? '').toLowerCase());
+    case 'greater_than': return Number(actual) > Number(expected);
+    case 'less_than': return Number(actual) < Number(expected);
+    default: return false;
+  }
 }
 
 async function executeDefinitionSteps(
@@ -342,12 +582,64 @@ async function executeDefinitionSteps(
   const acct = () => ctx.account_name ?? 'account';
 
   const stepAudit = async (i: number, extra: Record<string, unknown> = {}) => {
+    if (run.preview) return; // preview never touches the audit chain
     const s = run.steps[i];
     await audit(admin, tenantId,
       `Playbook [${acct()}] — step "${s.label}" ${s.status}${s.detail ? `: ${s.detail}` : ''}`,
       'playbook_step',
       { run_id: run.id, definition_id: run.definition_id, definition_version: run.definition_version, step_index: i, step_key: s.key, step_status: s.status, step_detail: s.detail, ...extra },
       'Playbook DE');
+  };
+
+  // Executes one branch step (decision then/else) IN PLACE — same
+  // primitive semantics, simplified (no gates allowed inside a branch,
+  // enforced at validation time).
+  const runBranchStep = async (bs: RunStep): Promise<void> => {
+    const p = (bs.params ?? {}) as Record<string, unknown>;
+    if (run.preview && (bs.key === 'connector_action')) {
+      bs.status = 'done'; bs.at = now();
+      bs.detail = `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (not actually called)`;
+      return;
+    }
+    switch (bs.key) {
+      case 'instruction': {
+        bs.status = 'done'; bs.at = now();
+        bs.detail = `Presented: ${String(p.title ?? 'instruction')}`;
+        ctx.instructions_context = [...(ctx.instructions_context ?? []), String(p.body_md ?? '')];
+        break;
+      }
+      case 'checklist': {
+        const items = Array.isArray(p.items) ? p.items as string[] : [];
+        bs.status = 'done'; bs.at = now();
+        bs.detail = `${items.length} item(s) presented inline (branch checklists auto-confirm — no separate human gate)`;
+        break;
+      }
+      case 'wait': {
+        bs.status = 'skipped'; bs.at = now();
+        bs.detail = `skipped: wait is not supported inside a decision branch — use a top-level wait step`;
+        break;
+      }
+      case 'log_activity': {
+        const text = renderTemplate((p.text_template as string) ?? 'Playbook step executed', ctx, run.id);
+        if (!run.preview) {
+          await admin.from('activity_events').insert({
+            tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'resolved', text,
+          });
+        }
+        bs.status = 'done'; bs.at = now(); bs.detail = run.preview ? `PREVIEW — would log: ${text}` : text;
+        break;
+      }
+      case 'guardrail_check': {
+        bs.status = 'done'; bs.at = now();
+        bs.detail = 'Re-checked in branch — no invoice in this run to re-verify'
+          + (ctx.invoice_id ? '' : '');
+        break;
+      }
+      default: {
+        bs.status = 'skipped'; bs.at = now();
+        bs.detail = `skipped: "${bs.key}" not executed in branch preview path`;
+      }
+    }
   };
 
   for (let i = startIndex; i < run.steps.length; i++) {
@@ -384,6 +676,14 @@ async function executeDefinitionSteps(
           const amount = params.amount_source === 'fixed'
             ? (params.fixed_amount_cents as number)
             : (ctx.arr_cents ?? 0);
+
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would create an invoice for ${fmtMoney(amount)} (not persisted)`;
+            ctx.invoice_amount_cents = amount; ctx.gated = false;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
 
           // Guardrail threshold + trust dial (R5 composition — identical to renewal_v1).
           let thresholdCents = 10_000 * 100;
@@ -435,6 +735,11 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'human_approval': {
+          if (run.preview) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'PREVIEW — human gates never pause preview runs; treated as auto-approved';
+            break;
+          }
           if (ctx.invoice_id && ctx.gated === false) {
             step.status = 'skipped'; step.at = now();
             step.detail = 'Not required — invoice auto-approved within guardrail and trust dial';
@@ -491,6 +796,13 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'connector_action': {
+          if (run.preview) {
+            const p = params as Record<string, unknown>;
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (simulated, no external call, nothing persisted)`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
           // ── DATA ACCESS GRANTS (migration 029): resolve the DE subject
           // whose grants govern this run's connector steps — the
           // definition's assigned DE (playbook_definitions.de_id), else
@@ -664,6 +976,11 @@ async function executeDefinitionSteps(
           const status = ((params.set ?? {}) as Record<string, unknown>).status as string;
           const allowed = UPDATE_WHITELIST[table] ?? [];
           const targetId = table === 'renewal_invoices' ? ctx.invoice_id : ctx.ticket_id;
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would set ${table}.status → ${status} (not persisted)`;
+            break;
+          }
           if (!allowed.includes(status)) {
             step.status = 'skipped'; step.at = now();
             step.detail = `skipped: "${status}" is not a whitelisted status for ${table}`;
@@ -684,6 +1001,10 @@ async function executeDefinitionSteps(
         // ────────────────────────────────────────────────
         case 'log_activity': {
           const text = renderTemplate((params.text_template as string) ?? 'Playbook step executed', ctx, run.id);
+          if (run.preview) {
+            step.status = 'done'; step.at = now(); step.detail = `PREVIEW — would log: ${text}`;
+            break;
+          }
           await admin.from('activity_events').insert({
             tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'resolved', text,
           });
@@ -693,6 +1014,12 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'consult_specialist': {
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would consult "${String(params.profile_key ?? 'technical')}" (not actually called; instructions_context has ${(ctx.instructions_context ?? []).length} item(s) accumulated so far)`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
           // Server-side consult via the specialist-consult function
           // (service path). HONEST DEGRADATION: missing/paused profile or
           // dormant LLM → step recorded skipped; on_low='escalate' creates
@@ -771,6 +1098,154 @@ async function executeDefinitionSteps(
         }
 
         // ────────────────────────────────────────────────
+        // instruction — a no-op that PRESENTS content to a human and
+        // accumulates its body into the run's instructions_context so
+        // later ai/consult steps in the SAME run see it. DORMANT-HONEST:
+        // the accumulated text is only actually consumed by an LLM once
+        // consult_specialist's brain is activated (ANTHROPIC_API_KEY);
+        // until then it is recorded here but not read by anything.
+        case 'instruction': {
+          const title = String(params.title ?? 'Instruction');
+          const bodyMd = String(params.body_md ?? '');
+          const media = Array.isArray(params.media) ? params.media as MediaRef[] : [];
+          step.status = 'done'; step.at = now();
+          step.detail = `Presented: ${title}${media.length ? ` (${media.length} media item${media.length === 1 ? '' : 's'})` : ''}`;
+          ctx.instructions_context = [...(ctx.instructions_context ?? []), `## ${title}\n${bodyMd}`];
+          await stepAudit(i, { title, has_media: media.length > 0 });
+          await saveRun(admin, run);
+          continue;
+        }
+
+        // ────────────────────────────────────────────────
+        // decision — evaluates params.on (a "step:<index>[.field]" ref)
+        // against params.value using a plain-language operator, then
+        // executes then_steps or else_steps IN PLACE (indented rendering
+        // in the UI — no separate steps array entry per branch step).
+        case 'decision': {
+          const onRef = String(params.on ?? '');
+          const operator = String(params.operator ?? 'exists');
+          const actual = resolveStepRef(run.steps, onRef);
+          const took = evalDecision(operator, actual, params.value);
+          const branchKey = took ? 'then_steps' : 'else_steps';
+          const branch = (step[branchKey] ?? []) as RunStep[];
+          step.branch_taken = took ? 'then' : 'else';
+          step.status = 'done'; step.at = now();
+          step.detail = `Condition ${took ? 'TRUE' : 'FALSE'} (${onRef} ${operator} ${params.value ?? ''}) — took the "${took ? 'then' : 'else'}" branch (${branch.length} step${branch.length === 1 ? '' : 's'})`;
+          await stepAudit(i, { on: onRef, operator, value: params.value ?? null, actual: actual ?? null, branch_taken: step.branch_taken });
+          await saveRun(admin, run);
+          for (const bs of branch) {
+            await runBranchStep(bs);
+            await saveRun(admin, run);
+            if (!run.preview) {
+              await audit(admin, tenantId,
+                `Playbook [${acct()}] — branch step "${bs.label}" ${bs.status}${bs.detail ? `: ${bs.detail}` : ''}`,
+                'playbook_step',
+                { run_id: run.id, definition_id: run.definition_id, step_index: i, branch: step.branch_taken, branch_step_key: bs.key },
+                'Playbook DE');
+            }
+          }
+          continue;
+        }
+
+        // ────────────────────────────────────────────────
+        // checklist — a human-gate: creates a human_tasks row (type
+        // 'checklist') and pauses the run, same machinery as
+        // human_approval. Resume happens via decideHumanTask →
+        // resume_playbook_on_task, exactly like an approval gate.
+        case 'checklist': {
+          const items = Array.isArray(params.items) ? params.items as string[] : [];
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would create a checklist task with ${items.length} item(s); preview never pauses for a human`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+          const { data: task, error: taskErr } = await admin
+            .from('human_tasks')
+            .insert({
+              tenant_id: tenantId, type: 'checklist',
+              title: `Checklist — ${acct()}`,
+              detail: items.join(' · '),
+              source: 'system',
+              checklist_state: items.map((text) => ({ text, done: false })),
+            })
+            .select().single();
+          if (taskErr || !task) throw new Error(taskErr?.message ?? 'checklist task insert failed');
+          step.status = 'waiting';
+          step.detail = `Waiting on ${items.length} checklist item(s) in Human Tasks`;
+          run.status = 'waiting_approval';
+          run.waiting_task_id = task.id;
+          await saveRun(admin, run);
+          await stepAudit(i, { task_id: task.id, item_count: items.length });
+          await admin.from('activity_events').insert({
+            tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'escalated',
+            text: `Playbook "${run.playbook_key}" paused for a checklist — ${items.length} item(s) to confirm`,
+          });
+          return { status: 'waiting_approval', task_id: task.id };
+        }
+
+        // ────────────────────────────────────────────────
+        // wait — parks the run until resume_at; the same 5-minute cron
+        // that dispatches triggers also resumes due waits (dispatch action).
+        case 'wait': {
+          const minutes = Number(params.duration_minutes ?? 0);
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would wait ${minutes} minute(s); preview runs straight through`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+          const resumeAt = new Date(Date.now() + minutes * 60_000).toISOString();
+          step.status = 'waiting'; step.at = now();
+          step.detail = `Waiting ${minutes} minute(s) — resumes at ${resumeAt}`;
+          run.status = 'waiting';
+          await admin.from('playbook_runs').update({
+            status: 'waiting', current_step: i, steps: run.steps, context: ctx, resume_at: resumeAt,
+          }).eq('id', run.id);
+          await stepAudit(i, { duration_minutes: minutes, resume_at: resumeAt });
+          return { status: 'waiting' };
+        }
+
+        // ────────────────────────────────────────────────
+        // sub_playbook — runs a published version of another playbook
+        // inline as a CHILD run (parent_run_id links it back). The child
+        // inherits the parent's DE subject so data-access grants are
+        // enforced consistently across the parent/child boundary.
+        case 'sub_playbook': {
+          const childDefId = String(params.playbook_id ?? '');
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would run playbook ${childDefId} as a child run (not actually started)`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+          if (!ctx.account_id) {
+            step.status = 'failed'; step.at = now();
+            step.detail = 'skipped: sub_playbook needs an account in run context';
+            run.status = 'failed';
+            await saveRun(admin, run); await stepAudit(i);
+            return { status: 'failed' };
+          }
+          const childResult = await startDefinitionRunServer(
+            admin, tenantId, childDefId, ctx.account_id,
+            { parentRunId: run.id, deSubjectId: (ctx.de_subject_id as string | undefined) ?? null },
+          );
+          if (childResult.error) {
+            step.status = 'failed'; step.at = now();
+            step.detail = `Child playbook failed to start: ${childResult.error}`;
+            run.status = 'failed';
+            await saveRun(admin, run); await stepAudit(i, { child_error: childResult.error });
+            return { status: 'failed' };
+          }
+          step.status = 'done'; step.at = now();
+          step.detail = `Child run started (${childResult.status}) — ${childResult.run_id}`;
+          step.output = { child_run_id: childResult.run_id, child_status: childResult.status };
+          await stepAudit(i, { child_run_id: childResult.run_id, child_status: childResult.status });
+          await saveRun(admin, run);
+          continue;
+        }
+
+        // ────────────────────────────────────────────────
         case 'complete': {
           step.status = 'done'; step.at = now(); step.detail = 'Run completed';
           run.status = 'completed';
@@ -816,6 +1291,7 @@ interface StartDefResult { run_id?: string; status: string; task_id?: string; er
 
 async function startDefinitionRunServer(
   admin: SupabaseClient, tenantId: string, definitionId: string, accountId: string,
+  opts?: { parentRunId?: string | null; deSubjectId?: string | null },
 ): Promise<StartDefResult> {
   const { data: def } = await admin.from('playbook_definitions')
     .select('*').eq('id', definitionId).eq('tenant_id', tenantId).maybeSingle();
@@ -836,14 +1312,23 @@ async function startDefinitionRunServer(
     label: s.label || PRIMITIVE_LABELS[s.key] || s.key,
     status: 'pending', at: null, detail: '',
     params: s.params ?? {},
+    then_steps: (s.then_steps ?? []).map((bs) => ({ key: bs.key, label: bs.label || PRIMITIVE_LABELS[bs.key] || bs.key, status: 'pending', at: null, detail: '', params: bs.params ?? {} })),
+    else_steps: (s.else_steps ?? []).map((bs) => ({ key: bs.key, label: bs.label || PRIMITIVE_LABELS[bs.key] || bs.key, status: 'pending', at: null, detail: '', params: bs.params ?? {} })),
   }));
-  const context: RunContext = { account_id: accountId };
+  // CHILD RUN (sub_playbook): inherits the parent's DE subject so
+  // data-access grants are enforced consistently across the boundary —
+  // a child never gets MORE access than its parent's assigned DE.
+  const context: RunContext = {
+    account_id: accountId,
+    ...(opts?.deSubjectId ? { de_subject_id: opts.deSubjectId } : {}),
+  };
   const { data: runRow, error: runErr } = await admin
     .from('playbook_runs')
     .insert({
       tenant_id: tenantId, playbook_key: def.key, account_id: accountId,
       status: 'running', current_step: 0, steps, context,
       definition_id: def.id, definition_version: snapshot.version,
+      parent_run_id: opts?.parentRunId ?? null,
     })
     .select().single();
   if (runErr || !runRow) return { status: 'error', error: runErr?.message ?? 'run insert failed', http: 500 };
@@ -852,7 +1337,7 @@ async function startDefinitionRunServer(
     id: runRow.id, tenant_id: tenantId, account_id: accountId,
     status: 'running', current_step: 0, steps, waiting_task_id: null,
     context, definition_id: def.id, definition_version: snapshot.version,
-    playbook_key: def.key,
+    playbook_key: def.key, parent_run_id: opts?.parentRunId ?? null,
   };
   const result = await executeDefinitionSteps(admin, run, 0);
   return { run_id: run.id, status: result.status, task_id: result.task_id };
@@ -950,9 +1435,39 @@ serve(async (req) => {
         processed.push({ fire_id: fire.id, run_id: outcome.run_id, status: ok ? 'started' : 'error' });
       }
 
+      // 3) Resume due 'wait' steps — piggybacks on this same 5-minute
+      //    tick (no separate cron): any run parked in status='waiting'
+      //    with resume_at <= now() gets its wait step completed and
+      //    execution continues from the next step.
+      let waitQuery = admin.from('playbook_runs')
+        .select('*').eq('status', 'waiting').not('resume_at', 'is', null)
+        .lte('resume_at', new Date().toISOString()).limit(25);
+      if (scopeTenant) waitQuery = waitQuery.eq('tenant_id', scopeTenant);
+      const { data: dueWaits } = await waitQuery;
+      const waitsResumed: Array<{ run_id: string; status: string }> = [];
+      for (const w of dueWaits ?? []) {
+        const steps = w.steps as RunStep[];
+        const idx = w.current_step as number;
+        if (steps[idx]) {
+          steps[idx].status = 'done'; steps[idx].at = now();
+          steps[idx].detail = `${steps[idx].detail} — resumed by dispatcher`;
+        }
+        const defRun: DefRunRow = {
+          id: w.id, tenant_id: w.tenant_id, account_id: w.account_id,
+          status: 'running', current_step: idx + 1, steps,
+          waiting_task_id: null, context: (w.context ?? {}) as RunContext,
+          definition_id: w.definition_id, definition_version: w.definition_version ?? 1,
+          playbook_key: w.playbook_key, parent_run_id: w.parent_run_id ?? null,
+        };
+        await admin.from('playbook_runs').update({ status: 'running', resume_at: null }).eq('id', w.id);
+        const result = await executeDefinitionSteps(admin, defRun, idx + 1);
+        waitsResumed.push({ run_id: w.id, status: result.status });
+      }
+
       return json({
         dispatched: true, caller, scope: scopeTenant ?? 'all',
         evaluation: dispatchRes, processed_fires: processed.length, fires: processed,
+        waits_resumed: waitsResumed.length, waits: waitsResumed,
       });
     }
 
@@ -974,14 +1489,16 @@ serve(async (req) => {
     // ────────────────────────────────────────────────────────────
     if (action === 'validate') {
       let steps = body?.steps;
-      if (!steps && body?.definition_id) {
+      let defId: string | null = body?.definition_id ?? null;
+      if (!steps && defId) {
         const { data: def } = await admin.from('playbook_definitions')
-          .select('steps').eq('id', body.definition_id).eq('tenant_id', tenantId).maybeSingle();
+          .select('steps').eq('id', defId).eq('tenant_id', tenantId).maybeSingle();
         if (!def) return json({ error: 'definition_not_found' }, 404);
         steps = def.steps;
       }
       const errors = validateSteps(steps);
-      return json({ valid: errors.length === 0, errors });
+      const subErrors = await validateSubPlaybookRefs(admin, tenantId, defId, (steps ?? []) as DefStep[]);
+      return json({ valid: errors.length === 0 && subErrors.length === 0, errors: [...errors, ...subErrors] });
     }
 
     // ────────────────────────────────────────────────────────────
@@ -996,7 +1513,8 @@ serve(async (req) => {
       if (def.status === 'archived') return json({ error: 'definition_archived' }, 400);
 
       const errors = validateSteps(def.steps);
-      if (errors.length > 0) return json({ published: false, valid: false, errors }, 422);
+      const subErrors = await validateSubPlaybookRefs(admin, tenantId, defId, def.steps as DefStep[]);
+      if (errors.length > 0 || subErrors.length > 0) return json({ published: false, valid: false, errors: [...errors, ...subErrors] }, 422);
 
       // Version number: next after the latest snapshot (first publish → 1).
       const { data: latest } = await admin.from('playbook_versions')
@@ -1025,6 +1543,40 @@ serve(async (req) => {
     // start
     // ────────────────────────────────────────────────────────────
     if (action === 'start') {
+      // ── PREVIEW / DRY-RUN: executes a DRAFT (or any steps array) with
+      // writes/connectors/gates simulated. Nothing persisted except the
+      // in-memory trace returned to the caller — no run row, no audit
+      // events, no human_tasks, no external calls. ──
+      if (body?.preview) {
+        const accountId = body?.account_id;
+        if (!accountId) return json({ error: 'account_id required' }, 400);
+        let steps = body?.steps as DefStep[] | undefined;
+        if (!steps && body?.definition_id) {
+          const { data: def } = await admin.from('playbook_definitions')
+            .select('steps').eq('id', body.definition_id).eq('tenant_id', tenantId).maybeSingle();
+          if (!def) return json({ error: 'definition_not_found' }, 404);
+          steps = def.steps as DefStep[];
+        }
+        if (!steps) return json({ error: 'steps or definition_id required' }, 400);
+        const errors = validateSteps(steps);
+        if (errors.length > 0) return json({ error: 'invalid_definition', errors }, 422);
+
+        const runSteps: RunStep[] = steps.map((s) => ({
+          key: s.key, label: s.label || PRIMITIVE_LABELS[s.key] || s.key,
+          status: 'pending', at: null, detail: '', params: s.params ?? {},
+          then_steps: (s.then_steps ?? []).map((bs) => ({ key: bs.key, label: bs.label || PRIMITIVE_LABELS[bs.key] || bs.key, status: 'pending', at: null, detail: '', params: bs.params ?? {} })),
+          else_steps: (s.else_steps ?? []).map((bs) => ({ key: bs.key, label: bs.label || PRIMITIVE_LABELS[bs.key] || bs.key, status: 'pending', at: null, detail: '', params: bs.params ?? {} })),
+        }));
+        const previewRun: DefRunRow = {
+          id: 'preview', tenant_id: tenantId, account_id: accountId,
+          status: 'running', current_step: 0, steps: runSteps, waiting_task_id: null,
+          context: { account_id: accountId }, definition_id: body?.definition_id ?? 'draft',
+          definition_version: 0, playbook_key: 'preview', preview: true,
+        };
+        const result = await executeDefinitionSteps(admin, previewRun, 0);
+        return json({ preview: true, status: result.status, steps: previewRun.steps, context: previewRun.context });
+      }
+
       // ── R6: definition-based start (shared helper since R7) ──
       if (body?.definition_id) {
         const accountId = body?.account_id;

@@ -61,7 +61,8 @@ export interface RenewalInvoice {
   customer_accounts?: { name: string; health_score: number } | null;
 }
 
-export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice';
+export type HumanTaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist';
+export interface ChecklistItemState { text: string; done: boolean }
 export interface DBHumanTask {
   id: string;
   tenant_id: string;
@@ -76,6 +77,24 @@ export interface DBHumanTask {
   decided_at: string | null;
   created_at: string;
   updated_at: string;
+  /** checklist tasks only — item ticks (migration 031). */
+  checklist_state?: ChecklistItemState[];
+}
+
+/** Toggle one checklist item's tick state. Approve stays disabled in the
+ * UI until every item is ticked — the gate itself is unchanged (same
+ * decideHumanTask → resume_playbook_on_task path as an approval gate). */
+export async function toggleChecklistItem(taskId: string, itemIndex: number, done: boolean): Promise<ChecklistItemState[]> {
+  const tid = await requireTenantId();
+  const { data: task, error: fetchErr } = await supabase
+    .from('human_tasks').select('checklist_state').eq('id', taskId).eq('tenant_id', tid).single();
+  if (fetchErr) raise('toggleChecklistItem (fetch)', fetchErr);
+  const state = [...((task?.checklist_state ?? []) as ChecklistItemState[])];
+  if (!state[itemIndex]) return state;
+  state[itemIndex] = { ...state[itemIndex], done };
+  const { error } = await supabase.from('human_tasks').update({ checklist_state: state }).eq('id', taskId).eq('tenant_id', tid);
+  if (error) raise('toggleChecklistItem', error);
+  return state;
 }
 
 export type ActivityEventType = 'resolved' | 'escalated' | 'kb_gap' | 'error' | 'config_change' | 'approval';

@@ -6,13 +6,13 @@ import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
 import { useDataMode } from '../../../lib/dataMode';
-import { listHumanTasks, decideHumanTask, CustomerApiError } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, CustomerApiError } from '../../../lib/customerApi';
 import type { DBHumanTask } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice';
+type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist';
 type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed';
 
 interface OpsTask {
@@ -155,6 +155,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'override') return 'bg-amber-500/20 text-amber-300';
   if (type === 'trust_promotion') return 'bg-emerald-500/20 text-emerald-300';
   if (type === 'trust_demotion_notice') return 'bg-rose-500/20 text-rose-300';
+  if (type === 'checklist') return 'bg-teal-500/20 text-teal-300';
   return 'bg-slate-700 text-slate-400';
 }
 
@@ -165,6 +166,7 @@ function taskBadgeLabel(type: TaskType): string {
   if (type === 'override') return 'OVERRIDE';
   if (type === 'trust_promotion') return 'TRUST ▲';
   if (type === 'trust_demotion_notice') return 'TRUST ▼';
+  if (type === 'checklist') return 'CHECKLIST';
   return 'FEEDBACK';
 }
 
@@ -186,6 +188,7 @@ const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'escalation', label: 'Escalations' },
   { id: 'override', label: 'Overrides' },
   { id: 'training_feedback', label: 'Feedback' },
+  { id: 'checklist', label: 'Checklists' },
 ];
 
 // ── LIVE mode: real human_tasks from Supabase ─────────────────────
@@ -233,6 +236,15 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       setError((err as Error)?.message || 'Failed to record decision.');
     } finally {
       setDeciding(false);
+    }
+  };
+
+  const toggleItem = async (task: DBHumanTask, idx: number, done: boolean) => {
+    try {
+      const state = await toggleChecklistItem(task.id, idx, done);
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, checklist_state: state } : t));
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to update checklist item.');
     }
   };
 
@@ -357,11 +369,26 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   )}
                 </div>
 
+                {selected.type === 'checklist' && selected.status === 'pending' && (
+                  <div className="mt-4 space-y-1.5">
+                    {(selected.checklist_state ?? []).map((item, idx) => (
+                      <label key={idx} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-950 rounded-lg px-3 py-2 cursor-pointer">
+                        <input type="checkbox" checked={item.done} className="mt-0.5 accent-teal-500"
+                          onChange={e => void toggleItem(selected, idx, e.target.checked)} />
+                        <span className={item.done ? 'line-through text-slate-500' : ''}>{item.text}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
                 {selected.status === 'pending' && (
                   <div className="flex gap-2 mt-4">
-                    <button onClick={() => void decide(selected, 'approved')} disabled={deciding}
-                      className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium py-2 transition-colors">
-                      {deciding ? '…' : 'Approve'}
+                    <button
+                      onClick={() => void decide(selected, 'approved')}
+                      disabled={deciding || (selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done))}
+                      title={selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done) ? 'Tick every item before completing this checklist' : undefined}
+                      className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
+                      {deciding ? '…' : selected.type === 'checklist' ? 'Mark complete' : 'Approve'}
                     </button>
                     <button onClick={() => void decide(selected, 'rejected')} disabled={deciding}
                       className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 disabled:opacity-50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">

@@ -17,47 +17,90 @@ import type { PlaybookRun } from './playbookApi';
 
 export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
-  | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist' | 'complete';
+  | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist'
+  | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'complete';
+
+export interface StepMedia {
+  asset_id?: string;
+  url?: string;
+  kind: 'image' | 'video';
+  caption?: string;
+}
 
 export interface DefinitionStep {
   key: PrimitiveKey;
   label?: string;
   params: Record<string, unknown>;
+  /** decision only — branch steps rendered indented under the decision. */
+  then_steps?: DefinitionStep[];
+  else_steps?: DefinitionStep[];
 }
+
+export const DECISION_OPERATORS = [
+  { value: 'equals', label: 'equals' },
+  { value: 'not_equals', label: 'does not equal' },
+  { value: 'contains', label: 'contains' },
+  { value: 'greater_than', label: 'is greater than' },
+  { value: 'less_than', label: 'is less than' },
+  { value: 'exists', label: 'exists (has any value)' },
+] as const;
+
+// Primitives allowed inside a decision's then/else branch — no gates,
+// no invoice generation, no complete (one level of nesting, v1).
+export const BRANCH_PRIMITIVES: PrimitiveKey[] = [
+  'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
+  'connector_action', 'guardrail_check', 'consult_specialist',
+];
 
 export interface PrimitiveMeta {
   key: PrimitiveKey;
   label: string;
   description: string;
   gate: boolean;             // can pause the run for a human
+  group: 'work' | 'guide' | 'flow';
   defaultParams: Record<string, unknown>;
 }
 
 export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
-  { key: 'check_account', label: 'Check account', gate: false, defaultParams: {},
+  { key: 'check_account', label: 'Check account', gate: false, group: 'work', defaultParams: {},
     description: 'Loads the target account into the run context. Must be the first step.' },
-  { key: 'generate_invoice', label: 'Generate invoice', gate: true,
+  { key: 'generate_invoice', label: 'Generate invoice', gate: true, group: 'work',
     defaultParams: { amount_source: 'account_arr' },
     description: 'Creates a renewal invoice. Runs the guardrail + trust-dial composition — over-limit amounts route to human approval.' },
-  { key: 'human_approval', label: 'Human approval', gate: true,
+  { key: 'human_approval', label: 'Human approval', gate: true, group: 'work',
     defaultParams: { title_template: 'Playbook approval — {{account.name}}', task_type: 'approval_gate' },
     description: 'Explicit gate: creates a Human Task and pauses the run. Skipped automatically when a prior invoice was auto-approved within limits.' },
-  { key: 'guardrail_check', label: 'Guardrail check', gate: false,
+  { key: 'guardrail_check', label: 'Guardrail check', gate: false, group: 'work',
     defaultParams: { check: 'invoice_threshold' },
     description: 'Explicit re-check point — records the threshold comparison in the audit chain. Never pauses.' },
-  { key: 'connector_action', label: 'Connector action', gate: false,
+  { key: 'connector_action', label: 'Connector action', gate: false, group: 'work',
     defaultParams: { provider: 'zendesk', op: 'add_internal_note', payload_template: 'Playbook update for {{account.name}}: invoice {{invoice.amount}}', external_ref_template: '' },
     description: 'Write-back into the system of record (Zendesk). Degrades honestly: no connector → step recorded as skipped, run continues.' },
-  { key: 'update_record', label: 'Update record', gate: false,
+  { key: 'update_record', label: 'Update record', gate: false, group: 'work',
     defaultParams: { table: 'renewal_invoices', set: { status: 'sent' } },
     description: 'Whitelisted status flip only (invoices: sent/paid · tickets: open/pending/resolved/escalated).' },
-  { key: 'log_activity', label: 'Log activity', gate: false,
+  { key: 'log_activity', label: 'Log activity', gate: false, group: 'work',
     defaultParams: { text_template: 'Playbook completed for {{account.name}} — invoice {{invoice.amount}}' },
     description: 'Writes a line to the activity feed. Supports templates.' },
-  { key: 'consult_specialist', label: 'Consult specialist', gate: false,
+  { key: 'consult_specialist', label: 'Consult specialist', gate: false, group: 'work',
     defaultParams: { profile_key: 'technical', question_template: 'Review this run for {{account.name}} — any technical risks?', min_confidence: 60, on_low: 'escalate' },
     description: 'Consults a Specialist (Technical v1) server-side. Recorded in the consultation log. Below the confidence floor → escalate to a human or continue (your choice). Dormant LLM → step skipped honestly.' },
-  { key: 'complete', label: 'Complete', gate: false, defaultParams: {},
+  { key: 'instruction', label: 'Instruction', gate: false, group: 'guide',
+    defaultParams: { title: 'Before you continue', body_md: '', media: [] },
+    description: 'Explains something to whoever is reading the playbook — text, images, or video, embedded right in the step. Feeds later "Consult specialist" steps as context once the specialist brain is activated.' },
+  { key: 'checklist', label: 'Checklist', gate: true, group: 'guide',
+    defaultParams: { items: [''] },
+    description: 'A list of items a human must tick off. Creates a Human Task and pauses the run until every item is confirmed.' },
+  { key: 'decision', label: 'Decision', gate: false, group: 'flow',
+    defaultParams: { on: '', operator: 'exists', value: '', then_steps: [], else_steps: [] },
+    description: 'Branches the playbook based on an earlier step’s result — "then" and "else" steps render indented underneath. One level of nesting.' },
+  { key: 'wait', label: 'Wait', gate: false, group: 'flow',
+    defaultParams: { duration_minutes: 60 },
+    description: 'Pauses the run for a set number of minutes, then continues automatically (checked every 5 minutes).' },
+  { key: 'sub_playbook', label: 'Run another playbook', gate: false, group: 'flow',
+    defaultParams: { playbook_id: '' },
+    description: 'Runs a published playbook as a child of this one. The child inherits this playbook’s access — it can never do more than its parent is allowed to.' },
+  { key: 'complete', label: 'Complete', gate: false, group: 'work', defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
 
@@ -76,12 +119,49 @@ export const UPDATE_WHITELIST: Record<string, string[]> = {
 // builder. The server re-validates on publish regardless.
 export interface ValidationError { index: number; code: string; message: string }
 
+function validateBranchClient(
+  branch: DefinitionStep[] | undefined, parentIndex: number, side: 'then' | 'else', depth: number, errs: ValidationError[],
+): void {
+  if (!Array.isArray(branch)) return;
+  for (const bs of branch) {
+    if (bs.key === 'decision') {
+      if (depth >= 1) {
+        errs.push({ index: parentIndex, code: 'decision_nesting_too_deep', message: `This decision is nested inside another decision's ${side} branch — decisions can only be nested one level deep. Move the inner decision to its own top-level step.` });
+        continue;
+      }
+      validateDecisionClient(bs, parentIndex, depth + 1, errs);
+      continue;
+    }
+    if (!BRANCH_PRIMITIVES.includes(bs.key)) {
+      errs.push({ index: parentIndex, code: 'branch_primitive_not_allowed', message: `"${bs.key}" cannot run inside a decision's ${side} branch — only guide/explain and simple work steps are allowed there.` });
+    }
+  }
+}
+
+function validateDecisionClient(s: DefinitionStep, i: number, depth: number, errs: ValidationError[]): void {
+  const p = s.params ?? {};
+  if (!(typeof p.on === 'string' && p.on.trim())) {
+    errs.push({ index: i, code: 'bad_params', message: 'This decision needs to know what to look at — pick a prior step and field.' });
+  }
+  if (!(DECISION_OPERATORS as readonly { value: string }[]).some(o => o.value === p.operator)) {
+    errs.push({ index: i, code: 'bad_params', message: 'Pick a comparison for this decision.' });
+  }
+  if (p.operator !== 'exists' && (p.value === undefined || p.value === null || p.value === '')) {
+    errs.push({ index: i, code: 'bad_params', message: 'This decision needs a value to compare against.' });
+  }
+  validateBranchClient(s.then_steps, i, 'then', depth, errs);
+  validateBranchClient(s.else_steps, i, 'else', depth, errs);
+}
+
 export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] {
   const errs: ValidationError[] = [];
   if (steps.length === 0) return [{ index: -1, code: 'empty', message: 'A playbook needs at least one step.' }];
   if (steps.length > 20) errs.push({ index: -1, code: 'too_many_steps', message: 'A playbook is limited to 20 steps.' });
   const known = new Set(PRIMITIVE_REGISTRY.map(p => p.key));
-  const postGateAllowed = new Set(['guardrail_check', 'connector_action', 'update_record', 'log_activity', 'complete']);
+  const postGateAllowed = new Set([
+    'guardrail_check', 'connector_action', 'update_record', 'log_activity',
+    'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'consult_specialist', 'complete',
+  ]);
   let invoiceIdx = -1, approvalIdx = -1, completeCount = 0;
   steps.forEach((s, i) => {
     if (!known.has(s.key)) { errs.push({ index: i, code: 'unknown_primitive', message: `Unknown step primitive "${s.key}".` }); return; }
@@ -116,7 +196,34 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
         errs.push({ index: i, code: 'bad_params', message: 'Consult specialist needs a question template.' });
       }
     }
+    if (s.key === 'instruction') {
+      if (!(typeof p.title === 'string' && p.title.trim())) errs.push({ index: i, code: 'bad_params', message: 'This instruction needs a title.' });
+      if (!(typeof p.body_md === 'string' && p.body_md.trim())) errs.push({ index: i, code: 'bad_params', message: 'This instruction needs some body text.' });
+    }
+    if (s.key === 'checklist') {
+      const items = Array.isArray(p.items) ? p.items as unknown[] : [];
+      if (items.length === 0 || items.some(it => typeof it !== 'string' || !it.trim())) {
+        errs.push({ index: i, code: 'bad_params', message: 'A checklist needs at least one non-empty item.' });
+      }
+    }
+    if (s.key === 'wait' && !(typeof p.duration_minutes === 'number' && p.duration_minutes > 0)) {
+      errs.push({ index: i, code: 'bad_params', message: 'This wait needs a duration greater than 0 minutes.' });
+    }
+    if (s.key === 'sub_playbook' && !(typeof p.playbook_id === 'string' && p.playbook_id.trim())) {
+      errs.push({ index: i, code: 'bad_params', message: 'Pick which playbook this step should run.' });
+    }
+    if (s.key === 'decision') validateDecisionClient(s, i, 0, errs);
     if (s.key === 'complete') completeCount++;
+  });
+  // decision.on must reference an earlier step (client sends "step:<index>[.field]").
+  steps.forEach((s, i) => {
+    if (s.key !== 'decision') return;
+    const on = s.params?.on;
+    if (typeof on !== 'string') return;
+    const m = /^step:(\d+)/.exec(on);
+    if (m && parseInt(m[1], 10) >= i) {
+      errs.push({ index: i, code: 'decision_forward_reference', message: `This decision points at step ${parseInt(m[1], 10) + 1}, which runs at or after it — decisions can only look at earlier steps.` });
+    }
   });
   if (steps[0]?.key !== 'check_account') errs.push({ index: 0, code: 'first_step', message: 'Step 1 must be Check account.' });
   if (steps[steps.length - 1]?.key !== 'complete') errs.push({ index: steps.length - 1, code: 'last_step', message: 'The last step must be Complete.' });
@@ -127,7 +234,7 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
   if (approvalIdx !== -1) {
     steps.slice(approvalIdx + 1).forEach((s, off) => {
       if (!postGateAllowed.has(s.key)) {
-        errs.push({ index: approvalIdx + 1 + off, code: 'post_gate_primitive', message: `"${s.key}" cannot follow Human approval — only guardrail check, connector action, update record, log activity, and complete may run after the gate.` });
+        errs.push({ index: approvalIdx + 1 + off, code: 'post_gate_primitive', message: `"${s.key}" cannot follow Human approval — only guardrail check, connector action, update record, log activity, instruction, decision, checklist, wait, sub-playbook, consult specialist, and complete may run after the gate.` });
       }
     });
   }
@@ -465,4 +572,147 @@ export async function dispatchTriggersOpportunistic(): Promise<{ processed: numb
   } catch {
     return null;
   }
+}
+
+// ============================================================
+// Dry-run preview — executes a draft (or arbitrary steps array) with
+// writes/connectors/gates SIMULATED server-side. Nothing persisted:
+// no run row, no audit events, no human tasks, no external calls.
+// ============================================================
+
+export interface PreviewRunStep {
+  key: string; label: string; status: string; at: string | null; detail: string;
+  branch_taken?: 'then' | 'else' | null;
+  then_steps?: PreviewRunStep[]; else_steps?: PreviewRunStep[];
+}
+export interface PreviewResult {
+  preview: true; status: string; steps: PreviewRunStep[];
+  context: Record<string, unknown>; error?: string; errors?: ValidationError[];
+}
+
+export async function previewRun(input: { definitionId?: string; steps?: DefinitionStep[]; accountId: string }): Promise<PreviewResult> {
+  const { data, error } = await supabase.functions.invoke('playbook-execute', {
+    body: {
+      action: 'start', preview: true, account_id: input.accountId,
+      ...(input.definitionId ? { definition_id: input.definitionId } : { steps: input.steps }),
+    },
+  });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try { return await ctx.json() as PreviewResult; } catch { /* fallthrough */ }
+    }
+    raise('previewRun', { message: error.message ?? String(error) });
+  }
+  return data as PreviewResult;
+}
+
+// ============================================================
+// Playbook step media — uploads to the private 'playbook-media' bucket
+// (tenant-folder RLS, same pattern as specialist-media). Used by
+// instruction steps to embed images/video right in the step.
+// ============================================================
+
+export interface PlaybookMediaAsset {
+  id: string; tenant_id: string; definition_id: string | null;
+  kind: 'document' | 'image' | 'video'; title: string; storage_path: string;
+  mime: string; size_bytes: number; created_at: string;
+}
+
+export async function uploadPlaybookMedia(file: File, definitionId: string): Promise<PlaybookMediaAsset> {
+  const tid = await requireTenantId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const path = `${tid}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const { error: upErr } = await supabase.storage
+    .from('playbook-media')
+    .upload(path, file, { contentType: file.type || 'application/octet-stream' });
+  if (upErr) raise('uploadPlaybookMedia (storage)', upErr);
+
+  const kind: 'document' | 'image' | 'video' = file.type.startsWith('image/') ? 'image'
+    : file.type.startsWith('video/') ? 'video' : 'document';
+  const { data, error } = await supabase
+    .from('media_assets')
+    .insert({
+      tenant_id: tid, definition_id: definitionId, kind,
+      title: file.name, storage_path: path, mime: file.type || '', size_bytes: file.size,
+      created_by: user?.id ?? null,
+    })
+    .select().single();
+  if (error) raise('uploadPlaybookMedia', error);
+  return data as PlaybookMediaAsset;
+}
+
+export async function getPlaybookMediaUrl(storagePath: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from('playbook-media').createSignedUrl(storagePath, 3600);
+  if (error || !data) return null;
+  return data.signedUrl;
+}
+
+/** Resolve a signed URL from a media_assets.id (what instruction steps
+ * store as asset_id) — looks up the storage_path, then signs it. */
+export async function getPlaybookMediaUrlByAssetId(assetId: string): Promise<string | null> {
+  const { data: asset } = await supabase.from('media_assets').select('storage_path').eq('id', assetId).maybeSingle();
+  if (!asset?.storage_path) return null;
+  return getPlaybookMediaUrl(asset.storage_path);
+}
+
+// ============================================================
+// de_playbook_assignments — the DE operating charter: which playbooks
+// a DE runs, and in what priority order (lowest number first) when
+// several active playbooks match the same trigger.
+// ============================================================
+
+export interface DEPlaybookAssignment {
+  id: string;
+  tenant_id: string;
+  de_id: string;
+  playbook_id: string;
+  priority: number;
+  active: boolean;
+  created_at: string;
+}
+
+export async function listDEPlaybookAssignments(deId?: string): Promise<DEPlaybookAssignment[]> {
+  const tid = await requireTenantId();
+  let q = supabase.from('de_playbook_charter').select('*').eq('tenant_id', tid).order('priority', { ascending: true });
+  if (deId) q = q.eq('de_id', deId);
+  const { data, error } = await q;
+  if (error) raise('listDEPlaybookAssignments', error);
+  return (data ?? []) as DEPlaybookAssignment[];
+}
+
+export async function assignPlaybookToDE(deId: string, playbookId: string, priority = 100): Promise<DEPlaybookAssignment> {
+  const tid = await requireTenantId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('de_playbook_charter')
+    .insert({ tenant_id: tid, de_id: deId, playbook_id: playbookId, priority, created_by: user?.id ?? null })
+    .select().single();
+  if (error) raise('assignPlaybookToDE', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Playbook assigned to DE — priority ${priority}`,
+    detail: { kind: 'de_playbook_assignment', de_id: deId, playbook_id: playbookId, priority },
+  });
+  notify();
+  return data as DEPlaybookAssignment;
+}
+
+export async function reprioritizeAssignment(id: string, priority: number): Promise<void> {
+  const { error } = await supabase.from('de_playbook_charter').update({ priority }).eq('id', id);
+  if (error) raise('reprioritizeAssignment', error);
+  notify();
+}
+
+export async function setAssignmentActive(id: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('de_playbook_charter').update({ active }).eq('id', id);
+  if (error) raise('setAssignmentActive', error);
+  notify();
+}
+
+export async function removeAssignment(id: string): Promise<void> {
+  const { error } = await supabase.from('de_playbook_charter').delete().eq('id', id);
+  if (error) raise('removeAssignment', error);
+  notify();
 }

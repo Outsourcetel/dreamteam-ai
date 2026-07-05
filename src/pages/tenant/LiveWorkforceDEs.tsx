@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../supabase';
 import type { Page } from '../../types';
 import { CustomerApiError, fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
@@ -14,6 +15,11 @@ import {
 } from '../../lib/trustApi';
 import type { TrustPolicy, TrustEvidence, TrustHistoryEvent, TrustCategory } from '../../lib/trustApi';
 import { appendAuditEvent } from '../../lib/guardrailApi';
+import {
+  listDefinitions, listDEPlaybookAssignments, assignPlaybookToDE,
+  reprioritizeAssignment, setAssignmentActive, removeAssignment,
+} from '../../lib/playbookBuilderApi';
+import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 
 // ============================================================
@@ -39,6 +45,149 @@ function draftFrom(a: DEAutonomy | undefined): RowDraft {
     amount: a?.max_amount_cents != null ? String(Math.round(a.max_amount_cents / 100)) : '',
     confidence: a?.min_confidence != null ? String(a.min_confidence) : '',
   };
+}
+
+// ── "How this DE operates" — the operating charter panel ───────────
+// Which playbooks this DE runs, and in what priority order (lowest
+// number first) when several active playbooks match the same trigger.
+function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
+  const [deId, setDeId] = useState<string | null>(null);
+  const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
+  const [assignments, setAssignments] = useState<DEPlaybookAssignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [pickId, setPickId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [{ data: profile }] = await Promise.all([
+        supabase.from('profiles').select('tenant_id').single(),
+      ]);
+      const tenantId = profile?.tenant_id;
+      if (!tenantId) { setLoading(false); return; }
+      // Same fallback as playbook-execute: the tenant's first DE (by
+      // created_at) is the subject whose grants govern un-assigned runs.
+      const { data: firstDe } = await supabase.from('digital_employees')
+        .select('id, name').eq('tenant_id', tenantId).order('created_at', { ascending: true }).limit(1).maybeSingle();
+      if (!firstDe) { setLoading(false); return; }
+      setDeId(firstDe.id);
+      const [d, a] = await Promise.all([listDefinitions(), listDEPlaybookAssignments(firstDe.id)]);
+      setDefs(d.filter(x => x.status === 'published'));
+      setAssignments(a);
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to load the operating charter.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const unassigned = defs.filter(d => !assignments.some(a => a.playbook_id === d.id));
+
+  const add = async () => {
+    if (!deId || !pickId) return;
+    setBusy(true); setError(null);
+    try {
+      const nextPriority = (assignments.reduce((m, a) => Math.max(m, a.priority), 0) || 0) + 10;
+      await assignPlaybookToDE(deId, pickId, nextPriority);
+      setPickId(''); setAdding(false);
+      await refresh();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const move = async (a: DEPlaybookAssignment, dir: -1 | 1) => {
+    const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
+    const idx = sorted.findIndex(x => x.id === a.id);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx];
+    setBusy(true);
+    try {
+      await Promise.all([
+        reprioritizeAssignment(a.id, other.priority),
+        reprioritizeAssignment(other.id, a.priority),
+      ]);
+      await refresh();
+    } catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return null;
+  if (!deId) return null;
+
+  const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">How this DE operates</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">operating charter</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        The playbooks assigned to this DE, in priority order. When more than one active playbook matches the same
+        trigger, the lowest-numbered priority runs first. Drag with the arrows to reprioritize.
+      </p>
+
+      {error && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
+
+      {sorted.length === 0 ? (
+        <p className="text-xs text-slate-500 mb-3">No playbooks assigned yet — this DE only runs playbooks it's directly assigned.</p>
+      ) : (
+        <div className="space-y-1.5 mb-3">
+          {sorted.map((a, i) => {
+            const def = defs.find(d => d.id === a.playbook_id);
+            return (
+              <div key={a.id} className={`flex items-center gap-3 text-xs rounded-lg px-3 py-2 ${a.active ? 'bg-slate-950/60' : 'bg-slate-950/30 opacity-60'}`}>
+                <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{a.priority}</span>
+                <button onClick={() => setPage('systems_playbooks')} className="text-slate-200 hover:text-indigo-300 transition-colors truncate flex-1 text-left">
+                  {def?.name ?? 'Unknown playbook'}
+                </button>
+                {!a.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 flex-shrink-0">paused</span>}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => void move(a, -1)} disabled={busy || i === 0} className="text-slate-500 hover:text-slate-300 disabled:opacity-30">↑</button>
+                  <button onClick={() => void move(a, 1)} disabled={busy || i === sorted.length - 1} className="text-slate-500 hover:text-slate-300 disabled:opacity-30">↓</button>
+                  <button onClick={() => void (async () => { setBusy(true); try { await setAssignmentActive(a.id, !a.active); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
+                    className="text-slate-500 hover:text-slate-300 disabled:opacity-30 ml-1">{a.active ? 'pause' : 'resume'}</button>
+                  <button onClick={() => void (async () => { setBusy(true); try { await removeAssignment(a.id); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
+                    className="text-slate-600 hover:text-rose-400 disabled:opacity-30 ml-1">remove</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {adding ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={pickId} onChange={e => setPickId(e.target.value)}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-500 !w-64">
+            <option value="">Pick a published playbook…</option>
+            {unassigned.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+          <button onClick={() => void add()} disabled={busy || !pickId}
+            className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium disabled:opacity-40 transition-colors">
+            {busy ? 'Adding…' : 'Add'}
+          </button>
+          <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} disabled={unassigned.length === 0}
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+          + Assign a playbook
+        </button>
+      )}
+      {unassigned.length === 0 && !adding && defs.length > 0 && (
+        <p className="mt-2 text-[11px] text-slate-600">Every published playbook is already assigned.</p>
+      )}
+      {defs.length === 0 && (
+        <p className="mt-2 text-[11px] text-slate-600">No published playbooks yet — build one in Playbooks first.</p>
+      )}
+    </div>
+  );
 }
 
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
@@ -206,6 +355,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               </div>
             </div>
           </div>
+
+          {/* DE operating charter */}
+          <OperatingCharterPanel setPage={setPage} />
 
           {/* Trust dial */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">

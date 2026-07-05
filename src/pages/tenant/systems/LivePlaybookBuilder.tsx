@@ -6,17 +6,18 @@ import type { CustomerAccount } from '../../../lib/customerApi';
 import { listPlaybookRuns, RENEWAL_STEP_DEFS } from '../../../lib/playbookApi';
 import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import {
-  PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST,
+  PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST, DECISION_OPERATORS, BRANCH_PRIMITIVES,
   validateStepsClient, listDefinitions, createDefinition, updateDefinition,
-  publishDefinition, startDefinitionRun,
+  publishDefinition, startDefinitionRun, previewRun, uploadPlaybookMedia, getPlaybookMediaUrlByAssetId,
   DISPATCH_MODE, WEEKDAYS, EVENT_META, describeSchedule, describeEventRule,
   listSchedules, createSchedule, setScheduleActive, deleteSchedule,
   listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
   listTriggerFires, dispatchTriggersOpportunistic,
 } from '../../../lib/playbookBuilderApi';
 import type {
-  PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError,
+  PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
+  PreviewResult, PreviewRunStep,
 } from '../../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
@@ -166,9 +167,189 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       );
     case 'guardrail_check':
       return <p className="text-[11px] text-slate-500">Re-checks the invoice approval threshold and records the result in the audit chain.</p>;
+    case 'checklist':
+      return <ChecklistEditor step={step} onChange={onChange} />;
+    case 'wait':
+      return <WaitEditor step={step} onChange={onChange} />;
     default:
       return null;
   }
+}
+
+// ── Instruction step editor: title, markdown body, media upload ────
+
+function InstructionEditor({ step, definitionId, onChange }: {
+  step: DefinitionStep; definitionId: string | null; onChange: (params: Record<string, unknown>) => void;
+}) {
+  const p = step.params ?? {};
+  const media = Array.isArray(p.media) ? (p.media as StepMedia[]) : [];
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const set = (k: string, v: unknown) => onChange({ ...p, [k]: v });
+
+  const handleUpload = async (file: File) => {
+    if (!definitionId) { setUploadErr('Save this playbook as a draft first, then attach media.'); return; }
+    setUploading(true); setUploadErr(null);
+    try {
+      const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
+      const asset = await uploadPlaybookMedia(file, definitionId);
+      set('media', [...media, { asset_id: asset.id, kind, caption: file.name }]);
+    } catch (err) { setUploadErr((err as Error).message); }
+    finally { setUploading(false); }
+  };
+
+  return (
+    <div className="space-y-2">
+      <input className={inputCls} placeholder="Title (e.g. Before you continue)" value={String(p.title ?? '')}
+        onChange={e => set('title', e.target.value)} />
+      <textarea className={inputCls + ' min-h-[80px] resize-y'} placeholder="Body — markdown supported (headings, lists, **bold**, links)"
+        value={String(p.body_md ?? '')} onChange={e => set('body_md', e.target.value)} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 cursor-pointer transition-colors">
+          {uploading ? 'Uploading…' : '+ Add image or video'}
+          <input type="file" accept="image/*,video/*" className="hidden" disabled={uploading}
+            onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f); e.target.value = ''; }} />
+        </label>
+        {media.map((m, i) => (
+          <span key={i} className="text-[11px] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+            {m.kind === 'video' ? '🎬' : '🖼️'} {m.caption || m.asset_id?.slice(0, 8) || 'media'}
+            <button onClick={() => set('media', media.filter((_, k) => k !== i))} className="text-slate-600 hover:text-rose-400">✕</button>
+          </span>
+        ))}
+      </div>
+      {uploadErr && <p className="text-[11px] text-rose-400">✗ {uploadErr}</p>}
+      <p className="text-[10px] text-slate-600">Presented to whoever reads or runs this playbook. Feeds later "Consult specialist" steps as context — dormant until the specialist brain (API key) is activated.</p>
+    </div>
+  );
+}
+
+// ── Checklist editor: list of items ─────────────────────────────────
+
+function ChecklistEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const items = Array.isArray(p.items) ? (p.items as string[]) : [''];
+  const set = (next: string[]) => onChange({ ...p, items: next });
+  return (
+    <div className="space-y-1.5">
+      {items.map((it, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input className={inputCls} placeholder={`Item ${i + 1}`} value={it}
+            onChange={e => set(items.map((v, k) => k === i ? e.target.value : v))} />
+          <button onClick={() => set(items.filter((_, k) => k !== i))} disabled={items.length <= 1}
+            className="text-xs text-slate-600 hover:text-rose-400 disabled:opacity-30">✕</button>
+        </div>
+      ))}
+      <button onClick={() => set([...items, ''])} className="text-[11px] text-indigo-400 hover:text-indigo-300">+ Add item</button>
+      <p className="text-[10px] text-slate-600">Creates a Human Task — the run pauses until every item is ticked.</p>
+    </div>
+  );
+}
+
+// ── Wait editor ──────────────────────────────────────────────────────
+
+function WaitEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  return (
+    <div className="flex items-center gap-2">
+      <input className={inputCls + ' !w-24'} type="number" min={1} value={typeof p.duration_minutes === 'number' ? p.duration_minutes : 60}
+        onChange={e => onChange({ ...p, duration_minutes: Math.max(1, Number(e.target.value) || 1) })} />
+      <span className="text-xs text-slate-500">minutes, then continue automatically (checked every 5 minutes).</span>
+    </div>
+  );
+}
+
+// ── Sub-playbook editor ──────────────────────────────────────────────
+
+function SubPlaybookEditor({ step, publishedDefs, onChange }: {
+  step: DefinitionStep; publishedDefs: PlaybookDefinition[]; onChange: (params: Record<string, unknown>) => void;
+}) {
+  const p = step.params ?? {};
+  return (
+    <div className="space-y-1.5">
+      <select className={selectCls + ' !w-64'} value={String(p.playbook_id ?? '')} onChange={e => onChange({ ...p, playbook_id: e.target.value })}>
+        <option value="">Pick a published playbook…</option>
+        {publishedDefs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>
+      <p className="text-[10px] text-slate-600">Runs as a child of this playbook — inherits this playbook's DE access (never more). Only published playbooks can be picked; no cycles allowed.</p>
+    </div>
+  );
+}
+
+// ── Decision editor: condition + indented then/else branches ───────
+
+function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
+  step: DefinitionStep; stepIndex: number; allSteps: DefinitionStep[];
+  onChange: (params: Record<string, unknown>, thenSteps: DefinitionStep[], elseSteps: DefinitionStep[]) => void;
+}) {
+  const p = step.params ?? {};
+  const thenSteps = step.then_steps ?? [];
+  const elseSteps = step.else_steps ?? [];
+  const priorSteps = allSteps.slice(0, stepIndex).filter(s => s.key !== 'decision' || true);
+
+  const setCond = (patch: Record<string, unknown>) => onChange({ ...p, ...patch }, thenSteps, elseSteps);
+
+  const branchAdd = (side: 'then' | 'else', key: PrimitiveKey) => {
+    const meta = PRIMITIVE_REGISTRY.find(m => m.key === key)!;
+    const newStep: DefinitionStep = { key, params: JSON.parse(JSON.stringify(meta.defaultParams)) };
+    if (side === 'then') onChange(p, [...thenSteps, newStep], elseSteps);
+    else onChange(p, thenSteps, [...elseSteps, newStep]);
+  };
+  const branchRemove = (side: 'then' | 'else', i: number) => {
+    if (side === 'then') onChange(p, thenSteps.filter((_, k) => k !== i), elseSteps);
+    else onChange(p, thenSteps, elseSteps.filter((_, k) => k !== i));
+  };
+  const branchUpdate = (side: 'then' | 'else', i: number, params: Record<string, unknown>) => {
+    if (side === 'then') onChange(p, thenSteps.map((s, k) => k === i ? { ...s, params } : s), elseSteps);
+    else onChange(p, thenSteps, elseSteps.map((s, k) => k === i ? { ...s, params } : s));
+  };
+
+  const branchList = (side: 'then' | 'else', steps: DefinitionStep[]) => (
+    <div className="pl-4 border-l-2 border-slate-700 space-y-1.5 mt-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500">{side === 'then' ? 'Then' : 'Else'}</p>
+      {steps.map((bs, i) => {
+        const meta = PRIMITIVE_REGISTRY.find(m => m.key === bs.key);
+        return (
+          <div key={i} className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-xs text-slate-300">{meta?.label ?? bs.key}</span>
+              <button onClick={() => branchRemove(side, i)} className="text-xs text-slate-600 hover:text-rose-400">✕</button>
+            </div>
+            <StepParamsEditor step={bs} onChange={params => branchUpdate(side, i, params)} />
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap gap-1">
+        {BRANCH_PRIMITIVES.map(k => (
+          <button key={k} onClick={() => branchAdd(side, k)}
+            className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-500 hover:text-slate-200 hover:border-slate-500 transition-colors">
+            + {PRIMITIVE_REGISTRY.find(m => m.key === k)?.label ?? k}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 flex-wrap items-center">
+        <select className={selectCls + ' !w-56'} value={String(p.on ?? '')} onChange={e => setCond({ on: e.target.value })}>
+          <option value="">Look at step…</option>
+          {priorSteps.map((s, i) => (
+            <option key={i} value={`step:${i}`}>{i + 1}. {PRIMITIVE_REGISTRY.find(m => m.key === s.key)?.label ?? s.key}</option>
+          ))}
+        </select>
+        <select className={selectCls + ' !w-52'} value={String(p.operator ?? 'exists')} onChange={e => setCond({ operator: e.target.value })}>
+          {DECISION_OPERATORS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {p.operator !== 'exists' && (
+          <input className={inputCls + ' !w-40'} placeholder="value" value={String(p.value ?? '')} onChange={e => setCond({ value: e.target.value })} />
+        )}
+      </div>
+      {branchList('then', thenSteps)}
+      {branchList('else', elseSteps)}
+      <p className="text-[10px] text-slate-600">Decisions can only look at EARLIER steps. One level of branch nesting.</p>
+    </div>
+  );
 }
 
 function TemplateHelp() {
@@ -212,10 +393,96 @@ const NEW_TEMPLATE: DefinitionStep[] = [
   { key: 'complete', params: {} },
 ];
 
-function Builder({ initial, onDone, onCancel }: {
+// ── "Document that executes" read view — the demo money-shot. Renders
+// like an SOP: numbered steps, rich instruction blocks with embedded
+// media, decision branches indented, executable steps as action chips.
+
+function MediaThumb({ m }: { m: StepMedia }) {
+  const [url, setUrl] = useState<string | null>(m.url ?? null);
+  useEffect(() => {
+    if (m.url || !m.asset_id) return;
+    void getPlaybookMediaUrlByAssetId(m.asset_id).then(setUrl).catch(() => undefined);
+  }, [m.asset_id, m.url]);
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 inline-block">
+      {m.kind === 'video' ? (
+        url ? <video src={url} controls className="max-h-40 rounded" /> : <span className="text-[11px] text-slate-500">🎬 {m.caption || 'video'}</span>
+      ) : (
+        url ? <img src={url} alt={m.caption || ''} className="max-h-40 rounded" /> : <span className="text-[11px] text-slate-500">🖼️ {m.caption || 'image'}</span>
+      )}
+      {m.caption && <p className="text-[10px] text-slate-600 mt-1">{m.caption}</p>}
+    </div>
+  );
+}
+
+function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
+  s: DefinitionStep; index: number | null; publishedDefs: PlaybookDefinition[]; depth?: number;
+}) {
+  const meta = PRIMITIVE_REGISTRY.find(m => m.key === s.key);
+  const gate = s.key === 'human_approval' || s.key === 'checklist';
+  const p = s.params ?? {};
+
+  if (s.key === 'instruction') {
+    const media = Array.isArray(p.media) ? (p.media as StepMedia[]) : [];
+    return (
+      <div style={{ marginLeft: depth * 20 }} className="rounded-xl border border-sky-800/30 bg-sky-500/5 p-3 mb-1.5">
+        <div className="flex items-center gap-2 mb-1">
+          {index !== null && <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
+          <span className="text-sm font-medium text-white">{String(p.title ?? 'Instruction')}</span>
+        </div>
+        {p.body_md ? <p className="text-xs text-slate-300 whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
+        {media.length > 0 && <div className="ml-8 mt-2 flex flex-wrap gap-2">{media.map((m, i) => <MediaThumb key={i} m={m} />)}</div>}
+      </div>
+    );
+  }
+
+  if (s.key === 'decision') {
+    const then = s.then_steps ?? [];
+    const els = s.else_steps ?? [];
+    return (
+      <div style={{ marginLeft: depth * 20 }} className="mb-1.5">
+        <div className="flex items-center gap-2 rounded-xl border border-violet-800/30 bg-violet-500/5 px-3 py-2">
+          {index !== null && <span className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
+          <span className="text-sm text-white">If <code className="text-violet-300">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-violet-300">{String(p.value ?? '')}</code> : null}</span>
+        </div>
+        <div className="ml-8 mt-1">
+          <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-1">Then</p>
+          {then.length === 0 ? <p className="text-[11px] text-slate-600 ml-2">(nothing)</p> : then.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
+          <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-2">Else</p>
+          {els.length === 0 ? <p className="text-[11px] text-slate-600 ml-2">(nothing)</p> : els.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
+        </div>
+      </div>
+    );
+  }
+
+  // Everything else — a numbered "document" row with an action chip.
+  return (
+    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-slate-800/60'}`}>
+      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>{index + 1}</span>}
+      <span className="text-slate-300">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
+      {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">{String(p.category ?? p.provider ?? '')} · {String(p.op ?? '')}</span>}
+      {s.key === 'log_activity' && <span className="text-[10px] text-slate-600 truncate">{String(p.text_template ?? '')}</span>}
+      {s.key === 'checklist' && <span className="text-[10px] text-slate-600">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
+      {s.key === 'wait' && <span className="text-[10px] text-slate-600">{String(p.duration_minutes ?? 0)} min</span>}
+      {s.key === 'sub_playbook' && <span className="text-[10px] text-slate-600">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
+    </div>
+  );
+}
+
+function PlaybookDocumentView({ steps, publishedDefs }: { steps: DefinitionStep[]; publishedDefs: PlaybookDefinition[] }) {
+  return (
+    <div className="space-y-1 mb-4">
+      {steps.map((s, i) => <DocStepRow key={i} s={s} index={i} publishedDefs={publishedDefs} />)}
+    </div>
+  );
+}
+
+function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   initial: BuilderState;
   onDone: (published: boolean) => void;
   onCancel: () => void;
+  publishedDefs: PlaybookDefinition[];
+  accounts: CustomerAccount[];
 }) {
   const [st, setSt] = useState<BuilderState>(initial);
   const [serverErrors, setServerErrors] = useState<ValidationError[]>([]);
@@ -308,9 +575,23 @@ function Builder({ initial, onDone, onCancel }: {
                     {isGate && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Human Gate</span>}
                   </div>
                   <p className="text-[11px] text-slate-500 mb-2">{meta?.description}</p>
-                  <StepParamsEditor step={s} onChange={params => {
-                    const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
-                  }} />
+                  {s.key === 'instruction' ? (
+                    <InstructionEditor step={s} definitionId={st.id} onChange={params => {
+                      const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
+                    }} />
+                  ) : s.key === 'sub_playbook' ? (
+                    <SubPlaybookEditor step={s} publishedDefs={publishedDefs.filter(d => d.id !== st.id)} onChange={params => {
+                      const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
+                    }} />
+                  ) : s.key === 'decision' ? (
+                    <DecisionEditor step={s} stepIndex={i} allSteps={st.steps} onChange={(params, thenSteps, elseSteps) => {
+                      const steps = [...st.steps]; steps[i] = { ...s, params, then_steps: thenSteps, else_steps: elseSteps }; setSt({ ...st, steps });
+                    }} />
+                  ) : (
+                    <StepParamsEditor step={s} onChange={params => {
+                      const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
+                    }} />
+                  )}
                   {errs.map((e, k) => <p key={k} className="text-[11px] text-rose-400 mt-1.5">✗ {e.message}</p>)}
                 </div>
                 <div className="flex flex-col gap-1 flex-shrink-0">
@@ -324,13 +605,22 @@ function Builder({ initial, onDone, onCancel }: {
         })}
       </div>
 
-      {/* Add step */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {PRIMITIVE_REGISTRY.map(m => (
-          <button key={m.key} onClick={() => addStep(m.key)} title={m.description}
-            className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors">
-            + {m.label}
-          </button>
+      {/* Add step — grouped: Do something / Guide & explain / Flow control */}
+      <div className="space-y-2 mb-4">
+        {([
+          ['work', 'Do something'],
+          ['guide', 'Guide & explain'],
+          ['flow', 'Flow control'],
+        ] as const).map(([group, label]) => (
+          <div key={group} className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-slate-600 w-32 flex-shrink-0">{label}</span>
+            {PRIMITIVE_REGISTRY.filter(m => m.group === group).map(m => (
+              <button key={m.key} onClick={() => addStep(m.key)} title={m.description}
+                className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors">
+                + {m.label}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -338,7 +628,7 @@ function Builder({ initial, onDone, onCancel }: {
       {error && <p className="text-[11px] text-rose-400 mb-2">✗ {error}</p>}
       {serverErrors.length > 0 && <p className="text-[11px] text-amber-400 mb-2">Server validation rejected the publish — fix the flagged steps and retry.</p>}
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap mb-4">
         <button onClick={saveDraft} disabled={busy !== null}
           className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save draft'}
@@ -350,6 +640,87 @@ function Builder({ initial, onDone, onCancel }: {
         <button onClick={onCancel} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
         <span className="ml-auto text-[10px] text-slate-600">Publishing validates server-side and snapshots an immutable version — running playbooks never see later edits.</span>
       </div>
+
+      <DryRunPreview steps={st.steps} definitionId={st.id} accounts={accounts} disabled={clientErrors.length > 0} />
+    </div>
+  );
+}
+
+// ── Dry-run preview: executes the draft with writes/connectors/gates
+// SIMULATED. No persistence — the trace is returned in-memory only. ──
+
+function PreviewStepRow({ s, depth = 0 }: { s: PreviewRunStep; depth?: number }) {
+  const branch = s.branch_taken != null ? (s.branch_taken === 'then' ? s.then_steps : s.else_steps) : null;
+  return (
+    <div style={{ marginLeft: depth * 16 }}>
+      <div className={`flex items-start gap-2 text-xs rounded-lg px-2 py-1.5 ${s.status === 'failed' ? 'bg-rose-500/5' : s.status === 'waiting' ? 'bg-amber-500/5' : ''}`}>
+        <span className={`flex-shrink-0 ${s.status === 'done' ? 'text-emerald-400' : s.status === 'skipped' ? 'text-slate-500' : s.status === 'failed' ? 'text-rose-400' : s.status === 'waiting' ? 'text-amber-400' : 'text-slate-600'}`}>
+          {s.status === 'done' ? '✓' : s.status === 'skipped' ? '↷' : s.status === 'failed' ? '✗' : s.status === 'waiting' ? '⏸' : '·'}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="text-slate-300">{s.label}</span>
+          {s.detail && <p className="text-[11px] text-slate-500 mt-0.5 break-words">{s.detail}</p>}
+        </div>
+      </div>
+      {branch && branch.map((bs, i) => <PreviewStepRow key={i} s={bs} depth={depth + 1} />)}
+    </div>
+  );
+}
+
+function DryRunPreview({ steps, definitionId, accounts, disabled }: {
+  steps: DefinitionStep[]; definitionId: string | null; accounts: CustomerAccount[]; disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState('');
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<PreviewResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!accountId) return;
+    setRunning(true); setErr(null); setResult(null);
+    try {
+      const res = await previewRun({ definitionId: definitionId ?? undefined, steps: definitionId ? undefined : steps, accountId });
+      setResult(res);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-indigo-800/40 bg-indigo-500/5 p-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <p className="text-xs font-medium text-indigo-300">Dry-run preview</p>
+          <p className="text-[10px] text-slate-500">Simulates connector calls and writes — nothing is called externally, nothing is persisted, human gates never pause.</p>
+        </div>
+        <button onClick={() => setOpen(o => !o)} disabled={disabled}
+          className="text-xs px-3 py-1.5 rounded-lg border border-indigo-700/50 text-indigo-300 hover:border-indigo-500 disabled:opacity-40 transition-colors">
+          {open ? 'Hide' : 'Try it'}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-3">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <select className={selectCls + ' !w-56'} value={accountId} onChange={e => setAccountId(e.target.value)}>
+              <option value="">Pick an account to simulate…</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <button onClick={() => void run()} disabled={running || !accountId}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+              {running ? 'Running…' : 'Run preview'}
+            </button>
+          </div>
+          {err && <p className="text-[11px] text-rose-400 mb-2">✗ {err}</p>}
+          {result?.errors && result.errors.length > 0 && (
+            <div className="mb-2">{result.errors.map((e, k) => <p key={k} className="text-[11px] text-rose-400">✗ {e.message}</p>)}</div>
+          )}
+          {result?.steps && (
+            <div className="space-y-1 bg-slate-950/50 rounded-lg p-2">
+              {result.steps.map((s, i) => <PreviewStepRow key={i} s={s} />)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -681,6 +1052,8 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             await refresh();
             setToast(published ? 'Published — immutable version snapshot created' : 'Draft saved');
           }}
+          publishedDefs={defs.filter(d => d.status === 'published')}
+          accounts={accounts}
         />
       ) : selectedDef ? (
         <div>
@@ -704,21 +1077,8 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             </div>
             {selectedDef.description && <p className="text-sm text-slate-400 mb-3">{selectedDef.description}</p>}
 
-            {/* Steps rendered like a run timeline */}
-            <div className="space-y-1.5 mb-4">
-              {selectedDef.steps.map((s, i) => {
-                const meta = PRIMITIVE_REGISTRY.find(m => m.key === s.key);
-                const gate = s.key === 'human_approval';
-                return (
-                  <div key={i} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : ''}`}>
-                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>{i + 1}</span>
-                    <span className="text-slate-300">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
-                    {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">Zendesk · {String(s.params?.op ?? '')}</span>}
-                    {s.key === 'log_activity' && <span className="text-[10px] text-slate-600 truncate">{String(s.params?.text_template ?? '')}</span>}
-                  </div>
-                );
-              })}
-            </div>
+            {/* The "document that executes" — an SOP-style read view */}
+            <PlaybookDocumentView steps={selectedDef.steps} publishedDefs={defs} />
 
             {/* Run controls */}
             {selectedDef.status === 'published' ? (

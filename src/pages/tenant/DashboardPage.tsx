@@ -42,7 +42,7 @@ const DEFAULT_HEALTH_CONFIG: HealthConfig = {
 
 type EntityHealth = 'active' | 'degraded' | 'at_risk' | 'offline';
 type OutcomeTrend = 'up' | 'stable' | 'warn' | 'alert';
-type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice';
+type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist';
 type ActivityType = 'resolved' | 'escalated' | 'kb_gap' | 'error';
 
 interface EntityData {
