@@ -35,7 +35,8 @@ export interface GuardrailRule {
 
 export type AuditCategory =
   | 'resolved' | 'escalated' | 'approval' | 'guardrail_check'
-  | 'guardrail_block' | 'config_change' | 'playbook_step' | 'invoice';
+  | 'guardrail_block' | 'config_change' | 'playbook_step' | 'invoice'
+  | 'connector_sync' | 'connector_action' | 'evidence_step' | 'access_control';
 
 export interface AuditEvent {
   id: string;

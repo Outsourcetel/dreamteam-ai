@@ -74,6 +74,7 @@ export type TenantPage =
   | 'gov_audit'                 // Immutable audit trail
   | 'gov_security'              // Access, SSO, API keys, sessions
   | 'gov_trust'                 // Trust & Architecture — security-review posture
+  | 'gov_data_access'           // Data Access — per-DE/specialist × system grants (default-deny)
 
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'

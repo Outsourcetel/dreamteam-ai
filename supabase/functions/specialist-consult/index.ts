@@ -313,7 +313,7 @@ serve(async (req) => {
       interface Citation { system: string; ref: string; title: string; url: string | null; snippet: string }
       interface EvidenceStep {
         kind: string; system: string; query: string;
-        outcome: 'ok' | 'skipped_not_connected' | 'failed';
+        outcome: 'ok' | 'skipped_not_connected' | 'failed' | 'denied_no_access';
         summary: string; item_count: number; latency_ms: number; citations: Citation[];
         category?: string; op?: string; provider?: string;
       }
@@ -341,14 +341,28 @@ serve(async (req) => {
               'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
               'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
             },
-            body: JSON.stringify({ action: 'category_op', connector_id: connectorId, tenant_id: tenantId, op, params }),
+            body: JSON.stringify({
+              action: 'category_op', connector_id: connectorId, tenant_id: tenantId, op, params,
+              // DATA ACCESS GRANTS: every evidence call runs AS the
+              // specialist subject — the hub enforces default-deny grants.
+              subject_kind: 'specialist', subject_id: prof2?.id ?? null,
+            }),
           });
           const data = await res.json().catch(() => ({}));
-          return { ok: !!data.ok, items: (data.items ?? []) as HubItemLite[], error: data.error as string | null, ms: Date.now() - started };
+          return {
+            ok: !!data.ok, items: (data.items ?? []) as HubItemLite[],
+            error: data.error as string | null,
+            denied: data.error === 'access_denied',
+            denial: (data.denial ?? null) as { needed?: string; has?: string | null } | null,
+            ms: Date.now() - started,
+          };
         } catch (e) {
-          return { ok: false, items: [] as HubItemLite[], error: String(e).slice(0, 140), ms: Date.now() - started };
+          return { ok: false, items: [] as HubItemLite[], error: String(e).slice(0, 140), denied: false, denial: null, ms: Date.now() - started };
         }
       };
+      // Plain-language denial summary for the evidence trail.
+      const denialSummary = (denial: { needed?: string; has?: string | null } | null) =>
+        `No access — blocked by your data access rules: the specialist needs "${denial?.needed ?? 'access'}" permission on this system${denial?.has ? ` and has only "${denial.has}"` : ' and has no grant'}. An admin can change this under Governance → Data Access.`;
       // Pass-through compromise: persist metadata + ≤200-char snippet only.
       const toCitations = (system: string, items: HubItemLite[]): Citation[] =>
         items.slice(0, 5).map((i) => ({ system, ref: i.external_ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
@@ -374,10 +388,11 @@ serve(async (req) => {
         const r = await callCategoryOp(acctConn.id, acctOp, { query: accountRef });
         await recordStep({
           kind: 'account_context', system: label(acctConn), query: accountRef,
-          outcome: r.ok ? 'ok' : 'failed',
+          outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
           category: acctCategory, op: acctOp, provider: acctConn.provider,
           summary: r.ok
             ? (r.items.length > 0 ? `Found ${r.items.length} account record(s) for "${accountRef}" via ${acctCategory}.${acctOp} — configuration read live, not stored.` : `No account matching "${accountRef}" in ${label(acctConn)}.`)
+            : r.denied ? denialSummary(r.denial)
             : `Live lookup failed: ${r.error}`,
           item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(acctConn), r.items),
         });
@@ -423,9 +438,11 @@ serve(async (req) => {
           const r = await callCategoryOp(kc.id, 'search_articles', { query: inquiry });
           await recordStep({
             kind: 'knowledge_search', system: label(kc), query: inquiry,
-            outcome: r.ok ? 'ok' : 'failed',
+            outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
             category: 'knowledge_base', op: 'search_articles', provider: kc.provider,
-            summary: r.ok ? `${r.items.length} matching article(s) fetched live via knowledge_base.search_articles (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).` : `Search failed: ${r.error}`,
+            summary: r.ok ? `${r.items.length} matching article(s) fetched live via knowledge_base.search_articles (${kc.access_mode === 'fetch_only' ? 'fetch-only — content never stored' : 'ingest mode'}).`
+              : r.denied ? denialSummary(r.denial)
+              : `Search failed: ${r.error}`,
             item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(kc), r.items),
           });
         }
@@ -445,10 +462,11 @@ serve(async (req) => {
           historyMatches += r.ok ? r.items.length : 0;
           await recordStep({
             kind: 'history_check', system: label(hc), query: inquiry,
-            outcome: r.ok ? 'ok' : 'failed',
+            outcome: r.ok ? 'ok' : r.denied ? 'denied_no_access' : 'failed',
             category, op, provider: hc.provider,
             summary: r.ok
               ? (r.items.length > 0 ? `${r.items.length} similar past case(s) found via ${category}.${op} — resolutions cited below for confidence.` : `No similar past cases via ${category}.${op} — this looks new; lower confidence.`)
+              : r.denied ? denialSummary(r.denial)
               : `History search failed: ${r.error}`,
             item_count: r.items.length, latency_ms: r.ms, citations: toCitations(label(hc), r.items),
           });
@@ -466,6 +484,7 @@ serve(async (req) => {
         systems_consulted: steps.filter((s) => s.outcome === 'ok').length,
         systems_skipped_not_connected: steps.filter((s) => s.outcome === 'skipped_not_connected').length,
         systems_failed: steps.filter((s) => s.outcome === 'failed').length,
+        systems_denied_no_access: steps.filter((s) => s.outcome === 'denied_no_access').length,
       };
       await recordStep({
         kind: 'compose', system: 'DreamTeam', query: inquiry, outcome: 'ok',
@@ -578,6 +597,27 @@ serve(async (req) => {
         .select('id, tenant_id, profile_id, question, answer, sources_used')
         .eq('id', consultationId).eq('tenant_id', tenantId).maybeSingle();
       if (!consultation) return json({ error: 'consultation_not_found' }, 404);
+
+      // DATA ACCESS GRANTS: a Scribe write requires the specialist to hold
+      // "write_back" on the target connector BEFORE the request is even
+      // created (the human approval gate comes after — a grant is
+      // necessary, never sufficient).
+      const { data: writeVerdict } = await admin.rpc('resolve_access', {
+        p_tenant_id: tenantId, p_subject_kind: 'specialist', p_subject_id: consultation.profile_id,
+        p_connector_id: connectorId, p_needed: 'write_back',
+      });
+      const wv = writeVerdict as { allowed?: boolean; has?: string | null; reason?: string } | null;
+      if (!wv?.allowed) {
+        await audit(admin, tenantId, 'Scribe (Technical Specialist)',
+          `Scribe write-back REFUSED by data access rules — specialist has ${wv?.has ? `only "${wv.has}"` : 'no grant'} on connector ${connectorId} and needs "write_back". No request created, nothing written.`,
+          'access_control',
+          { kind: 'data_access_denied', subject_kind: 'specialist', subject_id: consultation.profile_id, connector_id: connectorId, op: `scribe.${actionKey}`, needed: 'write_back', has: wv?.has ?? null, reason: wv?.reason ?? 'no_grant' });
+        return json({
+          error: 'access_denied',
+          detail: `This specialist does not have write-back permission on that system — blocked by your data access rules${wv?.has ? ` (it has only "${wv.has}")` : ''}. An admin can grant it under Governance → Data Access.`,
+          denial: { subject_kind: 'specialist', subject_id: consultation.profile_id, connector_id: connectorId, needed: 'write_back', has: wv?.has ?? null },
+        }, 403);
+      }
 
       const built = buildScribePayload(actionKey, consultation, body.status_value ? String(body.status_value) : undefined);
       if (!built.ok) return json({ error: built.error }, 400);
@@ -767,6 +807,19 @@ serve(async (req) => {
           } else if (!ticketRef) {
             retrieved.push({ source_id: src.id, source_type: 'connector', access_mode: 'fetch_only', label, kind: 'skipped', detail: 'no target ref in consult context — fetch-only sources need one (v1)' });
           } else {
+            // DATA ACCESS GRANTS: opening a live record needs "read".
+            const { data: rv } = await admin.rpc('resolve_access', {
+              p_tenant_id: tenantId, p_subject_kind: 'specialist', p_subject_id: prof.id,
+              p_connector_id: connectorId, p_needed: 'read',
+            });
+            if (!(rv as { allowed?: boolean } | null)?.allowed) {
+              retrieved.push({ source_id: src.id, source_type: 'connector', access_mode: 'fetch_only', label, kind: 'skipped', detail: 'No access — blocked by your data access rules (needs "read" on this system). An admin can change this under Governance → Data Access.' });
+              await audit(admin, tenantId, 'Technical Specialist',
+                `Consult read-through DENIED by data access rules — specialist lacks "read" on connector for ticket #${ticketRef}; nothing fetched`,
+                'access_control',
+                { kind: 'data_access_denied', subject_kind: 'specialist', subject_id: prof.id, connector_id: connectorId, op: 'consult.fetch_record', needed: 'read', has: (rv as { has?: string | null } | null)?.has ?? null });
+              continue;
+            }
             const r = await zendeskFetch(admin, connectorId, tenantId, `/api/v2/tickets/${encodeURIComponent(ticketRef)}.json`);
             if (r.ok) {
               const t = (r.body as { ticket?: Record<string, unknown> })?.ticket ?? {};

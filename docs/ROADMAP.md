@@ -79,3 +79,6 @@ R2, R4, R5 build in parallel now (R4+R5 fully testable pre-key; R2 testable to c
 
 ## Explicitly deferred (triggers unchanged)
 Queue/tiering (volume), ~~tenant playbook builder (after R4)~~ **shipped as R6**, LLM-judge guardrails (after R1 economics), Trust & Architecture page (first security review), PDF/DOCX ingestion (first tenant needing it), signed widget JWTs (first embedded pilot).
+
+## Data Access Grants  ✅ **SHIPPED**
+Migration 029 + enforcement in `connector-hub` / `specialist-consult` / `playbook-execute` + Governance → Data Access UI. Founder ask: "we won't want a support DE having access to company financials." Default-deny, per-DE/specialist × system permissions on a cumulative ladder (search ⊂ read ⊂ ingest ⊂ write_back); connector-specific grants beat category grants; all changes via audited role-guarded RPCs; denials audited (`data_access_denied`) and surfaced (evidence-trail `denied_no_access` badge, recent-denials list). Seeded sensible defaults per domain — never financials/billing/payroll. Verified live end-to-end incl. playbook step failure + escalation and Scribe write refusal. *Named upgrade:* per-DE knowledge scopes (internal knowledge is tenant-wide in v1).

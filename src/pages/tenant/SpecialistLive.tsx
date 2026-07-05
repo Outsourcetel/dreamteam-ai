@@ -180,6 +180,7 @@ const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
   skipped_not_connected: ['Not connected — skipped', 'bg-slate-700 text-slate-300'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
+  denied_no_access: ['No access — blocked by your data access rules', 'bg-rose-500/20 text-rose-300'],
 };
 
 function EvidenceTrail({ steps, confidence, answerStatus, answer, note }: {

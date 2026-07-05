@@ -36,6 +36,13 @@
  * (evidence pipeline path). Credentials come from connector_secrets
  * (service-role-only table; the client can never read them back).
  *
+ * DATA ACCESS GRANTS (migration 029): calls made ON BEHALF OF a machine
+ * subject carry subject_kind ('de'|'specialist') + subject_id; every
+ * data action then requires a server-side grant (resolve_access,
+ * default-deny). search/list_recent → 'search', fetch/get ops → 'read',
+ * sync → 'ingest'. Denials return structured `access_denied` and are
+ * audited (data_access_denied). Human wizard calls carry no subject.
+ *
  * HONESTY NOTES: salesforce/confluence/jira/intercom adapters are shaped
  * to the providers' documented REST APIs but remain unverified against
  * live instances until real tenant credentials exist. sharepoint returns
@@ -962,6 +969,47 @@ serve(async (req) => {
       .select('*').eq('id', connectorId).eq('tenant_id', tenantId).single();
     if (!connector) return json({ error: 'connector_not_found' }, 404);
 
+    // ════════ DATA ACCESS GRANTS (migration 029) — default-deny ════════
+    // Callers acting AS a machine subject (a DE or a specialist) pass
+    // subject_kind + subject_id; every data action then requires a grant
+    // resolved server-side (connector-specific beats category; no grant =
+    // DENY). Direct human wizard calls (test / health_check / dry-run)
+    // carry no subject and are unaffected — humans are governed by app
+    // RLS + roles, not this table.
+    const subjectKind: string | null =
+      payload.subject_kind === 'de' || payload.subject_kind === 'specialist' ? payload.subject_kind : null;
+    const subjectId: string | null =
+      subjectKind && typeof payload.subject_id === 'string' && payload.subject_id ? payload.subject_id : null;
+
+    /** Returns null when allowed (or no subject); a structured denial Response otherwise. */
+    const enforceAccess = async (needed: 'search' | 'read' | 'ingest' | 'write_back', opLabel: string): Promise<Response | null> => {
+      if (!subjectKind || !subjectId) return null;
+      const { data: verdict, error: raErr } = await admin.rpc('resolve_access', {
+        p_tenant_id: tenantId, p_subject_kind: subjectKind, p_subject_id: subjectId,
+        p_connector_id: connectorId, p_needed: needed,
+      });
+      if (raErr) return json({ ok: false, error: 'access_check_failed', detail: raErr.message }, 500);
+      const v = verdict as { allowed: boolean; reason: string; has: string | null; via: string | null };
+      if (v.allowed) return null;
+      await admin.rpc('append_audit_event', {
+        p_tenant_id: tenantId,
+        p_actor: `${subjectKind === 'de' ? 'DE' : 'Specialist'} ${subjectId.slice(0, 8)}`,
+        p_actor_type: 'de',
+        p_action: `Data access DENIED — ${subjectKind} attempted ${opLabel} on ${connector.display_name || connector.provider} (needs ${needed}, has ${v.has ?? 'no grant'}). Default-deny: no data left the system.`,
+        p_category: 'access_control',
+        p_detail: {
+          kind: 'data_access_denied', subject_kind: subjectKind, subject_id: subjectId,
+          connector_id: connectorId, connector_label: connector.display_name || connector.provider,
+          op: opLabel, needed, has: v.has, reason: v.reason,
+        },
+      });
+      return json({
+        ok: false, error: 'access_denied',
+        denial: { subject_kind: subjectKind, subject_id: subjectId, connector_id: connectorId, needed, has: v.has, reason: v.reason },
+        detail: `Access denied by this workspace's data access rules: this ${subjectKind === 'de' ? 'digital employee' : 'specialist'} needs "${needed}" permission on ${connector.display_name || connector.provider} and has ${v.has ? `only "${v.has}"` : 'no grant'}. An admin can change this under Governance → Data Access.`,
+      }, 200);
+    };
+
     // sharepoint: registered honestly, adapter not implemented yet.
     if (connector.provider === 'sharepoint') {
       return json({ ok: false, error: 'not_implemented', detail: 'SharePoint is registered but its adapter is not built yet — documented honestly, no pretending.' }, 200);
@@ -1081,6 +1129,11 @@ serve(async (req) => {
       if (opDef.kind === 'search' && !p.query?.trim()) return json({ error: 'params.query_required' }, 400);
       if (opDef.kind === 'get' && !p.external_ref?.trim()) return json({ error: 'params.external_ref_required' }, 400);
 
+      // Access grants: search-kind ops need "search"; get-kind ops open
+      // a record and need "read".
+      const denied = await enforceAccess(opDef.kind === 'get' ? 'read' : 'search', `${category}.${op}`);
+      if (denied) return denied;
+
       const started = Date.now();
       let r: AdapterResult | null = null;
       if (templateExec) {
@@ -1127,6 +1180,10 @@ serve(async (req) => {
 
     // ════════ search / fetch_record / list_recent — READ-THROUGH ════════
     if (action === 'search' || action === 'fetch_record' || action === 'list_recent') {
+      // Access grants: search/list_recent → "search"; fetch_record opens
+      // a full record → "read".
+      const denied = await enforceAccess(action === 'fetch_record' ? 'read' : 'search', action);
+      if (denied) return denied;
       const started = Date.now();
       let r: AdapterResult;
       if (action === 'search') {
@@ -1153,6 +1210,9 @@ serve(async (req) => {
 
     // ════════ sync — knowledge ingest (REFUSED for fetch_only) ════════
     if (action === 'sync') {
+      // Access grants: syncing stores content in DreamTeam → "ingest".
+      const denied = await enforceAccess('ingest', 'sync');
+      if (denied) return denied;
       if (connector.access_mode === 'fetch_only') {
         // THE DOCTRINE, enforced server-side: the customer chose
         // "look, never store" — sync is refused no matter who asks.

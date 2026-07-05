@@ -491,6 +491,40 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'connector_action': {
+          // ── DATA ACCESS GRANTS (migration 029): resolve the DE subject
+          // whose grants govern this run's connector steps — the
+          // definition's assigned DE (playbook_definitions.de_id), else
+          // the tenant's first DE (same fallback as trust policies in
+          // migration 025). The hub enforces default-deny; a denial
+          // FAILS the step honestly and escalates to a human.
+          let runDeId = typeof ctx.de_subject_id === 'string' ? ctx.de_subject_id as string : null;
+          if (!runDeId) {
+            if (run.definition_id) {
+              const { data: defRow } = await admin.from('playbook_definitions')
+                .select('de_id').eq('id', run.definition_id).maybeSingle();
+              runDeId = (defRow?.de_id as string | null) ?? null;
+            }
+            if (!runDeId) {
+              const { data: firstDe } = await admin.from('digital_employees')
+                .select('id').eq('tenant_id', tenantId)
+                .order('created_at', { ascending: true }).limit(1).maybeSingle();
+              runDeId = (firstDe?.id as string | undefined) ?? null;
+            }
+            if (runDeId) ctx.de_subject_id = runDeId;
+          }
+          const failDenied = async (opLabel: string, detail: string) => {
+            step.status = 'failed'; step.at = now();
+            step.detail = `Access denied by data access rules — ${detail}`;
+            run.status = 'failed';
+            await admin.from('human_tasks').insert({
+              tenant_id: tenantId, type: 'escalation', source: 'de',
+              title: `Playbook blocked by data access rules — ${acct()}`,
+              detail: `Step "${step.label}" (${opLabel}) was denied: ${detail} An admin can change this under Governance → Data Access, or assign a DE with the right grants to this playbook.`,
+            });
+            await saveRun(admin, run); await stepAudit(i, { denied_by: 'data_access_grants' });
+            return { status: 'failed' as const };
+          };
+
           // ── Category-op form (migration 027): provider-agnostic
           // read-through via connector-hub category_op. The step names
           // a CATEGORY + canonical op; the hub picks the adapter and
@@ -519,9 +553,16 @@ async function executeDefinitionSteps(
                   'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
                   'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
                 },
-                body: JSON.stringify({ action: 'category_op', connector_id: catConn.id, tenant_id: tenantId, op, params: opParams }),
+                body: JSON.stringify({
+                  action: 'category_op', connector_id: catConn.id, tenant_id: tenantId, op, params: opParams,
+                  ...(runDeId ? { subject_kind: 'de', subject_id: runDeId } : {}),
+                }),
               });
               const data = await res.json().catch(() => ({}));
+              if (data.error === 'access_denied') {
+                return await failDenied(`${category}.${op}`,
+                  `the ${runDeId ? 'assigned DE' : 'DE'} needs "${data.denial?.needed ?? 'access'}" permission on ${catConn.display_name || catConn.provider} and has ${data.denial?.has ? `only "${data.denial.has}"` : 'no grant'}.`);
+              }
               if (data.ok) {
                 step.status = 'done'; step.at = now();
                 step.detail = `${category}.${op} on ${catConn.display_name || catConn.provider} → ${(data.items ?? []).length} item(s), read-through`;
@@ -559,6 +600,25 @@ async function executeDefinitionSteps(
               .from('connector_actions').select('enabled')
               .eq('connector_id', connector.id).eq('action_key', params.op as string).maybeSingle();
             if (!actionRow?.enabled) skip = `skipped: write-back action "${params.op}" is disabled in the registry`;
+          }
+
+          // DATA ACCESS GRANTS: a write-back needs "write_back" on the
+          // connector for the run's DE subject. Denial fails honestly.
+          if (!skip && connector && runDeId) {
+            const { data: verdict } = await admin.rpc('resolve_access', {
+              p_tenant_id: tenantId, p_subject_kind: 'de', p_subject_id: runDeId,
+              p_connector_id: connector.id, p_needed: 'write_back',
+            });
+            const v = verdict as { allowed?: boolean; has?: string | null } | null;
+            if (!v?.allowed) {
+              await audit(admin, tenantId,
+                `Playbook [${acct()}] — write-back DENIED by data access rules: DE needs "write_back" on the Zendesk connector and has ${v?.has ? `only "${v.has}"` : 'no grant'}. Nothing written.`,
+                'access_control',
+                { kind: 'data_access_denied', run_id: run.id, definition_id: run.definition_id, subject_kind: 'de', subject_id: runDeId, connector_id: connector.id, op: String(params.op ?? 'write_back'), needed: 'write_back', has: v?.has ?? null },
+                'Playbook DE');
+              return await failDenied(String(params.op ?? 'write_back'),
+                `the DE needs "write_back" permission on the Zendesk connector and has ${v?.has ? `only "${v.has}"` : 'no grant'}.`);
+            }
           }
 
           if (!skip && connector) {

@@ -142,6 +142,10 @@ const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }
   config_change: { label: 'Config change', style: 'bg-indigo-500/15 text-indigo-300' },
   playbook_step: { label: 'Playbook step', style: 'bg-violet-500/15 text-violet-300' },
   invoice: { label: 'Invoice', style: 'bg-teal-500/15 text-teal-300' },
+  connector_sync: { label: 'Connector sync', style: 'bg-cyan-500/15 text-cyan-300' },
+  connector_action: { label: 'Connector action', style: 'bg-cyan-500/15 text-cyan-300' },
+  evidence_step: { label: 'Evidence step', style: 'bg-teal-500/15 text-teal-300' },
+  access_control: { label: 'Data access', style: 'bg-rose-500/15 text-rose-300' },
 }
 
 function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
