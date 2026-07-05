@@ -18,7 +18,7 @@ export interface DBTenant {
   updated_at: string;
 }
 
-export interface DBProfile {
+interface DBProfile {
   id: string;
   user_id: string;
   tenant_id?: string;
@@ -31,7 +31,7 @@ export interface DBProfile {
   created_at: string;
 }
 
-export interface DBKnowledgeArticle {
+interface DBKnowledgeArticle {
   id: string;
   tenant_id: string;
   title: string;
@@ -54,7 +54,7 @@ export interface DBKnowledgeArticle {
   updated_at: string;
 }
 
-export interface DBConversation {
+interface DBConversation {
   id: string;
   tenant_id: string;
   channel: 'chat' | 'email' | 'phone' | 'api';
@@ -72,7 +72,7 @@ export interface DBConversation {
   created_at: string;
 }
 
-export interface DBMessage {
+interface DBMessage {
   id: string;
   conversation_id: string;
   tenant_id: string;
@@ -139,7 +139,7 @@ export const fetchMyProfile = async (): Promise<DBProfile | null> => {
 // =====================================================
 // CONVERSATION QUERIES
 // =====================================================
-export const createConversation = async (
+const createConversation = async (
   conv: Partial<DBConversation> & { tenant_id: string; channel: DBConversation['channel'] }
 ): Promise<DBConversation | null> => {
   const { data, error } = await supabase
@@ -151,7 +151,7 @@ export const createConversation = async (
   return data;
 };
 
-export const addMessage = async (
+const addMessage = async (
   msg: Omit<DBMessage, 'id' | 'created_at'>
 ): Promise<DBMessage | null> => {
   const { data, error } = await supabase
@@ -257,7 +257,7 @@ export const fetchDashboardStats = async (tenantId: string) => {
 // retrieval/compose block with an Edge Function call.
 // =====================================================
 
-export interface AgentDraft {
+interface AgentDraft {
   agentName: string;
   actionType: string;
   description: string;
@@ -336,7 +336,7 @@ const tryEdgeFunction = async (
 };
 
 // Draft a proposed agent action by retrieving from the tenant KB.
-export const draftAgentAction = async (
+const draftAgentAction = async (
   tenantId: string,
   query: string,
   audience: 'customer' | 'internal' = 'customer',
@@ -409,8 +409,8 @@ export const draftAgentAction = async (
 };
 
 /* ===================== CUSTOMER PORTAL: ANSWER + AUDIT + ESCALATION ===================== */
-export interface PortalSource { id: string; title: string; }
-export interface PortalTurnResult {
+interface PortalSource { id: string; title: string; }
+interface PortalTurnResult {
   conversationId: string | null;
   answer: string;
   confidence: number;            // 0..1
@@ -426,7 +426,7 @@ export interface PortalTurnResult {
 /* Bot audit review: a second-pass validator that runs BEFORE the answer is shown to the
    customer. It checks that the drafted answer is grounded (has sources), confident enough,
    and not the no-answer fallback. Deterministic + zero-cost; swap for an LLM critic later. */
-export const auditAnswer = (draft: AgentDraft): { verdict: 'passed' | 'review' | 'failed'; note: string; reason: string | null } => {
+const auditAnswer = (draft: AgentDraft): { verdict: 'passed' | 'review' | 'failed'; note: string; reason: string | null } => {
   const noAnswer = /could not find a confident answer/i.test(draft.answer || '');
   if (noAnswer || (draft.sources || []).length === 0) {
     return { verdict: 'failed', note: 'No grounded source found in the knowledge base; answer is not supported.', reason: 'no_answer' };
@@ -502,17 +502,6 @@ export const runPortalTurn = async (
 // ============================================================
 // CONVERSATION MANAGEMENT (admin take-over + resolve)
 // ============================================================
-
-export const updateTenantProfile = async (
-  tenantId: string,
-  data: { name?: string; industry?: string; accent_color?: string },
-): Promise<boolean> => {
-  const { error } = await supabase.from('tenants')
-    .update({ ...data, updated_at: new Date().toISOString() })
-    .eq('id', tenantId);
-  if (error) console.error('updateTenantProfile:', error.message);
-  return !error;
-};
 
 // ============================================================
 // CSAT

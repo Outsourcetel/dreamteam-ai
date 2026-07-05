@@ -74,16 +74,8 @@ export interface ReadThroughResult {
 
 // ── Errors / tenant plumbing (mirrors customerApi) ────────────────
 
-function raise(context: string, error: { code?: string; message: string }): never {
-  console.error(`${context}:`, error.message);
-  throw new CustomerApiError(error.message, isMissingTableError(error));
-}
+import { raise, requireTenantId } from './liveShared';
 
-async function requireTenantId(): Promise<string> {
-  const tid = await getSessionTenantId();
-  if (!tid) throw new CustomerApiError('No tenant found for the current session.', false);
-  return tid;
-}
 
 // ── Connector CRUD ────────────────────────────────────────────────
 

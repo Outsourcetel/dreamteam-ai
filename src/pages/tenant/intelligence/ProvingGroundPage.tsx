@@ -319,9 +319,6 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
         setSimStep(target.scenarios.length);
         setSimRunning(false);
         setSimDone(true);
-        try {
-          localStorage.setItem(`dt_evals_lastrun_${activeCompanyId}`, JSON.stringify({ deId: target.deId, at: new Date().toISOString() }));
-        } catch { /* noop */ }
       } else {
         setSimStep(i);
       }
