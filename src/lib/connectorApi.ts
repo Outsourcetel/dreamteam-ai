@@ -19,7 +19,7 @@ import { computeHealth } from './categoryContracts';
 
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
-  | 'generic_rest' | 'sharepoint';
+  | 'generic_rest' | 'sharepoint' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -33,6 +33,8 @@ export interface Connector {
   /** Category contract (migration 027) — what KIND of system this is; the app speaks category ops. */
   category: SystemCategory;
   access_mode: ConnectorAccessMode;
+  /** Declarative Adapter Framework (migration 028): the template this connector was created from. */
+  template_id: string | null;
   config: Record<string, unknown>;
   /** {canonical_field: source_field} applied at normalization time. */
   field_map: Record<string, string>;
@@ -69,7 +71,7 @@ export interface ProviderMeta {
   implemented: boolean;
 }
 
-export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'sharepoint', ProviderMeta> = {
+export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
   zendesk: {
     label: 'Zendesk', tagline: 'Support desk — tickets, past conversations, help center',
     defaultCategory: 'helpdesk',
@@ -133,6 +135,14 @@ export const PROVIDERS: Record<Exclude<ConnectorProvider, 'sharepoint'> | 'share
       { key: 'header_value', label: 'Auth header value (optional)', placeholder: 'Bearer …', secret: true },
     ],
     help: 'Point DreamTeam at any JSON REST API: give it a search endpoint (path + query parameter) and optionally a record endpoint (path with {ref}). If the API needs a key, add the header it expects — stored server-side, never shown again.',
+    knowledgeSync: false, implemented: true,
+  },
+  template: {
+    label: 'Custom system (from template)', tagline: 'Any REST system as configuration — built with the template builder',
+    defaultCategory: 'other',
+    baseUrlLabel: 'Base URL', baseUrlPlaceholder: 'set by the template',
+    fields: [],
+    help: 'Template connectors are created from the template library or the template builder — not from this generic form.',
     knowledgeSync: false, implemented: true,
   },
   sharepoint: {
@@ -574,4 +584,148 @@ export function fmtSince(iso: string | null): string {
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
   return `${Math.round(hrs / 24)} day${hrs < 48 ? '' : 's'} ago`;
+}
+
+// ── Declarative Adapter Framework (migration 028) ──────────────────
+// Templates make connecting ANY REST system configuration, not code.
+
+import type {
+  AdapterDefinition, AdapterTemplate,
+} from './adapterTemplates';
+import { validateAdapterDefinition, AUTH_META } from './adapterTemplates';
+
+/** Platform library + this tenant's own templates (RLS does the scoping). */
+export async function listAdapterTemplates(): Promise<AdapterTemplate[]> {
+  const { data, error } = await supabase
+    .from('adapter_templates')
+    .select('*')
+    .order('scope', { ascending: false })  // platform first? tenant first: 'tenant' > 'platform'
+    .order('created_at', { ascending: true });
+  if (error) raise('listAdapterTemplates', error);
+  return (data ?? []) as AdapterTemplate[];
+}
+
+/** Save (create or update) a tenant-scope template. Validates locally
+ *  first (plain-language errors); the RPC re-validates structurally and
+ *  the executor re-validates on every run. */
+export async function saveAdapterTemplate(input: {
+  id?: string;
+  name: string;
+  description: string;
+  category: SystemCategory;
+  definition: AdapterDefinition;
+}): Promise<string> {
+  const v = validateAdapterDefinition(input.definition, input.category);
+  if (!v.ok) throw new CustomerApiError(v.errors.join(' '), false);
+  const { data, error } = await supabase.rpc('save_adapter_template', {
+    p_name: input.name,
+    p_description: input.description,
+    p_category: input.category,
+    p_definition: input.definition,
+    p_id: input.id ?? null,
+  });
+  if (error) raise('save_adapter_template', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Adapter template ${input.id ? 'updated' : 'created'} — "${input.name}" (${input.category}), ${Object.keys(input.definition.ops).length} operation(s) bound`,
+    detail: { template_id: data, category: input.category, ops: Object.keys(input.definition.ops) },
+  });
+  return data as string;
+}
+
+export async function publishAdapterTemplate(id: string, name: string): Promise<void> {
+  const { error } = await supabase.rpc('publish_adapter_template', { p_id: id });
+  if (error) raise('publish_adapter_template', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Adapter template published — "${name}" is now available to connect from`,
+    detail: { template_id: id },
+  });
+}
+
+export interface TemplateDryRunResult {
+  ok: boolean;
+  items: CanonicalItemLike[];
+  error?: string | null;
+  detail?: string | null;
+  errors?: string[];          // validation errors when error = invalid_template_definition
+  url_called?: string | null;
+  raw_response?: unknown;     // side-by-side debug view — never persisted
+  latency_ms?: number;
+}
+interface CanonicalItemLike { ref: string; title: string; snippet: string; url: string | null }
+
+/** The builder's "Test now": run one op live against creds entered in the
+ *  builder — before anything is saved. Secrets travel in-flight only and
+ *  are never stored. Returns the raw response next to the extracted items. */
+export async function templateDryRun(input: {
+  definition: AdapterDefinition;
+  category: SystemCategory;
+  op: string;
+  variables: Record<string, string>;
+  secrets: Record<string, string>;
+  params: { query?: string; external_ref?: string };
+}): Promise<TemplateDryRunResult> {
+  return invokeHub({
+    action: 'template_dry_run',
+    definition: input.definition,
+    category: input.category,
+    op: input.op,
+    variables: input.variables,
+    secrets: input.secrets,
+    params: input.params,
+  }) as unknown as Promise<TemplateDryRunResult>;
+}
+
+/** Create a connector FROM a template: variables fill the base URL,
+ *  secrets go to the service-role-only store, then a live test runs. */
+export async function connectFromTemplate(input: {
+  template: AdapterTemplate;
+  displayName: string;
+  variables: Record<string, string>;
+  secrets: Record<string, string>;
+  accessMode: ConnectorAccessMode;
+}): Promise<{ connector: Connector; test: { ok: boolean; error?: string; detail?: string } }> {
+  const tid = await requireTenantId();
+  // Render the base URL for display/health purposes (executor re-renders live).
+  let baseUrl = input.template.definition.base_url_template;
+  for (const [k, v] of Object.entries(input.variables)) baseUrl = baseUrl.split(`{${k}}`).join(v.trim());
+  const { data, error } = await supabase
+    .from('connectors')
+    .insert({
+      tenant_id: tid,
+      provider: 'template',
+      template_id: input.template.id,
+      display_name: input.displayName.trim() || input.template.name,
+      base_url: baseUrl.replace(/\/+$/, ''),
+      category: input.template.category,
+      access_mode: input.accessMode,
+      config: { template_vars: Object.fromEntries(Object.entries(input.variables).map(([k, v]) => [k, v.trim()])) },
+      status: 'disconnected',
+    })
+    .select()
+    .single();
+  if (error) raise('connectFromTemplate', error);
+  const connector = data as Connector;
+
+  const secretEntries = Object.entries(input.secrets).filter(([, v]) => v.trim());
+  if (secretEntries.length > 0) {
+    const { error: secretErr } = await supabase.rpc('set_connector_secret', {
+      p_connector_id: connector.id,
+      p_secret: JSON.stringify(Object.fromEntries(secretEntries.map(([k, v]) => [k, v.trim()]))),
+    });
+    if (secretErr) raise('set_connector_secret', secretErr);
+  }
+
+  const test = await invokeHub<{ ok: boolean; error?: string; detail?: string }>({ action: 'test', connector_id: connector.id });
+  const { data: fresh } = await supabase
+    .from('connectors').select('*').eq('id', connector.id).single();
+  return { connector: (fresh ?? connector) as Connector, test };
+}
+
+/** Secret fields a template's auth recipe requires (labels for the connect form). */
+export function templateSecretFields(def: AdapterDefinition): { key: string; label: string }[] {
+  return AUTH_META[def.auth.type]?.secretFields ?? [];
 }

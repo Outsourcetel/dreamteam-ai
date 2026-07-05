@@ -48,6 +48,10 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import {
   SystemCategory, CanonicalItem, getCategoryOp, legalOps, computeHealth,
 } from '../_shared/categoryContracts.ts';
+import {
+  AdapterDefinition, AUTH_META, validateAdapterDefinition,
+  walkPath, renderTemplate, renderBody,
+} from '../_shared/adapterTemplates.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -458,6 +462,226 @@ const genericRest = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// TEMPLATE EXECUTOR — the Declarative Adapter Framework (migration
+// 028). A template is DATA: auth recipe + base-URL shape + per-op
+// HTTP bindings + response dot-paths. This executor turns that data
+// into live calls with STRUCTURED errors for every failure class so
+// a non-developer can debug a template from the builder UI:
+//   var_missing · auth_failed · op_not_bound · http_NNN ·
+//   unreachable · path_not_found_in_response (with the keys found)
+// Secret VALUES come only from connector_secrets (or in-flight for
+// dry runs) — a template never contains a credential.
+// ════════════════════════════════════════════════════════════════
+
+interface TemplateExec {
+  def: AdapterDefinition;
+  vars: Record<string, string>;    // non-secret per-connector variables
+  secret: Record<string, string>;  // credential values (never from the template)
+}
+interface TemplateOpResult extends AdapterResult {
+  raw_response?: unknown;   // returned to the builder for side-by-side debugging; never persisted
+  url?: string;             // the URL actually called (no secrets in it)
+}
+
+async function templateAuthHeaders(
+  t: TemplateExec,
+): Promise<{ ok: true; headers: Record<string, string> } | { ok: false; error: string; detail?: string }> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...(t.def.auth.extra_headers ?? {}) };
+  const a = t.def.auth;
+  const need = (keys: string[]): string | null => {
+    const missing = keys.filter((k) => !t.secret[k]?.trim());
+    return missing.length ? missing.join(', ') : null;
+  };
+  switch (a.type) {
+    case 'none': return { ok: true, headers };
+    case 'api_key_header': {
+      const m = need(['api_key']);
+      if (m) return { ok: false, error: 'no_credentials', detail: `Missing secret field(s): ${m}` };
+      headers[a.header_name ?? 'X-Api-Key'] = t.secret.api_key;
+      return { ok: true, headers };
+    }
+    case 'bearer': {
+      const m = need(['token']);
+      if (m) return { ok: false, error: 'no_credentials', detail: `Missing secret field(s): ${m}` };
+      headers.Authorization = `Bearer ${t.secret.token}`;
+      return { ok: true, headers };
+    }
+    case 'basic': {
+      if (!t.secret.username?.trim() && !t.secret.password?.trim()) {
+        return { ok: false, error: 'no_credentials', detail: 'Missing secret field(s): username (and/or password)' };
+      }
+      headers.Authorization = 'Basic ' + btoa(`${t.secret.username ?? ''}:${t.secret.password ?? ''}`);
+      return { ok: true, headers };
+    }
+    case 'oauth2_client_credentials': {
+      const m = need(['client_id', 'client_secret']);
+      if (m) return { ok: false, error: 'no_credentials', detail: `Missing secret field(s): ${m}` };
+      const tokenUrl = renderTemplate(a.token_url ?? '', t.vars);
+      if (tokenUrl.missing.length) return { ok: false, error: 'var_missing', detail: `token_url needs variable(s): ${tokenUrl.missing.join(', ')}` };
+      const r = await httpJson(tokenUrl.out, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: t.secret.client_id, client_secret: t.secret.client_secret,
+        }).toString(),
+      });
+      const b = r.body as { access_token?: string; error_description?: string; error?: string } | null;
+      if (!r.ok || !b?.access_token) {
+        return { ok: false, error: 'auth_failed', detail: `Token exchange at ${tokenUrl.out} failed: ${b?.error_description ?? b?.error ?? r.error ?? `HTTP ${r.status}`}` };
+      }
+      headers.Authorization = `Bearer ${b.access_token}`;
+      return { ok: true, headers };
+    }
+    default: return { ok: false, error: 'invalid_template_definition', detail: `Unknown auth type "${(a as { type?: string }).type}"` };
+  }
+}
+
+const scalarOrJson = (v: unknown, n: number): string => {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return clip(v, n);
+  try { return clip(JSON.stringify(v), n); } catch { return ''; }
+};
+
+async function runTemplateOp(
+  t: TemplateExec, opName: string, params: { query?: string; ref?: string },
+): Promise<TemplateOpResult> {
+  const binding = t.def.ops?.[opName];
+  if (!binding) {
+    return { ok: false, error: 'op_not_bound', detail: `This template has no binding for "${opName}". Bound operations: ${Object.keys(t.def.ops ?? {}).join(', ') || 'none'}.` };
+  }
+  const values = { ...t.vars, query: params.query ?? '', ref: params.ref ?? '' };
+  const missing: string[] = [];
+
+  const base = renderTemplate(t.def.base_url_template, values);
+  missing.push(...base.missing);
+  const path = renderTemplate(binding.path_template, values, true);
+  missing.push(...path.missing);
+  const qp = new URLSearchParams();
+  for (const [k, v] of Object.entries(binding.query_params ?? {})) {
+    const rv = renderTemplate(v, values);
+    missing.push(...rv.missing);
+    qp.set(k, rv.out);
+  }
+  let body: string | undefined;
+  if (binding.body_template && binding.method === 'POST') {
+    body = JSON.stringify(renderBody(binding.body_template, values, missing));
+  }
+  const realMissing = [...new Set(missing)].filter((k) => k !== 'query' && k !== 'ref');
+  if (realMissing.length) {
+    return { ok: false, error: 'var_missing', detail: `This connection is missing variable value(s): ${realMissing.join(', ')}. Fill them in the connection settings.` };
+  }
+
+  const auth = await templateAuthHeaders(t);
+  if (!auth.ok) return { ok: false, error: auth.error, detail: auth.detail };
+  const headers = { ...auth.headers, ...(body ? { 'Content-Type': 'application/json' } : {}) };
+
+  const qs = qp.toString();
+  const url = `${base.out.replace(/\/+$/, '')}${path.out}${qs ? (path.out.includes('?') ? '&' : '?') + qs : ''}`;
+  const r = await httpJson(url, { method: binding.method, headers, body });
+  if (!r.ok) {
+    return {
+      ok: false, url, raw_response: r.body,
+      error: r.error ?? `http_${r.status}`,
+      detail: r.error === 'auth_failed'
+        ? `The API at ${url} rejected the credentials (HTTP ${r.status}). Check the auth recipe and the secret values.`
+        : `HTTP ${r.status} from ${url}${r.body ? ` — ${scalarOrJson(r.body, 200)}` : ''}`,
+    };
+  }
+
+  // Walk to the items
+  const itemsPath = binding.response.items_path ?? '';
+  const walked = walkPath(r.body, itemsPath);
+  if (!walked.found) {
+    return {
+      ok: false, url, raw_response: r.body, error: 'path_not_found_in_response',
+      detail: `items_path "${itemsPath}" died at segment "${walked.failed_segment}". Keys actually present there: ${(walked.keys_at_failure ?? []).join(', ') || '(none — value is not an object)'}. Adjust "where results live" and test again.`,
+    };
+  }
+  let list: Array<Record<string, unknown>>;
+  if (binding.single_item) list = [walked.value as Record<string, unknown>];
+  else if (Array.isArray(walked.value)) list = (walked.value as Array<Record<string, unknown>>).slice(0, 10);
+  else if (walked.value && typeof walked.value === 'object') list = [walked.value as Record<string, unknown>];
+  else {
+    return {
+      ok: false, url, raw_response: r.body, error: 'path_not_found_in_response',
+      detail: `items_path "${itemsPath}" points at a ${typeof walked.value}, not a list or record. Point it at the array of results ("" if the whole response is the list).`,
+    };
+  }
+
+  const items: HubItem[] = [];
+  for (const o of list) {
+    if (!o || typeof o !== 'object') continue;
+    const id = walkPath(o, binding.response.id_path);
+    if (!id.found && items.length === 0 && o === list[0]) {
+      return {
+        ok: false, url, raw_response: r.body, error: 'path_not_found_in_response',
+        detail: `id_path "${binding.response.id_path}" not found in the first result. Keys actually present: ${(id.keys_at_failure ?? Object.keys(o).slice(0, 20)).join(', ')}.`,
+      };
+    }
+    const title = walkPath(o, binding.response.title_path);
+    const snippet = binding.response.snippet_path ? walkPath(o, binding.response.snippet_path) : { found: false } as const;
+    const urlW = binding.response.url_path ? walkPath(o, binding.response.url_path) : { found: false } as const;
+    items.push({
+      ref: scalarOrJson(id.found ? id.value : '', 120),
+      type: 'record',
+      title: title.found ? scalarOrJson(title.value, 160) || '(untitled)' : '(untitled)',
+      snippet: snippet.found ? scalarOrJson(snippet.value, 400) : '',
+      url: urlW.found && typeof urlW.value === 'string' ? urlW.value : null,
+      raw: o,
+    });
+  }
+  return { ok: true, items, url, raw_response: r.body };
+}
+
+/** Resolve a connector's template row + validated definition. */
+async function resolveTemplate(
+  admin: SupabaseClient, templateId: string | null, tenantId: string,
+): Promise<{ ok: true; template: { id: string; name: string; category: string; definition: AdapterDefinition } } | { ok: false; error: string; detail?: string }> {
+  if (!templateId) return { ok: false, error: 'template_not_linked', detail: 'This connector has no adapter template linked — reconnect it from a template.' };
+  const { data: tpl } = await admin.from('adapter_templates')
+    .select('id, name, category, definition, scope, tenant_id, status')
+    .eq('id', templateId).maybeSingle();
+  if (!tpl || (tpl.scope === 'tenant' && tpl.tenant_id !== tenantId)) {
+    return { ok: false, error: 'template_not_found', detail: 'The adapter template linked to this connector no longer exists (or belongs to another workspace).' };
+  }
+  const v = validateAdapterDefinition(tpl.definition, tpl.category as SystemCategory);
+  if (!v.ok) return { ok: false, error: 'invalid_template_definition', detail: v.errors.join(' · ') };
+  return { ok: true, template: { id: tpl.id, name: tpl.name, category: tpl.category, definition: tpl.definition as AdapterDefinition } };
+}
+
+/** Build the standard adapter interface from a template so the shared
+ *  test / search / fetch_record / list_recent paths work unchanged. */
+function templateAdapter(t: TemplateExec) {
+  const firstOfKind = (kind: 'search' | 'get') =>
+    Object.keys(t.def.ops).find((op) => op.startsWith(kind === 'search' ? 'search' : 'get'));
+  return {
+    async test(_c: Ctx): Promise<TestResult> {
+      const testOp = t.def.test_op?.op ?? firstOfKind('search') ?? Object.keys(t.def.ops)[0];
+      const p = t.def.test_op?.params ?? {};
+      const r = await runTemplateOp(t, testOp, { query: p.query ?? 'test', ref: p.ref ?? '' });
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      return { ok: true, detail: `${testOp} answered with ${r.items?.length ?? 0} item(s) via the template executor` };
+    },
+    async search(_c: Ctx, query: string): Promise<AdapterResult> {
+      const op = firstOfKind('search');
+      if (!op) return { ok: false, error: 'op_not_supported', detail: 'This template binds no search operation.' };
+      return runTemplateOp(t, op, { query });
+    },
+    async fetchRecord(_c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+      const op = firstOfKind('get');
+      if (!op) return { ok: false, error: 'op_not_supported', detail: 'This template binds no single-record operation.' };
+      return runTemplateOp(t, op, { ref });
+    },
+    async listRecent(_c: Ctx): Promise<AdapterResult> {
+      const op = firstOfKind('search');
+      if (!op) return { ok: false, error: 'op_not_supported', detail: 'This template binds no search operation.' };
+      return runTemplateOp(t, op, { query: '' });
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
 
 const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom']);
 
@@ -661,7 +885,8 @@ serve(async (req) => {
     const action: string = payload.action ?? '';
     const connectorId: string = payload.connector_id ?? '';
     if (!action) return json({ error: 'action_required' }, 400);
-    if (!connectorId) return json({ error: 'connector_id_required' }, 400);
+    // template_dry_run runs BEFORE a connector exists (the builder's "Test now").
+    if (!connectorId && action !== 'template_dry_run') return json({ error: 'connector_id_required' }, 400);
 
     const admin: SupabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -683,6 +908,56 @@ serve(async (req) => {
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 
+    // ════════ template_dry_run — the builder's "Test now" ════════
+    // Runs a template definition live against creds ENTERED IN THE
+    // BUILDER, before anything is saved. The secrets travel in-flight
+    // only (TLS), are used for this one call, and are NEVER stored.
+    // Returns the raw response side-by-side with the extracted items
+    // so a non-developer can adjust paths until it works.
+    if (action === 'template_dry_run') {
+      const def = payload.definition as AdapterDefinition | undefined;
+      const category = String(payload.category ?? 'other') as SystemCategory;
+      const op = String(payload.op ?? '').trim();
+      if (!def || !op) return json({ error: 'definition_and_op_required' }, 400);
+      const v = validateAdapterDefinition(def, category);
+      if (!v.ok) return json({ ok: false, error: 'invalid_template_definition', errors: v.errors }, 200);
+      if (!legalOps(category).includes(op)) {
+        return json({ ok: false, error: 'op_not_legal_for_category', detail: `"${op}" is not a ${category} operation. Legal ops: ${legalOps(category).join(', ')}.`, legal_ops: legalOps(category) }, 200);
+      }
+      const t: TemplateExec = {
+        def,
+        vars: (payload.variables ?? {}) as Record<string, string>,
+        secret: (payload.secrets ?? {}) as Record<string, string>,  // in-flight only, never stored
+      };
+      const started = Date.now();
+      const r = await runTemplateOp(t, op, {
+        query: typeof payload.params?.query === 'string' ? payload.params.query : undefined,
+        ref: typeof payload.params?.external_ref === 'string' ? payload.params.external_ref : undefined,
+      });
+      await admin.rpc('append_audit_event', {
+        p_tenant_id: tenantId,
+        p_actor: 'Template builder (dry run)', p_actor_type: 'human',
+        p_action: r.ok
+          ? `Template dry run — ${category}.${op} answered with ${r.items?.length ?? 0} item(s) in ${Date.now() - started}ms; nothing stored`
+          : `Template dry run — ${category}.${op} failed: ${r.error} (structured error returned to the builder)`,
+        p_category: 'connector_action',
+        p_detail: { mode: 'template_dry_run', category, op, ok: r.ok, error: r.error ?? null, item_count: r.items?.length ?? 0, persisted: false },
+      });
+      return json({
+        ok: r.ok, op, category,
+        items: r.items ?? [], error: r.error ?? null, detail: r.detail ?? null,
+        url_called: r.url ?? null,
+        // clipped raw response for the side-by-side debug view — never persisted
+        raw_response: (() => {
+          try {
+            const s = JSON.stringify(r.raw_response ?? null);
+            return s.length <= 8000 ? (r.raw_response ?? null) : s.slice(0, 8000) + '… (clipped)';
+          } catch { return scalarOrJson(r.raw_response, 8000); }
+        })(),
+        latency_ms: Date.now() - started, persisted: false,
+      });
+    }
+
     const { data: connector } = await admin.from('connectors')
       .select('*').eq('id', connectorId).eq('tenant_id', tenantId).single();
     if (!connector) return json({ error: 'connector_not_found' }, 404);
@@ -692,20 +967,14 @@ serve(async (req) => {
       return json({ ok: false, error: 'not_implemented', detail: 'SharePoint is registered but its adapter is not built yet — documented honestly, no pretending.' }, 200);
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom> = {
-      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest,
-    };
-    // deno-lint-ignore no-explicit-any
-    const adapter: any = adapters[connector.provider];
-    if (!adapter) return json({ error: 'unsupported_provider' }, 400);
-
-    // ── Credentials (service-role-only table). generic_rest may run open. ──
+    // ── Credentials (service-role-only table). generic_rest and
+    // template (auth recipe "none") may run open. ──
     const { data: secretRow } = await admin.from('connector_secrets')
       .select('secret').eq('connector_id', connectorId).maybeSingle();
     let secret: Record<string, string> = {};
     if (secretRow?.secret) {
       try { secret = JSON.parse(secretRow.secret); } catch { return json({ error: 'invalid_credentials_format' }, 400); }
-    } else if (connector.provider !== 'generic_rest') {
+    } else if (connector.provider !== 'generic_rest' && connector.provider !== 'template') {
       return json({ error: 'no_credentials' }, 400);
     }
 
@@ -714,6 +983,27 @@ serve(async (req) => {
       secret,
       config: (connector.config ?? {}) as Record<string, unknown>,
     };
+
+    // ── template provider: resolve the declarative adapter (DATA → adapter) ──
+    let templateExec: TemplateExec | null = null;
+    let templateName: string | null = null;
+    if (connector.provider === 'template') {
+      const resolved = await resolveTemplate(admin, connector.template_id ?? null, tenantId);
+      if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
+      templateExec = {
+        def: resolved.template.definition,
+        vars: ((connector.config as Record<string, unknown> | null)?.template_vars ?? {}) as Record<string, string>,
+        secret,
+      };
+      templateName = resolved.template.name;
+    }
+
+    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom> = {
+      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest,
+    };
+    // deno-lint-ignore no-explicit-any
+    const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
+    if (!adapter) return json({ error: 'unsupported_provider' }, 400);
 
     const audit = (category: string, actionText: string, detail: Record<string, unknown>) =>
       admin.rpc('append_audit_event', {
@@ -793,7 +1083,18 @@ serve(async (req) => {
 
       const started = Date.now();
       let r: AdapterResult | null = null;
-      if (connector.provider === 'generic_rest') {
+      if (templateExec) {
+        // Declarative adapter: the op binding IS the translation.
+        const tr = await runTemplateOp(templateExec, op, { query: p.query, ref: p.external_ref });
+        if (!tr.ok && tr.error === 'op_not_bound') {
+          const ms0 = Date.now() - started;
+          await audit('connector_action',
+            `Category op ${category}.${op} on template "${templateName}" — op not bound in the template (documented honestly)`,
+            { mode: 'read_through', hub_action: 'category_op', category, op, ok: false, error: 'op_not_supported', template: templateName, latency_ms: ms0, persisted: false });
+          return json({ ok: false, error: 'op_not_supported', detail: tr.detail, category, op, template: templateName }, 200);
+        }
+        r = { ok: tr.ok, items: tr.items, error: tr.error, detail: tr.detail };
+      } else if (connector.provider === 'generic_rest') {
         r = await (genericRestOp(ctx, opDef, p) ?? Promise.resolve(null));
         if (r === null) {
           return json({
@@ -820,8 +1121,8 @@ serve(async (req) => {
         r.ok
           ? `Category op ${category}.${op} on ${connector.provider} — ${items.length} ${opDef.object}(s) fetched live in ${ms}ms, not persisted`
           : `Category op ${category}.${op} on ${connector.provider} FAILED — ${r.error} (recorded honestly)`,
-        { mode: 'read_through', hub_action: 'category_op', category, op, ok: r.ok, error: r.error ?? null, item_count: items.length, latency_ms: ms, health, persisted: false });
-      return json({ ok: r.ok, category, op, object: opDef.object, items, error: r.error ?? null, latency_ms: ms, health, persisted: false });
+        { mode: 'read_through', hub_action: 'category_op', category, op, ok: r.ok, error: r.error ?? null, item_count: items.length, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
+      return json({ ok: r.ok, category, op, object: opDef.object, items, error: r.error ?? null, detail: r.detail ?? null, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
     }
 
     // ════════ search / fetch_record / list_recent — READ-THROUGH ════════

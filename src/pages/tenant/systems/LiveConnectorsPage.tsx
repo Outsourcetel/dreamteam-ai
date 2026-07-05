@@ -15,6 +15,9 @@ import {
   SystemCategory, CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT,
   MAPPABLE_FIELDS, MAPPABLE_FIELD_HELP, HEALTH_LABELS, ConnectorHealth,
 } from '../../../lib/categoryContracts';
+import { listAdapterTemplates } from '../../../lib/connectorApi';
+import type { AdapterTemplate } from '../../../lib/adapterTemplates';
+import { TemplateBuilderModal, ConnectFromTemplateModal, TemplateLibrary } from './TemplateBuilder';
 
 // ============================================================
 // Live Connectors page — Multi-System Connector Hub.
@@ -70,12 +73,12 @@ const CONNECTION_LADDER: { rung: string; how: string; note?: string }[] = [
   { rung: '1. Does it have an MCP server?', how: 'If your system publishes an MCP server, register it under Specialist sources — the most direct route.' },
   { rung: '2. Aggregator', how: 'One connection that covers hundreds of long-tail systems.', note: 'Available on request — built when the first customer needs it.' },
   { rung: '3. Named adapter', how: 'Salesforce, Zendesk, Confluence, Jira, Intercom — pick it below and connect with credentials.' },
-  { rung: '4. Your own API', how: 'Any JSON REST API via "Your product API" — bind your endpoints, zero code.' },
+  { rung: '4. Any other system', how: 'Any JSON REST API: use a template from the library, or build one in five guided steps — configuration, not code.' },
   { rung: '5. File import', how: 'No API at all? Upload documents into Knowledge and DreamTeam works from those.' },
 ];
 const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   zendesk: '🎫', salesforce: '☁️', confluence: '📘', jira: '🧩',
-  intercom: '💬', generic_rest: '🔌', sharepoint: '📁',
+  intercom: '💬', generic_rest: '🔌', sharepoint: '📁', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -83,7 +86,7 @@ const selectCls = 'bg-slate-950 border border-slate-700 rounded-lg text-xs text-
 
 // ── Connect wizard ────────────────────────────────────────────────
 
-function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg: string) => void }) {
+function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onDone: (msg: string) => void; onCustom: () => void }) {
   // Category FIRST (what kind of system), provider second (which brand).
   const [category, setCategory] = useState<SystemCategory | null>(null);
   const [provider, setProvider] = useState<ConnectorProvider | null>(null);
@@ -173,7 +176,13 @@ function ConnectWizard({ onClose, onDone }: { onClose: () => void; onDone: (msg:
               <h2 className="text-sm font-semibold text-white mb-1">Which system is your {CATEGORY_SHORT[category]}?</h2>
               <p className="text-xs text-slate-500 mb-4">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
               <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { onClose(); onCustom(); }}
+                  className="text-left rounded-xl border p-3 transition-colors bg-slate-950 border-indigo-500/40 hover:border-indigo-400">
+                  <p className="text-sm font-semibold text-white">🧱 Custom system — build a template</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
+                </button>
                 {(Object.keys(PROVIDERS) as ConnectorProvider[])
+                  .filter(p => p !== 'template')
                   .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
                   .map(p => (
                     <button key={p} onClick={() => pick(p)}
@@ -331,6 +340,9 @@ export default function LiveConnectorsPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const [showConnect, setShowConnect] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [templates, setTemplates] = useState<AdapterTemplate[]>([]);
+  const [useTemplate, setUseTemplate] = useState<AdapterTemplate | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [fieldMapFor, setFieldMapFor] = useState<string | null>(null);
 
@@ -346,6 +358,7 @@ export default function LiveConnectorsPage() {
       setLoading(true);
       const conns = await listConnectors();
       setConnectors(conns);
+      try { setTemplates(await listAdapterTemplates()); } catch { setTemplates([]); /* library appears once migration 028 is applied */ }
       const objMap: Record<string, ConnectorObject[]> = {};
       const actMap: Record<string, ConnectorAction[]> = {};
       await Promise.all(conns.filter(c => c.provider === 'zendesk').map(async (c) => {
@@ -477,6 +490,10 @@ export default function LiveConnectorsPage() {
       {toast && <div className="mb-4 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-200">{toast}</div>}
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 
+      {!loading && !missingTables && (
+        <TemplateLibrary templates={templates} onUse={t => setUseTemplate(t)} onBuild={() => setShowBuilder(true)} />
+      )}
+
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
       ) : missingTables ? (
@@ -496,7 +513,7 @@ export default function LiveConnectorsPage() {
             onPrimary={() => setShowConnect(true)}
           />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-            {(Object.keys(PROVIDERS) as ConnectorProvider[]).slice(0, 8).map(p => (
+            {(Object.keys(PROVIDERS) as ConnectorProvider[]).filter(p => p !== 'template').slice(0, 8).map(p => (
               <button key={p} onClick={() => setShowConnect(true)} className="text-left bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 transition-colors">
                 <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
@@ -668,7 +685,9 @@ export default function LiveConnectorsPage() {
         </div>
       )}
 
-      {showConnect && <ConnectWizard onClose={() => setShowConnect(false)} onDone={m => { showToast(m); void load(); }} />}
+      {showConnect && <ConnectWizard onClose={() => setShowConnect(false)} onDone={m => { showToast(m); void load(); }} onCustom={() => setShowBuilder(true)} />}
+      {showBuilder && <TemplateBuilderModal onClose={() => setShowBuilder(false)} onDone={m => { showToast(m); void load(); }} />}
+      {useTemplate && <ConnectFromTemplateModal template={useTemplate} onClose={() => setUseTemplate(null)} onDone={m => { showToast(m); void load(); }} />}
     </div>
   );
 }

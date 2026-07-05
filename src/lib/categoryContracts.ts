@@ -87,6 +87,14 @@ export const CATEGORY_OPS: Record<SystemCategory, CategoryOp[]> = {
   ],
 };
 
+export function getCategoryOp(category: SystemCategory, op: string): CategoryOp | null {
+  return (CATEGORY_OPS[category] ?? []).find((o) => o.op === op) ?? null;
+}
+
+export function legalOps(category: SystemCategory): string[] {
+  return (CATEGORY_OPS[category] ?? []).map((o) => o.op);
+}
+
 export interface CanonicalItem {
   id: string;
   external_ref: string;
