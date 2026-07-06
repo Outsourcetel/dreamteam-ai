@@ -27,7 +27,7 @@ const SettingsPage = ({
   page,
   setPage,
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
-  const { refreshTenant } = useAuth();
+  const { refreshTenant, isDTUser } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
   const dataMode = useDataMode();
   const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>('general');
@@ -65,6 +65,10 @@ const SettingsPage = ({
   const [budgetSaving, setBudgetSaving] = useState<string | null>(null);
 
   useEffect(() => {
+    if (activeTab === 'ai_engine' && !isDTUser) setActiveTab('general');
+  }, [activeTab, isDTUser]);
+
+  useEffect(() => {
     setOrgName(tenant?.name || '');
     setIndustry(tenant?.industry || 'Technology');
     setContactEmail(tenant?.contactEmail || user?.email || '');
@@ -72,7 +76,7 @@ const SettingsPage = ({
   }, [tenant, user]);
 
   useEffect(() => {
-    if (activeTab === 'ai_engine') {
+    if (activeTab === 'ai_engine' && isDTUser) {
       Promise.all([
         hasPlatformConfigKey('ANTHROPIC_API_KEY'),
         hasPlatformConfigKey('OPENAI_API_KEY'),
@@ -180,9 +184,10 @@ const SettingsPage = ({
   });
 </script>`;
 
-  const tabList = (dataMode === 'live'
+  const tabList = ((dataMode === 'live'
     ? ['general', 'ai_engine', 'usage', 'widget', 'billing', 'security']
-    : ['general', 'ai_engine', 'usage', 'billing', 'security']) as Array<typeof activeTab>;
+    : ['general', 'ai_engine', 'usage', 'billing', 'security']) as Array<typeof activeTab>)
+    .filter(t => t !== 'ai_engine' || isDTUser);
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -286,8 +291,8 @@ const SettingsPage = ({
         </div>
       )}
 
-      {/* ── AI Engine ─────────────────────────────────────────────── */}
-      {activeTab === 'ai_engine' && (
+      {/* ── AI Engine (platform admins only — keys are shared platform-wide) ── */}
+      {activeTab === 'ai_engine' && isDTUser && (
         <div className="max-w-2xl space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
