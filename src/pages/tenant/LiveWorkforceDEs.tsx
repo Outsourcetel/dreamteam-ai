@@ -21,6 +21,8 @@ import {
 } from '../../lib/playbookBuilderApi';
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
+import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
+import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
 
 // ============================================================
 // Workforce — LIVE mode (R5): the first live DE-profile surface.
@@ -190,6 +192,130 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
   );
 }
 
+// ── Roster + "Add a Digital Employee" — the generic persona-creation
+// capability (migration 037). Domain-agnostic: creates ANY future DE,
+// not just Account/Finance/etc. Simple enough for a non-technical
+// admin: name + role label are the only required fields.
+function RosterPanel() {
+  const [des, setDes] = useState<DigitalEmployee[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState('');
+  const [personaName, setPersonaName] = useState('');
+  const [department, setDepartment] = useState('');
+  const [description, setDescription] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      setDes(await listDigitalEmployees());
+      setError(null);
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to load the roster.');
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const submit = async () => {
+    if (!name.trim()) { setError('Give the new Digital Employee a name or role label.'); return; }
+    setBusy(true); setError(null);
+    try {
+      await createDigitalEmployee({
+        name: name.trim(),
+        personaName: personaName.trim() || undefined,
+        department: department.trim() || undefined,
+        description: description.trim() || undefined,
+      });
+      setName(''); setPersonaName(''); setDepartment(''); setDescription('');
+      setAdding(false);
+      await refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to create the Digital Employee. Only workspace owners/admins can do this.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (des === null) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center justify-between gap-3 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Your Digital Employees</h3>
+        {!adding && (
+          <button onClick={() => setAdding(true)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+            + Add a Digital Employee
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
+        data access, playbooks, and trust build up the same way for every department.
+      </p>
+
+      {error && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
+
+      <div className="space-y-2 mb-3">
+        {des.map(de => (
+          <div key={de.id} className="flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-950/60">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">
+              {(de.persona_name || de.name).charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
+                {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>{de.status}</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
+            </div>
+          </div>
+        ))}
+        {des.length === 0 && <p className="text-xs text-slate-500">No Digital Employees yet — add your first one below.</p>}
+      </div>
+
+      {adding && (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-slate-400">
+              Role / label (required)
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Account Success DE"
+                className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+            </label>
+            <label className="text-xs text-slate-400">
+              Persona name (optional)
+              <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="e.g. Jordan"
+                className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+            </label>
+          </div>
+          <label className="text-xs text-slate-400 block">
+            Department
+            <input value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Account Success"
+              className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+          </label>
+          <label className="text-xs text-slate-400 block">
+            What does this Digital Employee do?
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder="Plain language — what this DE is responsible for"
+              className="mt-1 w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+          </label>
+          <p className="text-[11px] text-slate-500">
+            Starts supervised with no data access and no playbooks — you (or an admin) grant those next, the same way for every DE.
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => void submit()} disabled={busy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium disabled:opacity-40 transition-colors">
+              {busy ? 'Creating…' : 'Create'}
+            </button>
+            <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [rows, setRows] = useState<Record<string, DEAutonomy>>({});
@@ -339,6 +465,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
         <MissingTablesNotice />
       ) : (
         <div className="max-w-3xl space-y-6">
+          {/* Roster + Add a Digital Employee */}
+          <RosterPanel />
+
           {/* DE card */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
             <div className="flex items-center gap-4">
@@ -354,6 +483,10 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                 </p>
               </div>
             </div>
+            <p className="mt-3 text-[11px] text-slate-600">
+              The panels below (operating charter, trust dial, earned trust) are scoped to your workspace's first Digital Employee today —
+              per-DE dashboards for every roster member are a planned upgrade, not yet built.
+            </p>
           </div>
 
           {/* DE operating charter */}
