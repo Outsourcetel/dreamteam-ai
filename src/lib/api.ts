@@ -14,6 +14,8 @@ export interface DBTenant {
   logo_url?: string;
   settings?: Record<string, unknown>;
   monthly_token_budget?: number;
+  parent_tenant_id?: string | null;
+  allow_self_serve_subtenants?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -154,6 +156,140 @@ export const completeSignup = async (orgName: string, industry: string): Promise
   });
   if (error) return { ok: false, error: 'rpc_error', detail: error.message };
   return data as CompleteSignupResult;
+};
+
+// =====================================================================
+// TENANT HIERARCHY (migration 050) — parent/child tenants, provisioning
+// workflow, feature flags. See supabase/migrations/050_tenant_hierarchy.sql
+// for the full schema and security model.
+// =====================================================================
+export interface TenantAncestryRow { tenant_id: string; depth: number }
+
+export interface RequestSubtenantResult {
+  ok: boolean;
+  path?: 'self_serve' | 'pending_platform_approval';
+  tenant_id?: string;
+  slug?: string;
+  request_id?: string;
+  error?: string;
+}
+
+export interface TenantProvisioningRequest {
+  id: string;
+  requested_by_user_id: string;
+  proposed_parent_tenant_id: string | null;
+  proposed_name: string;
+  proposed_industry: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by: string | null;
+  decided_at: string | null;
+  rejection_reason: string | null;
+  created_tenant_id: string | null;
+  created_at: string;
+}
+
+export interface FeatureRegistryEntry {
+  key: string;
+  label: string;
+  description: string | null;
+  default_enabled: boolean;
+  category: string | null;
+}
+
+export interface TenantFeatureOverride {
+  tenant_id: string;
+  feature_key: string;
+  enabled: boolean;
+  note: string | null;
+  updated_at: string;
+}
+
+// Request a sub-tenant under p_parent_tenant_id. Immediate creation if the
+// parent has allow_self_serve_subtenants=true and the caller is its
+// owner/admin; otherwise routes to the platform for approval.
+export const requestSubtenant = async (
+  parentTenantId: string,
+  name: string,
+  industry?: string
+): Promise<RequestSubtenantResult> => {
+  const { data, error } = await supabase.rpc('request_subtenant', {
+    p_parent_tenant_id: parentTenantId,
+    p_name: name,
+    p_industry: industry ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data as RequestSubtenantResult;
+};
+
+export const fetchPendingProvisioningRequests = async (): Promise<TenantProvisioningRequest[]> => {
+  const { data, error } = await supabase
+    .from('tenant_provisioning_requests')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true });
+  if (error) { console.error('fetchPendingProvisioningRequests:', error.message); return []; }
+  return data ?? [];
+};
+
+export const approveSubtenantRequest = async (requestId: string): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('approve_subtenant_request', { p_request_id: requestId });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export const rejectSubtenantRequest = async (requestId: string, reason: string): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('reject_subtenant_request', { p_request_id: requestId, p_reason: reason });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export const setTenantSelfServe = async (tenantId: string, allow: boolean): Promise<boolean> => {
+  const { error } = await supabase
+    .from('tenants')
+    .update({ allow_self_serve_subtenants: allow, updated_at: new Date().toISOString() })
+    .eq('id', tenantId);
+  if (error) { console.error('setTenantSelfServe:', error.message); return false; }
+  return true;
+};
+
+export const fetchTenantDescendants = async (tenantId: string): Promise<TenantAncestryRow[]> => {
+  const { data, error } = await supabase.rpc('tenant_descendants', { p_tenant_id: tenantId });
+  if (error) { console.error('fetchTenantDescendants:', error.message); return []; }
+  return (data ?? []) as TenantAncestryRow[];
+};
+
+export const fetchFeatureRegistry = async (): Promise<FeatureRegistryEntry[]> => {
+  const { data, error } = await supabase
+    .from('feature_registry')
+    .select('*')
+    .order('category', { ascending: true });
+  if (error) { console.error('fetchFeatureRegistry:', error.message); return []; }
+  return data ?? [];
+};
+
+export const fetchTenantFeatureOverrides = async (tenantId: string): Promise<TenantFeatureOverride[]> => {
+  const { data, error } = await supabase
+    .from('tenant_feature_overrides')
+    .select('*')
+    .eq('tenant_id', tenantId);
+  if (error) { console.error('fetchTenantFeatureOverrides:', error.message); return []; }
+  return data ?? [];
+};
+
+export const setTenantFeatureOverride = async (
+  tenantId: string,
+  featureKey: string,
+  enabled: boolean,
+  note?: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('set_tenant_feature_override', {
+    p_tenant_id: tenantId,
+    p_feature_key: featureKey,
+    p_enabled: enabled,
+    p_note: note ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
 };
 
 // =====================================================

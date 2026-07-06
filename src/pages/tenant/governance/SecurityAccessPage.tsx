@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
+import { requestSubtenant, fetchTenantDescendants, type TenantAncestryRow } from '../../../lib/api'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Security & Access (gov_security)
@@ -76,8 +77,110 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
   )
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Manage sub-accounts — tenant-side self-serve entry point (migration
+// 050). A tenant owner/admin can request a sub-tenant here. Depending on
+// whether the platform has enabled self-serve for this tenant, the
+// request either creates the sub-account immediately or is submitted to
+// DreamTeam AI for approval — plain language either way, no jargon about
+// "provisioning workflows."
+// ─────────────────────────────────────────────────────────────────
+function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
+  const [descendants, setDescendants] = useState<TenantAncestryRow[]>([])
+  const [loadingList, setLoadingList] = useState(true)
+  const [name, setName] = useState('')
+  const [industry, setIndustry] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ kind: 'created' | 'submitted' | 'error'; message: string } | null>(null)
+
+  const load = () => {
+    setLoadingList(true)
+    fetchTenantDescendants(tenantId).then(rows => {
+      setDescendants(rows)
+      setLoadingList(false)
+    })
+  }
+
+  useEffect(() => { load() }, [tenantId])
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return
+    setBusy(true)
+    setResult(null)
+    const res = await requestSubtenant(tenantId, name.trim(), industry.trim() || undefined)
+    setBusy(false)
+    if (!res.ok) {
+      setResult({ kind: 'error', message: res.error || 'Something went wrong — please try again.' })
+      return
+    }
+    if (res.path === 'self_serve') {
+      setResult({ kind: 'created', message: `"${name.trim()}" was created right away as a sub-account.` })
+      setName('')
+      setIndustry('')
+      load()
+    } else {
+      setResult({ kind: 'submitted', message: `Submitted for DreamTeam AI approval — we'll let you know once it's reviewed.` })
+      setName('')
+      setIndustry('')
+    }
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-800">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Manage Sub-Accounts</p>
+        <p className="text-xs text-slate-500 mt-1">
+          Create a smaller workspace under your account for one of your own customers — they get limited,
+          customer-focused access, and your data stays separate from theirs.
+        </p>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {!loadingList && descendants.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">{descendants.length} existing sub-account{descendants.length === 1 ? '' : 's'}</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Sub-account name (e.g. Acme Customer Portal)"
+            className="bg-slate-950 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+          />
+          <input
+            value={industry}
+            onChange={e => setIndustry(e.target.value)}
+            placeholder="Industry (optional)"
+            className="bg-slate-950 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={busy || !name.trim()}
+          className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all"
+        >
+          {busy ? 'Submitting…' : 'Request sub-account'}
+        </button>
+
+        {result && (
+          <div className={`text-xs rounded-lg p-3 ${
+            result.kind === 'created' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+            : result.kind === 'submitted' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
+            : 'bg-red-500/10 border border-red-500/30 text-red-300'
+          }`}>
+            {result.message}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function SecurityAccessPage() {
-  const { activeCompanyId, handleSetPage } = useAuth()
+  const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant } = useAuth()
   const companyId = activeCompanyId
   const users = HUMAN_USERS[companyId]
   const apiKeys = API_KEYS[companyId]
@@ -124,6 +227,11 @@ export default function SecurityAccessPage() {
       </div>
 
       <div className="space-y-6">
+        {/* ── Manage sub-accounts (migration 050) — real tenant hierarchy, live mode only ── */}
+        {isLiveTenant && authedUser?.tenantId && ['tenant_owner', 'tenant_admin'].includes(authedUser.role) && (
+          <ManageSubAccountsPanel tenantId={authedUser.tenantId} />
+        )}
+
         {/* ── RBAC permission matrix ── */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800">

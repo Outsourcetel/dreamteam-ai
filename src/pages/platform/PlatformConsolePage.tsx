@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
 import { mockTenants } from '../../lib/mockData';
-import type { DBTenant } from '../../lib/api';
+import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride } from '../../lib/api';
+import {
+  fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
+  setTenantSelfServe, fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
+} from '../../lib/api';
 
 const PlatformConsolePage = ({
   page,
@@ -33,10 +37,13 @@ const PlatformConsolePage = ({
         createdAt: (t.created_at || '').split('T')[0],
         industry: t.industry || '—',
         contactEmail: (t.settings && t.settings.contactEmail) || '',
+        parentTenantId: t.parent_tenant_id ?? null,
+        allowSelfServeSubtenants: !!t.allow_self_serve_subtenants,
       }))
     : mockTenants;
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [godModeTarget, setGodModeTarget] = useState<Tenant | null>(null);
+  const [featureTarget, setFeatureTarget] = useState<Tenant | null>(null);
 
   if (page === 'platform_home') {
     const totalTokens = tenants.reduce((s, t) => s + t.monthlyTokens, 0);
@@ -149,6 +156,25 @@ const PlatformConsolePage = ({
   }
 
   if (page === 'platform_tenants') {
+    // Build a depth-ordered tree list: parents before children, indented by
+    // depth, so the table renders as a readable nested hierarchy without a
+    // separate graph widget. A tenant whose parent isn't in this list
+    // (shouldn't happen, but defensive) is treated as top-level.
+    const byParent = new Map<string | null, Tenant[]>();
+    tenants.forEach((t) => {
+      const key = t.parentTenantId && tenants.some((p) => p.id === t.parentTenantId) ? t.parentTenantId : null;
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key)!.push(t);
+    });
+    const orderedRows: { tenant: Tenant; depth: number }[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      (byParent.get(parentId) || []).forEach((t) => {
+        orderedRows.push({ tenant: t, depth });
+        walk(t.id, depth + 1);
+      });
+    };
+    walk(null, 0);
+
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
         <div className="flex items-center justify-between mb-6">
@@ -156,13 +182,16 @@ const PlatformConsolePage = ({
             <h1 className="text-2xl font-bold text-white">Tenant Management</h1>
             <p className="text-slate-400 text-sm mt-1">
               Manage all client workspaces — view, configure, and support
-              tenants
+              tenants. Indented rows are sub-tenants nested under their parent.
             </p>
           </div>
           <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500">
             + Provision Tenant
           </button>
         </div>
+
+        <PendingApprovalsPanel />
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
@@ -186,15 +215,16 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {tenants.map((t) => (
+              {orderedRows.map(({ tenant: t, depth }) => (
                 <tr
                   key={t.id}
                   className="hover:bg-slate-800/30 cursor-pointer transition-all"
                 >
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3" style={{ paddingLeft: depth * 24 }}>
+                      {depth > 0 && <span className="text-slate-600 text-xs flex-shrink-0">&#8627;</span>}
                       <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                         style={{
                           backgroundColor: t.primaryColor + '30',
                           border: '1px solid ' + t.primaryColor + '60',
@@ -205,6 +235,11 @@ const PlatformConsolePage = ({
                       <div>
                         <div className="text-sm font-medium text-white">
                           {t.name}
+                          {t.allowSelfServeSubtenants && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 align-middle">
+                              Self-serve sub-tenants ON
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-500">
                           {t.industry}
@@ -264,6 +299,12 @@ const PlatformConsolePage = ({
                         View
                       </button>
                       <button
+                        onClick={() => setFeatureTarget(t)}
+                        className="text-xs px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-lg transition-all"
+                      >
+                        Features
+                      </button>
+                      <button
                         onClick={() => setGodModeTarget(t)}
                         className="text-xs px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg transition-all"
                       >
@@ -308,6 +349,21 @@ const PlatformConsolePage = ({
                   </div>
                 ))}
               </div>
+
+              <div className="bg-slate-800 rounded-xl p-4 flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-white">
+                    Let this tenant create sub-tenants instantly
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    Off by default — a request to create a sub-tenant under {selectedTenant.name} goes to the
+                    platform for approval first. Turn this on once you trust {selectedTenant.name} to create
+                    their own sub-accounts without review.
+                  </div>
+                </div>
+                <SelfServeToggle tenant={selectedTenant} onChanged={(v) => setSelectedTenant({ ...selectedTenant, allowSelfServeSubtenants: v })} />
+              </div>
+
               <div className="flex gap-3">
                 <button
                   onClick={() => {
@@ -323,6 +379,14 @@ const PlatformConsolePage = ({
                 </button>
               </div>
             </div>
+          </Modal>
+        )}
+        {featureTarget && (
+          <Modal
+            title={'Features — ' + featureTarget.name}
+            onClose={() => setFeatureTarget(null)}
+          >
+            <FeatureTogglePanel tenant={featureTarget} />
           </Modal>
         )}
         {godModeTarget && (
@@ -656,6 +720,220 @@ const PlatformConsolePage = ({
   return (
     <div className="flex-1 p-6">
       <p className="text-slate-400">Platform Console</p>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Pending sub-tenant creation approvals — requests routed to the
+// platform (not the parent tenant) because the parent hasn't earned
+// self-serve sub-tenant creation yet (migration 050). Plain language:
+// a tenant asked to create a sub-account, and it's waiting on us.
+// ─────────────────────────────────────────────────────────────────
+const PendingApprovalsPanel = () => {
+  const [requests, setRequests] = useState<TenantProvisioningRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [rejectTarget, setRejectTarget] = useState<TenantProvisioningRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    fetchPendingProvisioningRequests().then((rows) => {
+      setRequests(rows);
+      setLoading(false);
+    });
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleApprove = async (id: string) => {
+    setBusyId(id);
+    await approveSubtenantRequest(id);
+    setBusyId(null);
+    load();
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget || !rejectReason.trim()) return;
+    setBusyId(rejectTarget.id);
+    await rejectSubtenantRequest(rejectTarget.id, rejectReason.trim());
+    setBusyId(null);
+    setRejectTarget(null);
+    setRejectReason('');
+    load();
+  };
+
+  if (loading) return null;
+  if (requests.length === 0) return null;
+
+  return (
+    <div className="bg-slate-900 border border-amber-500/30 rounded-xl overflow-hidden mb-6">
+      <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-white">Waiting on your approval</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            These tenants asked to create a sub-account. Nothing is created until you approve or reject.
+          </p>
+        </div>
+        <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-300 font-medium">
+          {requests.length} pending
+        </span>
+      </div>
+      <div className="divide-y divide-slate-800">
+        {requests.map((r) => (
+          <div key={r.id} className="px-5 py-3 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-sm text-white font-medium">{r.proposed_name}</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {r.proposed_industry ? r.proposed_industry + ' · ' : ''}
+                requested {new Date(r.created_at).toLocaleString()}
+                {r.proposed_parent_tenant_id ? ' · sub-tenant request' : ' · new top-level tenant'}
+              </div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                disabled={busyId === r.id}
+                onClick={() => handleApprove(r.id)}
+                className="text-xs px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg transition-all disabled:opacity-50"
+              >
+                Approve
+              </button>
+              <button
+                disabled={busyId === r.id}
+                onClick={() => setRejectTarget(r)}
+                className="text-xs px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {rejectTarget && (
+        <Modal title={'Reject request — ' + rejectTarget.proposed_name} onClose={() => setRejectTarget(null)}>
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400">
+              Tell the requester why this sub-tenant isn't being created. This reason is recorded and visible to them.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. Please provide more detail about the intended use case"
+              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
+            />
+            <button
+              disabled={!rejectReason.trim()}
+              onClick={handleReject}
+              className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-red-600 hover:bg-red-500 transition-all disabled:opacity-50"
+            >
+              Confirm rejection
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Self-serve toggle — plain-language on/off switch for
+// tenants.allow_self_serve_subtenants.
+// ─────────────────────────────────────────────────────────────────
+const SelfServeToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (v: boolean) => void }) => {
+  const [enabled, setEnabled] = useState(!!tenant.allowSelfServeSubtenants);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = async () => {
+    const next = !enabled;
+    setSaving(true);
+    const ok = await setTenantSelfServe(tenant.id, next);
+    setSaving(false);
+    if (ok) {
+      setEnabled(next);
+      onChanged(next);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={saving}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
+        enabled ? 'bg-emerald-600' : 'bg-slate-700'
+      }`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Feature toggle panel — every feature_registry entry, with a live
+// on/off switch reflecting tenant_feature_overrides, defaulting to the
+// registry default when no override exists. Plain language throughout.
+// ─────────────────────────────────────────────────────────────────
+const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
+  const [registry, setRegistry] = useState<FeatureRegistryEntry[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    Promise.all([fetchFeatureRegistry(), fetchTenantFeatureOverrides(tenant.id)]).then(([reg, over]) => {
+      setRegistry(reg);
+      const map: Record<string, boolean> = {};
+      over.forEach((o) => { map[o.feature_key] = o.enabled; });
+      setOverrides(map);
+      setLoading(false);
+    });
+  }, [tenant.id]);
+
+  const handleToggle = async (key: string, currentlyOn: boolean) => {
+    setSavingKey(key);
+    const next = !currentlyOn;
+    const res = await setTenantFeatureOverride(tenant.id, key, next);
+    setSavingKey(null);
+    if (res.ok) setOverrides((prev) => ({ ...prev, [key]: next }));
+  };
+
+  if (loading) return <div className="text-xs text-slate-500 py-6 text-center">Loading features…</div>;
+
+  const categories = Array.from(new Set(registry.map((r) => r.category || 'other')));
+
+  return (
+    <div className="space-y-4 max-h-[65vh] overflow-y-auto">
+      {categories.map((cat) => (
+        <div key={cat}>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">{cat.replace(/_/g, ' ')}</p>
+          <div className="space-y-2">
+            {registry.filter((r) => (r.category || 'other') === cat).map((r) => {
+              const hasOverride = Object.prototype.hasOwnProperty.call(overrides, r.key);
+              const isOn = hasOverride ? overrides[r.key] : r.default_enabled;
+              return (
+                <div key={r.key} className="bg-slate-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm text-white font-medium">{r.label}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {r.description} · {r.default_enabled ? 'ON by default' : 'OFF by default'},
+                      {' '}currently {isOn ? 'ON' : 'OFF'} for this tenant{hasOverride ? ' (custom override)' : ''}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleToggle(r.key, isOn)}
+                    disabled={savingKey === r.key}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
+                      isOn ? 'bg-emerald-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isOn ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 };
