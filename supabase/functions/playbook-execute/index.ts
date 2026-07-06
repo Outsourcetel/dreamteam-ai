@@ -611,6 +611,111 @@ async function executeDefinitionSteps(
       'Playbook DE');
   };
 
+  // Resolve the DE subject whose data-access grants govern this run's
+  // connector steps (migration 029) — hoisted here (was previously
+  // computed inline, only reachable by the top-level connector_action
+  // case) so BOTH the top-level step AND a decision-branch step can
+  // reach it via execRegisteredAction below.
+  const resolveRunDeId = async (): Promise<string | null> => {
+    let runDeId = typeof ctx.de_subject_id === 'string' ? ctx.de_subject_id as string : null;
+    if (!runDeId) {
+      if (run.definition_id) {
+        const { data: defRow } = await admin.from('playbook_definitions')
+          .select('de_id').eq('id', run.definition_id).maybeSingle();
+        runDeId = (defRow?.de_id as string | null) ?? null;
+      }
+      if (!runDeId) {
+        const { data: firstDe } = await admin.from('digital_employees')
+          .select('id').eq('tenant_id', tenantId)
+          .order('created_at', { ascending: true }).limit(1).maybeSingle();
+        runDeId = (firstDe?.id as string | undefined) ?? null;
+      }
+      if (runDeId) ctx.de_subject_id = runDeId;
+    }
+    return runDeId;
+  };
+
+  // Shared execution for the action_key form of connector_action
+  // (migration 035, THE GENERALIZED ACTION LAYER) — extracted so a
+  // decision branch can ACTUALLY act (not just present an inline
+  // checklist), rather than duplicating this ~40-line call. FIX (found
+  // live during the Finance DE build's own high-value-account
+  // guardrail proof, a genuine pre-existing gap, not new business
+  // logic): BRANCH_ALLOWED has always listed 'connector_action' as
+  // validation-legal inside a decision branch, but runBranchStep's
+  // switch never actually implemented it (fell to the default "skipped:
+  // not executed in branch" case) — so ANY playbook that ever tried to
+  // act conditionally on a decision (any department, not just Finance)
+  // silently no-op'd that step while reporting a misleadingly generic
+  // "skipped" detail. This is the SAME class of half-applied-mechanism
+  // gap the standing rule says to fix at the primitive, not work around.
+  async function execRegisteredAction(
+    stepLike: { status: string; at: string | null; detail: string },
+    p: Record<string, unknown>,
+  ): Promise<void> {
+    const actionCategory = String(p.action_category ?? '');
+    const actionKey = String(p.action_key ?? '');
+    const runDeId = await resolveRunDeId();
+    const { data: actConn } = await admin
+      .from('connectors').select('id, provider, display_name, category, status')
+      .eq('tenant_id', tenantId)
+      .eq(actionCategory ? 'category' : 'id', actionCategory || '00000000-0000-0000-0000-000000000000')
+      .neq('status', 'disconnected')
+      .limit(1).maybeSingle();
+    if (!actConn) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = `skipped: no connected ${actionCategory || 'target'} system for action "${actionKey}"`;
+      return;
+    }
+    const actionParams: Record<string, unknown> = {};
+    const templates = (p.param_templates ?? {}) as Record<string, string>;
+    for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id).trim();
+    try {
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        },
+        body: JSON.stringify({
+          action: 'execute_action', connector_id: actConn.id, tenant_id: tenantId,
+          action_key: actionKey, params: actionParams,
+          ...(runDeId ? { subject_kind: 'de', subject_id: runDeId } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.error === 'access_denied') {
+        stepLike.status = 'failed'; stepLike.at = now();
+        stepLike.detail = `Access denied by data access rules — the ${runDeId ? 'assigned DE' : 'DE'} needs write-back permission on ${actConn.display_name || actConn.provider} and ${data.detail ?? 'has no grant'}.`;
+        return;
+      }
+      if (data.ok && data.gated) {
+        stepLike.status = 'done'; stepLike.at = now();
+        stepLike.detail = `Action "${actionKey}" on ${actConn.display_name || actConn.provider} — ${data.reasoning ?? 'awaiting human approval'} (task created)`;
+        await audit(admin, tenantId,
+          `Playbook [${acct()}] — action "${actionKey}" on ${actConn.display_name || actConn.provider} routed to a human: ${data.reasoning ?? ''}`,
+          'connector_action',
+          { run_id: run.id, definition_id: run.definition_id, connector_id: actConn.id, action_key: actionKey, decision: data.decision, task_id: data.task_id ?? null },
+          'Playbook DE');
+      } else if (data.ok) {
+        stepLike.status = 'done'; stepLike.at = now();
+        stepLike.detail = data.receipt ?? `Action "${actionKey}" executed on ${actConn.display_name || actConn.provider}`;
+        await audit(admin, tenantId,
+          `Playbook [${acct()}] — ${data.receipt ?? `action "${actionKey}" executed`}`,
+          'connector_action',
+          { run_id: run.id, definition_id: run.definition_id, connector_id: actConn.id, action_key: actionKey, receipt: data.receipt ?? null },
+          'Playbook DE');
+      } else {
+        stepLike.status = 'skipped'; stepLike.at = now();
+        stepLike.detail = `skipped: action "${actionKey}" failed honestly (${data.error ?? data.detail ?? `HTTP ${res.status}`})`;
+      }
+    } catch (e) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = `skipped: connector-hub action call failed (${String(e).slice(0, 120)})`;
+    }
+  }
+
   // Executes one branch step (decision then/else) IN PLACE — same
   // primitive semantics, simplified (no gates allowed inside a branch,
   // enforced at validation time).
@@ -618,7 +723,9 @@ async function executeDefinitionSteps(
     const p = (bs.params ?? {}) as Record<string, unknown>;
     if (run.preview && (bs.key === 'connector_action')) {
       bs.status = 'done'; bs.at = now();
-      bs.detail = `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (not actually called)`;
+      bs.detail = typeof p.action_key === 'string' && p.action_key
+        ? `PREVIEW — would call ${String(p.action_category ?? 'connector')} action "${p.action_key}" (simulated, no external call)`
+        : `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (not actually called)`;
       return;
     }
     switch (bs.key) {
@@ -655,6 +762,23 @@ async function executeDefinitionSteps(
           + (ctx.invoice_id ? '' : '');
         break;
       }
+      case 'connector_action': {
+        // FIX (see execRegisteredAction's comment above): only the
+        // action_key form (migration 035's generalized action layer) is
+        // wired here — the category-op read-through and legacy zendesk
+        // write-back forms remain top-level-only, honestly, since
+        // extending those too is a larger change than this build's
+        // scope; a branch step using either of those forms still
+        // reports the same honest "not executed in branch" skip it
+        // always has.
+        if (typeof p.action_key === 'string' && p.action_key) {
+          await execRegisteredAction(bs, p);
+        } else {
+          bs.status = 'skipped'; bs.at = now();
+          bs.detail = 'skipped: only the action_key form of connector_action runs inside a decision branch today';
+        }
+        break;
+      }
       default: {
         bs.status = 'skipped'; bs.at = now();
         bs.detail = `skipped: "${bs.key}" not executed in branch preview path`;
@@ -688,6 +812,22 @@ async function executeDefinitionSteps(
           step.detail = account.renewal_date
             ? `${account.name} · ARR ${fmtMoney(account.arr_cents)} · renews ${account.renewal_date}`
             : `${account.name} · ARR ${fmtMoney(account.arr_cents)} · no renewal date set`;
+          // FIX (found live during the Finance DE build's own high-
+          // value-account guardrail proof — a genuine, pre-existing gap
+          // in the `decision` primitive, not new business logic): a
+          // subsequent `decision` step's `on: "step:N.field"` reference
+          // resolves via resolveStepRef, which only reads step.output
+          // (populated today ONLY by sub_playbook) or step.status/
+          // detail — never the values check_account itself just wrote
+          // into ctx. This silently made ANY decision step branching on
+          // account.arr_cents always evaluate the referenced field as
+          // undefined (Number(undefined) > N is always false), for
+          // every playbook that has ever tried this, not just this
+          // build's. Populating step.output here is a fully generic
+          // fix — any playbook wanting to branch on an account field
+          // check_account already exposes needs this, regardless of
+          // department — not a Finance-specific workaround.
+          step.output = { account_name: account.name, arr_cents: account.arr_cents, renewal_date: account.renewal_date };
           break;
         }
 
