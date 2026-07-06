@@ -4,6 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';
 import { countPendingChatEscalations } from '../lib/chatEscalations';
+import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnowledgeGapCount } from '../lib/customerApi';
+import { listOpportunities } from '../lib/pipelineApi';
+import { listProjects } from '../lib/onboardingApi';
 
 interface SidebarProps {
   page: Page;
@@ -39,9 +42,21 @@ interface NavSection {
   groups: NavGroup[];
 }
 
-// Live badge counts: read the same localStorage state the pages persist,
-// falling back to the static companies.ts values when nothing is stored.
-export function computeLiveCounts(companyId: CompanyId): { humanTasks: number; kbGaps: number } {
+interface NavCounts {
+  humanTasks: number;
+  kbGaps: number;
+  salesPipeline: number;
+  onboardingActive: number;
+  supportTickets: number;
+  atRiskAccounts: number;
+  renewalsDue: number;
+}
+
+// DEMO MODE ONLY. Live badge counts: read the same localStorage state the
+// demo pages persist, falling back to the static companies.ts seed values
+// when nothing is stored. Live tenants never call this — see
+// fetchLiveNavCounts below, which reads real per-tenant data instead.
+export function computeLiveCounts(companyId: CompanyId): NavCounts {
   const s = COMPANY_SUMMARY[companyId];
   let humanTasks = s.humanTasks;
   let kbGaps = s.kbGaps;
@@ -63,10 +78,43 @@ export function computeLiveCounts(companyId: CompanyId): { humanTasks: number; k
       kbGaps = Math.max(0, s.kbGaps - closed);
     }
   } catch { /* fall back to static */ }
-  return { humanTasks, kbGaps };
+  return {
+    humanTasks, kbGaps,
+    salesPipeline: s.salesPipeline ?? 0,
+    onboardingActive: s.onboardingActive ?? 0,
+    supportTickets: s.supportTickets ?? 0,
+    atRiskAccounts: s.atRiskAccounts ?? 0,
+    renewalsDue: s.renewalsDue ?? 0,
+  };
 }
 
-function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: number }): NavSection[] {
+// LIVE MODE ONLY. Real per-tenant counts, mirroring the exact same
+// semantics LiveDashboard (DashboardPage.tsx) already uses for its own KPI
+// tiles — the sidebar and the dashboard must never disagree with each
+// other. A brand-new empty tenant correctly gets all zeros here, instead
+// of the TCP demo company's static seed numbers.
+export async function fetchLiveNavCounts(): Promise<NavCounts> {
+  try {
+    const [accounts, tickets, invoices, tasks, opportunities, projects, kbGaps] = await Promise.all([
+      listAccounts(), listTickets(), listInvoices(), listHumanTasks(),
+      listOpportunities(), listProjects(), getPendingKnowledgeGapCount(),
+    ]);
+    return {
+      salesPipeline: opportunities.filter(o => o.stage !== 'won' && o.stage !== 'lost').length,
+      onboardingActive: projects.filter(p => p.status === 'active').length,
+      supportTickets: tickets.filter(t => t.status === 'open' || t.status === 'escalated').length,
+      atRiskAccounts: accounts.filter(a => a.status === 'at_risk' || a.health_score < 45).length,
+      renewalsDue: invoices.filter(i => i.status !== 'paid').length,
+      humanTasks: tasks.filter(t => t.status === 'pending').length,
+      kbGaps,
+    };
+  } catch (err) {
+    console.error('fetchLiveNavCounts:', err);
+    return { humanTasks: 0, kbGaps: 0, salesPipeline: 0, onboardingActive: 0, supportTickets: 0, atRiskAccounts: 0, renewalsDue: 0 };
+  }
+}
+
+function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
   const isTCP = companyId === 'tcp';
   const s = COMPANY_SUMMARY[companyId];
 
@@ -93,11 +141,11 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
           defaultOpen: true,
           children: [
             { id: 'entity_customer_bd', label: 'Business Development', indicator: { dot: true, color: '#6366f1' } },
-            { id: 'entity_customer_sales', label: 'Sales', indicator: s.salesPipeline !== undefined ? { count: s.salesPipeline, color: '#6366f1' } : undefined },
-            { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: s.onboardingActive !== undefined ? { count: s.onboardingActive, color: '#f59e0b' } : undefined },
-            { id: 'entity_customer_support', label: 'Support', indicator: s.supportTickets !== undefined ? { count: s.supportTickets, color: '#22c55e' } : undefined },
-            { id: 'entity_customer_success', label: 'Customer Success', indicator: s.atRiskAccounts !== undefined ? { count: s.atRiskAccounts, color: '#ef4444' } : undefined },
-            { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: s.renewalsDue !== undefined ? { count: s.renewalsDue, color: '#f59e0b' } : undefined },
+            { id: 'entity_customer_sales', label: 'Sales', indicator: { count: live.salesPipeline, color: '#6366f1' } },
+            { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: { count: live.onboardingActive, color: '#f59e0b' } },
+            { id: 'entity_customer_support', label: 'Support', indicator: { count: live.supportTickets, color: '#22c55e' } },
+            { id: 'entity_customer_success', label: 'Customer Success', indicator: { count: live.atRiskAccounts, color: '#ef4444' } },
+            { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: { count: live.renewalsDue, color: '#f59e0b' } },
           ],
         },
         {
@@ -233,20 +281,27 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, viewingDemo, setViewingDemo, liveTenantName } = useAuth();
+  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, viewingDemo, setViewingDemo, liveTenantName, dataMode } = useAuth();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['customer']));
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-  const [liveCounts, setLiveCounts] = useState(() => computeLiveCounts(activeCompany.id));
+  const [liveCounts, setLiveCounts] = useState<NavCounts>(() => computeLiveCounts(activeCompany.id));
 
   const refreshCounts = useCallback(() => {
+    if (dataMode === 'live') {
+      let cancelled = false;
+      fetchLiveNavCounts().then((counts) => { if (!cancelled) setLiveCounts(counts); });
+      return () => { cancelled = true; };
+    }
     setLiveCounts(computeLiveCounts(activeCompanyId));
-  }, [activeCompanyId]);
+    return undefined;
+  }, [activeCompanyId, dataMode]);
 
   useEffect(() => {
-    refreshCounts();
+    const cleanup = refreshCounts();
     window.addEventListener('storage', refreshCounts);
     window.addEventListener('dt-state-changed', refreshCounts);
     return () => {
+      cleanup?.();
       window.removeEventListener('storage', refreshCounts);
       window.removeEventListener('dt-state-changed', refreshCounts);
     };
