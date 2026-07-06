@@ -164,28 +164,27 @@ const addMessage = async (
 };
 
 // =====================================================
-// PLATFORM CONFIG (API keys stored in DB, service-role only via edge fn)
-// These write to platform_config via a thin upsert. The values are stored
-// server-side and never returned to the client after saving.
+// PLATFORM CONFIG (API keys stored in DB, platform-admin only)
+// platform_config holds platform-wide secrets (LLM provider keys, email
+// provider keys, per-tenant alert emails). RLS is deny-all for
+// anon/authenticated (service_role only) as of the security audit — the
+// table previously had RLS disabled entirely with default anon/authenticated
+// grants, meaning anyone with the public anon key could read every secret
+// in it with zero authentication (confirmed live during the audit). These
+// helpers now go through SECURITY DEFINER RPCs that internally re-check
+// is_platform_admin() before touching the table, rather than hitting
+// platform_config directly from the client.
 // =====================================================
 export const savePlatformConfig = async (entries: Record<string, string>): Promise<boolean> => {
-  const rows = Object.entries(entries).map(([key, value]) => ({
-    key, value, updated_at: new Date().toISOString(),
-  }));
-  const { error } = await supabase
-    .from('platform_config')
-    .upsert(rows, { onConflict: 'key' });
+  const { error } = await supabase.rpc('platform_config_set', { p_entries: entries });
   if (error) { console.error('savePlatformConfig:', error.message); return false; }
   return true;
 };
 
 export const hasPlatformConfigKey = async (key: string): Promise<boolean> => {
-  const { data, error } = await supabase
-    .from('platform_config')
-    .select('key')
-    .eq('key', key)
-    .single();
-  return !error && !!data;
+  const { data, error } = await supabase.rpc('platform_config_has_key', { p_key: key });
+  if (error) return false;
+  return !!data;
 };
 
 // =====================================================
@@ -298,44 +297,17 @@ const scoreArticle = (queryTokens: string[], a: DBKnowledgeArticle): number => {
   return Math.min(1, coverage * 0.6 + density * 0.4);
 };
 
-// ── LLM swap point ─────────────────────────────────────────────────────────
-// Attempt the workforce-chat Edge Function (powered by Claude via Anthropic API).
-// Falls back to the rule-based scorer below if the function is not yet deployed.
-// To activate: deploy supabase/functions/workforce-chat/index.ts and add the
-// ANTHROPIC_API_KEY secret in Supabase dashboard → Project Settings → Secrets.
-const tryEdgeFunction = async (
-  tenantId: string,
-  query: string,
-  conversationId?: string | null
-): Promise<AgentDraft | null> => {
-  try {
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/workforce-chat`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ message: query, tenantId, conversationId }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.source === 'fallback' || !data.response) return null;
-    return {
-      agentName: 'Support Digital Employee',
-      actionType: data.requires_approval ? 'draft' : 'send',
-      description: `Claude response (${Math.round(data.confidence * 100)}% confidence, ${data.kb_articles_used} KB articles)`,
-      answer: data.response,
-      confidence: data.confidence,
-      sources: [],
-      requiresApproval: data.requires_approval,
-    };
-  } catch {
-    return null;
-  }
-};
-
 // Draft a proposed agent action by retrieving from the tenant KB.
+//
+// NOTE: this previously tried a `workforce-chat` Edge Function first (an
+// unauthenticated, service-role-backed function that trusted a
+// client-supplied tenantId with zero verification — a live cross-tenant
+// data-leak vector if ever deployed). It was never actually deployed, but
+// kept the vulnerable source file and this call site around as a landmine.
+// Removed as part of the pre-launch security audit; the real DE-answer path
+// (supabase/functions/de-answer, which is JWT-authenticated and correctly
+// tenant-scoped) supersedes this. This function now goes straight to the
+// tenant-isolated search_knowledge RPC below.
 const draftAgentAction = async (
   tenantId: string,
   query: string,
@@ -343,10 +315,6 @@ const draftAgentAction = async (
   conversationId?: string | null,
   kbCategories?: string[]   // optional KB category filter for DE scoping
 ): Promise<AgentDraft> => {
-  // Try the LLM Edge Function first — if deployed and API key is set, use it.
-  const llmDraft = await tryEdgeFunction(tenantId, query, conversationId);
-  if (llmDraft) return llmDraft;
-
   const APPROVAL_THRESHOLD = 0.55; // below => route to human approval
   // Retrieval: zero-cost Postgres full-text search (tenant-isolated RPC).
   // The search_knowledge RPC enforces tenant_id + published status + audience
