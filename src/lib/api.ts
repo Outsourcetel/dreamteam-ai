@@ -304,47 +304,68 @@ const scoreArticle = (queryTokens: string[], a: DBKnowledgeArticle): number => {
 // client-supplied tenantId with zero verification — a live cross-tenant
 // data-leak vector if ever deployed). It was never actually deployed, but
 // kept the vulnerable source file and this call site around as a landmine.
-// Removed as part of the pre-launch security audit; the real DE-answer path
-// (supabase/functions/de-answer, which is JWT-authenticated and correctly
-// tenant-scoped) supersedes this. This function now goes straight to the
-// tenant-isolated search_knowledge RPC below.
+// Removed as part of the pre-launch security audit.
+//
+// CONSOLIDATED (found live during a founder product-demo walkthrough): this
+// used to query the LEGACY knowledge_articles table via the search_knowledge
+// RPC — pure Postgres full-text search, no semantic understanding, and a
+// completely separate system from the one the real production DE pipeline
+// (de-answer / widget-ask / specialist-consult) actually uses. On the live
+// demo, knowledge_articles held exactly 3 rows total, all for a different
+// tenant — the tenant being demoed had ZERO rows there, so every question
+// correctly (but uselessly) escalated. This now calls hybrid_match_knowledge
+// (migration 046) — the SAME shared retrieval RPC every other consumer uses,
+// over the real knowledge_docs/knowledge_doc_chunks tables — combining
+// lexical (ts_rank) and semantic (gte-small embeddings) signal via
+// Reciprocal Rank Fusion. The browser cannot compute a gte-small embedding
+// itself (that model only runs inside the Supabase.ai edge runtime), so
+// p_query_embedding is omitted here and the RPC gracefully degrades to
+// lexical-only ranking for this call site — still a real improvement over
+// the old path (same production doc set, not a dead duplicate table), and
+// still paraphrase-robust wherever a semantic-capable caller (de-answer,
+// widget-ask, specialist-consult) already answered the same question and
+// left embedded chunks behind. Only the RETRIEVAL changed — the
+// confidence-gating/escalation logic below (auditAnswer, runPortalTurn) is
+// untouched.
 const draftAgentAction = async (
   tenantId: string,
   query: string,
   audience: 'customer' | 'internal' = 'customer',
   conversationId?: string | null,
-  kbCategories?: string[]   // optional KB category filter for DE scoping
+  kbCategories?: string[]   // optional KB category filter for DE scoping (currently unused by hybrid_match_knowledge; retained for signature compat)
 ): Promise<AgentDraft> => {
   const APPROVAL_THRESHOLD = 0.55; // below => route to human approval
-  // Retrieval: zero-cost Postgres full-text search (tenant-isolated RPC).
-  // The search_knowledge RPC enforces tenant_id + published status + audience
-  // server-side and ranks via ts_rank over a weighted tsvector (title>summary/tags>body).
-  const { data: rpcRows, error: searchErr } = await supabase.rpc('search_knowledge', {
+  const { data: rpcRows, error: searchErr } = await supabase.rpc('hybrid_match_knowledge', {
     p_tenant_id: tenantId,
-    p_query: query,
-    p_audience: audience,
-    p_limit: 3,
+    p_query_text: query,
+    p_account_id: null,
+    p_query_embedding: null, // browser can't run gte-small; lexical-only for this caller
+    p_match_count: 3,
+    p_subject_kind: null,
+    p_subject_id: null,
   })
-  if (searchErr) console.error('search_knowledge:', searchErr.message)
-  // Apply optional KB category filter (DE scoping — empty = unrestricted)
-  const filteredRows = kbCategories && kbCategories.length > 0
-    ? (rpcRows || []).filter((r: any) => kbCategories.includes(r.category || ''))
-    : (rpcRows || []);
+  if (searchErr) console.error('hybrid_match_knowledge:', searchErr.message)
+  const rows: any[] = rpcRows || []
   const qTokens = tokenize(query)
-  // Map RPC rows to the article shape, then derive a calibrated 0..1 confidence
-  // from token overlap (the ts_rank ordering decides WHICH articles surface).
-  const ranked = filteredRows.map((r: any) => ({
-    a: { id: r.id, title: r.title, summary: r.summary, body: r.body,
-         audience: r.audience, tags: r.tags } as Partial<DBKnowledgeArticle> as DBKnowledgeArticle,
-    score: scoreArticle(qTokens, { title: r.title, body: r.body, tags: r.tags } as DBKnowledgeArticle),
-    rank: Number(r.rank) || 0,
+  // Map RPC rows (doc_id/doc_title/content) to the article shape the rest of
+  // this function expects, then derive a calibrated 0..1 confidence from
+  // token overlap. RRF `score` is a small fused number (each component is
+  // 1/(60+rank), max ~0.033 combined) — not itself a 0..1 confidence, so it
+  // is only used to preserve fusion order, same role `rank` (ts_rank) played
+  // before; the token-overlap score is still the primary confidence signal.
+  const ranked = rows.map((r: any) => ({
+    a: { id: r.doc_id, title: r.doc_title, summary: undefined, body: r.content || '',
+         audience: audience, tags: [] } as Partial<DBKnowledgeArticle> as DBKnowledgeArticle,
+    score: scoreArticle(qTokens, { title: r.doc_title, body: r.content, tags: [] } as DBKnowledgeArticle),
+    rrfScore: Number(r.score) || 0,
   }))
-  // Keep RPC (ts_rank) order; if token scoring found nothing, fall back to ts_rank.
+  // Keep RPC (RRF) order; if token scoring found nothing, fall back to a
+  // scaled RRF score (comparable role to the old ts_rank fallback).
   const anyTokenMatch = ranked.some((r) => r.score > 0)
 
   const top = ranked[0]
   const confidence = top ? (anyTokenMatch ? Math.round(top.score * 100) / 100
-                                          : Math.min(1, Math.round(top.rank * 100) / 100)) : 0
+                                          : Math.min(1, Math.round(top.rrfScore * 30 * 100) / 100)) : 0
   const sources = ranked.map((r) => ({ id: r.a.id, title: r.a.title }));
 
   let answer: string;

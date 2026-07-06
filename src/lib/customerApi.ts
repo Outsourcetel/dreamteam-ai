@@ -386,6 +386,24 @@ export async function listHumanTasks(): Promise<DBHumanTask[]> {
   return data ?? [];
 }
 
+// ── Knowledge gaps (migration 032's feedback loop + 046's count RPC) ──
+// A "knowledge gap" here is a real, tenant-scoped signal: a
+// knowledge_revision_requests row still sitting in 'pending_approval' —
+// i.e. a human flagged an answer as needing improvement/inaccurate, a
+// revision was drafted, and nobody has approved or rejected it yet. Added
+// to the live dashboard (DashboardPage.tsx LiveDashboard) because that KPI
+// card didn't exist there at all before — only the demo dashboard had a
+// scripted "5 detected" number. Returns 0 (not an error) when the count
+// RPC itself fails, so a transient issue here never blocks the rest of
+// the dashboard from rendering — same fail-open posture as other
+// best-effort dashboard reads.
+export async function getPendingKnowledgeGapCount(): Promise<number> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('count_pending_knowledge_gaps', { p_tenant_id: tid });
+  if (error) { console.error('getPendingKnowledgeGapCount:', error.message); return 0; }
+  return Number(data) || 0;
+}
+
 // ── Staleness watchdog (migration 042) ─────────────────────────────
 // "Nothing happened, escalate" — one generic primitive covering both
 // stalled onboarding projects and stuck pending-review/approval tasks.

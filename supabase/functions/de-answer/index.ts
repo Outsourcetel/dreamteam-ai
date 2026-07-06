@@ -19,6 +19,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { embedText } from '../_shared/knowledgeEmbed.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,23 +37,8 @@ const MAX_CONTEXT_CHARS = 6000;
 const MODEL = 'claude-sonnet-5';
 const CACHE_MAX_DISTANCE = 0.15; // cosine distance for semantic cache hits
 
-// ── Free edge embeddings (gte-small, 384 dims); null when unavailable ──
-async function embedText(text: string): Promise<number[] | null> {
-  try {
-    // deno-lint-ignore no-explicit-any
-    const SupabaseAI = (globalThis as any).Supabase?.ai;
-    if (!SupabaseAI) return null;
-    const session = new SupabaseAI.Session('gte-small');
-    const out = await session.run(text, { mean_pool: true, normalize: true });
-    const vec = Array.from(out as Iterable<number>);
-    return vec.length === 384 ? vec : null;
-  } catch (e) {
-    console.error('embedText (gte-small) failed:', e);
-    return null;
-  }
-}
-
-// ── Simple keyword-overlap retrieval (honest v1, no embeddings) ──
+// ── Simple keyword-overlap retrieval (last-resort fallback only, when
+// hybrid_match_knowledge returns nothing at all — e.g. truly empty KB) ──
 const STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
   'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
@@ -283,37 +269,43 @@ serve(async (req) => {
       });
     }
 
-    // Vector path first (gte-small + pgvector, account-first scoping);
-    // fall back to keyword overlap when no embedded chunks exist.
+    // Hybrid retrieval (migration 046): lexical (ts_rank) + semantic
+    // (gte-small/pgvector) fused via Reciprocal Rank Fusion — ONE shared
+    // RPC used by every knowledge consumer (de-answer, widget-ask,
+    // specialist-consult). qEmbedding may be null (Supabase.ai
+    // unavailable); the RPC degrades gracefully to lexical-only ranking
+    // in that case rather than returning nothing.
     let used = 0;
     const contextParts: string[] = [];
     // Answers derived from SCOPED docs must never enter the tenant-wide
     // answer cache (a later caller could be a different subject).
     let scopedContentUsed = false;
-    if (qEmbedding) {
-      const { data: chunks, error: matchErr } = await admin.rpc('match_doc_chunks', {
-        p_tenant_id: tenantId,
-        p_account_id: null,
-        p_query_embedding: qEmbedding,
-        p_match_count: 5,
-        p_subject_kind: subjectDeId ? 'de' : null,
-        p_subject_id: subjectDeId,
-      });
-      if (matchErr) console.error('match_doc_chunks:', matchErr.message);
-      if (Array.isArray(chunks) && chunks.length > 0) {
-        const titleById = new Map((docs as KDoc[]).map((d) => [d.id, d.title]));
-        for (const c of chunks) {
-          const budget = MAX_CONTEXT_CHARS - used;
-          if (budget <= 0) break;
-          const body = String(c.content ?? '').slice(0, budget);
-          const title = titleById.get(c.doc_id) ?? 'Knowledge document';
-          contextParts.push(`[Document: ${title}]\n${body}`);
-          used += body.length + title.length;
-          if (c.visibility === 'scoped') scopedContentUsed = true;
-        }
+    const { data: chunks, error: matchErr } = await admin.rpc('hybrid_match_knowledge', {
+      p_tenant_id: tenantId,
+      p_query_text: question,
+      p_account_id: null,
+      p_query_embedding: qEmbedding,
+      p_match_count: 5,
+      p_subject_kind: subjectDeId ? 'de' : null,
+      p_subject_id: subjectDeId,
+    });
+    if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
+    if (Array.isArray(chunks) && chunks.length > 0) {
+      for (const c of chunks) {
+        const budget = MAX_CONTEXT_CHARS - used;
+        if (budget <= 0) break;
+        const body = String(c.content ?? '').slice(0, budget);
+        const title = c.doc_title ?? 'Knowledge document';
+        contextParts.push(`[Document: ${title}]\n${body}`);
+        used += body.length + title.length;
+        if (c.visibility === 'scoped') scopedContentUsed = true;
       }
     }
-    if (contextParts.length === 0) {
+    // Last-resort fallback: hybrid RPC failed outright (e.g. transient
+    // error) rather than legitimately finding nothing — keyword overlap
+    // over the full visible doc set so a real question is never dropped
+    // purely because the RPC call itself errored.
+    if (contextParts.length === 0 && matchErr) {
       const top = rankDocs(question, docs as KDoc[]);
       for (const d of top) {
         const budget = MAX_CONTEXT_CHARS - used;

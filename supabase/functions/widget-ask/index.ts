@@ -22,6 +22,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { embedText } from '../_shared/knowledgeEmbed.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -55,7 +56,8 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ── Keyword-overlap retrieval (mirrors de-answer; de-answer is owned elsewhere) ──
+// ── Keyword-overlap retrieval (last-resort fallback only — see the
+// hybrid_match_knowledge call below, migration 046) ──
 const STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
   'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
@@ -299,15 +301,46 @@ serve(async (req) => {
       return json({ conversation_id: convId, answer, confidence: 0, sources: [], needs_escalation: false, no_docs: true });
     }
 
-    const top = rankDocs(question, docs as KDoc[]);
+    // Hybrid retrieval (migration 046): lexical + semantic fused via RRF —
+    // the SAME shared RPC de-answer and specialist-consult use. Previously
+    // widget-ask ran keyword-only rankDocs() despite its header comment
+    // claiming to mirror de-answer's pipeline; it never actually called
+    // match_doc_chunks or computed an embedding at all. Fixed here as part
+    // of the retrieval consolidation.
+    const qEmbedding = await embedText(question);
     let used = 0;
     const contextParts: string[] = [];
-    for (const d of top) {
-      const budget = MAX_CONTEXT_CHARS - used;
-      if (budget <= 0) break;
-      const bodyText = d.content.slice(0, budget);
-      contextParts.push(`[Document: ${d.title}]\n${bodyText}`);
-      used += bodyText.length + d.title.length;
+    const { data: chunks, error: matchErr } = await admin.rpc('hybrid_match_knowledge', {
+      p_tenant_id: tenantId,
+      p_query_text: question,
+      p_account_id: null,
+      p_query_embedding: qEmbedding,
+      p_match_count: 5,
+      p_subject_kind: subjectDeId ? 'de' : null,
+      p_subject_id: subjectDeId,
+    });
+    if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
+    if (Array.isArray(chunks) && chunks.length > 0) {
+      for (const c of chunks) {
+        const budget = MAX_CONTEXT_CHARS - used;
+        if (budget <= 0) break;
+        const bodyText = String(c.content ?? '').slice(0, budget);
+        const title = c.doc_title ?? 'Knowledge document';
+        contextParts.push(`[Document: ${title}]\n${bodyText}`);
+        used += bodyText.length + title.length;
+      }
+    }
+    // Last-resort fallback: only when the RPC itself errored, not when it
+    // legitimately found nothing.
+    if (contextParts.length === 0 && matchErr) {
+      const top = rankDocs(question, docs as KDoc[]);
+      for (const d of top) {
+        const budget = MAX_CONTEXT_CHARS - used;
+        if (budget <= 0) break;
+        const bodyText = d.content.slice(0, budget);
+        contextParts.push(`[Document: ${d.title}]\n${bodyText}`);
+        used += bodyText.length + d.title.length;
+      }
     }
     const context = contextParts.length > 0
       ? contextParts.join('\n\n---\n\n')

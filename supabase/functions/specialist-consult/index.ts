@@ -52,6 +52,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { embedText } from '../_shared/knowledgeEmbed.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -68,22 +69,7 @@ const MODEL = 'claude-sonnet-5';
 const MAX_CONTEXT_CHARS = 7000;
 const ESCALATION_FLOOR = 60;
 
-// ── Free edge embeddings (gte-small, 384 dims); null when unavailable ──
-async function embedText(text: string): Promise<number[] | null> {
-  try {
-    // deno-lint-ignore no-explicit-any
-    const SupabaseAI = (globalThis as any).Supabase?.ai;
-    if (!SupabaseAI) return null;
-    const session = new SupabaseAI.Session('gte-small');
-    const out = await session.run(text, { mean_pool: true, normalize: true });
-    const vec = Array.from(out as Iterable<number>);
-    return vec.length === 384 ? vec : null;
-  } catch {
-    return null;
-  }
-}
-
-// ── Keyword fallback (mirrors de-answer) ──
+// ── Keyword fallback (last-resort only — see hybrid_match_knowledge, migration 046) ──
 const STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
   'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
@@ -444,25 +430,25 @@ async function runResolveInquiry(
     });
   }
 
-  // ── Step 2: knowledge — internal chunks first ──
+  // ── Step 2: knowledge — hybrid (lexical + semantic via RRF, migration 046) ──
   {
     const started = Date.now();
     const kCitations: Citation[] = [];
     let kCount = 0;
     const qEmb = await embedText(inquiry);
-    if (qEmb) {
-      // KNOWLEDGE SCOPES (030): this step runs AS the resolved subject.
-      const { data: chunks } = await admin.rpc('match_doc_chunks', {
-        p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmb, p_match_count: 5,
-        p_subject_kind: subjectId ? subjectKind : null, p_subject_id: subjectId,
-      });
-      for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
-        const { data: doc } = await admin.from('knowledge_docs').select('title').eq('id', c.doc_id).maybeSingle();
-        kCitations.push({ system: 'DreamTeam knowledge', ref: String(c.doc_id), title: doc?.title ?? 'Knowledge document', url: null, snippet: String(c.content ?? '').slice(0, 200) });
-        kCount++;
-      }
+    // KNOWLEDGE SCOPES (030): this step runs AS the resolved subject.
+    const { data: chunks, error: hybridErr } = await admin.rpc('hybrid_match_knowledge', {
+      p_tenant_id: tenantId, p_query_text: inquiry, p_account_id: null, p_query_embedding: qEmb,
+      p_match_count: 5, p_subject_kind: subjectId ? subjectKind : null, p_subject_id: subjectId,
+    });
+    if (hybridErr) console.error('hybrid_match_knowledge:', hybridErr.message);
+    for (const c of (Array.isArray(chunks) ? chunks : []).slice(0, 5)) {
+      kCitations.push({ system: 'DreamTeam knowledge', ref: String(c.doc_id), title: c.doc_title ?? 'Knowledge document', url: null, snippet: String(c.content ?? '').slice(0, 200) });
+      kCount++;
     }
-    if (kCount === 0) {
+    // Last-resort fallback: only when the RPC itself errored, not when it
+    // legitimately found nothing.
+    if (kCount === 0 && hybridErr) {
       const { data: docs } = await admin.rpc('visible_knowledge_docs', {
         p_tenant_id: tenantId,
         p_subject_kind: subjectId ? subjectKind : null, p_subject_id: subjectId,
@@ -1309,9 +1295,14 @@ serve(async (req) => {
           tags.length === 0 || (d.tags ?? []).some((t) => tags.includes(t)));
         const titles: string[] = [];
         let added = 0;
-        if (qEmbedding && scoped.length > 0) {
-          const { data: chunks } = await admin.rpc('match_doc_chunks', {
-            p_tenant_id: tenantId, p_account_id: null,
+        if (scoped.length > 0) {
+          // Hybrid retrieval (lexical + semantic via RRF, migration 046) —
+          // same shared RPC as de-answer/widget-ask. Tag scope is enforced
+          // AFTER the RPC call (hybrid_match_knowledge only knows about
+          // subject/visibility scoping, not this specialist's per-source
+          // tag filter, so it's applied client-side same as before).
+          const { data: chunks } = await admin.rpc('hybrid_match_knowledge', {
+            p_tenant_id: tenantId, p_query_text: question, p_account_id: null,
             p_query_embedding: qEmbedding, p_match_count: 8,
             p_subject_kind: 'specialist', p_subject_id: prof.id,
           });

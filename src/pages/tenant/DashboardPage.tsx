@@ -9,7 +9,7 @@ import type { Page } from '../../types';
 import { useDataMode } from '../../lib/dataMode';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
-  fmtMoneyK, CustomerApiError,
+  getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
 } from '../../lib/customerApi';
 import type { CustomerAccount, SupportTicket, RenewalInvoice, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
@@ -300,6 +300,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [knowledgeGaps, setKnowledgeGaps] = useState(0);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
 
@@ -307,11 +308,13 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
     let cancelled = false;
     void (async () => {
       try {
-        const [a, t, i, h, ev] = await Promise.all([
+        const [a, t, i, h, ev, kg] = await Promise.all([
           listAccounts(), listTickets(), listInvoices(), listHumanTasks(), listActivity(10),
+          getPendingKnowledgeGapCount(),
         ]);
         if (cancelled) return;
         setAccounts(a); setTickets(t); setInvoices(i); setTasks(h); setActivity(ev);
+        setKnowledgeGaps(kg);
         setMissingTables(false);
       } catch (err) {
         if (!cancelled && err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -335,6 +338,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
     { icon: '✋', value: `${pendingTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: pendingTasks > 0 },
     { icon: '↻', value: String(renewalsDue), label: 'Renewals Open', navPage: 'entity_customer_renewal' as Page, alert: false },
     { icon: '⚑', value: String(atRisk), label: 'At-Risk Accounts', navPage: 'entity_customer_success' as Page, alert: atRisk > 0 },
+    { icon: '📚', value: `${knowledgeGaps} detected`, label: 'Knowledge Gaps', navPage: 'ops_human_tasks' as Page, alert: knowledgeGaps > 0 },
   ];
 
   const activityEventToType = (e: ActivityEvent): ActivityType =>
@@ -370,7 +374,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
         ) : (
           <>
             {/* KPI row */}
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-6 gap-3">
               {kpis.map((kpi) => (
                 <button
                   key={kpi.label}
