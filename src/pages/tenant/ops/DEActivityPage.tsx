@@ -39,11 +39,12 @@ import type { Page } from '../../../types';
 const fmtTime = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 const STEP_ICON: Record<string, string> = {
-  account_context: '🏢', knowledge_search: '📚', history_check: '🕓', mcp_tool: '🔧', compose: '🧾',
+  account_context: '🏢', knowledge_search: '📚', history_check: '🕓', prior_experience: '🧠', mcp_tool: '🔧', compose: '🧾',
 };
 const STEP_LABEL: Record<string, string> = {
   account_context: 'Account configuration', knowledge_search: 'Knowledge',
-  history_check: 'Past cases', mcp_tool: 'MCP tool', compose: 'Evidence bundle',
+  history_check: 'Past cases (external system)', prior_experience: 'Prior experience (this DE\'s own memory)',
+  mcp_tool: 'MCP tool', compose: 'Evidence bundle',
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],

@@ -333,10 +333,10 @@ export async function mcpHandshake(sourceId: string): Promise<McpHandshakeResult
 export type EvidenceOutcome = 'ok' | 'skipped_not_connected' | 'failed';
 export interface EvidenceCitation { system: string; ref: string; title: string; url: string | null; snippet: string }
 export interface EvidenceStep {
-  kind: 'account_context' | 'knowledge_search' | 'history_check' | 'mcp_tool' | 'compose';
+  kind: 'account_context' | 'knowledge_search' | 'history_check' | 'prior_experience' | 'mcp_tool' | 'compose';
   system: string;
   query: string;
-  outcome: EvidenceOutcome;
+  outcome: EvidenceOutcome | 'denied_no_access';
   summary: string;
   item_count: number;
   latency_ms: number;
@@ -361,6 +361,7 @@ export interface EvidenceRun {
   confidence_inputs: {
     knowledge_hits?: number;
     history_corroborations?: number;
+    prior_experience_hits?: number;
     account_context_found?: boolean;
     systems_consulted?: number;
     systems_skipped_not_connected?: number;
@@ -381,17 +382,41 @@ export interface ResolveInquiryResult {
   answer?: string | null;
   note?: string;
   error?: string;
+  /** migration 044 — set when this turn reused a fact (currently just
+   *  account_ref) established earlier in the SAME conversation_id,
+   *  rather than re-deriving it from this turn's input. */
+  conversation_facts_reused?: { account_ref: string; note: string };
+  resolved_category?: string;
 }
 
 /** Run the evidence pipeline for a customer inquiry:
- *  account context → knowledge → past-case verification → evidence bundle. */
-export async function resolveInquiry(inquiry: string, accountRef?: string): Promise<ResolveInquiryResult> {
+ *  account context → knowledge → past-case verification → prior
+ *  experience → evidence bundle. Pass conversationId to thread this
+ *  run into an existing de_conversations thread (migration 044) — a
+ *  follow-up turn on the SAME conversation_id reuses facts (account_ref,
+ *  category, evidence_run_id) established on a prior turn instead of
+ *  starting blank. Omit it for the existing one-shot behavior. */
+export async function resolveInquiry(inquiry: string, accountRef?: string, conversationId?: string | null): Promise<ResolveInquiryResult> {
   const res = await invokeSpecialist<ResolveInquiryResult>({
     action: 'resolve_inquiry', inquiry, account_ref: accountRef ?? '',
-    profile_key: 'technical',
+    profile_key: 'technical', conversation_id: conversationId ?? undefined,
   });
   notify();
   return res;
+}
+
+/** Mint a fresh de_conversations thread for the "Resolve an inquiry"
+ *  panel (migration 044). resolve_inquiry itself never creates one (it
+ *  predates de_conversations threading) — this gives the panel a
+ *  conversation_id to pass into subsequent resolveInquiry calls so the
+ *  pipeline can recognize "this is a follow-up in the same thread"
+ *  rather than always looking like a fresh, unrelated inquiry. */
+export async function startEvidenceConversation(): Promise<string> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('de_conversations').insert({ tenant_id: tid, channel: 'dock' }).select('id').single();
+  if (error) raise('startEvidenceConversation', error);
+  return (data as { id: string }).id;
 }
 
 export async function listEvidenceRuns(limit = 20): Promise<EvidenceRun[]> {

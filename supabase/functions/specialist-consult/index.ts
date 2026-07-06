@@ -302,10 +302,19 @@ interface RunResolveInquiryResult {
   evidence_run_id: string; status: string;
   steps: unknown[]; confidence_inputs: Record<string, unknown>;
   answer_status: string; answer: string | null; note?: string;
+  conversation_facts_reused?: Record<string, unknown>;
+  /** the account-context category this run resolved (product_system,
+   *  else crm) — surfaced so callers outside the per-category poller
+   *  loop (simulate_inquiry) can still pass a real category into
+   *  record_inquiry_decision for experience-memory recording. */
+  resolved_category?: string;
 }
 async function runResolveInquiry(
   admin: SupabaseClient, tenantId: string, inquiry: string, accountRef: string | null,
-  opts: { profileKey?: string; deId?: string | null; subjectKind?: 'de' | 'specialist'; subjectId?: string | null } = {},
+  opts: {
+    profileKey?: string; deId?: string | null; subjectKind?: 'de' | 'specialist'; subjectId?: string | null;
+    conversationId?: string | null;
+  } = {},
 ): Promise<RunResolveInquiryResult> {
   const { data: prof2 } = await admin.from('specialist_profiles')
     .select('id, name').eq('tenant_id', tenantId)
@@ -317,13 +326,35 @@ async function runResolveInquiry(
   const subjectKind: 'de' | 'specialist' = opts.subjectKind ?? 'specialist';
   const subjectId: string | null = opts.subjectKind ? (opts.subjectId ?? null) : (prof2?.id ?? null);
 
+  // ── CONVERSATION-SCOPED FACTS (migration 044, closes gap-analysis
+  // item 5) — if this run is part of an existing conversation thread,
+  // check for facts ALREADY ESTABLISHED this conversation (account_ref
+  // resolved, category determined on a prior turn) and EXTEND rather
+  // than re-derive from scratch. Structured lookup only — no
+  // summarization, just literal jsonb values already recorded by a
+  // prior turn of THIS SAME conversation_id.
+  let establishedFacts: Record<string, unknown> = {};
+  if (opts.conversationId) {
+    const { data: facts } = await admin.rpc('get_conversation_facts', {
+      p_tenant_id: tenantId, p_conversation_id: opts.conversationId,
+    });
+    establishedFacts = (facts ?? {}) as Record<string, unknown>;
+  }
+  // A follow-up turn that doesn't name an account reuses the one
+  // already resolved this thread (extend, don't restart) — but a turn
+  // that DOES name a (different) account always wins, honestly letting
+  // the customer redirect the conversation mid-thread.
+  const effectiveAccountRef = accountRef || (typeof establishedFacts.account_ref === 'string' ? establishedFacts.account_ref : null);
+  const reusedAccountFromThread = !accountRef && !!effectiveAccountRef;
+
   const { data: runRow, error: runErr } = await admin.from('evidence_runs').insert({
     tenant_id: tenantId, specialist_id: prof2?.id ?? null,
     de_id: opts.deId ?? (subjectKind === 'de' ? subjectId : null),
-    inquiry, account_ref: accountRef, status: 'running',
+    inquiry, account_ref: effectiveAccountRef, status: 'running',
   }).select('id').single();
   if (runErr || !runRow) throw new Error(runErr?.message ?? 'evidence_run insert failed');
   const runId2 = runRow.id as string;
+  accountRef = effectiveAccountRef;
 
   interface Citation { system: string; ref: string; title: string; url: string | null; snippet: string }
   interface EvidenceStep {
@@ -493,6 +524,46 @@ async function runResolveInquiry(
     }
   }
 
+  // ── Step 3b: prior experience — THIS SUBJECT's own past decisions on
+  // THIS account/record (migration 044, closes gap-analysis item 24).
+  // Distinct from Step 3 above: history_check searches EXTERNAL system
+  // records (past tickets/conversations in the connected SoR); this
+  // searches the DE/specialist's OWN internal memory of decisions IT
+  // made, citing the real evidence_run/action_execution each came from.
+  // Access-grant-checked via resolve_experience (029's SAME ladder,
+  // entered category-first instead of connector-first) — if the grant
+  // has been revoked, this step reports denied_no_access honestly,
+  // exactly like every other step in this pipeline, never silently
+  // substituting or leaking a citation the subject can no longer see.
+  let priorExperienceCount = 0;
+  const experienceCategory = acctCategory; // same category step 1 resolved (product_system, else crm)
+  if (!accountRef) {
+    await recordStep({ kind: 'prior_experience', system: 'DreamTeam memory', query: '', outcome: 'skipped_not_connected', summary: 'No account named in the inquiry — prior-experience lookup skipped.', item_count: 0, latency_ms: 0, citations: [] });
+  } else {
+    const started = Date.now();
+    const { data: expRes } = await admin.rpc('resolve_experience', {
+      p_tenant_id: tenantId, p_subject_kind: subjectKind, p_subject_id: subjectId,
+      p_category: experienceCategory, p_external_ref: accountRef, p_limit: 3,
+    });
+    const env = (expRes ?? { allowed: true, rows: [] }) as { allowed: boolean; reason?: string; rows: Array<{ id: string; fact_summary: { what_happened: string; decision_made: string; outcome: string }; source_evidence_run_id: string | null; source_action_execution_id: string | null; created_at: string }> };
+    const expCitations: Citation[] = (env.rows ?? []).map((r) => ({
+      system: 'DreamTeam memory', ref: r.id, title: r.fact_summary.what_happened.slice(0, 160),
+      url: null, snippet: `${r.fact_summary.decision_made} — ${r.fact_summary.outcome}`.slice(0, 200),
+    }));
+    priorExperienceCount = env.rows?.length ?? 0;
+    await recordStep({
+      kind: 'prior_experience', system: 'DreamTeam memory', query: accountRef,
+      outcome: env.allowed ? 'ok' : 'denied_no_access',
+      category: experienceCategory, op: 'resolve_experience', provider: 'internal',
+      summary: env.allowed
+        ? (priorExperienceCount > 0
+            ? `${priorExperienceCount} prior experience(s) — ${actorName} has handled "${accountRef}" before. See citations below.`
+            : `No prior experience recorded for "${accountRef}" yet — this looks like the first time ${actorName} has handled it.`)
+        : `No access — blocked by your data access rules: ${actorName} needs "search" permission on ${experienceCategory} to recall its own prior experience here. An admin can change this under Governance → Data Access.`,
+      item_count: priorExperienceCount, latency_ms: Date.now() - started, citations: expCitations,
+    });
+  }
+
   // ── Step 4: compose the evidence bundle ──
   const allCitations = steps.flatMap((s) => s.citations);
   const knowledgeHits = steps.filter((s) => s.kind === 'knowledge_search').reduce((n, s) => n + s.item_count, 0);
@@ -500,6 +571,7 @@ async function runResolveInquiry(
   const confidenceInputs = {
     knowledge_hits: knowledgeHits,
     history_corroborations: historyMatches,
+    prior_experience_hits: priorExperienceCount,
     account_context_found: accountFound,
     systems_consulted: steps.filter((s) => s.outcome === 'ok').length,
     systems_skipped_not_connected: steps.filter((s) => s.outcome === 'skipped_not_connected').length,
@@ -508,9 +580,37 @@ async function runResolveInquiry(
   };
   await recordStep({
     kind: 'compose', system: 'DreamTeam', query: inquiry, outcome: 'ok',
-    summary: `Evidence bundle assembled: ${allCitations.length} citation(s) across ${new Set(allCitations.map((c) => c.system)).size} system(s); ${knowledgeHits} knowledge hit(s), ${historyMatches} past-case corroboration(s), account context ${accountFound ? 'found' : 'not found'}.`,
+    summary: `Evidence bundle assembled: ${allCitations.length} citation(s) across ${new Set(allCitations.map((c) => c.system)).size} system(s); ${knowledgeHits} knowledge hit(s), ${historyMatches} past-case corroboration(s), ${priorExperienceCount} prior-experience citation(s), account context ${accountFound ? 'found' : 'not found'}.`,
     item_count: allCitations.length, latency_ms: 0, citations: [],
   });
+
+  // ── CONVERSATION-SCOPED FACTS — persist what THIS turn established so
+  // a follow-up message on the SAME conversation_id can extend rather
+  // than restart (migration 044, closes gap-analysis item 5). Structured
+  // literal values only (a ref string, a category string, a uuid) —
+  // never a generated summary.
+  if (opts.conversationId) {
+    // NOTE: p_fact_value is a jsonb column/param — the supabase-js RPC
+    // client already JSON-serializes whatever value is passed here, so
+    // passing a raw string/value (NOT JSON.stringify(...)) is correct;
+    // double-stringifying would store an escaped string-of-a-string
+    // (e.g. "\"Acme Retail Co\"" instead of "Acme Retail Co"), which
+    // would corrupt every downstream reuse of the fact.
+    if (accountRef) {
+      await admin.rpc('set_conversation_fact', {
+        p_tenant_id: tenantId, p_conversation_id: opts.conversationId,
+        p_fact_key: 'account_ref', p_fact_value: accountRef,
+      });
+    }
+    await admin.rpc('set_conversation_fact', {
+      p_tenant_id: tenantId, p_conversation_id: opts.conversationId,
+      p_fact_key: 'category_determined', p_fact_value: acctCategory,
+    });
+    await admin.rpc('set_conversation_fact', {
+      p_tenant_id: tenantId, p_conversation_id: opts.conversationId,
+      p_fact_key: 'evidence_run_id', p_fact_value: runId2,
+    });
+  }
 
   // LLM answer step — dormant-honest, same gate as consult.
   const answerStatus = Deno.env.get('ANTHROPIC_API_KEY') ? 'answered' : 'llm_not_configured';
@@ -544,6 +644,10 @@ async function runResolveInquiry(
     answer_status: answerText ? 'answered' : 'llm_not_configured',
     answer: answerText,
     note: answerText ? undefined : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
+    conversation_facts_reused: reusedAccountFromThread
+      ? { account_ref: accountRef, note: `Continuing from earlier in this conversation — account "${accountRef}" was already resolved on a prior turn.` }
+      : undefined,
+    resolved_category: acctCategory,
   };
 }
 
@@ -669,8 +773,8 @@ async function handlePollDeWorkSources(
             p_source: 'proactive_trigger', p_decision: 'skipped_no_access',
             p_confidence: null, p_guardrail_rule_id: null, p_trust_level: null,
             p_reasoning: denialNote, p_inquiry_title: `Access check — ${connLabel}`,
+            p_source_category: t.category,
           });
-          await admin.from('evidence_run_decisions').update({ source_category: t.category }).eq('evidence_run_id', stubRun.id);
         }
         await touchWatch(admin, t.tenant_id, t.connector_id);
         results.push({ connector_id: t.connector_id, category: t.category, new_items: 0, decisions: { skipped_no_access: 1 } });
@@ -786,10 +890,14 @@ async function handlePollDeWorkSources(
           p_source: 'proactive_trigger', p_decision: decision,
           p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
           p_trust_level: triage?.trust_level ?? null, p_reasoning: reasoning,
-          p_inquiry_title: item.title,
+          p_inquiry_title: item.title, p_source_category: t.category,
         });
+        // action_execution_id is not a record_inquiry_decision param (it
+        // is only known AFTER the act-attempt above, which runs before
+        // this call) — set via a targeted follow-up update, unchanged
+        // from before this migration.
         await admin.from('evidence_run_decisions')
-          .update({ source_category: t.category, action_execution_id: actionExecutionId })
+          .update({ action_execution_id: actionExecutionId })
           .eq('id', (rec as { id?: string })?.id ?? '__none__');
         await audit(admin, t.tenant_id, t.subject_name,
           `Proactive triage — "${item.title.slice(0, 80)}" via ${connLabel} [${t.category}]: ${decision}`,
@@ -891,12 +999,20 @@ serve(async (req) => {
     if (action === 'resolve_inquiry') {
       const inquiry = String(body.inquiry ?? '').trim();
       const accountRef = String(body.account_ref ?? '').trim() || null;
+      // conversation_id (migration 044): optional — when the caller
+      // threads the SAME de_conversations id across turns (as
+      // de-answer/widget-ask already do), this run checks for facts
+      // established earlier in the thread and extends rather than
+      // restarts. Backward compatible: omitted entirely, this behaves
+      // exactly as before.
+      const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
       if (!inquiry) return json({ error: 'inquiry_required' }, 400);
 
       try {
         const result = await runResolveInquiry(admin, tenantId!, inquiry, accountRef, {
           profileKey: String(body.profile_key ?? 'technical'),
           deId: typeof body.de_id === 'string' ? body.de_id : null,
+          conversationId,
           // Human-invoked path: unchanged default (Technical Specialist subject).
         });
         return json(result);
@@ -931,11 +1047,11 @@ serve(async (req) => {
         const decision = triage?.decision ?? 'needs_review';
         const rec = await admin.rpc('record_inquiry_decision', {
           p_tenant_id: tenantId, p_evidence_run_id: result.evidence_run_id,
-          p_connector_id: null, p_external_ref: null,
+          p_connector_id: null, p_external_ref: String(body.account_ref ?? '').trim() || null,
           p_source: 'manual_simulation', p_decision: decision,
           p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
           p_trust_level: triage?.trust_level ?? null, p_reasoning: triage?.reasoning ?? '',
-          p_inquiry_title: inquiry,
+          p_inquiry_title: inquiry, p_source_category: result.resolved_category ?? null,
         });
         await audit(admin, tenantId!, prof2?.name ?? 'Technical Specialist',
           `SIMULATION — "${inquiry.slice(0, 80)}": ${decision} (not a real ticket — demo/test trigger)`,

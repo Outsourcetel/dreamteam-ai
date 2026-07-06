@@ -11,6 +11,7 @@ import {
   listMedia, uploadMedia, raiseQualityFlag, deleteMedia, updateMedia,
   consult, listConsultations, listScribeRequests, createScribeRequest,
   resolveInquiry, listEvidenceRuns, EvidenceRun, EvidenceStep, ResolveInquiryResult,
+  startEvidenceConversation,
 } from '../../lib/specialistApi';
 import {
   listActionDefinitions, previewAction, ActionDefinition, ActionPreviewResult,
@@ -173,12 +174,13 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
 // ── Evidence trail renderer ───────────────────────────────────────
 
 const STEP_ICON: Record<string, string> = {
-  account_context: '🏢', knowledge_search: '📚', history_check: '🕓', mcp_tool: '🔧', compose: '🧾',
+  account_context: '🏢', knowledge_search: '📚', history_check: '🕓', prior_experience: '🧠', mcp_tool: '🔧', compose: '🧾',
 };
 const STEP_LABEL: Record<string, string> = {
   account_context: 'Account configuration',
   knowledge_search: 'Knowledge',
-  history_check: 'Past cases',
+  history_check: 'Past cases (external system)',
+  prior_experience: 'Prior experience (this DE\'s own memory)',
   mcp_tool: 'MCP tool',
   compose: 'Evidence bundle',
 };
@@ -325,6 +327,9 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
         <div className="mt-3 pt-3 border-t border-slate-800 flex gap-2 flex-wrap">
           <Chip label={`${confidence.knowledge_hits ?? 0} knowledge hits`} cls="bg-indigo-500/15 text-indigo-300" />
           <Chip label={`${confidence.history_corroborations ?? 0} past-case corroborations`} cls="bg-teal-500/15 text-teal-300" />
+          {(confidence.prior_experience_hits ?? 0) > 0 && (
+            <Chip label={`${confidence.prior_experience_hits} prior experience citation(s) — handled before`} cls="bg-purple-500/15 text-purple-300" />
+          )}
           <Chip label={confidence.account_context_found ? 'account context found' : 'no account context'}
             cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'} />
           {(confidence.systems_skipped_not_connected ?? 0) > 0 && (
@@ -380,6 +385,14 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const [lastRun, setLastRun] = useState<ResolveInquiryResult | null>(null);
   const [pastRuns, setPastRuns] = useState<EvidenceRun[]>([]);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  // Conversation threading (migration 044, closes gap-analysis item 5):
+  // once a conversation_id exists (created implicitly by the first turn
+  // — resolve_inquiry doesn't create one itself, so this panel mints one
+  // via de_conversations directly), every subsequent "Run" in this
+  // session reuses it, letting the pipeline check for facts established
+  // on a prior turn instead of starting blank.
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadTurns, setThreadTurns] = useState<ResolveInquiryResult[]>([]);
 
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
@@ -472,11 +485,28 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
     setError(null);
     setLastRun(null);
     try {
-      const res = await resolveInquiry(inquiry.trim(), inquiryAccount.trim() || undefined);
+      // CONVERSATION CONTINUITY (migration 044): mint a thread on the
+      // FIRST turn of this panel session, then reuse it for every
+      // subsequent "Run" — so a follow-up question ("what about the
+      // billing side?") lets the pipeline recognize the account/category
+      // already resolved on the prior turn instead of starting blank.
+      let convId = threadId;
+      if (!convId) {
+        convId = await startEvidenceConversation().catch(() => null);
+        if (convId) setThreadId(convId);
+      }
+      const res = await resolveInquiry(inquiry.trim(), inquiryAccount.trim() || undefined, convId);
       setLastRun(res);
+      setThreadTurns(prev => [...prev, res]);
       setPastRuns(await listEvidenceRuns().catch(() => [] as EvidenceRun[]));
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setResolving(false); }
+  };
+
+  const startNewThread = () => {
+    setThreadId(null);
+    setThreadTurns([]);
+    setLastRun(null);
   };
 
   const ask = async () => {
@@ -729,8 +759,15 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         <h3 className="text-sm font-semibold text-white mb-1">Resolve an inquiry — evidence first</h3>
         <p className="text-[11px] text-slate-500 mb-3">
           Before answering a customer, the specialist gathers evidence in order: account configuration from your product system,
-          your knowledge, then past cases in your support desk / CRM. Systems that aren't connected are skipped honestly — never faked.
+          your knowledge, past cases in your support desk / CRM, then its own prior experience with this account. Systems that
+          aren't connected are skipped honestly — never faked.
         </p>
+        {threadId && (
+          <div className="flex items-center gap-2 mb-3 text-[11px] text-teal-300">
+            <span>🧵 Conversation thread active — {threadTurns.length} turn{threadTurns.length === 1 ? '' : 's'} so far. A follow-up "Run" reuses facts already established this thread.</span>
+            <button className="text-slate-400 hover:text-white underline underline-offset-2" onClick={startNewThread}>Start a new conversation</button>
+          </div>
+        )}
         <div className="flex gap-2 mb-3 flex-wrap">
           <input className={inputCls + ' flex-1 min-w-[240px]'} placeholder="Customer inquiry, e.g. 'SSO login fails after the latest update'"
             value={inquiry} onChange={e => setInquiry(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void runInquiry(); }} />
@@ -739,6 +776,12 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             {resolving ? 'Gathering evidence…' : 'Run'}
           </button>
         </div>
+
+        {lastRun?.conversation_facts_reused && (
+          <div className="mb-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-[11px] text-indigo-200">
+            🔗 Continuing from earlier in this conversation — {lastRun.conversation_facts_reused.note}
+          </div>
+        )}
 
         {lastRun && <EvidenceTrail steps={lastRun.steps ?? []} confidence={lastRun.confidence_inputs} answerStatus={lastRun.answer_status} answer={lastRun.answer ?? null} note={lastRun.note} evidenceRunId={lastRun.evidence_run_id} />}
 
