@@ -16,6 +16,7 @@ import AuditTrailPage from './pages/tenant/governance/AuditTrailPage';
 import SecurityAccessPage from './pages/tenant/governance/SecurityAccessPage';
 import TrustArchitecturePage from './pages/tenant/governance/TrustArchitecturePage';
 import DataAccessPage from './pages/tenant/governance/DataAccessPage';
+import IdentityInventoryPage from './pages/tenant/governance/IdentityInventoryPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
@@ -112,6 +113,7 @@ const PAGE_TO_URL: Record<string, string> = {
   gov_security:   '/governance/security',
   gov_trust:      '/governance/trust',
   gov_data_access: '/governance/data-access',
+  gov_identity_inventory: '/governance/identity-credentials',
   // Setup
   company_setup:  '/setup',
 };
@@ -290,6 +292,8 @@ function AppShell() {
         return <TrustArchitecturePage />;
       case 'gov_data_access':
         return <DataAccessPage />;
+      case 'gov_identity_inventory':
+        return <IdentityInventoryPage />;
       case 'company_setup':
         return <CompanySetupPage setPage={handleSetPage} />;
       default:

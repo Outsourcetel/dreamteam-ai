@@ -76,6 +76,7 @@ export type TenantPage =
   | 'gov_security'              // Access, SSO, API keys, sessions
   | 'gov_trust'                 // Trust & Architecture — security-review posture
   | 'gov_data_access'           // Data Access — per-DE/specialist × system grants (default-deny)
+  | 'gov_identity_inventory'    // Identity & Credentials — every DE/specialist's grants, trust & connector health, one view
 
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'

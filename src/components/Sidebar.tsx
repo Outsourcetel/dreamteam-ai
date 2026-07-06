@@ -219,6 +219,7 @@ function buildNav(companyId: CompanyId, live: { humanTasks: number; kbGaps: numb
         { id: 'audit', label: 'Audit Trail', icon: '▤', page: 'gov_audit' },
         { id: 'security', label: 'Security & Access', icon: '⛨', page: 'gov_security' },
         { id: 'data_access', label: 'Data Access', icon: '⊘', page: 'gov_data_access' },
+        { id: 'identity_inventory', label: 'Identity & Credentials', icon: '🔑', page: 'gov_identity_inventory' },
         { id: 'trust', label: 'Trust & Architecture', icon: '▣', page: 'gov_trust' },
       ],
     },
