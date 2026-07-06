@@ -6,8 +6,8 @@ import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
 import { useDataMode } from '../../../lib/dataMode';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, CustomerApiError } from '../../../lib/customerApi';
-import type { DBHumanTask } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError } from '../../../lib/customerApi';
+import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -187,6 +187,20 @@ function statusBadge(status: TaskStatus) {
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${styles[status]}`}>{labels[status]}</span>;
 }
 
+// Stalled-work badge (migration 042 watchdog) — a plain-language, tier-
+// aware chip distinguishing "this task exists because a Digital
+// Employee raised it" from "this task exists because NOTHING happened
+// for too long and the watchdog noticed." Same badge regardless of
+// which target_kind (onboarding project or a pending review/approval
+// task) triggered it — the tier is what matters to a human glancing
+// at the queue, not the underlying table.
+function stalledBadge(tier: StalenessEscalation['tier']) {
+  if (tier === 'breach') {
+    return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40" title="Past the breach threshold — this has gone stale for longer than policy allows.">⏱ STALLED · OVERDUE</span>;
+  }
+  return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30" title="Past the warning threshold — nothing has happened on this in a while.">⏱ STALLED</span>;
+}
+
 const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'approval_gate', label: 'Approvals' },
@@ -210,10 +224,12 @@ function taskAge(iso: string): string {
 
 function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
+  const [staleness, setStaleness] = useState<Map<string, StalenessEscalation>>(new Map());
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskType | 'all'>('all');
+  const [stalledOnly, setStalledOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
 
@@ -223,6 +239,11 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     try {
       setTasks(await listHumanTasks());
       setMissingTables(false);
+      // Best-effort: the "Stalled work" badge is a nice-to-have overlay,
+      // not core task-list functionality — a workspace that hasn't
+      // applied migration 042 yet (or any transient error) should still
+      // show the task list, just without the stalled badges.
+      try { setStaleness(await listOpenStalenessEscalations()); } catch { /* noop */ }
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError((err as Error)?.message || 'Failed to load tasks.');
@@ -258,8 +279,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const decidedCount = tasks.filter(t => t.status !== 'pending').length;
   const approvedCount = tasks.filter(t => t.status === 'approved').length;
   const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
-  const visible = tasks.filter(t => filter === 'all' || t.type === filter);
+  const stalledCount = pending.filter(t => staleness.has(t.id)).length;
+  const visible = tasks.filter(t => (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
   const selected = tasks.find(t => t.id === selectedId) ?? null;
+  const selectedStale = selected ? staleness.get(selected.id) ?? null : null;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -285,9 +308,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       ) : (
         <>
           {/* Stats strip */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-4 gap-3 mb-6">
             {[
               { label: 'Pending', value: String(pending.length), color: pending.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
+              { label: 'Stalled work', value: String(stalledCount), color: stalledCount > 0 ? 'text-orange-300' : 'text-emerald-300' },
               { label: 'Decided', value: String(decidedCount), color: 'text-white' },
               { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-white' },
             ].map(s => (
@@ -309,6 +333,13 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 {f.label}
               </button>
             ))}
+            <div className="flex-1" />
+            <button
+              onClick={() => setStalledOnly(v => !v)}
+              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+            >
+              ⏱ Stalled work only{stalledCount > 0 ? ` (${stalledCount})` : ''}
+            </button>
           </div>
 
           <div className="grid grid-cols-5 gap-4">
@@ -316,15 +347,20 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             <div className={`${selected ? 'col-span-3' : 'col-span-5'} space-y-1.5`}>
               {visible.length === 0 && (
                 <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
-                  <p className="text-slate-500 text-sm">No tasks match the current filter.</p>
+                  <p className="text-slate-500 text-sm">
+                    {stalledOnly ? 'No stalled work right now — nothing has gone quiet past its threshold.' : 'No tasks match the current filter.'}
+                  </p>
                 </div>
               )}
-              {visible.map(task => (
+              {visible.map(task => {
+                const stale = staleness.get(task.id);
+                return (
                 <button
                   key={task.id}
                   onClick={() => setSelectedId(task.id)}
                   className={`w-full text-left grid grid-cols-[100px_1fr_70px_80px] gap-2 items-center px-3 py-2.5 rounded-xl border transition-colors ${
                     selectedId === task.id ? 'border-indigo-500/50 bg-slate-800/60'
+                    : stale ? (stale.tier === 'breach' ? 'border-red-500/30 bg-red-500/5 hover:bg-red-500/10' : 'border-orange-500/25 bg-orange-500/5 hover:bg-orange-500/10')
                     : task.status !== 'pending' ? 'border-slate-800/60 bg-slate-900/40 opacity-70 hover:opacity-100'
                     : 'border-slate-800 bg-slate-900 hover:bg-slate-800/50'
                   }`}
@@ -333,13 +369,17 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     {taskBadgeLabel(task.type)}
                   </span>
                   <div className="min-w-0">
-                    <span className="text-xs text-slate-200 truncate block">{task.title}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs text-slate-200 truncate">{task.title}</span>
+                      {stale && stalledBadge(stale.tier)}
+                    </div>
                     {task.detail && <span className="text-[10px] text-slate-500">{task.detail}</span>}
                   </div>
                   <span className="text-xs text-slate-500">{taskAge(task.created_at)}</span>
                   <span className="justify-self-end">{statusBadge(task.status as TaskStatus)}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             {/* Detail panel */}
@@ -349,13 +389,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
                   <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
                 </div>
-                <h3 className="text-sm font-semibold text-white mb-1">{selected.title}</h3>
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <h3 className="text-sm font-semibold text-white">{selected.title}</h3>
+                  {selectedStale && stalledBadge(selectedStale.tier)}
+                </div>
                 {selected.detail && <p className="text-xs text-slate-400 mb-3">{selected.detail}</p>}
+                {selectedStale && (
+                  <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] ${selectedStale.tier === 'breach' ? 'bg-red-500/10 border border-red-500/30 text-red-200' : 'bg-orange-500/10 border border-orange-500/30 text-orange-200'}`}>
+                    Raised automatically by the staleness watchdog — nothing happened on this for too long, so a human is being asked to look at it.
+                    {selectedStale.tier === 'breach' && ' This is now past the breach threshold.'}
+                  </div>
+                )}
 
                 <div className="space-y-3 text-xs">
                   <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
                     <span className="text-slate-500">Source</span>
-                    <span className="text-slate-300">{selected.source === 'de' ? 'Digital Employee' : selected.source === 'chat' ? 'DE chat' : 'System'}</span>
+                    <span className="text-slate-300">{selected.source === 'de' ? 'Digital Employee' : selected.source === 'chat' ? 'DE chat' : selectedStale ? 'Staleness watchdog' : 'System'}</span>
                   </div>
                   <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
                     <span className="text-slate-500">Raised</span>

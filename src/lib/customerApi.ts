@@ -386,6 +386,44 @@ export async function listHumanTasks(): Promise<DBHumanTask[]> {
   return data ?? [];
 }
 
+// ── Staleness watchdog (migration 042) ─────────────────────────────
+// "Nothing happened, escalate" — one generic primitive covering both
+// stalled onboarding projects and stuck pending-review/approval tasks.
+// The UI need only know: which open human_tasks were RAISED BY the
+// watchdog (so a distinct "stalled" badge can be shown), and at which
+// tier (warning/breach). No target_kind-specific UI branching needed —
+// same generic shape either way.
+export type StalenessTier = 'warning' | 'breach';
+export interface StalenessEscalation {
+  id: string;
+  tenant_id: string;
+  target_kind: string;
+  target_id: string;
+  tier: StalenessTier;
+  first_detected_at: string;
+  last_escalated_at: string;
+  resolved_at: string | null;
+  human_task_id: string | null;
+  created_at: string;
+}
+
+/** Open (unresolved) staleness escalations for the current tenant, keyed
+ * by human_task_id for O(1) lookup from the Human Tasks list. */
+export async function listOpenStalenessEscalations(): Promise<Map<string, StalenessEscalation>> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('staleness_escalations')
+    .select('*')
+    .eq('tenant_id', tid)
+    .is('resolved_at', null);
+  if (error) raise('listOpenStalenessEscalations', error);
+  const map = new Map<string, StalenessEscalation>();
+  for (const row of (data ?? []) as StalenessEscalation[]) {
+    if (row.human_task_id) map.set(row.human_task_id, row);
+  }
+  return map;
+}
+
 export async function createHumanTask(
   t: Partial<DBHumanTask> & { title: string; type: HumanTaskType }
 ): Promise<DBHumanTask> {
