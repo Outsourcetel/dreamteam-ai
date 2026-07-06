@@ -556,6 +556,30 @@ export interface ActionPreviewResult {
   detail?: string;
 }
 
+/** action_executions row shape (migration 035), read-only — used to
+ *  show the real receipt next to a "DE at Work" decision (migration
+ *  036) instead of just the decision label. */
+export interface ActionExecutionRow {
+  id: string;
+  tenant_id: string;
+  action_definition_id: string;
+  connector_id: string;
+  mode: 'preview' | 'execute';
+  decision: string;
+  destructive: boolean;
+  idempotent: boolean;
+  request_summary: string;
+  receipt: string | null;
+  task_id: string | null;
+  created_at: string;
+}
+
+export async function getActionExecution(id: string): Promise<ActionExecutionRow | null> {
+  const { data, error } = await supabase.from('action_executions').select('*').eq('id', id).maybeSingle();
+  if (error) raise('getActionExecution', error);
+  return (data as ActionExecutionRow | null) ?? null;
+}
+
 /** Render the exact request WITHOUT calling the external system. */
 export async function previewAction(
   connectorId: string, actionKey: string, params: Record<string, unknown>,

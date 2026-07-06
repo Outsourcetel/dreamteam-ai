@@ -548,41 +548,72 @@ async function runResolveInquiry(
 }
 
 // ════════════════════════════════════════════════════════════════
-// handlePollSupportInbox — action: poll_support_inbox, THE PROACTIVE
-// TRIGGER (migration 034, gap-analysis Tier 0 item 3). No human clicks
-// "resolve an inquiry" here: a new support ticket is noticed and
-// evaluated unprompted, using the EXACT SAME evidence pipeline
-// (runResolveInquiry) the human-invoked path uses, then triaged with
-// the SAME guardrail+trust composition generateInvoice uses for
-// invoices (decide_inquiry_triage, SQL, migration 034) — never a
-// parallel confidence system.
+// handlePollSupportInbox (migration 034) — RETIRED in migration 036.
+// Its logic (poll_support_inbox_targets, hardcoded to
+// category='helpdesk') is fully superseded by handlePollDeWorkSources
+// below, which is a strict superset: same auth, same idempotent-
+// cursor/diff logic, same evidence pipeline, but ANY of the 9
+// category-contract categories instead of only helpdesk, plus the new
+// decide-AND-act step. Deleted outright rather than left dangling —
+// "deprecate cleanly, don't leave two competing pollers" — the old
+// action string 'poll_support_inbox' is still accepted (routed to the
+// new handler below) so no caller breaks.
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+// handlePollDeWorkSources — action: poll_de_work_sources, THE
+// GENERALIZED TRIGGER (migration 036). The domain-agnostic successor
+// to handlePollSupportInbox (034): identical shape, but iterates ALL
+// 9 category-contract categories (poll_de_work_sources_targets,
+// migration 036, drops the "where c.category = 'helpdesk'" filter
+// that was the entire hardcode), frames each new item with the
+// category's (tenant-overridable) work_item_framing template instead
+// of a support-specific "customer says X" string, and — new — when
+// the decision indicates the DE should ACT (not just answer) and a
+// suitable action_definition is bound for the category, actually
+// invokes connector-hub's execute_action (migration 035), proving the
+// full loop notice -> understand -> decide -> ACT, not just
+// notice -> understand -> decide -> record-intent.
 //
 // Callers: pg_cron (via invoke_playbook_dispatch, x-dispatch-secret)
-// → all tenants; service-role key + body.tenant_id → one tenant. No
-// tenant-JWT path — this is a system trigger, not a user action
-// (mirrors playbook-execute's 'dispatch' cron-only scoping).
+// → all tenants; service-role key + body.tenant_id → one tenant. Same
+// system-trigger scoping as handlePollSupportInbox.
 //
-// Per qualifying (connector, subject) pair:
+// Per qualifying (connector, subject) pair, for ANY category:
 //   1. list_recent on the connector, AS the resolved subject
-//      (data_access_grants enforced — connector-hub denies if the
-//      grant was revoked since poll_support_inbox_targets ran).
-//   2. Diff against inbox_watch_state — only genuinely new items
-//      (by external_ref) are processed; idempotent upsert after.
-//   3. runResolveInquiry AS that subject (real evidence pipeline).
-//   4. decide_inquiry_triage (SQL) → would_auto_send / needs_review /
-//      blocked_guardrail, recorded via record_inquiry_decision
-//      (creates an inquiry_review human_task on needs_review).
-//   5. Every decision audited (category 'inquiry_triage').
-// A tenant/connector with no qualifying access grant is an honest
-// no-op (poll_support_inbox_targets yields no rows for it) — NOT a
-// silent skip, since nothing was denied; it was never attempted.
+//      (data_access_grants enforced, exactly as before).
+//   2. Diff against inbox_watch_state — same idempotent cursor logic,
+//      same table (already category-agnostic — no schema change).
+//   3. Frame each new item via resolve_work_item_framing(category) —
+//      "{title}"/"{snippet}" substituted into the category's plain-
+//      language template (tenant-overridable configuration, not
+//      hardcoded strings).
+//   4. runResolveInquiry AS that subject (the SAME evidence pipeline,
+//      unchanged — byte-identical to the helpdesk path).
+//   5. decide_work_item_triage(category) — the category-parameterized
+//      sibling of decide_inquiry_triage: guardrail-always-wins, then
+//      trust-narrows-within-it, resolved against the answer_widget
+//      dial scoped to this category (falling back to the legacy
+//      tenant-wide row so existing configuration keeps working).
+//   6. THE NEW STEP: if the decision would otherwise auto-send/act
+//      (would_auto_send) AND a non-disabled action_definition is
+//      registered for this category (resolve_action_definition_for_
+//      category), call connector-hub's execute_action for real —
+//      the SAME generalized action layer migration 035 built,
+//      composed through decide_action_execution (destructive-always-
+//      gates -> guardrail -> trust), recorded as 'would_act' (gated)
+//      or 'acted' (auto-executed / executed-after-approval). If no
+//      action_definition exists for the category, fall back to the
+//      honest would_auto_send/needs_review/blocked_guardrail/
+//      skipped_no_access recording — the SAME discipline as 034,
+//      never inventing an action that isn't actually registered.
+//   7. Cursor advances via upsert_inbox_watch_state — unchanged.
+//   8. Every decision audited with plain-language reasoning — the
+//      SAME discipline as 034, generalized to name the category.
 // ════════════════════════════════════════════════════════════════
-async function handlePollSupportInbox(
+async function handlePollDeWorkSources(
   admin: SupabaseClient, req: Request, jwt: string, body: Record<string, unknown>,
 ): Promise<Response> {
-  // Auth: cron (x-dispatch-secret) OR service-role — never a plain
-  // tenant JWT (system trigger, same scoping discipline as
-  // playbook-execute's dispatch action).
   const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
   const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
   const isCron = !!dispatchSecret && headerSecret === dispatchSecret;
@@ -590,11 +621,12 @@ async function handlePollSupportInbox(
   if (!isCron && !isServiceRole) return json({ error: 'unauthorized' }, 401);
 
   const scopeTenant: string | null = isServiceRole ? ((body?.tenant_id as string) ?? null) : null;
-  const results: Array<{ connector_id: string; new_items: number; decisions: Record<string, number> }> = [];
+  const results: Array<{ connector_id: string; category: string; new_items: number; decisions: Record<string, number> }> = [];
 
-  const { data: targets } = await admin.rpc('poll_support_inbox_targets', { p_tenant_id: scopeTenant });
+  const { data: targets } = await admin.rpc('poll_de_work_sources_targets', { p_tenant_id: scopeTenant });
   for (const t of (targets ?? []) as Array<{
     tenant_id: string; connector_id: string; connector_provider: string; connector_display_name: string;
+    category: string;
     subject_kind: 'de' | 'specialist'; subject_id: string; subject_name: string;
     last_seen_external_ref: string | null; last_seen_timestamp: string | null;
   }>) {
@@ -615,24 +647,21 @@ async function handlePollSupportInbox(
       });
       const data = await res.json().catch(() => ({}));
       if (data?.error === 'access_denied') {
-        // Grant revoked between poll_support_inbox_targets and now —
-        // honest, audited, not a silent drop. A minimal evidence_runs
-        // row is created (no steps ran — access was denied before any
-        // evidence gathering) so this shows up as a card in the "DE at
-        // Work" queue, not just the audit trail — the founder brief
-        // asks for skipped_no_access to be a visible decision badge.
-        const denialNote = `Access denied — ${connLabel} access was revoked before this poll could check it. No ticket data was read.`;
+        // Grant revoked between poll_de_work_sources_targets and now —
+        // honest, audited, not a silent drop. Same stub-run pattern as
+        // 034, generalized to name the category.
+        const denialNote = `Access denied — ${connLabel} (${t.category}) access was revoked before this poll could check it. No item data was read.`;
         const { data: stubRun } = await admin.from('evidence_runs').insert({
           tenant_id: t.tenant_id,
           specialist_id: t.subject_kind === 'specialist' ? t.subject_id : null,
           de_id: t.subject_kind === 'de' ? t.subject_id : null,
-          inquiry: `(proactive poll on ${connLabel} — access denied before evidence gathering)`,
+          inquiry: `(proactive poll on ${connLabel} [${t.category}] — access denied before evidence gathering)`,
           status: 'complete', steps: [], confidence_inputs: {},
         }).select('id').single();
         await audit(admin, t.tenant_id, t.subject_name,
-          `Proactive poll skipped — access to ${connLabel} was revoked; no ticket processed.`,
+          `Proactive poll skipped — access to ${connLabel} (${t.category}) was revoked; no item processed.`,
           'access_control',
-          { kind: 'proactive_poll', connector_id: t.connector_id, subject_kind: t.subject_kind, subject_id: t.subject_id, reason: 'access_denied' });
+          { kind: 'proactive_poll', connector_id: t.connector_id, category: t.category, subject_kind: t.subject_kind, subject_id: t.subject_id, reason: 'access_denied' });
         if (stubRun?.id) {
           await admin.rpc('record_inquiry_decision', {
             p_tenant_id: t.tenant_id, p_evidence_run_id: stubRun.id,
@@ -641,17 +670,15 @@ async function handlePollSupportInbox(
             p_confidence: null, p_guardrail_rule_id: null, p_trust_level: null,
             p_reasoning: denialNote, p_inquiry_title: `Access check — ${connLabel}`,
           });
+          await admin.from('evidence_run_decisions').update({ source_category: t.category }).eq('evidence_run_id', stubRun.id);
         }
         await touchWatch(admin, t.tenant_id, t.connector_id);
-        results.push({ connector_id: t.connector_id, new_items: 0, decisions: { skipped_no_access: 1 } });
+        results.push({ connector_id: t.connector_id, category: t.category, new_items: 0, decisions: { skipped_no_access: 1 } });
         continue;
       }
       const items = (data?.items ?? []) as Array<{ ref: string; title: string; snippet: string; url: string | null }>;
-      // list_recent returns newest-first (every adapter's contract).
-      // "New" = everything strictly before the last-seen ref in that
-      // order. First-ever poll for a connector (no cursor yet): cap at
-      // 5 so a connector with a long backlog can't flood the queue on
-      // its first tick — the cursor then advances normally from there.
+      // Newest-first (every adapter's contract, category-agnostic).
+      // Same idempotent diff logic as 034, unchanged.
       const seenRef = t.last_seen_external_ref;
       const newest = items[0]?.ref ?? null;
       let toProcess: typeof items;
@@ -662,37 +689,121 @@ async function handlePollSupportInbox(
         toProcess = seenIdx === -1 ? items : items.slice(0, seenIdx);
       }
 
+      // Category-specific, tenant-overridable framing (migration 036) —
+      // configuration, not hardcoded strings in application code.
+      const { data: framingTpl } = await admin.rpc('resolve_work_item_framing', {
+        p_tenant_id: t.tenant_id, p_category: t.category,
+      });
+      const template = String(framingTpl ?? 'New {category} item needs review: {title} — {snippet}');
+      const frame = (title: string, snippet: string) => template
+        .replace(/\{title\}/g, title)
+        .replace(/\{snippet\}/g, snippet ?? '')
+        .replace(/\{category\}/g, t.category)
+        .slice(0, 2000);
+
+      // A registered action for this category, if any — resolved ONCE
+      // per connector per tick (not per item) since the candidate
+      // action does not depend on the item's content.
+      // resolve_action_definition_for_category returns SETOF (0 or 1
+      // rows) precisely so "no action registered" is an empty array,
+      // never a single row of nulls (see migration 036 SQL comment).
+      const actionDef = await admin.rpc('resolve_action_definition_for_category', {
+        p_tenant_id: t.tenant_id, p_category: t.category,
+      }).then((r) => {
+        const rows = (r.data ?? []) as Array<{ id: string; action_key: string; label: string; param_schema: Array<{ name: string; type: string; required?: boolean }> }>;
+        return rows[0] ?? null;
+      });
+
       for (const item of toProcess) {
-        const inquiryText = `${item.title}${item.snippet ? ` — ${item.snippet}` : ''}`.slice(0, 2000);
+        const inquiryText = frame(item.title, item.snippet);
         const result = await runResolveInquiry(admin, t.tenant_id, inquiryText, null, {
           subjectKind: t.subject_kind, subjectId: t.subject_id,
         });
         const confidence = computeConfidenceFallback(result.confidence_inputs);
-        const { data: triage } = await admin.rpc('decide_inquiry_triage', {
-          p_tenant_id: t.tenant_id, p_inquiry: inquiryText, p_confidence: confidence,
+        const { data: triage } = await admin.rpc('decide_work_item_triage', {
+          p_tenant_id: t.tenant_id, p_category: t.category, p_inquiry: inquiryText, p_confidence: confidence,
         });
-        const decision = triage?.decision ?? 'needs_review';
-        await admin.rpc('record_inquiry_decision', {
+        let decision: string = triage?.decision ?? 'needs_review';
+        let reasoning: string = triage?.reasoning ?? '';
+        let actionExecutionId: string | null = null;
+
+        // ── THE NEW STEP: decide-to-answer clearing the bar AND a
+        // registered action existing for this category → actually try
+        // to ACT via the generalized action layer (migration 035),
+        // instead of only ever recording intent. If no action is
+        // registered, or params can't be filled from the item alone,
+        // fall back honestly to the original would_auto_send/
+        // needs_review recording — never invent an action that isn't
+        // really there.
+        if (decision === 'would_auto_send' && actionDef) {
+          // Only attempt params we can honestly fill from the
+          // canonical item shape (title/snippet/ref) — a v1, honest
+          // limit: an action needing OTHER fields is skipped here and
+          // falls back to would_auto_send, not silently guessed at.
+          const fillable: Record<string, string> = {
+            external_ref: item.ref, title: item.title, snippet: item.snippet ?? '', body: inquiryText,
+          };
+          const missing = (actionDef.param_schema ?? []).filter((p) => p.required && !(p.name in fillable));
+          if (missing.length === 0) {
+            const params: Record<string, string> = {};
+            for (const p of actionDef.param_schema ?? []) {
+              if (p.name in fillable) params[p.name] = fillable[p.name];
+            }
+            const execRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+              },
+              body: JSON.stringify({
+                action: 'execute_action', connector_id: t.connector_id, tenant_id: t.tenant_id,
+                subject_kind: t.subject_kind, subject_id: t.subject_id,
+                action_key: actionDef.action_key, params,
+              }),
+            });
+            const execData = await execRes.json().catch(() => ({}));
+            if (execData?.error === 'access_denied') {
+              // write_back not granted — honest fallback, not a crash.
+              reasoning = `${reasoning} (An action is registered for ${t.category}, but this subject lacks write_back access to act on it — recorded as intent only.)`;
+            } else if (execData?.gated) {
+              decision = 'would_act';
+              actionExecutionId = execData.execution_id ?? null;
+              reasoning = `Would act: ${execData.reasoning ?? reasoning} Action considered: "${actionDef.label}".`;
+            } else if (execData?.ok) {
+              decision = 'acted';
+              actionExecutionId = execData.execution_id ?? null;
+              reasoning = `Acted — ${execData.receipt ?? `executed "${actionDef.label}"`}.`;
+            } else {
+              reasoning = `${reasoning} (Attempted to act via "${actionDef.label}" but it failed: ${execData?.error ?? 'unknown error'} — recorded as intent only.)`;
+            }
+          }
+        }
+
+        const { data: rec } = await admin.rpc('record_inquiry_decision', {
           p_tenant_id: t.tenant_id, p_evidence_run_id: result.evidence_run_id,
           p_connector_id: t.connector_id, p_external_ref: item.ref,
           p_source: 'proactive_trigger', p_decision: decision,
           p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
-          p_trust_level: triage?.trust_level ?? null, p_reasoning: triage?.reasoning ?? '',
+          p_trust_level: triage?.trust_level ?? null, p_reasoning: reasoning,
           p_inquiry_title: item.title,
         });
+        await admin.from('evidence_run_decisions')
+          .update({ source_category: t.category, action_execution_id: actionExecutionId })
+          .eq('id', (rec as { id?: string })?.id ?? '__none__');
         await audit(admin, t.tenant_id, t.subject_name,
-          `Proactive triage — "${item.title.slice(0, 80)}" via ${connLabel}: ${decision}`,
+          `Proactive triage — "${item.title.slice(0, 80)}" via ${connLabel} [${t.category}]: ${decision}`,
           'inquiry_triage',
-          { kind: 'proactive_poll', connector_id: t.connector_id, external_ref: item.ref, evidence_run_id: result.evidence_run_id, decision, confidence, reasoning: triage?.reasoning ?? '' });
+          { kind: 'proactive_poll', connector_id: t.connector_id, category: t.category, external_ref: item.ref, evidence_run_id: result.evidence_run_id, decision, confidence, reasoning, action_execution_id: actionExecutionId });
         decisionCounts[decision] = (decisionCounts[decision] ?? 0) + 1;
       }
 
       if (newest) await upsertWatch(admin, t.tenant_id, t.connector_id, newest);
       else await touchWatch(admin, t.tenant_id, t.connector_id);
-      results.push({ connector_id: t.connector_id, new_items: toProcess.length, decisions: decisionCounts });
+      results.push({ connector_id: t.connector_id, category: t.category, new_items: toProcess.length, decisions: decisionCounts });
     } catch (e) {
-      console.error('poll_support_inbox connector error:', t.connector_id, e);
-      results.push({ connector_id: t.connector_id, new_items: 0, decisions: { error: 1 } });
+      console.error('poll_de_work_sources connector error:', t.connector_id, e);
+      results.push({ connector_id: t.connector_id, category: t.category, new_items: 0, decisions: { error: 1 } });
     }
   }
 
@@ -714,14 +825,30 @@ serve(async (req) => {
     // ── Auth: caller JWT → tenant, or service-role key + body.tenant_id ──
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
 
-    // action: poll_support_inbox is a SYSTEM TRIGGER (pg_cron, all
-    // tenants) and authenticates itself via x-dispatch-secret — it has
-    // no single tenantId until it resolves targets per-row, so it
-    // skips the standard per-request tenant resolution below (mirrors
-    // playbook-execute's 'dispatch' action, which does the same for
-    // the same reason). Every other action requires a resolved tenant.
+    // action: poll_de_work_sources is a SYSTEM TRIGGER (pg_cron, all
+    // tenants, ANY category — migration 036) and authenticates itself
+    // via x-dispatch-secret — it has no single tenantId until it
+    // resolves targets per-row, so it skips the standard per-request
+    // tenant resolution below (mirrors playbook-execute's 'dispatch'
+    // action, which does the same for the same reason). This is the
+    // ONLY proactive poller the dispatch cron calls as of migration
+    // 036 — invoke_playbook_dispatch() was updated to call this
+    // action instead of 'poll_support_inbox'.
+    if (action === 'poll_de_work_sources') {
+      return await handlePollDeWorkSources(admin, req, jwt, body);
+    }
+    // action: poll_support_inbox — DEPRECATED (migration 034, replaced
+    // by poll_de_work_sources in migration 036). No longer invoked by
+    // the cron. Kept as a thin, honest redirect (not removed outright)
+    // so any in-flight/cached caller from before this deploy still
+    // gets a correct, non-broken response rather than a 400 — it
+    // simply runs the SAME generalized poller, which naturally
+    // includes helpdesk connectors (the only ones the old function
+    // ever targeted). Not a second competing poller: this path is
+    // dead code from the cron's perspective, exercised only if
+    // something still calls the old action name directly.
     if (action === 'poll_support_inbox') {
-      return await handlePollSupportInbox(admin, req, jwt, body);
+      return await handlePollDeWorkSources(admin, req, jwt, body);
     }
 
     let tenantId: string | null = null;

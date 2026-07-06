@@ -341,6 +341,13 @@ export interface EvidenceStep {
   item_count: number;
   latency_ms: number;
   citations: EvidenceCitation[];
+  /** Category-contract fields (migration 027/036) — which canonical
+   *  category+op this step called, and which provider answered it.
+   *  Not every step carries these (e.g. the internal knowledge_search
+   *  step over knowledge_docs has no connector behind it). */
+  category?: string;
+  op?: string;
+  provider?: string;
 }
 export interface EvidenceRun {
   id: string;
@@ -407,7 +414,17 @@ export async function listEvidenceRuns(limit = 20): Promise<EvidenceRun[]> {
 // the DE/specialist has no access grant to that system.
 
 export type InquiryDecisionSource = 'manual' | 'proactive_trigger' | 'manual_simulation';
-export type InquiryDecisionKind = 'would_auto_send' | 'needs_review' | 'blocked_guardrail' | 'skipped_no_access';
+// 'would_act'/'acted' added in migration 036 (the Generalized Trigger
+// Layer) — the act-side siblings of would_auto_send/needs_review. A
+// decision becomes 'would_act' when a registered action_definition
+// exists for the item's category but composition (destructive-always-
+// gates / guardrail / trust) requires human approval first, and
+// 'acted' when connector-hub's execute_action actually ran (auto or
+// after approval) — distinct from 'would_auto_send', which still only
+// ever records intent to ANSWER, never to act.
+export type InquiryDecisionKind =
+  | 'would_auto_send' | 'needs_review' | 'blocked_guardrail' | 'skipped_no_access'
+  | 'would_act' | 'acted';
 
 export interface EvidenceRunDecision {
   id: string;
@@ -423,6 +440,12 @@ export interface EvidenceRunDecision {
   reasoning: string;
   human_task_id: string | null;
   created_at: string;
+  /** migration 036: which of the 9 category-contract categories this
+   *  item came from (null for pre-036 rows/the manual/simulation path
+   *  when a category wasn't recorded), and the linked action_executions
+   *  row when the decision resulted in (or awaits) a real ACT attempt. */
+  source_category?: string | null;
+  action_execution_id?: string | null;
 }
 
 /** Live "DE at work" feed: evidence_runs joined with their decision

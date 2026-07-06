@@ -4,10 +4,14 @@ import { CustomerApiError } from '../../../lib/customerApi';
 import {
   listDEActivity, simulateInquiry, DEActivityRow, EvidenceStep, InquiryDecisionKind,
 } from '../../../lib/specialistApi';
+import { getActionExecution, ActionExecutionRow } from '../../../lib/connectorApi';
+import { CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts';
 import type { Page } from '../../../types';
 
 // ============================================================
-// "DE at work" — the live proactive-triage queue (migration 034).
+// "DE at work" — the live proactive-triage queue (migration 034),
+// generalized to any source category with real ACT outcomes
+// (migration 036 — the Generalized Trigger Layer).
 //
 // Closes gap-analysis Tier 0 item 4: near-real-time visibility into a
 // DE noticing and evaluating work on its own, with the REASONING for
@@ -15,6 +19,12 @@ import type { Page } from '../../../types';
 // telemetry over structural — "is the system making sound decisions",
 // per the 2026 agent-observability research this build is grounded in
 // (see the migration 034 SQL header for the full citation).
+//
+// Migration 036 adds: which of the 9 category-contract categories each
+// run came from (not just implicitly "support"), and a real receipt
+// when the DE actually ACTED (via the generalized action layer,
+// migration 035) — distinct from merely deciding it WOULD act, or
+// deciding to just answer.
 //
 // LIVE STRATEGY: short poll (8s) rather than a Supabase Realtime
 // channel subscription. This codebase has NO existing Realtime
@@ -41,11 +51,17 @@ const OUTCOME_CHIP: Record<string, [string, string]> = {
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked', 'bg-rose-500/20 text-rose-300'],
 };
+// 'would_act'/'acted' added in migration 036 — the act-side siblings
+// of would_auto_send/needs_review. 'acted' is styled distinctly (solid
+// emerald, not just a tint) since it means something REALLY HAPPENED
+// in the outside world, not just an intent recorded.
 const DECISION_META: Record<InquiryDecisionKind, { label: string; cls: string }> = {
   would_auto_send: { label: 'Would auto-send', cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
   needs_review: { label: 'Needs review', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
   blocked_guardrail: { label: 'Blocked by guardrail', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
   skipped_no_access: { label: 'No access', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
+  would_act: { label: 'Would act — awaiting approval', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  acted: { label: 'Acted', cls: 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50' },
 };
 const SOURCE_LABEL: Record<string, string> = {
   manual: 'Human-invoked',
@@ -82,17 +98,29 @@ function StepList({ steps }: { steps: EvidenceStep[] }) {
 
 function ActivityCard({ row }: { row: DEActivityRow }) {
   const [expanded, setExpanded] = useState(false);
+  const [execution, setExecution] = useState<ActionExecutionRow | null>(null);
   const { evidence_run: run, decision } = row;
   const meta = decision ? DECISION_META[decision.decision] : null;
   const sourceLabel = decision ? SOURCE_LABEL[decision.source] ?? decision.source : null;
   const isSimulation = decision?.source === 'manual_simulation';
+  const categoryLabel = decision?.source_category
+    ? (CATEGORY_LABELS[decision.source_category as SystemCategory] ?? decision.source_category).split(' — ')[0]
+    : null;
+  const didAct = decision?.decision === 'acted' || decision?.decision === 'would_act';
+
+  useEffect(() => {
+    if (decision?.action_execution_id) {
+      void getActionExecution(decision.action_execution_id).then(setExecution).catch(() => setExecution(null));
+    }
+  }, [decision?.action_execution_id]);
 
   return (
-    <div className={`rounded-xl border p-4 ${isSimulation ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
+    <div className={`rounded-xl border p-4 ${isSimulation ? 'border-purple-500/30 bg-purple-500/5' : didAct ? 'border-emerald-600/40 bg-emerald-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             {isSimulation && <Chip label="SIMULATION — not a real ticket" cls="bg-purple-500/20 text-purple-300 border border-purple-500/40" />}
+            {categoryLabel && <Chip label={categoryLabel} cls="bg-indigo-500/15 text-indigo-300 border border-indigo-500/30" />}
             {sourceLabel && !isSimulation && <Chip label={sourceLabel} cls="bg-slate-800 text-slate-400" />}
             <span className="text-xs font-medium text-white truncate">{run.inquiry.slice(0, 140)}</span>
           </div>
@@ -115,6 +143,17 @@ function ActivityCard({ row }: { row: DEActivityRow }) {
           {decision.human_task_id && (
             <p className="text-[11px] text-amber-300 mt-1">A human review task was created for this.</p>
           )}
+        </div>
+      )}
+
+      {execution && (
+        <div className="mt-3 pt-3 border-t border-slate-800">
+          <p className="text-[11px] font-medium text-emerald-400 mb-1">
+            {execution.receipt ? 'Receipt — what actually happened' : 'What this action will do (awaiting approval)'}
+          </p>
+          <p className="text-xs text-emerald-200/90 leading-relaxed font-mono">
+            {execution.receipt ?? execution.request_summary}
+          </p>
         </div>
       )}
 
@@ -196,15 +235,16 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
         title="DE at Work"
-        subtitle="Live evidence + reasoning as Digital Employees notice and evaluate work on their own — not just a status dot."
+        subtitle="Live evidence + reasoning as Digital Employees notice, evaluate, and act on work across any connected system — not just a status dot."
       />
 
       <div className="mb-5 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
         <p className="text-xs text-slate-400 mb-2">
-          <span className="text-slate-300 font-medium">Honest limits:</span> "Would auto-send" records intent only —
-          there is no outbound reply channel yet, so nothing is ever actually sent to a customer here. Automatic
-          polling runs every 5 minutes via the existing dispatch cron; use the simulator below to watch the
-          mechanism run immediately without waiting for real ticket data.
+          <span className="text-slate-300 font-medium">Honest limits:</span> "Would auto-send" and "would act" record intent
+          only — a decision only becomes "Acted" when a registered action exists for that item's category and the trust/
+          guardrail rules clear it for real execution. This queue now watches every connected category (not just support
+          tickets), each with its own plain-language framing. Automatic polling runs every 5 minutes via the existing
+          dispatch cron; use the simulator below to watch the mechanism run immediately without waiting for real data.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           <input
