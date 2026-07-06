@@ -93,13 +93,13 @@ export const mockTenants: Tenant[] = [
   },
 ];
 
-export const canAccessPage = (role: UserRole, page: Page): boolean => {
+export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | 'tenant' | 'end_user'): boolean => {
   const isDtRole = [
     'dt_super_admin',
     'dt_god_access',
     'dt_support',
     'dt_billing',
-  ].includes(role);
+  ].includes(role) || layer === 'platform';
   const isTenantRole = [
     'tenant_owner',
     'tenant_admin',

@@ -150,6 +150,40 @@ function URLSync() {
   return null;
 }
 
+// ── Platform Console top nav ─────────────────────────────────────
+// PlatformConsolePage has no navigation of its own, and the regular
+// tenant Sidebar (Command Centre, Customer Lifecycle, ...) makes no sense
+// for a platform-layer user — it was rendering unconditionally alongside
+// Platform Console with no way to reach anything but the Overview page.
+// This is the whole navigation surface for platform-layer accounts.
+const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
+  { page: 'platform_home', label: 'Overview' },
+  { page: 'platform_tenants', label: 'Tenants & Approvals' },
+  { page: 'platform_health', label: 'System Health' },
+  { page: 'platform_revenue', label: 'Revenue' },
+  { page: 'platform_remote_access', label: 'Remote Access' },
+];
+
+function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: Page) => void }) {
+  return (
+    <div className="flex items-center gap-1 px-6 pt-4 border-b border-slate-800 bg-slate-950">
+      {PLATFORM_TABS.map((t) => (
+        <button
+          key={t.page}
+          onClick={() => setPage(t.page)}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+            page === t.page
+              ? 'bg-slate-900 text-white border border-slate-800 border-b-slate-900 -mb-px'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Main authenticated shell ────────────────────────────────────
 function AppShell() {
   const {
@@ -188,12 +222,15 @@ function AppShell() {
   const renderPage = () => {
     if (isDTUser)
       return (
-        <PlatformConsolePage
-          page={currentPage as PlatformPage}
-          setPage={handleSetPage}
-          user={authedUser}
-          dbTenants={dbTenants}
-        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <PlatformNavTabs page={currentPage as PlatformPage} setPage={handleSetPage} />
+          <PlatformConsolePage
+            page={currentPage as PlatformPage}
+            setPage={handleSetPage}
+            user={authedUser}
+            dbTenants={dbTenants}
+          />
+        </div>
       );
     switch (currentPage) {
       case 'dashboard':
@@ -312,17 +349,19 @@ function AppShell() {
     <>
       <URLSync />
       <div className="flex h-screen bg-slate-950 overflow-hidden">
-        <Sidebar
-          page={currentPage}
-          setPage={handleSetPage}
-          user={authedUser}
-          tenant={currentTenant}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          godModeActive={!!godModeSession}
-          exitGodMode={() => setGodModeSession(null)}
-          onLogout={handleLogout}
-        />
+        {!isDTUser && (
+          <Sidebar
+            page={currentPage}
+            setPage={handleSetPage}
+            user={authedUser}
+            tenant={currentTenant}
+            collapsed={sidebarCollapsed}
+            setCollapsed={setSidebarCollapsed}
+            godModeActive={!!godModeSession}
+            exitGodMode={() => setGodModeSession(null)}
+            onLogout={handleLogout}
+          />
+        )}
         <main className="flex-1 flex flex-col overflow-hidden">
           {godModeSession && (
             <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 flex items-center justify-between">

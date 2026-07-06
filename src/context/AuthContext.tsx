@@ -7,7 +7,7 @@ import {
   fetchMyProfile,
   DBTenant,
 } from '../lib/api';
-import type { AuthUser, Tenant, Page } from '../types';
+import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/mockData';
 import { COMPANIES_LOOKUP } from '../data/companies';
 import type { CompanyProfile, CompanyId } from '../data/companies';
@@ -112,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: role,
         tenantId: (profile && profile.tenant_id) || (sessionUser.user_metadata && sessionUser.user_metadata.tenant_id) || undefined,
         avatar: (profile && profile.avatar) || undefined,
+        layer: layer as 'platform' | 'tenant' | 'end_user',
       };
       setAuthedUser(au);
       // Only a genuine, successfully-fetched profile row with a null
@@ -181,6 +182,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (profile?.tenant_id && profile.tenant_id !== authedUser.tenantId) {
           setAuthedUser(prev => (prev ? { ...prev, tenantId: profile.tenant_id } : prev));
         }
+        // Same staleness problem as tenantId above, for role/layer: a direct
+        // sign-in seeds these from Supabase Auth user_metadata (set once at
+        // signup, e.g. LoginPage's handleLogin), not the live profiles row.
+        // A platform account created/promoted after signup (or whose
+        // metadata was simply never populated — true of every seed account
+        // in this project) would otherwise never be recognized as platform
+        // by isDTUser/canAccessPage, which read authedUser.role/.layer, not
+        // the database directly. Keep both in sync with the source of truth.
+        if (profile?.role && profile.role !== authedUser.role) {
+          setAuthedUser(prev => (prev ? { ...prev, role: profile.role as UserRole } : prev));
+        }
+        if (profile?.layer && profile.layer !== authedUser.layer) {
+          setAuthedUser(prev => (prev ? { ...prev, layer: profile.layer } : prev));
+        }
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
           if (!_cleanup) setDbTenants(t);
@@ -201,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authedUser?.id]);
 
-  const isDTUser = !!(authedUser && ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(authedUser.role));
+  const isDTUser = !!(authedUser && (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(authedUser.role) || authedUser.layer === 'platform'));
   const isTenantUser = !!(authedUser && ['tenant_owner', 'tenant_admin', 'tenant_manager', 'tenant_user'].includes(authedUser.role));
 
   const activeCompany: CompanyProfile = COMPANIES_LOOKUP[activeCompanyId];
@@ -221,13 +236,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;
 
   // ── Needs org setup (post-signup recovery) ───────────────────────
-  // A real, confirmed, authenticated user whose profile genuinely has no
-  // tenant_id must see the "set up your organization" screen — never the
-  // demo dashboard. Explicitly excludes the dev-demo-user login path,
-  // which never has a real profile row and must be completely unaffected.
+  // A real, confirmed, authenticated TENANT user whose profile genuinely
+  // has no tenant_id must see the "set up your organization" screen —
+  // never the demo dashboard. Explicitly excludes the dev-demo-user login
+  // path (never has a real profile row) AND platform-layer accounts, which
+  // are SUPPOSED to have no tenant_id by design (a platform admin operates
+  // above every tenant, not inside one) — without this exclusion, every
+  // platform account would be wrongly routed into org setup forever.
   const needsOrgSetup = !!(
     authedUser &&
     authedUser.id !== 'dev-demo-user' &&
+    authedUser.layer !== 'platform' &&
     profileHasNoTenant === true
   );
 
@@ -256,7 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleLogin = (u: AuthUser) => {
     setAuthedUser(u);
-    if (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(u.role)) {
+    if (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(u.role) || u.layer === 'platform') {
       setCurrentPage('platform_home');
     } else {
       let firstLogin = false;
@@ -272,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleSetPage = (p: Page) => {
     if (!authedUser) return;
-    if (canAccessPage(authedUser.role, p)) setCurrentPage(p);
+    if (canAccessPage(authedUser.role, p, authedUser.layer)) setCurrentPage(p);
   };
 
   const refreshTenant = async () => {
