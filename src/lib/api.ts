@@ -133,6 +133,29 @@ export const fetchMyProfile = async (): Promise<DBProfile | null> => {
   return data;
 };
 
+export interface CompleteSignupResult {
+  ok: boolean;
+  tenant_id?: string;
+  slug?: string;
+  name?: string;
+  error?: string;
+  detail?: string;
+}
+
+// Provisions a real tenant for the currently-authenticated caller and links
+// it to their own profile. Runs server-side via a SECURITY DEFINER RPC
+// (migration 049) — this is the ONLY correct place tenant creation happens;
+// see LoginPage.tsx and AuthContext.tsx for why the old client-side
+// `tenants` insert at signup time never worked.
+export const completeSignup = async (orgName: string, industry: string): Promise<CompleteSignupResult> => {
+  const { data, error } = await supabase.rpc('complete_signup', {
+    p_org_name: orgName,
+    p_industry: industry,
+  });
+  if (error) return { ok: false, error: 'rpc_error', detail: error.message };
+  return data as CompleteSignupResult;
+};
+
 // =====================================================
 // KNOWLEDGE ARTICLE QUERIES
 // =====================================================

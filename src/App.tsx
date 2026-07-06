@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components';
 import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
+import OrgSetupScreen from './pages/OrgSetupScreen';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
@@ -161,6 +162,7 @@ function AppShell() {
     currentTenant,
     isDTUser,
     isTenantUser,
+    needsOrgSetup,
     handleLogin,
     handleLogout,
     handleSetPage,
@@ -169,6 +171,11 @@ function AppShell() {
   } = useAuth();
 
   if (!authedUser) return <LoginPage onLogin={handleLogin} />;
+
+  // A real, confirmed user with no tenant yet must land here — never
+  // silently fall through to the demo dashboard. See AuthContext's
+  // needsOrgSetup and OrgSetupScreen for the full reasoning.
+  if (needsOrgSetup) return <OrgSetupScreen />;
 
   const commonProps = {
     user: authedUser,

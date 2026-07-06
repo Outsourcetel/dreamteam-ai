@@ -63,7 +63,16 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
     }
     setSuLoading(true);
     try {
-      // 1. Create the auth user
+      // Create the auth user only. Organization (tenant) creation happens
+      // AFTER the user confirms their email and logs in, via the
+      // "Set up your organization" screen calling the complete_signup RPC
+      // (see AuthContext's needsOrgSetup / OrgSetupScreen). We used to also
+      // attempt a client-side `tenants` insert right here, but the tenants
+      // table has never had an INSERT RLS policy (SELECT-only), so that
+      // insert always silently failed — and because email confirmation is
+      // required on this project, signUp() doesn't even return a usable
+      // authenticated session at this point anyway. Attempting tenant
+      // creation here was both unauthorized and premature; don't do it.
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: suEmail.trim(),
         password: suPassword,
@@ -72,49 +81,16 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
             full_name: suFullName.trim(),
             role: 'tenant_owner',
             layer: 'tenant',
+            // Carried through so the post-confirmation setup screen can
+            // pre-fill the org name/industry the user already typed here,
+            // even though it isn't used to create anything at this step.
+            pending_org_name: suOrgName.trim(),
+            pending_industry: suIndustry,
           },
         },
       });
       if (authError) throw authError;
-
-      const userId = authData.user?.id;
-      if (!userId) throw new Error('User creation failed.');
-
-      // 2. Create the organization (tenant)
-      const slug = suOrgName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-      const { data: tenantData, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({
-          name: suOrgName.trim(),
-          slug: `${slug}-${Date.now()}`,
-          industry: suIndustry,
-          plan: 'trial',
-          status: 'trial',
-          settings: {},
-        })
-        .select()
-        .single();
-
-      if (tenantError) {
-        // Non-fatal if tenants table doesn't exist yet — still show success
-        console.warn('Could not create tenant record:', tenantError.message);
-      }
-
-      const tenantId = tenantData?.id || null;
-
-      // 3. Create the user profile
-      if (tenantId) {
-        try {
-          await supabase.from('profiles').insert({
-            user_id: userId,
-            tenant_id: tenantId,
-            full_name: suFullName.trim(),
-            role: 'tenant_owner',
-            layer: 'tenant',
-            is_active: true,
-          }).throwOnError();
-        } catch { /* profile creation is best-effort at signup */ }
-      }
+      if (!authData.user?.id) throw new Error('User creation failed.');
 
       setSuSuccess(true);
     } catch (err: any) {

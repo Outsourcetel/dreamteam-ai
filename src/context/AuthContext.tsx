@@ -59,6 +59,17 @@ interface AuthContextValue {
   /** 'live' → Customer-section pages read real Supabase data; 'demo' → seed data */
   dataMode: DataMode;
   liveTenantName: string | null;
+  /**
+   * true when a genuinely authenticated, confirmed user's profile has no
+   * tenant_id yet (signup's tenant-provisioning step never ran or hasn't
+   * completed). This must route to the "set up your organization" screen,
+   * NEVER silently fall through to demo mode. Always false for the
+   * dev-demo-user login path.
+   */
+  needsOrgSetup: boolean;
+  /** Called by the org-setup screen once complete_signup succeeds, to
+   *  re-pull the profile/tenant and clear needsOrgSetup. */
+  completeOrgSetup: (tenantId: string) => Promise<void>;
   handleLogin: (u: AuthUser) => void;
   handleLogout: () => Promise<void>;
   handleSetPage: (p: Page) => void;
@@ -81,6 +92,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
+  // Tri-state, not boolean: undefined = not resolved yet (still loading, or
+  // no session), true = a real profile row was fetched and it genuinely has
+  // no tenant_id (needs the org-setup screen), false = has a tenant, OR the
+  // profile fetch itself failed/ambiguous (never force setup on a transient
+  // error — that would be its own kind of false positive).
+  const [profileHasNoTenant, setProfileHasNoTenant] = useState<boolean | undefined>(undefined);
+
   // Restore Supabase session on load
   useEffect(() => {
     let active = true;
@@ -96,6 +114,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatar: (profile && profile.avatar) || undefined,
       };
       setAuthedUser(au);
+      // Only a genuine, successfully-fetched profile row with a null
+      // tenant_id counts as "needs setup" — see profileHasNoTenant comment.
+      setProfileHasNoTenant(!!profile && !profile.tenant_id);
       const isPlatform = ['dt_super_admin','dt_god_access','dt_support','dt_billing'].includes(au.role) || layer === 'platform';
       if (isPlatform) {
         setCurrentPage('platform_home');
@@ -137,9 +158,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setDbTenants([]); setDbStats(null);
           return;
         }
+        // The dev-only demo login never touches Supabase and always carries
+        // its own synthetic tenantId — never route it through the org-setup
+        // check.
+        if (authedUser.id === 'dev-demo-user') {
+          setProfileHasNoTenant(false);
+          return;
+        }
         const profile = await fetchMyProfile();
         if (_cleanup) return;
+        setProfileHasNoTenant(!!profile && !profile.tenant_id);
         const tid = (profile?.tenant_id ?? authedUser.tenantId) as string | undefined;
+        // authedUser.tenantId is seeded from Supabase Auth user_metadata at
+        // sign-IN time (see LoginPage's handleLogin), which is only ever set
+        // once at signUp and never updated afterward. profiles.tenant_id is
+        // the source of truth and can change later (e.g. exactly the
+        // complete_signup / org-setup flow this tenant-id mismatch would
+        // otherwise silently defeat: a user signs in, profile now has a real
+        // tenant_id, but authedUser.tenantId is still stale/null, so
+        // isLiveTenant would wrongly compute false and they'd see the demo
+        // dashboard instead of their own data). Keep authedUser in sync.
+        if (profile?.tenant_id && profile.tenant_id !== authedUser.tenantId) {
+          setAuthedUser(prev => (prev ? { ...prev, tenantId: profile.tenant_id } : prev));
+        }
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
           if (!_cleanup) setDbTenants(t);
@@ -178,6 +219,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const dataMode: DataMode = isLiveTenant && !viewingDemo ? 'live' : 'demo';
   const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;
+
+  // ── Needs org setup (post-signup recovery) ───────────────────────
+  // A real, confirmed, authenticated user whose profile genuinely has no
+  // tenant_id must see the "set up your organization" screen — never the
+  // demo dashboard. Explicitly excludes the dev-demo-user login path,
+  // which never has a real profile row and must be completely unaffected.
+  const needsOrgSetup = !!(
+    authedUser &&
+    authedUser.id !== 'dev-demo-user' &&
+    profileHasNoTenant === true
+  );
 
   // Build a Tenant UI object from the DB record, falling back to the
   // god-mode override if a DT support agent is operating on behalf of a tenant.
@@ -230,6 +282,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDbCurrentTenant(t);
   };
 
+  // Called by the org-setup screen right after complete_signup() succeeds.
+  // Re-pulls the (now-linked) profile and tenant, clears needsOrgSetup, and
+  // lands the user on their brand-new, empty live dashboard.
+  const completeOrgSetup = async (tenantId: string) => {
+    setProfileHasNoTenant(false);
+    setAuthedUser(prev => (prev ? { ...prev, tenantId } : prev));
+    const t = await fetchTenantById(tenantId);
+    setDbCurrentTenant(t);
+    setCurrentPage('dashboard');
+  };
+
   const handleLogout = async () => {
     // Clear the customerApi tenant cache so the next login re-resolves it.
     try { (await import('../lib/customerApi')).clearTenantCache(); } catch { /* noop */ }
@@ -261,6 +324,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setViewingDemo,
       dataMode,
       liveTenantName,
+      needsOrgSetup,
+      completeOrgSetup,
       handleLogin,
       handleLogout,
       handleSetPage,
