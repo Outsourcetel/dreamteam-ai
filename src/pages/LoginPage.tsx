@@ -5,7 +5,15 @@ import { Spinner } from '../components';
 
 const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Professional Services', 'Manufacturing', 'Education', 'Real Estate', 'Legal', 'Other'];
 
-const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
+const LoginPage = ({
+  onLogin,
+  deactivatedMessage,
+  clearDeactivatedMessage,
+}: {
+  onLogin: (u: AuthUser) => void | Promise<void>;
+  deactivatedMessage?: string | null;
+  clearDeactivatedMessage?: () => void;
+}) => {
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
 
   // Sign-in state
@@ -27,13 +35,19 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError('');
+    if (clearDeactivatedMessage) clearDeactivatedMessage();
     setLoading(true);
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) {
         setError(authError.message);
       } else if (authData.user) {
-        onLogin({
+        // onLogin (AuthContext.handleLogin) checks profiles.is_active
+        // before ever setting an authenticated session — if the account
+        // is deactivated, it signs out immediately and sets
+        // deactivatedMessage, which we render below instead of navigating
+        // anywhere.
+        await onLogin({
           id: authData.user.id,
           name: authData.user.user_metadata?.full_name || authData.user.email || 'User',
           email: authData.user.email || '',
@@ -168,6 +182,11 @@ const LoginPage = ({ onLogin }: { onLogin: (u: AuthUser) => void }) => {
             <>
               <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
               <p className="text-slate-400 text-sm mb-6">Sign in to your workspace</p>
+              {deactivatedMessage && (
+                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                  <p className="text-xs text-red-300">{deactivatedMessage}</p>
+                </div>
+              )}
               <form onSubmit={handleLogin} className="space-y-4 mb-6">
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>

@@ -2,11 +2,19 @@
 
 **Purpose:** DreamTeam AI is a **design-validation prototype with a production track underway**. This document is the single source of truth for what is demo-only, what carries forward to the enterprise product, and what is now live. Read this before building or selling anything.
 
-_Last updated: 2026-07-07 (Foundational multi-level tenant hierarchy, migration 050)_
+_Last updated: 2026-07-07 (Platform-owner security model, migration 052)_
 
 ---
 
 ## 0. Production track status — Customer section (P1 + P2 SHIPPED)
+
+**Platform-owner security model — "no one else has access unless I authorize it" (SHIPPED, migration 052).** The founder's own words, verbatim: "no one else, other than authorized by me as team member, ever has access to this platform... a panel to see my tenants and provision them... an easy way to remote access those tenants." Three pieces:
+
+1. **`profiles.is_active` enforcement (real security gap, found and closed).** Before this fix, `is_active` was set by the UI's deactivate toggle but checked NOWHERE — no RLS, no RPC, no AuthContext check. "Deactivating" a team member was cosmetic; they could still log in and act normally. Fixed via a new `my_account_status()` RPC checked at session-restore, direct sign-in, and a new 60-second resync poll (so an already-open session is force-signed-out mid-session, not just blocked at next login).
+2. **`platform_invites`** — the only owner-controlled path to platform-layer access (direct DB writes remain the only OTHER way, deliberately no self-serve platform signup). `invite_platform_team_member`/`list_platform_invites`/`revoke_platform_invite` (`is_platform_admin()`-gated) + `redeem_platform_invite` (any authenticated user with an existing profile, single-use, no parallel signup path). Deny-all RLS on the table itself — the invite code is a bearer credential, reads go through guarded RPCs only.
+3. **Remote Access ("god-mode") — found disconnected, actually wired.** The existing `godModeSession`/banner/modal UI in `PlatformConsolePage.tsx` looked complete but its confirmation buttons never called `setGodModeSession` — clicking "Enter Tenant Workspace" did nothing. Fixed with real DB-gated `start_platform_remote_access`/`end_platform_remote_access` RPCs (durably audited in a new `platform_access_events` table) wired to real `enterRemoteAccess`/`exitRemoteAccess` AuthContext functions, called from every Remote Access button. UI copy renamed from "Support Access"/"God Mode" to "Remote Access" throughout (internal variable names unchanged).
+
+Full detail, live verification evidence (invite create/reject/redeem/duplicate-reject/revoke, remote-access start/end with real audit rows shown, is_active flip-and-recheck, grant-check results): see the ROADMAP.md entry of the same name.
 
 **FOUNDATIONAL: multi-level tenant hierarchy — "fix this once and for all" (SHIPPED, migration 050).** The founder's explicit, highest-priority architectural request, ahead of any new feature: a parent platform, tenants underneath it, and tenants able to have their own sub-tenants ("four levels is a possibility"), with a HYBRID creation model — self-serve where a tenant is trusted to do so, otherwise a creation request routes to the PLATFORM (not the parent tenant) for approval by default.
 

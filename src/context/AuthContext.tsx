@@ -7,6 +7,7 @@ import {
   fetchMyProfile,
   DBTenant,
 } from '../lib/api';
+import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/mockData';
 import { COMPANIES_LOOKUP } from '../data/companies';
@@ -27,6 +28,9 @@ interface DbStats {
 interface GodModeSession {
   tenant: Tenant;
   operator: AuthUser;
+  /** platform_access_events.session_key for this Remote Access session —
+   *  ties the start/end audit pair together server-side. */
+  sessionKey: string;
 }
 
 export type { CompanyProfile, CompanyId } from '../data/companies';
@@ -70,12 +74,33 @@ interface AuthContextValue {
   /** Called by the org-setup screen once complete_signup succeeds, to
    *  re-pull the profile/tenant and clear needsOrgSetup. */
   completeOrgSetup: (tenantId: string) => Promise<void>;
-  handleLogin: (u: AuthUser) => void;
+  /**
+   * Non-null right after a session was force-ended because the account's
+   * profile.is_active is false — either caught at session-restore/sign-in,
+   * or mid-session via the periodic resync check. LoginPage shows this as
+   * a clear message ("This account has been deactivated") rather than
+   * silently landing back on the sign-in form. Cleared on the next login
+   * attempt.
+   */
+  deactivatedMessage: string | null;
+  clearDeactivatedMessage: () => void;
+  handleLogin: (u: AuthUser) => Promise<void>;
   handleLogout: () => Promise<void>;
   handleSetPage: (p: Page) => void;
   setSidebarCollapsed: (v: boolean) => void;
   setGodModeSession: (s: GodModeSession | null) => void;
   refreshTenant: () => Promise<void>;
+  /**
+   * Remote Access ("god-mode"), platform-owner-only: starts a durably
+   * audited session against p_tenant_id (platform_access_events, via the
+   * start_platform_remote_access RPC — gated by is_platform_admin() at
+   * the DB layer, so this is unreachable by any tenant-layer user even if
+   * the UI entry point were somehow bypassed). Returns true on success.
+   */
+  enterRemoteAccess: (tenant: Tenant) => Promise<boolean>;
+  /** Ends the current Remote Access session (audited: an 'end' event
+   *  paired to the same session_key) and returns to Platform Console. */
+  exitRemoteAccess: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -98,6 +123,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // profile fetch itself failed/ambiguous (never force setup on a transient
   // error — that would be its own kind of false positive).
   const [profileHasNoTenant, setProfileHasNoTenant] = useState<boolean | undefined>(undefined);
+  const [deactivatedMessage, setDeactivatedMessage] = useState<string | null>(null);
+  const clearDeactivatedMessage = () => setDeactivatedMessage(null);
+
+  // Force-ends the current session because the account has been
+  // deactivated (profile.is_active === false). Signs out of Supabase,
+  // clears local auth state, and surfaces a clear message on the login
+  // screen instead of silently leaving the user on a stale session.
+  const forceSignOutDeactivated = async () => {
+    try { await supabase.auth.signOut(); } catch { /* noop */ }
+    setAuthedUser(null);
+    setDbTenants([]);
+    setDbStats(null);
+    setDbCurrentTenant(null);
+    setGodModeSession(null);
+    setCurrentPage('dashboard');
+    setDeactivatedMessage('This account has been deactivated. Contact your platform owner if you believe this is a mistake.');
+  };
 
   // Restore Supabase session on load
   useEffect(() => {
@@ -138,6 +180,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data } = await supabase.auth.getSession();
         const sess = data && data.session;
         if (!active || !sess || !sess.user) return;
+        // Authoritative deactivation check BEFORE trusting anything else
+        // about this session. A stale session for a since-deactivated
+        // account must never be allowed to "restore" — is_active is
+        // enforced here, not just at the point of fresh sign-in.
+        const status = await checkMyAccountStatus();
+        if (!active) return;
+        if (status && status.found && status.is_active === false) {
+          await forceSignOutDeactivated();
+          return;
+        }
         const profile = await fetchMyProfile();
         if (!active) return;
         buildFromProfile(sess.user, profile);
@@ -150,10 +202,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load DB data when user changes
+  // Load DB data when user changes, AND periodically resync (role/layer/
+  // tenant/is_active) for an already-logged-in session. The periodic tick
+  // is what makes deactivation take effect mid-session, not just at the
+  // next fresh login — see is_active enforcement notes above.
   useEffect(() => {
     let _cleanup = false;
-    void (async () => {
+    const syncProfile = async () => {
       try {
         if (!authedUser) {
           setDbTenants([]); setDbStats(null);
@@ -161,9 +216,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         // The dev-only demo login never touches Supabase and always carries
         // its own synthetic tenantId — never route it through the org-setup
-        // check.
+        // or deactivation check.
         if (authedUser.id === 'dev-demo-user') {
           setProfileHasNoTenant(false);
+          return;
+        }
+        // Authoritative deactivation check on every resync tick — this is
+        // what force-ends an ALREADY-LOGGED-IN session promptly if the
+        // account gets deactivated while the user is still using the app,
+        // not just at the next fresh sign-in.
+        const status = await checkMyAccountStatus();
+        if (_cleanup) return;
+        if (status && status.found && status.is_active === false) {
+          await forceSignOutDeactivated();
           return;
         }
         const profile = await fetchMyProfile();
@@ -211,8 +276,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch(e) { console.error('[DT] data load:', e); }
-    })();
-    return () => { _cleanup = true; };
+    };
+    void syncProfile();
+    // Re-check every 60s so a deactivation applied by the platform owner
+    // (or a tenant admin toggling a team member off) takes effect for an
+    // already-open session promptly, not just on the next fresh login.
+    const intervalId = setInterval(() => { void syncProfile(); }, 60000);
+    return () => { _cleanup = true; clearInterval(intervalId); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authedUser?.id]);
 
@@ -273,7 +343,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       : undefined);
 
-  const handleLogin = (u: AuthUser) => {
+  const handleLogin = async (u: AuthUser) => {
+    // Direct sign-in path: LoginPage builds `u` from Supabase Auth
+    // user_metadata (set once at signup), which has no idea about a
+    // later profiles.is_active = false toggle. Check the authoritative
+    // status BEFORE ever setting authedUser — a deactivated account must
+    // never get even a flash of an authenticated session. The dev-only
+    // demo login never touches Supabase and is exempt.
+    if (u.id !== 'dev-demo-user') {
+      const status = await checkMyAccountStatus();
+      if (status && status.found && status.is_active === false) {
+        await forceSignOutDeactivated();
+        return;
+      }
+    }
     setAuthedUser(u);
     if (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(u.role) || u.layer === 'platform') {
       setCurrentPage('platform_home');
@@ -299,6 +382,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!tid) return;
     const t = await fetchTenantById(tid);
     setDbCurrentTenant(t);
+  };
+
+  // Remote Access ("god-mode"): the platform owner enters a real tenant's
+  // workspace. Calls the DB-gated RPC first (is_platform_admin() enforced
+  // server-side, so this is unreachable for any tenant-layer caller) which
+  // writes a durable platform_access_events 'start' row and hands back a
+  // session_key; only then do we flip the local godModeSession state that
+  // drives the amber banner and currentTenant override.
+  const enterRemoteAccess = async (tenant: Tenant): Promise<boolean> => {
+    if (!authedUser) return false;
+    const res = await startPlatformRemoteAccess(tenant.id);
+    if (!res.ok || !res.session_key) {
+      console.error('[DT] enterRemoteAccess failed:', res.error);
+      return false;
+    }
+    setGodModeSession({ tenant, operator: authedUser, sessionKey: res.session_key });
+    return true;
+  };
+
+  // Ends the current Remote Access session: writes the paired 'end'
+  // platform_access_events row (audited duration), then clears local
+  // state and returns to Platform Console.
+  const exitRemoteAccess = async () => {
+    const sessionKey = godModeSession?.sessionKey;
+    setGodModeSession(null);
+    if (sessionKey) {
+      const res = await endPlatformRemoteAccess(sessionKey);
+      if (!res.ok) console.error('[DT] exitRemoteAccess audit failed:', res.error);
+    }
   };
 
   // Called by the org-setup screen right after complete_signup() succeeds.
@@ -345,12 +457,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       liveTenantName,
       needsOrgSetup,
       completeOrgSetup,
+      deactivatedMessage,
+      clearDeactivatedMessage,
       handleLogin,
       handleLogout,
       handleSetPage,
       setSidebarCollapsed,
       setGodModeSession,
       refreshTenant,
+      enterRemoteAccess,
+      exitRemoteAccess,
     }}>
       {children}
     </AuthContext.Provider>

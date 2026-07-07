@@ -292,6 +292,96 @@ export const setTenantFeatureOverride = async (
   return data as { ok: boolean };
 };
 
+// =====================================================================
+// PLATFORM-OWNER SECURITY (migration 052) — account-status check,
+// owner-controlled team invitations, remote-access audit trail.
+// =====================================================================
+export interface AccountStatus {
+  found: boolean;
+  is_active?: boolean;
+  role?: string;
+  layer?: 'platform' | 'tenant';
+  tenant_id?: string | null;
+}
+
+// Authoritative "am I still allowed in" check, straight from the DB, not
+// a cached profile row — used to catch a deactivated account (is_active
+// = false) immediately, both at session-restore and mid-session.
+export const checkMyAccountStatus = async (): Promise<AccountStatus | null> => {
+  const { data, error } = await supabase.rpc('my_account_status');
+  if (error) { console.error('checkMyAccountStatus:', error.message); return null; }
+  return data as AccountStatus;
+};
+
+export type PlatformInviteRole = 'platform_support' | 'platform_billing' | 'platform_super_admin';
+
+export const PLATFORM_INVITE_ROLE_LABELS: Record<PlatformInviteRole, string> = {
+  platform_support: 'Support',
+  platform_billing: 'Billing',
+  platform_super_admin: 'Full platform access',
+};
+
+export interface PlatformInvite {
+  id: string;
+  email: string;
+  role: PlatformInviteRole;
+  status: 'pending' | 'redeemed' | 'revoked';
+  invite_code: string;
+  invited_by: string | null;
+  created_at: string;
+  redeemed_at: string | null;
+  redeemed_by: string | null;
+}
+
+export const invitePlatformTeamMember = async (
+  email: string,
+  role: PlatformInviteRole
+): Promise<{ ok: boolean; invite_code?: string; email?: string; role?: string; error?: string }> => {
+  const { data, error } = await supabase.rpc('invite_platform_team_member', { p_email: email, p_role: role });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; invite_code?: string; email?: string; role?: string };
+};
+
+export const listPlatformInvites = async (): Promise<PlatformInvite[]> => {
+  const { data, error } = await supabase.rpc('list_platform_invites');
+  if (error) { console.error('listPlatformInvites:', error.message); return []; }
+  return (data ?? []) as PlatformInvite[];
+};
+
+export const revokePlatformInvite = async (inviteId: string): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('revoke_platform_invite', { p_invite_id: inviteId });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export const redeemPlatformInvite = async (
+  inviteCode: string
+): Promise<{ ok: boolean; role?: string; layer?: string; error?: string }> => {
+  const { data, error } = await supabase.rpc('redeem_platform_invite', { p_invite_code: inviteCode });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; role?: string; layer?: string };
+};
+
+export interface RemoteAccessStartResult {
+  ok: boolean;
+  session_key?: string;
+  tenant_id?: string;
+  tenant_name?: string;
+  error?: string;
+}
+
+export const startPlatformRemoteAccess = async (tenantId: string): Promise<RemoteAccessStartResult> => {
+  const { data, error } = await supabase.rpc('start_platform_remote_access', { p_tenant_id: tenantId });
+  if (error) return { ok: false, error: error.message };
+  return data as RemoteAccessStartResult;
+};
+
+export const endPlatformRemoteAccess = async (sessionKey: string): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('end_platform_remote_access', { p_session_key: sessionKey });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
 // =====================================================
 // KNOWLEDGE ARTICLE QUERIES
 // =====================================================

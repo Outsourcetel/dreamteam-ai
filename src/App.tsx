@@ -5,6 +5,7 @@ import { Sidebar } from './components';
 import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
 import OrgSetupScreen from './pages/OrgSetupScreen';
+import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
@@ -201,10 +202,29 @@ function AppShell() {
     handleLogout,
     handleSetPage,
     setSidebarCollapsed,
-    setGodModeSession,
+    exitRemoteAccess,
+    deactivatedMessage,
+    clearDeactivatedMessage,
   } = useAuth();
+  const location = useLocation();
 
-  if (!authedUser) return <LoginPage onLogin={handleLogin} />;
+  // Platform-invite redemption: a small, self-contained entry point that
+  // must work whether or not the visitor is logged in yet (the redeem
+  // page itself handles both cases) — intercepted here, before both the
+  // "not logged in" and "needs org setup" gates below, so it never gets
+  // swallowed by either.
+  if (location.pathname === '/platform/redeem') {
+    const code = new URLSearchParams(location.search).get('code') || '';
+    return <PlatformInviteRedeemPage code={code} />;
+  }
+
+  if (!authedUser) return (
+    <LoginPage
+      onLogin={handleLogin}
+      deactivatedMessage={deactivatedMessage}
+      clearDeactivatedMessage={clearDeactivatedMessage}
+    />
+  );
 
   // A real, confirmed user with no tenant yet must land here — never
   // silently fall through to the demo dashboard. See AuthContext's
@@ -358,7 +378,7 @@ function AppShell() {
             collapsed={sidebarCollapsed}
             setCollapsed={setSidebarCollapsed}
             godModeActive={!!godModeSession}
-            exitGodMode={() => setGodModeSession(null)}
+            exitGodMode={() => { void exitRemoteAccess(); }}
             onLogout={handleLogout}
           />
         )}
@@ -368,15 +388,15 @@ function AppShell() {
               <div className="flex items-center gap-2">
                 <span className="text-amber-400 text-sm">!</span>
                 <span className="text-xs text-amber-300">
-                  Support Access — viewing {godModeSession.tenant.name} as{' '}
+                  Remote Access — viewing {godModeSession.tenant.name} as{' '}
                   {godModeSession.operator.name}
                 </span>
               </div>
               <button
-                onClick={() => setGodModeSession(null)}
+                onClick={() => { void exitRemoteAccess(); }}
                 className="text-xs text-amber-500 hover:text-amber-300 underline transition-all"
               >
-                Exit Support Session
+                Exit Remote Access
               </button>
             </div>
           )}

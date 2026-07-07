@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
 import { mockTenants } from '../../lib/mockData';
+import { useAuth } from '../../context/AuthContext';
 import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
 } from '../../lib/api';
+import PlatformInvitesPanel from './PlatformInvitesPanel';
 
 const PlatformConsolePage = ({
   page,
@@ -19,6 +21,7 @@ const PlatformConsolePage = ({
   user: AuthUser;
   dbTenants?: DBTenant[];
 }) => {
+  const { enterRemoteAccess } = useAuth();
   // Use real DB tenants when available, fall back to mock data otherwise
   const tenants: Tenant[] = (dbTenants && dbTenants.length > 0)
     ? dbTenants.map((t: any) => ({
@@ -43,7 +46,29 @@ const PlatformConsolePage = ({
     : mockTenants;
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [godModeTarget, setGodModeTarget] = useState<Tenant | null>(null);
+  const [entering, setEntering] = useState(false);
+  const [enterError, setEnterError] = useState('');
   const [featureTarget, setFeatureTarget] = useState<Tenant | null>(null);
+
+  // Real, DB-gated ONLY (is_platform_admin() enforced server-side): calls
+  // start_platform_remote_access, which durably audits the session in
+  // platform_access_events, then flips local godModeSession state and
+  // routes into the tenant's own dashboard so the owner is actually
+  // operating inside that tenant's real data — not just looking at a
+  // confirmation modal that goes nowhere.
+  const handleEnterRemoteAccess = async (tenant: Tenant) => {
+    setEntering(true);
+    setEnterError('');
+    const ok = await enterRemoteAccess(tenant);
+    setEntering(false);
+    if (ok) {
+      setGodModeTarget(null);
+      setSelectedTenant(null);
+      setPage('dashboard');
+    } else {
+      setEnterError('Could not start Remote Access. Please try again.');
+    }
+  };
 
   if (page === 'platform_home') {
     const totalTokens = tenants.reduce((s, t) => s + t.monthlyTokens, 0);
@@ -92,6 +117,9 @@ const PlatformConsolePage = ({
             trend="Platform-wide"
           />
         </div>
+
+        <PlatformInvitesPanel />
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-white mb-4">
             Recent Platform Events
@@ -305,10 +333,10 @@ const PlatformConsolePage = ({
                         Features
                       </button>
                       <button
-                        onClick={() => setGodModeTarget(t)}
+                        onClick={() => { setEnterError(''); setGodModeTarget(t); }}
                         className="text-xs px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg transition-all"
                       >
-                        Support Access
+                        Remote Access
                       </button>
                     </div>
                   </td>
@@ -367,12 +395,13 @@ const PlatformConsolePage = ({
               <div className="flex gap-3">
                 <button
                   onClick={() => {
+                    setEnterError('');
                     setGodModeTarget(selectedTenant);
                     setSelectedTenant(null);
                   }}
                   className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-all"
                 >
-                  Start Support Session
+                  Remote Access
                 </button>
                 <button className="px-4 py-2.5 text-sm text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-all">
                   Suspend
@@ -391,17 +420,17 @@ const PlatformConsolePage = ({
         )}
         {godModeTarget && (
           <Modal
-            title={'Support Access: ' + godModeTarget.name}
-            onClose={() => setGodModeTarget(null)}
+            title={'Remote Access: ' + godModeTarget.name}
+            onClose={() => { if (!entering) setGodModeTarget(null); }}
           >
             <div className="space-y-4">
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
                 <p className="text-sm text-amber-300 font-medium mb-1">
-                  Support Access — Remote Session
+                  Remote Access — enter this tenant's workspace
                 </p>
                 <p className="text-xs text-amber-400/70">
-                  You are about to enter this tenant workspace with full access.
-                  All actions will be logged and visible to the tenant owner.
+                  You are about to work inside {godModeTarget.name}'s real workspace, seeing exactly what
+                  their team sees. This session is recorded — who accessed it, when, and for how long.
                 </p>
               </div>
               <div className="space-y-2 text-xs text-slate-400">
@@ -412,19 +441,17 @@ const PlatformConsolePage = ({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Audit logged</span>
-                  <span className="text-white">Yes — visible to tenant</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Session timeout</span>
-                  <span className="text-white">60 minutes</span>
+                  <span>Recorded</span>
+                  <span className="text-white">Yes — every session is logged</span>
                 </div>
               </div>
+              {enterError && <p className="text-xs text-red-400">{enterError}</p>}
               <button
-                onClick={() => setGodModeTarget(null)}
-                className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-amber-600 hover:bg-amber-500 transition-all"
+                onClick={() => handleEnterRemoteAccess(godModeTarget)}
+                disabled={entering}
+                className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-60 transition-all"
               >
-                Enter Tenant Workspace
+                {entering ? 'Starting session…' : 'Enter Tenant Workspace'}
               </button>
             </div>
           </Modal>
@@ -629,7 +656,7 @@ const PlatformConsolePage = ({
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Remote Access</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Support Access sessions and remote access to tenant workspaces
+            Enter any tenant's workspace to see exactly what they see
           </p>
         </div>
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
@@ -637,11 +664,11 @@ const PlatformConsolePage = ({
             <span className="text-amber-400 text-lg">!</span>
             <div>
               <div className="text-sm font-medium text-amber-300">
-                Support Access
+                Remote Access
               </div>
               <div className="text-xs text-amber-400/70">
-                All remote sessions are fully logged and visible to tenant
-                owners. Only authorised DT staff can initiate a Support Access session.
+                Every remote-access session is recorded — who accessed which tenant, and when. Only the
+                platform owner (you) can start one.
               </div>
             </div>
           </div>
@@ -682,18 +709,18 @@ const PlatformConsolePage = ({
                   </div>
                 </div>
                 <button
-                  onClick={() => setGodModeTarget(t)}
+                  onClick={() => { setEnterError(''); setGodModeTarget(t); }}
                   className="w-full py-2 text-sm font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all"
                 >
-                  Start Support Session
+                  Remote Access
                 </button>
               </div>
             ))}
         </div>
         {godModeTarget && (
           <Modal
-            title={'Support Access: ' + godModeTarget.name}
-            onClose={() => setGodModeTarget(null)}
+            title={'Remote Access: ' + godModeTarget.name}
+            onClose={() => { if (!entering) setGodModeTarget(null); }}
           >
             <div className="space-y-4">
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
@@ -701,14 +728,16 @@ const PlatformConsolePage = ({
                   Confirm Remote Access
                 </p>
                 <p className="text-xs text-amber-400/70">
-                  Session will be logged and visible to the tenant owner.
+                  You'll be working inside {godModeTarget.name}'s real workspace. This session is recorded.
                 </p>
               </div>
+              {enterError && <p className="text-xs text-red-400">{enterError}</p>}
               <button
-                onClick={() => setGodModeTarget(null)}
-                className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-amber-600 hover:bg-amber-500 transition-all"
+                onClick={() => handleEnterRemoteAccess(godModeTarget)}
+                disabled={entering}
+                className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-60 transition-all"
               >
-                Launch Remote Session
+                {entering ? 'Starting session…' : 'Enter Tenant Workspace'}
               </button>
             </div>
           </Modal>

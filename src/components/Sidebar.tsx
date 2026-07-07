@@ -547,7 +547,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         </div>
         {godModeActive && (
           <button onClick={exitGodMode} className="mt-2 w-full text-[10px] text-amber-500 hover:text-amber-300 text-center">
-            Exit support session
+            Exit Remote Access
           </button>
         )}
       </div>
