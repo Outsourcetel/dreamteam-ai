@@ -109,16 +109,6 @@ export async function startRenewalRun(account: CustomerAccount): Promise<Playboo
   };
 }
 
-/** Cancel a run (server-side). */
-export async function cancelRun(runId: string): Promise<void> {
-  const { data, error } = await supabase.functions.invoke('playbook-execute', {
-    body: { action: 'cancel', run_id: runId },
-  });
-  if (error) raise('cancelRun', { message: error.message ?? String(error) });
-  if ((data as { error?: string })?.error) raise('cancelRun', { message: (data as { error: string }).error });
-  notify();
-}
-
 /**
  * Resume the run waiting on a decided human task. Primary path: the
  * resume_playbook_on_task RPC (server-authoritative SQL). Fallback when

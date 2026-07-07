@@ -47,25 +47,6 @@ export async function listKnowledgeDocs(): Promise<KnowledgeDoc[]> {
   return data ?? [];
 }
 
-/** The version chain for one doc lineage, newest first — walks
- *  previous_version_id back to the original upload/paste. */
-export async function listDocVersionHistory(docId: string): Promise<KnowledgeDoc[]> {
-  const tid = await requireTenantId();
-  const chain: KnowledgeDoc[] = [];
-  let cursor: string | null = docId;
-  let guard = 0;
-  while (cursor && guard < 50) {
-    guard++;
-    const { data, error } = await supabase
-      .from('knowledge_docs').select('*').eq('id', cursor).eq('tenant_id', tid).maybeSingle();
-    if (error) raise('listDocVersionHistory', error);
-    if (!data) break;
-    chain.push(data as KnowledgeDoc);
-    cursor = (data as KnowledgeDoc).previous_version_id;
-  }
-  return chain;
-}
-
 export async function createKnowledgeDoc(
   d: { title: string; content: string; source: 'upload' | 'paste'; tags: string[] }
 ): Promise<KnowledgeDoc> {

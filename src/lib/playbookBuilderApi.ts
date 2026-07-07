@@ -344,10 +344,6 @@ export async function startDefinitionRun(definitionId: string, accountId: string
   return res;
 }
 
-export function runsForDefinition(runs: PlaybookRun[], definitionId: string): PlaybookRun[] {
-  return runs.filter(r => (r as PlaybookRun & { definition_id?: string | null }).definition_id === definitionId);
-}
-
 // ============================================================
 // R7 — Scheduled & event triggers.
 //
