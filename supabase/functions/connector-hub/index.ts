@@ -1147,6 +1147,19 @@ serve(async (req) => {
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 
+    // ── Feature gate: connector_hub can be turned off per tenant from
+    // the Platform Console (feature_registry / tenant_feature_overrides,
+    // migration 050/068). is_feature_enabled_internal has no caller-auth
+    // check of its own (safe here since it's called with the service-
+    // role client, and tenantId above is already resolved/authorized).
+    const { data: connectorHubOn } = await admin.rpc('is_feature_enabled_internal', {
+      p_tenant_id: tenantId,
+      p_feature_key: 'connector_hub',
+    });
+    if (connectorHubOn === false) {
+      return json({ error: 'feature_disabled', detail: 'Connector Hub is not enabled for this workspace.' }, 403);
+    }
+
     // ════════ template_dry_run — the builder's "Test now" ════════
     // Runs a template definition live against creds ENTERED IN THE
     // BUILDER, before anything is saved. The secrets travel in-flight
