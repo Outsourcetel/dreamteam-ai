@@ -155,7 +155,7 @@ const fmtMoney = (cents: number) => '$' + Math.round(cents / 100).toLocaleString
 const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
   'connector_action', 'update_record', 'log_activity', 'consult_specialist',
-  'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'complete',
+  'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -172,6 +172,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   checklist: 'Checklist',
   wait: 'Wait',
   sub_playbook: 'Run another playbook',
+  agentic_step: 'Agentic step',
   complete: 'Complete',
 };
 
@@ -181,7 +182,7 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 // the HTTP executor and is allowed to sit after a human gate.
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
-  'wait', 'sub_playbook', 'consult_specialist',
+  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
@@ -399,6 +400,17 @@ function validateSteps(steps: unknown): ValidationError[] {
       case 'sub_playbook': {
         if (typeof p.playbook_id !== 'string' || !p.playbook_id.trim()) {
           errs.push({ index: i, code: 'bad_params', message: 'Pick which playbook this step should run.' });
+        }
+        break;
+      }
+      case 'agentic_step': {
+        // Budget (max_iterations/token/cost) is a TENANT policy
+        // (agentic_step_policies), not step shape — checked at run time,
+        // same "definition shape here, runtime state there" split as
+        // consult_specialist.profile_key. Validation here is just: does
+        // this step actually say what it's trying to accomplish.
+        if (typeof p.goal_template !== 'string' || !p.goal_template.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'An agentic step needs a goal — describe what it should accomplish.' });
         }
         break;
       }
@@ -1477,6 +1489,101 @@ async function executeDefinitionSteps(
           step.detail = `Child run started (${childResult.status}) — ${childResult.run_id}`;
           step.output = { child_run_id: childResult.run_id, child_status: childResult.status };
           await stepAudit(i, { child_run_id: childResult.run_id, child_status: childResult.status });
+          await saveRun(admin, run);
+          continue;
+        }
+
+        // ────────────────────────────────────────────────
+        // agentic_step — hands the step to a bounded reasoning loop
+        // (agentic-step-execute) instead of a fixed script. DORMANT-
+        // HONEST: mirrors consult_specialist's llm_not_configured skip
+        // exactly. The loop's own tool calls run through execute_action
+        // internally (destructive-gates/guardrails/trust all apply
+        // automatically, same as connector_action).
+        //
+        // NON-BLOCKING BY DESIGN, matching connector_action's existing
+        // convention exactly: when a tool call inside the loop gets
+        // gated, connector-hub creates its normal human_tasks row (type
+        // 'action_approval') and the loop is TOLD the action is pending
+        // — it does not stop and wait. The playbook step completes in
+        // this one HTTP call once the loop reaches a terminal state
+        // (goal reached, budget/iteration cap, or no-progress), exactly
+        // like every other step. This deliberately mirrors
+        // execRegisteredAction (above) rather than human_approval: a
+        // gate created mid-reasoning is routed to a human for that ONE
+        // action, same as a deterministic connector_action step would,
+        // without pausing the playbook run around it. A future version
+        // could make the loop itself wait on a gate before continuing
+        // its OWN reasoning — deliberately out of scope here (it would
+        // require executing the approved action exactly once, and the
+        // existing approval hook (resolveActionExecution, connectorApi.ts)
+        // already owns that; teaching two systems to coordinate on the
+        // same gate without double-executing needs its own design pass).
+        case 'agentic_step': {
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would run an agentic step toward: "${String(params.goal_template ?? '').slice(0, 120)}" (not actually run)`;
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+          const goal = renderTemplate(String(params.goal_template ?? ''), ctx, run.id).trim()
+            || `Complete step ${i + 1} of this playbook.`;
+          const runDeId = await resolveRunDeId();
+          if (!runDeId) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'skipped: no digital employee available to run this step';
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+
+          let agenticRes: Record<string, unknown> | null = null;
+          try {
+            const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/agentic-step-execute`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                action: 'start', tenant_id: tenantId, de_id: runDeId,
+                playbook_run_id: run.id, step_index: i, goal,
+              }),
+            });
+            agenticRes = await r.json().catch(() => null);
+          } catch (e) {
+            agenticRes = { error: `agentic step call failed: ${String(e).slice(0, 120)}` };
+          }
+
+          const errKey = String(agenticRes?.error ?? '');
+          if (errKey === 'llm_not_configured') {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'skipped: agentic reasoning not activated (ANTHROPIC_API_KEY) — run recorded';
+            await stepAudit(i, { agentic_step_run_id: agenticRes?.agentic_step_run_id ?? null });
+            await saveRun(admin, run);
+            continue;
+          }
+          if (errKey) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `skipped: agentic step failed (${errKey.slice(0, 120)})`;
+            await stepAudit(i, { agentic_step_run_id: agenticRes?.agentic_step_run_id ?? null });
+            await saveRun(admin, run);
+            continue;
+          }
+
+          const outStatus = String(agenticRes?.status ?? 'failed');
+          const done = outStatus === 'completed';
+          step.status = done ? 'done' : 'failed';
+          step.at = now();
+          step.detail = done
+            ? `Agentic step completed — ${String(agenticRes?.summary ?? '').slice(0, 200) || 'goal reached'}`
+            : `Agentic step ended: ${outStatus}`;
+          ctx.last_agentic_step_run_id = (agenticRes?.agentic_step_run_id as string | undefined) ?? null;
+          await stepAudit(i, { agentic_step_run_id: agenticRes?.agentic_step_run_id ?? null, status: outStatus });
+          if (!done) {
+            run.status = 'failed';
+            await saveRun(admin, run);
+            return { status: 'failed' };
+          }
           await saveRun(admin, run);
           continue;
         }

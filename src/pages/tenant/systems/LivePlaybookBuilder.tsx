@@ -165,6 +165,14 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
           <p className="text-[10px] text-slate-600">Missing/paused profile or dormant specialist brain → step records as skipped (honest degradation); escalation still fires when chosen.</p>
         </div>
       );
+    case 'agentic_step':
+      return (
+        <div className="space-y-2">
+          <textarea className={inputCls + ' min-h-[60px] resize-y'} placeholder="Goal — what should this step accomplish? (templates supported, e.g. {{account.name}})"
+            value={String(p.goal_template ?? '')} onChange={e => set('goal_template', e.target.value)} />
+          <p className="text-[10px] text-slate-600">The DE decides how to reach this goal using whatever tools it's been granted — it doesn't follow a fixed script. Every action still passes through the same access grants, guardrails, and trust dial as a Connector action step. Dormant reasoning brain → step records as skipped (honest degradation), same as Consult specialist.</p>
+        </div>
+      );
     case 'guardrail_check':
       return <p className="text-[11px] text-slate-500">Re-checks the invoice approval threshold and records the result in the audit chain.</p>;
     case 'checklist':
