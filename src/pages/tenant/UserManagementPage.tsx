@@ -141,6 +141,12 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
+
+  const runAction = async (action: () => Promise<string | null>) => {
+    const err = await action();
+    setActionError(err || '');
+  };
 
   const accentColor = tenant?.primaryColor || '#6366f1';
 
@@ -174,6 +180,13 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           </button>
         )}
       </div>
+
+      {actionError && (
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center justify-between gap-3">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-300">×</button>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -251,7 +264,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                 {/* Role */}
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin && m.role !== 'tenant_owner' ? (
-                    <select value={m.role} onChange={e => { updateRole(m.id, e.target.value as TenantRole); setEditingId(null); }}
+                    <select value={m.role} onChange={e => { runAction(() => updateRole(m.id, e.target.value as TenantRole)); setEditingId(null); }}
                       onBlur={() => setEditingId(null)} autoFocus
                       className="w-full bg-slate-800 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
                       {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
@@ -269,7 +282,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                 {/* Department */}
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin ? (
-                    <select value={m.department} onChange={e => { updateDepartment(m.id, e.target.value); }}
+                    <select value={m.department} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value)); }}
                       className="w-full bg-slate-800 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
                       {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
                     </select>
@@ -296,18 +309,18 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
 
                 {/* Actions */}
                 <div className="col-span-1 flex items-center justify-end gap-2">
-                  {isAdmin && m.id !== user?.id && m.role !== 'tenant_owner' && (
+                  {isAdmin && m.userId !== user?.id && m.role !== 'tenant_owner' && (
                     <>
                       {confirmRemove === m.id ? (
                         <div className="flex gap-1">
-                          <button onClick={() => { remove(m.id); setConfirmRemove(null); }}
+                          <button onClick={() => { runAction(() => remove(m.id)); setConfirmRemove(null); }}
                             className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Remove</button>
                           <button onClick={() => setConfirmRemove(null)}
                             className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-400">Cancel</button>
                         </div>
                       ) : (
                         <>
-                          <button onClick={() => toggleStatus(m.id)}
+                          <button onClick={() => runAction(() => toggleStatus(m.id))}
                             className="text-xs text-slate-500 hover:text-slate-300 transition-all"
                             title={m.status === 'active' ? 'Deactivate' : 'Reactivate'}>
                             {m.status === 'active' ? '⊘' : '✓'}

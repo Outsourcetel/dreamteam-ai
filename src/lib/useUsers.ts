@@ -14,6 +14,7 @@ export type TenantRole =
 
 export interface TeamMember {
   id: string;
+  userId: string;
   fullName: string;
   email: string;
   role: TenantRole;
@@ -49,6 +50,7 @@ function profileToMember(row: Record<string, unknown>): TeamMember {
   const name = (row.full_name as string) || (row.email as string) || 'Unknown';
   return {
     id: row.id as string,
+    userId: row.user_id as string,
     fullName: name,
     email: (row.email as string) || '',
     role: (row.role as TenantRole) || 'tenant_user',
@@ -132,37 +134,74 @@ export function useUsers() {
     return members.find(m => m.email === data.email) ?? null;
   }, [tenantId, actorId, load, members]);
 
-  const updateRole = useCallback(async (id: string, role: TenantRole) => {
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, role } : m));
-    const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
-    if (error) console.error('updateRole:', error.message);
-    else writeAuditLog({ tenant_id: tenantId, actor_user_id: actorId, action: 'update_role', entity_type: 'user', entity_id: id, after_data: { role } });
-  }, [tenantId, actorId]);
-
-  const updateDepartment = useCallback(async (id: string, department: string) => {
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, department } : m));
-    const { error } = await supabase.from('profiles').update({ department }).eq('id', id);
-    if (error) console.error('updateDepartment:', error.message);
-  }, []);
-
-  const toggleStatus = useCallback(async (id: string) => {
+  // All four of these used to be raw table writes against ANOTHER user's
+  // profile row -- no RLS policy has ever allowed that (only "own profile"
+  // and "platform admin manages all" exist), so they silently did nothing
+  // while the optimistic update below made it look like they worked. Now
+  // real SECURITY DEFINER RPCs (migration 065) that actually check
+  // membership + role. Errors are surfaced for real and the member list is
+  // reloaded from the server rather than trusted from an optimistic guess.
+  const updateRole = useCallback(async (id: string, role: TenantRole): Promise<string | null> => {
     const member = members.find(m => m.id === id);
-    if (!member) return;
-    const newActive = member.status !== 'active';
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, status: newActive ? 'active' : 'deactivated' } : m));
-    const { error } = await supabase.from('profiles').update({ is_active: newActive }).eq('id', id);
-    if (error) console.error('toggleStatus:', error.message);
-  }, [members]);
+    if (!member) return 'Member not found.';
+    const { error } = await supabase.rpc('update_team_member_role', {
+      p_target_user_id: member.userId,
+      p_new_role: role,
+    });
+    if (error) return error.message;
+    await load();
+    return null;
+  }, [members, load]);
 
-  const remove = useCallback(async (id: string) => {
-    setMembers(prev => prev.filter(m => m.id !== id));
-    const { error } = await supabase.from('profiles').delete().eq('id', id);
-    if (error) console.error('remove user:', error.message);
-  }, []);
+  const updateDepartment = useCallback(async (id: string, department: string): Promise<string | null> => {
+    const member = members.find(m => m.id === id);
+    if (!member) return 'Member not found.';
+    const { error } = await supabase.rpc('update_team_member_department', {
+      p_target_user_id: member.userId,
+      p_department: department,
+    });
+    if (error) return error.message;
+    await load();
+    return null;
+  }, [members, load]);
+
+  const toggleStatus = useCallback(async (id: string): Promise<string | null> => {
+    const member = members.find(m => m.id === id);
+    if (!member) return 'Member not found.';
+    const newActive = member.status !== 'active';
+    const { error } = await supabase.rpc('set_team_member_status', {
+      p_target_user_id: member.userId,
+      p_is_active: newActive,
+    });
+    if (error) return error.message;
+    await load();
+    return null;
+  }, [members, load]);
+
+  const remove = useCallback(async (id: string): Promise<string | null> => {
+    const member = members.find(m => m.id === id);
+    if (!member) return 'Member not found.';
+    const { error } = await supabase.rpc('remove_team_member', { p_target_user_id: member.userId });
+    if (error) return error.message;
+    await load();
+    return null;
+  }, [members, load]);
+
+  // Only the current owner can call this (enforced server-side); hands
+  // the owner seat to another active teammate and demotes the caller to
+  // tenant_admin in the same atomic operation.
+  const transferOwnership = useCallback(async (id: string): Promise<string | null> => {
+    const member = members.find(m => m.id === id);
+    if (!member) return 'Member not found.';
+    const { error } = await supabase.rpc('transfer_tenant_ownership', { p_new_owner_user_id: member.userId });
+    if (error) return error.message;
+    await load();
+    return null;
+  }, [members, load]);
 
   const resendInvite = useCallback((id: string) => {
     console.log('Resend invite for', id);
   }, []);
 
-  return { members, loading, invite, updateRole, updateDepartment, toggleStatus, remove, resendInvite };
+  return { members, loading, invite, updateRole, updateDepartment, toggleStatus, remove, transferOwnership, resendInvite };
 }
