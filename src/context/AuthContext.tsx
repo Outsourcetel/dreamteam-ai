@@ -264,6 +264,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
           if (!_cleanup) setDbTenants(t);
+          // A fresh direct sign-in (LoginPage's handleLogin) decides the
+          // initial page from the STALE metadata-seeded layer, which is
+          // 'tenant' for every account whose signup metadata never said
+          // otherwise — true of every platform account in this project,
+          // since none of them signed up through the normal tenant flow.
+          // That leaves currentPage stuck at 'dashboard' even after this
+          // effect corrects authedUser.layer to 'platform' a moment later,
+          // and PlatformConsolePage has no case for 'dashboard' — it falls
+          // through to a bare, contentless placeholder. Redirect to the
+          // real Overview once, only if we're not already on a genuine
+          // platform page (never clobber active navigation).
+          if (!_cleanup) {
+            setCurrentPage(prev => (prev.toString().startsWith('platform_') ? prev : 'platform_home'));
+          }
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
           const [s, t] = await Promise.all([
@@ -398,6 +412,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
     setGodModeSession({ tenant, operator: authedUser, sessionKey: res.session_key });
+    // currentPage may be a platform-only page (e.g. 'platform_remote_access')
+    // that the tenant-side page switch has no case for. Land somewhere real.
+    setCurrentPage('dashboard');
     return true;
   };
 

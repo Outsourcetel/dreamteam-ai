@@ -240,7 +240,13 @@ function AppShell() {
   };
 
   const renderPage = () => {
-    if (isDTUser)
+    // A platform owner inside an active Remote Access session must see the
+    // TENANT's real workspace, not Platform Console — godModeSession being
+    // set is exactly that state. Without this check, isDTUser stays true
+    // for the whole session (it reflects the platform owner's own account,
+    // not what they're currently looking at) and Remote Access would show
+    // its banner over... Platform Console, never the tenant's own pages.
+    if (isDTUser && !godModeSession)
       return (
         <div className="flex-1 flex flex-col overflow-hidden">
           <PlatformNavTabs page={currentPage as PlatformPage} setPage={handleSetPage} />
