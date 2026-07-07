@@ -385,6 +385,9 @@ serve(async (req) => {
 
     if (!Deno.env.get('ANTHROPIC_API_KEY')) {
       await markTerminal(admin, runId, 'blocked_llm', { reason: 'llm_not_configured' });
+      await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
+        `Agentic step blocked — reasoning not activated (ANTHROPIC_API_KEY) — "${goal.slice(0, 160)}"`,
+        'playbook_step', { kind: 'agentic_step_blocked_llm', agentic_step_run_id: runId, playbook_run_id: playbookRunId, step_index: stepIndex });
       return json({ error: 'llm_not_configured', agentic_step_run_id: runId });
     }
 

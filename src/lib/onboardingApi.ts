@@ -24,6 +24,26 @@ export const PHASES: Array<{ key: OnboardingPhase; label: string }> = [
   { key: 'golive', label: 'Go-live' },
 ];
 
+export type VerifyMatch = 'exists' | 'contains';
+
+/**
+ * Connector-verified provisioning (gap-analysis item 10): when present,
+ * this item completes only when a real read-through check against a
+ * connected system passes — not when a human picks "Done." Reuses
+ * category_op's canonical search/get shape: query_template for a
+ * 'search'-kind op, ref_template for a 'get'-kind op (see
+ * src/lib/categoryContracts.ts for which ops are which kind).
+ * {{account.name}} is the only template token supported today.
+ */
+export interface VerifyConfig {
+  category: string;
+  op: string;
+  query_template?: string;
+  ref_template?: string;
+  match: VerifyMatch;
+  contains_text?: string;
+}
+
 export interface TemplateItem {
   key: string;
   label: string;
@@ -31,6 +51,7 @@ export interface TemplateItem {
   owner_type: OnboardingOwnerType;
   requires_signoff: boolean;
   description?: string;
+  verify?: VerifyConfig;
 }
 
 export interface OnboardingTemplate {
@@ -65,6 +86,13 @@ export interface ProjectItemState {
   signed_off_by?: string;
   signed_off_at?: string;
   signoff_task_id?: string | null;
+  /** Set only when this item's completion came from apply_onboarding_verification,
+   *  never from a human status change — the honest signal gap #10 exists for. */
+  verified_by?: 'system';
+  verified_at?: string;
+  last_check_at?: string;
+  last_check_result?: 'verified' | 'not_yet';
+  verify_detail?: string;
 }
 
 export interface OnboardingProject {
@@ -195,6 +223,16 @@ export async function listProjects(): Promise<OnboardingProject[]> {
   return (data ?? []) as OnboardingProject[];
 }
 
+export async function getProject(projectId: string): Promise<OnboardingProject | null> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('onboarding_projects')
+    .select('*, customer_accounts(name)')
+    .eq('tenant_id', tid).eq('id', projectId).maybeSingle();
+  if (error) raise('getProject', error);
+  return (data as OnboardingProject) ?? null;
+}
+
 export async function getProjectForAccount(accountId: string): Promise<OnboardingProject | null> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
@@ -282,6 +320,35 @@ export async function resolveOnboardingSignoff(
   const res = data as { error?: string } | null;
   if (res?.error) console.warn('resolveOnboardingSignoff:', res.error);
   notify();
+}
+
+/**
+ * Runs the connector-verified check for one item right now (the
+ * project page's "Check now" button) — same check the 5-minute
+ * dispatch cron runs automatically for verify-configured items on
+ * active projects. Never flips status on a human's word; only a real
+ * matching read-through result does.
+ */
+export interface CheckItemResult {
+  ok: boolean;
+  verified?: boolean;
+  skipped?: string;
+  detail: string;
+  error?: string;
+}
+export async function checkItemNow(projectId: string, key: string): Promise<CheckItemResult> {
+  const { data, error } = await supabase.functions.invoke('onboarding-verify', {
+    body: { action: 'check_item', project_id: projectId, key },
+  });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try { const body = await ctx.json(); notify(); return body as CheckItemResult; } catch { /* fallthrough */ }
+    }
+    raise('checkItemNow', { message: error.message ?? String(error) });
+  }
+  notify();
+  return data as CheckItemResult;
 }
 
 // ── Display helpers ───────────────────────────────────────────────

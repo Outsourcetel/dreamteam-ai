@@ -8,12 +8,15 @@ import {
   PHASES, listTemplates, createTemplate, saveTemplateDraft, deleteTemplate, publishTemplate,
   installStarterTemplate, listPublishedVersions, getTemplateVersion,
   listProjects, createProject, updateItem, setProjectStatus, currentPhase, daysUntil,
+  getProject, checkItemNow,
 } from '../../../lib/onboardingApi';
 import type {
   OnboardingTemplate, TemplateVersion, TemplateItem, OnboardingProject,
-  ProjectItemState, OnboardingItemStatus, OnboardingPhase,
+  ProjectItemState, OnboardingItemStatus, OnboardingPhase, VerifyConfig, VerifyMatch,
 } from '../../../lib/onboardingApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import { CATEGORIES, CATEGORY_LABELS, CATEGORY_OPS } from '../../../lib/categoryContracts';
+import type { SystemCategory } from '../../../lib/categoryContracts';
 
 // ============================================================
 // Customer Onboarding — LIVE (migration 022).
@@ -97,6 +100,19 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
       setProj(res.project);
       if (res.signoff_task_id) setToast('Item done — a sign-off task was created in Human Tasks. The item locks in once a human approves it.');
       if (res.completed) setToast('All items complete — project marked completed. 🎉');
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusyKey(null); }
+  };
+
+  const runCheckNow = async (key: string) => {
+    setBusyKey(key); setErr(null);
+    try {
+      const res = await checkItemNow(proj.id, key);
+      if (res.error) { setErr(res.error.replace(/_/g, ' ')); return; }
+      const fresh = await getProject(proj.id);
+      if (fresh) setProj(fresh);
+      setToast(res.verified ? `✓ Verified — ${res.detail}` : res.skipped ? `Not checked — ${res.detail}` : `Not yet — ${res.detail}`);
       onChanged();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusyKey(null); }
@@ -191,11 +207,36 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                           <p className="text-sm text-white">{item.label}
                             {item.requires_signoff && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 align-middle">sign-off</span>}
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 align-middle">{item.owner_type}</span>
+                            {item.verify && (
+                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 align-middle" title={`Auto-verified via ${item.verify.category}.${item.verify.op}`}>
+                                connector-verified
+                              </span>
+                            )}
                           </p>
                           {item.description && <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>}
                           {st.note && <p className="text-[11px] text-amber-200/80 mt-1">📝 {st.note}</p>}
+                          {st.verified_by === 'system' && (
+                            <p className="text-[11px] text-teal-300 mt-1">
+                              ✓ Verified by the platform{st.verified_at ? ` at ${new Date(st.verified_at).toLocaleString()}` : ''} — not a self-reported tick.{st.verify_detail ? ` ${st.verify_detail}` : ''}
+                            </p>
+                          )}
+                          {item.verify && st.verified_by !== 'system' && st.last_check_at && (
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Last checked {new Date(st.last_check_at).toLocaleString()} — not yet provisioned.{st.verify_detail ? ` ${st.verify_detail}` : ''}
+                            </p>
+                          )}
+                          {item.verify && st.verified_by !== 'system' && !st.last_check_at && st.status !== 'done' && (
+                            <p className="text-[11px] text-slate-600 mt-1">
+                              This item completes automatically once the platform confirms it in the connected system — checked every 5 minutes, or click "Check now."
+                            </p>
+                          )}
                         </div>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_META[st.status].cls}`}>{STATUS_META[st.status].label}</span>
+                        {item.verify && !locked && !awaitingSignoff && (
+                          <button onClick={() => void runCheckNow(item.key)} disabled={busy} className={btnGhost}>
+                            {busy ? 'Checking…' : 'Check now'}
+                          </button>
+                        )}
                         {!locked && !awaitingSignoff && (
                           <select
                             value={st.status === 'signed_off' ? 'done' : st.status}
@@ -206,7 +247,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                             <option value="pending">Pending</option>
                             <option value="in_progress">In progress</option>
                             <option value="blocked">Blocked</option>
-                            <option value="done">Done{item.requires_signoff ? ' → sign-off' : ''}</option>
+                            {!item.verify && <option value="done">Done{item.requires_signoff ? ' → sign-off' : ''}</option>}
                           </select>
                         )}
                         {!locked && (
@@ -328,6 +369,71 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
   );
 }
 
+// ── Verify config editor — gap-analysis item 10: lets a de/either item
+// opt into completing only when a connected system actually confirms
+// it, instead of a human tick. Reuses the SAME category/op vocabulary
+// the connector-action builder already speaks (categoryContracts) —
+// no new concepts, just a new place they're used. ────────────────
+function VerifyEditor({ item, onChange }: {
+  item: TemplateItem; onChange: (patch: Partial<TemplateItem>) => void;
+}) {
+  const v = item.verify;
+  if (!v) {
+    return (
+      <button onClick={() => onChange({
+        verify: { category: CATEGORIES[0], op: CATEGORY_OPS[CATEGORIES[0]][0].op, match: 'exists' },
+      })} className="text-[11px] text-teal-400 hover:text-teal-300 underline mt-1">
+        + Verify automatically via a connected system (instead of a manual tick)
+      </button>
+    );
+  }
+  const ops = CATEGORY_OPS[v.category as SystemCategory] ?? [];
+  const opDef = ops.find(o => o.op === v.op) ?? ops[0];
+  const kind = opDef?.kind ?? 'search';
+  const setVerify = (patch: Partial<VerifyConfig>) => onChange({ verify: { ...v, ...patch } });
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-slate-800/60">
+      <span className="text-[10px] text-teal-400 font-medium whitespace-nowrap">Auto-verify:</span>
+      <select value={v.category} onChange={e => {
+        const category = e.target.value as SystemCategory;
+        const firstOp = CATEGORY_OPS[category][0];
+        setVerify({ category, op: firstOp.op, query_template: undefined, ref_template: undefined });
+      }} className={`${inputCls} !py-1 !px-1.5 !text-[11px]`}>
+        {CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+      </select>
+      <select value={v.op} onChange={e => {
+        const nextOp = ops.find(o => o.op === e.target.value);
+        setVerify({
+          op: e.target.value,
+          ...(nextOp?.kind === 'search' ? { ref_template: undefined } : { query_template: undefined }),
+        });
+      }} className={`${inputCls} !py-1 !px-1.5 !text-[11px]`}>
+        {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
+      </select>
+      {kind === 'search' ? (
+        <input value={v.query_template ?? ''} onChange={e => setVerify({ query_template: e.target.value })}
+          placeholder="Search text — e.g. {{account.name}}" className={`${inputCls} !py-1 !px-1.5 !text-[11px] w-44`} />
+      ) : (
+        <input value={v.ref_template ?? ''} onChange={e => setVerify({ ref_template: e.target.value })}
+          placeholder="Record ref — e.g. {{account.name}}" className={`${inputCls} !py-1 !px-1.5 !text-[11px] w-44`} />
+      )}
+      <select value={v.match} onChange={e => setVerify({ match: e.target.value as VerifyMatch })} className={`${inputCls} !py-1 !px-1.5 !text-[11px]`}>
+        <option value="exists">a matching record exists</option>
+        <option value="contains">a record contains text…</option>
+      </select>
+      {v.match === 'contains' && (
+        <input value={v.contains_text ?? ''} onChange={e => setVerify({ contains_text: e.target.value })}
+          placeholder="Text to find" className={`${inputCls} !py-1 !px-1.5 !text-[11px] w-28`} />
+      )}
+      <button onClick={() => onChange({ verify: undefined })} className="text-slate-600 hover:text-red-300 text-[11px]">✕ remove check</button>
+      <p className="w-full text-[10px] text-slate-600 mt-0.5">
+        This item completes on its own once a live check against {CATEGORY_LABELS[v.category as SystemCategory]?.split(' —')[0]} matches — {'{{'}account.name{'}}'} is the only token supported. The manual "Done" option is hidden for auto-verified items.
+      </p>
+    </div>
+  );
+}
+
 // ── Template editor ───────────────────────────────────────────────
 function TemplateEditor({ template, onClose, onSaved }: {
   template: OnboardingTemplate; onClose: () => void; onSaved: () => void;
@@ -409,7 +515,10 @@ function TemplateEditor({ template, onClose, onSaved }: {
               <select value={it.phase} onChange={e => setItem(idx, { phase: e.target.value as OnboardingPhase })} className={`${inputCls} !py-1.5 !text-xs`}>
                 {PHASES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </select>
-              <select value={it.owner_type} onChange={e => setItem(idx, { owner_type: e.target.value as TemplateItem['owner_type'] })} className={`${inputCls} !py-1.5 !text-xs`}>
+              <select value={it.owner_type} onChange={e => {
+                const owner_type = e.target.value as TemplateItem['owner_type'];
+                setItem(idx, owner_type === 'human' ? { owner_type, verify: undefined } : { owner_type });
+              }} className={`${inputCls} !py-1.5 !text-xs`}>
                 <option value="human">Human</option>
                 <option value="de">DE</option>
                 <option value="either">Either</option>
@@ -419,6 +528,11 @@ function TemplateEditor({ template, onClose, onSaved }: {
                 sign-off
               </label>
               <button onClick={() => remove(idx)} className="text-slate-600 hover:text-red-300 text-sm">✕</button>
+              {it.owner_type !== 'human' && (
+                <div className="w-full pl-6">
+                  <VerifyEditor item={it} onChange={patch => setItem(idx, patch)} />
+                </div>
+              )}
             </div>
           ))}
           <button onClick={addItem} className={btnGhost}>+ Add item</button>
