@@ -3,6 +3,7 @@ import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
 import { mockTenants } from '../../lib/mockData';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../supabase';
 import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
@@ -718,6 +719,9 @@ const PlatformConsolePage = ({
               </div>
             ))}
         </div>
+
+        <RemoteAccessWriteAuditPanel dbTenants={dbTenants} />
+
         {godModeTarget && (
           <Modal
             title={'Remote Access: ' + godModeTarget.name}
@@ -754,6 +758,235 @@ const PlatformConsolePage = ({
   return (
     <div className="flex-1 p-6">
       <p className="text-slate-400">Platform Console</p>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Remote Access write audit — every write made during a remote-access
+// session is logged server-side by the trg_remote_access_audit trigger
+// (migrations 062/063). This panel is the founder's actual window into
+// that log: who changed what, in which tenant, and (at a glance) which
+// fields changed. RLS on remote_access_write_log already restricts
+// SELECT to is_platform_admin(), so this query is safe as-is for any
+// platform-layer user viewing this page.
+// ─────────────────────────────────────────────────────────────────
+interface RemoteAccessWriteLogRow {
+  id: number;
+  session_key: string | null;
+  operator_user_id: string;
+  operator_name: string | null;
+  tenant_id: string;
+  table_name: string;
+  operation: string;
+  row_pk: string | null;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const changedFields = (row: RemoteAccessWriteLogRow): string[] => {
+  if (row.operation === 'INSERT') return row.new_data ? Object.keys(row.new_data) : [];
+  if (row.operation === 'DELETE') return [];
+  if (!row.old_data || !row.new_data) return [];
+  const keys = new Set([...Object.keys(row.old_data), ...Object.keys(row.new_data)]);
+  const changed: string[] = [];
+  keys.forEach((k) => {
+    const before = JSON.stringify(row.old_data ? row.old_data[k] : undefined);
+    const after = JSON.stringify(row.new_data ? row.new_data[k] : undefined);
+    if (before !== after) changed.push(k);
+  });
+  return changed;
+};
+
+const operationBadgeClasses: Record<string, string> = {
+  INSERT: 'bg-emerald-500/15 text-emerald-300',
+  UPDATE: 'bg-blue-500/15 text-blue-300',
+  DELETE: 'bg-red-500/15 text-red-300',
+};
+
+const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [rows, setRows] = useState<RemoteAccessWriteLogRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState('');
+  const [tenantFilter, setTenantFilter] = useState<string>('all');
+  const [detailRow, setDetailRow] = useState<RemoteAccessWriteLogRow | null>(null);
+
+  const tenantName = (tenantId: string): string => {
+    const t = dbTenants?.find((dt) => dt.id === tenantId);
+    return t ? t.name : tenantId.slice(0, 8) + '…';
+  };
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    const { data, error: qError } = await supabase
+      .from('remote_access_write_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    setLoading(false);
+    setLoaded(true);
+    if (qError) {
+      setError(qError.message);
+      return;
+    }
+    setRows((data as RemoteAccessWriteLogRow[]) || []);
+  };
+
+  useEffect(() => {
+    if (expanded && !loaded) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
+  const visibleRows = tenantFilter === 'all' ? rows : rows.filter((r) => r.tenant_id === tenantFilter);
+  const tenantIdsInLog = Array.from(new Set(rows.map((r) => r.tenant_id)));
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
+      >
+        <div>
+          <p className="text-sm font-semibold text-white">Write audit log</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Every change made to a tenant's data during a remote-access session — who, what, and where.
+          </p>
+        </div>
+        <span className="text-xs text-slate-500 flex-shrink-0">{expanded ? 'Hide ▲' : 'Show ▼'}</span>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-800 px-5 py-4">
+          {loading && <p className="text-xs text-slate-500 py-4 text-center">Loading write log…</p>}
+          {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
+
+          {!loading && !error && (
+            <>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">Tenant</label>
+                  <select
+                    value={tenantFilter}
+                    onChange={(e) => setTenantFilter(e.target.value)}
+                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="all">All tenants</option>
+                    {tenantIdsInLog.map((tid) => (
+                      <option key={tid} value={tid}>{tenantName(tid)}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={load}
+                  className="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {visibleRows.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">
+                  No remote-access writes recorded{tenantFilter !== 'all' ? ' for this tenant' : ''} yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Tenant</th>
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Table</th>
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Operation</th>
+                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Changed fields</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {visibleRows.map((row) => {
+                        const fields = changedFields(row);
+                        return (
+                          <tr
+                            key={row.id}
+                            onClick={() => setDetailRow(row)}
+                            className="cursor-pointer hover:bg-slate-800/50 transition-all"
+                          >
+                            <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+                              {new Date(row.created_at).toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-white whitespace-nowrap">
+                              {row.operator_name || 'Platform admin'}
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-slate-300 whitespace-nowrap">
+                              {tenantName(row.tenant_id)}
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-slate-300 font-mono">{row.table_name}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-700 text-slate-300'}`}>
+                                {row.operation}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-slate-400 max-w-xs truncate">
+                              {fields.length > 0 ? fields.join(', ') : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {detailRow && (
+        <Modal
+          title={`${detailRow.table_name} · ${detailRow.operation}`}
+          onClose={() => setDetailRow(null)}
+        >
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            <div className="text-xs text-slate-400 space-y-1">
+              <div><span className="text-slate-500">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
+              <div><span className="text-slate-500">Who:</span> {detailRow.operator_name || 'Platform admin'}</div>
+              <div><span className="text-slate-500">Tenant:</span> {tenantName(detailRow.tenant_id)}</div>
+              <div><span className="text-slate-500">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Changed fields</p>
+              {changedFields(detailRow).length === 0 ? (
+                <p className="text-xs text-slate-500">No field-level changes to show.</p>
+              ) : (
+                <div className="space-y-2">
+                  {changedFields(detailRow).map((field) => (
+                    <div key={field} className="bg-slate-800 rounded-xl p-3">
+                      <div className="text-xs font-mono text-amber-300 mb-1">{field}</div>
+                      <div className="text-xs text-slate-400 space-y-1">
+                        <div>
+                          <span className="text-slate-500">before:</span>{' '}
+                          <span className="font-mono break-all">
+                            {detailRow.old_data ? JSON.stringify(detailRow.old_data[field]) : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">after:</span>{' '}
+                          <span className="font-mono break-all text-white">
+                            {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
