@@ -130,6 +130,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // deactivated (profile.is_active === false). Signs out of Supabase,
   // clears local auth state, and surfaces a clear message on the login
   // screen instead of silently leaving the user on a stale session.
+  // Sweeps every dt_-prefixed localStorage key rather than hand-listing
+  // each one -- a blanket prefix sweep automatically covers keys future
+  // features add, without needing to remember to update an enumerated
+  // list each time. On a shared device, these otherwise survive sign-out
+  // and can leak fragments of the previous user's local UI state
+  // (roster selection, governance/security preferences, chat threads)
+  // into the next login before their own data loads.
+  const clearLocalTenantState = () => {
+    try {
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith('dt_'));
+      keys.forEach((k) => localStorage.removeItem(k));
+    } catch { /* noop */ }
+  };
+
   const forceSignOutDeactivated = async () => {
     try { await supabase.auth.signOut(); } catch { /* noop */ }
     setAuthedUser(null);
@@ -139,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setGodModeSession(null);
     setCurrentPage('dashboard');
     setDeactivatedMessage('This account has been deactivated. Contact your platform owner if you believe this is a mistake.');
+    clearLocalTenantState();
   };
 
   // Restore Supabase session on load
@@ -451,6 +466,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDbTenants([]);
     setDbStats(null);
     setDbCurrentTenant(null);
+    setGodModeSession(null);
+    clearLocalTenantState();
   };
 
   return (
