@@ -163,6 +163,7 @@ const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_health', label: 'System Health' },
   { page: 'platform_revenue', label: 'Revenue' },
   { page: 'platform_remote_access', label: 'Remote Access' },
+  { page: 'platform_security', label: 'Security' },
 ];
 
 function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: Page) => void }) {

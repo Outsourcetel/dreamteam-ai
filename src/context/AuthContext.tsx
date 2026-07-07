@@ -97,7 +97,7 @@ interface AuthContextValue {
    * the DB layer, so this is unreachable by any tenant-layer user even if
    * the UI entry point were somehow bypassed). Returns true on success.
    */
-  enterRemoteAccess: (tenant: Tenant) => Promise<boolean>;
+  enterRemoteAccess: (tenant: Tenant) => Promise<{ ok: boolean; error?: string }>;
   /** Ends the current Remote Access session (audited: an 'end' event
    *  paired to the same session_key) and returns to Platform Console. */
   exitRemoteAccess: () => Promise<void>;
@@ -404,18 +404,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // writes a durable platform_access_events 'start' row and hands back a
   // session_key; only then do we flip the local godModeSession state that
   // drives the amber banner and currentTenant override.
-  const enterRemoteAccess = async (tenant: Tenant): Promise<boolean> => {
-    if (!authedUser) return false;
+  const enterRemoteAccess = async (tenant: Tenant): Promise<{ ok: boolean; error?: string }> => {
+    if (!authedUser) return { ok: false, error: 'Not signed in.' };
     const res = await startPlatformRemoteAccess(tenant.id);
     if (!res.ok || !res.session_key) {
       console.error('[DT] enterRemoteAccess failed:', res.error);
-      return false;
+      return { ok: false, error: res.error || 'Could not start Remote Access. Please try again.' };
     }
     setGodModeSession({ tenant, operator: authedUser, sessionKey: res.session_key });
     // currentPage may be a platform-only page (e.g. 'platform_remote_access')
     // that the tenant-side page switch has no case for. Land somewhere real.
     setCurrentPage('dashboard');
-    return true;
+    return { ok: true };
   };
 
   // Ends the current Remote Access session: writes the paired 'end'

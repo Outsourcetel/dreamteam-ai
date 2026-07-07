@@ -9,6 +9,7 @@ import {
   setTenantSelfServe, fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
 } from '../../lib/api';
 import PlatformInvitesPanel from './PlatformInvitesPanel';
+import MfaEnrollmentPanel from './MfaEnrollmentPanel';
 
 const PlatformConsolePage = ({
   page,
@@ -59,14 +60,14 @@ const PlatformConsolePage = ({
   const handleEnterRemoteAccess = async (tenant: Tenant) => {
     setEntering(true);
     setEnterError('');
-    const ok = await enterRemoteAccess(tenant);
+    const res = await enterRemoteAccess(tenant);
     setEntering(false);
-    if (ok) {
+    if (res.ok) {
       setGodModeTarget(null);
       setSelectedTenant(null);
       setPage('dashboard');
     } else {
-      setEnterError('Could not start Remote Access. Please try again.');
+      setEnterError(res.error || 'Could not start Remote Access. Please try again.');
     }
   };
 
@@ -744,6 +745,10 @@ const PlatformConsolePage = ({
         )}
       </div>
     );
+  }
+
+  if (page === 'platform_security') {
+    return <MfaEnrollmentPanel />;
   }
 
   return (

@@ -112,6 +112,7 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
     'platform_remote_access',
     'platform_health',
     'platform_revenue',
+    'platform_security',
   ];
   if (dtOnlyPages.includes(page)) return isDtRole;
   return isTenantRole || isDtRole;
