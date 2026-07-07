@@ -51,6 +51,7 @@ const PlatformConsolePage = ({
   const [entering, setEntering] = useState(false);
   const [enterError, setEnterError] = useState('');
   const [featureTarget, setFeatureTarget] = useState<Tenant | null>(null);
+  const [showTestDebris, setShowTestDebris] = useState(false);
 
   // Real, DB-gated ONLY (is_platform_admin() enforced server-side): calls
   // start_platform_remote_access, which durably audits the session in
@@ -186,13 +187,15 @@ const PlatformConsolePage = ({
   }
 
   if (page === 'platform_tenants') {
+    const debrisTenants = tenants.filter((t) => t.name.startsWith('[TEST DEBRIS'));
+    const visibleTenants = showTestDebris ? tenants : tenants.filter((t) => !t.name.startsWith('[TEST DEBRIS'));
     // Build a depth-ordered tree list: parents before children, indented by
     // depth, so the table renders as a readable nested hierarchy without a
     // separate graph widget. A tenant whose parent isn't in this list
     // (shouldn't happen, but defensive) is treated as top-level.
     const byParent = new Map<string | null, Tenant[]>();
-    tenants.forEach((t) => {
-      const key = t.parentTenantId && tenants.some((p) => p.id === t.parentTenantId) ? t.parentTenantId : null;
+    visibleTenants.forEach((t) => {
+      const key = t.parentTenantId && visibleTenants.some((p) => p.id === t.parentTenantId) ? t.parentTenantId : null;
       if (!byParent.has(key)) byParent.set(key, []);
       byParent.get(key)!.push(t);
     });
@@ -214,6 +217,19 @@ const PlatformConsolePage = ({
               Manage all client workspaces — view, configure, and support
               tenants. Indented rows are sub-tenants nested under their parent.
             </p>
+            {debrisTenants.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                {showTestDebris
+                  ? `Showing ${debrisTenants.length} suspended test tenant${debrisTenants.length === 1 ? '' : 's'} from earlier security testing — never billed, never active.`
+                  : `${debrisTenants.length} suspended test tenant${debrisTenants.length === 1 ? '' : 's'} from earlier security testing hidden.`}{' '}
+                <button
+                  onClick={() => setShowTestDebris((v) => !v)}
+                  className="text-indigo-400 hover:text-indigo-300 underline"
+                >
+                  {showTestDebris ? 'Hide them' : 'Show them'}
+                </button>
+              </p>
+            )}
           </div>
           <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500">
             + Provision Tenant
