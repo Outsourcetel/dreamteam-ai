@@ -8,6 +8,8 @@ import { CustomerApiError } from '../../../lib/customerApi'
 import { listAuditEvents, verifyAuditChain } from '../../../lib/guardrailApi'
 import type { AuditEvent as LiveAuditEvent, AuditCategory, ChainVerification } from '../../../lib/guardrailApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
+import { supabase } from '../../../supabase'
+import Modal from '../../../components/Modal'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Audit Trail (gov_audit)
@@ -148,6 +150,229 @@ const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }
   access_control: { label: 'Data access', style: 'bg-rose-500/15 text-rose-300' },
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Team activity log — every write made by this tenant's OWN team is
+// logged server-side by the trg_tenant_activity_log trigger (migrations
+// 066/067). This panel is the tenant owner/admin's window into that
+// log: who on their team changed what, in which table, and (at a
+// glance) which fields changed. RLS on tenant_activity_log already
+// restricts SELECT to tenant_owner/tenant_admin of that tenant, so this
+// query is safe as-is -- but we also gate rendering client-side so a
+// non-admin sees a clear message instead of a confusingly-empty panel.
+// Mirrors the "changed fields" pattern used by the platform-side
+// Remote Access write-audit panel (PlatformConsolePage.tsx), replicated
+// inline here rather than imported since that's a different layer.
+// ─────────────────────────────────────────────────────────────────
+interface TenantActivityLogRow {
+  id: number
+  tenant_id: string
+  actor_user_id: string
+  actor_name: string | null
+  actor_role: string | null
+  table_name: string
+  operation: string
+  row_pk: string | null
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
+  created_at: string
+}
+
+const activityChangedFields = (row: TenantActivityLogRow): string[] => {
+  if (row.operation === 'INSERT') return row.new_data ? Object.keys(row.new_data) : []
+  if (row.operation === 'DELETE') return []
+  if (!row.old_data || !row.new_data) return []
+  const keys = new Set([...Object.keys(row.old_data), ...Object.keys(row.new_data)])
+  const changed: string[] = []
+  keys.forEach((k) => {
+    const before = JSON.stringify(row.old_data ? row.old_data[k] : undefined)
+    const after = JSON.stringify(row.new_data ? row.new_data[k] : undefined)
+    if (before !== after) changed.push(k)
+  })
+  return changed
+}
+
+const activityOperationBadge: Record<string, string> = {
+  INSERT: 'bg-emerald-500/15 text-emerald-300',
+  UPDATE: 'bg-blue-500/15 text-blue-300',
+  DELETE: 'bg-red-500/15 text-red-300',
+}
+
+function TeamActivityLogPanel() {
+  const { authedUser } = useAuth()
+  const isAdmin = !!(authedUser?.tenantId && ['tenant_owner', 'tenant_admin'].includes(authedUser.role))
+
+  const [rows, setRows] = useState<TenantActivityLogRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [tableFilter, setTableFilter] = useState('all')
+  const [detailRow, setDetailRow] = useState<TenantActivityLogRow | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    const { data, error: qError } = await supabase
+      .from('tenant_activity_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setLoading(false)
+    setLoaded(true)
+    if (qError) {
+      setError(qError.message)
+      return
+    }
+    setRows((data as TenantActivityLogRow[]) || [])
+  }
+
+  useEffect(() => {
+    if (isAdmin && !loaded) void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin])
+
+  if (!isAdmin) return null
+
+  const tablesInLog = Array.from(new Set(rows.map((r) => r.table_name))).sort()
+  const visibleRows = tableFilter === 'all' ? rows : rows.filter((r) => r.table_name === tableFilter)
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-white">Team activity log</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Every change your own team made across the platform — visible only to owners and admins.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {tablesInLog.length > 0 && (
+            <select
+              value={tableFilter}
+              onChange={(e) => setTableFilter(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+            >
+              <option value="all">All tables</option>
+              {tablesInLog.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => void load()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 py-4">
+        {loading && <p className="text-xs text-slate-500 py-4 text-center">Loading team activity…</p>}
+        {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
+
+        {!loading && !error && visibleRows.length === 0 && (
+          <p className="text-xs text-slate-500 py-6 text-center">
+            No team activity recorded{tableFilter !== 'all' ? ' for this table' : ''} yet.
+          </p>
+        )}
+
+        {!loading && !error && visibleRows.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-800">
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Table</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Operation</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Changed fields</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {visibleRows.map((row) => {
+                  const fields = activityChangedFields(row)
+                  return (
+                    <tr
+                      key={row.id}
+                      onClick={() => setDetailRow(row)}
+                      className="cursor-pointer hover:bg-slate-800/30 transition-colors"
+                    >
+                      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+                        {new Date(row.created_at).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        {row.actor_role && (
+                          <span className="text-slate-600 ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-300 font-mono">{row.table_name}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-slate-700 text-slate-300'}`}>
+                          {row.operation}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-400 max-w-xs truncate">
+                        {fields.length > 0 ? fields.join(', ') : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {detailRow && (
+        <Modal
+          title={`${detailRow.table_name} · ${detailRow.operation}`}
+          onClose={() => setDetailRow(null)}
+        >
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            <div className="text-xs text-slate-400 space-y-1">
+              <div><span className="text-slate-500">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
+              <div>
+                <span className="text-slate-500">Who:</span> {detailRow.actor_name || 'Team member'}
+                {detailRow.actor_role && <span className="text-slate-600 capitalize"> ({detailRow.actor_role.replace('tenant_', '')})</span>}
+              </div>
+              <div><span className="text-slate-500">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Changed fields</p>
+              {activityChangedFields(detailRow).length === 0 ? (
+                <p className="text-xs text-slate-500">No field-level changes to show.</p>
+              ) : (
+                <div className="space-y-2">
+                  {activityChangedFields(detailRow).map((field) => (
+                    <div key={field} className="bg-slate-800 rounded-xl p-3">
+                      <div className="text-xs font-mono text-indigo-300 mb-1">{field}</div>
+                      <div className="text-xs text-slate-400 space-y-1">
+                        <div>
+                          <span className="text-slate-500">before:</span>{' '}
+                          <span className="font-mono break-all">
+                            {detailRow.old_data ? JSON.stringify(detailRow.old_data[field]) : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">after:</span>{' '}
+                          <span className="font-mono break-all text-white">
+                            {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
   const [events, setEvents] = useState<LiveAuditEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -201,6 +426,8 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         subtitle="Immutable, hash-chained record of every DE action, guardrail check, human approval, and playbook step — records can only be appended, never edited or deleted"
       />
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      <TeamActivityLogPanel />
 
       {loading ? (
         <LiveLoadingSkeleton rows={5} />
