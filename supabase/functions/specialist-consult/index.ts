@@ -204,7 +204,7 @@ async function zendeskFetch(
   const { data: connector } = await admin.from('connectors')
     .select('id, base_url, provider').eq('id', connectorId).eq('tenant_id', tenantId).maybeSingle();
   if (!connector) return { ok: false, status: 0, body: null, error: 'connector_not_found' };
-  const { data: secretRow } = await admin.from('connector_secrets')
+  const { data: secretRow } = await admin.from('connector_secrets_decrypted')
     .select('secret').eq('connector_id', connectorId).maybeSingle();
   if (!secretRow?.secret) return { ok: false, status: 0, body: null, error: 'no_credentials' };
   let creds: ZendeskCreds;
@@ -1069,7 +1069,7 @@ serve(async (req) => {
       const headers: Record<string, string> = {};
       const authHeaderName = String(cfg.auth_header ?? '');
       if (authHeaderName) {
-        const { data: secretRow } = await admin.from('specialist_source_secrets')
+        const { data: secretRow } = await admin.from('specialist_source_secrets_decrypted')
           .select('secret').eq('source_id', sourceId).maybeSingle();
         if (secretRow?.secret) headers[authHeaderName] = secretRow.secret;
       }

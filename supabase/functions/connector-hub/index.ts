@@ -1260,9 +1260,10 @@ serve(async (req) => {
       return json({ ok: false, error: 'not_implemented', detail: 'SharePoint is registered but its adapter is not built yet — documented honestly, no pretending.' }, 200);
     }
 
-    // ── Credentials (service-role-only table). generic_rest and
-    // template (auth recipe "none") may run open. ──
-    const { data: secretRow } = await admin.from('connector_secrets')
+    // ── Credentials (service-role-only view over Vault-encrypted
+    // storage, migration 088). generic_rest and template (auth recipe
+    // "none") may run open. ──
+    const { data: secretRow } = await admin.from('connector_secrets_decrypted')
       .select('secret').eq('connector_id', connectorId).maybeSingle();
     let secret: Record<string, string> = {};
     if (secretRow?.secret) {

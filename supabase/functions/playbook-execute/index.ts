@@ -1183,7 +1183,7 @@ async function executeDefinitionSteps(
 
           if (!skip && connector) {
             const { data: secretRow } = await admin
-              .from('connector_secrets').select('secret').eq('connector_id', connector.id).maybeSingle();
+              .from('connector_secrets_decrypted').select('secret').eq('connector_id', connector.id).maybeSingle();
             if (!secretRow?.secret) skip = 'skipped: no credentials stored for the connector';
             else {
               try {

@@ -12,7 +12,8 @@
  *   - test          : credential check via GET /api/v2/users/me.json.
  *
  * Auth: caller JWT (tenant resolved from profiles). Credentials are read
- * with the service role from connector_secrets (no authenticated access).
+ * with the service role from connector_secrets_decrypted, a view over
+ * Vault-encrypted storage (no authenticated access, migration 088).
  * Secret format: JSON { email, api_token } — Zendesk basic auth
  * "{email}/token:{api_token}".
  */
@@ -128,9 +129,10 @@ serve(async (req) => {
     if (!connector) return json({ error: 'connector_not_found' }, 404);
     if (connector.provider !== 'zendesk') return json({ error: 'unsupported_provider' }, 400);
 
-    // ── Credentials (service-role-only table) ──
+    // ── Credentials (service-role-only view over Vault-encrypted
+    // storage, migration 088) ──
     const { data: secretRow } = await admin
-      .from('connector_secrets')
+      .from('connector_secrets_decrypted')
       .select('secret')
       .eq('connector_id', connectorId)
       .single();

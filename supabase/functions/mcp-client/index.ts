@@ -22,8 +22,9 @@
  *     returned to the caller and audited; NOTHING is persisted.
  *
  * Auth to the MCP server: optional bearer secret from
- * specialist_source_secrets (service-role-only), sent under the
- * configured header name (default Authorization: Bearer …).
+ * specialist_source_secrets_decrypted, a service-role-only view over
+ * Vault-encrypted storage (migration 088), sent under the configured
+ * header name (default Authorization: Bearer …).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -174,7 +175,7 @@ serve(async (req) => {
     if (!endpoint) return json({ error: 'no_endpoint_configured' }, 400);
 
     const headers: Record<string, string> = {};
-    const { data: secretRow } = await admin.from('specialist_source_secrets')
+    const { data: secretRow } = await admin.from('specialist_source_secrets_decrypted')
       .select('secret').eq('source_id', sourceId).maybeSingle();
     if (secretRow?.secret) {
       const headerName = String(cfg.auth_header ?? '') || 'Authorization';
