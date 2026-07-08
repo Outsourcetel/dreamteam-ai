@@ -617,6 +617,11 @@ async function runResolveInquiry(
     if (res2.ok) {
       const d2 = await res2.json();
       answerText = String(d2.content?.[0]?.text ?? '');
+      const usageDeId = opts.deId ?? (subjectKind === 'de' ? subjectId : null);
+      admin.rpc('record_de_token_usage', {
+        p_tenant_id: tenantId, p_de_id: usageDeId, p_model_id: MODEL,
+        p_input_tokens: d2.usage?.input_tokens ?? 0, p_output_tokens: d2.usage?.output_tokens ?? 0,
+      }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
     }
   }
 
@@ -1487,6 +1492,13 @@ ${groundedContext}`;
     const data = await res.json();
     const parsed = parseModelJson(data.content?.[0]?.text ?? '');
     await bump('llm_calls');
+    // No de_id here -- this is a specialist consult (specialist_profiles),
+    // not a digital_employees row; de_token_usage.de_id is nullable and
+    // this row is simply excluded from the per-DE cost breakdown.
+    admin.rpc('record_de_token_usage', {
+      p_tenant_id: tenantId, p_de_id: null, p_model_id: MODEL,
+      p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
+    }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
 
     // ── Guardrail answer-check (blocking) ──
     const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);

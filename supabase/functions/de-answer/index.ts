@@ -199,7 +199,7 @@ serve(async (req) => {
     if (!convId) {
       const { data: conv } = await admin
         .from('de_conversations')
-        .insert({ tenant_id: tenantId, channel: 'dock' })
+        .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
         .select('id').single();
       convId = conv?.id ?? null;
     }
@@ -355,6 +355,12 @@ ${context}`;
     const raw: string = data.content?.[0]?.text ?? '';
     const parsed = parseModelJson(raw);
     await bump('llm_calls');
+    if (subjectDeId) {
+      admin.rpc('record_de_token_usage', {
+        p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: MODEL,
+        p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
+      }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
+    }
 
     // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
     const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);

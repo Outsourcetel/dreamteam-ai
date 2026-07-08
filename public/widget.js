@@ -47,6 +47,31 @@
     return bubble;
   }
 
+  // Real CSAT (migration 095) -- submits via widget-ask's action:'csat'
+  // branch (the widget has no Supabase session, only a widget_key).
+  function submitCsat(score, row) {
+    if (!state.conversationId) return;
+    row.textContent = score === 1 ? 'Thanks for the feedback!' : "Thanks — we'll improve.";
+    fetch(state.cfg.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widget_key: state.cfg.key, action: 'csat', conversation_id: state.conversationId, score: score }),
+    }).catch(function () {});
+  }
+
+  function addCsatRow() {
+    var row = h('div', 'display:flex;align-items:center;gap:6px;margin:2px 14px 6px;font-size:11px;color:#8a94a3;');
+    var label = h('span', '', 'Helpful?');
+    row.appendChild(label);
+    var up = h('button', 'border:none;background:none;cursor:pointer;font-size:13px;padding:0;', '👍');
+    up.onclick = function () { row.textContent = ''; row.appendChild(label); submitCsat(1, row); };
+    var down = h('button', 'border:none;background:none;cursor:pointer;font-size:13px;padding:0;', '👎');
+    down.onclick = function () { row.textContent = ''; row.appendChild(label); submitCsat(-1, row); };
+    row.appendChild(up);
+    row.appendChild(down);
+    state.els.messages.appendChild(row);
+  }
+
   function setBusy(b) {
     state.busy = b;
     state.els.send.disabled = b;
@@ -93,6 +118,7 @@
             var m = h('div', 'margin:2px 14px 4px;font-size:10.5px;color:' + (j.needs_escalation ? '#d97706' : '#8a94a3') + ';', metaParts.join(' · '));
             state.els.messages.appendChild(m);
           }
+          if (j.answer && !j.needs_escalation) addCsatRow();
         }
         state.els.messages.scrollTop = state.els.messages.scrollHeight;
       })

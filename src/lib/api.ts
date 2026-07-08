@@ -918,16 +918,18 @@ export const runPortalTurn = async (
 // CSAT
 // ============================================================
 
+// Was a direct .update() against a `conversations` table that has never
+// existed (migration 010's own mismatch) -- every real call has silently
+// failed since this was written. Fixed at the source (migration 095):
+// the real table is de_conversations, now reachable only via submit_csat.
 export const submitCSAT = async (
   conversationId: string,
   tenantId: string,
   score: 1 | -1,
 ): Promise<boolean> => {
-  const { error } = await supabase
-    .from('conversations')
-    .update({ csat_score: score, csat_submitted_at: new Date().toISOString() })
-    .eq('id', conversationId)
-    .eq('tenant_id', tenantId);
+  const { error } = await supabase.rpc('submit_csat', {
+    p_conversation_id: conversationId, p_tenant_id: tenantId, p_score: score,
+  });
   if (error) console.error('submitCSAT:', error.message);
   return !error;
 };

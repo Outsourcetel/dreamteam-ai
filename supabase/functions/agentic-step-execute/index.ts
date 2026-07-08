@@ -261,6 +261,10 @@ async function runLoop(
       cost_used_cents: costUsed + costThisTurn,
       updated_at: new Date().toISOString(),
     }).eq('id', runId);
+    admin.rpc('record_de_token_usage', {
+      p_tenant_id: tenantId, p_de_id: deId, p_model_id: useModel,
+      p_input_tokens: resp.usage.input_tokens, p_output_tokens: resp.usage.output_tokens,
+    }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
 
     messages.push({ role: 'assistant', content: resp.content });
     await persistMessage(admin, runId, turnIndex++, 'assistant', resp.content);

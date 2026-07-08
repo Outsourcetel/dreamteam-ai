@@ -173,8 +173,34 @@ serve(async (req) => {
       return json({ error: 'invalid_json' }, 400);
     }
     const widgetKey = body.widget_key;
-    const question = body.question;
     if (!widgetKey || typeof widgetKey !== 'string') return json({ error: 'widget_key required' }, 400);
+
+    // ── CSAT submission (real, migration 095) -- the embeddable widget has
+    // no Supabase session, only a widget_key, so this reuses that same
+    // key-validation path rather than requiring the authenticated
+    // submit_csat RPC. Kept in this function (not a new one) since it's
+    // the only endpoint this widget can already reach.
+    if (body.action === 'csat') {
+      const csatAdmin = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+      const csatKeyHash = await sha256Hex(widgetKey.trim());
+      const { data: csatKeyRow } = await csatAdmin
+        .from('widget_keys').select('id, tenant_id').eq('key_hash', csatKeyHash).eq('active', true).maybeSingle();
+      if (!csatKeyRow) return json({ error: 'invalid_widget_key' }, 401);
+      const csatConvId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
+      const csatScore = body.score === 1 || body.score === -1 ? body.score : null;
+      if (!csatConvId || csatScore === null) return json({ error: 'conversation_id and score (1 or -1) required' }, 400);
+      const { error: csatErr } = await csatAdmin
+        .from('de_conversations')
+        .update({ csat_score: csatScore, csat_submitted_at: new Date().toISOString() })
+        .eq('id', csatConvId).eq('tenant_id', csatKeyRow.tenant_id);
+      if (csatErr) return json({ error: 'csat_submit_failed' }, 500);
+      return json({ ok: true });
+    }
+
+    const question = body.question;
     if (!question || typeof question !== 'string' || !question.trim()) {
       return json({ error: 'question required' }, 400);
     }
@@ -258,12 +284,24 @@ serve(async (req) => {
     const { data: tenant } = await admin.from('tenants').select('name').eq('id', tenantId).single();
     const tenantName = tenant?.name ?? 'this company';
 
+    // ── Retrieval — KNOWLEDGE SCOPES (migration 030): the widget runs
+    // AS the tenant's answering DE (first DE — the 025/029 fallback
+    // pattern; the public payload can NOT pick a subject). Scoped docs
+    // are only retrievable when that DE is listed in their scopes.
+    // Resolved before the conversation insert below so the new
+    // de_conversations.de_id (migration 095, real per-DE CSAT) can be
+    // set at creation time.
+    const { data: firstDe } = await admin.from('digital_employees')
+      .select('id').eq('tenant_id', tenantId)
+      .order('created_at', { ascending: true }).limit(1).maybeSingle();
+    const subjectDeId: string | null = firstDe?.id ?? null;
+
     // ── Conversation + user message ──
     let convId: string | null = conversationId;
     if (!convId) {
       const { data: conv, error: convErr } = await admin
         .from('de_conversations')
-        .insert({ tenant_id: tenantId, channel: 'dock' })
+        .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
         .select('id').single();
       if (convErr) console.error('conversation create failed', convErr.message);
       convId = conv?.id ?? null;
@@ -276,15 +314,6 @@ serve(async (req) => {
         content: endUserTag ? `[widget · ${endUserTag}] ${question}` : `[widget] ${question}`,
       });
     }
-
-    // ── Retrieval — KNOWLEDGE SCOPES (migration 030): the widget runs
-    // AS the tenant's answering DE (first DE — the 025/029 fallback
-    // pattern; the public payload can NOT pick a subject). Scoped docs
-    // are only retrievable when that DE is listed in their scopes.
-    const { data: firstDe } = await admin.from('digital_employees')
-      .select('id').eq('tenant_id', tenantId)
-      .order('created_at', { ascending: true }).limit(1).maybeSingle();
-    const subjectDeId: string | null = firstDe?.id ?? null;
     const { data: docs } = await admin.rpc('visible_knowledge_docs', {
       p_tenant_id: tenantId,
       p_subject_kind: subjectDeId ? 'de' : null,
@@ -384,6 +413,12 @@ ${context}`;
     const data = await res.json();
     const raw: string = data.content?.[0]?.text ?? '';
     const parsed = parseModelJson(raw);
+    if (subjectDeId) {
+      admin.rpc('record_de_token_usage', {
+        p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: MODEL,
+        p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
+      }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
+    }
 
     // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
     const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);
