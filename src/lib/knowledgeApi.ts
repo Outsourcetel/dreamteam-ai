@@ -25,6 +25,10 @@ export interface KnowledgeDoc {
    *  never destructively overwritten. */
   previous_version_id: string | null;
   is_current: boolean;
+  /** Real "confirmed still accurate" stamp (migration 101) — null until
+   *  a human explicitly re-verifies; distinct from updated_at, which
+   *  only reflects the last content edit. */
+  last_verified_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -87,6 +91,41 @@ export async function deleteKnowledgeDoc(id: string): Promise<void> {
   if (error) raise('deleteKnowledgeDoc', error);
 }
 
+/** Real "I checked this is still accurate" stamp (migration 101) — a
+ *  plain column update, not an RPC, since knowledge_docs already
+ *  allows any tenant member to write via RLS (same permission level
+ *  as updateKnowledgeDoc). Distinct from editing: a doc can be
+ *  verified-as-still-correct without changing its content. */
+export async function markKnowledgeDocVerified(id: string): Promise<void> {
+  const tid = await requireTenantId();
+  const { error } = await supabase
+    .from('knowledge_docs')
+    .update({ last_verified_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('tenant_id', tid);
+  if (error) raise('markKnowledgeDocVerified', error);
+}
+
+/** Per-doc citation count + confidence/feedback correlation
+ *  (migration 101) — real evidence of whether a document is actually
+ *  helping DEs answer well, not a guess. */
+export interface KnowledgeDocCitationStats {
+  doc_id: string;
+  citation_count: number;
+  avg_confidence: number | null;
+  accurate_count: number;
+  needs_improvement_count: number;
+}
+
+export async function getKnowledgeDocCitationStats(): Promise<Record<string, KnowledgeDocCitationStats>> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('get_knowledge_doc_citation_stats', { p_tenant_id: tid });
+  if (error) raise('getKnowledgeDocCitationStats', error);
+  const map: Record<string, KnowledgeDocCitationStats> = {};
+  for (const row of (data ?? []) as KnowledgeDocCitationStats[]) map[row.doc_id] = row;
+  return map;
+}
+
 // ── Knowledge scopes (migration 030) ──────────────────────────────
 
 /** A machine subject a doc can be scoped to — same subject model as
@@ -101,7 +140,7 @@ export interface ScopeSubject {
 export async function listScopeSubjects(): Promise<ScopeSubject[]> {
   const tid = await requireTenantId();
   const [des, specs] = await Promise.all([
-    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).order('created_at'),
+    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).eq('status', 'active').order('created_at'),
     supabase.from('specialist_profiles').select('id, name').eq('tenant_id', tid).order('created_at'),
   ]);
   if (des.error) raise('listScopeSubjects', des.error);
