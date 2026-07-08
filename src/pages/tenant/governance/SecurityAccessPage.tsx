@@ -7,7 +7,8 @@ import {
   requestSubtenant, fetchTenantDescendants, listTeamMfaStatus,
   listTenantApiKeys, createTenantApiKey, revokeTenantApiKey,
   getTenantSessionPolicy, setTenantSessionPolicy,
-  type TenantAncestryRow, type TeamMfaStatusRow, type TenantApiKey,
+  getTenantIpAllowlist, setTenantIpAllowlistEnabled, addTenantIpAllowlistEntry, removeTenantIpAllowlistEntry,
+  type TenantAncestryRow, type TeamMfaStatusRow, type TenantApiKey, type TenantIpAllowlistEntry,
 } from '../../../lib/api'
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
 
@@ -42,9 +43,6 @@ const PERMISSION_AREAS = Array.from(
 const ALL_ROLES = Object.keys(ROLE_LABELS) as TenantRole[]
 
 const API_KEY_SCOPES = ['read:analytics', 'read:knowledge', 'read:conversations', 'write:knowledge'] as const
-
-interface IpEntry { id: string; ip: string; label: string }
-interface IpAllowlistState { enabled: boolean; list: IpEntry[] }
 
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -324,6 +322,116 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────
+// IP allowlist (migration 092) — real, client-side enforced (see
+// check-ip-allowlist edge function's header for why not Edge Middleware).
+// Owner/admin of the tenant, or a platform admin via Remote Access.
+// ─────────────────────────────────────────────────────────────────
+function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
+  const [enabled, setEnabled] = useState(false)
+  const [entries, setEntries] = useState<TenantIpAllowlistEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newIp, setNewIp] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+  const [addError, setAddError] = useState('')
+  const [toggleError, setToggleError] = useState('')
+  const [removeTarget, setRemoveTarget] = useState<TenantIpAllowlistEntry | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    getTenantIpAllowlist(tenantId).then(a => { setEnabled(a.enabled); setEntries(a.entries); setLoading(false) })
+  }
+  useEffect(() => { load() }, [tenantId])
+
+  const handleToggle = async (v: boolean) => {
+    setToggleError('')
+    const res = await setTenantIpAllowlistEnabled(tenantId, v)
+    if (!res.ok) { setToggleError(res.error ?? 'Could not update.'); return }
+    setEnabled(v)
+  }
+
+  const handleAdd = async () => {
+    if (!newIp.trim()) return
+    setAddError('')
+    const res = await addTenantIpAllowlistEntry(tenantId, newIp.trim(), newLabel.trim())
+    if (!res.ok) { setAddError(res.error ?? 'Could not add that range.'); return }
+    setNewIp('')
+    setNewLabel('')
+    load()
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">IP Allowlist</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Restrict sign-in to approved network ranges — checked once per session, not on every request.
+          </p>
+        </div>
+        <Toggle enabled={enabled} onChange={handleToggle} />
+      </div>
+      {toggleError && <p className="text-xs text-red-400 mb-2">{toggleError}</p>}
+      {!enabled && !loading && <p className="text-xs text-slate-500">All networks allowed while disabled.</p>}
+      {enabled && (
+        <div className="space-y-2">
+          {entries.length === 0 && (
+            <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
+              No ranges added — add at least one before this can stay enabled.
+            </div>
+          )}
+          {entries.map(e => (
+            <div key={e.id} className="flex gap-2 items-center bg-slate-950 rounded-lg px-3 py-2">
+              <span className="flex-1 font-mono text-xs text-slate-200">{e.ip_range}</span>
+              <span className="flex-1 text-xs text-slate-500">{e.label || '—'}</span>
+              <button
+                onClick={() => setRemoveTarget(e)}
+                className="text-slate-500 hover:text-red-400 text-xs px-2 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2 items-center mt-3">
+        <input
+          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
+          placeholder="192.168.1.0/24" value={newIp}
+          onChange={e => setNewIp(e.target.value)}
+        />
+        <input
+          className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
+          placeholder="Label (e.g. Office WiFi)" value={newLabel}
+          onChange={e => setNewLabel(e.target.value)}
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!newIp.trim()}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+        >
+          + Add range
+        </button>
+      </div>
+      {addError && <p className="text-xs text-red-400 mt-2">{addError}</p>}
+
+      {removeTarget && (
+        <ConfirmDeleteModal
+          title="Remove IP range"
+          message={`Remove "${removeTarget.ip_range}"${removeTarget.label ? ` (${removeTarget.label})` : ''}? Anyone signing in from this range will need a different one, if the allowlist is enabled.`}
+          confirmLabel="Remove"
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={async () => {
+            await removeTenantIpAllowlistEntry(removeTarget.id)
+            setRemoveTarget(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function SecurityAccessPage() {
   const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
   const companyId = activeCompanyId
@@ -367,19 +475,6 @@ export default function SecurityAccessPage() {
     if (res.ok) { setPolicySaved(true); setTimeout(() => setPolicySaved(false), 2500) }
   }
 
-  // ── IP allowlist — read on mount, persist on change ──
-  const ipKey = `dt_gov_ip_allowlist_${companyId}`
-  const [ipState, setIpState] = useState<IpAllowlistState>(() => {
-    try {
-      const s = localStorage.getItem(ipKey)
-      if (s) return JSON.parse(s)
-    } catch { /* noop */ }
-    return { enabled: false, list: [] }
-  })
-  const saveIp = (next: IpAllowlistState) => {
-    setIpState(next)
-    try { localStorage.setItem(ipKey, JSON.stringify(next)) } catch { /* noop */ }
-  }
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -570,43 +665,14 @@ export default function SecurityAccessPage() {
         )}
 
         {/* ── IP allowlist ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">IP Allowlist</p>
-              <p className="text-xs text-slate-500 mt-1">Restrict console access to approved network ranges</p>
-            </div>
-            <Toggle enabled={ipState.enabled} onChange={v => saveIp({ ...ipState, enabled: v })} />
+        {canManageSecurity && currentTenant?.id ? (
+          <IpAllowlistPanel tenantId={currentTenant.id} />
+        ) : (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">IP Allowlist</p>
+            <p className="text-xs text-slate-500">Only a workspace owner or admin can view and manage the IP allowlist.</p>
           </div>
-          {!ipState.enabled && <p className="text-xs text-slate-500">All IPs allowed while disabled.</p>}
-          {ipState.enabled && (
-            <div className="space-y-2">
-              {ipState.list.length === 0 && (
-                <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
-                  No IPs added — all access will be blocked. Add at least one range before enforcing.
-                </div>
-              )}
-              {ipState.list.map(entry => (
-                <div key={entry.id} className="flex gap-2 items-center">
-                  <input
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
-                    placeholder="192.168.1.0/24" value={entry.ip}
-                    onChange={e => saveIp({ ...ipState, list: ipState.list.map(x => x.id === entry.id ? { ...x, ip: e.target.value } : x) })} />
-                  <input
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
-                    placeholder="Label (e.g. Office WiFi)" value={entry.label}
-                    onChange={e => saveIp({ ...ipState, list: ipState.list.map(x => x.id === entry.id ? { ...x, label: e.target.value } : x) })} />
-                  <button className="text-slate-500 hover:text-red-400 text-xs px-2 transition-colors"
-                    onClick={() => saveIp({ ...ipState, list: ipState.list.filter(x => x.id !== entry.id) })}>✕</button>
-                </div>
-              ))}
-              <button className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                onClick={() => saveIp({ ...ipState, list: [...ipState.list, { id: `ip_${Date.now()}`, ip: '', label: '' }] })}>
-                + Add IP range
-              </button>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )

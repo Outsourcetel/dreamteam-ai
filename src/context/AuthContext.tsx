@@ -7,7 +7,7 @@ import {
   fetchMyProfile,
   DBTenant,
 } from '../lib/api';
-import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy } from '../lib/api';
+import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy, checkMyIpAllowed } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/mockData';
 import { COMPANIES_LOOKUP } from '../data/companies';
@@ -489,6 +489,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, 30000);
     return () => { events.forEach(e => window.removeEventListener(e, bump)); clearInterval(intervalId); };
   }, [isLiveTenant, isDTUser, sessionPolicy]);
+
+  // IP allowlist (migration 092) -- client-side check, fails open on any
+  // error. Checked on sign-in and every 5 minutes, not per-request (see
+  // check-ip-allowlist's own header comment for why this isn't Vercel
+  // Edge Middleware). Scoped to real tenant users only, same reasoning
+  // as the rest of this session-policy block.
+  useEffect(() => {
+    if (!isLiveTenant || isDTUser || !currentTenant?.id) return;
+    let cancelled = false;
+    const runCheck = async () => {
+      const allowed = await checkMyIpAllowed();
+      if (!cancelled && !allowed) void supabase.auth.signOut();
+    };
+    void runCheck();
+    const intervalId = setInterval(() => { void runCheck(); }, 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(intervalId); };
+  }, [isLiveTenant, isDTUser, currentTenant?.id]);
 
   const mfaGateBlocking = isLiveTenant && !isDTUser && sessionPolicy?.mfaRequired === true && mfaEnrolled === false;
 

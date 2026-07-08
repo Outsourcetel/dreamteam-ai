@@ -1000,3 +1000,54 @@ export const setTenantSessionPolicy = async (
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 };
+
+// ============================================================
+// SECURITY & ACCESS — real IP allowlist (migration 092)
+// ============================================================
+
+export interface TenantIpAllowlistEntry { id: string; ip_range: string; label: string }
+export interface TenantIpAllowlist { enabled: boolean; entries: TenantIpAllowlistEntry[] }
+
+export const getTenantIpAllowlist = async (tenantId: string): Promise<TenantIpAllowlist> => {
+  const { data, error } = await supabase.rpc('get_tenant_ip_allowlist', { p_tenant_id: tenantId });
+  if (error) { console.error('getTenantIpAllowlist:', error.message); return { enabled: false, entries: [] }; }
+  return data as TenantIpAllowlist;
+};
+
+export const setTenantIpAllowlistEnabled = async (
+  tenantId: string, enabled: boolean,
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('set_tenant_ip_allowlist_enabled', { p_tenant_id: tenantId, p_enabled: enabled });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};
+
+export const addTenantIpAllowlistEntry = async (
+  tenantId: string, ipRange: string, label: string,
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('add_tenant_ip_allowlist_entry', {
+    p_tenant_id: tenantId, p_ip_range: ipRange, p_label: label,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};
+
+export const removeTenantIpAllowlistEntry = async (entryId: string): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('remove_tenant_ip_allowlist_entry', { p_entry_id: entryId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};
+
+// Client-side IP-allowlist check (see check-ip-allowlist edge function's
+// own header comment for why this isn't Vercel Edge Middleware). Fails
+// open on any error -- a network hiccup must never look like a lockout.
+export const checkMyIpAllowed = async (): Promise<boolean> => {
+  try {
+    const { data, error } = await supabase.functions.invoke('check-ip-allowlist', { method: 'POST' });
+    if (error) { console.error('checkMyIpAllowed:', error.message); return true; }
+    return (data as { allowed: boolean })?.allowed !== false;
+  } catch (e) {
+    console.error('checkMyIpAllowed:', e);
+    return true;
+  }
+};
