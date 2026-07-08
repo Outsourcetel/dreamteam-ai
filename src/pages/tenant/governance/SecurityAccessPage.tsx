@@ -2,54 +2,38 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
-import { requestSubtenant, fetchTenantDescendants, type TenantAncestryRow } from '../../../lib/api'
+import { requestSubtenant, fetchTenantDescendants, listTeamMfaStatus, type TenantAncestryRow, type TeamMfaStatusRow } from '../../../lib/api'
+import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Security & Access (gov_security)
-// Migrated from the legacy SecurityPage: RBAC matrix, human users,
-// SSO/SAML config, API keys, session policy, and IP allowlist
-// (now properly read on mount + persisted on change).
+// Migrated from the legacy SecurityPage, then rebuilt against real data
+// (2026-07-08 readiness-review page rebuild): human users/roles/MFA and
+// the permission reference now come from the real profiles/auth.users/
+// auth.mfa_factors tables (migration 089) instead of a hardcoded mock
+// list. SSO/API keys/session policy/IP allowlist are being rebuilt in
+// the same pass; see their own migrations as each lands.
 // ═══════════════════════════════════════════════════════════════
 
-const ROLES = [
-  { id: 'tenant_owner', label: 'Owner', color: 'bg-red-500/15 text-red-300' },
-  { id: 'tenant_admin', label: 'Admin', color: 'bg-amber-500/15 text-amber-300' },
-  { id: 'tenant_manager', label: 'Manager', color: 'bg-blue-500/15 text-blue-300' },
-  { id: 'tenant_user', label: 'User', color: 'bg-slate-700 text-slate-300' },
-]
-
-// Permission matrix — harvested from the legacy SecurityPage RBAC view
-const PERMISSIONS: { label: string; grants: Record<string, boolean> }[] = [
-  { label: 'View dashboards & analytics', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: true, tenant_user: true } },
-  { label: 'Approve DE actions (human tasks)', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: true, tenant_user: false } },
-  { label: 'Configure Digital Employees', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: false, tenant_user: false } },
-  { label: 'Edit guardrails & compliance', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: false, tenant_user: false } },
-  { label: 'Manage connectors & systems', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: false, tenant_user: false } },
-  { label: 'Manage knowledge library', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: true, tenant_user: false } },
-  { label: 'Export audit trail', grants: { tenant_owner: true, tenant_admin: false, tenant_manager: false, tenant_user: false } },
-  { label: 'Manage users & API keys', grants: { tenant_owner: true, tenant_admin: true, tenant_manager: false, tenant_user: false } },
-  { label: 'Billing & plan management', grants: { tenant_owner: true, tenant_admin: false, tenant_manager: false, tenant_user: false } },
-]
-
-interface HumanUser { name: string; email: string; role: string; lastActive: string; mfa: boolean }
-
-const HUMAN_USERS: Record<CompanyId, HumanUser[]> = {
-  tcp: [
-    { name: 'Priya Sharma', email: 'priya.sharma@tcpsoftware.com', role: 'tenant_owner', lastActive: '2 min ago', mfa: true },
-    { name: 'K. Douglas', email: 'k.douglas@tcpsoftware.com', role: 'tenant_admin', lastActive: '35 min ago', mfa: true },
-    { name: 'Taylor Smith', email: 'taylor.smith@tcpsoftware.com', role: 'tenant_manager', lastActive: '1 hr ago', mfa: true },
-    { name: 'Maya Osei', email: 'm.osei@tcpsoftware.com', role: 'tenant_manager', lastActive: '25 min ago', mfa: true },
-    { name: 'Jai Patel', email: 'j.patel@tcpsoftware.com', role: 'tenant_manager', lastActive: '3 hr ago', mfa: true },
-    { name: 'Jordan Lee', email: 'jordan.lee@tcpsoftware.com', role: 'tenant_user', lastActive: '1 day ago', mfa: false },
-    { name: 'Dana Whitfield', email: 'dana.whitfield@tcpsoftware.com', role: 'tenant_user', lastActive: '3 days ago', mfa: true },
-  ],
-  pwc: [
-    { name: 'James Whitfield', email: 'j.whitfield@pwc.com', role: 'tenant_owner', lastActive: '10 min ago', mfa: true },
-    { name: 'Aisha Osei', email: 'a.osei@pwc.com', role: 'tenant_admin', lastActive: '1 hr ago', mfa: true },
-    { name: 'Rina Tanaka', email: 'r.tanaka@pwc.com', role: 'tenant_manager', lastActive: '4 hr ago', mfa: true },
-    { name: 'Liam Brennan', email: 'l.brennan@pwc.com', role: 'tenant_user', lastActive: '2 days ago', mfa: true },
-  ],
+const ROLE_COLORS: Record<TenantRole, string> = {
+  tenant_owner: 'bg-red-500/15 text-red-300',
+  tenant_admin: 'bg-amber-500/15 text-amber-300',
+  tenant_manager: 'bg-blue-500/15 text-blue-300',
+  knowledge_manager: 'bg-purple-500/15 text-purple-300',
+  approver: 'bg-cyan-500/15 text-cyan-300',
+  tenant_user: 'bg-slate-700 text-slate-300',
+  read_only: 'bg-slate-800 text-slate-400',
 }
+
+// The real permission areas each role carries, straight from useUsers.ts's
+// ROLE_PERMISSIONS — the same source the invite-role picker uses. This is
+// a reference to what's server-enforced (RLS policies gated on these
+// roles, e.g. migration 064), not an independently editable table; there
+// is no per-tenant custom RBAC today.
+const PERMISSION_AREAS = Array.from(
+  new Set(Object.values(ROLE_PERMISSIONS).flat().filter(a => a !== 'All permissions'))
+)
+const ALL_ROLES = Object.keys(ROLE_LABELS) as TenantRole[]
 
 interface ApiKeyRow { name: string; masked: string; scope: string; created: string; lastUsed: string }
 
@@ -180,10 +164,26 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
 }
 
 export default function SecurityAccessPage() {
-  const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant } = useAuth()
+  const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
   const companyId = activeCompanyId
-  const users = HUMAN_USERS[companyId]
   const apiKeys = API_KEYS[companyId]
+
+  // ── Real team roster (migration 089's list_team_members_full, via useUsers) ──
+  const { members, loading: membersLoading } = useUsers()
+  // Matches list_team_mfa_status's server-side gate: the tenant's own
+  // owner/admin, or a platform admin viewing via Remote Access.
+  const canViewMfa = isLiveTenant && !!currentTenant?.id && (
+    isDTUser || (authedUser?.role && ['tenant_owner', 'tenant_admin'].includes(authedUser.role))
+  )
+  const [mfaStatus, setMfaStatus] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!canViewMfa || !currentTenant?.id) return
+    listTeamMfaStatus(currentTenant.id).then(rows => {
+      const map: Record<string, boolean> = {}
+      rows.forEach((r: TeamMfaStatusRow) => { map[r.user_id] = r.mfa_verified })
+      setMfaStatus(map)
+    })
+  }, [canViewMfa, currentTenant?.id, members.length])
 
   // ── Session policy (persisted) ──
   const policyKey = `dt_gov_session_policy_${companyId}`
@@ -211,8 +211,6 @@ export default function SecurityAccessPage() {
     try { localStorage.setItem(ipKey, JSON.stringify(next)) } catch { /* noop */ }
   }
 
-  const roleMeta = (id: string) => ROLES.find(r => r.id === id) ?? ROLES[3]
-
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="flex items-start justify-between gap-4">
@@ -235,41 +233,52 @@ export default function SecurityAccessPage() {
         {/* ── RBAC permission matrix ── */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">RBAC — Roles & Permissions</p>
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Roles & Permissions</p>
+            <p className="text-xs text-slate-500 mt-1">
+              What each built-in role can do — enforced by real access-control policy, not independently configurable per tenant.
+            </p>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800">
-                <th className={th}>Permission</th>
-                {ROLES.map(r => (
-                  <th key={r.id} className={`${th} text-center`}>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.color}`}>{r.label}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {PERMISSIONS.map(p => (
-                <tr key={p.label} className="hover:bg-slate-800/20 transition-colors">
-                  <td className={`${td} text-slate-200 text-xs`}>{p.label}</td>
-                  {ROLES.map(r => (
-                    <td key={r.id} className={`${td} text-center`}>
-                      {p.grants[r.id]
-                        ? <span className="text-emerald-400 text-sm">✓</span>
-                        : <span className="text-slate-700 text-sm">—</span>}
-                    </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800">
+                  <th className={th}>Permission area</th>
+                  {ALL_ROLES.map(r => (
+                    <th key={r} className={`${th} text-center whitespace-nowrap`}>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${ROLE_COLORS[r]}`}>{ROLE_LABELS[r]}</span>
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {PERMISSION_AREAS.map(area => (
+                  <tr key={area} className="hover:bg-slate-800/20 transition-colors">
+                    <td className={`${td} text-slate-200 text-xs`}>{area}</td>
+                    {ALL_ROLES.map(r => {
+                      const grants = ROLE_PERMISSIONS[r]
+                      const has = grants.includes('All permissions') || grants.includes(area)
+                      return (
+                        <td key={r} className={`${td} text-center`}>
+                          {has
+                            ? <span className="text-emerald-400 text-sm">✓</span>
+                            : <span className="text-slate-700 text-sm">—</span>}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* ── Human users ── */}
+        {/* ── Human users (real profiles + auth.users email + auth.mfa_factors, migration 089) ── */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Human Users</p>
-            <span className="text-xs text-slate-500">{users.length} members · full management in Users</span>
+            <span className="text-xs text-slate-500">
+              {membersLoading ? 'Loading…' : `${members.length} member${members.length === 1 ? '' : 's'} · full management in Users`}
+            </span>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -282,26 +291,31 @@ export default function SecurityAccessPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
-              {users.map(u => (
-                <tr key={u.email} className="hover:bg-slate-800/20 transition-colors">
+              {!membersLoading && members.length === 0 && (
+                <tr><td colSpan={5} className={`${td} text-slate-500 text-xs text-center py-6`}>No team members yet.</td></tr>
+              )}
+              {members.map(u => (
+                <tr key={u.userId} className="hover:bg-slate-800/20 transition-colors">
                   <td className={td}>
                     <div className="flex items-center gap-2.5">
                       <span className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">
-                        {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        {u.avatar}
                       </span>
-                      <span className="text-slate-200 text-xs font-medium">{u.name}</span>
+                      <span className="text-slate-200 text-xs font-medium">{u.fullName}</span>
                     </div>
                   </td>
                   <td className={`${td} text-slate-400 text-xs`}>{u.email}</td>
                   <td className={td}>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${roleMeta(u.role).color}`}>{roleMeta(u.role).label}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role] ?? ROLE_COLORS.tenant_user}`}>{ROLE_LABELS[u.role] ?? u.role}</span>
                   </td>
                   <td className={td}>
-                    {u.mfa
-                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Enabled</span>
-                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Missing</span>}
+                    {!canViewMfa
+                      ? <span className="text-[10px] text-slate-600">Owner/admin only</span>
+                      : mfaStatus[u.userId]
+                        ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Enabled</span>
+                        : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Missing</span>}
                   </td>
-                  <td className={`${td} text-slate-500 text-xs`}>{u.lastActive}</td>
+                  <td className={`${td} text-slate-500 text-xs`}>{u.lastSeen}</td>
                 </tr>
               ))}
             </tbody>

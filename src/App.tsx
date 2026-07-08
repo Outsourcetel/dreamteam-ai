@@ -413,7 +413,7 @@ function AppShell() {
     <>
       <URLSync />
       <div className="flex h-screen bg-slate-950 overflow-hidden">
-        {!isDTUser && (
+        {(!isDTUser || godModeSession) && (
           <Sidebar
             page={currentPage}
             setPage={handleSetPage}

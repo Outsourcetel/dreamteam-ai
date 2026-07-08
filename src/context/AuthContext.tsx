@@ -12,6 +12,7 @@ import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/mockData';
 import { COMPANIES_LOOKUP } from '../data/companies';
 import type { CompanyProfile, CompanyId } from '../data/companies';
+import { setGodModeTenantIdOverride } from '../lib/customerApi';
 
 interface DbStats {
   totalConversations: number;
@@ -135,6 +136,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [dbTenantsLoaded, setDbTenantsLoaded] = useState(false);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
+
+  // Keeps the shared "Live" API libs (customerApi.ts + everything built on
+  // its requireTenantId()) in sync with which tenant a platform admin is
+  // currently viewing via Remote Access -- see setGodModeTenantIdOverride's
+  // own comment for why this is needed at all.
+  useEffect(() => {
+    setGodModeTenantIdOverride(godModeSession?.tenant?.id ?? null);
+  }, [godModeSession]);
 
   // Tri-state, not boolean: undefined = not resolved yet (still loading, or
   // no session), true = a real profile row was fetched and it genuinely has
@@ -357,13 +366,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ── Live vs demo mode ────────────────────────────────────────────
   // Demo when: dev demo login, no tenant, non-UUID tenant, or the seeded
   // demo tenant UUID. Live tenants can still opt into the demo story.
+  // A platform admin inside a Remote Access session is always "live" too --
+  // godModeSession carries a real tenant's data (see currentTenant below),
+  // but the operator's OWN authedUser.tenantId is null (platform accounts
+  // have no tenant membership by design), so without this the whole app
+  // would render Remote Access as demo mode. This was the exact bug behind
+  // "Remote Access lands on the demo dashboard" — the session's tenant was
+  // real, isLiveTenant just never looked at it.
   const userTenantId = authedUser?.tenantId as string | undefined;
   const isLiveTenant = !!(
-    authedUser &&
-    authedUser.id !== 'dev-demo-user' &&
-    userTenantId &&
-    UUID_RE.test(userTenantId) &&
-    userTenantId.toLowerCase() !== DEMO_TENANT_ID
+    godModeSession ||
+    (authedUser &&
+      authedUser.id !== 'dev-demo-user' &&
+      userTenantId &&
+      UUID_RE.test(userTenantId) &&
+      userTenantId.toLowerCase() !== DEMO_TENANT_ID)
   );
   const dataMode: DataMode = isLiveTenant && !viewingDemo ? 'live' : 'demo';
   const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;

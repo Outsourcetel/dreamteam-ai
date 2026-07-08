@@ -144,7 +144,23 @@ function raise(context: string, error: { code?: string; message: string }): neve
 let cachedTenantId: string | null = null;
 let tenantPromise: Promise<string | null> | null = null;
 
+// Set by AuthContext whenever a platform admin starts/ends a Remote
+// Access session. Every "Live" API lib resolves its tenant through
+// getSessionTenantId() below, which otherwise looks up the SIGNED-IN
+// user's own profiles.tenant_id -- always null for a platform account,
+// since platform accounts have no tenant membership by design. Without
+// this override, Remote Access could never show a single real tenant-
+// scoped row across any of these libs, regardless of which tenant the
+// operator was viewing (this was the root cause behind Remote Access
+// silently falling back to demo-mode data).
+let godModeTenantIdOverride: string | null = null;
+
+export function setGodModeTenantIdOverride(tenantId: string | null) {
+  godModeTenantIdOverride = tenantId;
+}
+
 export async function getSessionTenantId(): Promise<string | null> {
+  if (godModeTenantIdOverride) return godModeTenantIdOverride;
   if (cachedTenantId) return cachedTenantId;
   if (!tenantPromise) {
     tenantPromise = (async () => {

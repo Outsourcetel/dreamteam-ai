@@ -49,7 +49,7 @@ export const ROLE_PERMISSIONS: Record<TenantRole, string[]> = {
 function profileToMember(row: Record<string, unknown>): TeamMember {
   const name = (row.full_name as string) || (row.email as string) || 'Unknown';
   return {
-    id: row.id as string,
+    id: row.user_id as string,
     userId: row.user_id as string,
     fullName: name,
     email: (row.email as string) || '',
@@ -74,15 +74,18 @@ export function useUsers() {
   const load = useCallback(async () => {
     if (!tenantId) { setLoading(false); return; }
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .order('created_at', { ascending: true });
+    // profiles has no email column -- list_team_members_full() (migration
+    // 089) joins auth.users for the real address; the old raw
+    // .from('profiles').select('*') silently returned '' for every email,
+    // breaking display, search, and the "reset password" admin action.
+    const { data, error } = await supabase.rpc('list_team_members_full', { p_tenant_id: tenantId });
     if (error) {
       console.error('useUsers fetch:', error.message);
     } else {
-      setMembers((data ?? []).map(r => profileToMember(r as Record<string, unknown>)));
+      const rows = ((data ?? []) as Record<string, unknown>[])
+        .slice()
+        .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
+      setMembers(rows.map(r => profileToMember(r)));
     }
     setLoading(false);
   }, [tenantId]);

@@ -931,3 +931,17 @@ export const submitCSAT = async (
   if (error) console.error('submitCSAT:', error.message);
   return !error;
 };
+
+// ============================================================
+// SECURITY & ACCESS — real team MFA status (migration 089)
+// ============================================================
+
+export interface TeamMfaStatusRow { user_id: string; mfa_verified: boolean }
+
+// Owner/admin (of that tenant) or a platform admin (Remote Access) only --
+// server-enforced; the RPC throws rather than returning partial data.
+export const listTeamMfaStatus = async (tenantId: string): Promise<TeamMfaStatusRow[]> => {
+  const { data, error } = await supabase.rpc('list_team_mfa_status', { p_tenant_id: tenantId });
+  if (error) { console.error('listTeamMfaStatus:', error.message); return []; }
+  return (data ?? []) as TeamMfaStatusRow[];
+};
