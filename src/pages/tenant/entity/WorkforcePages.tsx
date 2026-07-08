@@ -3,13 +3,41 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
+import { useDataMode } from '../../../lib/dataMode';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Workforce entity pages: Overview, Talent, Onboarding,
 // Development, Payroll. Riley (HR & People DE, confidence 83,
 // needs recertification) serves the TCP workforce; PWC has no
 // workforce DE — consistent with WorkforceDEsPage roster.
+//
+// Deliberately scoped OUT of the entity/outcome-model rebuild
+// (founder decision, 2026-07-09): Workforce/HR stays a design
+// preview, not a real HRIS-lite backend. What changed here is
+// honesty, not scope — a LIVE tenant used to see this exact seeded
+// TCP/PWC demo data unconditionally, which is exactly the kind of
+// "fake data presented as real" this project treats as a bug
+// everywhere else. Every page below now shows a real empty state
+// for live tenants (matching the Dashboard's own "Not yet on the
+// production track" cards for this entity) and keeps the untouched
+// design-preview content for demo mode.
 // ============================================================
+
+function WorkforceNotYetAvailable({ title, setPage }: { title: string; setPage?: (p: Page) => void }) {
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader title={title} subtitle="Our People" />
+      <LiveEmptyState
+        icon="◉"
+        title="Workforce & HR isn't built yet"
+        body="This entity is still a design preview, not a real workspace feature. Real roster, onboarding, and payroll tracking aren't available for live workspaces yet."
+        primaryLabel={setPage ? 'Back to Command Centre' : undefined}
+        onPrimary={setPage ? () => setPage('dashboard') : undefined}
+      />
+    </div>
+  );
+}
 
 
 
@@ -55,9 +83,12 @@ const HEADCOUNT_STATS: Record<CompanyId, { label: string; value: string; sub: st
 
 export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
+  const dataMode = useDataMode();
   const stages = WF_STAGES[activeCompanyId];
   const stats = HEADCOUNT_STATS[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
+
+  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Our People" setPage={setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -162,6 +193,7 @@ const ROLES: Record<CompanyId, Role[]> = {
 
 export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const roles = ROLES[activeCompanyId];
   const totals = roles.reduce(
     (acc, r) => ({ sourced: acc.sourced + r.sourced, screening: acc.screening + r.screening, interview: acc.interview + r.interview, offer: acc.offer + r.offer }),
@@ -174,6 +206,8 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
     { stage: 'Offer', count: totals.offer, color: 'bg-emerald-400' },
   ];
   const maxCount = funnel[0].count || 1;
+
+  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Talent — Our People" setPage={_setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -254,9 +288,12 @@ const JORDAN_TASKS: OnboardTask[] = [
 
 export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const doneCount = JORDAN_TASKS.filter(t => t.done).length;
   const pct = Math.round((doneCount / JORDAN_TASKS.length) * 100);
+
+  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Onboarding — Our People" setPage={_setPage} />;
 
   if (!isTcp) {
     return (
@@ -330,11 +367,14 @@ const SKILLS: Record<CompanyId, { skill: string; strong: number; developing: num
 
 export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const skills = SKILLS[activeCompanyId];
   const cycle = isTcp
     ? { name: 'H2 2026 review cycle', opens: 'Jul 15', completion: 0, selfReviews: '0 of 42 submitted', note: 'Self-reviews open Jul 15; manager reviews due Aug 8.' }
     : { name: 'H2 2026 review cycle', opens: 'Aug 1', completion: 0, selfReviews: '0 of 118 submitted', note: 'Partner calibration scheduled for late August.' };
+
+  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Performance & Development — Our People" setPage={_setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -410,8 +450,11 @@ const PAYROLL: Record<CompanyId, { date: string; headcount: number; gross: strin
 
 export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const data = PAYROLL[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
+
+  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Payroll & Benefits — Our People" setPage={setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">

@@ -3,12 +3,40 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
+import { useDataMode } from '../../../lib/dataMode';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Vendor entity pages: Overview, Sourcing, Contracts, Management.
 // No DE assigned to the Vendor entity yet (both companies) —
 // consistent with DashboardPage entity cards.
+//
+// Deliberately scoped OUT of the entity/outcome-model rebuild
+// (founder decision, 2026-07-09): Vendor Management stays a design
+// preview, not a real backend. What changed here is honesty, not
+// scope — a LIVE tenant used to see this exact seeded TCP/PWC demo
+// data unconditionally, which is exactly the kind of "fake data
+// presented as real" this project treats as a bug everywhere else.
+// Every page below now shows a real empty state for live tenants
+// (matching the Dashboard's own "Not yet on the production track"
+// cards for this entity) and keeps the untouched design-preview
+// content for demo mode.
 // ============================================================
+
+function VendorNotYetAvailable({ title, setPage }: { title: string; setPage?: (p: Page) => void }) {
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader title={title} subtitle="Vendors & Partners" />
+      <LiveEmptyState
+        icon="◈"
+        title="Vendor management isn't built yet"
+        body="This entity is still a design preview, not a real workspace feature. Real vendor records, contracts, and relationship tracking aren't available for live workspaces yet."
+        primaryLabel={setPage ? 'Back to Command Centre' : undefined}
+        onPrimary={setPage ? () => setPage('dashboard') : undefined}
+      />
+    </div>
+  );
+}
 
 
 
@@ -50,8 +78,11 @@ const VENDOR_STATS: Record<CompanyId, { label: string; value: string; sub: strin
 
 export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
+  const dataMode = useDataMode();
   const stages = VENDOR_STAGES[activeCompanyId];
   const stats = VENDOR_STATS[activeCompanyId];
+
+  if (dataMode === 'live') return <VendorNotYetAvailable title="Vendors & Partners" setPage={setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -162,8 +193,11 @@ const evalStageBadge = (stage: string) => {
 
 export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const evals = EVALUATIONS[activeCompanyId];
   const rfps = RFPS[activeCompanyId];
+
+  if (dataMode === 'live') return <VendorNotYetAvailable title="Sourcing — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -253,9 +287,12 @@ const contractStatusBadge = (s: Contract['status']) => {
 
 export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const contracts = CONTRACTS[activeCompanyId];
   const expiring = contracts.filter(c => c.status === 'Expiring soon');
   const isTcp = activeCompanyId === 'tcp';
+
+  if (dataMode === 'live') return <VendorNotYetAvailable title="Contracts — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
@@ -358,8 +395,11 @@ const reviewBadge = (s: string) => {
 
 export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const cards = SCORECARDS[activeCompanyId];
   const reviews = REVIEWS[activeCompanyId];
+
+  if (dataMode === 'live') return <VendorNotYetAvailable title="Relationship Management — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
