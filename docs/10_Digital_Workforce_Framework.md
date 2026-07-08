@@ -26,6 +26,50 @@ Version 1.0 | 2026-07-01
 
 ---
 
+## 0. Implementation Status — read this first
+
+*Added 2026-07-09. This document specifies the constitution; it does not report on itself. Every section below was written as the target, and for a long time nothing marked which parts of the target had actually been reached. That silence let real drift go unnoticed. This ledger closes that gap, using the same discipline already established in [`TRUST-AND-ARCHITECTURE.md`](TRUST-AND-ARCHITECTURE.md): every claim is labeled **Live** (built, verified against the deployed schema/code), **Partial** (a real piece exists but falls short of the spec below), **Designed** (schema/hooks exist, reserved, unused), or **Roadmap** (not started). When in doubt, downgrade the label — this ledger is only useful if it never rounds up. Re-verify against the live migrations before trusting a label more than a few weeks old; this codebase moves fast.*
+
+| # | Concept | Status | Evidence |
+|---|---|---|---|
+| §2 | Knowledge Scope, Tool Access, Connector Access (the Control Fabric) | **Live** | `data_access_grants` (029) + `knowledge_doc_scopes` (030), enforced server-side, default-deny, real admin UI (Data Access page, per-doc "who can use this" modal). The most mature piece of this document. |
+| §2 | Workforce Teams | **Roadmap** | No table exists. Playbook-to-DE assignment (`de_playbook_charter`, 031) covers *work distribution*, not team structure, shared team goals/KPIs, or the primary/backup resilience model in §7. |
+| §2 | Memory (Working / Conversation / Organisational, three-tier) | **Partial** | Per-DE experience memory is real (`de_experience`/`resolve_experience`, 045) but only wired into the specialist-consult evidence pipeline, not a general three-tier model. `conversation_facts` (045) covers short-term in-conversation state only. |
+| §3.1–3.2 | Identity & Purpose (`display_title`, `avatar_url`, `slug`, `purpose_statement`, `primary_business_outcome`) | **Roadmap** | `digital_employees` has `name`/`persona_name`/`description` only — one free-text paragraph does the job of five structured fields here. |
+| §3.3 | Workforce Role & Classification (`workforce_role` enum, `seniority_level`) | **Roadmap** | `department`/`category` are free text/loose enum, not a job-family classification with seniority-driven default autonomy. |
+| §3.4–3.6 | Responsibilities, Capability assignment, Skills Profile | **Roadmap** | `responsibilities[]`, `skills`, `capabilities`, `model_config` are dead columns — populated at seed time only, never read by any RPC or UI, no assessment logic exists. |
+| §3.7 | Knowledge Scope | **Live** | Same as §2 above. |
+| §3.8–3.9 | Tool Access, Connector Access | **Live** | Same as §2 above — this is the one place the Blueprint's ambition is fully met. |
+| §3.10–3.12 | Policies, Approval Rules, Escalation Rules | **Partial** | Guardrail rules + the trust dial (`de_autonomy`) are real but tenant/category-scoped, not the structured per-DE object described. `sentiment_below` escalation is genuinely **Live** (frustration-score triage tier, shipped 2026-07-08/09) — the one escalation trigger from this section that's fully real. |
+| §3.13 | Goals & KPIs | **Roadmap** | No `goals`/`kpis` array on the DE record. |
+| §3.14 | Performance Profile | **Partial** | Real per-DE resolution/confidence/escalation/error-rate/cost/frustration metrics exist and are shown live (Performance page), but not in this exact schema shape, and with no quarterly review cadence. |
+| §3.15 | Trust Level (promotion & demotion) | **Partial — further along than it looks.** | The evidence-based promote/demote machinery is genuinely **Live** (`trust_policies`, migration 025 — server-computed evidence, human-gated promotion with re-verification and self-approval blocked, *automatic* demotion on eval regression or guardrail block). What's missing is only the `de_id` granularity: today it resolves per `(tenant, action_category)`, not per individual DE — and the column for that is already sitting in the schema, reserved and commented, unfinished. See `docs/ROADMAP.md` "R5.5 — Earned-Trust Progression." |
+| §3.16 | Incident Record | **Roadmap** | No `incidents` table. Guardrail blocks and eval regressions feed automatic trust demotion (§3.15) but are not captured as a durable, reviewable Incident Record in their own right. |
+| §3.17 | Health Profile (DE-level) | **Roadmap** | A near-identical *account*-health model is real (Customer Success health scoring) — the same pattern has not been applied to DE operational health. |
+| §3.18 | Cost Profile | **Partial** | Per-DE token usage tracking and tenant AI budget enforcement are real and live. `fte_equivalent` and `roi_score` are dead/unpopulated fields — no executive ROI reporting exists yet. |
+| §3.19 | Availability | **Roadmap** | No scheduling/concurrency/overflow model. |
+| §3.20 | Development Record | **Partial** | The tenant-wide audit trail is real and strong; a dedicated per-DE `development_history`/`certifications` structure is not. |
+| §4 | Skills Framework | **Roadmap** | Not started — see §3.6. |
+| §5 | Responsibilities Framework | **Roadmap** | Not started — see §3.4. |
+| §6 | Capability Assignment (primary/backup, proficiency) | **Roadmap** | A `capabilities` table exists (002) but not this many-to-many assignment model with primary/backup resilience. |
+| §7.1–7.5 | Workforce Teams | **Roadmap** | See §2 above. |
+| §7.6 | DE Composition (sub-agent delegation) | **Roadmap** | Does not exist in any form. The Specialist-consultation mechanism (migration 024) is a flatter, different pattern — a hardcoded, single-hop call to one of 4 fixed specialist types per playbook step, not a Coordinator DE that delegates to other DEs and assembles results. This document explicitly deferred Composition until the single-DE model is stable — that condition is arguably closer to met now than when this was written. |
+| §8 | Lifecycle (governance gates) | **Partial** | `lifecycle_status` exists with exactly this enum, but as a stored label — no code today enforces entry/exit criteria or blocks operations based on stage. It's a field, not yet a gate. |
+| §9 | Development Framework | **Partial** | Real pieces exist (per-DE knowledge scoping, per-DE experience memory) but there is no formal Development Plan object, no skills-gap-driven trigger, no Certification record. |
+| §10 | Performance Management (reviews, PIPs, benchmarking) | **Partial** | Metrics are real and live (§3.14); the *management* layer — scheduled reviews, formal PIPs, cross-tenant benchmarking — is not built. |
+| §11 | Workforce Health (DE-level) | **Roadmap** | See §3.17. |
+| §12 | Workforce Economics (FTE, ROI, executive reporting) | **Partial** | Cost tracking and budget enforcement are real; FTE Equivalent, ROI, and the executive report suite are not. |
+| §13.2 | Permission Governance | **Live** | This is exactly what the Control Fabric (§2) already does. |
+| §13.3–13.4 | Approval & Policy Governance | **Partial** | Real but coarser than the spec — see §3.10–3.12. |
+| §13.5 | Versioning Governance | **Roadmap** | No DE config `version` field, no re-certification-on-major-change flow. |
+| §13.6 | Ownership Governance (owner, transfer) | **Roadmap** | `created_by` is recorded; there is no formal owner-transfer process. |
+| §13.7 | Retirement Governance | **Roadmap** | A DE can be flagged `disabled`; there is no dependency-resolution process (active conversations, workflow dependencies, pending approvals) before that happens. |
+| §14 | Marketplace Readiness | **Roadmap** | Not started. |
+| §15 | Anti-Patterns | *Doctrine* | Worth flagging which ones the current gaps above put at risk if left unaddressed: §15.3 (Unmanaged Development — mitigated today mostly by absence of edit surfaces, not by governance), §15.9 (DE Composition Without Governance — moot until §7.6 exists). §15.8 (Trust Level Inflation) is actively **well-guarded** by the real promotion machinery in §3.15 — worth naming as a genuine strength. |
+| §16 | Immutable Principles | *Doctrine* | Principle 3 ("trust is earned") is **true today** at tenant-category granularity. Principle 9 ("incidents are managed") is **not yet true** — no Incident Record exists. Principle 11 ("FTE Equivalent is auditable") is not violated (nothing is fabricated) but not fulfilled either — an honest empty state, consistent with this codebase's own convention of never inventing numbers it can't back. |
+
+---
+
 ## 1. Digital Workforce Philosophy
 
 ### 1.1 The Fundamental Premise
