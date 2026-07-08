@@ -145,6 +145,7 @@ interface RunContext {
   instructions_context?: string[];
   de_subject_id?: string;
   last_consultation_id?: string | null;
+  onboarding_project_id?: string | null;
   [k: string]: unknown;
 }
 
@@ -156,7 +157,8 @@ const fmtMoney = (cents: number) => '$' + Math.round(cents / 100).toLocaleString
 const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
   'connector_action', 'update_record', 'log_activity', 'consult_specialist',
-  'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step', 'complete',
+  'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
+  'start_onboarding', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -174,6 +176,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   wait: 'Wait',
   sub_playbook: 'Run another playbook',
   agentic_step: 'Agentic step',
+  start_onboarding: 'Start onboarding',
   complete: 'Complete',
 };
 
@@ -183,7 +186,7 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 // the HTTP executor and is allowed to sit after a human gate.
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
-  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step',
+  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'start_onboarding',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
@@ -412,6 +415,18 @@ function validateSteps(steps: unknown): ValidationError[] {
         // this step actually say what it's trying to accomplish.
         if (typeof p.goal_template !== 'string' || !p.goal_template.trim()) {
           errs.push({ index: i, code: 'bad_params', message: 'An agentic step needs a goal — describe what it should accomplish.' });
+        }
+        break;
+      }
+      case 'start_onboarding': {
+        // Which template version is real tenant runtime state (like
+        // consult_specialist.profile_key) — checked at execution time
+        // by create_onboarding_project itself (returns a real, honest
+        // {error:'template_version_not_found'} skip), not re-validated
+        // against the DB here. Shape-only check: is this even a uuid.
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (typeof p.template_version_id !== 'string' || !UUID_RE.test(p.template_version_id)) {
+          errs.push({ index: i, code: 'bad_params', message: 'Pick which onboarding template version this step should create a project from.' });
         }
         break;
       }
@@ -1585,6 +1600,54 @@ async function executeDefinitionSteps(
             await saveRun(admin, run);
             return { status: 'failed' };
           }
+          await saveRun(admin, run);
+          continue;
+        }
+
+        // ────────────────────────────────────────────────
+        // start_onboarding — the fix closing roadmap #9 (auto-kickoff
+        // onboarding on a won deal) and #13 (reunify onboarding with
+        // the playbook engine) together. Before this, the ONLY caller
+        // of create_onboarding_project was the manual UI checkbox
+        // inside close_opportunity_won — the automatic opportunity_won
+        // dispatcher path fired a real playbook run with nothing real
+        // for it to do. create_onboarding_project's service-role
+        // branch (migration 104) lets THIS call, running with no JWT,
+        // pass tenantId explicitly instead of resolving via auth.uid().
+        case 'start_onboarding': {
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = 'PREVIEW — would create a real onboarding project (not actually created)';
+            await stepAudit(i); await saveRun(admin, run);
+            continue;
+          }
+          const { data: projRes, error: projErr } = await admin.rpc('create_onboarding_project', {
+            p_account_id: ctx.account_id, p_version_id: params.template_version_id,
+            p_name: (params.name as string) || null, p_target: null, p_tenant_id: tenantId,
+          });
+          if (projErr) throw new Error(projErr.message);
+          const errKey = String((projRes as { error?: string } | null)?.error ?? '');
+          if (errKey) {
+            // Honest skip, not a throw — same posture as connector_action's
+            // "no target record in run context" skips. A misconfigured
+            // step (a deleted/unpublished template version, or no
+            // account resolved yet in this run) shouldn't fail the
+            // whole playbook.
+            step.status = 'skipped'; step.at = now();
+            step.detail = errKey === 'template_version_not_found'
+              ? 'skipped: the configured onboarding template version no longer exists'
+              : errKey === 'account_not_found'
+                ? 'skipped: no account resolved yet in this run to onboard'
+                : `skipped: ${errKey}`;
+            await stepAudit(i, { error: errKey });
+            await saveRun(admin, run);
+            continue;
+          }
+          const projectId = (projRes as { project_id?: string } | null)?.project_id ?? null;
+          step.status = 'done'; step.at = now();
+          step.detail = `Onboarding project created — ${acct()}`;
+          ctx.onboarding_project_id = projectId;
+          await stepAudit(i, { project_id: projectId, account_id: ctx.account_id, template_version_id: params.template_version_id });
           await saveRun(admin, run);
           continue;
         }

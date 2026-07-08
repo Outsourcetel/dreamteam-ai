@@ -4,6 +4,8 @@ import type { Page } from '../../../types';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
 import type { CustomerAccount } from '../../../lib/customerApi';
 import { listPlaybookRuns, RENEWAL_STEP_DEFS } from '../../../lib/playbookApi';
+import { listPublishedVersions } from '../../../lib/onboardingApi';
+import type { TemplateVersion } from '../../../lib/onboardingApi';
 import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import {
   PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST, DECISION_OPERATORS, BRANCH_PRIMITIVES,
@@ -179,9 +181,37 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       return <ChecklistEditor step={step} onChange={onChange} />;
     case 'wait':
       return <WaitEditor step={step} onChange={onChange} />;
+    case 'start_onboarding':
+      return <StartOnboardingEditor step={step} onChange={onChange} />;
     default:
       return null;
   }
+}
+
+// ── Start onboarding editor: pick a published template version ────
+
+function StartOnboardingEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const [versions, setVersions] = useState<TemplateVersion[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    listPublishedVersions().then(setVersions).finally(() => setLoading(false));
+  }, []);
+  return (
+    <div className="space-y-1.5">
+      <select className={selectCls + ' !w-64'} value={String(p.template_version_id ?? '')}
+        onChange={e => onChange({ ...p, template_version_id: e.target.value })} disabled={loading}>
+        <option value="">{loading ? 'Loading template versions…' : 'Pick a published onboarding template…'}</option>
+        {versions.map(v => <option key={v.id} value={v.id}>{v.name} · v{v.version}</option>)}
+      </select>
+      <input className={inputCls} placeholder="Project name override (optional — defaults to account + template name)"
+        value={String(p.name ?? '')} onChange={e => onChange({ ...p, name: e.target.value })} />
+      {!loading && versions.length === 0 && (
+        <p className="text-[10px] text-amber-500">No published onboarding templates yet — publish one first (Onboarding → Templates).</p>
+      )}
+      <p className="text-[10px] text-slate-600">Creates a real onboarding project for this run's account. A deleted/unpublished template version or no account in context → step records as skipped, run continues.</p>
+    </div>
+  );
 }
 
 // ── Instruction step editor: title, markdown body, media upload ────
@@ -773,6 +803,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   const [overdueDays, setOverdueDays] = useState(7);
   const [priority, setPriority] = useState('p1');
   const [minArr, setMinArr] = useState(0); // dollars; 0 = any ARR
+  const [minAmount, setMinAmount] = useState(0); // dollars; 0 = any deal size
   const [cooldown, setCooldown] = useState(24);
 
   const guard = async (fn: () => Promise<unknown>) => {
@@ -795,6 +826,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
     definition_id: def.id, event_key: eventKey,
     params: eventKey === 'invoice_overdue' ? { overdue_days: overdueDays }
       : eventKey === 'account_at_risk' ? { min_arr_cents: Math.max(0, Math.round(minArr)) * 100 }
+      : eventKey === 'opportunity_won' ? { min_amount_cents: Math.max(0, Math.round(minAmount)) * 100 }
       : { priority },
     cooldown_hours: cooldown,
   }));
@@ -885,6 +917,12 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
               <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
                 min ARR $
                 <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minArr} onChange={e => setMinArr(Number(e.target.value))} />
+                (0 = any)
+              </label>
+            ) : eventKey === 'opportunity_won' ? (
+              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                min deal $
+                <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minAmount} onChange={e => setMinAmount(Number(e.target.value))} />
                 (0 = any)
               </label>
             ) : (

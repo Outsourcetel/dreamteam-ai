@@ -18,7 +18,8 @@ import type { PlaybookRun } from './playbookApi';
 export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
   | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist'
-  | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'agentic_step' | 'complete';
+  | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'agentic_step'
+  | 'start_onboarding' | 'complete';
 
 export interface StepMedia {
   asset_id?: string;
@@ -103,6 +104,9 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'agentic_step', label: 'Agentic step', gate: false, group: 'work',
     defaultParams: { goal_template: '' },
     description: 'Hands this step to a reasoning loop instead of a fixed script — the DE decides what to do (search knowledge, act in connected systems, ask a human) based on a goal, not a pre-written sequence. Every action it takes still passes through the same access grants, guardrails, and trust dial as a Connector action step. Dormant LLM → step skipped honestly.' },
+  { key: 'start_onboarding', label: 'Start onboarding', gate: false, group: 'work',
+    defaultParams: { template_version_id: '', name: '' },
+    description: 'Creates a real onboarding project for the run\'s account, from a published template version you pick. Degrades honestly: a deleted/unpublished template version or no account in context → step recorded as skipped, run continues.' },
   { key: 'complete', label: 'Complete', gate: false, group: 'work', defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
@@ -163,7 +167,8 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
   const known = new Set(PRIMITIVE_REGISTRY.map(p => p.key));
   const postGateAllowed = new Set([
     'guardrail_check', 'connector_action', 'update_record', 'log_activity',
-    'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'complete',
+    'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'consult_specialist', 'agentic_step',
+    'start_onboarding', 'complete',
   ]);
   let invoiceIdx = -1, approvalIdx = -1, completeCount = 0;
   steps.forEach((s, i) => {
@@ -217,6 +222,9 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
     }
     if (s.key === 'agentic_step' && !(typeof p.goal_template === 'string' && p.goal_template.trim())) {
       errs.push({ index: i, code: 'bad_params', message: 'An agentic step needs a goal — describe what it should accomplish.' });
+    }
+    if (s.key === 'start_onboarding' && !(typeof p.template_version_id === 'string' && p.template_version_id.trim())) {
+      errs.push({ index: i, code: 'bad_params', message: 'Pick which onboarding template version this step should create a project from.' });
     }
     if (s.key === 'decision') validateDecisionClient(s, i, 0, errs);
     if (s.key === 'complete') completeCount++;
@@ -365,7 +373,7 @@ export async function startDefinitionRun(definitionId: string, accountId: string
 export const DISPATCH_MODE: 'cron' | 'opportunistic' = 'cron';
 
 export type ScheduleCadence = 'daily' | 'weekly' | 'monthly';
-export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority' | 'account_at_risk';
+export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority' | 'account_at_risk' | 'opportunity_won';
 
 export interface PlaybookSchedule {
   id: string;
@@ -387,7 +395,7 @@ export interface PlaybookEventRule {
   tenant_id: string;
   definition_id: string;
   event_key: EventKey;
-  params: { overdue_days?: number; priority?: string; min_arr_cents?: number };
+  params: { overdue_days?: number; priority?: string; min_arr_cents?: number; min_amount_cents?: number };
   cooldown_hours: number;
   active: boolean;
   last_fired_at: string | null;
@@ -424,6 +432,10 @@ export const EVENT_META: Record<EventKey, { label: string; description: string }
     label: 'Account flips to at-risk',
     description: 'Fires when computed health drops an account below the at-risk threshold. Optional minimum ARR filter. Per-account cooldown dedup.',
   },
+  opportunity_won: {
+    label: 'Opportunity won',
+    description: 'Fires for each deal closed won within the last 7 days, against the account it created or linked. Optional minimum deal-size filter. Per-opportunity cooldown dedup.',
+  },
 };
 
 export function describeSchedule(s: PlaybookSchedule): string {
@@ -438,6 +450,10 @@ export function describeEventRule(r: PlaybookEventRule): string {
   if (r.event_key === 'account_at_risk') {
     const min = r.params.min_arr_cents ?? 0;
     return min > 0 ? `on account at-risk (ARR ≥ $${Math.round(min / 100).toLocaleString()})` : 'on account at-risk';
+  }
+  if (r.event_key === 'opportunity_won') {
+    const min = r.params.min_amount_cents ?? 0;
+    return min > 0 ? `on opportunity won (deal ≥ $${Math.round(min / 100).toLocaleString()})` : 'on opportunity won';
   }
   return `on ${r.params.priority ?? 'p1'} ticket synced`;
 }

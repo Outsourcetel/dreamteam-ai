@@ -23,7 +23,6 @@ interface DbStats {
   pendingApprovals: number;
   autoResolved: number;
   channelBreakdown: { chat: number; email: number; phone: number };
-  sentimentBreakdown: { positive: number; neutral: number; negative: number };
 }
 
 interface GodModeSession {

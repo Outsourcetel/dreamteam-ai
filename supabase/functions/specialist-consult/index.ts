@@ -892,6 +892,7 @@ async function handlePollDeWorkSources(
           p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
           p_trust_level: triage?.trust_level ?? null, p_reasoning: reasoning,
           p_inquiry_title: item.title, p_source_category: t.category,
+          p_frustration_score: triage?.frustration_score ?? null,
         });
         // action_execution_id is not a record_inquiry_decision param (it
         // is only known AFTER the act-attempt above, which runs before
@@ -1053,6 +1054,7 @@ serve(async (req) => {
           p_confidence: confidence, p_guardrail_rule_id: triage?.guardrail_rule_id ?? null,
           p_trust_level: triage?.trust_level ?? null, p_reasoning: triage?.reasoning ?? '',
           p_inquiry_title: inquiry, p_source_category: result.resolved_category ?? null,
+          p_frustration_score: triage?.frustration_score ?? null,
         });
         await audit(admin, tenantId!, prof2?.name ?? 'Technical Specialist',
           `SIMULATION — "${inquiry.slice(0, 80)}": ${decision} (not a real ticket — demo/test trigger)`,

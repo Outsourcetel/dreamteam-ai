@@ -664,11 +664,6 @@ export const fetchDashboardStats = async (tenantId: string) => {
       email: convs.filter(c => c.channel === 'email').length,
       phone: convs.filter(c => c.channel === 'phone').length,
     },
-    sentimentBreakdown: {
-      positive: convs.filter(c => c.sentiment === 'positive').length,
-      neutral: convs.filter(c => c.sentiment === 'neutral').length,
-      negative: convs.filter(c => c.sentiment === 'negative').length,
-    },
   };
 };
 
@@ -1062,6 +1057,7 @@ export interface DePerformanceMetrics {
   de_id: string; de_name: string; total_decisions: number; resolution_rate: number;
   avg_confidence: number; escalation_rate: number; blocked_guardrail_count: number;
   total_runs: number; error_rate: number;
+  avg_frustration_score: number; high_frustration_count: number;
   trend: { week: string; decisions: number; resolution_rate: number; avg_confidence: number }[];
 }
 

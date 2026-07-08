@@ -64,10 +64,11 @@ function Sparkline({ data, color = '#818cf8' }: { data: number[]; color?: string
   );
 }
 
-function metricColor(kind: 'resolution' | 'confidence' | 'escalation' | 'error', val: number): string {
+function metricColor(kind: 'resolution' | 'confidence' | 'escalation' | 'error' | 'frustration', val: number): string {
   if (kind === 'resolution') return val >= 85 ? 'text-emerald-400' : val >= 70 ? 'text-amber-400' : 'text-red-400';
   if (kind === 'confidence') return val >= 80 ? 'text-emerald-400' : val >= 60 ? 'text-amber-400' : 'text-red-400';
   if (kind === 'escalation') return val > 20 ? 'text-red-400' : val > 12 ? 'text-amber-400' : 'text-emerald-400';
+  if (kind === 'frustration') return val >= 50 ? 'text-red-400' : val >= 25 ? 'text-amber-400' : 'text-emerald-400';
   return val > 10 ? 'text-red-400' : val > 4 ? 'text-amber-400' : 'text-emerald-400';
 }
 
@@ -372,11 +373,12 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                       )}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       {[
                         { label: 'Confidence', value: `${m.avg_confidence}%`, color: metricColor('confidence', m.avg_confidence) },
                         { label: 'Escalation', value: `${m.escalation_rate}%`, color: metricColor('escalation', m.escalation_rate) },
                         { label: 'Error rate', value: `${m.error_rate}%`, color: metricColor('error', m.error_rate) },
+                        { label: 'Frustration', value: `${m.avg_frustration_score}%`, color: metricColor('frustration', m.avg_frustration_score) },
                       ].map(x => (
                         <div key={x.label} className="bg-slate-950 rounded-lg px-2 py-2 text-center">
                           <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
@@ -385,7 +387,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                       ))}
                     </div>
                     <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-950 rounded-lg px-3 py-2">
-                      <span>{m.total_decisions} inquiries this period</span>
+                      <span>{m.total_decisions} inquiries this period{m.high_frustration_count > 0 ? ` · ${m.high_frustration_count} auto-escalated for frustration` : ''}</span>
                       {c && c.total_calls > 0 && (
                         <span className="text-slate-300">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
                       )}
