@@ -140,10 +140,10 @@ const SettingsPage = ({
     if (isNaN(val) || val < 0) return;
     setBudgetSaving(tenantId);
     setBudgetError(prev => ({ ...prev, [tenantId]: '' }));
-    const ok = await updateTenantBudget(tenantId, val);
+    const res = await updateTenantBudget(tenantId, val);
     setBudgetSaving(null);
-    if (!ok) {
-      setBudgetError(prev => ({ ...prev, [tenantId]: 'Could not save — only an owner or admin can change the budget.' }));
+    if (!res.ok) {
+      setBudgetError(prev => ({ ...prev, [tenantId]: res.error || 'Could not save the budget.' }));
       return;
     }
     // refresh usage

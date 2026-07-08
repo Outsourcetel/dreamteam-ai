@@ -608,15 +608,20 @@ export const fetchAllTenantsUsage = async (): Promise<TenantUsage[]> => {
   return data ?? [];
 };
 
-// Routed through a SECURITY DEFINER RPC (migration 083) — same silent-
-// no-op fix as updateTenant above.
-export const updateTenantBudget = async (tenantId: string, monthlyTokenBudget: number): Promise<boolean> => {
+// Routed through a SECURITY DEFINER RPC (migration 083), capped for
+// self-serve callers (migration 084) — same silent-no-op fix as
+// updateTenant above, plus a ceiling so a tenant can't self-serve an
+// unbounded AI-usage budget with no billing behind it.
+export const updateTenantBudget = async (
+  tenantId: string,
+  monthlyTokenBudget: number
+): Promise<{ ok: boolean; error?: string }> => {
   const { data, error } = await supabase.rpc('set_tenant_monthly_budget', {
     p_tenant_id: tenantId,
     p_budget: monthlyTokenBudget,
   });
-  if (error) { console.error('updateTenantBudget:', error.message); return false; }
-  return !!(data as { ok?: boolean })?.ok;
+  if (error) { console.error('updateTenantBudget:', error.message); return { ok: false, error: error.message }; }
+  return { ok: !!(data as { ok?: boolean })?.ok };
 };
 
 // =====================================================
