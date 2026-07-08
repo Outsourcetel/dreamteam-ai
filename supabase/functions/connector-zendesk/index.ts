@@ -20,6 +20,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -72,6 +73,9 @@ async function zdFetch(
   init: RequestInit = {},
 ): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
   const url = baseUrl.replace(/\/+$/, '') + path;
+  if (!isSafeExternalUrl(url)) {
+    return { ok: false, status: 0, body: null, error: 'blocked: refusing to fetch a non-public or internal address' };
+  }
   let res: Response;
   try {
     res = await fetch(url, {

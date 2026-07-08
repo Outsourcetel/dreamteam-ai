@@ -80,6 +80,7 @@ import {
   AdapterDefinition, AdapterActionBinding, AUTH_META, validateAdapterDefinition,
   walkPath, renderTemplate, renderBody, renderAction,
 } from '../_shared/adapterTemplates.ts';
+import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -116,6 +117,9 @@ const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').tri
 const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
 
 async function httpJson(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
+  if (!isSafeExternalUrl(url)) {
+    return { ok: false, status: 0, body: null, error: 'blocked: refusing to fetch a non-public or internal address' };
+  }
   try {
     const res = await fetch(url, init);
     const body = await res.json().catch(() => null);
