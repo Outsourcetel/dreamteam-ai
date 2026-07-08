@@ -22,6 +22,28 @@ const LoginPage = ({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Forgot-password state
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    if (!forgotEmail.trim()) { setForgotError('Enter your email address.'); return; }
+    setForgotLoading(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setForgotLoading(false);
+    // Never reveal whether the email exists — same message either way,
+    // so this can't be used to enumerate real accounts.
+    if (resetError) { setForgotError(resetError.message); return; }
+    setForgotSent(true);
+  };
+
   // Sign-up state
   const [suFullName, setSuFullName] = useState('');
   const [suEmail, setSuEmail] = useState('');
@@ -178,7 +200,7 @@ const LoginPage = ({
           </div>
 
           {/* ── SIGN IN ── */}
-          {tab === 'signin' && (
+          {tab === 'signin' && !showForgot && (
             <>
               <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
               <p className="text-slate-400 text-sm mb-6">Sign in to your workspace</p>
@@ -194,7 +216,13 @@ const LoginPage = ({
                     className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Password</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-slate-400">Password</label>
+                    <button type="button" onClick={() => { setShowForgot(true); setForgotEmail(email); setForgotSent(false); setForgotError(''); }}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 underline">
+                      Forgot password?
+                    </button>
+                  </div>
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
                     className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
@@ -220,6 +248,46 @@ const LoginPage = ({
                   </button>
                 )}
               </div>
+            </>
+          )}
+
+          {/* ── FORGOT PASSWORD ── */}
+          {tab === 'signin' && showForgot && (
+            <>
+              {forgotSent ? (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
+                  <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
+                  <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                    If an account exists for {forgotEmail}, a password reset link is on its way.
+                  </p>
+                  <button onClick={() => setShowForgot(false)}
+                    className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
+                    Back to sign in
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold text-white mb-1">Reset your password</h2>
+                  <p className="text-slate-400 text-sm mb-6">We'll email you a link to set a new one.</p>
+                  <form onSubmit={handleForgotPassword} className="space-y-4">
+                    <div>
+                      <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
+                      <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@company.com" autoFocus
+                        className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    </div>
+                    {forgotError && <p className="text-xs text-red-400">{forgotError}</p>}
+                    <button type="submit" disabled={forgotLoading}
+                      className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                      {forgotLoading ? <><Spinner /> Sending...</> : 'Send reset link'}
+                    </button>
+                    <button type="button" onClick={() => setShowForgot(false)}
+                      className="w-full text-center text-xs text-slate-500 hover:text-slate-300 underline">
+                      Back to sign in
+                    </button>
+                  </form>
+                </>
+              )}
             </>
           )}
 

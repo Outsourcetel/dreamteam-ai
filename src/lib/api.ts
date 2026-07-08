@@ -458,6 +458,21 @@ export const revokePlatformCapabilityGrant = async (
   return data as { ok: boolean };
 };
 
+/**
+ * Sends a password-reset email to the given address — the same call
+ * LoginPage's "Forgot password?" makes, reused here for an admin
+ * triggering a reset on someone else's behalf (a team roster). Never
+ * sees or sets the password directly — Supabase emails the person a
+ * link, and they choose their own new password from there. Requires
+ * no elevated privilege to call (same as the self-service flow), so
+ * this is safe to expose to anyone who can already see a roster.
+ */
+export const sendPasswordReset = async (email: string): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};
+
 export interface RemoteAccessStartResult {
   ok: boolean;
   session_key?: string;

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
 import { useDepartments } from '../../lib/useDepartments';
+import { sendPasswordReset } from '../../lib/api';
 
 const DEPARTMENTS = ['Leadership', 'Customer Success', 'Finance', 'HR & People', 'Legal & Compliance', 'Revenue', 'IT', 'Operations', 'Product', 'Marketing'];
 
@@ -142,10 +143,21 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
+  const [resettingId, setResettingId] = useState<string | null>(null);
 
   const runAction = async (action: () => Promise<string | null>) => {
     const err = await action();
     setActionError(err || '');
+  };
+
+  const handleResetPassword = async (m: TeamMember) => {
+    setResettingId(m.id); setActionError(''); setResetMsg('');
+    const res = await sendPasswordReset(m.email);
+    setResettingId(null);
+    if (!res.ok) { setActionError(res.error || 'Could not send the reset email.'); return; }
+    setResetMsg(`Password reset email sent to ${m.email}.`);
+    setTimeout(() => setResetMsg(''), 5000);
   };
 
   const accentColor = tenant?.primaryColor || '#6366f1';
@@ -185,6 +197,11 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
         <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center justify-between gap-3">
           <span>{actionError}</span>
           <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-300">×</button>
+        </div>
+      )}
+      {resetMsg && (
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+          ✓ {resetMsg}
         </div>
       )}
 
@@ -320,6 +337,14 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                         </div>
                       ) : (
                         <>
+                          {m.status === 'active' && (
+                            <button onClick={() => void handleResetPassword(m)}
+                              disabled={resettingId === m.id}
+                              className="text-xs text-slate-500 hover:text-slate-300 transition-all disabled:opacity-50"
+                              title="Email a password reset link">
+                              🔑
+                            </button>
+                          )}
                           <button onClick={() => runAction(() => toggleStatus(m.id))}
                             className="text-xs text-slate-500 hover:text-slate-300 transition-all"
                             title={m.status === 'active' ? 'Deactivate' : 'Reactivate'}>

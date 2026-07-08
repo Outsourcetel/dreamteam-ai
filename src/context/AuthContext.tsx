@@ -84,6 +84,20 @@ interface AuthContextValue {
    */
   deactivatedMessage: string | null;
   clearDeactivatedMessage: () => void;
+  /**
+   * True from the moment Supabase's client detects a password-recovery
+   * link in the URL (the PASSWORD_RECOVERY auth event — fired when
+   * someone clicks a "reset your password" email, self-requested via
+   * LoginPage or admin-triggered from a team roster) until they set a
+   * new password. Checked in App.tsx BEFORE the normal authedUser gate,
+   * since Supabase's recovery link establishes a real signed-in session
+   * — without this flag, the person would land straight in their normal
+   * workspace instead of being asked to set a new password first.
+   */
+  passwordRecoveryActive: boolean;
+  /** Sets the new password on the recovery session and clears
+   *  passwordRecoveryActive on success. */
+  completePasswordRecovery: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   handleLogin: (u: AuthUser) => Promise<void>;
   handleLogout: () => Promise<void>;
   handleSetPage: (p: Page) => void;
@@ -125,6 +139,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profileHasNoTenant, setProfileHasNoTenant] = useState<boolean | undefined>(undefined);
   const [deactivatedMessage, setDeactivatedMessage] = useState<string | null>(null);
   const clearDeactivatedMessage = () => setDeactivatedMessage(null);
+  const [passwordRecoveryActive, setPasswordRecoveryActive] = useState(false);
+
+  const completePasswordRecovery = async (newPassword: string): Promise<{ ok: boolean; error?: string }> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { ok: false, error: error.message };
+    setPasswordRecoveryActive(false);
+    return { ok: true };
+  };
 
   // Force-ends the current session because the account has been
   // deactivated (profile.is_active === false). Signs out of Supabase,
@@ -212,6 +234,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') { setAuthedUser(null); setCurrentPage('dashboard'); }
+      // Fires when the URL carries a password-recovery link's tokens
+      // (self-requested via "Forgot password?" or an admin-triggered
+      // reset from a team roster). Takes priority over whatever the
+      // normal session-restore effect above does with this same
+      // session — see passwordRecoveryActive's doc comment.
+      else if (event === 'PASSWORD_RECOVERY') { setPasswordRecoveryActive(true); }
     });
     return () => { active = false; if (sub && sub.subscription) sub.subscription.unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -493,6 +521,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       completeOrgSetup,
       deactivatedMessage,
       clearDeactivatedMessage,
+      passwordRecoveryActive,
+      completePasswordRecovery,
       handleLogin,
       handleLogout,
       handleSetPage,

@@ -4,6 +4,7 @@ import {
   listPlatformTeam, updatePlatformTeamRole, setPlatformTeamActive,
   listPlatformCapabilityGrants, setPlatformCapabilityGrant, revokePlatformCapabilityGrant,
   PLATFORM_INVITE_ROLE_LABELS, PLATFORM_CAPABILITIES, PLATFORM_CAPABILITY_LABELS,
+  sendPasswordReset,
 } from '../../lib/api';
 import type { PlatformTeamMember, PlatformInviteRole, PlatformCapability, PlatformCapabilityGrant } from '../../lib/api';
 import PlatformInvitesPanel from './PlatformInvitesPanel';
@@ -60,6 +61,14 @@ const PlatformTeamPage = () => {
     setBusyId(null);
     if (!res.ok) { setErr(res.error || 'Could not change that account\'s active status.'); return; }
     load();
+  };
+
+  const handleResetPassword = async (m: PlatformTeamMember) => {
+    setBusyId(m.user_id); setErr(null);
+    const res = await sendPasswordReset(m.email);
+    setBusyId(null);
+    if (!res.ok) { setErr(res.error || 'Could not send the reset email.'); return; }
+    setToast(`Password reset email sent to ${m.email}.`);
   };
 
   return (
@@ -134,6 +143,17 @@ const PlatformTeamPage = () => {
                   >
                     Manage permissions
                   </button>
+
+                  {!isSelf && (
+                    <button
+                      onClick={() => void handleResetPassword(m)}
+                      disabled={busy}
+                      className="text-[11px] px-2 py-1 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
+                      title="Email this person a password reset link"
+                    >
+                      Reset password
+                    </button>
+                  )}
 
                   {!isSelf && (
                     <button

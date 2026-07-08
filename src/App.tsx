@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar } from './components';
 import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordScreen from './pages/ResetPasswordScreen';
 import OrgSetupScreen from './pages/OrgSetupScreen';
 import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
@@ -168,15 +169,27 @@ const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_security', label: 'Security' },
 ];
 
+// Two rows instead of one: the badge previously fought the tabs for
+// horizontal space in a single flex row, which is what forced a
+// browser scrollbar to appear on anything but a wide window. Splitting
+// them means the tab row can wrap onto a second line on its own —
+// nothing is ever hidden behind a scrollbar, and the badge never moves.
 function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: Page) => void }) {
   return (
-    <div className="flex items-center gap-3 pl-6 pr-3 pt-4 border-b border-slate-800 bg-slate-950">
-      <div className="flex items-center gap-1 overflow-x-auto">
+    <div className="border-b border-slate-800 bg-slate-950">
+      <div className="flex items-center justify-between pl-6 pr-4 pt-3">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">DT</div>
+          <span className="text-xs font-semibold text-slate-400 tracking-wide">Platform Console</span>
+        </div>
+        <MyAccountBadge />
+      </div>
+      <div className="flex items-center flex-wrap gap-1 px-6 pt-2">
         {PLATFORM_TABS.map((t) => (
           <button
             key={t.page}
             onClick={() => setPage(t.page)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
+            className={`px-3.5 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
               page === t.page
                 ? 'bg-slate-900 text-white border border-slate-800 border-b-slate-900 -mb-px'
                 : 'text-slate-500 hover:text-slate-300'
@@ -185,9 +198,6 @@ function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: P
             {t.label}
           </button>
         ))}
-      </div>
-      <div className="ml-auto pb-2 flex-shrink-0">
-        <MyAccountBadge />
       </div>
     </div>
   );
@@ -213,6 +223,8 @@ function AppShell() {
     exitRemoteAccess,
     deactivatedMessage,
     clearDeactivatedMessage,
+    passwordRecoveryActive,
+    completePasswordRecovery,
   } = useAuth();
   const location = useLocation();
 
@@ -224,6 +236,15 @@ function AppShell() {
   if (location.pathname === '/platform/redeem') {
     const code = new URLSearchParams(location.search).get('code') || '';
     return <PlatformInviteRedeemPage code={code} />;
+  }
+
+  // Password recovery (self-requested or admin-triggered) establishes a
+  // real signed-in session via the emailed link — this must take
+  // priority over the normal authedUser routing below, or the person
+  // would land straight in their workspace instead of setting a new
+  // password first.
+  if (passwordRecoveryActive) {
+    return <ResetPasswordScreen onComplete={completePasswordRecovery} />;
   }
 
   if (!authedUser) return (
