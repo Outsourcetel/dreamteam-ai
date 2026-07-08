@@ -619,6 +619,7 @@ function DemoDashboardPage({
   const [showHealthConfig, setShowHealthConfig] = useState(false);
   const [lastUpdated] = useState(new Date());
   const [draftConfig, setDraftConfig] = useState<HealthConfig>(DEFAULT_HEALTH_CONFIG);
+  const [healthConfigSavedToast, setHealthConfigSavedToast] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(`dt_health_config_${activeCompanyId}`);
@@ -643,6 +644,8 @@ function DemoDashboardPage({
     setHealthConfig(cfg);
     localStorage.setItem(`dt_health_config_${activeCompanyId}`, JSON.stringify(cfg));
     setShowHealthConfig(false);
+    setHealthConfigSavedToast(true);
+    setTimeout(() => setHealthConfigSavedToast(false), 2500);
   };
 
   const resetHealthConfig = () => {
@@ -676,6 +679,11 @@ function DemoDashboardPage({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+      {healthConfigSavedToast && (
+        <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg">
+          Health thresholds saved ✓
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
 
         {/* Top bar */}

@@ -369,6 +369,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
 
   const [charter, setCharter] = useState('');
   const [savingCharter, setSavingCharter] = useState(false);
+  const [savedCharter, setSavedCharter] = useState(false);
 
   const [sources, setSources] = useState<SpecialistSource[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -458,7 +459,11 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const saveCharter = async () => {
     if (!profile || savingCharter) return;
     setSavingCharter(true);
-    try { setProfile(await updateProfile(profile.id, { charter })); }
+    try {
+      setProfile(await updateProfile(profile.id, { charter }));
+      setSavedCharter(true);
+      setTimeout(() => setSavedCharter(false), 2500);
+    }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setSavingCharter(false); }
   };
@@ -630,7 +635,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         <textarea className={inputCls + ' resize-y'} rows={4} value={charter} onChange={e => setCharter(e.target.value)} />
         <div className="flex justify-end mt-2">
           <button className={btnPrimary + ' !py-1.5'} disabled={savingCharter || charter === profile.charter} onClick={() => void saveCharter()}>
-            {savingCharter ? 'Saving…' : 'Save charter'}
+            {savingCharter ? 'Saving…' : savedCharter ? 'Saved ✓' : 'Save charter'}
           </button>
         </div>
       </div>
