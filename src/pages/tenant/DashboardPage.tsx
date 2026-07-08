@@ -12,7 +12,7 @@ import {
   getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
 } from '../../lib/customerApi';
 import type { CustomerAccount, SupportTicket, RenewalInvoice, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
-import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveErrorNotice } from '../../components/LiveDataStates';
 
 // ── Health config ────────────────────────────────────────────────
 
@@ -303,9 +303,12 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const [knowledgeGaps, setKnowledgeGaps] = useState(0);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void (async () => {
       try {
         const [a, t, i, h, ev, kg] = await Promise.all([
@@ -316,15 +319,21 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
         setAccounts(a); setTickets(t); setInvoices(i); setTasks(h); setActivity(ev);
         setKnowledgeGaps(kg);
         setMissingTables(false);
+        setLoadError(null);
       } catch (err) {
-        if (!cancelled && err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
-        else console.error('LiveDashboard:', err);
+        if (cancelled) return;
+        if (err instanceof CustomerApiError && err.missingTables) {
+          setMissingTables(true);
+        } else {
+          console.error('LiveDashboard:', err);
+          setLoadError(err instanceof Error ? err.message : 'Something went wrong loading your dashboard.');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [retryTick]);
 
   const openTickets = tickets.filter(t => t.status === 'open' || t.status === 'escalated').length;
   const atRisk = accounts.filter(a => a.status === 'at_risk' || a.health_score < 45).length;
@@ -369,6 +378,8 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
 
         {loading ? (
           <LiveLoadingSkeleton rows={6} />
+        ) : loadError ? (
+          <LiveErrorNotice message={loadError} onRetry={() => setRetryTick((n) => n + 1)} />
         ) : missingTables ? (
           <MissingTablesNotice />
         ) : (
@@ -638,8 +649,20 @@ function DemoDashboardPage({
     setDraftConfig(DEFAULT_HEALTH_CONFIG);
   };
 
+  // staleness_* are day counts (0-365 is a sane range); every other field is a
+  // percentage (0-100). Guards against NaN (empty input) and out-of-range
+  // values that would otherwise silently corrupt the stored config with no
+  // warning shown to the user.
+  const HEALTH_CONFIG_MAX: Record<keyof HealthConfig, number> = {
+    confidence_amber: 100, confidence_red: 100,
+    escalation_amber: 100, escalation_red: 100,
+    staleness_amber: 365, staleness_red: 365,
+    error_rate_amber: 100, error_rate_red: 100,
+  };
   const updateDraft = (key: keyof HealthConfig, val: number) => {
-    setDraftConfig(prev => ({ ...prev, [key]: val }));
+    if (Number.isNaN(val)) return;
+    const clamped = Math.max(0, Math.min(HEALTH_CONFIG_MAX[key], Math.round(val)));
+    setDraftConfig(prev => ({ ...prev, [key]: clamped }));
   };
 
   const formatTime = (d: Date) => {
@@ -1009,6 +1032,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.confidence_amber}
                         onChange={e => updateDraft('confidence_amber', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
@@ -1021,6 +1045,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.confidence_red}
                         onChange={e => updateDraft('confidence_red', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
@@ -1040,6 +1065,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.escalation_amber}
                         onChange={e => updateDraft('escalation_amber', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
@@ -1052,6 +1078,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.escalation_red}
                         onChange={e => updateDraft('escalation_red', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
@@ -1071,6 +1098,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.staleness_amber}
                         onChange={e => updateDraft('staleness_amber', Number(e.target.value))}
+                        min={0} max={365}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">days</span>
@@ -1083,6 +1111,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.staleness_red}
                         onChange={e => updateDraft('staleness_red', Number(e.target.value))}
+                        min={0} max={365}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">days</span>
@@ -1102,6 +1131,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.error_rate_amber}
                         onChange={e => updateDraft('error_rate_amber', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
@@ -1114,6 +1144,7 @@ function DemoDashboardPage({
                         type="number"
                         value={draftConfig.error_rate_red}
                         onChange={e => updateDraft('error_rate_red', Number(e.target.value))}
+                        min={0} max={100}
                         className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>

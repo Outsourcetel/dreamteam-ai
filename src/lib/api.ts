@@ -918,4 +918,3 @@ export const submitCSAT = async (
   if (error) console.error('submitCSAT:', error.message);
   return !error;
 };
-
