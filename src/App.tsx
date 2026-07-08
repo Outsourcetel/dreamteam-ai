@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar, MfaEnrollmentPanel } from './components';
@@ -136,21 +136,38 @@ function URLSync() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Page state → URL
+  // Two separate effects (one per direction) that each call the OTHER
+  // side's setter can cascade under fast/overlapping updates — e.g.
+  // enterRemoteAccess flips currentPage while other context state is
+  // also settling, and each direction's effect can retrigger the other
+  // enough times in one tick to trip React's "Maximum update depth
+  // exceeded" safety check. This ref makes each direction a no-op if
+  // it would just be reacting to the sync IT ITSELF already performed
+  // last time, so the two directions can never bounce off each other
+  // regardless of timing.
+  const lastSynced = useRef<{ page: string; pathname: string } | null>(null);
+
   useEffect(() => {
+    if (lastSynced.current?.page === currentPage && lastSynced.current?.pathname === location.pathname) {
+      return;
+    }
+
     const target = PAGE_TO_URL[currentPage];
     if (target && location.pathname !== target) {
+      lastSynced.current = { page: currentPage, pathname: target };
       navigate(target, { replace: true });
+      return;
     }
-  }, [currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // URL → page state (browser back/forward, direct links)
-  useEffect(() => {
     const page = URL_TO_PAGE[location.pathname];
     if (page && page !== currentPage) {
+      lastSynced.current = { page, pathname: location.pathname };
       handleSetPage(page);
+      return;
     }
-  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    lastSynced.current = { page: currentPage, pathname: location.pathname };
+  }, [currentPage, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }

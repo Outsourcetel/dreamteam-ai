@@ -149,9 +149,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // its requireTenantId()) in sync with which tenant a platform admin is
   // currently viewing via Remote Access -- see setGodModeTenantIdOverride's
   // own comment for why this is needed at all.
-  useEffect(() => {
-    setGodModeTenantIdOverride(godModeSession?.tenant?.id ?? null);
-  }, [godModeSession]);
+  //
+  // Deliberately called here, in the render body, NOT inside a useEffect.
+  // React runs effects bottom-up (children before parents), so a
+  // useEffect here would fire AFTER Sidebar's own mount-time effect —
+  // Sidebar's first live nav-count fetch would race ahead of this sync
+  // and read the override before it was set, resolving no tenant and
+  // failing with "No tenant found for the current session." Setting a
+  // plain module-level variable during render (not React state) is
+  // safe and makes the override correct before ANY child even renders.
+  setGodModeTenantIdOverride(godModeSession?.tenant?.id ?? null);
 
   // Read inside the syncProfile effect below without adding godModeSession
   // to its dependency array (deliberately excluded so the 60s resync timer
