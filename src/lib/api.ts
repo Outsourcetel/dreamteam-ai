@@ -89,16 +89,24 @@ interface DBMessage {
 // =====================================================
 // TENANT QUERIES
 // =====================================================
+// Routed through a SECURITY DEFINER RPC (migration 083), not a direct
+// client update — tenants has exactly one RLS policy (SELECT only), so a
+// direct `.update()` here was a silent no-op: a customer editing their org
+// name/industry/brand color in Settings would see "Saved" while nothing
+// was ever written. Gated server-side on tenant_owner/tenant_admin of
+// that tenant (or a platform account with tenants.manage).
 export const updateTenant = async (
   id: string,
   updates: Partial<Pick<DBTenant, 'name' | 'industry' | 'accent_color'>>
 ): Promise<boolean> => {
-  const { error } = await supabase
-    .from('tenants')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id);
+  const { data, error } = await supabase.rpc('update_tenant_general_settings', {
+    p_tenant_id: id,
+    p_name: updates.name ?? null,
+    p_industry: updates.industry ?? null,
+    p_accent_color: updates.accent_color ?? null,
+  });
   if (error) { console.error('updateTenant:', error.message); return false; }
-  return true;
+  return !!(data as { ok?: boolean })?.ok;
 };
 
 export const fetchTenants = async (): Promise<DBTenant[]> => {
@@ -243,19 +251,21 @@ export const rejectSubtenantRequest = async (requestId: string, reason: string):
   return data as { ok: boolean };
 };
 
+// Routed through a SECURITY DEFINER RPC (migration 082), not a direct
+// client update — tenants has exactly one RLS policy (SELECT only), so a
+// direct `.update()` here was a silent no-op: RLS blocked every row, but
+// Supabase returns success rather than an error, so the toggle visually
+// flipped in the UI while nothing was ever written. Gated on tenants.manage.
 export const setTenantSelfServe = async (tenantId: string, allow: boolean): Promise<boolean> => {
-  const { error } = await supabase
-    .from('tenants')
-    .update({ allow_self_serve_subtenants: allow, updated_at: new Date().toISOString() })
-    .eq('id', tenantId);
+  const { data, error } = await supabase.rpc('set_tenant_self_serve', { p_tenant_id: tenantId, p_allow: allow });
   if (error) { console.error('setTenantSelfServe:', error.message); return false; }
-  return true;
+  return !!(data as { ok?: boolean })?.ok;
 };
 
 // Suspend/reactivate a tenant. Routed through a SECURITY DEFINER RPC
 // (migration 081), not a direct client update — tenants has no UPDATE RLS
-// policy for this column, same reason setTenantSelfServe above is a known
-// silent no-op today (see project memory). Gated on tenants.manage.
+// policy for this column, same reason setTenantSelfServe above needed the
+// identical fix (migration 082). Gated on tenants.manage.
 export const setTenantStatus = async (
   tenantId: string,
   status: 'active' | 'trial' | 'suspended'
@@ -598,13 +608,15 @@ export const fetchAllTenantsUsage = async (): Promise<TenantUsage[]> => {
   return data ?? [];
 };
 
+// Routed through a SECURITY DEFINER RPC (migration 083) — same silent-
+// no-op fix as updateTenant above.
 export const updateTenantBudget = async (tenantId: string, monthlyTokenBudget: number): Promise<boolean> => {
-  const { error } = await supabase
-    .from('tenants')
-    .update({ monthly_token_budget: monthlyTokenBudget, updated_at: new Date().toISOString() })
-    .eq('id', tenantId);
+  const { data, error } = await supabase.rpc('set_tenant_monthly_budget', {
+    p_tenant_id: tenantId,
+    p_budget: monthlyTokenBudget,
+  });
   if (error) { console.error('updateTenantBudget:', error.message); return false; }
-  return true;
+  return !!(data as { ok?: boolean })?.ok;
 };
 
 // =====================================================

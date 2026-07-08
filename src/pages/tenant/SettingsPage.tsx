@@ -63,6 +63,7 @@ const SettingsPage = ({
   const [usageMap, setUsageMap] = useState<Record<string, number>>({});
   const [budgetEdits, setBudgetEdits] = useState<Record<string, string>>({});
   const [budgetSaving, setBudgetSaving] = useState<string | null>(null);
+  const [budgetError, setBudgetError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (activeTab === 'ai_engine' && !isDTUser) setActiveTab('general');
@@ -138,8 +139,13 @@ const SettingsPage = ({
     const val = parseInt(budgetEdits[tenantId] || '0', 10);
     if (isNaN(val) || val < 0) return;
     setBudgetSaving(tenantId);
-    await updateTenantBudget(tenantId, val);
+    setBudgetError(prev => ({ ...prev, [tenantId]: '' }));
+    const ok = await updateTenantBudget(tenantId, val);
     setBudgetSaving(null);
+    if (!ok) {
+      setBudgetError(prev => ({ ...prev, [tenantId]: 'Could not save — only an owner or admin can change the budget.' }));
+      return;
+    }
     // refresh usage
     const [ts, usage] = await Promise.all([fetchTenants(), fetchAllTenantsUsage()]);
     setTenants(ts);
@@ -445,6 +451,9 @@ const SettingsPage = ({
                       </div>
                       {pct >= 90 && (
                         <p className="text-xs text-red-400 mt-1.5">Near limit — DEs will stop responding soon. Increase budget or wait for monthly reset.</p>
+                      )}
+                      {budgetError[t.id] && (
+                        <p className="text-xs text-red-400 mt-1.5">{budgetError[t.id]}</p>
                       )}
                     </div>
                   );
