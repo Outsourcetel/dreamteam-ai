@@ -3,6 +3,17 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import { useDataMode } from '../../../lib/dataMode';
+import { CustomerApiError } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import {
+  listLearnedBehaviorClusters, listLearningPolicies, getLearnedBehaviorClusterDetail,
+  approveLearnedBehavior, rejectLearnedBehavior,
+} from '../../../lib/selfLearningApi';
+import type { LearnedBehaviorCluster, LearningPolicy, LearnedBehaviorClusterMember } from '../../../lib/selfLearningApi';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
+import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi';
+import { supabase } from '../../../supabase';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -108,7 +119,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange?: 
 
 // ── Page ──────────────────────────────────────────────────────────
 
-export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
+function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const lsKey = `dt_learning_org_${activeCompanyId}`;
   const validationKey = `dt_learning_validations_${activeCompanyId}`;
@@ -369,4 +380,375 @@ export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => vo
       </div>
     </div>
   );
+}
+
+// ============================================================
+// LIVE mode — real automatic learned-behavior detection (migration
+// 103). Same detect -> cluster -> promote -> human-review -> resolve
+// pipeline shape as Knowledge Gaps (070), but the SIGNAL is a human
+// actually correcting or overriding a DE decision, not an unanswered
+// question. Two verdict types, never mixed in one cluster:
+//   - 'correction'  — a human REJECTED the DE's needs-review answer.
+//     Approving proposes a brand-new guardrail_rules row.
+//   - 'overcaution' — a human APPROVED despite the DE flagging it,
+//     repeatedly, against the SAME guardrail rule. Approving loosens
+//     or deactivates that specific rule.
+// Activation is real: the resulting guardrail_rules row/edit takes
+// effect on the very next evaluation for every DE type immediately —
+// no retraining step, no "24h to take effect" delay to fake.
+// ============================================================
+
+type RepInfo = { inquiry: string; created_at: string };
+
+const VERDICT_META: Record<LearnedBehaviorCluster['verdict_type'], { label: string; cls: string }> = {
+  correction: { label: 'Correction', cls: 'bg-rose-500/20 text-rose-400' },
+  overcaution: { label: 'Overcaution', cls: 'bg-sky-500/20 text-sky-400' },
+};
+
+const LIVE_STATUS_META: Record<LearnedBehaviorCluster['status'], { label: string; cls: string }> = {
+  open: { label: 'Open', cls: 'bg-slate-700/50 text-slate-300' },
+  proposed: { label: 'Proposed — awaiting review', cls: 'bg-amber-500/20 text-amber-400' },
+  resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
+};
+
+function severityTier(c: LearnedBehaviorCluster, policy: LearningPolicy | null): { label: string; cls: string } {
+  if (c.recurred_after_fix) return { label: 'Recurred after fix', cls: 'text-red-400' };
+  const bar = policy?.min_cluster_size ?? 3;
+  if (c.severity_score >= bar * 1.5) return { label: 'High', cls: 'text-red-400' };
+  if (c.severity_score >= bar) return { label: 'Medium', cls: 'text-amber-400' };
+  return { label: 'Low', cls: 'text-slate-400' };
+}
+
+function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
+  const [clusters, setClusters] = useState<LearnedBehaviorCluster[]>([]);
+  const [policies, setPolicies] = useState<LearningPolicy[]>([]);
+  const [des, setDes] = useState<DigitalEmployee[]>([]);
+  const [repInfo, setRepInfo] = useState<Record<string, RepInfo>>({});
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ members: LearnedBehaviorClusterMember[]; inquiries: Record<string, RepInfo> } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [overridePattern, setOverridePattern] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [c, p, d] = await Promise.all([
+        listLearnedBehaviorClusters(), listLearningPolicies(), listDigitalEmployees(),
+      ]);
+      setClusters(c);
+      setPolicies(p);
+      setDes(d);
+      setMissingTables(false);
+
+      const repIds = Array.from(new Set(c.map(cl => cl.representative_run_id)));
+      if (repIds.length > 0) {
+        const { data: runs, error: runsErr } = await supabase
+          .from('evidence_runs').select('id, inquiry, created_at').in('id', repIds);
+        if (runsErr) throw runsErr;
+        setRepInfo(Object.fromEntries((runs ?? []).map((row: any) => [row.id, { inquiry: row.inquiry, created_at: row.created_at }])));
+      } else {
+        setRepInfo({});
+      }
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load learned behaviors.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!selectedId) { setDetail(null); return; }
+    const cluster = clusters.find(c => c.id === selectedId);
+    if (!cluster) return;
+    setOverridePattern('');
+    setDetailLoading(true);
+    getLearnedBehaviorClusterDetail(cluster)
+      .then(setDetail)
+      .catch(err => setError((err as Error)?.message || 'Failed to load this pattern\'s evidence.'))
+      .finally(() => setDetailLoading(false));
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const deById = new Map(des.map(d => [d.id, d]));
+  const policyFor = (category: string | null): LearningPolicy | null =>
+    policies.find(p => p.category === category) ?? policies.find(p => p.category === null) ?? null;
+
+  const decide = async (clusterId: string, decision: 'approved' | 'rejected') => {
+    setDeciding(true);
+    try {
+      if (decision === 'approved') {
+        const result = await approveLearnedBehavior(clusterId, overridePattern.trim() || undefined);
+        if (!result.ok) throw new Error(result.error || 'Approval failed.');
+        setToast('Approved — the guardrail took effect immediately for every Digital Employee.');
+      } else {
+        const result = await rejectLearnedBehavior(clusterId);
+        if (!result.ok) throw new Error(result.error || 'Rejection failed.');
+        setToast('Rejected — this pattern reopened and will keep accumulating for the next detection pass.');
+      }
+      await refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to record decision.');
+    } finally {
+      setDeciding(false);
+    }
+  };
+
+  const openCount = clusters.filter(c => c.status === 'open').length;
+  const proposedCount = clusters.filter(c => c.status === 'proposed').length;
+  const resolvedCount = clusters.filter(c => c.status === 'resolved').length;
+  const recurredCount = clusters.filter(c => c.recurred_after_fix).length;
+  const correctionCount = clusters.filter(c => c.verdict_type === 'correction').length;
+  const overcautionCount = clusters.filter(c => c.verdict_type === 'overcaution').length;
+
+  const loopNodes = [
+    { label: 'Pattern detected', count: openCount, icon: '◉' },
+    { label: 'Proposed for review', count: proposedCount, icon: '✎' },
+    { label: 'Resolved', count: resolvedCount, icon: '↗' },
+  ];
+
+  const selected = clusters.find(c => c.id === selectedId) ?? null;
+  const selectedRep = selected ? repInfo[selected.representative_run_id] : undefined;
+  const selectedDe = selected ? deById.get(selected.de_id) : undefined;
+  const selectedPolicy = selected ? policyFor(selected.category) : null;
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+      <PageHeader
+        title="Self-Learning"
+        subtitle="Automatic detection of recurring human corrections — when a Digital Employee keeps getting the same kind of decision overridden by a person, it's grouped into a pattern here and a real policy change is proposed for review."
+      />
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={4} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : clusters.length === 0 ? (
+        <LiveEmptyState
+          icon="◎"
+          title="No learned-behavior patterns yet"
+          body="This runs automatically every 5 minutes: when several similar decisions are repeatedly corrected or overridden by the same kind of human verdict, they're grouped into a pattern here for review. Nothing has crossed that threshold yet for this workspace — it depends on Human Tasks review decisions actually accumulating over time."
+          primaryLabel="Go to Human Tasks"
+          onPrimary={() => setPage('ops_human_tasks')}
+        />
+      ) : (
+        <>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+            <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+              {loopNodes.map((n, i) => (
+                <React.Fragment key={n.label}>
+                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-800 bg-slate-950 p-3 text-center">
+                    <p className="text-indigo-400 text-sm">{n.icon}</p>
+                    <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
+                    <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
+                  </div>
+                  {i < loopNodes.length - 1 && <span className="self-center text-slate-600 flex-shrink-0">→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              {correctionCount} correction pattern{correctionCount === 1 ? '' : 's'} (the DE was wrong) · {overcautionCount} overcaution pattern{overcautionCount === 1 ? '' : 's'} (the DE was needlessly cautious).
+              {recurredCount > 0 && <span className="text-red-400"> {recurredCount} recurred after a fix was applied — that fix may not have held.</span>}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+            <table className="w-full text-sm text-slate-300">
+              <thead className="bg-slate-900 border-b border-slate-800">
+                <tr>
+                  <th className={th}>Pattern</th>
+                  <th className={th}>DE</th>
+                  <th className={th}>Verdict</th>
+                  <th className={th}>Members</th>
+                  <th className={th}>Severity</th>
+                  <th className={th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clusters.map(c => {
+                  const rep = repInfo[c.representative_run_id];
+                  const de = deById.get(c.de_id);
+                  const tier = severityTier(c, policyFor(c.category));
+                  return (
+                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-800/60 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                      <td className={td}>
+                        <p className="text-white font-medium max-w-md truncate">{rep?.inquiry ?? '(loading…)'}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
+                      </td>
+                      <td className={td}>
+                        {de ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[9px] font-bold">{de.name[0]}</span>
+                            <span className="text-xs">{de.name}</span>
+                          </span>
+                        ) : <span className="text-xs text-slate-600">—</span>}
+                      </td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VERDICT_META[c.verdict_type].cls}`}>{VERDICT_META[c.verdict_type].label}</span></td>
+                      <td className={`${td} text-xs text-slate-300`}>{c.member_count}</td>
+                      <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status].cls}`}>{LIVE_STATUS_META[c.status].label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {selected && (
+            <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
+              <div className="absolute inset-0 bg-black/50" />
+              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-900 border-l border-slate-800 overflow-y-auto p-6">
+                <div className="flex items-start justify-between mb-1">
+                  <h2 className="text-lg font-semibold text-white">{selectedRep?.inquiry ?? 'Pattern detail'}</h2>
+                  <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+                </div>
+                <div className="flex items-center gap-2 mb-5 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VERDICT_META[selected.verdict_type].cls}`}>{VERDICT_META[selected.verdict_type].label}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[selected.status].cls}`}>{LIVE_STATUS_META[selected.status].label}</span>
+                  <span className="text-xs text-slate-500">{selected.member_count} similar decision{selected.member_count === 1 ? '' : 's'}{selectedPolicy ? ` in a ${selectedPolicy.window_days}-day window` : ''}{selectedDe ? ` · ${selectedDe.name}` : ''}</span>
+                </div>
+
+                {typeof selected.pre_fix_avg_confidence === 'number' && (
+                  <div className="mb-5 bg-slate-950 rounded-lg px-3 py-2">
+                    <p className="text-xs text-slate-400">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
+                  </div>
+                )}
+
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">1 · Signal — the decisions behind this pattern</p>
+                {detailLoading ? (
+                  <div className="mb-6"><LiveLoadingSkeleton rows={2} /></div>
+                ) : (
+                  <div className="space-y-2 mb-6">
+                    {(detail?.members ?? []).map(m => {
+                      const info = detail?.inquiries[m.evidence_run_id];
+                      return (
+                        <div key={m.id} className="bg-slate-950 rounded-lg px-3 py-2">
+                          <p className="text-xs text-slate-300">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">
+                            {info ? new Date(info.created_at).toLocaleString() : ''}
+                            {m.similarity_to_representative !== null ? ` · ${Math.round(m.similarity_to_representative * 100)}% similar to the representative decision` : ''}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    {(detail?.members ?? []).length === 0 && !detailLoading && (
+                      <p className="text-xs text-slate-500">No member decisions loaded.</p>
+                    )}
+                  </div>
+                )}
+
+                {selected.proposed_rule && (
+                  <>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Proposed change</p>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 mb-6">
+                      {selected.proposed_rule.action === 'insert_guardrail_rule' ? (
+                        <>
+                          <p className="text-sm font-semibold text-white mb-1">New guardrail rule</p>
+                          <p className="text-xs text-slate-400 mb-2">Pattern: <span className="font-mono text-slate-300">{selected.proposed_rule.suggested_pattern}</span></p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-white mb-1">Loosen existing rule: {selected.proposed_rule.current_rule_label}</p>
+                          <p className="text-xs text-slate-400 mb-2">Current pattern: <span className="font-mono text-slate-300">{selected.proposed_rule.current_pattern}</span></p>
+                        </>
+                      )}
+                      <p className="text-xs text-slate-300 leading-relaxed">{selected.proposed_rule.rationale}</p>
+                    </div>
+                  </>
+                )}
+
+                {selected.status === 'proposed' && (
+                  <>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">3 · Human review</p>
+                    {selected.verdict_type === 'correction' && (
+                      <div className="mb-3">
+                        <label className="text-[11px] text-slate-500 block mb-1">Pattern to block (edit before approving)</label>
+                        <input
+                          type="text"
+                          value={overridePattern || selected.proposed_rule?.suggested_pattern || ''}
+                          onChange={e => setOverridePattern(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
+                        />
+                      </div>
+                    )}
+                    {selected.verdict_type === 'overcaution' && (
+                      <p className="text-[11px] text-slate-500 mb-3">
+                        Approving without changes deactivates "{selected.proposed_rule?.current_rule_label}" — edit the pattern below to narrow it instead of removing it entirely.
+                      </p>
+                    )}
+                    {selected.verdict_type === 'overcaution' && (
+                      <div className="mb-3">
+                        <label className="text-[11px] text-slate-500 block mb-1">Narrow the pattern instead of deactivating (optional)</label>
+                        <input
+                          type="text"
+                          value={overridePattern}
+                          onChange={e => setOverridePattern(e.target.value)}
+                          placeholder={selected.proposed_rule?.current_pattern || ''}
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
+                        />
+                      </div>
+                    )}
+                    <div className="flex gap-2 mb-6">
+                      <button
+                        disabled={deciding}
+                        onClick={() => void decide(selected.id, 'approved')}
+                        className="flex-1 text-sm px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium">
+                        {deciding ? '…' : 'Approve'}
+                      </button>
+                      <button
+                        disabled={deciding}
+                        onClick={() => void decide(selected.id, 'rejected')}
+                        className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
+                        Reject
+                      </button>
+                    </div>
+                  </>
+                )}
+                {selected.status === 'resolved' && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
+                    <p className="text-xs text-emerald-300">Resolved{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''} — the guardrail change is live.</p>
+                    {selected.recurred_after_fix && (
+                      <p className="text-xs text-red-300 mt-1">This pattern has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying issue may not have been fully resolved.</p>
+                    )}
+                  </div>
+                )}
+                {selected.status === 'open' && (
+                  <p className="text-xs text-slate-500 mb-6">
+                    Still accumulating — needs {Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count)} more similar decision{Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count) === 1 ? '' : 's'} before it's promoted to a reviewable proposal.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveSelfLearning setPage={setPage} />;
+  return <DemoSelfLearningPage setPage={setPage} />;
 }
