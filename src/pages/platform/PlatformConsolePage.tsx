@@ -6,7 +6,7 @@ import { supabase } from '../../supabase';
 import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
-  setTenantSelfServe, setTenantStatus, requestSubtenant, fetchTenants,
+  setTenantSelfServe, setTenantStatus, setTenantPlan, requestSubtenant, fetchTenants,
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
   fetchPlatformConnectorHealth,
 } from '../../lib/api';
@@ -31,6 +31,7 @@ const dbTenantToTenant = (t: DBTenant): Tenant => ({
   contactEmail: (t.settings && (t.settings as any).contactEmail) || '',
   parentTenantId: t.parent_tenant_id ?? null,
   allowSelfServeSubtenants: !!t.allow_self_serve_subtenants,
+  trialEndsAt: t.trial_ends_at ?? null,
 });
 
 const PlatformConsolePage = ({
@@ -419,6 +420,25 @@ const PlatformConsolePage = ({
                   </div>
                 </div>
                 <SelfServeToggle tenant={selectedTenant} onChanged={(v) => setSelectedTenant({ ...selectedTenant, allowSelfServeSubtenants: v })} />
+              </div>
+
+              <div className="bg-slate-800 rounded-xl p-4">
+                <div className="flex items-center justify-between gap-4 mb-1">
+                  <div className="text-sm font-medium text-white">Plan</div>
+                  <PlanSelector
+                    tenant={selectedTenant}
+                    onChanged={(plan, budget) => setSelectedTenant({ ...selectedTenant, plan, monthlyTokens: selectedTenant.monthlyTokens, tokenLimit: budget })}
+                  />
+                </div>
+                <div className="text-xs text-slate-400">
+                  Changing plan resets this tenant's token budget to that plan's default — you can still raise it
+                  manually afterward if this specific customer needs more.
+                </div>
+                {selectedTenant.status === 'trial' && selectedTenant.trialEndsAt && (
+                  <div className="text-xs text-amber-400 mt-2">
+                    Trial ends {new Date(selectedTenant.trialEndsAt).toLocaleDateString()} — auto-suspends if not upgraded by then.
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -1372,6 +1392,50 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
     >
       {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
     </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Plan selector — set_tenant_plan (migration 086) is the first-ever
+// way to change a tenant's plan; every signup path hardcoded 'starter'
+// forever before this. Changing plan resets the token budget to that
+// plan's default server-side, so this control is deliberately the
+// only place plan changes, keeping "plan" and "budget" from silently
+// drifting out of sync.
+// ─────────────────────────────────────────────────────────────────
+const PLAN_TOKEN_DEFAULTS: Record<Tenant['plan'], number> = { starter: 100000, growth: 500000, enterprise: 2000000 };
+const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan: Tenant['plan'], budget: number) => void }) => {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = async (plan: Tenant['plan']) => {
+    if (plan === tenant.plan) return;
+    setSaving(true);
+    setError('');
+    const res = await setTenantPlan(tenant.id, plan);
+    setSaving(false);
+    if (res.ok) {
+      onChanged(plan, res.monthly_token_budget ?? PLAN_TOKEN_DEFAULTS[plan]);
+    } else {
+      setError(res.error || 'Could not change plan.');
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={tenant.plan}
+        onChange={(e) => void handleChange(e.target.value as Tenant['plan'])}
+        disabled={saving}
+        className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+      >
+        <option value="starter">Starter</option>
+        <option value="growth">Growth</option>
+        <option value="enterprise">Enterprise</option>
+      </select>
+      {saving && <span className="text-xs text-slate-500">Saving…</span>}
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
   );
 };
 

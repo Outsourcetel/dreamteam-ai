@@ -222,6 +222,16 @@ const SettingsPage = ({
       {/* ── General ───────────────────────────────────────────────── */}
       {activeTab === 'general' && (
         <div className="max-w-2xl space-y-4">
+          {tenant?.status === 'trial' && tenant?.trialEndsAt && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+              <p className="text-sm font-medium text-amber-300 mb-0.5">
+                Trial — ends {new Date(tenant.trialEndsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
+              <p className="text-xs text-amber-400/70">
+                Your workspace will be paused automatically if the trial isn't upgraded by then. Contact us to talk about a plan.
+              </p>
+            </div>
+          )}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">Workspace Details</h2>
             <div className="space-y-4">

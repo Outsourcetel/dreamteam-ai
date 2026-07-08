@@ -130,4 +130,5 @@ export interface Tenant {
   // Tenant hierarchy (migration 050) — parentTenantId null = top-level tenant.
   parentTenantId?: string | null;
   allowSelfServeSubtenants?: boolean;
+  trialEndsAt?: string | null;
 }

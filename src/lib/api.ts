@@ -16,6 +16,7 @@ export interface DBTenant {
   monthly_token_budget?: number;
   parent_tenant_id?: string | null;
   allow_self_serve_subtenants?: boolean;
+  trial_ends_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -273,6 +274,18 @@ export const setTenantStatus = async (
   const { data, error } = await supabase.rpc('set_tenant_status', { p_tenant_id: tenantId, p_status: status });
   if (error) return { ok: false, error: error.message };
   return data as { ok: boolean; error?: string };
+};
+
+// Changes plan and resets the token budget to that plan's standard default
+// (migration 086) — platform-admin only. There was previously no way at all
+// to change a tenant's plan; every signup path hardcoded 'starter' forever.
+export const setTenantPlan = async (
+  tenantId: string,
+  plan: 'starter' | 'growth' | 'enterprise'
+): Promise<{ ok: boolean; error?: string; monthly_token_budget?: number }> => {
+  const { data, error } = await supabase.rpc('set_tenant_plan', { p_tenant_id: tenantId, p_plan: plan });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; error?: string; monthly_token_budget?: number };
 };
 
 export interface PlatformConnectorHealthRow {

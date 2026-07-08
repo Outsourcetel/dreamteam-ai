@@ -403,6 +403,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           monthlyTokens: 0,
           tokenLimit:   5000000,
           createdAt:    dbCurrentTenant.created_at,
+          trialEndsAt:  dbCurrentTenant.trial_ends_at ?? null,
         }
       : undefined);
 
