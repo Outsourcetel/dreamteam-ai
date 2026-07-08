@@ -12,7 +12,8 @@ export interface KnowledgeDoc {
   tenant_id: string;
   title: string;
   content: string;
-  source: 'upload' | 'paste';
+  source: 'upload' | 'paste' | 'connector';
+  external_ref: string | null;
   tags: string[];
   /** Per-DE knowledge scopes (migration 030): 'tenant' = every DE and
    *  specialist answers from this doc; 'scoped' = only the subjects in

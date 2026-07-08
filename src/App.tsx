@@ -381,7 +381,7 @@ function AppShell() {
       case 'knowledge_library':
         return <KnowledgeLibraryPage setPage={handleSetPage} />;
       case 'knowledge_ingestion':
-        return <KnowledgeIngestionPage />;
+        return <KnowledgeIngestionPage setPage={handleSetPage} />;
       case 'knowledge_gaps':
         return <KnowledgeGapsPage setPage={handleSetPage} />;
       case 'knowledge_quality':

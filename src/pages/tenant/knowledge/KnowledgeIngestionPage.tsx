@@ -1,9 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import { K_TYPES } from './KnowledgeLibraryPage';
 import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
+import type { Page } from '../../../types';
+import { useDataMode } from '../../../lib/dataMode';
+import { CustomerApiError } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import {
+  listConnectors, connectorHealth, hubSync, PROVIDERS,
+} from '../../../lib/connectorApi';
+import type { Connector } from '../../../lib/connectorApi';
+import { listKnowledgeDocs, listChunkStatus, createKnowledgeDoc, ingestDocChunks } from '../../../lib/knowledgeApi';
+import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 
 // ============================================================
 // Ingestion & Sources — connected sources, processing pipeline,
@@ -88,7 +98,7 @@ const statusStyle: Record<Source['status'], { dot: string; label: string; text: 
 
 type ReviewState = Record<string, { decision?: 'approved' | 'rejected'; entity: KEntity; audience: KAudience; type: KType }>;
 
-const KnowledgeIngestionPage = () => {
+const DemoKnowledgeIngestionPage = () => {
   const { activeCompanyId } = useAuth();
   const companyId = activeCompanyId as CompanyId;
   const sources = SOURCES[companyId];
@@ -266,4 +276,269 @@ const KnowledgeIngestionPage = () => {
   );
 };
 
-export default KnowledgeIngestionPage;
+// ============================================================
+// LIVE mode — real connectors (migrations 017/026/027/028) feeding
+// real knowledge_docs. "Ingest" (connector sync → knowledge_docs),
+// "Chunk"/"Embed" (same chunking/embedding path as the Knowledge
+// Library's manual ingest) are all real. There is NO real "Classify"/
+// "Confidence"/"Review" stage or Entity×Audience×Type auto-tagging
+// backend — the demo's human-review queue has nothing to bind to, so
+// rather than invent a classification/approval system that doesn't
+// exist, this page is honest that a synced document goes straight
+// into the knowledge base with no review gate today.
+// ============================================================
+
+const HEALTH_META: Record<string, { label: string; dot: string; text: string }> = {
+  healthy: { label: 'Healthy', dot: 'bg-emerald-400', text: 'text-emerald-400' },
+  degraded: { label: 'Degraded', dot: 'bg-amber-400', text: 'text-amber-400' },
+  down: { label: 'Down', dot: 'bg-red-400', text: 'text-red-400' },
+  never_connected: { label: 'Never connected', dot: 'bg-slate-600', text: 'text-slate-500' },
+};
+
+function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [chunkStatus, setChunkStatus] = useState<Record<string, { chunks: number; embedded: number }>>({});
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTitle, setAddTitle] = useState('');
+  const [addContent, setAddContent] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [c, d, cs] = await Promise.all([listConnectors(), listKnowledgeDocs(), listChunkStatus()]);
+      setConnectors(c);
+      setDocs(d);
+      setChunkStatus(cs);
+      setMissingTables(false);
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load ingestion data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const doSync = async (c: Connector) => {
+    setSyncingId(c.id);
+    try {
+      const r = await hubSync(c.id);
+      if (r.ok) {
+        setToast(`${c.display_name || c.provider}: ${r.upserted ?? 0} doc(s) synced, ${r.chunked ?? 0} chunks, ${r.embedded ?? 0} embedded.`);
+      } else {
+        setToast(`${c.display_name || c.provider}: sync failed — ${r.detail ?? r.error ?? 'unknown error'}`);
+      }
+      await refresh();
+    } catch (err) {
+      setToast(`Sync failed: ${(err as Error)?.message ?? 'unknown error'}`);
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  const addDoc = async () => {
+    if (!addTitle.trim() || !addContent.trim()) return;
+    setAdding(true);
+    try {
+      const doc = await createKnowledgeDoc({ title: addTitle.trim(), content: addContent.trim(), source: 'paste', tags: [] });
+      await ingestDocChunks(doc.id);
+      setToast(`"${doc.title}" added and indexed.`);
+      setAddTitle('');
+      setAddContent('');
+      setAddOpen(false);
+      await refresh();
+    } catch (err) {
+      setToast(`Couldn't add document: ${(err as Error)?.message ?? 'unknown error'}`);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const connectorDocs = docs.filter(d => d.source === 'connector');
+  const connectorDocIds = new Set(connectorDocs.map(d => d.id));
+  let chunkedCount = 0, embeddedCount = 0;
+  for (const id of connectorDocIds) {
+    const s = chunkStatus[id];
+    if (s) { chunkedCount += s.chunks; embeddedCount += s.embedded; }
+  }
+  const healthyCount = connectors.filter(c => connectorHealth(c) === 'healthy').length;
+
+  const pipeline = [
+    { stage: 'Sources', desc: 'Connected & healthy', count: healthyCount, total: connectors.length },
+    { stage: 'Ingested', desc: 'Documents synced in', count: connectorDocs.length },
+    { stage: 'Chunked', desc: 'Split for retrieval', count: chunkedCount },
+    { stage: 'Embedded', desc: 'Indexed for search', count: embeddedCount },
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+      <PageHeader title="Ingestion & Sources" subtitle="Real connector syncs pull external content into the knowledge base — chunked and indexed automatically." />
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={4} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : connectors.length === 0 ? (
+        <LiveEmptyState
+          icon="⟷"
+          title="No sources connected yet"
+          body="Connect a system like Zendesk, Confluence, or Salesforce to pull its content into the knowledge base automatically. You can also add a document directly below."
+          primaryLabel="Go to Connectors"
+          onPrimary={() => setPage('systems_connectors')}
+        />
+      ) : (
+        <>
+          {/* Pipeline */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+            <h3 className="text-sm font-semibold text-white mb-4">Processing pipeline</h3>
+            <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+              {pipeline.map((s, i) => (
+                <React.Fragment key={s.stage}>
+                  <div className="flex-1 min-w-[110px] rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <p className="text-xs font-semibold text-slate-300">{s.stage}</p>
+                    <p className="text-xl font-bold text-white mt-1">{s.count}{s.total !== undefined ? <span className="text-sm text-slate-500"> / {s.total}</span> : null}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{s.desc}</p>
+                  </div>
+                  {i < pipeline.length - 1 && <span className="self-center text-slate-600 flex-shrink-0">→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-3">
+              Synced documents go straight into the knowledge base — there's no draft/review gate on connector-sourced content today. You can still edit or remove any document from the Knowledge Library.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {/* Connected sources */}
+            <div className="xl:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Connected sources</h3>
+                <span className="text-xs text-slate-500">{healthyCount} of {connectors.length} healthy</span>
+              </div>
+              <table className="w-full text-sm text-slate-300">
+                <thead className="bg-slate-900 border-b border-slate-800">
+                  <tr>
+                    <th className={th}>Source</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Docs synced</th>
+                    <th className={th}>Last sync</th>
+                    <th className={th}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {connectors.map(c => {
+                    const health = connectorHealth(c);
+                    const st = HEALTH_META[health];
+                    const meta = PROVIDERS[c.provider];
+                    const canSync = meta?.knowledgeSync && c.access_mode !== 'fetch_only';
+                    const docsForThisConnector = connectorDocs.filter(d => (d.tags ?? []).includes(`connector:${c.provider}`)).length;
+                    return (
+                      <tr key={c.id} className="border-b border-slate-800/60">
+                        <td className={`${td} text-white font-medium`}>
+                          {c.display_name || meta?.label || c.provider}
+                          <p className="text-[11px] text-slate-500 font-normal">{meta?.label ?? c.provider}</p>
+                        </td>
+                        <td className={td}>
+                          <span className={`flex items-center gap-1.5 text-xs ${st.text}`}>
+                            <span className={`w-2 h-2 rounded-full ${st.dot}`} />{st.label}
+                          </span>
+                          {c.last_error && <p className="text-[11px] text-slate-500 mt-0.5 max-w-xs truncate" title={c.last_error}>{c.last_error}</p>}
+                        </td>
+                        <td className={td}>{docsForThisConnector.toLocaleString()}</td>
+                        <td className={`${td} text-xs text-slate-400`}>{c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : 'never'}</td>
+                        <td className={td}>
+                          {canSync ? (
+                            <button
+                              disabled={syncingId === c.id}
+                              onClick={() => void doSync(c)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+                              {syncingId === c.id ? 'Syncing…' : 'Sync now'}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-600" title={c.access_mode === 'fetch_only' ? "This source is fetch-only — content is looked up live, never stored" : "This provider doesn't support knowledge sync"}>
+                              {c.access_mode === 'fetch_only' ? 'fetch-only' : 'no sync'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Quick-add a document */}
+            <div className="space-y-4">
+              {!addOpen ? (
+                <button
+                  onClick={() => setAddOpen(true)}
+                  className="w-full rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500/50 bg-slate-900/30 p-8 text-center transition-colors group">
+                  <div className="w-10 h-10 mx-auto rounded-xl bg-slate-800 group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
+                  <p className="text-sm font-medium text-slate-200">Add a document</p>
+                  <p className="text-xs text-slate-500 mt-1">Paste text directly — it's chunked and indexed immediately</p>
+                </button>
+              ) : (
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+                  <input
+                    value={addTitle}
+                    onChange={e => setAddTitle(e.target.value)}
+                    placeholder="Document title"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                  <textarea
+                    value={addContent}
+                    onChange={e => setAddContent(e.target.value)}
+                    placeholder="Paste the document content…"
+                    rows={6}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" />
+                  <div className="flex gap-2">
+                    <button
+                      disabled={adding || !addTitle.trim() || !addContent.trim()}
+                      onClick={() => void addDoc()}
+                      className="flex-1 text-xs px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white">
+                      {adding ? 'Adding…' : 'Add & index'}
+                    </button>
+                    <button onClick={() => { setAddOpen(false); setAddTitle(''); setAddContent(''); }} className="text-xs px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-indigo-400 hover:text-indigo-300 transition-colors text-center">
+                Manage connectors →
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl max-w-md">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function KnowledgeIngestionPage({ setPage }: { setPage?: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveKnowledgeIngestion setPage={setPage ?? (() => {})} />;
+  return <DemoKnowledgeIngestionPage />;
+}
