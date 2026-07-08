@@ -564,6 +564,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             Exit Remote Access
           </button>
         )}
+        <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-slate-600">
+          <a href="/terms" className="hover:text-slate-400 transition-colors">Terms</a>
+          <a href="/privacy" className="hover:text-slate-400 transition-colors">Privacy</a>
+        </div>
       </div>
     </div>
   );

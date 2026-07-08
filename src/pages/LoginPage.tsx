@@ -330,7 +330,10 @@ const LoginPage = ({
                   {suLoading ? <><Spinner /> Creating account...</> : 'Create Organization'}
                 </button>
                 <p className="text-xs text-slate-600 text-center">
-                  By signing up you agree to DreamTeam's terms of service
+                  By signing up you agree to DreamTeam's{' '}
+                  <a href="/terms" className="text-indigo-400 hover:underline">terms of service</a>{' '}
+                  and{' '}
+                  <a href="/privacy" className="text-indigo-400 hover:underline">privacy policy</a>
                 </p>
               </form>
             </>

@@ -7,6 +7,8 @@ import LoginPage from './pages/LoginPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
 import OrgSetupScreen from './pages/OrgSetupScreen';
 import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
+import TermsOfServicePage from './pages/legal/TermsOfServicePage';
+import PrivacyPolicyPage from './pages/legal/PrivacyPolicyPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import MyAccountBadge from './pages/platform/MyAccountBadge';
 import DashboardPage from './pages/tenant/DashboardPage';
@@ -238,6 +240,11 @@ function AppShell() {
     const code = new URLSearchParams(location.search).get('code') || '';
     return <PlatformInviteRedeemPage code={code} />;
   }
+
+  // Terms/Privacy must be reachable whether or not the visitor is signed
+  // in — intercepted here for the same reason as /platform/redeem above.
+  if (location.pathname === '/terms') return <TermsOfServicePage onBack={() => window.history.back()} />;
+  if (location.pathname === '/privacy') return <PrivacyPolicyPage onBack={() => window.history.back()} />;
 
   // Password recovery (self-requested or admin-triggered) establishes a
   // real signed-in session via the emailed link — this must take
