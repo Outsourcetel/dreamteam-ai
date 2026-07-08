@@ -433,8 +433,7 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
 }
 
 export default function SecurityAccessPage() {
-  const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
-  const companyId = activeCompanyId
+  const { handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
 
   // ── Real team roster (migration 089's list_team_members_full, via useUsers) ──
   const { members, loading: membersLoading } = useUsers()
@@ -588,31 +587,20 @@ export default function SecurityAccessPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* ── SSO / SAML card ── */}
+          {/* ── SSO / SAML — honest deferred state ── */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">SSO / SAML</p>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full ${companyId === 'pwc' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-                {companyId === 'pwc' ? 'Configured' : 'Not configured'}
-              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Not available yet</span>
             </div>
-            <div className="space-y-2 text-xs">
-              {[
-                ['Protocol', companyId === 'pwc' ? 'SAML 2.0' : '—'],
-                ['Identity provider', companyId === 'pwc' ? 'Azure AD (pwc.com)' : '—'],
-                ['SP entity ID', `https://app.dreamteam.ai/saml/metadata/${companyId}`],
-                ['ACS URL', `https://app.dreamteam.ai/saml/acs/${companyId}`],
-                ['JIT provisioning', companyId === 'pwc' ? 'Enabled — default role: User' : 'Disabled'],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-3 bg-slate-950 rounded-lg px-3 py-2">
-                  <span className="text-slate-500 flex-shrink-0">{k}</span>
-                  <span className="text-slate-300 text-right break-all">{v}</span>
-                </div>
-              ))}
-            </div>
-            <button className="mt-4 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
-              {companyId === 'pwc' ? 'Edit configuration' : 'Configure SSO'}
-            </button>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Supabase Auth (the identity system behind this app) has native SAML 2.0 support ready to use —
+              it just requires a Supabase Pro plan or above. This workspace is currently on the Free plan,
+              which doesn't support SSO at all.
+            </p>
+            <p className="text-xs text-slate-600 mt-3">
+              Upgrade the Supabase project to enable this — no rebuild needed once that's done.
+            </p>
           </div>
 
           {/* ── Session policy card (migration 091) — real, enforced ── */}
