@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
-import { requestSubtenant, fetchTenantDescendants, listTeamMfaStatus, type TenantAncestryRow, type TeamMfaStatusRow } from '../../../lib/api'
+import ConfirmDeleteModal from '../../../components/ConfirmDeleteModal'
+import Modal from '../../../components/Modal'
+import {
+  requestSubtenant, fetchTenantDescendants, listTeamMfaStatus,
+  listTenantApiKeys, createTenantApiKey, revokeTenantApiKey,
+  type TenantAncestryRow, type TeamMfaStatusRow, type TenantApiKey,
+} from '../../../lib/api'
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
 
 // ═══════════════════════════════════════════════════════════════
@@ -35,19 +40,7 @@ const PERMISSION_AREAS = Array.from(
 )
 const ALL_ROLES = Object.keys(ROLE_LABELS) as TenantRole[]
 
-interface ApiKeyRow { name: string; masked: string; scope: string; created: string; lastUsed: string }
-
-const API_KEYS: Record<CompanyId, ApiKeyRow[]> = {
-  tcp: [
-    { name: 'Zendesk sync', masked: 'dt_live_••••••••3f8a', scope: 'read:conversations, write:conversations', created: '2026-02-12', lastUsed: '4 min ago' },
-    { name: 'Analytics export', masked: 'dt_live_••••••••91c2', scope: 'read:analytics', created: '2026-04-03', lastUsed: '2 hrs ago' },
-    { name: 'CI deploy hook', masked: 'dt_live_••••••••d05e', scope: 'read:agents', created: '2026-05-20', lastUsed: '1 day ago' },
-  ],
-  pwc: [
-    { name: 'SharePoint bridge', masked: 'dt_live_••••••••7ab1', scope: 'read:knowledge, write:knowledge', created: '2026-01-30', lastUsed: '20 min ago' },
-    { name: 'Risk reporting feed', masked: 'dt_live_••••••••2e44', scope: 'read:analytics', created: '2026-03-18', lastUsed: '6 hrs ago' },
-  ],
-}
+const API_KEY_SCOPES = ['read:analytics', 'read:knowledge', 'read:conversations', 'write:knowledge'] as const
 
 interface IpEntry { id: string; ip: string; label: string }
 interface IpAllowlistState { enabled: boolean; list: IpEntry[] }
@@ -163,27 +156,194 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────
+// API keys (migration 090) — real generation/hashing/revocation.
+// Owner/admin of the tenant, or a platform admin viewing via Remote
+// Access, matching the server-side gate on every RPC this calls.
+// ─────────────────────────────────────────────────────────────────
+function ApiKeysPanel({ tenantId }: { tenantId: string }) {
+  const [keys, setKeys] = useState<TenantApiKey[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newScopes, setNewScopes] = useState<string[]>([])
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [justCreated, setJustCreated] = useState<{ rawKey: string; name: string } | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<TenantApiKey | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    listTenantApiKeys(tenantId).then(rows => { setKeys(rows); setLoading(false) })
+  }
+  useEffect(() => { load() }, [tenantId])
+
+  const toggleScope = (s: string) =>
+    setNewScopes(cur => cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s])
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return
+    setCreating(true)
+    setCreateError('')
+    const res = await createTenantApiKey(tenantId, newName.trim(), newScopes)
+    setCreating(false)
+    if ('rawKey' in res) {
+      setJustCreated({ rawKey: res.rawKey, name: newName.trim() })
+      setShowCreate(false)
+      setNewName('')
+      setNewScopes([])
+      load()
+    } else {
+      setCreateError(res.error)
+    }
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">API Keys</p>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        >
+          + Create key
+        </button>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-800">
+            <th className={th}>Name</th>
+            <th className={th}>Key</th>
+            <th className={th}>Scope</th>
+            <th className={th}>Created</th>
+            <th className={th}>Last used</th>
+            <th className={th}></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800/50">
+          {!loading && keys.length === 0 && (
+            <tr><td colSpan={6} className={`${td} text-slate-500 text-xs text-center py-6`}>No API keys yet.</td></tr>
+          )}
+          {keys.map(k => (
+            <tr key={k.id} className="hover:bg-slate-800/20 transition-colors">
+              <td className={`${td} text-slate-200 text-xs font-medium`}>{k.name}</td>
+              <td className={`${td} text-slate-400 text-xs font-mono`}>{k.display_hint}</td>
+              <td className={`${td} text-slate-400 text-xs`}>{k.scopes.length > 0 ? k.scopes.join(', ') : '—'}</td>
+              <td className={`${td} text-slate-500 text-xs`}>{new Date(k.created_at).toLocaleDateString()}</td>
+              <td className={`${td} text-slate-500 text-xs`}>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
+              <td className={td}>
+                {k.revoked_at
+                  ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">Revoked</span>
+                  : (
+                    <button onClick={() => setRevokeTarget(k)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
+                      Revoke
+                    </button>
+                  )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {showCreate && (
+        <Modal title="Create API key" onClose={() => { if (!creating) setShowCreate(false) }}>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-slate-400 mb-1.5 block">Name</label>
+              <input
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                placeholder="e.g. Analytics export"
+                className="w-full bg-slate-950 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1.5 block">Scope</label>
+              <div className="flex flex-wrap gap-2">
+                {API_KEY_SCOPES.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => toggleScope(s)}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                      newScopes.includes(s)
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-950 border-slate-700 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {createError && <p className="text-xs text-red-400">{createError}</p>}
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newName.trim()}
+              className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all"
+            >
+              {creating ? 'Creating…' : 'Create key'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {justCreated && (
+        <Modal title="API key created" onClose={() => setJustCreated(null)}>
+          <div className="space-y-4">
+            <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+              Copy this key now — for security, it's shown only once and can't be retrieved again.
+            </div>
+            <div className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 font-mono text-xs text-emerald-300 break-all">
+              {justCreated.rawKey}
+            </div>
+            <button
+              onClick={() => { navigator.clipboard?.writeText(justCreated.rawKey); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors"
+            >
+              Copy to clipboard
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {revokeTarget && (
+        <ConfirmDeleteModal
+          title="Revoke API key"
+          message={`Revoke "${revokeTarget.name}"? Anything using this key will stop working immediately. This can't be undone.`}
+          confirmLabel="Revoke"
+          onClose={() => setRevokeTarget(null)}
+          onConfirm={async () => {
+            await revokeTenantApiKey(revokeTarget.id)
+            setRevokeTarget(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function SecurityAccessPage() {
   const { activeCompanyId, handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
   const companyId = activeCompanyId
-  const apiKeys = API_KEYS[companyId]
 
   // ── Real team roster (migration 089's list_team_members_full, via useUsers) ──
   const { members, loading: membersLoading } = useUsers()
-  // Matches list_team_mfa_status's server-side gate: the tenant's own
-  // owner/admin, or a platform admin viewing via Remote Access.
-  const canViewMfa = isLiveTenant && !!currentTenant?.id && (
+  // Matches the server-side gate on list_team_mfa_status / the API-key
+  // RPCs (migrations 089/090): the tenant's own owner/admin, or a
+  // platform admin viewing via Remote Access.
+  const canManageSecurity = isLiveTenant && !!currentTenant?.id && (
     isDTUser || (authedUser?.role && ['tenant_owner', 'tenant_admin'].includes(authedUser.role))
   )
   const [mfaStatus, setMfaStatus] = useState<Record<string, boolean>>({})
   useEffect(() => {
-    if (!canViewMfa || !currentTenant?.id) return
+    if (!canManageSecurity || !currentTenant?.id) return
     listTeamMfaStatus(currentTenant.id).then(rows => {
       const map: Record<string, boolean> = {}
       rows.forEach((r: TeamMfaStatusRow) => { map[r.user_id] = r.mfa_verified })
       setMfaStatus(map)
     })
-  }, [canViewMfa, currentTenant?.id, members.length])
+  }, [canManageSecurity, currentTenant?.id, members.length])
 
   // ── Session policy (persisted) ──
   const policyKey = `dt_gov_session_policy_${companyId}`
@@ -309,7 +469,7 @@ export default function SecurityAccessPage() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role] ?? ROLE_COLORS.tenant_user}`}>{ROLE_LABELS[u.role] ?? u.role}</span>
                   </td>
                   <td className={td}>
-                    {!canViewMfa
+                    {!canManageSecurity
                       ? <span className="text-[10px] text-slate-600">Owner/admin only</span>
                       : mfaStatus[u.userId]
                         ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Enabled</span>
@@ -376,35 +536,15 @@ export default function SecurityAccessPage() {
           </div>
         </div>
 
-        {/* ── API keys ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">API Keys</p>
-            <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">+ Create key</button>
+        {/* ── API keys (migration 090) — real generation/hashing/revocation ── */}
+        {canManageSecurity && currentTenant?.id ? (
+          <ApiKeysPanel tenantId={currentTenant.id} />
+        ) : (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">API Keys</p>
+            <p className="text-xs text-slate-500">Only a workspace owner or admin can view and manage API keys.</p>
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800">
-                <th className={th}>Name</th>
-                <th className={th}>Key</th>
-                <th className={th}>Scope</th>
-                <th className={th}>Created</th>
-                <th className={th}>Last used</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {apiKeys.map(k => (
-                <tr key={k.name} className="hover:bg-slate-800/20 transition-colors">
-                  <td className={`${td} text-slate-200 text-xs font-medium`}>{k.name}</td>
-                  <td className={`${td} text-slate-400 text-xs font-mono`}>{k.masked}</td>
-                  <td className={`${td} text-slate-400 text-xs`}>{k.scope}</td>
-                  <td className={`${td} text-slate-500 text-xs`}>{k.created}</td>
-                  <td className={`${td} text-slate-500 text-xs`}>{k.lastUsed}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        )}
 
         {/* ── IP allowlist ── */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">

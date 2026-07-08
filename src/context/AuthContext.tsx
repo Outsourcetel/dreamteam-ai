@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import {
   fetchTenants,
@@ -144,6 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setGodModeTenantIdOverride(godModeSession?.tenant?.id ?? null);
   }, [godModeSession]);
+
+  // Read inside the syncProfile effect below without adding godModeSession
+  // to its dependency array (deliberately excluded so the 60s resync timer
+  // doesn't get torn down and rebuilt on every Remote Access start/end).
+  const godModeSessionRef = useRef(godModeSession);
+  useEffect(() => { godModeSessionRef.current = godModeSession; }, [godModeSession]);
 
   // Tri-state, not boolean: undefined = not resolved yet (still loading, or
   // no session), true = a real profile row was fetched and it genuinely has
@@ -332,9 +338,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // and PlatformConsolePage has no case for 'dashboard' — it falls
           // through to a bare, contentless placeholder. Redirect to the
           // real Overview once, only if we're not already on a genuine
-          // platform page (never clobber active navigation).
+          // platform page (never clobber active navigation). Also never
+          // clobber an active Remote Access session -- this same guard,
+          // unconditional, was the reason a platform admin got silently
+          // bounced back to the Platform Console every time this effect's
+          // 60s resync tick fired while intentionally viewing a tenant
+          // page (e.g. Security & Access) via Remote Access.
           if (!_cleanup) {
-            setCurrentPage(prev => (prev.toString().startsWith('platform_') ? prev : 'platform_home'));
+            setCurrentPage(prev => (
+              prev.toString().startsWith('platform_') || godModeSessionRef.current ? prev : 'platform_home'
+            ));
           }
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {

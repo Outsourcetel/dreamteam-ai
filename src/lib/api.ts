@@ -945,3 +945,36 @@ export const listTeamMfaStatus = async (tenantId: string): Promise<TeamMfaStatus
   if (error) { console.error('listTeamMfaStatus:', error.message); return []; }
   return (data ?? []) as TeamMfaStatusRow[];
 };
+
+// ============================================================
+// SECURITY & ACCESS — real API keys (migration 090)
+// ============================================================
+
+export interface TenantApiKey {
+  id: string; name: string; display_hint: string; scopes: string[];
+  created_at: string; last_used_at: string | null; revoked_at: string | null;
+}
+
+export const listTenantApiKeys = async (tenantId: string): Promise<TenantApiKey[]> => {
+  const { data, error } = await supabase.rpc('list_tenant_api_keys', { p_tenant_id: tenantId });
+  if (error) { console.error('listTenantApiKeys:', error.message); return []; }
+  return (data ?? []) as TenantApiKey[];
+};
+
+// Returns the raw key exactly once -- the caller must show and let the
+// user copy it immediately; it is never retrievable again after this call.
+export const createTenantApiKey = async (
+  tenantId: string, name: string, scopes: string[],
+): Promise<{ ok: true; rawKey: string } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.rpc('create_tenant_api_key', {
+    p_tenant_id: tenantId, p_name: name, p_scopes: scopes,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rawKey: (data as { raw_key: string }).raw_key };
+};
+
+export const revokeTenantApiKey = async (keyId: string): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('revoke_tenant_api_key', { p_key_id: keyId });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};
