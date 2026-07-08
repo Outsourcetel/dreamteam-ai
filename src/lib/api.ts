@@ -978,3 +978,25 @@ export const revokeTenantApiKey = async (keyId: string): Promise<{ ok: boolean; 
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 };
+
+// ============================================================
+// SECURITY & ACCESS — real session policy (migration 091)
+// ============================================================
+
+export interface TenantSessionPolicy { timeout_minutes: number; mfa_required: boolean }
+
+export const getTenantSessionPolicy = async (tenantId: string): Promise<TenantSessionPolicy | null> => {
+  const { data, error } = await supabase.rpc('get_tenant_session_policy', { p_tenant_id: tenantId });
+  if (error) { console.error('getTenantSessionPolicy:', error.message); return null; }
+  return data as TenantSessionPolicy;
+};
+
+export const setTenantSessionPolicy = async (
+  tenantId: string, timeoutMinutes: number, mfaRequired: boolean,
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('set_tenant_session_policy', {
+    p_tenant_id: tenantId, p_timeout_minutes: timeoutMinutes, p_mfa_required: mfaRequired,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+};

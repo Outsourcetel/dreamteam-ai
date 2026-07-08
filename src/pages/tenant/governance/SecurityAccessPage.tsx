@@ -6,6 +6,7 @@ import Modal from '../../../components/Modal'
 import {
   requestSubtenant, fetchTenantDescendants, listTeamMfaStatus,
   listTenantApiKeys, createTenantApiKey, revokeTenantApiKey,
+  getTenantSessionPolicy, setTenantSessionPolicy,
   type TenantAncestryRow, type TeamMfaStatusRow, type TenantApiKey,
 } from '../../../lib/api'
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
@@ -345,16 +346,25 @@ export default function SecurityAccessPage() {
     })
   }, [canManageSecurity, currentTenant?.id, members.length])
 
-  // ── Session policy (persisted) ──
-  const policyKey = `dt_gov_session_policy_${companyId}`
-  const savedPolicy: { timeout?: string; mfaRequired?: boolean } = (() => {
-    try { const s = localStorage.getItem(policyKey); return s ? JSON.parse(s) : {} } catch { return {} }
-  })()
-  const [timeout_, setTimeout_] = useState(savedPolicy.timeout ?? (companyId === 'pwc' ? '4h' : '8h'))
-  const [mfaRequired, setMfaRequired] = useState<boolean>(savedPolicy.mfaRequired ?? true)
-  const savePolicy = (patch: { timeout?: string; mfaRequired?: boolean }) => {
-    const next = { timeout: timeout_, mfaRequired, ...patch }
-    try { localStorage.setItem(policyKey, JSON.stringify(next)) } catch { /* noop */ }
+  // ── Session policy (migration 091) — real timeout + MFA-required, ──
+  // enforced in AuthContext (inactivity auto-signout, MFA gate). Any
+  // tenant member can view it; only owner/admin/platform-admin can save.
+  const [timeoutMinutes, setTimeoutMinutes] = useState(480)
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [policySaved, setPolicySaved] = useState(false)
+  useEffect(() => {
+    if (!currentTenant?.id) return
+    getTenantSessionPolicy(currentTenant.id).then(p => {
+      if (p) { setTimeoutMinutes(p.timeout_minutes); setMfaRequired(p.mfa_required) }
+    })
+  }, [currentTenant?.id])
+  const savePolicy = async (patch: { timeoutMinutes?: number; mfaRequired?: boolean }) => {
+    if (!currentTenant?.id || !canManageSecurity) return
+    const next = { timeoutMinutes, mfaRequired, ...patch }
+    setTimeoutMinutes(next.timeoutMinutes)
+    setMfaRequired(next.mfaRequired)
+    const res = await setTenantSessionPolicy(currentTenant.id, next.timeoutMinutes, next.mfaRequired)
+    if (res.ok) { setPolicySaved(true); setTimeout(() => setPolicySaved(false), 2500) }
   }
 
   // ── IP allowlist — read on mount, persist on change ──
@@ -510,27 +520,40 @@ export default function SecurityAccessPage() {
             </button>
           </div>
 
-          {/* ── Session policy card ── */}
+          {/* ── Session policy card (migration 091) — real, enforced ── */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-4">Session Policy</p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Session Policy</p>
+              {policySaved && <span className="text-[10px] text-emerald-300">Saved ✓</span>}
+            </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
-                <span className="text-xs text-slate-300">Session timeout</span>
-                <select value={timeout_} onChange={e => { setTimeout_(e.target.value); savePolicy({ timeout: e.target.value }) }}
-                  className="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none">
-                  {['1h', '4h', '8h', '24h'].map(t => <option key={t}>{t}</option>)}
+                <span className="text-xs text-slate-300">Session timeout (inactivity)</span>
+                <select
+                  value={timeoutMinutes}
+                  disabled={!canManageSecurity}
+                  onChange={e => savePolicy({ timeoutMinutes: Number(e.target.value) })}
+                  className="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none disabled:opacity-50"
+                >
+                  <option value={60}>1h</option>
+                  <option value={240}>4h</option>
+                  <option value={480}>8h</option>
+                  <option value={1440}>24h</option>
                 </select>
               </div>
               <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
                 <div>
                   <p className="text-xs text-slate-300">MFA required</p>
-                  <p className="text-[10px] text-slate-600 mt-0.5">All human users must enroll a second factor</p>
+                  <p className="text-[10px] text-slate-600 mt-0.5">Blocks the app until a human user enrolls a second factor</p>
                 </div>
-                <Toggle enabled={mfaRequired} onChange={v => { setMfaRequired(v); savePolicy({ mfaRequired: v }) }} />
+                <Toggle enabled={mfaRequired} onChange={v => canManageSecurity && savePolicy({ mfaRequired: v })} />
               </div>
-              <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+              <div className="bg-slate-950 rounded-lg px-3 py-2.5">
                 <span className="text-xs text-slate-300">Re-auth for sensitive areas</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Always on</span>
+                <p className="text-[10px] text-slate-600 mt-1">
+                  Not yet enforced for regular workspace actions. Platform-level Remote Access already requires a
+                  verified 2FA code once an operator enrolls one.
+                </p>
               </div>
             </div>
           </div>

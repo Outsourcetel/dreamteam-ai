@@ -10,7 +10,7 @@ import {
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
   fetchPlatformConnectorHealth,
 } from '../../lib/api';
-import MfaEnrollmentPanel from './MfaEnrollmentPanel';
+import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../supabase';
+import { supabase } from '../supabase';
 
 // Real two-factor enrollment, wired to Supabase's own MFA system
 // (supabase.auth.mfa.*) -- not the hardcoded demo toggle that used to be

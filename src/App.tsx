@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Sidebar } from './components';
+import { Sidebar, MfaEnrollmentPanel } from './components';
 import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
@@ -219,6 +219,7 @@ function AppShell() {
     isDTUser,
     isTenantUser,
     needsOrgSetup,
+    mfaGateBlocking,
     handleLogin,
     handleLogout,
     handleSetPage,
@@ -267,6 +268,23 @@ function AppShell() {
   // silently fall through to the demo dashboard. See AuthContext's
   // needsOrgSetup and OrgSetupScreen for the full reasoning.
   if (needsOrgSetup) return <OrgSetupScreen />;
+
+  // Real enforcement of the tenant's own session policy (migration 091,
+  // Security & Access page): if the workspace requires MFA and this real
+  // tenant user hasn't enrolled a verified factor, block the app behind
+  // the same enrollment screen already used for Remote Access's own
+  // AAL2 requirement (never true for a platform admin — see
+  // mfaGateBlocking's own comment in AuthContext).
+  if (mfaGateBlocking) {
+    return (
+      <div className="flex-1 flex flex-col h-screen bg-slate-950">
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3 text-sm text-amber-300">
+          Your workspace requires two-factor authentication before you can continue.
+        </div>
+        <MfaEnrollmentPanel />
+      </div>
+    );
+  }
 
   const commonProps = {
     user: authedUser,

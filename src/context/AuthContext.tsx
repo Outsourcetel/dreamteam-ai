@@ -7,7 +7,7 @@ import {
   fetchMyProfile,
   DBTenant,
 } from '../lib/api';
-import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess } from '../lib/api';
+import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/mockData';
 import { COMPANIES_LOOKUP } from '../data/companies';
@@ -120,6 +120,14 @@ interface AuthContextValue {
   /** Ends the current Remote Access session (audited: an 'end' event
    *  paired to the same session_key) and returns to Platform Console. */
   exitRemoteAccess: () => Promise<void>;
+  /**
+   * True when the current tenant's real session policy (migration 091)
+   * requires MFA and this user hasn't enrolled a verified factor yet.
+   * Only ever true for a real tenant user (never a platform admin viewing
+   * via Remote Access, and never demo/undetermined state) -- App.tsx uses
+   * this to show a blocking enrollment screen instead of the normal app.
+   */
+  mfaGateBlocking: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -437,6 +445,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       : undefined);
 
+  // ── Real session policy enforcement (migration 091) ──────────────
+  // Deliberately scoped to a real tenant user only (isLiveTenant &&
+  // !isDTUser) -- a platform admin's OWN Remote Access session should
+  // never be force-signed-out or MFA-gated by the tenant they're
+  // inspecting's policy; that would break the one tool built to help a
+  // customer, over a policy that isn't about the platform admin at all.
+  const [sessionPolicy, setSessionPolicy] = useState<{ timeoutMinutes: number; mfaRequired: boolean } | null>(null);
+  const [mfaEnrolled, setMfaEnrolled] = useState<boolean | undefined>(undefined);
+  const lastActivityRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!isLiveTenant || isDTUser || !currentTenant?.id) {
+      setSessionPolicy(null);
+      setMfaEnrolled(undefined);
+      return;
+    }
+    let cancelled = false;
+    getTenantSessionPolicy(currentTenant.id).then(p => {
+      if (!cancelled) setSessionPolicy(p ? { timeoutMinutes: p.timeout_minutes, mfaRequired: p.mfa_required } : null);
+    });
+    supabase.auth.mfa.listFactors().then(({ data }) => {
+      if (cancelled) return;
+      setMfaEnrolled((data?.totp ?? []).some(f => f.status === 'verified'));
+    });
+    return () => { cancelled = true; };
+  }, [isLiveTenant, isDTUser, currentTenant?.id]);
+
+  // Inactivity auto-signout -- a common, real pattern (the same one banking
+  // apps use), not a server-enforced session revocation. Checked every 30s
+  // against real user-input events, not a fixed timer alone.
+  useEffect(() => {
+    if (!isLiveTenant || isDTUser || !sessionPolicy) return;
+    const bump = () => { lastActivityRef.current = Date.now(); };
+    const events: Array<keyof WindowEventMap> = ['mousedown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, bump, { passive: true }));
+    bump();
+    const intervalId = setInterval(() => {
+      const idleMs = Date.now() - lastActivityRef.current;
+      if (idleMs > sessionPolicy.timeoutMinutes * 60 * 1000) {
+        void supabase.auth.signOut();
+      }
+    }, 30000);
+    return () => { events.forEach(e => window.removeEventListener(e, bump)); clearInterval(intervalId); };
+  }, [isLiveTenant, isDTUser, sessionPolicy]);
+
+  const mfaGateBlocking = isLiveTenant && !isDTUser && sessionPolicy?.mfaRequired === true && mfaEnrolled === false;
+
   const handleLogin = async (u: AuthUser) => {
     // Direct sign-in path: LoginPage builds `u` from Supabase Auth
     // user_metadata (set once at signup), which has no idea about a
@@ -570,6 +625,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshTenant,
       enterRemoteAccess,
       exitRemoteAccess,
+      mfaGateBlocking,
     }}>
       {children}
     </AuthContext.Provider>
