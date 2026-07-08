@@ -12,6 +12,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,7 +65,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { doc_id } = await req.json();
+    const { doc_id, tenant_id: assertedTenantId } = await req.json();
     if (!doc_id || typeof doc_id !== 'string') return json({ error: 'doc_id required' }, 400);
 
     // ── Auth: resolve the caller from their JWT ──
@@ -78,8 +79,8 @@ serve(async (req) => {
     if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
 
     const { data: profile } = await admin
-      .from('profiles').select('tenant_id').eq('user_id', userData.user.id).single();
-    const tenantId: string | null = profile?.tenant_id ?? null;
+      .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
+    const tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, assertedTenantId);
     if (!tenantId) return json({ error: 'no_tenant' }, 403);
 
     // ── Fetch the doc (must belong to the caller's tenant) ──

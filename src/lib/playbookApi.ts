@@ -90,9 +90,9 @@ interface StartResponse { run_id: string; status: RunStatus; task_id?: string; s
 
 /** Start a renewal run — executed entirely server-side. */
 export async function startRenewalRun(account: CustomerAccount): Promise<PlaybookRun> {
-  await requireTenantId();
+  const tid = await requireTenantId();
   const { data, error } = await supabase.functions.invoke('playbook-execute', {
-    body: { action: 'start', playbook_key: 'renewal_v1', account_id: account.id },
+    body: { action: 'start', playbook_key: 'renewal_v1', account_id: account.id, tenant_id: tid },
   });
   if (error) raise('startRenewalRun', { message: error.message ?? String(error) });
   const res = data as StartResponse;
@@ -127,8 +127,9 @@ export async function resumeRunForTask(
     // ('resume_pending' + needs_http) — the edge function finishes those.
     if ((data as { needs_http?: boolean } | null)?.needs_http) {
       try {
+        const tid = await getSessionTenantId();
         await supabase.functions.invoke('playbook-execute', {
-          body: { action: 'advance', run_id: (data as { run_id: string }).run_id },
+          body: tid ? { action: 'advance', run_id: (data as { run_id: string }).run_id, tenant_id: tid } : { action: 'advance', run_id: (data as { run_id: string }).run_id },
         });
       } catch (err) {
         console.error('resumeRunForTask http advance:', err);
@@ -140,8 +141,9 @@ export async function resumeRunForTask(
   // PGRST202 / 42883: function not found — migration 016 not applied yet.
   console.warn('resume_playbook_on_task RPC unavailable, falling back to edge advance:', error.message);
   try {
+    const tid = await getSessionTenantId();
     await supabase.functions.invoke('playbook-execute', {
-      body: { action: 'advance', task_id: taskId },
+      body: tid ? { action: 'advance', task_id: taskId, tenant_id: tid } : { action: 'advance', task_id: taskId },
     });
     notify();
   } catch (err) {

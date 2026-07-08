@@ -81,6 +81,7 @@ import {
   walkPath, renderTemplate, renderBody, renderAction,
 } from '../_shared/adapterTemplates.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1146,8 +1147,8 @@ serve(async (req) => {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
       const { data: profile } = await admin
-        .from('profiles').select('tenant_id').eq('user_id', userData.user.id).single();
-      tenantId = profile?.tenant_id ?? null;
+        .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
+      tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, payload.tenant_id);
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 

@@ -227,6 +227,7 @@ export async function startEvalRun(trigger: EvalTrigger = 'manual'): Promise<{ r
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new EvalRunError('server', 'Not signed in.');
 
+  const tid = await getSessionTenantId();
   let res: Response;
   try {
     res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/eval-run`, {
@@ -236,7 +237,7 @@ export async function startEvalRun(trigger: EvalTrigger = 'manual'): Promise<{ r
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ trigger }),
+      body: JSON.stringify(tid ? { trigger, tenant_id: tid } : { trigger }),
     });
   } catch (err) {
     throw new EvalRunError('network', String(err));

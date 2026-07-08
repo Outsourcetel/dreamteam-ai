@@ -219,6 +219,11 @@ export async function listChunkStatus(): Promise<Record<string, DocChunkStatus>>
 export async function ingestDocChunks(docId: string): Promise<DocChunkStatus> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  // tenant_id here is only ever a fallback the edge function verifies
+  // server-side against a real Remote Access session — for an
+  // ordinary tenant user it's redundant with their own profile and
+  // never gets used (see resolveTenantWithRemoteAccess).
+  const tid = await requireTenantId();
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-chunks`, {
     method: 'POST',
     headers: {
@@ -226,7 +231,7 @@ export async function ingestDocChunks(docId: string): Promise<DocChunkStatus> {
       'Authorization': `Bearer ${session.access_token}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ doc_id: docId }),
+    body: JSON.stringify({ doc_id: docId, tenant_id: tid }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) throw new CustomerApiError(String(data.error ?? `HTTP ${res.status}`), false);

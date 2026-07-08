@@ -337,8 +337,9 @@ export interface CheckItemResult {
   error?: string;
 }
 export async function checkItemNow(projectId: string, key: string): Promise<CheckItemResult> {
+  const tid = await getSessionTenantId();
   const { data, error } = await supabase.functions.invoke('onboarding-verify', {
-    body: { action: 'check_item', project_id: projectId, key },
+    body: tid ? { action: 'check_item', project_id: projectId, key, tenant_id: tid } : { action: 'check_item', project_id: projectId, key },
   });
   if (error) {
     const ctx = (error as { context?: Response }).context;

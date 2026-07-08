@@ -175,6 +175,9 @@ async function auditConfig(action: string, detail: Record<string, unknown>): Pro
 async function invokeSpecialist<T>(body: Record<string, unknown>): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  // tenant_id is only ever a fallback the edge function verifies
+  // server-side against a real Remote Access session (migration 102).
+  const tid = await requireTenantId().catch(() => null);
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/specialist-consult`, {
     method: 'POST',
     headers: {
@@ -182,7 +185,7 @@ async function invokeSpecialist<T>(body: Record<string, unknown>): Promise<T> {
       'Authorization': `Bearer ${session.access_token}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(tid ? { ...body, tenant_id: tid } : body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);
@@ -313,6 +316,7 @@ export interface McpHandshakeResult {
 export async function mcpHandshake(sourceId: string): Promise<McpHandshakeResult> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const tid = await requireTenantId().catch(() => null);
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp-client`, {
     method: 'POST',
     headers: {
@@ -320,7 +324,7 @@ export async function mcpHandshake(sourceId: string): Promise<McpHandshakeResult
       'Authorization': `Bearer ${session.access_token}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ action: 'handshake', source_id: sourceId }),
+    body: JSON.stringify(tid ? { action: 'handshake', source_id: sourceId, tenant_id: tid } : { action: 'handshake', source_id: sourceId }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);

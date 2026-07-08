@@ -641,6 +641,11 @@ async function invokeHub<T = Record<string, unknown>>(
 ): Promise<T & { ok: boolean; error?: string; items: HubItem[] }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  // tenant_id is only ever a fallback the edge function verifies
+  // server-side against a real Remote Access session (migration 102)
+  // — for an ordinary tenant user it's redundant with their own
+  // profile and never gets used.
+  const tid = await getSessionTenantId();
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connector-hub`, {
     method: 'POST',
     headers: {
@@ -648,7 +653,7 @@ async function invokeHub<T = Record<string, unknown>>(
       'Authorization': `Bearer ${session.access_token}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(tid ? { ...body, tenant_id: tid } : body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);
@@ -662,6 +667,7 @@ async function invokeConnector<T = Record<string, unknown>>(
 ): Promise<T & { ok: boolean; error?: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const tid = await getSessionTenantId();
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connector-zendesk`, {
     method: 'POST',
     headers: {
@@ -669,7 +675,7 @@ async function invokeConnector<T = Record<string, unknown>>(
       'Authorization': `Bearer ${session.access_token}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(tid ? { ...body, tenant_id: tid } : body),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok && !data?.error) {
