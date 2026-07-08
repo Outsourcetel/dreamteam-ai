@@ -1053,3 +1053,60 @@ export const checkMyIpAllowed = async (): Promise<boolean> => {
     return true;
   }
 };
+
+// ============================================================
+// PERFORMANCE & INSIGHTS — real per-DE metrics (migrations 093-096)
+// ============================================================
+
+export interface DePerformanceMetrics {
+  de_id: string; de_name: string; total_decisions: number; resolution_rate: number;
+  avg_confidence: number; escalation_rate: number; blocked_guardrail_count: number;
+  total_runs: number; error_rate: number;
+  trend: { week: string; decisions: number; resolution_rate: number; avg_confidence: number }[];
+}
+
+export const getDePerformanceMetrics = async (tenantId: string): Promise<DePerformanceMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_performance_metrics', { p_tenant_id: tenantId });
+  if (error) { console.error('getDePerformanceMetrics:', error.message); return []; }
+  return (data ?? []) as DePerformanceMetrics[];
+};
+
+export interface DeCostMetrics {
+  de_id: string; total_calls: number; total_input_tokens: number; total_output_tokens: number; total_cost_usd: number;
+}
+
+export const getDeCostMetrics = async (tenantId: string): Promise<DeCostMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_cost_metrics', { p_tenant_id: tenantId });
+  if (error) { console.error('getDeCostMetrics:', error.message); return []; }
+  return (data ?? []) as DeCostMetrics[];
+};
+
+export interface DeCsatMetrics { de_id: string; total_ratings: number; positive_ratings: number; csat_pct: number }
+
+export const getDeCsatMetrics = async (tenantId: string): Promise<DeCsatMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_csat_metrics', { p_tenant_id: tenantId });
+  if (error) { console.error('getDeCsatMetrics:', error.message); return []; }
+  return (data ?? []) as DeCsatMetrics[];
+};
+
+export interface DeGuardrailActivity {
+  de_id: string | null; de_name: string | null; gated_count: number; blocked_count: number;
+  tenant_total_events: number; tenant_attributed_events: number;
+}
+
+export const getDeGuardrailActivity = async (tenantId: string): Promise<DeGuardrailActivity[]> => {
+  const { data, error } = await supabase.rpc('get_de_guardrail_activity', { p_tenant_id: tenantId, p_days: 30 });
+  if (error) { console.error('getDeGuardrailActivity:', error.message); return []; }
+  return (data ?? []) as DeGuardrailActivity[];
+};
+
+export interface RecentEvalFailure {
+  id: string; trigger: string; total: number; passed: number; failed: number;
+  started_at: string; finished_at: string | null;
+}
+
+export const getRecentEvalFailures = async (tenantId: string): Promise<RecentEvalFailure[]> => {
+  const { data, error } = await supabase.rpc('get_recent_eval_failures', { p_tenant_id: tenantId, p_limit: 5 });
+  if (error) { console.error('getRecentEvalFailures:', error.message); return []; }
+  return (data ?? []) as RecentEvalFailure[];
+};

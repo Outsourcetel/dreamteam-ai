@@ -7,6 +7,13 @@ import { COMPANY_SUMMARY } from '../../../data/companies';
 import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+import {
+  getDePerformanceMetrics, getDeCostMetrics, getDeCsatMetrics,
+  getDeGuardrailActivity, getRecentEvalFailures,
+  type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics,
+  type DeGuardrailActivity, type RecentEvalFailure,
+} from '../../../lib/api';
+import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 
 // ── Shared per-DE metrics (numbers from WorkforceDEsPage) ─────────
 
@@ -100,6 +107,15 @@ function LiveUsageStrip() {
 // ══════════════════════════════════════════════════════════════════
 
 export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  const { currentTenant } = useAuth();
+  if (dataMode === 'live' && currentTenant?.id) {
+    return <LivePerformancePage tenantId={currentTenant.id} setPage={setPage} />;
+  }
+  return <DemoPerformancePage setPage={setPage} />;
+}
+
+function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const dataMode = useDataMode();
   const des = METRICS[activeCompanyId];
@@ -250,6 +266,164 @@ export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   );
 }
 
+// ── Real Performance page (live tenants) — migrations 093-095 ──
+function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
+  const [des, setDes] = useState<DigitalEmployee[]>([]);
+  const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
+  const [cost, setCost] = useState<DeCostMetrics[]>([]);
+  const [csat, setCsat] = useState<DeCsatMetrics[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      listDigitalEmployees(),
+      getDePerformanceMetrics(tenantId),
+      getDeCostMetrics(tenantId),
+      getDeCsatMetrics(tenantId),
+    ]).then(([d, m, c, s]) => {
+      if (cancelled) return;
+      setDes(d);
+      setMetrics(m);
+      setCost(c);
+      setCsat(s);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
+  const metricsByDe = new Map(metrics.map(m => [m.de_id, m]));
+  const costByDe = new Map(cost.map(c => [c.de_id, c]));
+  const csatByDe = new Map(csat.map(c => [c.de_id, c]));
+
+  const totalDecisions = metrics.reduce((s, m) => s + m.total_decisions, 0);
+  const totalCostUsd = cost.reduce((s, c) => s + c.total_cost_usd, 0);
+
+  if (loading) {
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <PageHeader title="Performance Analytics" subtitle="Loading real Digital Employee activity…" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Performance Analytics"
+        subtitle={`${des.length} DE${des.length === 1 ? '' : 's'} · ${totalDecisions.toLocaleString()} inquiries handled this period`}
+      />
+
+      <LiveUsageStrip />
+
+      {totalCostUsd > 0 && (
+        <div className="bg-slate-900 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Real AI usage cost</span>
+            <span className="text-sm text-slate-200">
+              ${totalCostUsd.toFixed(2)} across {cost.reduce((s, c) => s + c.total_calls, 0).toLocaleString()} LLM calls this period
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Computed from real token usage on every completion — no assumed human-cost comparison, since there's no real baseline to compare against yet.
+          </p>
+        </div>
+      )}
+
+      {des.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-sm text-slate-500">
+          No Digital Employees yet — add one under Workforce to start seeing real performance data here.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          {des.map(de => {
+            const m = metricsByDe.get(de.id);
+            const c = costByDe.get(de.id);
+            const trend = m?.trend ?? [];
+            const trendValues = trend.map(t => t.resolution_rate);
+            return (
+              <div key={de.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-white">{de.name}</p>
+                      <p className="text-[11px] text-slate-500">{de.description || de.category}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setPage('workforce_des')} className="text-xs text-slate-500 hover:text-indigo-300 transition-colors">Profile →</button>
+                </div>
+
+                {!m || m.total_decisions === 0 ? (
+                  <p className="text-xs text-slate-600 py-4 text-center">No real activity recorded yet.</p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className={`text-2xl font-bold ${metricColor('resolution', m.resolution_rate)}`}>{m.resolution_rate}%</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">Resolution rate</p>
+                      </div>
+                      {trendValues.length > 1 && (
+                        <div className="text-right">
+                          <Sparkline data={trendValues} />
+                          <p className="text-[10px] text-slate-600 mt-0.5">{trend.length}-week trend</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'Confidence', value: `${m.avg_confidence}%`, color: metricColor('confidence', m.avg_confidence) },
+                        { label: 'Escalation', value: `${m.escalation_rate}%`, color: metricColor('escalation', m.escalation_rate) },
+                        { label: 'Error rate', value: `${m.error_rate}%`, color: metricColor('error', m.error_rate) },
+                      ].map(x => (
+                        <div key={x.label} className="bg-slate-950 rounded-lg px-2 py-2 text-center">
+                          <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
+                          <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-950 rounded-lg px-3 py-2">
+                      <span>{m.total_decisions} inquiries this period</span>
+                      {c && c.total_calls > 0 && (
+                        <span className="text-slate-300">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <h3 className="text-sm font-semibold text-white mb-1">Customer satisfaction (CSAT)</h3>
+        <p className="text-xs text-slate-500 mb-4">Real thumbs-up/down from the support widget and portal chat</p>
+        {csat.length === 0 ? (
+          <p className="text-xs text-slate-600">No ratings submitted yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {csat.map(c => {
+              const de = des.find(d => d.id === c.de_id);
+              return (
+                <div key={c.de_id} className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+                  <span className="text-xs text-slate-300">{de?.name ?? 'Unknown DE'}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">{c.total_ratings} rating{c.total_ratings === 1 ? '' : 's'}</span>
+                    <span className={`text-sm font-medium ${c.csat_pct >= 70 ? 'text-emerald-400' : c.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400'}`}>{c.csat_pct}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Insights
 // ══════════════════════════════════════════════════════════════════
@@ -341,6 +515,15 @@ const KIND_META: Record<InsightKind, { label: string; cls: string }> = {
 };
 
 export function InsightsPage({ setPage }: { setPage: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  const { currentTenant } = useAuth();
+  if (dataMode === 'live' && currentTenant?.id) {
+    return <LiveInsightsPage tenantId={currentTenant.id} setPage={setPage} />;
+  }
+  return <DemoInsightsPage setPage={setPage} />;
+}
+
+function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
   const insights = INSIGHTS[activeCompanyId];
   const des = METRICS[activeCompanyId];
@@ -397,6 +580,144 @@ export function InsightsPage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Real Insights page (live tenants) — migration 096 ──
+// Anomaly: computed here from get_de_performance_metrics' real weekly
+// trend (no separate RPC needed). Config-drift + eval-failure: real
+// signals from migration 096, replacing invented narrative text.
+function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
+  const [des, setDes] = useState<DigitalEmployee[]>([]);
+  const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
+  const [guardrails, setGuardrails] = useState<DeGuardrailActivity[]>([]);
+  const [evalFailures, setEvalFailures] = useState<RecentEvalFailure[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      listDigitalEmployees(),
+      getDePerformanceMetrics(tenantId),
+      getDeGuardrailActivity(tenantId),
+      getRecentEvalFailures(tenantId),
+    ]).then(([d, m, g, e]) => {
+      if (cancelled) return;
+      setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
+  // Anomaly: this week's escalation rate vs. the trailing average of
+  // prior weeks in the same real trend data get_de_performance_metrics
+  // already returns — a genuine week-over-week comparison, not invented text.
+  const anomalies = metrics.flatMap(m => {
+    if (m.trend.length < 2) return [];
+    const latest = m.trend[m.trend.length - 1];
+    const prior = m.trend.slice(0, -1);
+    const priorAvgEscalation = prior.reduce((s, t) => s + (100 - t.resolution_rate), 0) / prior.length;
+    const latestEscalation = 100 - latest.resolution_rate;
+    const delta = latestEscalation - priorAvgEscalation;
+    if (delta < 15) return [];
+    return [{
+      deName: m.de_name,
+      detail: `Escalation rate ${latestEscalation.toFixed(0)}% the week of ${latest.week}, up from a ${priorAvgEscalation.toFixed(0)}% trailing average.`,
+    }];
+  });
+
+  const trendCards = metrics.filter(m => m.trend.length > 1).map(m => {
+    const delta = m.trend[m.trend.length - 1].resolution_rate - m.trend[0].resolution_rate;
+    return { name: m.de_name, delta, trend: m.trend.map(t => t.resolution_rate) };
+  });
+
+  if (loading) {
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <PageHeader title="Business Insights" subtitle="Loading real signals…" />
+      </div>
+    );
+  }
+
+  const hasAnySignal = anomalies.length > 0 || guardrails.length > 0 || evalFailures.length > 0;
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader
+        title="Business Insights"
+        subtitle="Real anomaly, guardrail, and Proving Ground signals from your Digital Employee workforce"
+      />
+
+      {trendCards.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          {trendCards.map(t => (
+            <div key={t.name} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">{t.name}</p>
+                <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {t.delta >= 0 ? '↑' : '↓'} {Math.abs(t.delta).toFixed(0)} pts resolution rate
+                </p>
+              </div>
+              <Sparkline data={t.trend} color={t.delta >= 0 ? '#34d399' : '#f87171'} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!hasAnySignal ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-sm text-slate-500">
+          No anomalies, guardrail overrides, or Proving Ground failures in this period — nothing needs attention right now.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {anomalies.map(a => (
+            <div key={a.deName} className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
+                <span className="text-sm font-medium text-white">{a.deName} escalation rate spiked</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">{a.detail}</p>
+            </div>
+          ))}
+
+          {guardrails.map((g, i) => (
+            <div key={g.de_id ?? `tenant-${i}`} className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">CONFIG DRIFT</span>
+                <span className="text-sm font-medium text-white">
+                  {g.de_name ? `${g.de_name}: ${g.gated_count + g.blocked_count} guardrail event(s)` : 'Guardrail activity recorded'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {g.de_name
+                  ? `${g.gated_count} gated, ${g.blocked_count} blocked in the last 30 days.`
+                  : `${g.tenant_total_events} guardrail event(s) recorded tenant-wide, but none could be matched to a currently-named Digital Employee (likely renamed since).`}
+              </p>
+              <button onClick={() => setPage('gov_compliance')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">
+                Open Compliance & Guardrails →
+              </button>
+            </div>
+          ))}
+
+          {evalFailures.map(e => (
+            <div key={e.id} className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
+                <span className="text-sm font-medium text-white">{e.failed} of {e.total} scenarios failed</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {e.trigger} eval run on {new Date(e.started_at).toLocaleDateString()} — {e.passed} passed, {e.failed} failed.
+                Tenant-wide (Proving Ground runs aren't yet attributed to one Digital Employee).
+              </p>
+              <button onClick={() => setPage('intelligence_evals')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">
+                Open Proving Ground →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
