@@ -382,6 +382,11 @@ serve(async (req) => {
       return json({ error: 'llm_not_configured', conversation_id: convId });
     }
 
+    const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetCheck && budgetCheck.allowed === false) {
+      return json({ error: 'ai_budget_exceeded', conversation_id: convId });
+    }
+
     const audience = accountName
       ? `You are answering an end user (${displayName || 'an employee'}) at customer account "${accountName}".`
       : `You are answering an end user${displayName ? ` (${displayName})` : ''} of a business customer.`;

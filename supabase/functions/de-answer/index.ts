@@ -327,6 +327,11 @@ serve(async (req) => {
       return json({ error: 'llm_not_configured', conversation_id: convId });
     }
 
+    const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetCheck && budgetCheck.allowed === false) {
+      return json({ error: 'ai_budget_exceeded', conversation_id: convId });
+    }
+
     const system = `You are Alex, a Customer Support Digital Employee for ${tenantName}. Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:

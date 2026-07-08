@@ -601,7 +601,10 @@ async function runResolveInquiry(
 
   // LLM answer step — dormant-honest, same gate as consult.
   const resolveApiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-  const answerStatus = resolveApiKey ? 'answered' : 'llm_not_configured';
+  const { data: resolveBudgetCheck } = resolveApiKey
+    ? await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId })
+    : { data: null };
+  const answerStatus = !resolveApiKey ? 'llm_not_configured' : (resolveBudgetCheck && resolveBudgetCheck.allowed === false) ? 'ai_budget_exceeded' : 'answered';
   let answerText: string | null = null;
   if (answerStatus === 'answered') {
     const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
@@ -627,16 +630,20 @@ async function runResolveInquiry(
 
   await admin.from('evidence_runs').update({
     status: 'complete', steps, confidence_inputs: confidenceInputs,
-    answer_status: answerText ? 'answered' : 'llm_not_configured',
+    answer_status: answerText ? 'answered' : answerStatus,
     answer: answerText, completed_at: new Date().toISOString(),
   }).eq('id', runId2);
 
   return {
     evidence_run_id: runId2, status: 'complete', steps,
     confidence_inputs: confidenceInputs,
-    answer_status: answerText ? 'answered' : 'llm_not_configured',
+    answer_status: answerText ? 'answered' : answerStatus,
     answer: answerText,
-    note: answerText ? undefined : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
+    note: answerText
+      ? undefined
+      : answerStatus === 'ai_budget_exceeded'
+        ? 'Evidence gathered and cited — the final written answer is paused because this workspace has reached its AI usage limit for this month.'
+        : 'Evidence gathered and cited — the final written answer unlocks when the LLM is activated (ANTHROPIC_API_KEY).',
     conversation_facts_reused: reusedAccountFromThread
       ? { account_ref: accountRef, note: `Continuing from earlier in this conversation — account "${accountRef}" was already resolved on a prior turn.` }
       : undefined,
@@ -1464,6 +1471,28 @@ serve(async (req) => {
         consultation_id: row?.id ?? null,
         retrieved_sources: retrieved,
         note: 'Specialist brain not activated — configuration and retrieval are live; the answer path unlocks when ANTHROPIC_API_KEY is set.',
+      });
+    }
+
+    // Same enforcement gate the other 4 LLM call sites use — checked
+    // right before spending real AI-provider cost.
+    const { data: consultBudgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (consultBudgetCheck && consultBudgetCheck.allowed === false) {
+      const { data: row } = await admin.from('spec_consultations').insert({
+        tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+        question, answer: null, confidence: null,
+        sources_used: retrieved, status: 'blocked_budget',
+      }).select('id').single();
+      await bump('consultations');
+      await audit(admin, tenantId, prof.name,
+        `Consultation recorded (AI usage limit reached) — retrieval exercised across ${retrieved.length} source${retrieved.length === 1 ? '' : 's'}; answer blocked, this workspace is over its monthly AI usage budget`,
+        'config_change',
+        { kind: 'specialist_consult', consultation_id: row?.id ?? null, profile_key: profileKey, status: 'blocked_budget', requested_by: requestedBy, sources: retrieved.length });
+      return json({
+        error: 'ai_budget_exceeded',
+        consultation_id: row?.id ?? null,
+        retrieved_sources: retrieved,
+        note: 'This workspace has reached its AI usage limit for this month — retrieval is live, the written answer is paused until next month or the budget is raised.',
       });
     }
 

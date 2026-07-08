@@ -245,6 +245,13 @@ async function runLoop(
       return { status: 'budget_exceeded', agentic_step_run_id: runId };
     }
 
+    const { data: tenantBudget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (tenantBudget && tenantBudget.allowed === false) {
+      const result = { reason: 'tenant_ai_budget_exceeded' };
+      await markTerminal(admin, runId, 'budget_exceeded', result);
+      return { status: 'budget_exceeded', agentic_step_run_id: runId };
+    }
+
     const useModel = (escalationThreshold != null && iterationCount >= escalationThreshold) ? escalationModel : model;
     let resp;
     try {
