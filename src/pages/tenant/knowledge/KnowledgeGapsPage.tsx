@@ -4,6 +4,18 @@ import { COMPANY_SUMMARY } from '../../../data/companies';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
+import type { Page } from '../../../types';
+import { useDataMode } from '../../../lib/dataMode';
+import { CustomerApiError } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import {
+  listKnowledgeGapClusters, listKnowledgeGapPolicies, getKnowledgeGapClusterDetail,
+  listKnowledgeRevisionRequests, resolveKnowledgeRevision,
+} from '../../../lib/knowledgeApi';
+import type { KnowledgeGapCluster, KnowledgeGapPolicy, KnowledgeGapClusterMember, KnowledgeRevisionRequest } from '../../../lib/knowledgeApi';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
+import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi';
+import { supabase } from '../../../supabase';
 
 // ============================================================
 // Gap Detection — THE FLAGSHIP PAGE. The self-healing loop:
@@ -233,7 +245,7 @@ const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
 
 const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' } as const;
 
-const KnowledgeGapsPage = () => {
+const DemoKnowledgeGapsPage = () => {
   const { activeCompanyId, handleSetPage } = useAuth();
   const companyId = activeCompanyId as CompanyId;
   const gaps = companyId === 'tcp' ? TCP_GAPS : PWC_GAPS;
@@ -502,4 +514,330 @@ const KnowledgeGapsPage = () => {
   );
 };
 
-export default KnowledgeGapsPage;
+// ============================================================
+// LIVE mode — real automatic detection (migration 070): a cluster of
+// similar low-confidence inquiries, promoted into a real
+// knowledge_revision_requests draft once it crosses the tenant's
+// configured min_cluster_size. Approve/reject uses the SAME RPCs
+// (apply_knowledge_revision / reject_knowledge_revision) the Human
+// Tasks queue's "KNOWLEDGE" items already call — this page is just a
+// richer, gap-specific view onto the same real data.
+//
+// Real states are simpler than the demo's invented 5-stage lifecycle:
+// open (accumulating members) → revision_requested (a draft is
+// pending human review) → resolved (applied) or back to open
+// (rejected). There is no tracked "investigating" phase and no
+// tracked "retrained" event — those stayed as demo-only concepts
+// rather than being faked with real data that doesn't exist.
+// ============================================================
+
+type RepInfo = { inquiry: string; de_id: string | null; created_at: string };
+
+function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null): { label: string; cls: string } {
+  if (c.recurred_after_fix) return { label: 'Recurred after fix', cls: 'text-red-400' };
+  const bar = policy?.min_cluster_size ?? 3;
+  if (c.severity_score >= bar * 1.5) return { label: 'High', cls: 'text-red-400' };
+  if (c.severity_score >= bar) return { label: 'Medium', cls: 'text-amber-400' };
+  return { label: 'Low', cls: 'text-slate-400' };
+}
+
+const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; cls: string }> = {
+  open: { label: 'Open', cls: 'bg-slate-700/50 text-slate-300' },
+  revision_requested: { label: 'Draft pending review', cls: 'bg-amber-500/20 text-amber-400' },
+  resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
+};
+
+function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
+  const [clusters, setClusters] = useState<KnowledgeGapCluster[]>([]);
+  const [policies, setPolicies] = useState<KnowledgeGapPolicy[]>([]);
+  const [revisions, setRevisions] = useState<KnowledgeRevisionRequest[]>([]);
+  const [des, setDes] = useState<DigitalEmployee[]>([]);
+  const [repInfo, setRepInfo] = useState<Record<string, RepInfo>>({});
+  const [loading, setLoading] = useState(true);
+  const [missingTables, setMissingTables] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<{ members: KnowledgeGapClusterMember[]; inquiries: Record<string, RepInfo> } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [c, p, r, d] = await Promise.all([
+        listKnowledgeGapClusters(), listKnowledgeGapPolicies(), listKnowledgeRevisionRequests(), listDigitalEmployees(),
+      ]);
+      setClusters(c);
+      setPolicies(p);
+      setRevisions(r);
+      setDes(d);
+      setMissingTables(false);
+
+      const repIds = Array.from(new Set(c.map(cl => cl.representative_run_id)));
+      if (repIds.length > 0) {
+        const { data: runs, error: runsErr } = await supabase
+          .from('evidence_runs').select('id, inquiry, de_id, created_at').in('id', repIds);
+        if (runsErr) throw runsErr;
+        setRepInfo(Object.fromEntries((runs ?? []).map((row: any) => [row.id, { inquiry: row.inquiry, de_id: row.de_id, created_at: row.created_at }])));
+      } else {
+        setRepInfo({});
+      }
+    } catch (err) {
+      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
+      else setError((err as Error)?.message || 'Failed to load knowledge gaps.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!selectedId) { setDetail(null); return; }
+    const cluster = clusters.find(c => c.id === selectedId);
+    if (!cluster) return;
+    setDetailLoading(true);
+    getKnowledgeGapClusterDetail(cluster)
+      .then(setDetail)
+      .catch(err => setError((err as Error)?.message || 'Failed to load this gap\'s evidence.'))
+      .finally(() => setDetailLoading(false));
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const deById = new Map(des.map(d => [d.id, d]));
+  const revisionById = new Map(revisions.map(r => [r.id, r]));
+  const policyFor = (category: string | null): KnowledgeGapPolicy | null =>
+    policies.find(p => p.category === category) ?? policies.find(p => p.category === null) ?? null;
+
+  const decide = async (requestId: string, decision: 'approved' | 'rejected') => {
+    setDeciding(true);
+    try {
+      await resolveKnowledgeRevision(requestId, decision);
+      setToast(decision === 'approved'
+        ? 'Article published — the knowledge base was updated immediately.'
+        : 'Draft rejected — this gap reopened and will keep accumulating for the next detection pass.');
+      await refresh();
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to record decision.');
+    } finally {
+      setDeciding(false);
+    }
+  };
+
+  const openCount = clusters.filter(c => c.status === 'open').length;
+  const pendingCount = clusters.filter(c => c.status === 'revision_requested').length;
+  const resolvedCount = clusters.filter(c => c.status === 'resolved').length;
+  const recurredCount = clusters.filter(c => c.recurred_after_fix).length;
+
+  const loopNodes = [
+    { label: 'Gap detected', count: openCount, icon: '◉' },
+    { label: 'Draft pending review', count: pendingCount, icon: '✎' },
+    { label: 'Resolved', count: resolvedCount, icon: '↗' },
+  ];
+
+  const selected = clusters.find(c => c.id === selectedId) ?? null;
+  const selectedRevision = selected?.revision_request_id ? revisionById.get(selected.revision_request_id) ?? null : null;
+  const selectedRep = selected ? repInfo[selected.representative_run_id] : undefined;
+  const selectedDe = selectedRep?.de_id ? deById.get(selectedRep.de_id) : undefined;
+  const selectedPolicy = selected ? policyFor(selected.category) : null;
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+      <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
+
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {loading ? (
+        <LiveLoadingSkeleton rows={4} />
+      ) : missingTables ? (
+        <MissingTablesNotice />
+      ) : clusters.length === 0 ? (
+        <LiveEmptyState
+          icon="◎"
+          title="No knowledge gaps detected yet"
+          body="This runs automatically every 5 minutes: when several similar questions score below your confidence floor with no matching knowledge, they're grouped into a gap here for review. Nothing has crossed that pattern yet for this workspace."
+          primaryLabel="Go to Knowledge Library"
+          onPrimary={() => setPage('knowledge_library')}
+        />
+      ) : (
+        <>
+          {/* Loop diagram strip — real states only */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+            <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+              {loopNodes.map((n, i) => (
+                <React.Fragment key={n.label}>
+                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-800 bg-slate-950 p-3 text-center">
+                    <p className="text-indigo-400 text-sm">{n.icon}</p>
+                    <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
+                    <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
+                  </div>
+                  {i < loopNodes.length - 1 && <span className="self-center text-slate-600 flex-shrink-0">→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Detection and clustering run every 5 minutes against real, low-confidence inquiries — approving a draft updates the knowledge base immediately.
+              {recurredCount > 0 && <span className="text-red-400"> {recurredCount} gap{recurredCount === 1 ? '' : 's'} recurred after a fix was applied — the earlier fix may not have worked.</span>}
+            </p>
+          </div>
+
+          {/* Gap table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+            <table className="w-full text-sm text-slate-300">
+              <thead className="bg-slate-900 border-b border-slate-800">
+                <tr>
+                  <th className={th}>Gap</th>
+                  <th className={th}>Category</th>
+                  <th className={th}>Members</th>
+                  <th className={th}>Affected DE</th>
+                  <th className={th}>Severity</th>
+                  <th className={th}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clusters.map(c => {
+                  const rep = repInfo[c.representative_run_id];
+                  const de = rep?.de_id ? deById.get(rep.de_id) : undefined;
+                  const rev = c.revision_request_id ? revisionById.get(c.revision_request_id) : undefined;
+                  const title = rev?.proposed_title ?? rep?.inquiry ?? '(loading…)';
+                  const tier = severityTier(c, policyFor(c.category));
+                  return (
+                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-800/60 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                      <td className={td}>
+                        <p className="text-white font-medium max-w-md truncate">{title}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
+                      </td>
+                      <td className={`${td} text-xs text-slate-400`}>{c.category ?? 'any'}</td>
+                      <td className={`${td} text-xs text-slate-300`}>{c.member_count}</td>
+                      <td className={td}>
+                        {de ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[9px] font-bold">{de.name[0]}</span>
+                            <span className="text-xs">{de.name}</span>
+                          </span>
+                        ) : <span className="text-xs text-slate-600">—</span>}
+                      </td>
+                      <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status].cls}`}>{LIVE_STATUS_META[c.status].label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Detail panel */}
+          {selected && (
+            <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
+              <div className="absolute inset-0 bg-black/50" />
+              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-900 border-l border-slate-800 overflow-y-auto p-6">
+                <div className="flex items-start justify-between mb-1">
+                  <h2 className="text-lg font-semibold text-white">{selectedRevision?.proposed_title ?? selectedRep?.inquiry ?? 'Gap detail'}</h2>
+                  <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+                </div>
+                <div className="flex items-center gap-2 mb-5 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[selected.status].cls}`}>{LIVE_STATUS_META[selected.status].label}</span>
+                  <span className="text-xs text-slate-500">{selected.member_count} similar question{selected.member_count === 1 ? '' : 's'}{selectedPolicy ? ` in a ${selectedPolicy.window_days}-day window` : ''}{selectedDe ? ` · affects ${selectedDe.name}` : ''}</span>
+                </div>
+
+                {typeof selected.pre_fix_avg_confidence === 'number' && (
+                  <div className="mb-5 bg-slate-950 rounded-lg px-3 py-2">
+                    <p className="text-xs text-slate-400">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
+                  </div>
+                )}
+
+                {/* 1. Signal — real cluster members, real inquiry text */}
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">1 · Signal — the questions behind this pattern</p>
+                {detailLoading ? (
+                  <div className="mb-6"><LiveLoadingSkeleton rows={2} /></div>
+                ) : (
+                  <div className="space-y-2 mb-6">
+                    {(detail?.members ?? []).map(m => {
+                      const info = detail?.inquiries[m.evidence_run_id];
+                      return (
+                        <div key={m.id} className="bg-slate-950 rounded-lg px-3 py-2">
+                          <p className="text-xs text-slate-300">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">
+                            {info ? new Date(info.created_at).toLocaleString() : ''}
+                            {m.similarity_to_representative !== null ? ` · ${Math.round(m.similarity_to_representative * 100)}% similar to the representative question` : ''}
+                          </p>
+                        </div>
+                      );
+                    })}
+                    {(detail?.members ?? []).length === 0 && !detailLoading && (
+                      <p className="text-xs text-slate-500">No member questions loaded.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Drafted revision — real proposed_body_md, server-composed from the evidence above */}
+                {selectedRevision && (
+                  <>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Proposed knowledge update</p>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 mb-6">
+                      <p className="text-sm font-semibold text-white mb-2">{selectedRevision.proposed_title}</p>
+                      <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">{selectedRevision.proposed_body_md}</pre>
+                    </div>
+                  </>
+                )}
+
+                {/* 3. Human gate — real approve/reject via the same RPCs Human Tasks uses */}
+                {selected.status === 'revision_requested' && selectedRevision && selectedRevision.status === 'pending_approval' && (
+                  <>
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">3 · Human review</p>
+                    <div className="flex gap-2 mb-6">
+                      <button
+                        disabled={deciding}
+                        onClick={() => void decide(selectedRevision.id, 'approved')}
+                        className="flex-1 text-sm px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium">
+                        {deciding ? '…' : 'Approve & publish'}
+                      </button>
+                      <button
+                        disabled={deciding}
+                        onClick={() => void decide(selectedRevision.id, 'rejected')}
+                        className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
+                        Reject
+                      </button>
+                    </div>
+                  </>
+                )}
+                {selected.status === 'resolved' && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
+                    <p className="text-xs text-emerald-300">Resolved — a knowledge update was published{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''}.</p>
+                    {selected.recurred_after_fix && (
+                      <p className="text-xs text-red-300 mt-1">This gap has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying question may not have been fully resolved.</p>
+                    )}
+                  </div>
+                )}
+                {selected.status === 'open' && (
+                  <p className="text-xs text-slate-500 mb-6">
+                    Still accumulating — needs {Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count)} more similar question{Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count) === 1 ? '' : 's'} before it's promoted to a reviewable draft.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function KnowledgeGapsPage({ setPage }: { setPage?: (p: Page) => void }) {
+  const dataMode = useDataMode();
+  if (dataMode === 'live') return <LiveKnowledgeGaps setPage={setPage ?? (() => {})} />;
+  return <DemoKnowledgeGapsPage />;
+}

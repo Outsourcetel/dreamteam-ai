@@ -371,3 +371,96 @@ export async function resolveKnowledgeRevision(
   }
   return result;
 }
+
+// ============================================================
+// Knowledge-gap clusters (migration 070) — the automatic-detection
+// half of the Knowledge Gaps page. A cluster is a group of similar
+// low-confidence inquiries; once it crosses a tenant's configured
+// min_cluster_size it gets promoted into a knowledge_revision_requests
+// row (above), which is what a human actually approves/rejects.
+// ============================================================
+
+export interface KnowledgeGapCluster {
+  id: string;
+  tenant_id: string;
+  category: string | null;
+  representative_run_id: string;
+  member_count: number;
+  severity_score: number;
+  root_cause_category: 'missing' | 'unretrievable' | 'contradicted' | 'stale' | null;
+  reviewer_summary: string | null;
+  status: 'open' | 'revision_requested' | 'resolved';
+  revision_request_id: string | null;
+  pre_fix_avg_confidence: number | null;
+  fix_applied_at: string | null;
+  recurred_after_fix: boolean;
+  recurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeGapClusterMember {
+  id: string;
+  cluster_id: string;
+  evidence_run_id: string;
+  similarity_to_representative: number | null;
+  frustration_score: number;
+  added_at: string;
+}
+
+export interface KnowledgeGapPolicy {
+  id: string;
+  tenant_id: string;
+  category: string | null;
+  min_confidence_floor: number;
+  min_cluster_size: number;
+  window_days: number;
+  similarity_threshold: number;
+  enabled: boolean;
+}
+
+export async function listKnowledgeGapClusters(): Promise<KnowledgeGapCluster[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('knowledge_gap_clusters').select('*')
+    .eq('tenant_id', tid)
+    .order('last_seen_at', { ascending: false });
+  if (error) raise('listKnowledgeGapClusters', error);
+  return (data ?? []) as KnowledgeGapCluster[];
+}
+
+export async function listKnowledgeGapPolicies(): Promise<KnowledgeGapPolicy[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('knowledge_gap_policies').select('*')
+    .eq('tenant_id', tid);
+  if (error) raise('listKnowledgeGapPolicies', error);
+  return (data ?? []) as KnowledgeGapPolicy[];
+}
+
+/** The evidence behind a detected cluster: which inquiries make it up
+ *  (real text, not invented "findings"), plus their DE attribution
+ *  where evidence_runs.de_id is set. */
+export async function getKnowledgeGapClusterDetail(cluster: KnowledgeGapCluster): Promise<{
+  members: KnowledgeGapClusterMember[];
+  inquiries: Record<string, { inquiry: string; de_id: string | null; created_at: string }>;
+}> {
+  const { data: members, error } = await supabase
+    .from('knowledge_gap_cluster_members').select('*')
+    .eq('cluster_id', cluster.id)
+    .order('added_at', { ascending: true });
+  if (error) raise('getKnowledgeGapClusterDetail (members)', error);
+
+  const ids = Array.from(new Set([cluster.representative_run_id, ...(members ?? []).map(m => m.evidence_run_id)]));
+  let inquiries: Record<string, { inquiry: string; de_id: string | null; created_at: string }> = {};
+  if (ids.length > 0) {
+    const { data: runs, error: runsErr } = await supabase
+      .from('evidence_runs').select('id, inquiry, de_id, created_at')
+      .in('id', ids);
+    if (runsErr) raise('getKnowledgeGapClusterDetail (runs)', runsErr);
+    inquiries = Object.fromEntries((runs ?? []).map(r => [r.id, { inquiry: r.inquiry, de_id: r.de_id, created_at: r.created_at }]));
+  }
+  return { members: (members ?? []) as KnowledgeGapClusterMember[], inquiries };
+}

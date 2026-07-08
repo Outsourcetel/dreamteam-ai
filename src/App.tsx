@@ -383,7 +383,7 @@ function AppShell() {
       case 'knowledge_ingestion':
         return <KnowledgeIngestionPage />;
       case 'knowledge_gaps':
-        return <KnowledgeGapsPage />;
+        return <KnowledgeGapsPage setPage={handleSetPage} />;
       case 'knowledge_quality':
         return <KnowledgeQualityPage />;
       // ── Systems ───────────────────────────────────────────────
