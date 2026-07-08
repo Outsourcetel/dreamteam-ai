@@ -9,8 +9,8 @@ import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
 } from '../../lib/api';
-import PlatformInvitesPanel from './PlatformInvitesPanel';
 import MfaEnrollmentPanel from './MfaEnrollmentPanel';
+import PlatformTeamPage from './PlatformTeamPage';
 
 const PlatformConsolePage = ({
   page,
@@ -120,8 +120,6 @@ const PlatformConsolePage = ({
             trend="Platform-wide"
           />
         </div>
-
-        <PlatformInvitesPanel />
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-white mb-4">
@@ -765,6 +763,10 @@ const PlatformConsolePage = ({
         )}
       </div>
     );
+  }
+
+  if (page === 'platform_team') {
+    return <PlatformTeamPage />;
   }
 
   if (page === 'platform_security') {

@@ -362,6 +362,102 @@ export const redeemPlatformInvite = async (
   return data as { ok: boolean; role?: string; layer?: string };
 };
 
+// =====================================================================
+// PLATFORM CAPABILITY GRANTS (migration 077) — the active team roster
+// (not just pending invites) and per-person, per-capability overrides
+// on top of the 3 role-label defaults. Mirrors the shape of the
+// invite functions above; every RPC is server-gated on the caller
+// actually holding 'team.manage', not just being any platform admin.
+// =====================================================================
+export type PlatformCapability =
+  | 'tenants.view' | 'tenants.manage' | 'tenants.provision'
+  | 'remote_access.use' | 'remote_access.audit'
+  | 'team.manage' | 'billing.manage' | 'support.cross_tenant';
+
+export const PLATFORM_CAPABILITY_LABELS: Record<PlatformCapability, string> = {
+  'tenants.view': 'View tenants',
+  'tenants.manage': 'Manage tenants (approve requests, toggle feature flags)',
+  'tenants.provision': 'Create new tenants',
+  'remote_access.use': 'Remote-access a tenant workspace',
+  'remote_access.audit': 'View Remote Access session logs',
+  'team.manage': 'Manage the platform team (invite, edit roles, revoke access, set permissions)',
+  'billing.manage': 'Manage platform-wide LLM provider keys',
+  'support.cross_tenant': 'Cross-tenant support visibility',
+};
+
+export const PLATFORM_CAPABILITIES: PlatformCapability[] = [
+  'tenants.view', 'tenants.manage', 'tenants.provision',
+  'remote_access.use', 'remote_access.audit',
+  'team.manage', 'billing.manage', 'support.cross_tenant',
+];
+
+export interface PlatformTeamMember {
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  role: PlatformInviteRole;
+  is_active: boolean;
+  created_at: string;
+  last_sign_in_at: string | null;
+}
+
+export const listPlatformTeam = async (): Promise<{ ok: boolean; members: PlatformTeamMember[]; error?: string }> => {
+  const { data, error } = await supabase.rpc('list_platform_team');
+  if (error) return { ok: false, members: [], error: error.message };
+  return { ok: true, members: (data ?? []) as PlatformTeamMember[] };
+};
+
+export const updatePlatformTeamRole = async (
+  userId: string, newRole: PlatformInviteRole
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('update_platform_team_role', { p_target_user_id: userId, p_new_role: newRole });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export const setPlatformTeamActive = async (
+  userId: string, isActive: boolean
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('set_platform_team_active', { p_target_user_id: userId, p_is_active: isActive });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export interface PlatformCapabilityGrant {
+  id: string;
+  user_id: string;
+  capability: PlatformCapability;
+  effect: 'grant' | 'deny';
+  granted_by: string | null;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const listPlatformCapabilityGrants = async (userId?: string): Promise<{ ok: boolean; grants: PlatformCapabilityGrant[]; error?: string }> => {
+  const { data, error } = await supabase.rpc('list_platform_capability_grants', { p_target_user_id: userId ?? null });
+  if (error) return { ok: false, grants: [], error: error.message };
+  return { ok: true, grants: (data ?? []) as PlatformCapabilityGrant[] };
+};
+
+export const setPlatformCapabilityGrant = async (
+  userId: string, capability: PlatformCapability, effect: 'grant' | 'deny', note?: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('set_platform_capability_grant', {
+    p_target_user_id: userId, p_capability: capability, p_effect: effect, p_note: note ?? '',
+  });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
+export const revokePlatformCapabilityGrant = async (
+  userId: string, capability: PlatformCapability
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('revoke_platform_capability_grant', { p_target_user_id: userId, p_capability: capability });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean };
+};
+
 export interface RemoteAccessStartResult {
   ok: boolean;
   session_key?: string;

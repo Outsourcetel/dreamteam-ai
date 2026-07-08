@@ -109,6 +109,7 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
   const dtOnlyPages = [
     'platform_home',
     'platform_tenants',
+    'platform_team',
     'platform_remote_access',
     'platform_health',
     'platform_revenue',

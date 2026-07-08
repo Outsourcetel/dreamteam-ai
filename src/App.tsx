@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import OrgSetupScreen from './pages/OrgSetupScreen';
 import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
+import MyAccountBadge from './pages/platform/MyAccountBadge';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
 import KnowledgeIngestionPage from './pages/tenant/knowledge/KnowledgeIngestionPage';
@@ -160,6 +161,7 @@ function URLSync() {
 const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_home', label: 'Overview' },
   { page: 'platform_tenants', label: 'Tenants & Approvals' },
+  { page: 'platform_team', label: 'Team & Permissions' },
   { page: 'platform_health', label: 'System Health' },
   { page: 'platform_revenue', label: 'Revenue' },
   { page: 'platform_remote_access', label: 'Remote Access' },
@@ -168,20 +170,25 @@ const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
 
 function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: Page) => void }) {
   return (
-    <div className="flex items-center gap-1 px-6 pt-4 border-b border-slate-800 bg-slate-950">
-      {PLATFORM_TABS.map((t) => (
-        <button
-          key={t.page}
-          onClick={() => setPage(t.page)}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-            page === t.page
-              ? 'bg-slate-900 text-white border border-slate-800 border-b-slate-900 -mb-px'
-              : 'text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div className="flex items-center gap-3 pl-6 pr-3 pt-4 border-b border-slate-800 bg-slate-950">
+      <div className="flex items-center gap-1 overflow-x-auto">
+        {PLATFORM_TABS.map((t) => (
+          <button
+            key={t.page}
+            onClick={() => setPage(t.page)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
+              page === t.page
+                ? 'bg-slate-900 text-white border border-slate-800 border-b-slate-900 -mb-px'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="ml-auto pb-2 flex-shrink-0">
+        <MyAccountBadge />
+      </div>
     </div>
   );
 }
