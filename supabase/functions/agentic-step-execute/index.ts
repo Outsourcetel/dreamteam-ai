@@ -53,6 +53,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { getAIKey } from '../_shared/aiKeys.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -111,12 +112,12 @@ async function persistMessage(
 }
 
 async function callAnthropic(
-  model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: AnthropicTool[],
+  apiKey: string, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: AnthropicTool[],
 ): Promise<{ content: ContentBlock[]; stop_reason: string; usage: { input_tokens: number; output_tokens: number } }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!,
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
@@ -207,7 +208,7 @@ async function markTerminal(
 async function runLoop(
   admin: SupabaseClient, tenantId: string, runId: string, goal: string,
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
-  tools: AnthropicTool[], policy: Policy, deId: string,
+  tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
     + `Use the tools available to you to accomplish the goal — search knowledge, take actions in connected systems, or ask a human if you're stuck. `
@@ -247,7 +248,7 @@ async function runLoop(
     const useModel = (escalationThreshold != null && iterationCount >= escalationThreshold) ? escalationModel : model;
     let resp;
     try {
-      resp = await callAnthropic(useModel, system, messages, tools);
+      resp = await callAnthropic(apiKey, useModel, system, messages, tools);
     } catch (e) {
       await markTerminal(admin, runId, 'failed', { reason: 'model_call_failed', detail: String(e).slice(0, 300) });
       return { status: 'failed', agentic_step_run_id: runId };
@@ -383,7 +384,8 @@ serve(async (req) => {
       return json({ status: 'failed', agentic_step_run_id: runId, error: 'disabled_by_tenant_policy' });
     }
 
-    if (!Deno.env.get('ANTHROPIC_API_KEY')) {
+    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
+    if (!apiKey) {
       await markTerminal(admin, runId, 'blocked_llm', { reason: 'llm_not_configured' });
       await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
         `Agentic step blocked — reasoning not activated (ANTHROPIC_API_KEY) — "${goal.slice(0, 160)}"`,
@@ -402,7 +404,7 @@ serve(async (req) => {
       admin, tenantId!, runId, goal, deRow.name ?? 'Digital employee',
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
-      tools, policy, deId,
+      tools, policy, deId, apiKey,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',

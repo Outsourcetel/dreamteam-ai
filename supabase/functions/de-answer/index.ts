@@ -20,6 +20,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { getAIKey } from '../_shared/aiKeys.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -321,7 +322,7 @@ serve(async (req) => {
       : 'No documents matched the question.';
 
     // ── Claude ──
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
     if (!anthropicKey) {
       return json({ error: 'llm_not_configured', conversation_id: convId });
     }
