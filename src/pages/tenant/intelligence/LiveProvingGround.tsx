@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
+import { ConfirmDeleteModal } from '../../../components';
 import {
   GoldenQA, GoldenCategory, EvalRun, EvalGate,
   listGoldenQA, createGoldenQA, updateGoldenQA, deleteGoldenQA,
@@ -52,6 +53,7 @@ const LiveProvingGround = () => {
   const [liveRun, setLiveRun] = useState<EvalRun | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<GoldenQA | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async () => {
@@ -306,7 +308,7 @@ const LiveProvingGround = () => {
                       >
                         Edit
                       </button>
-                      <button onClick={() => void remove(qa.id)} className="text-xs text-red-400/80 hover:text-red-300 transition-colors">
+                      <button onClick={() => setRemoveTarget(qa)} className="text-xs text-red-400/80 hover:text-red-300 transition-colors">
                         Delete
                       </button>
                     </div>
@@ -489,6 +491,15 @@ const LiveProvingGround = () => {
             </div>
           </div>
         </div>
+      )}
+      {removeTarget && (
+        <ConfirmDeleteModal
+          title="Delete golden question"
+          message={`Delete "${removeTarget.question}"? This removes it from every future eval run — this can't be undone.`}
+          confirmLabel="Delete"
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={async () => { await remove(removeTarget.id); setRemoveTarget(null); }}
+        />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
   KnowledgeDoc, listKnowledgeDocs, createKnowledgeDoc,
@@ -36,6 +37,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<KnowledgeDoc | null>(null);
   const [chunkStatus, setChunkStatus] = useState<Record<string, DocChunkStatus>>({});
   const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
   // Per-DE knowledge scopes (migration 030)
@@ -345,7 +347,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         Edit
                       </button>
                       <button
-                        onClick={() => void remove(d.id)}
+                        onClick={() => setRemoveTarget(d)}
                         disabled={deletingId === d.id}
                         className="text-xs text-red-400/80 hover:text-red-300 disabled:opacity-40 transition-colors"
                       >
@@ -579,6 +581,15 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </div>
           </div>
         </div>
+      )}
+      {removeTarget && (
+        <ConfirmDeleteModal
+          title="Delete document"
+          message={`Delete "${removeTarget.title}"? This can't be undone.`}
+          confirmLabel="Delete"
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={async () => { await remove(removeTarget.id); setRemoveTarget(null); }}
+        />
       )}
     </div>
   );

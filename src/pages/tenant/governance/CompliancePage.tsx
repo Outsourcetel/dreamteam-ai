@@ -11,6 +11,7 @@ import {
 } from '../../../lib/guardrailApi'
 import type { GuardrailRule, GuardrailRuleType } from '../../../lib/guardrailApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
+import { ConfirmDeleteModal } from '../../../components'
 
 // ═══════════════════════════════════════════════════════════════
 // LIVE mode — real tenant guardrail_rules: enforced in the real
@@ -404,7 +405,8 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth()
   const companyId = activeCompanyId
   const des = companyId === 'tcp' ? TCP_DES : PWC_DES
-  const template = ACTIVE_TEMPLATE[companyId]
+  const [template, setTemplate] = useState(ACTIVE_TEMPLATE[companyId])
+  useEffect(() => { setTemplate(ACTIVE_TEMPLATE[companyId]) }, [companyId])
   const rules = TEMPLATE_RULES[companyId]
   const calendar = CALENDAR[companyId]
   const versions = VERSION_HISTORY[companyId]
@@ -457,6 +459,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   // Template change dialog
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [pendingTemplate, setPendingTemplate] = useState<string | null>(null)
+  const [removeOverrideTarget, setRemoveOverrideTarget] = useState<OverrideRow | null>(null)
 
   const layerCards = [
     { title: 'Industry Template', sub: 'base', detail: `${template.name} ${template.version}` },
@@ -619,7 +622,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <td className={`${td} text-slate-500 text-xs`}>{o.date}</td>
                   <td className={`${td} text-indigo-400 text-xs`}>{o.version}</td>
                   <td className={`${td} text-right`}>
-                    <button onClick={() => saveOverrides(overrides.filter(x => x.id !== o.id))}
+                    <button onClick={() => setRemoveOverrideTarget(o)}
                       className="text-slate-500 hover:text-red-400 text-xs transition-colors">Remove</button>
                   </td>
                 </tr>
@@ -746,11 +749,25 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex justify-end gap-2">
               <button onClick={() => setPendingTemplate(null)}
                 className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
-              <button onClick={() => setPendingTemplate(null)}
+              <button
+                onClick={() => {
+                  const [name, version] = [pendingTemplate!.slice(0, pendingTemplate!.lastIndexOf(' ')), pendingTemplate!.slice(pendingTemplate!.lastIndexOf(' ') + 1)]
+                  setTemplate({ name, version })
+                  setPendingTemplate(null)
+                }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">Re-base guardrails</button>
             </div>
           </div>
         </div>
+      )}
+      {removeOverrideTarget && (
+        <ConfirmDeleteModal
+          title="Remove override"
+          message={`Remove the override "${removeOverrideTarget.rule}"? This tenant will fall back to the industry template's default for this rule.`}
+          confirmLabel="Remove"
+          onClose={() => setRemoveOverrideTarget(null)}
+          onConfirm={() => { saveOverrides(overrides.filter(x => x.id !== removeOverrideTarget.id)); setRemoveOverrideTarget(null) }}
+        />
       )}
     </div>
   )

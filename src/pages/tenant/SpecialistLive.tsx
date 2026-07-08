@@ -20,6 +20,7 @@ import {
   submitEvidenceFeedback, listEvidenceFeedback, EvidenceFeedback, EvidenceVerdict,
 } from '../../lib/knowledgeApi';
 import type { Page } from '../../types';
+import { ConfirmDeleteModal } from '../../components';
 
 // ============================================================
 // Technical Specialist — LIVE (migration 024).
@@ -363,6 +364,8 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [removeSourceTarget, setRemoveSourceTarget] = useState<SpecialistSource | null>(null);
+  const [deleteMediaTarget, setDeleteMediaTarget] = useState<MediaAsset | null>(null);
 
   const [charter, setCharter] = useState('');
   const [savingCharter, setSavingCharter] = useState(false);
@@ -702,7 +705,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                   {src.enabled ? 'Disable' : 'Enable'}
                 </button>
                 <button className="text-xs text-red-400/80 hover:text-red-300"
-                  onClick={() => void removeSource(src).then(() => listSources(profile.id).then(setSources)).catch(err => setError(String(err)))}>
+                  onClick={() => setRemoveSourceTarget(src)}>
                   Remove
                 </button>
               </div>
@@ -747,7 +750,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                 }}>Tags</button>
                 <button className="text-xs text-amber-400 hover:text-amber-300" onClick={() => { setFlagFor(m); setFlagKind('stale'); setFlagNote(''); }}>Flag</button>
                 <button className="text-xs text-red-400/80 hover:text-red-300"
-                  onClick={() => void deleteMedia(m).then(() => listMedia(profile.id).then(setMedia)).catch(err => setError(String(err)))}>Delete</button>
+                  onClick={() => setDeleteMediaTarget(m)}>Delete</button>
               </div>
             ))}
           </div>
@@ -930,6 +933,34 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             </div>
           </div>
         </div>
+      )}
+
+      {removeSourceTarget && (
+        <ConfirmDeleteModal
+          title="Remove source"
+          message={`Remove "${removeSourceTarget.label}" as a source for this specialist? It will stop being consulted immediately.`}
+          confirmLabel="Remove"
+          onClose={() => setRemoveSourceTarget(null)}
+          onConfirm={async () => {
+            await removeSource(removeSourceTarget);
+            setRemoveSourceTarget(null);
+            setSources(await listSources(profile!.id));
+          }}
+        />
+      )}
+
+      {deleteMediaTarget && (
+        <ConfirmDeleteModal
+          title="Delete media"
+          message={`Delete "${deleteMediaTarget.title}"? This can't be undone.`}
+          confirmLabel="Delete"
+          onClose={() => setDeleteMediaTarget(null)}
+          onConfirm={async () => {
+            await deleteMedia(deleteMediaTarget);
+            setDeleteMediaTarget(null);
+            setMedia(await listMedia(profile!.id));
+          }}
+        />
       )}
 
       {/* Scribe create modal — THE GENERALIZED ACTION LAYER's action

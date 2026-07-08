@@ -21,6 +21,7 @@ import {
 } from '../../lib/playbookBuilderApi';
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
+import { ConfirmDeleteModal } from '../../components';
 import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
 import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
 
@@ -61,6 +62,7 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
   const [pickId, setPickId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<DEPlaybookAssignment | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -154,7 +156,7 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
                   <button onClick={() => void move(a, 1)} disabled={busy || i === sorted.length - 1} className="text-slate-500 hover:text-slate-300 disabled:opacity-30">↓</button>
                   <button onClick={() => void (async () => { setBusy(true); try { await setAssignmentActive(a.id, !a.active); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
                     className="text-slate-500 hover:text-slate-300 disabled:opacity-30 ml-1">{a.active ? 'pause' : 'resume'}</button>
-                  <button onClick={() => void (async () => { setBusy(true); try { await removeAssignment(a.id); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
+                  <button onClick={() => setRemoveTarget(a)} disabled={busy}
                     className="text-slate-600 hover:text-rose-400 disabled:opacity-30 ml-1">remove</button>
                 </div>
               </div>
@@ -187,6 +189,15 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
       )}
       {defs.length === 0 && (
         <p className="mt-2 text-[11px] text-slate-600">No published playbooks yet — build one in Playbooks first.</p>
+      )}
+      {removeTarget && (
+        <ConfirmDeleteModal
+          title="Remove playbook assignment"
+          message={`Remove "${defs.find(d => d.id === removeTarget.playbook_id)?.name ?? 'this playbook'}" from this DE? It will stop running for this DE immediately — you can re-assign it later if needed.`}
+          confirmLabel="Remove"
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={async () => { await removeAssignment(removeTarget.id); setRemoveTarget(null); await refresh(); }}
+        />
       )}
     </div>
   );
