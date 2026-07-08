@@ -62,6 +62,12 @@ const PlatformConsolePage = ({
   const [featureTarget, setFeatureTarget] = useState<Tenant | null>(null);
   const [showTestDebris, setShowTestDebris] = useState(false);
   const [provisionOpen, setProvisionOpen] = useState(false);
+  const [tenantSearch, setTenantSearch] = useState('');
+  const [tenantRowLimit, setTenantRowLimit] = useState(50);
+  const [revenueRowLimit, setRevenueRowLimit] = useState(50);
+  const [remoteAccessSearch, setRemoteAccessSearch] = useState('');
+  const [remoteAccessLimit, setRemoteAccessLimit] = useState(30);
+  const TENANT_PAGE_SIZE = 50;
 
   // Real, DB-gated ONLY (is_platform_admin() enforced server-side): calls
   // start_platform_remote_access, which durably audits the session in
@@ -170,6 +176,17 @@ const PlatformConsolePage = ({
     };
     walk(null, 0);
 
+    // Search flattens the tree (depth/indentation stop being meaningful once
+    // filtered to a subset) — matched rows render as a flat list, which is
+    // the right tradeoff for "find one tenant among hundreds" over preserving
+    // hierarchy for a search result set.
+    const searchTerm = tenantSearch.trim().toLowerCase();
+    const searchedRows = searchTerm
+      ? orderedRows.filter(({ tenant: t }) => t.name.toLowerCase().includes(searchTerm) || t.slug.toLowerCase().includes(searchTerm))
+      : orderedRows;
+    const rowsToRender = searchedRows.slice(0, tenantRowLimit);
+    const hasMoreRows = searchedRows.length > rowsToRender.length;
+
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
         <div className="flex items-center justify-between mb-6">
@@ -199,6 +216,18 @@ const PlatformConsolePage = ({
           >
             + Provision Tenant
           </button>
+        </div>
+
+        <div className="flex items-center justify-between mb-4">
+          <input
+            value={tenantSearch}
+            onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
+            placeholder="Search tenants by name or slug…"
+            className="w-72 bg-slate-900 border border-slate-800 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+          />
+          <span className="text-xs text-slate-500">
+            {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
+          </span>
         </div>
 
         {provisionOpen && (
@@ -233,7 +262,7 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {orderedRows.map(({ tenant: t, depth }) => (
+              {rowsToRender.map(({ tenant: t, depth }) => (
                 <tr
                   key={t.id}
                   className="hover:bg-slate-800/30 cursor-pointer transition-all"
@@ -335,6 +364,16 @@ const PlatformConsolePage = ({
             </tbody>
           </table>
         </div>
+        {hasMoreRows && (
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={() => setTenantRowLimit((n) => n + TENANT_PAGE_SIZE)}
+              className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+            >
+              Show {Math.min(TENANT_PAGE_SIZE, searchedRows.length - rowsToRender.length)} more (of {searchedRows.length} total)
+            </button>
+          </div>
+        )}
         {selectedTenant && (
           <Modal
             title={selectedTenant.name + ' — Detail'}
@@ -500,7 +539,7 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {tenants.map((t) => (
+              {tenants.slice(0, revenueRowLimit).map((t) => (
                 <tr key={t.id} className="hover:bg-slate-800/20 transition-all">
                   <td className="px-4 py-3 text-sm text-white">{t.name}</td>
                   <td className="px-4 py-3">
@@ -532,6 +571,16 @@ const PlatformConsolePage = ({
             </tbody>
           </table>
         </div>
+        {tenants.length > revenueRowLimit && (
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={() => setRevenueRowLimit((n) => n + 50)}
+              className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+            >
+              Show 50 more (of {tenants.length} total)
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -559,10 +608,21 @@ const PlatformConsolePage = ({
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tenants
-            .filter((t) => t.status === 'active')
-            .map((t) => (
+        <input
+          value={remoteAccessSearch}
+          onChange={(e) => { setRemoteAccessSearch(e.target.value); setRemoteAccessLimit(30); }}
+          placeholder="Search tenants by name…"
+          className="w-72 bg-slate-900 border border-slate-800 text-white text-sm rounded-xl px-4 py-2 mb-4 focus:outline-none focus:border-amber-500"
+        />
+        {(() => {
+          const activeTenants = tenants.filter((t) => t.status === 'active');
+          const term = remoteAccessSearch.trim().toLowerCase();
+          const matched = term ? activeTenants.filter((t) => t.name.toLowerCase().includes(term)) : activeTenants;
+          const shown = matched.slice(0, remoteAccessLimit);
+          return (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {shown.map((t) => (
               <div
                 key={t.id}
                 className="bg-slate-900 border border-slate-800 rounded-xl p-5"
@@ -594,15 +654,28 @@ const PlatformConsolePage = ({
                     <span className="text-white">{t.usersCount}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => { setEnterError(''); setGodModeTarget(t); }}
-                  className="w-full py-2 text-sm font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all"
-                >
-                  Remote Access
-                </button>
+                    <button
+                      onClick={() => { setEnterError(''); setGodModeTarget(t); }}
+                      className="w-full py-2 text-sm font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all"
+                    >
+                      Remote Access
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-        </div>
+              {matched.length > shown.length && (
+                <div className="flex justify-center mt-4">
+                  <button
+                    onClick={() => setRemoteAccessLimit((n) => n + 30)}
+                    className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+                  >
+                    Show 30 more (of {matched.length} total)
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <RemoteAccessWriteAuditPanel dbTenants={dbTenants} />
 

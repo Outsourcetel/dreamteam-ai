@@ -361,6 +361,13 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           </button>
         ))}
         <div className="flex-1" />
+        <a
+          href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
+          title="Contact support"
+          className="w-8 h-8 rounded-lg bg-slate-900 text-slate-500 hover:text-white text-xs flex items-center justify-center"
+        >
+          ✉
+        </a>
         <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-slate-900 text-slate-500 hover:text-white text-xs flex items-center justify-center">
           ⇥
         </button>
@@ -528,6 +535,13 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
 
       {/* User footer */}
       <div className="p-3 border-t border-slate-800/50">
+        <a
+          href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
+          className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-900/50 transition-colors text-xs"
+        >
+          <span className="w-4 text-center flex-shrink-0">✉</span>
+          <span className="truncate">Contact support</span>
+        </a>
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
             {user?.name?.[0] ?? 'U'}
