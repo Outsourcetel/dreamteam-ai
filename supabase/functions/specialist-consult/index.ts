@@ -53,6 +53,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { getAIKey } from '../_shared/aiKeys.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -599,13 +600,14 @@ async function runResolveInquiry(
   }
 
   // LLM answer step — dormant-honest, same gate as consult.
-  const answerStatus = Deno.env.get('ANTHROPIC_API_KEY') ? 'answered' : 'llm_not_configured';
+  const resolveApiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
+  const answerStatus = resolveApiKey ? 'answered' : 'llm_not_configured';
   let answerText: string | null = null;
   if (answerStatus === 'answered') {
     const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
     const res2 = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      headers: { 'x-api-key': resolveApiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model: MODEL, max_tokens: 1024,
         system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
@@ -1440,7 +1442,7 @@ serve(async (req) => {
         .then(({ error }) => { if (error) console.error('increment_metric_tenant:', error.message); });
 
     // ── DORMANT-HONEST: no key → blocked_llm row, plumbing returned ──
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
     if (!anthropicKey) {
       const { data: row } = await admin.from('spec_consultations').insert({
         tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
