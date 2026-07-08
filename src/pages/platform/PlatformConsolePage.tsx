@@ -819,6 +819,7 @@ const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
       });
 
       [...currentTenants]
+        .filter((t) => !t.name.startsWith('[TEST DEBRIS'))
         .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
         .slice(0, 6)
         .forEach((t) => {
