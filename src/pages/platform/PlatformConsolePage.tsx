@@ -1,57 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
-import { mockTenants } from '../../lib/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
-import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride } from '../../lib/api';
+import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
-  setTenantSelfServe, fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
+  setTenantSelfServe, setTenantStatus, requestSubtenant, fetchTenants,
+  fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
+  fetchPlatformConnectorHealth,
 } from '../../lib/api';
 import MfaEnrollmentPanel from './MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
+
+const dbTenantToTenant = (t: DBTenant): Tenant => ({
+  id: t.id,
+  name: t.name,
+  slug: t.slug,
+  logo: t.logo_url || undefined,
+  primaryColor: (t.settings && (t.settings as any).primaryColor) || t.accent_color || '#6366f1',
+  accentColor: t.accent_color || undefined,
+  plan: t.plan,
+  status: t.status,
+  agentsActive: (t.settings && (t.settings as any).agentsActive) ?? 0,
+  usersCount: (t.settings && (t.settings as any).usersCount) ?? 0,
+  monthlyTokens: (t.settings && (t.settings as any).monthlyTokens) ?? 0,
+  tokenLimit: (t.settings && (t.settings as any).tokenLimit) ?? 1000000,
+  createdAt: (t.created_at || '').split('T')[0],
+  industry: t.industry || '—',
+  contactEmail: (t.settings && (t.settings as any).contactEmail) || '',
+  parentTenantId: t.parent_tenant_id ?? null,
+  allowSelfServeSubtenants: !!t.allow_self_serve_subtenants,
+});
 
 const PlatformConsolePage = ({
   page,
   setPage,
   user,
   dbTenants,
+  dbTenantsLoaded,
 }: {
   page: PlatformPage;
   setPage: (p: Page) => void;
   user: AuthUser;
   dbTenants?: DBTenant[];
+  dbTenantsLoaded?: boolean;
 }) => {
   const { enterRemoteAccess } = useAuth();
-  // Use real DB tenants when available, fall back to mock data otherwise
-  const tenants: Tenant[] = (dbTenants && dbTenants.length > 0)
-    ? dbTenants.map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        logo: t.logo_url || undefined,
-        primaryColor: (t.settings && t.settings.primaryColor) || t.accent_color || '#6366f1',
-        accentColor: t.accent_color || undefined,
-        plan: t.plan,
-        status: t.status,
-        agentsActive: (t.settings && t.settings.agentsActive) ?? 0,
-        usersCount: (t.settings && t.settings.usersCount) ?? 0,
-        monthlyTokens: (t.settings && t.settings.monthlyTokens) ?? 0,
-        tokenLimit: (t.settings && t.settings.tokenLimit) ?? 1000000,
-        createdAt: (t.created_at || '').split('T')[0],
-        industry: t.industry || '—',
-        contactEmail: (t.settings && t.settings.contactEmail) || '',
-        parentTenantId: t.parent_tenant_id ?? null,
-        allowSelfServeSubtenants: !!t.allow_self_serve_subtenants,
-      }))
-    : mockTenants;
+  // Local mirror of the prop, so a provision/suspend action can refresh the
+  // list immediately without waiting on the parent's own resync cycle.
+  const [localDbTenants, setLocalDbTenants] = useState<DBTenant[]>(dbTenants || []);
+  useEffect(() => { setLocalDbTenants(dbTenants || []); }, [dbTenants]);
+  const refetchTenants = async () => {
+    setLocalDbTenants(await fetchTenants());
+  };
+  const tenants: Tenant[] = localDbTenants.map(dbTenantToTenant);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [godModeTarget, setGodModeTarget] = useState<Tenant | null>(null);
   const [entering, setEntering] = useState(false);
   const [enterError, setEnterError] = useState('');
   const [featureTarget, setFeatureTarget] = useState<Tenant | null>(null);
   const [showTestDebris, setShowTestDebris] = useState(false);
+  const [provisionOpen, setProvisionOpen] = useState(false);
 
   // Real, DB-gated ONLY (is_platform_admin() enforced server-side): calls
   // start_platform_remote_access, which durably audits the session in
@@ -72,6 +82,18 @@ const PlatformConsolePage = ({
       setEnterError(res.error || 'Could not start Remote Access. Please try again.');
     }
   };
+
+  // Tenants power every tab except Team & Permissions and Security, which
+  // don't depend on the tenant list — only gate on the fetch for tabs that
+  // actually need it, so those two stay usable even if it's slow.
+  const tenantsGatedPage = page !== 'platform_team' && page !== 'platform_security';
+  if (tenantsGatedPage && !dbTenantsLoaded) {
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6 flex items-center justify-center">
+        <p className="text-sm text-slate-500">Loading tenants…</p>
+      </div>
+    );
+  }
 
   if (page === 'platform_home') {
     const totalTokens = tenants.reduce((s, t) => s + t.monthlyTokens, 0);
@@ -121,65 +143,7 @@ const PlatformConsolePage = ({
           />
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">
-            Recent Platform Events
-          </h2>
-          <div className="space-y-3">
-            {[
-              {
-                event: 'New tenant onboarded: Umbrella Medical',
-                time: '2 hr ago',
-                type: 'success',
-              },
-              {
-                event:
-                  'Hooli Technologies exceeded 80% token limit — warning sent',
-                time: '4 hr ago',
-                type: 'warn',
-              },
-              {
-                event: 'Pied Piper account suspended — payment failure',
-                time: '1 day ago',
-                type: 'error',
-              },
-              {
-                event: 'Platform-wide model update to GPT-4o-latest',
-                time: '2 days ago',
-                type: 'info',
-              },
-              {
-                event: 'Initech Solutions upgraded to Growth plan',
-                time: '3 days ago',
-                type: 'success',
-              },
-            ].map((e, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span
-                  className={`text-sm ${
-                    e.type === 'success'
-                      ? 'text-emerald-400'
-                      : e.type === 'warn'
-                      ? 'text-amber-400'
-                      : e.type === 'error'
-                      ? 'text-red-400'
-                      : 'text-blue-400'
-                  }`}
-                >
-                  {e.type === 'success'
-                    ? 'v'
-                    : e.type === 'warn'
-                    ? '!'
-                    : e.type === 'error'
-                    ? 'x'
-                    : 'i'}
-                </span>
-                <span className="text-sm text-slate-300 flex-1">{e.event}</span>
-                <span className="text-xs text-slate-600">{e.time}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RecentPlatformEventsPanel tenants={tenants} />
       </div>
     );
   }
@@ -229,10 +193,20 @@ const PlatformConsolePage = ({
               </p>
             )}
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500">
+          <button
+            onClick={() => setProvisionOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500"
+          >
             + Provision Tenant
           </button>
         </div>
+
+        {provisionOpen && (
+          <ProvisionTenantModal
+            onClose={() => setProvisionOpen(false)}
+            onCreated={async () => { setProvisionOpen(false); await refetchTenants(); }}
+          />
+        )}
 
         <PendingApprovalsPanel />
 
@@ -419,9 +393,13 @@ const PlatformConsolePage = ({
                 >
                   Remote Access
                 </button>
-                <button className="px-4 py-2.5 text-sm text-slate-400 hover:text-white bg-slate-800 rounded-xl transition-all">
-                  Suspend
-                </button>
+                <SuspendToggle
+                  tenant={selectedTenant}
+                  onChanged={(status) => {
+                    setSelectedTenant({ ...selectedTenant, status });
+                    refetchTenants();
+                  }}
+                />
               </div>
             </div>
           </Modal>
@@ -477,130 +455,41 @@ const PlatformConsolePage = ({
   }
 
   if (page === 'platform_health') {
-    return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">System Health</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Real-time platform health across all services
-          </p>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatCard
-            label="Platform Uptime"
-            value="99.97%"
-            icon="★"
-            color="emerald"
-            trend="30-day SLA"
-          />
-          <StatCard
-            label="Avg API Latency"
-            value="84ms"
-            icon="✚"
-            color="blue"
-            trend="-12ms vs last week"
-          />
-          <StatCard
-            label="Active Incidents"
-            value="0"
-            icon="⚠"
-            color="emerald"
-            trend="All clear"
-          />
-          <StatCard
-            label="Error Rate"
-            value="0.03%"
-            icon="◎"
-            color="amber"
-            trend="Within SLA"
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { name: 'API Gateway', latency: '42ms', uptime: '100%' },
-            { name: 'AI Inference Layer', latency: '1.2s', uptime: '99.9%' },
-            {
-              name: 'Knowledge Embeddings',
-              latency: '220ms',
-              uptime: '99.98%',
-            },
-            { name: 'Agent Runtime', latency: '88ms', uptime: '99.97%' },
-            { name: 'Data Connectors', latency: '150ms', uptime: '99.95%' },
-            { name: 'Audit Log Service', latency: '30ms', uptime: '100%' },
-          ].map((svc, i) => (
-            <div
-              key={i}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <div>
-                  <div className="text-sm font-medium text-white">
-                    {svc.name}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {svc.latency} · {svc.uptime} uptime
-                  </div>
-                </div>
-              </div>
-              <Badge label="Operational" color="green" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <PlatformHealthPage />;
   }
 
   if (page === 'platform_revenue') {
+    const byPlan = { starter: 0, growth: 0, enterprise: 0 } as Record<Tenant['plan'], number>;
+    tenants.forEach((t) => { byPlan[t.plan] = (byPlan[t.plan] || 0) + 1; });
+
     return (
       <div className="flex-1 overflow-auto bg-slate-950 p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Revenue</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Platform revenue across all tenant subscriptions
+            Plan mix across all tenants — no billing system is connected yet, so no dollar figures are shown.
           </p>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatCard
-            label="MRR"
-            value="$28,450"
-            icon="◎"
-            color="emerald"
-            trend="+12% MoM"
-          />
-          <StatCard
-            label="ARR"
-            value="$341,400"
-            icon="◎"
-            color="indigo"
-            trend="On track"
-          />
-          <StatCard
-            label="Active Subscriptions"
-            value="5"
-            icon="◆"
-            color="blue"
-            trend="1 suspended"
-          />
-          <StatCard
-            label="Avg Revenue/Tenant"
-            value="$5,690"
-            icon="★"
-            color="amber"
-            trend="Growing"
-          />
+
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
+          <p className="text-xs text-amber-300">
+            Billing isn't connected to any payment provider yet — there's no real MRR, ARR, or renewal data to
+            show. This page reflects only what's actually known: each tenant's plan tier and status.
+          </p>
         </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <StatCard label="Total Tenants" value={String(tenants.length)} icon="◈" color="indigo" trend="All plans" />
+          <StatCard label="Starter" value={String(byPlan.starter)} icon="◎" color="slate" trend="Plan tier" />
+          <StatCard label="Growth" value={String(byPlan.growth)} icon="◆" color="blue" trend="Plan tier" />
+          <StatCard label="Enterprise" value={String(byPlan.enterprise)} icon="★" color="purple" trend="Plan tier" />
+        </div>
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-800">
-                {[
-                  'Tenant',
-                  'Plan',
-                  'Monthly Revenue',
-                  'Status',
-                  'Next Renewal',
-                ].map((h) => (
+                {['Tenant', 'Plan', 'Status'].map((h) => (
                   <th
                     key={h}
                     className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider"
@@ -611,54 +500,35 @@ const PlatformConsolePage = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
-              {tenants.map((t) => {
-                const rev =
-                  t.plan === 'enterprise'
-                    ? 1499
-                    : t.plan === 'growth'
-                    ? 299
-                    : 99;
-                return (
-                  <tr
-                    key={t.id}
-                    className="hover:bg-slate-800/20 transition-all"
-                  >
-                    <td className="px-4 py-3 text-sm text-white">{t.name}</td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        label={t.plan}
-                        color={
-                          t.plan === 'enterprise'
-                            ? 'purple'
-                            : t.plan === 'growth'
-                            ? 'blue'
-                            : 'slate'
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-sm text-white">
-                      {t.status === 'suspended'
-                        ? '-'
-                        : '$' + rev.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        label={t.status}
-                        color={
-                          t.status === 'active'
-                            ? 'green'
-                            : t.status === 'trial'
-                            ? 'yellow'
-                            : 'red'
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      July 1, 2026
-                    </td>
-                  </tr>
-                );
-              })}
+              {tenants.map((t) => (
+                <tr key={t.id} className="hover:bg-slate-800/20 transition-all">
+                  <td className="px-4 py-3 text-sm text-white">{t.name}</td>
+                  <td className="px-4 py-3">
+                    <Badge
+                      label={t.plan}
+                      color={
+                        t.plan === 'enterprise'
+                          ? 'purple'
+                          : t.plan === 'growth'
+                          ? 'blue'
+                          : 'slate'
+                      }
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge
+                      label={t.status}
+                      color={
+                        t.status === 'active'
+                          ? 'green'
+                          : t.status === 'trial'
+                          ? 'yellow'
+                          : 'red'
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -776,6 +646,229 @@ const PlatformConsolePage = ({
   return (
     <div className="flex-1 p-6">
       <p className="text-slate-400">Platform Console</p>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Recent Platform Events — a real feed composed from three actually-
+// tracked sources (no fabricated content): Remote Access session
+// starts/ends (platform_access_events), decided tenant-provisioning
+// requests (tenant_provisioning_requests), and newly created tenants
+// (from the tenants list already loaded by the parent page). Fetched
+// once on mount via a ref so a re-render of the parent's tenants array
+// (a new object identity every render) doesn't cause a refetch loop.
+// ─────────────────────────────────────────────────────────────────
+const relativeTime = (iso: string | null | undefined): string => {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+// ─────────────────────────────────────────────────────────────────
+// System Health — the old page was 100% fabricated (fake uptime,
+// latency, incident counts, and six "services" all unconditionally
+// "Operational"). Nothing in this codebase actually monitors API
+// gateway/inference/embeddings/runtime/audit-log uptime or latency —
+// building that is real infrastructure work, out of scope for a
+// dummy-data cleanup pass. The one signal that IS actually tracked is
+// connector health (connectors.status/consecutive_failures/
+// last_ok_at, migration 027) — this page shows that, honestly, and
+// says plainly that the rest isn't monitored yet rather than faking
+// it.
+// ─────────────────────────────────────────────────────────────────
+const PlatformHealthPage = () => {
+  const [rows, setRows] = useState<PlatformConnectorHealthRow[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlatformConnectorHealth().then((r) => { if (!cancelled) setRows(r); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const total = rows?.length ?? 0;
+  const healthy = (rows || []).filter((r) => r.status === 'connected' && r.consecutive_failures === 0).length;
+  const failing = (rows || []).filter((r) => r.status === 'error' || r.consecutive_failures > 0).length;
+  const disconnected = (rows || []).filter((r) => r.status === 'disconnected').length;
+
+  const statusBadge = (r: PlatformConnectorHealthRow) => {
+    if (r.status === 'error' || r.consecutive_failures > 0) return <Badge label="Failing" color="red" />;
+    if (r.status === 'disconnected') return <Badge label="Disconnected" color="slate" />;
+    return <Badge label="Healthy" color="green" />;
+  };
+
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">System Health</h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Connector health across every tenant — the one system-health signal this platform actually tracks today.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Connectors Tracked" value={String(total)} icon="◈" color="indigo" trend="All tenants" />
+        <StatCard label="Healthy" value={String(healthy)} icon="✓" color="emerald" trend="No recent failures" />
+        <StatCard label="Failing" value={String(failing)} icon="⚠" color={failing > 0 ? 'amber' : 'emerald'} trend={failing > 0 ? 'Needs attention' : 'None'} />
+        <StatCard label="Disconnected" value={String(disconnected)} icon="◎" color="slate" trend="Never connected / removed" />
+      </div>
+
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
+        <p className="text-xs text-amber-300">
+          Platform-level infrastructure metrics (API latency, uptime, error rate, incidents) aren't monitored yet —
+          shown here honestly rather than with placeholder numbers.
+        </p>
+      </div>
+
+      {rows === null && <p className="text-xs text-slate-500 text-center py-10">Loading connector health…</p>}
+      {rows !== null && rows.length === 0 && (
+        <p className="text-xs text-slate-500 text-center py-10">No connectors configured by any tenant yet.</p>
+      )}
+      {rows !== null && rows.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-800">
+                {['Tenant', 'Connector', 'Status', 'Consecutive Failures', 'Last OK', 'Last Error'].map((h) => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {rows.map((r) => (
+                <tr key={r.connector_id} className="hover:bg-slate-800/20 transition-all">
+                  <td className="px-4 py-3 text-sm text-white">{r.tenant_name}</td>
+                  <td className="px-4 py-3 text-sm text-slate-300">{r.display_name || r.provider}</td>
+                  <td className="px-4 py-3">{statusBadge(r)}</td>
+                  <td className="px-4 py-3 text-sm text-white">{r.consecutive_failures}</td>
+                  <td className="px-4 py-3 text-xs text-slate-400">{relativeTime(r.last_ok_at)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-400 max-w-xs truncate">{r.last_error || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface PlatformFeedEvent {
+  key: string;
+  text: string;
+  time: string;
+  tone: 'success' | 'warn' | 'error' | 'info';
+}
+
+const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
+  const [events, setEvents] = useState<PlatformFeedEvent[] | null>(null);
+  const tenantsRef = React.useRef(tenants);
+  tenantsRef.current = tenants;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [accessRes, decisionsRes] = await Promise.all([
+        supabase
+          .from('platform_access_events')
+          .select('event, tenant_id, operator_name, created_at')
+          .order('created_at', { ascending: false })
+          .limit(6),
+        supabase
+          .from('tenant_provisioning_requests')
+          .select('proposed_name, status, decided_at, rejection_reason')
+          .neq('status', 'pending')
+          .order('decided_at', { ascending: false })
+          .limit(6),
+      ]);
+      if (cancelled) return;
+
+      const currentTenants = tenantsRef.current;
+      const items: PlatformFeedEvent[] = [];
+
+      ((accessRes.data as any[]) || []).forEach((row) => {
+        const tenantName = currentTenants.find((t) => t.id === row.tenant_id)?.name || 'a tenant workspace';
+        items.push({
+          key: `ra-${row.tenant_id}-${row.created_at}-${row.event}`,
+          text: row.event === 'start'
+            ? `${row.operator_name || 'A platform admin'} started Remote Access into ${tenantName}`
+            : `${row.operator_name || 'A platform admin'} ended a Remote Access session in ${tenantName}`,
+          time: row.created_at,
+          tone: 'info',
+        });
+      });
+
+      ((decisionsRes.data as any[]) || []).forEach((row) => {
+        items.push({
+          key: `tpr-${row.proposed_name}-${row.decided_at}`,
+          text: row.status === 'approved'
+            ? `Tenant request approved: ${row.proposed_name}`
+            : `Tenant request rejected: ${row.proposed_name}${row.rejection_reason ? ' — ' + row.rejection_reason : ''}`,
+          time: row.decided_at,
+          tone: row.status === 'approved' ? 'success' : 'error',
+        });
+      });
+
+      [...currentTenants]
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+        .slice(0, 6)
+        .forEach((t) => {
+          items.push({
+            key: `tenant-${t.id}`,
+            text: `New tenant created: ${t.name}`,
+            time: t.createdAt,
+            tone: 'success',
+          });
+        });
+
+      items.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+      setEvents(items.slice(0, 8));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const toneClasses: Record<PlatformFeedEvent['tone'], string> = {
+    success: 'text-emerald-400',
+    warn: 'text-amber-400',
+    error: 'text-red-400',
+    info: 'text-blue-400',
+  };
+  const toneGlyph: Record<PlatformFeedEvent['tone'], string> = {
+    success: '✓',
+    warn: '!',
+    error: '✕',
+    info: 'i',
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <h2 className="text-sm font-semibold text-white mb-4">Recent Platform Events</h2>
+      {events === null && (
+        <p className="text-xs text-slate-500 text-center py-6">Loading recent activity…</p>
+      )}
+      {events !== null && events.length === 0 && (
+        <p className="text-xs text-slate-500 text-center py-6">No platform activity recorded yet.</p>
+      )}
+      {events !== null && events.length > 0 && (
+        <div className="space-y-3">
+          {events.map((e) => (
+            <div key={e.key} className="flex items-start gap-3">
+              <span className={`text-sm ${toneClasses[e.tone]}`}>{toneGlyph[e.tone]}</span>
+              <span className="text-sm text-slate-300 flex-1">{e.text}</span>
+              <span className="text-xs text-slate-600 whitespace-nowrap">{relativeTime(e.time)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1150,6 +1243,120 @@ const SelfServeToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (v:
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Suspend / reactivate — the tenant-status write path, gated server-
+// side on tenants.manage (migration 081). Suspending asks for a plain
+// confirm click (it's reversible via the same button) rather than a
+// separate modal, matching this page's existing lightweight style.
+// ─────────────────────────────────────────────────────────────────
+const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (status: Tenant['status']) => void }) => {
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const isSuspended = tenant.status === 'suspended';
+
+  const apply = async () => {
+    const nextStatus = isSuspended ? 'active' : 'suspended';
+    setSaving(true);
+    const res = await setTenantStatus(tenant.id, nextStatus);
+    setSaving(false);
+    setConfirming(false);
+    if (res.ok) onChanged(nextStatus);
+  };
+
+  if (!isSuspended && confirming) {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={apply}
+          disabled={saving}
+          className="px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all disabled:opacity-50"
+        >
+          {saving ? 'Suspending…' : 'Confirm suspend'}
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          className="px-3 py-2.5 text-sm text-slate-400 hover:text-white transition-all"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => (isSuspended ? apply() : setConfirming(true))}
+      disabled={saving}
+      className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50 ${
+        isSuspended
+          ? 'text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30'
+          : 'text-slate-400 hover:text-white bg-slate-800'
+      }`}
+    >
+      {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
+    </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Provision Tenant — the platform-admin fast path already built into
+// request_subtenant (p_parent_tenant_id=null + tenants.provision):
+// creates the tenant directly, no approval step, since the caller IS
+// the approver.
+// ─────────────────────────────────────────────────────────────────
+const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) => {
+  const [name, setName] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    if (!name.trim()) { setError('Tenant name is required.'); return; }
+    setSaving(true);
+    setError('');
+    const res = await requestSubtenant(null, name.trim(), industry.trim() || undefined);
+    setSaving(false);
+    if (res && (res as any).ok) {
+      onCreated();
+    } else {
+      setError((res as any)?.error || 'Could not create the tenant. Please try again.');
+    }
+  };
+
+  return (
+    <Modal title="Provision a new tenant" onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">Tenant name</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Acme Manufacturing"
+            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">Industry (optional)</label>
+          <input
+            value={industry}
+            onChange={(e) => setIndustry(e.target.value)}
+            placeholder="e.g. Manufacturing"
+            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <button
+          onClick={submit}
+          disabled={saving || !name.trim()}
+          className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-500 transition-all disabled:opacity-50"
+        >
+          {saving ? 'Creating…' : 'Create tenant'}
+        </button>
+      </div>
+    </Modal>
   );
 };
 

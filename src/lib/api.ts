@@ -208,7 +208,7 @@ export interface TenantFeatureOverride {
 // parent has allow_self_serve_subtenants=true and the caller is its
 // owner/admin; otherwise routes to the platform for approval.
 export const requestSubtenant = async (
-  parentTenantId: string,
+  parentTenantId: string | null,
   name: string,
   industry?: string
 ): Promise<RequestSubtenantResult> => {
@@ -250,6 +250,38 @@ export const setTenantSelfServe = async (tenantId: string, allow: boolean): Prom
     .eq('id', tenantId);
   if (error) { console.error('setTenantSelfServe:', error.message); return false; }
   return true;
+};
+
+// Suspend/reactivate a tenant. Routed through a SECURITY DEFINER RPC
+// (migration 081), not a direct client update — tenants has no UPDATE RLS
+// policy for this column, same reason setTenantSelfServe above is a known
+// silent no-op today (see project memory). Gated on tenants.manage.
+export const setTenantStatus = async (
+  tenantId: string,
+  status: 'active' | 'trial' | 'suspended'
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.rpc('set_tenant_status', { p_tenant_id: tenantId, p_status: status });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; error?: string };
+};
+
+export interface PlatformConnectorHealthRow {
+  tenant_id: string;
+  tenant_name: string;
+  connector_id: string;
+  display_name: string;
+  provider: string;
+  status: 'connected' | 'error' | 'disconnected';
+  last_ok_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+}
+
+export const fetchPlatformConnectorHealth = async (): Promise<PlatformConnectorHealthRow[]> => {
+  const { data, error } = await supabase.rpc('platform_connector_health_summary');
+  if (error) { console.error('fetchPlatformConnectorHealth:', error.message); return []; }
+  return (data as PlatformConnectorHealthRow[]) ?? [];
 };
 
 export const fetchTenantDescendants = async (tenantId: string): Promise<TenantAncestryRow[]> => {

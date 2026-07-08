@@ -48,6 +48,10 @@ interface AuthContextValue {
   sidebarCollapsed: boolean;
   godModeSession: GodModeSession | null;
   dbTenants: DBTenant[];
+  /** true once the platform-scoped tenants fetch has completed (success or
+   *  empty) at least once — lets the platform console tell "still loading"
+   *  apart from "genuinely zero tenants" instead of guessing from length. */
+  dbTenantsLoaded: boolean;
   dbStats: DbStats | null;
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
@@ -128,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [viewingDemo, setViewingDemo] = useState(false);
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
+  const [dbTenantsLoaded, setDbTenantsLoaded] = useState(false);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
@@ -170,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { await supabase.auth.signOut(); } catch { /* noop */ }
     setAuthedUser(null);
     setDbTenants([]);
+    setDbTenantsLoaded(false);
     setDbStats(null);
     setDbCurrentTenant(null);
     setGodModeSession(null);
@@ -254,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const syncProfile = async () => {
       try {
         if (!authedUser) {
-          setDbTenants([]); setDbStats(null);
+          setDbTenants([]); setDbTenantsLoaded(false); setDbStats(null);
           return;
         }
         // The dev-only demo login never touches Supabase and always carries
@@ -306,7 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
-          if (!_cleanup) setDbTenants(t);
+          if (!_cleanup) { setDbTenants(t); setDbTenantsLoaded(true); }
           // A fresh direct sign-in (LoginPage's handleLogin) decides the
           // initial page from the STALE metadata-seeded layer, which is
           // 'tenant' for every account whose signup metadata never said
@@ -492,6 +498,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthedUser(null as any);
     setCurrentPage('dashboard');
     setDbTenants([]);
+    setDbTenantsLoaded(false);
     setDbStats(null);
     setDbCurrentTenant(null);
     setGodModeSession(null);
@@ -505,6 +512,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sidebarCollapsed,
       godModeSession,
       dbTenants,
+      dbTenantsLoaded,
       dbStats,
       currentTenant,
       isDTUser,

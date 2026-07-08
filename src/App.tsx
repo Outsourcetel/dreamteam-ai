@@ -211,6 +211,7 @@ function AppShell() {
     sidebarCollapsed,
     godModeSession,
     dbTenants,
+    dbTenantsLoaded,
     dbStats,
     currentTenant,
     isDTUser,
@@ -284,6 +285,7 @@ function AppShell() {
             setPage={handleSetPage}
             user={authedUser}
             dbTenants={dbTenants}
+            dbTenantsLoaded={dbTenantsLoaded}
           />
         </div>
       );
