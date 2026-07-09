@@ -16,7 +16,7 @@ export interface DigitalEmployee {
   department: string;
   status: string;
   lifecycle_status: string;
-  trust_level: 'supervised' | 'semi_autonomous' | 'autonomous';
+  trust_level: 'supervised' | 'established' | 'trusted' | 'autonomous';
   confidence_threshold: number;
   required_approval: boolean;
   created_at: string;
@@ -32,7 +32,7 @@ export interface CreateDEInput {
   category?: string;
   department?: string;
   personaName?: string;
-  trustLevel?: 'supervised' | 'semi_autonomous' | 'autonomous';
+  trustLevel?: 'supervised' | 'established' | 'trusted' | 'autonomous';
   confidenceThreshold?: number;
   requiredApproval?: boolean;
 }
