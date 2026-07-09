@@ -2,7 +2,31 @@ import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
-import { th, td } from '../../../components/ui';
+import { th, td, PageHeader } from '../../../components/ui';
+import { useDataMode } from '../../../lib/dataMode';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
+
+// Found in the 2026-07-09 adversarial go-live audit: none of the 4
+// Outcomes pages below had a live/demo gate at all — a real tenant
+// saw fabricated MRR, AR/AP invoices, releases, and risk alerts,
+// unconditionally, as if they were their own financial and
+// operational reality. Fixed the same way every other page in this
+// codebase already handles a not-yet-built entity (VendorPages.tsx/
+// WorkforcePages.tsx's NotYetAvailable pattern).
+function OutcomeNotYetAvailable({ title, subtitle, setPage }: { title: string; subtitle: string; setPage: (p: Page) => void }) {
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader title={title} subtitle={subtitle} />
+      <LiveEmptyState
+        icon="◈"
+        title="This outcomes view isn't built yet"
+        body="Real revenue, delivery, financial, and risk rollups aren't available for live workspaces yet — this page is still a design preview."
+        primaryLabel="Back to Command Centre"
+        onPrimary={() => setPage('dashboard')}
+      />
+    </div>
+  );
+}
 
 // ============================================================
 // Outcome pages — cross-entity metric lenses.
@@ -119,8 +143,11 @@ const TCP_MRR = [
 
 export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const maxMrr = Math.max(...TCP_MRR.map(m => m.value));
+
+  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Revenue & Growth" subtitle="Pipeline, renewals, and expansion — outcome view" setPage={setPage} />;
 
   const kpis = isTcp
     ? [
@@ -260,7 +287,10 @@ const releaseBadge = (s: string) => {
 
 export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
+
+  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Product & Delivery" subtitle="Releases, incidents, and engagements — outcome view" setPage={setPage} />;
 
   const kpis = isTcp
     ? [
@@ -543,11 +573,14 @@ const exToneBadge = (tone: FinException['tone']) =>
 
 export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const [resolved, setResolved] = useState<Record<string, 'approved' | 'rejected'>>({});
   const [selected, setSelected] = useState<FinException | null>(null);
   const [toast, setToast] = useState('');
   const [bucketFilter, setBucketFilter] = useState<AgingBucketKey | 'all'>('all');
+
+  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Financial Health" subtitle="AR/AP, exceptions, and aging — outcome view" setPage={setPage} />;
 
   const exceptions = EXCEPTIONS[activeCompanyId];
   const aging = AR_AGING[activeCompanyId];
@@ -894,7 +927,11 @@ const COMPLIANCE_CALENDAR: Record<CompanyId, { item: string; date: string; statu
 
 export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
+
+  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Risk Posture" subtitle="Compliance alerts and calendar — outcome view" setPage={setPage} />;
+
   const alerts = RISK_ALERTS[activeCompanyId];
   const calendar = COMPLIANCE_CALENDAR[activeCompanyId];
 

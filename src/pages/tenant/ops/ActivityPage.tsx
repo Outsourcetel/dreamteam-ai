@@ -1,8 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader } from '../../../components/ui';
+import { useDataMode } from '../../../lib/dataMode';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
+
+// Found in the 2026-07-09 adversarial go-live audit: this page had NO
+// live/demo gate at all — a real tenant clicking "Activity Log" saw
+// this fabricated seed timeline (fake names, fake dollar figures)
+// unconditionally, presented as their own operational history. Fixed
+// the same way every other page in this codebase already handles
+// this (VendorPages.tsx/WorkforcePages.tsx's NotYetAvailable pattern)
+// — except real per-DE activity genuinely exists (ops_de_activity /
+// DEActivityPage.tsx, wired to real evidence_runs data), so this
+// points there instead of a generic "not built" message.
+function ActivityLogNotYetAvailable({ setPage }: { setPage: (p: Page) => void }) {
+  return (
+    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <PageHeader title="Activity Log" subtitle="Org-wide activity stream" />
+      <LiveEmptyState
+        icon="◈"
+        title="This org-wide feed isn't built yet"
+        body="This page's org-wide event stream is still a design preview. For real, live per-employee activity, see DE at Work — or the immutable Audit Trail for the compliance record."
+        primaryLabel="Open DE at Work"
+        onPrimary={() => setPage('ops_de_activity')}
+        secondaryLabel="Open Audit Trail"
+        onSecondary={() => setPage('gov_audit')}
+      />
+    </div>
+  );
+}
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -126,6 +154,7 @@ const TYPE_LABELS: Record<ActivityType, string> = {
 
 export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
+  const dataMode = useDataMode();
   const rows = ACTIVITY[activeCompanyId];
 
   const [deFilter, setDeFilter] = useState<string>('all');
@@ -133,6 +162,8 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
   const [typeFilter, setTypeFilter] = useState<ActivityType | 'all'>('all');
 
   useEffect(() => { setDeFilter('all'); setEntityFilter('all'); setTypeFilter('all'); }, [activeCompanyId]);
+
+  if (dataMode === 'live') return <ActivityLogNotYetAvailable setPage={setPage} />;
 
   const des = Array.from(new Set(rows.map(r => r.de)));
   const entities = Array.from(new Set(rows.map(r => r.entity)));
