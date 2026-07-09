@@ -24,6 +24,11 @@ import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveD
 import { ConfirmDeleteModal } from '../../components';
 import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
 import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
+import { getDePerformanceMetrics } from '../../lib/api';
+import type { DePerformanceMetrics } from '../../lib/api';
+import { listAuditEvents } from '../../lib/guardrailApi';
+import type { AuditEvent } from '../../lib/guardrailApi';
+import { listDocScopes } from '../../lib/knowledgeApi';
 
 // ============================================================
 // Workforce — LIVE mode (R5): the first live DE-profile surface.
@@ -53,8 +58,7 @@ function draftFrom(a: DEAutonomy | undefined): RowDraft {
 // ── "How this DE operates" — the operating charter panel ───────────
 // Which playbooks this DE runs, and in what priority order (lowest
 // number first) when several active playbooks match the same trigger.
-function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
-  const [deId, setDeId] = useState<string | null>(null);
+function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [assignments, setAssignments] = useState<DEPlaybookAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,19 +69,9 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
   const [removeTarget, setRemoveTarget] = useState<DEPlaybookAssignment | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      const [{ data: profile }] = await Promise.all([
-        supabase.from('profiles').select('tenant_id').single(),
-      ]);
-      const tenantId = profile?.tenant_id;
-      if (!tenantId) { setLoading(false); return; }
-      // Same fallback as playbook-execute: the tenant's first DE (by
-      // created_at) is the subject whose grants govern un-assigned runs.
-      const { data: firstDe } = await supabase.from('digital_employees')
-        .select('id, name').eq('tenant_id', tenantId).order('created_at', { ascending: true }).limit(1).maybeSingle();
-      if (!firstDe) { setLoading(false); return; }
-      setDeId(firstDe.id);
-      const [d, a] = await Promise.all([listDefinitions(), listDEPlaybookAssignments(firstDe.id)]);
+      const [d, a] = await Promise.all([listDefinitions(), listDEPlaybookAssignments(deId)]);
       setDefs(d.filter(x => x.status === 'published'));
       setAssignments(a);
     } catch (err) {
@@ -85,14 +79,14 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [deId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const unassigned = defs.filter(d => !assignments.some(a => a.playbook_id === d.id));
 
   const add = async () => {
-    if (!deId || !pickId) return;
+    if (!pickId) return;
     setBusy(true); setError(null);
     try {
       const nextPriority = (assignments.reduce((m, a) => Math.max(m, a.priority), 0) || 0) + 10;
@@ -121,7 +115,6 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   if (loading) return null;
-  if (!deId) return null;
 
   const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
 
@@ -207,7 +200,7 @@ function OperatingCharterPanel({ setPage }: { setPage: (p: Page) => void }) {
 // capability (migration 037). Domain-agnostic: creates ANY future DE,
 // not just Account/Finance/etc. Simple enough for a non-technical
 // admin: name + role label are the only required fields.
-function RosterPanel() {
+function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) {
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -270,7 +263,8 @@ function RosterPanel() {
 
       <div className="space-y-2 mb-3">
         {des.map(de => (
-          <div key={de.id} className="flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-950/60">
+          <button key={de.id} onClick={() => onSelect(de)}
+            className="w-full flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-950/60 hover:bg-slate-900 hover:ring-1 hover:ring-indigo-500/40 transition-all text-left">
             <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">
               {(de.persona_name || de.name).charAt(0).toUpperCase()}
             </div>
@@ -282,7 +276,8 @@ function RosterPanel() {
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
             </div>
-          </div>
+            <span className="text-slate-600 flex-shrink-0">→</span>
+          </button>
         ))}
         {des.length === 0 && <p className="text-xs text-slate-500">No Digital Employees yet — add your first one below.</p>}
       </div>
@@ -327,8 +322,176 @@ function RosterPanel() {
   );
 }
 
+// ── Performance — real per-DE metrics (migrations 093-096), filtered
+// client-side from the tenant-wide RPC to this one employee. ──────
+function DePerformancePanel({ deId }: { deId: string }) {
+  const [metrics, setMetrics] = useState<DePerformanceMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const { data: profile } = await supabase.from('profiles').select('tenant_id').single();
+      const tenantId = profile?.tenant_id;
+      if (!tenantId) { if (!cancelled) setLoading(false); return; }
+      const all = await getDePerformanceMetrics(tenantId);
+      if (!cancelled) {
+        setMetrics(all.find(m => m.de_id === deId) ?? null);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [deId]);
+
+  if (loading) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Performance</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">real metrics</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-5">Computed from this employee's own decisions and runs — not estimated.</p>
+
+      {!metrics || metrics.total_decisions === 0 ? (
+        <p className="text-xs text-slate-500">No decisions recorded yet for this employee.</p>
+      ) : (
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            { label: 'Resolution', value: `${metrics.resolution_rate}%` },
+            { label: 'Confidence', value: `${metrics.avg_confidence}%` },
+            { label: 'Escalation', value: `${metrics.escalation_rate}%` },
+            { label: 'Error rate', value: `${metrics.error_rate}%` },
+          ].map(t => (
+            <div key={t.label} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+              <div className="text-[11px] text-slate-500">{t.label}</div>
+              <div className="text-lg font-semibold text-slate-100 mt-0.5">{t.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {metrics && metrics.total_decisions > 0 && (
+        <p className="mt-4 text-[11px] text-slate-500">
+          {metrics.total_decisions} inquiries this period{metrics.high_frustration_count > 0 ? ` · ${metrics.high_frustration_count} auto-escalated for frustration` : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Knowledge scope — real per-DE knowledge_doc_scopes count
+// (migration 030). No doc list here on purpose — the Knowledge
+// Library is where you manage scoping; this is a status summary. ──
+function DeKnowledgeScopePanel({ deId }: { deId: string }) {
+  const [scopedCount, setScopedCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const scopes = await listDocScopes();
+        let n = 0;
+        for (const subjects of Object.values(scopes)) {
+          if (subjects.some(s => s.kind === 'de' && s.id === deId)) n++;
+        }
+        if (!cancelled) setScopedCount(n);
+      } catch { if (!cancelled) setScopedCount(0); }
+    })();
+    return () => { cancelled = true; };
+  }, [deId]);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Knowledge scope</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">control fabric</span>
+      </div>
+      <p className="text-xs text-slate-500">
+        This employee reads every company-wide document, plus{' '}
+        <span className="text-slate-300">{scopedCount === null ? '…' : scopedCount}</span>{' '}
+        document{scopedCount === 1 ? '' : 's'} specifically scoped to it.
+      </p>
+      <p className="mt-3 text-[11px] text-slate-500">
+        Manage scoping from the Knowledge Library — each document's "Who can use this" setting.
+      </p>
+    </div>
+  );
+}
+
+// ── Incidents — real guardrail-block audit events attributed to this
+// DE, given their own identity instead of living unlabeled inside the
+// tenant-wide Audit Trail. Data already existed (audit_events,
+// category='guardrail_block'); this is a filtered, labeled view over
+// it, not new detection. ────────────────────────────────────────────
+function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await listAuditEvents(200);
+        const mine = all.filter(e =>
+          e.category === 'guardrail_block' &&
+          (e.actor === de.name || e.actor === (de.persona_name ?? '__none__')));
+        if (!cancelled) setEvents(mine);
+      } catch { if (!cancelled) setEvents([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [de.id, de.name, de.persona_name]);
+
+  if (events === null) return null;
+
+  const openCount = events.length; // guardrail_block events have no separate "resolved" state today — every one shown is on record, none reopened
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Incidents</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">guardrail record</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-5">
+        Every time a guardrail blocked this employee from acting on its own — the same immutable audit
+        record the trust dial's automatic demotions read from.
+      </p>
+
+      {events.length === 0 ? (
+        <p className="text-xs text-slate-500">No incidents on record — a clean guardrail history.</p>
+      ) : (
+        <div className="space-y-1.5">
+          <p className="text-xs text-slate-400 mb-2">{openCount} incident{openCount === 1 ? '' : 's'} on record, all logged, none require action.</p>
+          {events.map(e => (
+            <div key={e.id} className="rounded-lg bg-slate-950/60">
+              <button onClick={() => setOpenId(k => k === e.id ? null : e.id)}
+                className="w-full flex items-center gap-3 text-left px-3 py-2 text-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
+                <span className="flex-1 text-slate-300 truncate">{e.action}</span>
+                <span className="text-slate-600 flex-shrink-0">{new Date(e.created_at).toLocaleDateString()}</span>
+              </button>
+              {openId === e.id && (
+                <div className="px-3 pb-3 text-[11px] text-slate-500 space-y-1">
+                  {typeof e.detail?.guardrail_rule === 'string' && <p>Rule: <span className="text-slate-400">{e.detail.guardrail_rule as string}</span></p>}
+                  <p>Recorded {new Date(e.created_at).toLocaleString()} · hash-chained, immutable.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-4 text-[11px] text-slate-500">
+        <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+          View the full Audit Trail →
+        </button>
+      </p>
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
+  const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
   const [rows, setRows] = useState<Record<string, DEAutonomy>>({});
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [evidence, setEvidence] = useState<ApprovalEvidence | null>(null);
@@ -459,12 +622,31 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
     ? `${evidence.total} invoice approval${evidence.total === 1 ? '' : 's'} on record, ${evidence.approved} approved unchanged (${evidence.approvedPct}%)${evidence.approvedPct >= 80 ? ' — consider raising the limit' : ''}`
     : 'No invoice approvals on record yet — evidence accrues as the DE routes invoices through the human gate.';
 
+  if (!selectedDe) {
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-white">Digital Employees</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            {liveTenantName || 'Your company'} · Click an employee to see their profile — trust dial, charter, performance, and more
+          </p>
+        </div>
+        <div className="max-w-3xl">
+          <RosterPanel onSelect={setSelectedDe} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Digital Employees</h1>
+        <button onClick={() => setSelectedDe(null)} className="text-xs text-slate-400 hover:text-slate-200 mb-3 transition-colors">
+          ← All Digital Employees
+        </button>
+        <h1 className="text-2xl font-bold text-white">{selectedDe.persona_name || selectedDe.name}</h1>
         <p className="text-slate-400 text-sm mt-1">
-          {liveTenantName || 'Your company'} · Live DE profile — per-action autonomy is configured on the trust dial below
+          {liveTenantName || 'Your company'} · {selectedDe.department || selectedDe.category}
         </p>
       </div>
 
@@ -476,32 +658,32 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
         <MissingTablesNotice />
       ) : (
         <div className="max-w-3xl space-y-6">
-          {/* Roster + Add a Digital Employee */}
-          <RosterPanel />
-
-          {/* DE card */}
+          {/* DE card — real identity, not a hardcoded persona */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xl">A</div>
+              <div className="w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xl">
+                {(selectedDe.persona_name || selectedDe.name).charAt(0).toUpperCase()}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-base font-semibold text-white">Alex</h2>
-                  <span className="text-xs text-slate-400">Customer Support DE</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">active</span>
+                  <h2 className="text-base font-semibold text-white">{selectedDe.persona_name || selectedDe.name}</h2>
+                  {selectedDe.persona_name && <span className="text-xs text-slate-400">{selectedDe.name}</span>}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>{selectedDe.status}</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Answers from your knowledge library, escalates below confidence, runs the renewal playbook inside guardrails.
+                  {selectedDe.description || 'No description set yet.'}
                 </p>
               </div>
             </div>
-            <p className="mt-3 text-[11px] text-slate-600">
-              The panels below (operating charter, trust dial, earned trust) are scoped to your workspace's first Digital Employee today —
-              per-DE dashboards for every roster member are a planned upgrade, not yet built.
-            </p>
           </div>
 
           {/* DE operating charter */}
-          <OperatingCharterPanel setPage={setPage} />
+          <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
+
+          {/* Performance, knowledge scope, incidents — real per-DE data */}
+          <DePerformancePanel deId={selectedDe.id} />
+          <DeKnowledgeScopePanel deId={selectedDe.id} />
+          <DeIncidentsPanel de={selectedDe} setPage={setPage} />
 
           {/* Trust dial */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
@@ -509,6 +691,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <h3 className="text-base font-semibold text-white">Trust dial</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
             </div>
+            <p className="text-[11px] text-amber-400/80 mb-2">
+              Shared across your whole workspace today, not yet specific to {selectedDe.persona_name || selectedDe.name} — a per-employee trust dial is next on the roadmap.
+            </p>
             <p className="text-xs text-slate-500 mb-1">
               Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
               both the {thresholdCents !== null ? fmtMoneyK(thresholdCents) : 'guardrail'} approval threshold <em>and</em> the trust-dial limit.
@@ -597,8 +782,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <h3 className="text-base font-semibold text-white">Earned trust</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
             </div>
+            <p className="text-[11px] text-amber-400/80 mb-2">
+              Also shared across your workspace today, not yet per employee — see the note above.
+            </p>
             <p className="text-xs text-slate-500 mb-5">
-              Alex earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
+              Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
               A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
             </p>
 
