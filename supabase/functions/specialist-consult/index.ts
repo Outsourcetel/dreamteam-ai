@@ -820,6 +820,41 @@ async function handlePollDeWorkSources(
       });
 
       for (const item of toProcess) {
+        // Atomic ownership claim (migration 109). poll_de_work_sources_
+        // targets deliberately allows multiple subjects (DEs and/or
+        // specialists) to be eligible on the same connector/category —
+        // but inbox_watch_state's cursor is connector-level, not
+        // subject-level, so without this claim every eligible subject
+        // would independently re-run evidence gathering, triage, and
+        // (if a registered action exists) a REAL action on the exact
+        // same item. Whichever subject's insert lands first owns the
+        // item; every other subject hits the unique (tenant_id,
+        // connector_id, external_ref) constraint and is skipped here,
+        // before any of that work happens — not recorded as a
+        // duplicate decision, just honestly not processed by the
+        // subject that lost the race.
+        const { data: claimRows } = await admin
+          .from('work_item_claims')
+          .upsert(
+            { tenant_id: t.tenant_id, connector_id: t.connector_id, external_ref: item.ref, category: t.category, owner_subject_kind: t.subject_kind, owner_subject_id: t.subject_id },
+            { onConflict: 'tenant_id,connector_id,external_ref', ignoreDuplicates: true },
+          )
+          .select('id');
+        if (!claimRows || claimRows.length === 0) {
+          decisionCounts['already_claimed'] = (decisionCounts['already_claimed'] ?? 0) + 1;
+          continue;
+        }
+        const claimId = (claimRows[0] as { id: string }).id;
+
+        // The claim persists across ticks (unlike inbox_watch_state's
+        // cursor), so a transient failure partway through this item
+        // must release it — otherwise the item would be silently and
+        // permanently dropped instead of retried next tick, which is
+        // strictly worse than the pre-claim behavior (where a mid-loop
+        // failure just left the cursor stale and the item came back
+        // around naturally).
+        try {
+
         const inquiryText = frame(item.title, item.snippet);
         const result = await runResolveInquiry(admin, t.tenant_id, inquiryText, null, {
           subjectKind: t.subject_kind, subjectId: t.subject_id,
@@ -902,11 +937,19 @@ async function handlePollDeWorkSources(
         await admin.from('evidence_run_decisions')
           .update({ action_execution_id: actionExecutionId })
           .eq('id', (rec as { id?: string })?.id ?? '__none__');
+        await admin.from('work_item_claims')
+          .update({ evidence_run_decision_id: (rec as { id?: string })?.id ?? null })
+          .eq('id', claimId);
         await audit(admin, t.tenant_id, t.subject_name,
           `Proactive triage — "${item.title.slice(0, 80)}" via ${connLabel} [${t.category}]: ${decision}`,
           'inquiry_triage',
           { kind: 'proactive_poll', connector_id: t.connector_id, category: t.category, external_ref: item.ref, evidence_run_id: result.evidence_run_id, decision, confidence, reasoning, action_execution_id: actionExecutionId });
         decisionCounts[decision] = (decisionCounts[decision] ?? 0) + 1;
+        } catch (itemErr) {
+          console.error('poll_de_work_sources item error:', t.connector_id, item.ref, itemErr);
+          await admin.from('work_item_claims').delete().eq('id', claimId);
+          decisionCounts['error'] = (decisionCounts['error'] ?? 0) + 1;
+        }
       }
 
       if (newest) await upsertWatch(admin, t.tenant_id, t.connector_id, newest);
