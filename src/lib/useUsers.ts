@@ -92,40 +92,39 @@ export function useUsers() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Real backing as of 2026-07-09 (F3, adversarial audit fix): a
+  // Postgres RPC can't create an auth.users row or send a real invite
+  // email -- only the Supabase Auth Admin API can, and that's only
+  // reachable with the service-role key, hence the edge function
+  // rather than another migration-065-style RPC. The old version did
+  // a raw signUp() + a second raw profiles insert as the INVITING
+  // admin's own session -- targeting a user_id handle_new_user's
+  // trigger already claimed, with no RLS path that could ever
+  // succeed, and swallowed the resulting error. This throws for real
+  // on any failure instead.
   const invite = useCallback(async (data: {
     fullName: string; email: string; role: TenantRole; department: string; invitedBy: string; tenantId?: string;
   }): Promise<TeamMember | null> => {
-    const tid = data.tenantId ?? tenantId;
-    if (!tid) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not signed in.');
 
-    // 1. Create auth user (Supabase sends confirmation email)
-    const tempPassword = Math.random().toString(36).slice(2) + 'Aa1!';
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: data.email.trim(),
-      password: tempPassword,
-      options: { data: { full_name: data.fullName.trim(), role: data.role, layer: 'tenant' } },
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-team-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({
+        email: data.email.trim(), full_name: data.fullName.trim(),
+        role: data.role, department: data.department,
+      }),
     });
-
-    if (authError) throw authError;
-    const userId = authData.user?.id;
-    if (!userId) throw new Error('User creation failed');
-
-    // 2. Insert profile linked to tenant
-    const { error: profileError } = await supabase.from('profiles').insert({
-      user_id: userId,
-      tenant_id: tid,
-      full_name: data.fullName.trim(),
-      role: data.role,
-      layer: 'tenant',
-      department: data.department,
-      invited_by: data.invitedBy,
-      is_active: true,
-    });
-
-    if (profileError) console.warn('profile insert:', profileError.message);
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || result.error) throw new Error(String(result.error ?? `HTTP ${res.status}`));
 
     writeAuditLog({
-      tenant_id: tid,
+      tenant_id: data.tenantId ?? tenantId,
       actor_user_id: actorId,
       action: 'invite',
       entity_type: 'user',
