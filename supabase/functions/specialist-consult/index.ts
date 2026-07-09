@@ -827,6 +827,7 @@ async function handlePollDeWorkSources(
         const confidence = computeConfidenceFallback(result.confidence_inputs);
         const { data: triage } = await admin.rpc('decide_work_item_triage', {
           p_tenant_id: t.tenant_id, p_category: t.category, p_inquiry: inquiryText, p_confidence: confidence,
+          p_de_id: t.subject_kind === 'de' ? t.subject_id : null,
         });
         let decision: string = triage?.decision ?? 'needs_review';
         let reasoning: string = triage?.reasoning ?? '';

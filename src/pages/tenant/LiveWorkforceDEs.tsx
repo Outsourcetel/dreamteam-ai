@@ -5,7 +5,7 @@ import type { Page } from '../../types';
 import { CustomerApiError, fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
 import {
-  listAutonomy, upsertAutonomy, getApprovalEvidence,
+  listAutonomy, upsertAutonomy, resolveAutonomy, getApprovalEvidence,
   AUTONOMY_ACTION_META,
 } from '../../lib/autonomyApi';
 import type { DEAutonomy, AutonomyActionType, ApprovalEvidence } from '../../lib/autonomyApi';
@@ -492,6 +492,10 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
+  // Whether each action type's resolved value came from THIS employee's
+  // own override (true) or the workspace-wide default (false) — drives
+  // the "personal / workspace default" badge on the dial.
+  const [isPersonal, setIsPersonal] = useState<Record<string, boolean>>({});
   const [rows, setRows] = useState<Record<string, DEAutonomy>>({});
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [evidence, setEvidence] = useState<ApprovalEvidence | null>(null);
@@ -528,14 +532,31 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
     }
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (deId: string) => {
     setLoading(true);
     setError(null);
     try {
-      const [list, thr] = await Promise.all([listAutonomy(), getApprovalThresholdCents()]);
+      const [resolved, list, thr] = await Promise.all([
+        Promise.all(ACTION_ORDER.map(t => resolveAutonomy(t, deId))),
+        listAutonomy(),
+        getApprovalThresholdCents(),
+      ]);
       const byType: Record<string, DEAutonomy> = {};
-      for (const a of list) byType[a.action_type] = a;
+      const personal: Record<string, boolean> = {};
+      ACTION_ORDER.forEach((t, idx) => {
+        const r = resolved[idx];
+        // Synthesize a DEAutonomy-shaped row from the resolved values —
+        // the "id" is cosmetic here since resolution can fall through
+        // several tiers with no single backing row.
+        byType[t] = {
+          id: `resolved:${t}`, tenant_id: '', action_type: t, de_id: deId, source_category: null,
+          enabled: r.enabled, max_amount_cents: r.max_amount_cents, min_confidence: r.min_confidence,
+          updated_by: null, created_at: '', updated_at: '',
+        };
+        personal[t] = list.some(a => a.action_type === t && a.de_id === deId);
+      });
       setRows(byType);
+      setIsPersonal(personal);
       setThresholdCents(thr.cents);
       setDrafts(Object.fromEntries(ACTION_ORDER.map(t => [t, draftFrom(byType[t])])));
       setMissingTables(false);
@@ -549,7 +570,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
     }
   }, [refreshTrust]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (selectedDe) void refresh(selectedDe.id); }, [selectedDe, refresh]);
 
   /** Does a dial setting exceed what's been EARNED for its category? */
   const exceedsEarned = useCallback((type: AutonomyActionType, enabled: boolean, maxCents: number | null, minConf: number | null): boolean => {
@@ -579,7 +600,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
   const save = async (type: AutonomyActionType) => {
     const d = drafts[type];
-    if (!d) return;
+    if (!d || !selectedDe) return;
     setSavingKey(type);
     setError(null);
     try {
@@ -590,7 +611,8 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
         min_confidence: meta.unit === 'confidence' && d.confidence.trim() !== ''
           ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
-      });
+      }, selectedDe.id);
+      setIsPersonal(prev => ({ ...prev, [type]: true }));
       // Manual raise above the earned level → recorded as an override so
       // the earned path stays the celebrated one (still guardrail-capped).
       if (exceedsEarned(type, row.enabled, row.max_amount_cents, row.min_confidence)) {
@@ -691,8 +713,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <h3 className="text-base font-semibold text-white">Trust dial</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
             </div>
-            <p className="text-[11px] text-amber-400/80 mb-2">
-              Shared across your whole workspace today, not yet specific to {selectedDe.persona_name || selectedDe.name} — a per-employee trust dial is next on the roadmap.
+            <p className="text-[11px] text-slate-500 mb-2">
+              Personal to {selectedDe.persona_name || selectedDe.name} — set a value here and it applies to this employee only.
+              Leave a card at its workspace default and this employee follows the shared setting instead.
             </p>
             <p className="text-xs text-slate-500 mb-1">
               Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
@@ -712,6 +735,15 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm text-slate-200 font-medium">{meta.label}</span>
+                          {isPersonal[type] ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300" title="This value is set for this employee specifically.">
+                              Personal
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500" title="No personal override — this employee follows the workspace-wide default.">
+                              Workspace default
+                            </span>
+                          )}
                           {rows[type] && exceedsEarned(type, rows[type].enabled, rows[type].max_amount_cents, rows[type].min_confidence) && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="This dial is set above the level the DE has earned from evidence. Still capped by guardrails.">
                               Manual override
@@ -783,7 +815,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
             </div>
             <p className="text-[11px] text-amber-400/80 mb-2">
-              Also shared across your workspace today, not yet per employee — see the note above.
+              The earned-progression ladder is still workspace-wide today, not yet per employee — the personal dial above can be set below or above it, but the ladder itself tracks evidence for the whole workspace.
             </p>
             <p className="text-xs text-slate-500 mb-5">
               Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.

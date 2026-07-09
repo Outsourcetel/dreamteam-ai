@@ -881,11 +881,18 @@ async function executeDefinitionSteps(
             .order('updated_at', { ascending: false }).limit(1);
           if (rules?.length && typeof rules[0].threshold === 'number') thresholdCents = rules[0].threshold;
 
-          let autonomy: { id: string; enabled: boolean; max_amount_cents: number | null } | null = null;
+          // Trust dial resolution is per-employee first now (Wave 1.1):
+          // this run's DE gets its own override if one exists, falling
+          // back to the tenant-wide default otherwise — the same
+          // cascade decide_work_item_triage/decide_inquiry_triage use,
+          // via the shared resolve_de_autonomy() RPC so the logic is
+          // written once, not duplicated in TypeScript.
+          let autonomy: { enabled: boolean; max_amount_cents: number | null } | null = null;
+          const invoiceRunDeId = await resolveRunDeId();
           try {
-            const { data: auto } = await admin
-              .from('de_autonomy').select('id, enabled, max_amount_cents')
-              .eq('tenant_id', tenantId).eq('action_type', 'invoice_auto_send').maybeSingle();
+            const { data: auto } = await admin.rpc('resolve_de_autonomy', {
+              p_tenant_id: tenantId, p_action_type: 'invoice_auto_send', p_de_id: invoiceRunDeId, p_source_category: null,
+            }).then(r => ({ data: (r.data as Array<{ enabled: boolean; max_amount_cents: number | null }> | null)?.[0] ?? null }));
             autonomy = auto ?? null;
           } catch { autonomy = null; }
 
@@ -915,7 +922,7 @@ async function executeDefinitionSteps(
               ? `Guardrail GATED — invoice ${fmtMoney(amount)} for ${acct()}: exceeds guardrail/trust-dial limits — routed to human approval`
               : `Guardrail passed — invoice ${fmtMoney(amount)} for ${acct()}: within guardrail and trust dial — auto-approved`,
             'guardrail_check',
-            { run_id: run.id, invoice_id: invoice.id, amount_cents: amount, threshold_cents: thresholdCents, autonomy_rule_id: autonomy?.id ?? null, result: gated ? 'gated' : 'passed', composition: 'autonomy_narrows_within_guardrails' },
+            { run_id: run.id, invoice_id: invoice.id, amount_cents: amount, threshold_cents: thresholdCents, resolved_de_id: invoiceRunDeId, result: gated ? 'gated' : 'passed', composition: 'autonomy_narrows_within_guardrails' },
             'Playbook DE');
           await saveRun(admin, run);
           continue; // audit already appended above
