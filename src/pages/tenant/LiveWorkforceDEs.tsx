@@ -32,6 +32,11 @@ import type {
 } from '../../lib/digitalEmployeesApi';
 import { useUsers } from '../../lib/useUsers';
 import Modal from '../../components/Modal';
+import {
+  listDeHealth, DE_HEALTH_LABELS, listDeDevelopmentItems, detectDeDevelopmentNeeds,
+  createDeDevelopmentItem, updateDeDevelopmentItemStatus,
+} from '../../lib/deHealthApi';
+import type { DEHealth, DEDevelopmentItem } from '../../lib/deHealthApi';
 import { getDePerformanceMetrics } from '../../lib/api';
 import type { DePerformanceMetrics } from '../../lib/api';
 import { listAuditEvents } from '../../lib/guardrailApi';
@@ -210,6 +215,7 @@ function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: P
 // admin: name + role label are the only required fields.
 function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) {
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
+  const [health, setHealth] = useState<Record<string, DEHealth>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -225,6 +231,10 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
     } catch (err) {
       setError((err as Error)?.message || 'Failed to load the roster.');
     }
+    try {
+      const h = await listDeHealth();
+      setHealth(Object.fromEntries(h.map(x => [x.de_id, x])));
+    } catch { /* health is supplementary — a roster still renders without it */ }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -281,6 +291,11 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
                 <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
                 {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>{de.status}</span>
+                {health[de.id] && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state].color}`}>
+                    {DE_HEALTH_LABELS[health[de.id].state].label}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
             </div>
@@ -493,6 +508,135 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
           View the full Audit Trail →
         </button>
       </p>
+    </div>
+  );
+}
+
+// ── Health — a real, composed signal (Wave 5, migration 112). Self-
+// contained: fetches the whole tenant's health list and filters to
+// this DE, matching the other per-DE panels' pattern. ──────────────
+function DeHealthInline({ deId }: { deId: string }) {
+  const [health, setHealth] = useState<DEHealth | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    listDeHealth().then(all => { if (!cancelled) setHealth(all.find(h => h.de_id === deId) ?? null); })
+      .catch(() => { if (!cancelled) setHealth(null); });
+    return () => { cancelled = true; };
+  }, [deId]);
+  if (!health) return null;
+  const meta = DE_HEALTH_LABELS[health.state];
+  return (
+    <>
+      <span className={`text-xs px-2 py-0.5 rounded-full ${meta.color}`} title={JSON.stringify(health.signals)}>
+        {meta.label}
+      </span>
+      {health.cost_per_task_usd !== null && (
+        <span className="text-[11px] text-slate-500">${health.cost_per_task_usd.toFixed(3)}/task</span>
+      )}
+    </>
+  );
+}
+
+// ── Development — evidence-grounded Development Plan items (Wave 4,
+// migration 112). Proposed from real 8-week performance data or
+// created manually; never fabricated categories. ───────────────────
+function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
+  const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [desc, setDesc] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try { setItems(await listDeDevelopmentItems(de.id)); } catch { setItems([]); }
+  }, [de.id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const scan = async () => {
+    setScanning(true); setErr(null);
+    try { await detectDeDevelopmentNeeds(); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Could not scan for development needs.'); }
+    finally { setScanning(false); }
+  };
+
+  const addManual = async () => {
+    if (!desc.trim()) { setErr('Describe the development need.'); return; }
+    setBusy(true); setErr(null);
+    try { await createDeDevelopmentItem(de.id, { description: desc.trim() }); setDesc(''); setShowAdd(false); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Could not create the item.'); }
+    finally { setBusy(false); }
+  };
+
+  const setStatus = async (itemId: string, status: DEDevelopmentItem['status']) => {
+    setBusy(true);
+    try { await updateDeDevelopmentItemStatus(itemId, status); await load(); }
+    finally { setBusy(false); }
+  };
+
+  if (items === null) return null;
+  const open = items.filter(i => i.status === 'proposed' || i.status === 'in_progress');
+  const resolved = items.filter(i => i.status === 'completed' || i.status === 'dismissed');
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Development</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">evidence-grounded</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Proposed from real 8-week performance data (escalation rate, confidence, error rate, guardrail patterns) — or added manually. While one is open, this employee shows as "Improving."
+      </p>
+      {err && <div className="mb-3 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+
+      <div className="flex gap-2 mb-3">
+        <button onClick={scan} disabled={scanning} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50">
+          {scanning ? 'Scanning…' : 'Scan for development needs'}
+        </button>
+        <button onClick={() => setShowAdd(s => !s)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">
+          + Add manually
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2 mb-3">
+          <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="What does this employee need to work on?"
+            className="w-full rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-white" />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">Cancel</button>
+            <button onClick={addManual} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">{busy ? 'Adding…' : 'Add item'}</button>
+          </div>
+        </div>
+      )}
+
+      {open.length === 0 ? (
+        <p className="text-xs text-slate-500">No open development items — nothing evidence-based flagged, and none added manually.</p>
+      ) : (
+        <div className="space-y-1.5 mb-3">
+          {open.map(item => (
+            <div key={item.id} className="rounded-lg bg-slate-950/60 px-3 py-2 text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 mr-1.5">{item.source === 'detected' ? 'detected' : 'manual'}</span>
+                  <span className="text-slate-300">{item.description}</span>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  {item.status === 'proposed' && (
+                    <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 hover:bg-sky-500/25">Start</button>
+                  )}
+                  <button onClick={() => setStatus(item.id, 'completed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25">Complete</button>
+                  <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-500 hover:bg-slate-700">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {resolved.length > 0 && (
+        <p className="text-[11px] text-slate-600">{resolved.length} resolved item{resolved.length === 1 ? '' : 's'} on record.</p>
+      )}
     </div>
   );
 }
@@ -1075,6 +1219,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                   <h2 className="text-base font-semibold text-white">{selectedDe.persona_name || selectedDe.name}</h2>
                   {selectedDe.persona_name && <span className="text-xs text-slate-400">{selectedDe.name}</span>}
                   <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>{selectedDe.status}</span>
+                  <DeHealthInline deId={selectedDe.id} />
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {selectedDe.description || 'No description set yet.'}
@@ -1086,10 +1231,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           {/* DE operating charter */}
           <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
 
-          {/* Performance, knowledge scope, incidents — real per-DE data */}
+          {/* Performance, knowledge scope, incidents, development — real per-DE data */}
           <DePerformancePanel deId={selectedDe.id} />
           <DeKnowledgeScopePanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
+          <DeDevelopmentPanel de={selectedDe} />
 
           {/* Governance — config editing/versioning, ownership/transfer, retirement */}
           <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
