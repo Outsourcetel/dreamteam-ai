@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
 import { askDE, DEAnswerError } from '../lib/knowledgeApi';
+import { listDigitalEmployees } from '../lib/digitalEmployeesApi';
 
 // ============================================================
 // "Ask your DE" global chat dock — context-aware DE routing,
@@ -84,8 +85,15 @@ interface ChatMsg {
 
 // ── LIVE mode (real tenant): the dock fronts the de-answer edge
 //    function — real Claude answers grounded in knowledge_docs. ──
-
-const LIVE_DE: DockDE = { id: 'alex', name: 'Alex', role: 'Customer Support DE', color: 'bg-indigo-600' };
+//
+// The dock's displayed identity is the REAL configured Digital
+// Employee (Wave 1.3, "make the role real") — not a fixed "Alex".
+// GENERIC_LIVE_DE is only the honest placeholder shown before either
+// (a) the on-mount roster fetch resolves the tenant's first DE, or
+// (b) the first de-answer response names the actual answering DE —
+// whichever lands first. A brand-new tenant with zero DEs yet
+// legitimately keeps this generic label; that's not a bug.
+const GENERIC_LIVE_DE: DockDE = { id: 'de', name: 'your Digital Employee', role: 'Digital Employee', color: 'bg-indigo-600' };
 
 const LIVE_SUGGESTIONS = [
   'What do you know about our refund policy?',
@@ -403,9 +411,31 @@ export default function DEChatDock() {
   const lastDeIdRef = useRef<string | null>(null);
   const reduceMotion = useMemo(prefersReducedMotion, []);
 
-  const de = isLive ? LIVE_DE : deForPage(currentPage, activeCompanyId);
+  const [liveDe, setLiveDe] = useState<DockDE>(GENERIC_LIVE_DE);
+  const de = isLive ? liveDe : deForPage(currentPage, activeCompanyId);
   const unowned = !isLive && isUnownedArea(currentPage);
   const conversationIdRef = useRef<string | null>(null);
+
+  // Resolve the real answering DE's identity up front (same "tenant's
+  // first DE" fallback de-answer itself uses when no de_id is passed)
+  // so the header doesn't sit on the generic placeholder until the
+  // first message round-trips. The de-answer response (sendLive,
+  // below) is still the source of truth and overwrites this on reply.
+  useEffect(() => {
+    if (!isLive) return;
+    let cancelled = false;
+    listDigitalEmployees().then((des) => {
+      if (cancelled || des.length === 0) return;
+      const first = des[0];
+      setLiveDe({
+        id: first.id,
+        name: first.persona_name || first.name || GENERIC_LIVE_DE.name,
+        role: first.department ? `${first.department} Digital Employee` : 'Digital Employee',
+        color: GENERIC_LIVE_DE.color,
+      });
+    }).catch(() => { /* honest fallback: keep the generic placeholder */ });
+    return () => { cancelled = true; };
+  }, [isLive]);
 
   // Company/mode switch → load that thread.
   useEffect(() => {
@@ -488,8 +518,13 @@ export default function DEChatDock() {
     try {
       const res = await askDE(text, conversationIdRef.current);
       if (res.conversation_id) conversationIdRef.current = res.conversation_id;
+      // de-answer is the source of truth for who actually answered —
+      // overwrite the on-mount guess (or confirm it) every reply.
+      if (res.de_name) {
+        setLiveDe(prev => ({ ...prev, id: res.de_id || prev.id, name: res.de_name! }));
+      }
       setMessages(prev => [...prev, {
-        id: uid(), role: 'de', deId: LIVE_DE.id,
+        id: uid(), role: 'de', deId: res.de_id || de.id,
         text: res.answer,
         confidence: res.confidence,
         sources: res.sources,
@@ -502,13 +537,13 @@ export default function DEChatDock() {
     } catch (err) {
       if (err instanceof DEAnswerError && err.code === 'llm_not_configured') {
         setMessages(prev => [...prev, {
-          id: uid(), role: 'de', deId: LIVE_DE.id, notice: 'llm_not_configured',
+          id: uid(), role: 'de', deId: de.id, notice: 'llm_not_configured',
           text: 'DE brain not yet activated — an admin needs to add the Anthropic API key (Supabase → Edge Function secrets → ANTHROPIC_API_KEY). Until then I can\'t answer from your knowledge documents.',
           time: nowTime(),
         }]);
       } else {
         setMessages(prev => [...prev, {
-          id: uid(), role: 'de', deId: LIVE_DE.id, notice: 'error',
+          id: uid(), role: 'de', deId: de.id, notice: 'error',
           text: 'I couldn\'t reach my answering service just now — that\'s a network or server issue on our side, not your question. Please try again in a moment.',
           time: nowTime(),
         }]);

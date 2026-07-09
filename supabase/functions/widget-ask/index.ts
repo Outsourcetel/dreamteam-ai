@@ -24,6 +24,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { resolveDePersona } from '../_shared/dePersona.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -295,6 +296,7 @@ serve(async (req) => {
       .select('id').eq('tenant_id', tenantId)
       .order('created_at', { ascending: true }).limit(1).maybeSingle();
     const subjectDeId: string | null = firstDe?.id ?? null;
+    const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
 
     // ── Conversation + user message ──
     let convId: string | null = conversationId;
@@ -391,7 +393,7 @@ serve(async (req) => {
       ? `You are answering an end user (${displayName || 'an employee'}) at customer account "${accountName}".`
       : `You are answering an end user${displayName ? ` (${displayName})` : ''} of a business customer.`;
 
-    const system = `You are Alex, a Customer Support Digital Employee for ${tenantName}. ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
+    const system = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:
 ${context}`;
@@ -446,11 +448,11 @@ ${context}`;
         related_id: convId,
       });
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'escalated',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
         text: `Widget answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `BLOCKED — widget answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
         'guardrail_block',
         { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated, channel: 'widget' });
@@ -482,25 +484,25 @@ ${context}`;
         type: 'escalation',
         source: 'de',
         title: `Widget escalation (${who}) — ${truncated}`,
-        detail: `End-user question via embedded widget${accountName ? ` from account "${accountName}"` : ''}. Alex's draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        detail: `End-user question via embedded widget${accountName ? ` from account "${accountName}"` : ''}. ${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
       });
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'escalated',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
         text: `Widget question from ${who} escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `Widget question from ${who} escalated to human review — "${truncated}"`,
         'escalated', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
     } else {
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'resolved',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
         text: `Answered a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `Resolved a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
         'resolved', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
     }

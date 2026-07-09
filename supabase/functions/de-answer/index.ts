@@ -21,6 +21,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { resolveDePersona } from '../_shared/dePersona.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -193,6 +194,7 @@ serve(async (req) => {
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       subjectDeId = firstDe?.id ?? null;
     }
+    const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
 
     // ── Conversation (create if needed) + persist the user message ──
     let convId: string | null = typeof conversation_id === 'string' ? conversation_id : null;
@@ -238,13 +240,14 @@ serve(async (req) => {
           });
         }
         await admin.from('activity_events').insert({
-          tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'resolved',
+          tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
           text: `Answered a chat question instantly from the verified answer cache`,
           confidence: hit.confidence,
         });
         return json({
           conversation_id: convId, answer: hit.answer, confidence: hit.confidence,
           sources, needs_escalation: false, cached: true,
+          de_id: subjectDeId, de_name: persona.name,
         });
       }
     }
@@ -267,6 +270,7 @@ serve(async (req) => {
       return json({
         conversation_id: convId, answer, confidence: 0, sources: [],
         needs_escalation: false, no_docs: true,
+        de_id: subjectDeId, de_name: persona.name,
       });
     }
 
@@ -332,7 +336,7 @@ serve(async (req) => {
       return json({ error: 'ai_budget_exceeded', conversation_id: convId });
     }
 
-    const system = `You are Alex, a Customer Support Digital Employee for ${tenantName}. Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
+    const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:
 ${context}`;
@@ -382,16 +386,16 @@ ${context}`;
         type: 'escalation',
         source: 'de',
         title: `Guardrail block — ${truncated}`,
-        detail: `Alex's draft answer was blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        detail: `${persona.name}'s draft answer was blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
       });
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'escalated',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
         text: `Answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `BLOCKED — chat answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
         'guardrail_block',
         { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated });
@@ -403,6 +407,7 @@ ${context}`;
         confidence: 0,
         sources: [],
         needs_escalation: true,
+        de_id: subjectDeId, de_name: persona.name,
       });
     }
 
@@ -439,25 +444,25 @@ ${context}`;
         type: 'escalation',
         source: 'de',
         title: `Chat escalation — ${truncated}`,
-        detail: `Alex's draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        detail: `${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
       });
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'escalated',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
         text: `Chat question escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `Chat question escalated to human review — "${truncated}"`,
         'escalated', { confidence: parsed.confidence, conversation_id: convId });
     } else {
       await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: 'Alex', actor_type: 'de', event_type: 'resolved',
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
         text: `Answered a chat question from knowledge docs (${parsed.sources.join(', ') || 'no sources cited'})`,
         confidence: parsed.confidence,
       });
-      await auditEvent(admin, tenantId, 'Alex', 'de',
+      await auditEvent(admin, tenantId, persona.name, 'de',
         `Resolved a chat question from knowledge docs (${parsed.sources.join(', ') || 'no sources cited'})`,
         'resolved', { confidence: parsed.confidence, conversation_id: convId });
     }
@@ -468,6 +473,7 @@ ${context}`;
       confidence: parsed.confidence,
       sources: parsed.sources,
       needs_escalation: escalate,
+      de_id: subjectDeId, de_name: persona.name,
     });
   } catch (err) {
     console.error('de-answer error:', err);

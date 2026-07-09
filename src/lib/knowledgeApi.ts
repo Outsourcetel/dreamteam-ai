@@ -253,6 +253,10 @@ export interface DEAnswerResult {
   blocked?: boolean;
   /** the guardrail rule text that blocked the answer */
   blocked_rule?: string;
+  /** the DE that actually answered — real per-DE persona (Wave 1.3),
+   *  not a hardcoded display name */
+  de_id?: string | null;
+  de_name?: string;
 }
 
 export class DEAnswerError extends Error {
@@ -307,6 +311,8 @@ export async function askDE(
     cached: !!data.cached,
     blocked: !!data.blocked,
     blocked_rule: typeof data.rule === 'string' ? data.rule : undefined,
+    de_id: typeof data.de_id === 'string' ? data.de_id : null,
+    de_name: typeof data.de_name === 'string' ? data.de_name : undefined,
   };
 }
 
