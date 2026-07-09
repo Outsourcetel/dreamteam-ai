@@ -22,8 +22,13 @@ import {
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../components';
-import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
-import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
+import {
+  listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
+  transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
+} from '../../lib/digitalEmployeesApi';
+import type { DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness } from '../../lib/digitalEmployeesApi';
+import { useUsers } from '../../lib/useUsers';
+import Modal from '../../components/Modal';
 import { getDePerformanceMetrics } from '../../lib/api';
 import type { DePerformanceMetrics } from '../../lib/api';
 import { listAuditEvents } from '../../lib/guardrailApi';
@@ -489,6 +494,259 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
   );
 }
 
+// ── Governance — config editing/versioning, ownership/transfer,
+// retirement with real dependency checks (Wave 2, migration 110). ──
+
+function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: () => void; onSaved: (de: DigitalEmployee) => void }) {
+  const [name, setName] = useState(de.name);
+  const [personaName, setPersonaName] = useState(de.persona_name ?? '');
+  const [description, setDescription] = useState(de.description);
+  const [department, setDepartment] = useState(de.department);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(String(de.confidence_threshold));
+  const [requiredApproval, setRequiredApproval] = useState(de.required_approval);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const updated = await updateDigitalEmployee(de.id, {
+        name: name.trim() || undefined,
+        personaName: personaName.trim(),
+        description,
+        department,
+        confidenceThreshold: Number(confidenceThreshold) || undefined,
+        requiredApproval,
+      });
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save changes.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={`Edit ${de.persona_name || de.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+        <label className="block text-xs text-slate-400">Name
+          <input value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <label className="block text-xs text-slate-400">Persona name (optional)
+          <input value={personaName} onChange={e => setPersonaName(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <label className="block text-xs text-slate-400">Description
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <label className="block text-xs text-slate-400">Department
+          <input value={department} onChange={e => setDepartment(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <label className="block text-xs text-slate-400">Confidence threshold (0-100)
+          <input type="number" min={0} max={100} value={confidenceThreshold} onChange={e => setConfidenceThreshold(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input type="checkbox" checked={requiredApproval} onChange={e => setRequiredApproval(e.target.checked)} />
+          Require human approval by default
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={save} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TransferOwnerModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: () => void; onSaved: (de: DigitalEmployee) => void }) {
+  const { members, loading: membersLoading } = useUsers();
+  const [target, setTarget] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const candidates = members.filter(m => m.status === 'active' && m.userId !== de.owner_id);
+
+  const save = async () => {
+    if (!target) { setErr('Choose a new owner.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const updated = await transferDeOwnership(de.id, target, note.trim() || undefined);
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not transfer ownership.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={`Transfer ownership of ${de.persona_name || de.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+        {membersLoading ? (
+          <p className="text-xs text-slate-500">Loading team…</p>
+        ) : candidates.length === 0 ? (
+          <p className="text-xs text-slate-500">No other active team members to transfer to.</p>
+        ) : (
+          <label className="block text-xs text-slate-400">New owner
+            <select value={target} onChange={e => setTarget(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white">
+              <option value="">Select a team member…</option>
+              {candidates.map(m => <option key={m.userId} value={m.userId}>{m.fullName} ({m.role})</option>)}
+            </select>
+          </label>
+        )}
+        <label className="block text-xs text-slate-400">Note (optional)
+          <input value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" placeholder="Why this transfer is happening" />
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={save} disabled={busy || candidates.length === 0} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Transferring…' : 'Transfer ownership'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClose: () => void; onRetired: (de: DigitalEmployee) => void }) {
+  const [readiness, setReadiness] = useState<RetirementReadiness | null>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    checkDeRetirementReadiness(de.id).then(r => { if (!cancelled) setReadiness(r); }).catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Could not check readiness.'); });
+    return () => { cancelled = true; };
+  }, [de.id]);
+
+  const confirm = async () => {
+    if (!reason.trim()) { setErr('A retirement reason is required.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const updated = await retireDigitalEmployee(de.id, reason.trim());
+      onRetired(updated);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not retire this employee.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={`Retire ${de.persona_name || de.name}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-xs text-slate-400">
+          Retirement is terminal — a retired employee cannot be reactivated. Configuration locks read-only and the full history is retained.
+        </p>
+        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+        {readiness === null ? (
+          <p className="text-xs text-slate-500">Checking for open dependencies…</p>
+        ) : readiness.ready ? (
+          <div className="rounded-lg border border-emerald-800/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+            No open dependencies — clear to retire.
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-800/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 space-y-1">
+            <p className="font-medium">Cannot retire yet — resolve first:</p>
+            {readiness.blockers.map(b => <p key={b.kind}>• {b.message}</p>)}
+          </div>
+        )}
+        <label className="block text-xs text-slate-400">Reason for retirement (required)
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white" />
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={confirm} disabled={busy || !readiness?.ready} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50">{busy ? 'Retiring…' : 'Retire this employee'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (de: DigitalEmployee) => void }) {
+  const { members } = useUsers();
+  const [history, setHistory] = useState<DEConfigHistoryEntry[] | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [modal, setModal] = useState<'edit' | 'transfer' | 'retire' | null>(null);
+  const ownerName = members.find(m => m.userId === de.owner_id)?.fullName ?? (de.owner_id ? 'Unknown' : 'Unassigned');
+  const retired = de.lifecycle_status === 'retired';
+
+  const loadHistory = async () => {
+    setShowHistory(s => !s);
+    if (history === null) {
+      try { setHistory(await getDEConfigHistory(de.id)); } catch { setHistory([]); }
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Governance</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">config v{de.config_version}</span>
+        {retired && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">retired — read-only</span>}
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Who's accountable for this employee, every configuration change on record, and how retirement works.
+      </p>
+
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 mb-3">
+        <div>
+          <p className="text-xs text-slate-500">Owner</p>
+          <p className="text-sm text-slate-200">{ownerName}</p>
+        </div>
+        {!retired && (
+          <button onClick={() => setModal('transfer')} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">
+            Transfer
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        {!retired && (
+          <button onClick={() => setModal('edit')} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">
+            Edit configuration
+          </button>
+        )}
+        <button onClick={loadHistory} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">
+          {showHistory ? 'Hide' : 'View'} config history
+        </button>
+        {!retired && (
+          <button onClick={() => setModal('retire')} className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-red-900/50 text-red-400 hover:bg-red-950/40 transition-colors">
+            Retire
+          </button>
+        )}
+      </div>
+
+      {showHistory && (
+        history === null ? (
+          <p className="text-xs text-slate-500">Loading history…</p>
+        ) : history.length === 0 ? (
+          <p className="text-xs text-slate-500">No configuration changes on record yet.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {history.map(h => (
+              <div key={h.id} className="rounded-lg bg-slate-950/60 px-3 py-2 text-[11px]">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <span className="capitalize text-slate-300">{h.operation.toLowerCase()}</span>
+                  <span>by {h.actor_name || 'unknown'}</span>
+                  <span className="ml-auto text-slate-600">{new Date(h.created_at).toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {modal === 'edit' && <EditDEModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
+      {modal === 'transfer' && <TransferOwnerModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
+      {modal === 'retire' && <RetireDEModal de={de} onClose={() => setModal(null)} onRetired={onUpdated} />}
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
@@ -706,6 +964,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           <DePerformancePanel deId={selectedDe.id} />
           <DeKnowledgeScopePanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
+
+          {/* Governance — config editing/versioning, ownership/transfer, retirement */}
+          <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* Trust dial */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
