@@ -302,6 +302,12 @@ async function runResolveInquiry(
   opts: {
     profileKey?: string; deId?: string | null; subjectKind?: 'de' | 'specialist'; subjectId?: string | null;
     conversationId?: string | null;
+    /** Wave 3 (bounded DE consultation, migration 111) — internal
+     *  recursion guard. Set to 1 automatically when this call IS a
+     *  consultation (see Step 3c below) so the consulted DE's own
+     *  evidence-gathering never itself consults a third DE. Single-
+     *  hop only, by construction — not full Composition/fan-out. */
+    consultDepth?: number;
   } = {},
 ): Promise<RunResolveInquiryResult> {
   const { data: prof2 } = await admin.from('specialist_profiles')
@@ -550,6 +556,52 @@ async function runResolveInquiry(
         : `No access — blocked by your data access rules: ${actorName} needs "search" permission on ${experienceCategory} to recall its own prior experience here. An admin can change this under Governance → Data Access.`,
       item_count: priorExperienceCount, latency_ms: Date.now() - started, citations: expCitations,
     });
+  }
+
+  // ── Step 3c: DE consultation (Wave 3, bounded — migration 111).
+  // NOT full Composition (docs §7.6 — Coordinator DE, multi-target
+  // fan-out, synthesis). This is single-hop only (consultDepth guards
+  // against a consulted DE consulting a third), governance-gated by
+  // an explicit tenant-admin-configured allow-list (de_consultation_
+  // grants — never an open "any DE can ask any DE anything"), and the
+  // TARGET DE's own access grants are what actually run — this step
+  // never widens the CALLING DE's own permissions, it just reuses
+  // THIS SAME PIPELINE recursively as the target DE's identity
+  // (docs §7.6 rule 3: "cannot escalate permissions").
+  const consultDepth = opts.consultDepth ?? 0;
+  if (subjectKind === 'de' && subjectId && consultDepth === 0) {
+    const { data: grants } = await admin.from('de_consultation_grants')
+      .select('id, target_de_id, category')
+      .eq('tenant_id', tenantId).eq('requester_de_id', subjectId).eq('active', true);
+    for (const g of (grants ?? []) as Array<{ id: string; target_de_id: string; category: string }>) {
+      const { data: targetDe } = await admin.from('digital_employees')
+        .select('id, name, persona_name').eq('id', g.target_de_id).eq('tenant_id', tenantId).maybeSingle();
+      if (!targetDe) continue;
+      const targetName = targetDe.persona_name || targetDe.name;
+      const started = Date.now();
+      try {
+        const sub = await runResolveInquiry(admin, tenantId, inquiry, accountRef, {
+          subjectKind: 'de', subjectId: targetDe.id, consultDepth: consultDepth + 1,
+        });
+        const answered = sub.answer_status === 'answered' && !!sub.answer;
+        await recordStep({
+          kind: 'de_consultation', system: `Consulted ${targetName}`, query: inquiry,
+          outcome: answered ? 'ok' : 'skipped_not_connected',
+          category: g.category, op: 'consult_de', provider: 'internal',
+          summary: answered
+            ? `Consulted ${targetName} (${g.category}) — governed by an active consultation grant, answered from ${targetName}'s own access, not this employee's.`
+            : `Consulted ${targetName} (${g.category}), but no answer was available (${sub.note ?? sub.answer_status}).`,
+          item_count: answered ? 1 : 0, latency_ms: Date.now() - started,
+          citations: answered ? [{ system: `Consulted: ${targetName}`, ref: sub.evidence_run_id, title: `${targetName}'s answer`, url: null, snippet: (sub.answer ?? '').slice(0, 200) }] : [],
+        });
+        await audit(admin, tenantId, actorName,
+          `Consulted ${targetName} on ${g.category} — "${inquiry.slice(0, 80)}"`,
+          'de_consultation',
+          { kind: 'de_consultation', requester_de_id: subjectId, target_de_id: targetDe.id, category: g.category, grant_id: g.id, target_evidence_run_id: sub.evidence_run_id, answered });
+      } catch (e) {
+        console.error('de_consultation step failed:', targetDe.id, e);
+      }
+    }
   }
 
   // ── Step 4: compose the evidence bundle ──

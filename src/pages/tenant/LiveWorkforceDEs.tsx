@@ -25,8 +25,11 @@ import { ConfirmDeleteModal } from '../../components';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
+  listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
 } from '../../lib/digitalEmployeesApi';
-import type { DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness } from '../../lib/digitalEmployeesApi';
+import type {
+  DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
+} from '../../lib/digitalEmployeesApi';
 import { useUsers } from '../../lib/useUsers';
 import Modal from '../../components/Modal';
 import { getDePerformanceMetrics } from '../../lib/api';
@@ -666,6 +669,127 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
   );
 }
 
+// ── Consultations — bounded DE-to-DE delegation (Wave 3, migration
+// 111). NOT full Composition: single-hop, governance-gated by an
+// explicit allow-list this panel manages. ──────────────────────────
+function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
+  const [asRequester, setAsRequester] = useState<DEConsultationGrant[] | null>(null);
+  const [asTarget, setAsTarget] = useState<DEConsultationGrant[] | null>(null);
+  const [roster, setRoster] = useState<DigitalEmployee[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [nameById, setNameById] = useState<Record<string, string>>({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [targetId, setTargetId] = useState('');
+  const [category, setCategory] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [grants, des, cats] = await Promise.all([
+        listDeConsultationGrants(de.id),
+        listDigitalEmployees(),
+        supabase.from('system_categories').select('key').order('key'),
+      ]);
+      setAsRequester(grants.asRequester);
+      setAsTarget(grants.asTarget);
+      setRoster(des.filter(d => d.id !== de.id && d.lifecycle_status !== 'retired'));
+      setNameById(Object.fromEntries(des.map(d => [d.id, d.persona_name || d.name])));
+      setCategories(((cats.data ?? []) as Array<{ key: string }>).map(c => c.key));
+    } catch {
+      setAsRequester([]); setAsTarget([]);
+    }
+  }, [de.id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const addGrant = async () => {
+    if (!targetId || !category) { setErr('Choose a target employee and a category.'); return; }
+    setBusy(true); setErr(null);
+    try {
+      await createDeConsultationGrant(de.id, targetId, category);
+      setShowAdd(false); setTargetId(''); setCategory('');
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not create the consultation grant.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async (grant: DEConsultationGrant) => {
+    setBusy(true);
+    try { await setDeConsultationGrantActive(grant.id, !grant.active); await load(); }
+    finally { setBusy(false); }
+  };
+
+  if (asRequester === null) return null;
+
+  return (
+    <div className="mt-5 pt-5 border-t border-slate-800">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h4 className="text-sm font-semibold text-slate-200">Consultations</h4>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">bounded, single-hop</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        A governed, one-question handoff to another employee — the answer comes from the OTHER employee's own access, never widening this one's.
+        Not full delegation: no chains, no fan-out.
+      </p>
+      {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+
+      <p className="text-xs text-slate-400 mb-1">Can consult:</p>
+      {asRequester.length === 0 ? (
+        <p className="text-xs text-slate-600 mb-3">No consultation grants yet.</p>
+      ) : (
+        <div className="space-y-1 mb-3">
+          {asRequester.map(g => (
+            <div key={g.id} className="flex items-center justify-between rounded-lg bg-slate-950/60 px-3 py-1.5 text-xs">
+              <span className="text-slate-300">{nameById[g.target_de_id] || 'Unknown'} <span className="text-slate-600">· {g.category}</span></span>
+              <button onClick={() => toggle(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}`}>
+                {g.active ? 'active' : 'inactive'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAdd ? (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2 mb-3">
+          <select value={targetId} onChange={e => setTargetId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-white">
+            <option value="">Consult which employee…</option>
+            {roster.map(d => <option key={d.id} value={d.id}>{d.persona_name || d.name}</option>)}
+          </select>
+          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-800 px-2 py-1.5 text-xs text-white">
+            <option value="">On which category…</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">Cancel</button>
+            <button onClick={addGrant} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setShowAdd(true)} className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 mb-3">
+          + Grant a consultation
+        </button>
+      )}
+
+      {asTarget !== null && asTarget.length > 0 && (
+        <>
+          <p className="text-xs text-slate-400 mb-1">Consulted by:</p>
+          <div className="space-y-1">
+            {asTarget.map(g => (
+              <div key={g.id} className="rounded-lg bg-slate-950/60 px-3 py-1.5 text-xs text-slate-400">
+                {nameById[g.requester_de_id] || 'Unknown'} <span className="text-slate-600">· {g.category} · {g.active ? 'active' : 'inactive'}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (de: DigitalEmployee) => void }) {
   const { members } = useUsers();
   const [history, setHistory] = useState<DEConfigHistoryEntry[] | null>(null);
@@ -739,6 +863,8 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
           </div>
         )
       )}
+
+      {!retired && <ConsultationsPanel de={de} />}
 
       {modal === 'edit' && <EditDEModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
       {modal === 'transfer' && <TransferOwnerModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}

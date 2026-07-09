@@ -4,7 +4,7 @@
 // DE (Account, Finance, Onboarding, …), not just one department.
 // ============================================================
 import { supabase } from '../supabase';
-import { raise, listTenantRows } from './liveShared';
+import { raise, listTenantRows, requireTenantId } from './liveShared';
 
 export interface DigitalEmployee {
   id: string;
@@ -173,4 +173,55 @@ export async function retireDigitalEmployee(deId: string, reason: string): Promi
   const { data, error } = await supabase.rpc('retire_digital_employee', { p_de_id: deId, p_reason: reason });
   if (error) raise('retireDigitalEmployee', error);
   return data as DigitalEmployee;
+}
+
+// ============================================================
+// Wave 3 (bounded, migration 111) — DE-to-DE consultation. NOT full
+// Composition (docs §7.6): single-hop, governance-gated by an
+// explicit allow-list, no coordinator role, no fan-out/synthesis.
+// ============================================================
+
+export interface DEConsultationGrant {
+  id: string;
+  tenant_id: string;
+  requester_de_id: string;
+  target_de_id: string;
+  category: string;
+  active: boolean;
+  created_at: string;
+}
+
+/** All consultation grants where this DE is either the requester or
+ *  the target — a plain RLS-scoped read, no RPC needed. */
+export async function listDeConsultationGrants(deId: string): Promise<{ asRequester: DEConsultationGrant[]; asTarget: DEConsultationGrant[] }> {
+  const { data, error } = await supabase
+    .from('de_consultation_grants')
+    .select('*')
+    .or(`requester_de_id.eq.${deId},target_de_id.eq.${deId}`)
+    .order('created_at', { ascending: false });
+  if (error) raise('listDeConsultationGrants', error);
+  const rows = (data ?? []) as DEConsultationGrant[];
+  return {
+    asRequester: rows.filter(r => r.requester_de_id === deId),
+    asTarget: rows.filter(r => r.target_de_id === deId),
+  };
+}
+
+/** Grants requesterDeId permission to consult targetDeId for one
+ *  category — owner/admin only (enforced by RLS). The target DE's own
+ *  data access grants govern what it can actually answer; this never
+ *  widens the requester's own access. */
+export async function createDeConsultationGrant(requesterDeId: string, targetDeId: string, category: string): Promise<DEConsultationGrant> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('de_consultation_grants')
+    .insert({ tenant_id: tid, requester_de_id: requesterDeId, target_de_id: targetDeId, category })
+    .select('*').single();
+  if (error) raise('createDeConsultationGrant', error);
+  return data as DEConsultationGrant;
+}
+
+export async function setDeConsultationGrantActive(grantId: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from('de_consultation_grants').update({ active }).eq('id', grantId);
+  if (error) raise('setDeConsultationGrantActive', error);
 }
