@@ -205,15 +205,23 @@ serve(async (req) => {
     // subject. Optional body.de_id (must be in-tenant); default = the
     // tenant's first DE (the 025/029 fallback pattern). Retrieval RPCs
     // filter scoped docs server-side by this subject.
+    // Lifecycle eligibility (DE-B4, migration 126): a paused or
+    // retired employee never answers. An explicitly requested DE in
+    // one of those stages is an honest refusal, not a silent swap;
+    // the auto-resolved fallback picks the next eligible one.
     let subjectDeId: string | null = null;
     if (typeof de_id === 'string' && de_id) {
       const { data: reqDe } = await admin.from('digital_employees')
-        .select('id').eq('id', de_id).eq('tenant_id', tenantId).maybeSingle();
+        .select('id, lifecycle_status').eq('id', de_id).eq('tenant_id', tenantId).maybeSingle();
       if (!reqDe) return json({ error: 'de_not_in_tenant' }, 403);
+      if (['paused', 'retired', 'archived'].includes(String(reqDe.lifecycle_status))) {
+        return json({ error: 'de_not_available', detail: `This employee is ${reqDe.lifecycle_status} and cannot answer.` }, 409);
+      }
       subjectDeId = reqDe.id;
     } else {
       const { data: firstDe } = await admin.from('digital_employees')
         .select('id').eq('tenant_id', tenantId)
+        .not('lifecycle_status', 'in', '(paused,retired,archived)')
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       subjectDeId = firstDe?.id ?? null;
     }

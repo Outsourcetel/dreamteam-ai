@@ -292,8 +292,14 @@ serve(async (req) => {
     // Resolved before the conversation insert below so the new
     // de_conversations.de_id (migration 095, real per-DE CSAT) can be
     // set at creation time.
+    // Lifecycle eligibility (DE-B4, migration 126): a paused or
+    // retired employee never answers — the next eligible one does.
+    // Pre-launch stages still answer here by design (reactive Q&A is
+    // this platform's sandbox surface — scoped deviation recorded in
+    // migration 126).
     const { data: firstDe } = await admin.from('digital_employees')
       .select('id').eq('tenant_id', tenantId)
+      .not('lifecycle_status', 'in', '(paused,retired,archived)')
       .order('created_at', { ascending: true }).limit(1).maybeSingle();
     const subjectDeId: string | null = firstDe?.id ?? null;
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);

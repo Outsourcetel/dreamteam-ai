@@ -1194,6 +1194,187 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
   );
 }
 
+// ── Lifecycle panel — the governance gate made visible (DE-B4,
+// migration 126). The chain is designed → configured → trained →
+// tested → certified → published → assigned → active; every "Advance"
+// is criteria-checked server-side (advance_de_lifecycle), certification
+// requires a named reviewer note, and pause/resume have real teeth
+// (a paused employee stops polling, answering, and running playbooks).
+const LIFECYCLE_CHAIN = ['designed', 'configured', 'trained', 'tested', 'certified', 'published', 'assigned', 'active'] as const;
+const STAGE_LABELS: Record<string, string> = {
+  designed: 'Designed', configured: 'Configured', trained: 'Trained', tested: 'Tested',
+  certified: 'Certified', published: 'Published', assigned: 'Assigned', active: 'Active',
+  improving: 'Improving', paused: 'Paused', retired: 'Retired', archived: 'Archived',
+};
+type LifecycleReadiness = {
+  stage: string; status: string;
+  criteria: Record<string, Record<string, boolean | string>>;
+};
+function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [readiness, setReadiness] = useState<LifecycleReadiness | null>(null);
+  const [events, setEvents] = useState<Array<{ id: string; from_stage: string; to_stage: string; actor_label: string; note: string | null; created_at: string }>>([]);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: r, error: rErr }, { data: ev }] = await Promise.all([
+      supabase.rpc('compute_de_lifecycle_readiness', { p_de_id: de.id }),
+      supabase.from('de_lifecycle_events')
+        .select('id, from_stage, to_stage, actor_label, note, created_at')
+        .eq('de_id', de.id).order('created_at', { ascending: false }).limit(5),
+    ]);
+    if (rErr) { setError(rErr.message); return; }
+    setReadiness(r as LifecycleReadiness);
+    setEvents((ev ?? []) as typeof events);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const stage = readiness?.stage ?? de.lifecycle_status ?? 'designed';
+  const chainIdx = (LIFECYCLE_CHAIN as readonly string[]).indexOf(stage);
+  const nextStage = chainIdx >= 0 && chainIdx < LIFECYCLE_CHAIN.length - 1 ? LIFECYCLE_CHAIN[chainIdx + 1] : null;
+  const nextCriteria = nextStage && readiness ? readiness.criteria[nextStage] : null;
+  const criteriaEntries = nextCriteria
+    ? Object.entries(nextCriteria).filter(([k, v]) => typeof v === 'boolean') as Array<[string, boolean]>
+    : [];
+  const allMet = criteriaEntries.length > 0 && criteriaEntries.every(([, v]) => v);
+  const isPaused = stage === 'paused';
+  const isClosed = stage === 'retired' || stage === 'archived';
+  const isOperational = stage === 'active' || stage === 'improving';
+
+  const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
+    setBusy(true); setError(null);
+    const { error: err } = await fn();
+    if (err) setError(err.message);
+    setNote('');
+    await load();
+    setBusy(false);
+    // Refresh the parent card's stage badge without a full reload.
+    const { data: fresh } = await supabase.from('digital_employees').select('*').eq('id', de.id).maybeSingle();
+    if (fresh) onUpdated(fresh as DigitalEmployee);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Lifecycle</h3>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+          isOperational ? 'bg-emerald-500/15 text-emerald-300'
+          : isPaused ? 'bg-amber-500/15 text-amber-300'
+          : isClosed ? 'bg-slate-800 text-slate-500'
+          : 'bg-indigo-500/15 text-indigo-300'}`}>
+          {STAGE_LABELS[stage] ?? stage}
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Stage is a governance gate, not a label: proactive work (inbox, actions, playbooks) needs
+        Assigned or beyond, and each advance checks real criteria. Reactive Q&A stays available
+        pre-launch — that is the proving ground.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+
+      {/* Stage ladder */}
+      <div className="flex flex-wrap items-center gap-1 mb-4">
+        {LIFECYCLE_CHAIN.map((s, i) => (
+          <span key={s} className="flex items-center gap-1">
+            <span className={`text-[10px] px-2 py-1 rounded-lg border ${
+              s === stage ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200 font-semibold'
+              : chainIdx >= 0 && i < chainIdx ? 'border-slate-800 bg-slate-950 text-emerald-400'
+              : 'border-slate-800 bg-slate-950 text-slate-600'}`}>
+              {chainIdx >= 0 && i < chainIdx ? '✓ ' : ''}{STAGE_LABELS[s]}
+            </span>
+            {i < LIFECYCLE_CHAIN.length - 1 && <span className="text-slate-700 text-[10px]">→</span>}
+          </span>
+        ))}
+        {(stage === 'improving' || isPaused || isClosed) && (
+          <span className="text-[10px] px-2 py-1 rounded-lg border border-amber-600/40 bg-amber-500/10 text-amber-300 ml-1">
+            {STAGE_LABELS[stage]}
+          </span>
+        )}
+      </div>
+
+      {/* Next-stage criteria */}
+      {!isPaused && !isClosed && nextStage && nextCriteria && (
+        <div className="mb-4">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+            To reach {STAGE_LABELS[nextStage]}
+          </p>
+          <div className="space-y-1">
+            {criteriaEntries.map(([k, met]) => (
+              <p key={k} className={`text-xs ${met ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {met ? '✓' : '○'} {k.split('_').join(' ')}
+              </p>
+            ))}
+            {typeof nextCriteria.detail === 'string' && (
+              <p className="text-[10px] text-slate-600 mt-1">{nextCriteria.detail}</p>
+            )}
+          </div>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {nextStage === 'certified' && (
+              <input
+                type="text" value={note} disabled={busy}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Certification note — what did you review?"
+                className="flex-1 min-w-[220px] bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+              />
+            )}
+            <button
+              onClick={() => void run(() => supabase.rpc('advance_de_lifecycle', { p_de_id: de.id, p_to_stage: nextStage, p_note: note.trim() || null }))}
+              disabled={busy || !allMet || (nextStage === 'certified' && !note.trim())}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              {busy ? 'Working…' : nextStage === 'certified' ? 'Certify' : `Advance to ${STAGE_LABELS[nextStage]}`}
+            </button>
+            {!allMet && <span className="text-[10px] text-slate-600">Criteria above must be met first.</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Pause / resume */}
+      {!isClosed && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <input
+            type="text" value={note} disabled={busy}
+            onChange={e => setNote(e.target.value)}
+            placeholder={isPaused ? 'Resume note — what was investigated?' : 'Pause reason (required)'}
+            className="flex-1 min-w-[220px] bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 disabled:opacity-50"
+          />
+          {isPaused ? (
+            <button
+              onClick={() => void run(() => supabase.rpc('resume_digital_employee', { p_de_id: de.id, p_note: note.trim() }))}
+              disabled={busy || !note.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40">
+              Resume
+            </button>
+          ) : (
+            <button
+              onClick={() => void run(() => supabase.rpc('pause_digital_employee', { p_de_id: de.id, p_reason: note.trim() }))}
+              disabled={busy || !note.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40">
+              Pause
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Recent transitions */}
+      {events.length > 0 && (
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Recent transitions</p>
+          <div className="space-y-1">
+            {events.map(ev => (
+              <p key={ev.id} className="text-[11px] text-slate-500">
+                <span className="text-slate-400">{STAGE_LABELS[ev.from_stage] ?? ev.from_stage} → {STAGE_LABELS[ev.to_stage] ?? ev.to_stage}</span>
+                {' '}· {ev.actor_label}{ev.note ? ` — ${ev.note.slice(0, 100)}` : ''}
+                {' '}· {new Date(ev.created_at).toLocaleDateString()}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Escalation rules panel — per-employee with workspace fallback ──
 // Frustration threshold + always-escalate topics (migration 124).
 // The same cascade as the trust dial: this employee's own rules win,
@@ -1507,6 +1688,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               </div>
             </div>
           </div>
+
+          {/* Lifecycle — the governance gate (DE-B4) */}
+          <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* DE operating charter */}
           <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />

@@ -1817,6 +1817,19 @@ async function startDefinitionRunServer(
   if (!def) return { status: 'error', error: 'definition_not_found', http: 404 };
   if (def.status !== 'published') return { status: 'error', error: 'definition_not_published', http: 400 };
 
+  // LIFECYCLE GATE (DE-B4, migration 126): a playbook assigned to a
+  // paused/retired employee does not run — the constitution's "paused
+  // = scheduled Workflows are paused" made real. Definitions with no
+  // assigned DE are unaffected.
+  if (def.de_id) {
+    const { data: assignedDe } = await admin.from('digital_employees')
+      .select('lifecycle_status, name').eq('id', def.de_id).maybeSingle();
+    const stage = String(assignedDe?.lifecycle_status ?? '');
+    if (['paused', 'retired', 'archived'].includes(stage)) {
+      return { status: 'error', error: 'assigned_de_' + stage, http: 409 };
+    }
+  }
+
   // Runs execute the IMMUTABLE published snapshot, never the live draft.
   const { data: snapshot } = await admin.from('playbook_versions')
     .select('version, steps').eq('definition_id', def.id)
