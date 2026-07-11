@@ -1712,6 +1712,146 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
+// ── Economics panel (DE-C5, migration 131). FTE Equivalent and ROI
+// exist ONLY downstream of baselines the workspace types in (§12.3:
+// "configured by the Organisation, not invented by the platform").
+// Real counts and real AI cost always show; the value math shows
+// "configure to calculate" until the baselines exist.
+type Economics = {
+  window_days: number;
+  counts: { inquiries_handled: number; actions_executed: number; conversations_answered: number };
+  baselines: { inquiry_minutes: number | null; action_minutes: number | null; conversation_minutes: number | null; avg_fte_cost_monthly_usd: number | null };
+  hours_saved: number | null; fte_equivalent: number | null; de_cost_usd: number;
+  human_cost_equivalent_usd: number | null; monthly_saving_usd: number | null; roi_ratio: number | null;
+  unconfigured: string[]; configured: boolean;
+};
+function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
+  const [eco, setEco] = useState<Economics | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const [fteCost, setFteCost] = useState('');
+  const [inqMin, setInqMin] = useState('');
+  const [actMin, setActMin] = useState('');
+  const [convMin, setConvMin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error: err } = await supabase.rpc('get_de_economics', {
+      p_tenant_id: de.tenant_id, p_de_id: de.id, p_days: 30,
+    });
+    if (err) { setError(err.message); return; }
+    const e = data as Economics;
+    setEco(e);
+    setFteCost(e.baselines.avg_fte_cost_monthly_usd?.toString() ?? '');
+    setInqMin(e.baselines.inquiry_minutes?.toString() ?? '');
+    setActMin(e.baselines.action_minutes?.toString() ?? '');
+    setConvMin(e.baselines.conversation_minutes?.toString() ?? '');
+  }, [de.id, de.tenant_id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const saveBaselines = async () => {
+    setBusy(true); setError(null);
+    const num = (s: string) => (s.trim() === '' ? null : Number(s));
+    const { error: err } = await supabase.rpc('set_workforce_baselines', {
+      p_avg_fte_cost_monthly_usd: num(fteCost),
+      p_inquiry_minutes: num(inqMin),
+      p_action_minutes: num(actMin),
+      p_conversation_minutes: num(convMin),
+    });
+    if (err) setError(err.message);
+    else setShowConfig(false);
+    await load();
+    setBusy(false);
+  };
+
+  const money = (n: number | null) => n === null ? '—' : `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Economics</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">your baselines, never estimated</span>
+        <button onClick={() => setShowConfig(s => !s)}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">
+          {showConfig ? 'Cancel' : 'Baselines…'}
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Work counts and AI cost are always real. Hours saved, FTE equivalent, and ROI are computed
+        only from baselines <span className="text-slate-300">you</span> configure — how long a human
+        takes per task and what a human FTE costs. The platform never invents these.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+
+      {showConfig && (
+        <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+          <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Workspace-wide — applies to every employee</p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[11px] text-slate-500">Human minutes per inbox item
+              <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
+                className="mt-0.5 w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            </label>
+            <label className="text-[11px] text-slate-500">Human minutes per action
+              <input type="number" min={0.1} step={0.5} value={actMin} disabled={busy} onChange={e => setActMin(e.target.value)} placeholder="e.g. 8"
+                className="mt-0.5 w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            </label>
+            <label className="text-[11px] text-slate-500">Human minutes per conversation
+              <input type="number" min={0.1} step={0.5} value={convMin} disabled={busy} onChange={e => setConvMin(e.target.value)} placeholder="e.g. 4"
+                className="mt-0.5 w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            </label>
+            <label className="text-[11px] text-slate-500">Human FTE cost / month (USD, fully loaded)
+              <input type="number" min={1} value={fteCost} disabled={busy} onChange={e => setFteCost(e.target.value)} placeholder="e.g. 6000"
+                className="mt-0.5 w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            </label>
+          </div>
+          <button onClick={() => void saveBaselines()} disabled={busy}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save baselines'}
+          </button>
+        </div>
+      )}
+
+      {eco === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Work · 30 days</p>
+              <p className="text-sm text-white font-semibold mt-1">
+                {eco.counts.inquiries_handled + eco.counts.actions_executed + eco.counts.conversations_answered}
+              </p>
+              <p className="text-[10px] text-slate-600">{eco.counts.inquiries_handled} inbox · {eco.counts.actions_executed} actions · {eco.counts.conversations_answered} conv.</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">AI cost</p>
+              <p className="text-sm text-white font-semibold mt-1">{money(eco.de_cost_usd)}</p>
+              <p className="text-[10px] text-slate-600">real token spend</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">Hours saved</p>
+              <p className="text-sm text-white font-semibold mt-1">{eco.hours_saved ?? '—'}</p>
+              <p className="text-[10px] text-slate-600">{eco.fte_equivalent !== null ? `${eco.fte_equivalent} FTE equivalent` : 'configure to calculate'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">ROI</p>
+              <p className="text-sm text-white font-semibold mt-1">{eco.roi_ratio !== null ? `${eco.roi_ratio}x` : '—'}</p>
+              <p className="text-[10px] text-slate-600">
+                {eco.monthly_saving_usd !== null ? `≈ ${money(eco.monthly_saving_usd)}/month saved` : 'configure to calculate'}
+              </p>
+            </div>
+          </div>
+          {eco.unconfigured.length > 0 && (
+            <p className="text-[11px] text-amber-300/90">
+              Configure to calculate: {eco.unconfigured.map(u => u.split('_').join(' ')).join(', ')} — set them under “Baselines…”.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Lifecycle panel — the governance gate made visible (DE-B4,
 // migration 126). The chain is designed → configured → trained →
 // tested → certified → published → assigned → active; every "Advance"
@@ -2389,6 +2529,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
           <DeSkillsPanel de={selectedDe} />
           <DeKpisPanel de={selectedDe} />
+          <DeEconomicsPanel de={selectedDe} />
           <DeCertificationsPanel de={selectedDe} />
           <DeDevelopmentPanel de={selectedDe} />
 
