@@ -6,6 +6,7 @@ import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
 import { useDataMode } from '../../../lib/dataMode';
+import type { GatedExecutionPreview } from '../../../lib/connectorApi';
 import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -232,6 +233,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [stalledOnly, setStalledOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -253,6 +255,20 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   useEffect(() => { void refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A human approving a gated action (e.g. a customer-visible reply)
+  // must see the FULL draft, not the truncated task detail — load the
+  // linked execution whenever an action_approval task is selected.
+  useEffect(() => {
+    setGatedExec(null);
+    const sel = tasks.find(t => t.id === selectedId);
+    if (!sel || sel.type !== 'action_approval') return;
+    let cancelled = false;
+    void import('../../../lib/connectorApi').then(({ getGatedExecutionForTask }) =>
+      getGatedExecutionForTask(sel.id).then(exec => { if (!cancelled) setGatedExec(exec); })
+    ).catch(() => { /* draft panel is an overlay — task still decidable */ });
+    return () => { cancelled = true; };
+  }, [selectedId, tasks]);
 
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected') => {
     setDeciding(true);
@@ -430,6 +446,24 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   )}
                 </div>
 
+                {selected.type === 'action_approval' && gatedExec && (
+                  <div className="mt-4">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+                      {gatedExec.destructive ? 'What will be sent / changed on approval' : 'What will happen on approval'}
+                    </p>
+                    <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300">
+                      <p className="font-medium text-slate-200 mb-1">{gatedExec.action_label}</p>
+                      {gatedExec.request_summary && <p className="text-slate-400 mb-2">{gatedExec.request_summary}</p>}
+                      {(gatedExec.params.body || gatedExec.params.note) && (
+                        <div className="border-t border-slate-800 pt-2 mt-1">
+                          <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Full draft</p>
+                          <p className="whitespace-pre-wrap text-slate-300">{gatedExec.params.body || gatedExec.params.note}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {selected.type === 'checklist' && selected.status === 'pending' && (
                   <div className="mt-4 space-y-1.5">
                     {(selected.checklist_state ?? []).map((item, idx) => (
@@ -449,7 +483,11 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       disabled={deciding || (selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done))}
                       title={selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done) ? 'Tick every item before completing this checklist' : undefined}
                       className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
-                      {deciding ? '…' : selected.type === 'checklist' ? 'Mark complete' : 'Approve'}
+                      {deciding ? '…'
+                        : selected.type === 'checklist' ? 'Mark complete'
+                        : selected.type === 'action_approval' && gatedExec?.destructive ? 'Approve & send'
+                        : selected.type === 'action_approval' ? 'Approve & execute'
+                        : 'Approve'}
                     </button>
                     <button onClick={() => void decide(selected, 'rejected')} disabled={deciding}
                       className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 disabled:opacity-50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">

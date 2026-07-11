@@ -615,6 +615,40 @@ export async function executeAction(
   }) as unknown as Promise<ActionExecuteResult>;
 }
 
+/** The gated execution a human task is holding for approval — used by
+ *  the Human Tasks pane to show the FULL draft (e.g. the reply text a
+ *  customer would see) before the human decides. Returns null when the
+ *  task doesn't gate an action. */
+export interface GatedExecutionPreview {
+  execution_id: string;
+  action_label: string;
+  destructive: boolean;
+  request_summary: string | null;
+  /** Full param values — params.body/params.note carry the complete
+   *  draft text for reply/note actions. */
+  params: Record<string, string>;
+}
+
+export async function getGatedExecutionForTask(taskId: string): Promise<GatedExecutionPreview | null> {
+  const { data, error } = await supabase
+    .from('action_executions')
+    .select('id, params, request_summary, decision, action_definitions(label, risk)')
+    .eq('task_id', taskId)
+    .like('decision', 'human_gated%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const def = (data as { action_definitions?: { label?: string; risk?: { destructive?: boolean } } }).action_definitions;
+  return {
+    execution_id: (data as { id: string }).id,
+    action_label: def?.label ?? 'Registered action',
+    destructive: !!def?.risk?.destructive,
+    request_summary: (data as { request_summary: string | null }).request_summary,
+    params: ((data as { params?: Record<string, string> }).params ?? {}),
+  };
+}
+
 /**
  * decideHumanTask hook target for 'action_approval' tasks: given the
  * task, find its pending action_executions row and re-execute with

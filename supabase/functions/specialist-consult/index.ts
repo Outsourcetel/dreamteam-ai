@@ -871,6 +871,22 @@ async function handlePollDeWorkSources(
         const rows = (r.data ?? []) as Array<{ id: string; action_key: string; label: string; param_schema: Array<{ name: string; type: string; required?: boolean }> }>;
         return rows[0] ?? null;
       });
+      // DE-A4 (draft-for-approval): when the DE composes a real ANSWER,
+      // the natural act is the REPLY — but the generic resolver prefers
+      // non-destructive candidates (correct for autonomous acts), which
+      // for helpdesk picks add_internal_note, whose `note` param is
+      // never fillable here — so no reply draft was ever proposable.
+      // Resolve reply_to_ticket separately; the item loop prefers it
+      // whenever an answer exists. Its destructive flag means
+      // decide_action_execution ALWAYS gates it into a human task
+      // carrying the full draft — approval sends, autonomy stays zero.
+      const replyDef = await admin
+        .from('action_definitions')
+        .select('id, action_key, label, param_schema')
+        .eq('category', t.category).eq('action_key', 'reply_to_ticket').eq('status', 'active')
+        .or(`scope.eq.platform,tenant_id.eq.${t.tenant_id}`)
+        .limit(1).maybeSingle()
+        .then((r) => (r.data ?? null) as { id: string; action_key: string; label: string; param_schema: Array<{ name: string; type: string; required?: boolean }> } | null);
 
       for (const item of toProcess) {
         // Atomic ownership claim (migration 109). poll_de_work_sources_
@@ -929,18 +945,31 @@ async function handlePollDeWorkSources(
         // fall back honestly to the original would_auto_send/
         // needs_review recording — never invent an action that isn't
         // really there.
-        if (decision === 'would_auto_send' && actionDef) {
-          // Only attempt params we can honestly fill from the
-          // canonical item shape (title/snippet/ref) — a v1, honest
+        // Prefer the reply action when the DE composed a real answer —
+        // see replyDef above. Falls back to the category's generic
+        // (non-destructive-first) action otherwise.
+        const chosenDef = (result.answer && result.answer.trim() && replyDef) ? replyDef : actionDef;
+        if (decision === 'would_auto_send' && chosenDef) {
+          // Only attempt params we can honestly fill — a v1, honest
           // limit: an action needing OTHER fields is skipped here and
           // falls back to would_auto_send, not silently guessed at.
+          //
+          // `body` (a customer-visible reply) is the DE's COMPOSED
+          // ANSWER from the evidence pipeline — never the inquiry
+          // text. The original wiring echoed inquiryText back as the
+          // reply body (written while the LLM was dormant and
+          // result.answer was always null); with the brain live that
+          // would have sent the customer their own question back.
+          // No answer → body stays unfillable → honest fallback to
+          // recording intent, exactly like any other missing param.
           const fillable: Record<string, string> = {
-            external_ref: item.ref, title: item.title, snippet: item.snippet ?? '', body: inquiryText,
+            external_ref: item.ref, title: item.title, snippet: item.snippet ?? '',
           };
-          const missing = (actionDef.param_schema ?? []).filter((p) => p.required && !(p.name in fillable));
+          if (result.answer && result.answer.trim()) fillable.body = result.answer.slice(0, 4000);
+          const missing = (chosenDef.param_schema ?? []).filter((p) => p.required && !(p.name in fillable));
           if (missing.length === 0) {
             const params: Record<string, string> = {};
-            for (const p of actionDef.param_schema ?? []) {
+            for (const p of chosenDef.param_schema ?? []) {
               if (p.name in fillable) params[p.name] = fillable[p.name];
             }
             const execRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
@@ -953,7 +982,7 @@ async function handlePollDeWorkSources(
               body: JSON.stringify({
                 action: 'execute_action', connector_id: t.connector_id, tenant_id: t.tenant_id,
                 subject_kind: t.subject_kind, subject_id: t.subject_id,
-                action_key: actionDef.action_key, params,
+                action_key: chosenDef.action_key, params,
               }),
             });
             const execData = await execRes.json().catch(() => ({}));
@@ -963,13 +992,13 @@ async function handlePollDeWorkSources(
             } else if (execData?.gated) {
               decision = 'would_act';
               actionExecutionId = execData.execution_id ?? null;
-              reasoning = `Would act: ${execData.reasoning ?? reasoning} Action considered: "${actionDef.label}".`;
+              reasoning = `Would act: ${execData.reasoning ?? reasoning} Action considered: "${chosenDef.label}".`;
             } else if (execData?.ok) {
               decision = 'acted';
               actionExecutionId = execData.execution_id ?? null;
-              reasoning = `Acted — ${execData.receipt ?? `executed "${actionDef.label}"`}.`;
+              reasoning = `Acted — ${execData.receipt ?? `executed "${chosenDef.label}"`}.`;
             } else {
-              reasoning = `${reasoning} (Attempted to act via "${actionDef.label}" but it failed: ${execData?.error ?? 'unknown error'} — recorded as intent only.)`;
+              reasoning = `${reasoning} (Attempted to act via "${chosenDef.label}" but it failed: ${execData?.error ?? 'unknown error'} — recorded as intent only.)`;
             }
           }
         }

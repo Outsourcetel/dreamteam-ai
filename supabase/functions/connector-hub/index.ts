@@ -261,6 +261,30 @@ const zendeskActions: Record<string, NativeAction> = {
       return { ok: true, status: res.status, raw: res.body, receipt: `Posted a public reply on ticket #${p.external_ref} — the customer will see it.` };
     },
   },
+  // DE-A5: tag/categorize — the triage op the support day-loop was
+  // missing (note/reply/status already existed). additional_tags is
+  // Zendesk's append-safe form: it never removes existing tags, which
+  // is also what makes this action honestly idempotent.
+  zendesk_add_tags: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket number) is required.' };
+      const tags = (p.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      if (tags.length === 0) return { ok: false, error: 'param_required', detail: 'tags (comma-separated) is required.' };
+      return {
+        ok: true, method: 'PUT',
+        url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}.json`,
+        body: { ticket: { additional_tags: tags } },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: zendesk.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const tagList = (p.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean).join(', ');
+      return { ok: true, status: res.status, raw: res.body, receipt: `Tagged ticket #${p.external_ref} with: ${tagList}.` };
+    },
+  },
 };
 
 // ── salesforce ── secrets: { instance_url, client_id, client_secret }
