@@ -29,6 +29,12 @@ export interface DigitalEmployee {
   task_type: string | null;
   escalation_model_id: string | null;
   escalation_threshold: number | null;
+  /** DE-C4 (migration 130) — structured identity + availability */
+  display_title: string;
+  purpose_statement: string;
+  primary_business_outcome: string;
+  responsibilities: string[];
+  availability: { mode: string; timezone?: string; start_hour?: number; end_hour?: number; days?: number[] };
 }
 
 export async function listDigitalEmployees(): Promise<DigitalEmployee[]> {

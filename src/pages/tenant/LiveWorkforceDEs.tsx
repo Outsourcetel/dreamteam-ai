@@ -1462,6 +1462,256 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
   );
 }
 
+// ── Identity & Purpose panel (DE-C4, migration 130). These fields
+// are consumed for real: display_title + purpose_statement feed the
+// system prompt of every answer this employee gives (dePersona), and
+// responsibilities are a lifecycle identity criterion (126).
+function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [title, setTitle] = useState(de.display_title ?? '');
+  const [purpose, setPurpose] = useState(de.purpose_statement ?? '');
+  const [outcome, setOutcome] = useState(de.primary_business_outcome ?? '');
+  const [resp, setResp] = useState((de.responsibilities ?? []).join('\n'));
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    const { data, error: err } = await supabase.rpc('set_de_identity', {
+      p_de_id: de.id,
+      p_display_title: title.trim(),
+      p_purpose_statement: purpose.trim(),
+      p_primary_business_outcome: outcome.trim(),
+      p_responsibilities: resp.split('\n').map(r => r.trim()).filter(Boolean),
+    });
+    if (err) setError(err.message);
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Identity & Purpose</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">feeds every answer</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        The title and purpose written here go straight into this employee's working instructions —
+        every customer answer is given in this identity. Responsibilities also unlock the lifecycle's
+        identity criterion.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="space-y-2">
+        <input type="text" value={title} disabled={busy} onChange={e => setTitle(e.target.value)}
+          placeholder="Display title — e.g. Customer Support Specialist"
+          className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        <textarea value={purpose} disabled={busy} onChange={e => setPurpose(e.target.value)} rows={2}
+          placeholder="Purpose statement — one to three sentences on what this employee exists to do"
+          className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        <input type="text" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}
+          placeholder="Primary business outcome — e.g. Reduce average resolution time by 40%"
+          className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        <textarea value={resp} disabled={busy} onChange={e => setResp(e.target.value)} rows={3}
+          placeholder={'Responsibilities — one per line, e.g.\nAnswer customer product questions\nDraft ticket replies for approval'}
+          className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button onClick={() => void save()} disabled={busy}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save identity'}
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Availability panel (DE-C4). Schedule only — enforced on inbox
+// polling: off-schedule falls through the same chain as paused
+// (team backup → specialist). Reactive Q&A stays available.
+type Availability = { mode: string; timezone?: string; start_hour?: number; end_hour?: number; days?: number[] };
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const avail = (de.availability ?? { mode: 'always_on' }) as Availability;
+  const [mode, setMode] = useState(avail.mode ?? 'always_on');
+  const [tz, setTz] = useState(avail.timezone ?? 'UTC');
+  const [startH, setStartH] = useState(String(avail.start_hour ?? 9));
+  const [endH, setEndH] = useState(String(avail.end_hour ?? 17));
+  const [days, setDays] = useState<number[]>(avail.days ?? [1, 2, 3, 4, 5]);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    const { data, error: err } = await supabase.rpc('set_de_availability', {
+      p_de_id: de.id, p_mode: mode, p_timezone: tz.trim() || 'UTC',
+      p_start_hour: Math.max(0, Math.min(23, Math.round(Number(startH) || 9))),
+      p_end_hour: Math.max(1, Math.min(24, Math.round(Number(endH) || 17))),
+      p_days: days,
+    });
+    if (err) setError(err.message);
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Availability</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+          {mode === 'always_on' ? 'always on' : 'business hours'}
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Off-schedule, this employee stops picking up inbox work — its team backup or the specialist
+        desk covers, exactly like when it's paused. Reactive Q&A (widget/chat) stays available.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={mode} disabled={busy} onChange={e => setMode(e.target.value)}
+          className="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+          <option value="always_on">Always on</option>
+          <option value="business_hours">Business hours</option>
+        </select>
+        {mode === 'business_hours' && (
+          <>
+            <input type="text" value={tz} disabled={busy} onChange={e => setTz(e.target.value)} placeholder="Timezone, e.g. America/New_York"
+              className="w-44 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+            <input type="number" min={0} max={23} value={startH} disabled={busy} onChange={e => setStartH(e.target.value)} title="Start hour"
+              className="w-16 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+            <span className="text-xs text-slate-500">to</span>
+            <input type="number" min={1} max={24} value={endH} disabled={busy} onChange={e => setEndH(e.target.value)} title="End hour"
+              className="w-16 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+          </>
+        )}
+        <button onClick={() => void save()} disabled={busy}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved</span>}
+      </div>
+      {mode === 'business_hours' && (
+        <div className="mt-2 flex gap-1.5 flex-wrap">
+          {DAY_LABELS.map((label, i) => {
+            const day = i + 1;
+            const on = days.includes(day);
+            return (
+              <button key={day} disabled={busy}
+                onClick={() => setDays(prev => on ? prev.filter(d => d !== day) : [...prev, day].sort())}
+                className={`text-[10px] px-2 py-1 rounded-lg border ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-800 bg-slate-950 text-slate-600'}`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── KPIs panel (DE-C4). Targets are stored; CURRENT is computed live
+// from the same real metrics the Performance page uses — never stale,
+// never fabricated. No measurable sample → "no data yet", not zero.
+type KpiStatus = {
+  kpi_id: string; name: string; metric_key: string; target: number;
+  direction: string; current: number | null; met: boolean | null; sample: number;
+};
+const KPI_METRICS: Array<{ key: string; label: string; defaultDirection: 'higher' | 'lower' }> = [
+  { key: 'resolution_rate', label: 'Resolution rate (%)', defaultDirection: 'higher' },
+  { key: 'avg_confidence', label: 'Average confidence (%)', defaultDirection: 'higher' },
+  { key: 'escalation_rate', label: 'Escalation rate (%)', defaultDirection: 'lower' },
+  { key: 'error_rate', label: 'Error rate (%)', defaultDirection: 'lower' },
+  { key: 'csat_pct', label: 'Positive CSAT (%)', defaultDirection: 'higher' },
+  { key: 'high_frustration_count', label: 'High-frustration cases', defaultDirection: 'lower' },
+  { key: 'total_decisions', label: 'Decisions handled', defaultDirection: 'higher' },
+];
+function DeKpisPanel({ de }: { de: DigitalEmployee }) {
+  const [kpis, setKpis] = useState<KpiStatus[] | null>(null);
+  const [metricKey, setMetricKey] = useState(KPI_METRICS[0].key);
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error: err } = await supabase.rpc('get_de_kpi_status', { p_de_id: de.id });
+    if (err) { setError(err.message); return; }
+    setKpis((data ?? []) as KpiStatus[]);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
+    setBusy(true); setError(null);
+    const { error: err } = await fn();
+    if (err) setError(err.message);
+    await load();
+    setBusy(false);
+  };
+
+  const add = () => {
+    const meta = KPI_METRICS.find(m => m.key === metricKey);
+    if (!meta || target.trim() === '') return;
+    void run(() => supabase.rpc('set_de_kpi', {
+      p_de_id: de.id, p_metric_key: metricKey, p_name: meta.label,
+      p_target: Number(target), p_direction: meta.defaultDirection,
+    }));
+    setTarget('');
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Goals & KPIs</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">measured live</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Targets you set against metrics the platform actually measures. Current values are computed
+        from real activity at view time — never a stored, stale, or invented number.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {kpis === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : kpis.length === 0 ? (
+        <p className="text-xs text-slate-500 mb-3">No KPIs set yet.</p>
+      ) : (
+        <div className="space-y-1.5 mb-3">
+          {kpis.map(k => (
+            <div key={k.kpi_id} className="flex items-center gap-2 text-xs flex-wrap">
+              <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                k.met === null ? 'bg-slate-800 text-slate-500'
+                : k.met ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                {k.met === null ? 'no data yet' : k.met ? 'on target' : 'off target'}
+              </span>
+              <span className="text-slate-300">{k.name}</span>
+              <span className="text-slate-500">
+                {k.current === null ? '—' : k.current} / target {k.direction === 'higher' ? '≥' : '≤'} {k.target}
+                {k.sample > 0 ? ` · ${k.sample} sampled` : ''}
+              </span>
+              <button onClick={() => void run(() => supabase.rpc('set_de_kpi', { p_de_id: de.id, p_metric_key: k.metric_key, p_name: k.name, p_target: null, p_direction: k.direction }))}
+                disabled={busy}
+                className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <select value={metricKey} disabled={busy} onChange={e => setMetricKey(e.target.value)}
+          className="flex-1 bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+          {KPI_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+        <input type="number" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} placeholder="Target"
+          className="w-24 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+        <button onClick={add} disabled={busy || target.trim() === ''}
+          className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40">
+          Add KPI
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Lifecycle panel — the governance gate made visible (DE-B4,
 // migration 126). The chain is designed → configured → trained →
 // tested → certified → published → assigned → active; every "Advance"
@@ -2114,8 +2364,14 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
             </div>
           </div>
 
+          {/* Identity & Purpose — feeds every answer (DE-C4) */}
+          <DeIdentityPanel de={selectedDe} onUpdated={setSelectedDe} />
+
           {/* Lifecycle — the governance gate (DE-B4) */}
           <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
+
+          {/* Availability — schedule with team/specialist coverage (DE-C4) */}
+          <DeAvailabilityPanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* DE operating charter */}
           <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
@@ -2132,6 +2388,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           <DeEscalationPanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
           <DeSkillsPanel de={selectedDe} />
+          <DeKpisPanel de={selectedDe} />
           <DeCertificationsPanel de={selectedDe} />
           <DeDevelopmentPanel de={selectedDe} />
 

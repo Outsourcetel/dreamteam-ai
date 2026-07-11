@@ -47,7 +47,7 @@ export async function resolveDePersona(
   }
   const { data: de } = await admin
     .from('digital_employees')
-    .select('name, persona_name, description, department, responsibilities')
+    .select('name, persona_name, description, department, responsibilities, display_title, purpose_statement')
     .eq('id', deId).eq('tenant_id', tenantId).maybeSingle();
   if (!de) {
     return {
@@ -56,15 +56,21 @@ export async function resolveDePersona(
     };
   }
   const name = de.persona_name || de.name || FALLBACK_NAME;
-  const roleLine = de.department
-    ? `the ${de.department} Digital Employee for ${tenantName}`
-    : `a Digital Employee for ${tenantName}`;
+  // Structured identity (DE-C4, migration 130): the founder-authored
+  // display_title/purpose_statement lead when present; department is
+  // the fallback role line.
+  const roleLine = de.display_title
+    ? `${de.display_title} — a Digital Employee for ${tenantName}`
+    : de.department
+      ? `the ${de.department} Digital Employee for ${tenantName}`
+      : `a Digital Employee for ${tenantName}`;
+  const purpose = de.purpose_statement ? ` ${de.purpose_statement}` : '';
   const responsibilities = Array.isArray(de.responsibilities) && de.responsibilities.length > 0
     ? ` You are responsible for: ${de.responsibilities.slice(0, 8).join('; ')}.`
     : '';
   const description = de.description ? ` ${de.description}` : '';
   return {
     name,
-    preamble: `You are ${name}, ${roleLine}.${responsibilities}${description}`,
+    preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description}`,
   };
 }
