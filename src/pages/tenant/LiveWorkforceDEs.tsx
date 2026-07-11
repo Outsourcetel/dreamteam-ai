@@ -447,56 +447,118 @@ function DeKnowledgeScopePanel({ deId }: { deId: string }) {
 // tenant-wide Audit Trail. Data already existed (audit_events,
 // category='guardrail_block'); this is a filtered, labeled view over
 // it, not new detection. ────────────────────────────────────────────
+// The durable Incident Record (migration 123, constitution §3.16):
+// real rows with an open→reviewed→closed lifecycle, captured every
+// 5 minutes from guardrail blocks, automatic trust demotions, failed
+// eval runs, and human-rejected actions. Replaces the old read-only
+// name-matched audit view.
+interface DEIncident {
+  id: string; de_id: string | null; kind: string; severity: string;
+  title: string; detail: Record<string, unknown>;
+  status: 'open' | 'reviewed' | 'closed';
+  resolution_note: string | null; occurred_at: string;
+}
+const INCIDENT_KIND_LABELS: Record<string, string> = {
+  guardrail_block: 'guardrail', trust_demotion: 'trust demotion',
+  eval_regression: 'eval failure', action_rejected: 'rejected action',
+};
 function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
-  const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [incidents, setIncidents] = useState<DEIncident[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const all = await listAuditEvents(200);
-        const mine = all.filter(e =>
-          e.category === 'guardrail_block' &&
-          (e.actor === de.name || e.actor === (de.persona_name ?? '__none__')));
-        if (!cancelled) setEvents(mine);
-      } catch { if (!cancelled) setEvents([]); }
-    })();
-    return () => { cancelled = true; };
-  }, [de.id, de.name, de.persona_name]);
+  const load = useCallback(async () => {
+    const { data, error: err } = await supabase
+      .from('de_incidents')
+      .select('id, de_id, kind, severity, title, detail, status, resolution_note, occurred_at')
+      .or(`de_id.eq.${de.id},de_id.is.null`)
+      .order('occurred_at', { ascending: false })
+      .limit(50);
+    if (err) { setIncidents([]); return; }
+    setIncidents((data ?? []) as DEIncident[]);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
 
-  if (events === null) return null;
+  const review = async (id: string, status: 'reviewed' | 'closed') => {
+    setBusy(true); setError(null);
+    const { error: err } = await supabase.rpc('review_de_incident', {
+      p_incident_id: id, p_status: status, p_resolution_note: note.trim() || null,
+    });
+    if (err) setError(err.message);
+    else { setNote(''); setOpenId(null); }
+    await load();
+    setBusy(false);
+  };
 
-  const openCount = events.length; // guardrail_block events have no separate "resolved" state today — every one shown is on record, none reopened
+  if (incidents === null) return null;
+
+  const openCount = incidents.filter(i => i.status === 'open').length;
+  const sevDot = (s: string) => s === 'critical' ? 'bg-rose-500' : s === 'warning' ? 'bg-amber-500' : 'bg-slate-500';
+  const statusChip = (s: string) =>
+    s === 'open' ? 'bg-amber-500/15 text-amber-300'
+    : s === 'reviewed' ? 'bg-indigo-500/15 text-indigo-300'
+    : 'bg-slate-800 text-slate-500';
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Incidents</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">guardrail record</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">durable record</span>
+        {openCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{openCount} open</span>}
       </div>
       <p className="text-xs text-slate-500 mb-5">
-        Every time a guardrail blocked this employee from acting on its own — the same immutable audit
-        record the trust dial's automatic demotions read from.
+        Guardrail blocks, automatic trust demotions, failed eval runs, and human-rejected actions —
+        captured every 5 minutes as reviewable records. Review or close each with a resolution note;
+        every decision is audited.
       </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
-      {events.length === 0 ? (
-        <p className="text-xs text-slate-500">No incidents on record — a clean guardrail history.</p>
+      {incidents.length === 0 ? (
+        <p className="text-xs text-slate-500">No incidents on record — a clean history.</p>
       ) : (
         <div className="space-y-1.5">
-          <p className="text-xs text-slate-400 mb-2">{openCount} incident{openCount === 1 ? '' : 's'} on record, all logged, none require action.</p>
-          {events.map(e => (
-            <div key={e.id} className="rounded-lg bg-slate-950/60">
-              <button onClick={() => setOpenId(k => k === e.id ? null : e.id)}
+          {incidents.map(inc => (
+            <div key={inc.id} className="rounded-lg bg-slate-950/60">
+              <button onClick={() => { setOpenId(k => k === inc.id ? null : inc.id); setNote(''); }}
                 className="w-full flex items-center gap-3 text-left px-3 py-2 text-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
-                <span className="flex-1 text-slate-300 truncate">{e.action}</span>
-                <span className="text-slate-600 flex-shrink-0">{new Date(e.created_at).toLocaleDateString()}</span>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sevDot(inc.severity)}`} />
+                <span className="flex-1 text-slate-300 truncate">{inc.title}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 flex-shrink-0">{INCIDENT_KIND_LABELS[inc.kind] ?? inc.kind}</span>
+                {inc.de_id === null && <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 flex-shrink-0">workspace-wide</span>}
+                <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${statusChip(inc.status)}`}>{inc.status}</span>
+                <span className="text-slate-600 flex-shrink-0">{new Date(inc.occurred_at).toLocaleDateString()}</span>
               </button>
-              {openId === e.id && (
-                <div className="px-3 pb-3 text-[11px] text-slate-500 space-y-1">
-                  {typeof e.detail?.guardrail_rule === 'string' && <p>Rule: <span className="text-slate-400">{e.detail.guardrail_rule as string}</span></p>}
-                  <p>Recorded {new Date(e.created_at).toLocaleString()} · hash-chained, immutable.</p>
+              {openId === inc.id && (
+                <div className="px-3 pb-3 text-[11px] text-slate-500 space-y-2">
+                  {typeof inc.detail?.reasoning === 'string' && <p className="text-slate-400">{inc.detail.reasoning as string}</p>}
+                  {typeof inc.detail?.action === 'string' && <p className="text-slate-400">{inc.detail.action as string}</p>}
+                  {typeof inc.detail?.request_summary === 'string' && <p className="text-slate-400">{inc.detail.request_summary as string}</p>}
+                  {inc.resolution_note && <p>Resolution: <span className="text-slate-300">{inc.resolution_note}</span></p>}
+                  <p>Occurred {new Date(inc.occurred_at).toLocaleString()} · provenance-linked to the immutable audit record.</p>
+                  {inc.status !== 'closed' && (
+                    <div className="pt-1 space-y-2">
+                      <input
+                        value={note}
+                        onChange={e => setNote(e.target.value)}
+                        placeholder="Resolution note (optional)"
+                        className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex gap-2">
+                        {inc.status === 'open' && (
+                          <button onClick={() => void review(inc.id, 'reviewed')} disabled={busy}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/50 disabled:opacity-50">
+                            Mark reviewed
+                          </button>
+                        )}
+                        <button onClick={() => void review(inc.id, 'closed')} disabled={busy}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 disabled:opacity-50">
+                          Close incident
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
