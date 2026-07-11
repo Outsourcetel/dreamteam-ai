@@ -118,6 +118,13 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
   const isTCP = companyId === 'tcp';
   const s = COMPANY_SUMMARY[companyId];
 
+  // DE-CENTERED STRUCTURE (founder-approved 2026-07-11, mockup artifact
+  // f43050e7): 8 sections, the Digital Employee at the center. A system
+  // of record organizes around the data; DreamTeam organizes around the
+  // employee — what each DE knows (Knowledge), what it can touch
+  // (Connectors), how it works (Playbooks), who supervises it (My Tasks
+  // + Governance). "Who we serve" is demoted to Company Data: the
+  // business substrate the DEs work on top of, never the product.
   return [
     {
       title: '',
@@ -131,14 +138,87 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
       ],
     },
     {
-      title: 'WHO WE SERVE',
+      title: 'DIGITAL EMPLOYEES',
+      groups: [
+        {
+          id: 'des',
+          label: 'Roster',
+          icon: '⚡',
+          page: 'workforce_des',
+          badge: { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
+        },
+        { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
+        { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
+        {
+          id: 'outcomes',
+          label: 'Outcomes',
+          icon: '↑',
+          badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
+          children: [
+            { id: 'outcome_revenue', label: 'Revenue & Growth' },
+            { id: 'outcome_delivery', label: isTCP ? 'Product & Engineering' : 'Practice Delivery' },
+            { id: 'outcome_financial', label: 'Financial Health' },
+            { id: 'outcome_risk', label: 'Risk Posture' },
+          ],
+        },
+        { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
+        { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
+        { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
+        {
+          id: 'specialist_desk',
+          label: 'Specialist Desk',
+          icon: '◆',
+          children: [
+            { id: 'specialist_technical', label: 'Technical' },
+            { id: 'specialist_legal', label: 'Legal' },
+            { id: 'specialist_finance_deep', label: 'Finance', indicator: !isTCP ? { dot: true, color: '#14b8a6' } : undefined },
+            { id: 'specialist_people', label: 'People' },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'MY TASKS',
+      groups: [
+        {
+          id: 'human_tasks',
+          label: 'Approvals & Drafts',
+          icon: '✋',
+          page: 'ops_human_tasks',
+          badge: live.humanTasks > 0 ? { text: `${live.humanTasks} pending`, color: '#f59e0b' } : undefined,
+        },
+        { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
+      ],
+    },
+    {
+      title: 'KNOWLEDGE',
+      groups: [
+        { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
+        { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
+        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
+        { id: 'kb_quality', label: 'Quality & Coverage', icon: '✓', page: 'knowledge_quality' },
+      ],
+    },
+    {
+      title: 'PLAYBOOKS',
+      groups: [
+        { id: 'playbooks', label: 'Playbook Builder', icon: '▶', page: 'systems_playbooks' },
+      ],
+    },
+    {
+      title: 'CONNECTORS',
+      groups: [
+        { id: 'connectors', label: 'Systems & Actions', icon: '⟷', page: 'systems_connectors' },
+      ],
+    },
+    {
+      title: 'COMPANY DATA',
       groups: [
         {
           id: 'customer',
-          label: 'Customer Lifecycle',
+          label: 'Customers',
           icon: '◎',
           page: 'entity_customer',
-          defaultOpen: true,
           children: [
             { id: 'entity_customer_bd', label: 'Business Development', indicator: { dot: true, color: '#6366f1' } },
             { id: 'entity_customer_sales', label: 'Sales', indicator: { count: live.salesPipeline, color: '#6366f1' } },
@@ -174,93 +254,6 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
       ],
     },
     {
-      title: 'OUTCOMES',
-      groups: [
-        { id: 'revenue', label: 'Revenue & Growth', icon: '↑', page: 'outcome_revenue' },
-        {
-          id: 'delivery',
-          label: isTCP ? 'Product & Engineering' : 'Practice Delivery',
-          icon: '◧',
-          page: 'outcome_delivery',
-        },
-        { id: 'financial', label: 'Financial Health', icon: '$', page: 'outcome_financial' },
-        {
-          id: 'risk',
-          label: 'Risk Posture',
-          icon: '◬',
-          page: 'outcome_risk',
-          badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
-        },
-      ],
-    },
-    {
-      title: 'WORKFORCE HQ',
-      groups: [
-        {
-          id: 'des',
-          label: 'Roster',
-          icon: '⚡',
-          page: 'workforce_des',
-          badge: { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
-        },
-      ],
-    },
-    {
-      title: 'SPECIALISTS',
-      groups: [
-        {
-          id: 'specialist_desk',
-          label: 'Specialist Desk',
-          icon: '◆',
-          children: [
-            { id: 'specialist_technical', label: 'Technical' },
-            { id: 'specialist_legal', label: 'Legal' },
-            { id: 'specialist_finance_deep', label: 'Finance', indicator: !isTCP ? { dot: true, color: '#14b8a6' } : undefined },
-            { id: 'specialist_people', label: 'People' },
-          ],
-        },
-      ],
-    },
-    {
-      title: 'KNOWLEDGE',
-      groups: [
-        { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
-        { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
-        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
-        { id: 'kb_quality', label: 'Quality & Coverage', icon: '✓', page: 'knowledge_quality' },
-      ],
-    },
-    {
-      title: 'SYSTEMS',
-      groups: [
-        { id: 'connectors', label: 'Connectors', icon: '⟷', page: 'systems_connectors' },
-        { id: 'playbooks', label: 'Playbooks', icon: '▶', page: 'systems_playbooks' },
-      ],
-    },
-    {
-      title: 'OPERATIONS',
-      groups: [
-        {
-          id: 'human_tasks',
-          label: 'Human Tasks',
-          icon: '✋',
-          page: 'ops_human_tasks',
-          badge: live.humanTasks > 0 ? { text: `${live.humanTasks} pending`, color: '#f59e0b' } : undefined,
-        },
-        { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
-        { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
-      ],
-    },
-    {
-      title: 'INTELLIGENCE',
-      groups: [
-        { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
-        { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
-        { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
-        { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
-      ],
-    },
-    {
       title: 'GOVERNANCE',
       groups: [
         { id: 'compliance', label: 'Compliance & Guardrails', icon: '⚑', page: 'gov_compliance' },
@@ -282,7 +275,9 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
   const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, viewingDemo, setViewingDemo, liveTenantName, dataMode } = useAuth();
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['customer']));
+  // No groups open by default — Company Data (the demoted entity
+  // section) in particular starts collapsed per the DE-centered IA.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [liveCounts, setLiveCounts] = useState<NavCounts>(() => computeLiveCounts(activeCompany.id));
 
@@ -339,13 +334,13 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         <div className="w-px h-4 bg-slate-800" />
         {([
           { icon: '⬡', page: 'dashboard' as Page, label: 'Command Centre' },
-          { icon: '◎', page: 'entity_customer' as Page, label: 'Customer Lifecycle' },
-          { icon: '⚡', page: 'workforce_des' as Page, label: 'Roster' },
-          { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge Library' },
+          { icon: '⚡', page: 'workforce_des' as Page, label: 'Digital Employees' },
+          { icon: '✋', page: 'ops_human_tasks' as Page, label: 'My Tasks' },
+          { icon: '◫', page: 'knowledge_library' as Page, label: 'Knowledge' },
+          { icon: '▶', page: 'systems_playbooks' as Page, label: 'Playbooks' },
           { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
-          { icon: '✋', page: 'ops_human_tasks' as Page, label: 'Human Tasks' },
-          { icon: '◔', page: 'intelligence_performance' as Page, label: 'Performance' },
-          { icon: '⚑', page: 'gov_compliance' as Page, label: 'Compliance & Guardrails' },
+          { icon: '◎', page: 'entity_customer' as Page, label: 'Company Data' },
+          { icon: '⚑', page: 'gov_compliance' as Page, label: 'Governance' },
         ]).map(item => (
           <button
             key={item.page}

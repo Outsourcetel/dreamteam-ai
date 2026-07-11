@@ -148,7 +148,8 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       return (
         <div className="space-y-2">
           <div className="flex gap-2 flex-wrap">
-            <select className={selectCls + ' !w-40'} value={String(p.profile_key ?? 'technical')} onChange={e => set('profile_key', e.target.value)}>
+            <select className={selectCls + ' !w-48'} value={String(p.profile_key ?? 'technical')} onChange={e => set('profile_key', e.target.value)}>
+              <option value="auto">Auto — the employee's own specialist</option>
               <option value="technical">Technical</option>
               <option value="legal">Legal</option>
               <option value="finance">Finance</option>

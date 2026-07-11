@@ -1017,6 +1017,121 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
   );
 }
 
+// ── System access panel — "what this employee can touch" ──────────
+// Reads the DE's own data_access_grants (Control Fabric, migration
+// 029): per connector/category, at what permission. Read-only here;
+// managed centrally under Governance → Data Access.
+function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
+  const [grants, setGrants] = useState<Array<{ id: string; resource_kind: string; resource_id: string | null; resource_category: string | null; permission: string }> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.from('data_access_grants')
+      .select('id, resource_kind, resource_id, resource_category, permission')
+      .eq('subject_kind', 'de').eq('subject_id', deId)
+      .then(({ data }) => { if (!cancelled) setGrants((data ?? []) as typeof grants); });
+    return () => { cancelled = true; };
+  }, [deId]);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">What this employee can touch</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">default-deny</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        System access via the Control Fabric — a grant is necessary, never sufficient, for a write
+        (guardrails and approval gates still apply on top).
+      </p>
+      {grants === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : grants.length === 0 ? (
+        <p className="text-xs text-slate-500">No system access granted — this employee can’t search, read, or act on any connected system yet.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {grants.map(g => (
+            <span key={g.id} className="text-xs px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+              {g.resource_category ?? 'specific connector'}
+              <span className={`ml-2 font-semibold ${g.permission === 'write_back' ? 'text-amber-300' : 'text-teal-300'}`}>{g.permission.replace('_', '-')}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <button onClick={() => setPage('gov_data_access')} className="mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+        Manage under Governance → Data Access →
+      </button>
+    </div>
+  );
+}
+
+// ── Specialists panel — primary & secondary consult desks ──────────
+// A DE consults its PRIMARY specialist first; if that profile is
+// paused, the SECONDARY. Playbook steps using profile_key "auto"
+// resolve through this assignment (migration 122).
+function DeSpecialistsPanel({ deId }: { deId: string }) {
+  const [specialists, setSpecialists] = useState<Array<{ id: string; name: string; key: string; status: string }>>([]);
+  const [assigned, setAssigned] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: sps }, { data: rows, error: err }] = await Promise.all([
+      supabase.from('specialist_profiles').select('id, name, key, status').order('created_at'),
+      supabase.rpc('list_de_specialists', { p_de_id: deId }),
+    ]);
+    if (err) { setError(err.message); return; }
+    setSpecialists((sps ?? []) as typeof specialists);
+    const map: Record<number, string> = {};
+    for (const r of (rows ?? []) as Array<{ rank: number; specialist_id: string }>) map[r.rank] = r.specialist_id;
+    setAssigned(map);
+  }, [deId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const setRank = async (rank: 1 | 2, specialistId: string) => {
+    setBusy(true); setError(null);
+    const { error: err } = await supabase.rpc('set_de_specialist', {
+      p_de_id: deId, p_rank: rank, p_specialist_id: specialistId || null,
+    });
+    if (err) setError(err.message);
+    await load();
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Specialists</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">consult desks</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        When this employee needs help beyond its own knowledge, it consults its primary specialist —
+        and falls back to the secondary if the primary is paused. Playbook “Consult specialist” steps
+        set to <span className="text-slate-300">auto</span> resolve through this assignment.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="grid grid-cols-2 gap-3">
+        {([1, 2] as const).map(rank => (
+          <div key={rank}>
+            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
+            <select
+              value={assigned[rank] ?? ''}
+              disabled={busy}
+              onChange={e => void setRank(rank, e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            >
+              <option value="">— none —</option>
+              {specialists.map(sp => (
+                <option key={sp.id} value={sp.id}>
+                  {sp.name}{sp.status !== 'active' ? ' (paused)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
@@ -1234,6 +1349,12 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           {/* Performance, knowledge scope, incidents, development — real per-DE data */}
           <DePerformancePanel deId={selectedDe.id} />
           <DeKnowledgeScopePanel deId={selectedDe.id} />
+
+          {/* The DE-centered hub (2026-07-11 restructure): what this
+              employee can touch (Control Fabric grants) and who it
+              consults (primary/secondary specialists, migration 122) */}
+          <DeSystemAccessPanel deId={selectedDe.id} setPage={setPage} />
+          <DeSpecialistsPanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
           <DeDevelopmentPanel de={selectedDe} />
 

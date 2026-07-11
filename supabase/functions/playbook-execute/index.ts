@@ -1296,9 +1296,41 @@ async function executeDefinitionSteps(
           // dormant LLM → step recorded skipped; on_low='escalate' creates
           // an escalation task either way — the run never silently loses
           // a low-confidence signal.
-          const profileKey = String(params.profile_key ?? 'technical');
+          //
+          // profile_key 'auto' (migration 122): resolve through the
+          // playbook's assigned DE — its PRIMARY specialist if active,
+          // else its secondary, else honest-skip with an explanation
+          // (and the usual on_low escalation).
+          let profileKey = String(params.profile_key ?? 'technical');
           const minConfidence = typeof params.min_confidence === 'number' ? params.min_confidence : 60;
           const onLow = params.on_low === 'continue' ? 'continue' : 'escalate';
+          if (profileKey === 'auto') {
+            const { data: defRow } = await admin.from('playbook_definitions')
+              .select('de_id').eq('id', run.definition_id).maybeSingle();
+            const autoDeId = (defRow as { de_id?: string } | null)?.de_id ?? null;
+            const { data: resolvedKey } = autoDeId
+              ? await admin.rpc('resolve_de_specialist_internal', { p_tenant_id: tenantId, p_de_id: autoDeId })
+              : { data: null };
+            if (typeof resolvedKey === 'string' && resolvedKey) {
+              profileKey = resolvedKey;
+            } else {
+              step.status = 'skipped'; step.at = now();
+              step.detail = autoDeId
+                ? 'skipped: profile_key "auto" but this playbook\'s employee has no active primary/secondary specialist assigned — assign one on the DE profile'
+                : 'skipped: profile_key "auto" but this playbook has no assigned employee to resolve a specialist from';
+              if (onLow === 'escalate') {
+                await admin.from('human_tasks').insert({
+                  tenant_id: tenantId, type: 'escalation', source: 'de',
+                  title: `Specialist consult needs a human — ${acct()}`,
+                  detail: `Playbook step "Consult specialist" (auto): ${step.detail}`,
+                  related_table: 'playbook_runs', related_id: run.id,
+                });
+                step.detail += '; escalation task created';
+              }
+              await stepAudit(i); await saveRun(admin, run);
+              continue;
+            }
+          }
           const questionText = renderTemplate(String(params.question_template ?? ''), ctx, run.id).trim()
             || `Specialist review for ${acct()}`;
 
