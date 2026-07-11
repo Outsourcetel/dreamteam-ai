@@ -9,6 +9,7 @@ import { Spinner } from './index';
 // account menu (platform MyAccountBadge, tenant Settings).
 // ─────────────────────────────────────────────────────────────────
 const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
+  const [current, setCurrent] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -20,10 +21,29 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
     setError('');
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (password === current) { setError('The new password must be different from the current one.'); return; }
     setLoading(true);
+    // Re-verify the CURRENT password before allowing a change —
+    // updateUser alone would let anyone at an unlocked screen take
+    // over the account.
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData?.user?.email;
+    if (!email) { setLoading(false); setError('No live session — please sign in again first.'); return; }
+    const { error: reauthError } = await supabase.auth.signInWithPassword({ email, password: current });
+    if (reauthError) { setLoading(false); setError('Current password is incorrect.'); return; }
     const { error: updateError } = await supabase.auth.updateUser({ password });
     setLoading(false);
     if (updateError) { setError(updateError.message); return; }
+    // Best-effort audit — never blocks the change; skips cleanly for
+    // accounts without a tenant (platform admins).
+    try {
+      const { appendAuditEvent } = await import('../lib/guardrailApi');
+      await appendAuditEvent({
+        actor: 'You', actor_type: 'human', category: 'access_control',
+        action: 'Account password changed (self-serve, current password re-verified)',
+        detail: { kind: 'password_change' },
+      });
+    } catch { /* noop */ }
     setDone(true);
   };
 
@@ -43,8 +63,13 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <div>
+              <label className="text-xs font-medium text-slate-400 block mb-1.5">Current password</label>
+              <input value={current} onChange={(e) => setCurrent(e.target.value)} type="password" placeholder="Your current password" autoComplete="current-password" autoFocus
+                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div>
               <label className="text-xs font-medium text-slate-400 block mb-1.5">New password</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoFocus
+              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoComplete="new-password"
                 className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             <div>

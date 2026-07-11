@@ -7,6 +7,7 @@ import { countPendingChatEscalations } from '../lib/chatEscalations';
 import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnowledgeGapCount } from '../lib/customerApi';
 import { listOpportunities } from '../lib/pipelineApi';
 import { listProjects } from '../lib/onboardingApi';
+import ChangePasswordModal from './ChangePasswordModal';
 
 interface SidebarProps {
   page: Page;
@@ -278,6 +279,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   // No groups open by default — Company Data (the demoted entity
   // section) in particular starts collapsed per the DE-centered IA.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [liveCounts, setLiveCounts] = useState<NavCounts>(() => computeLiveCounts(activeCompany.id));
 
@@ -537,23 +540,45 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           <span className="w-4 text-center flex-shrink-0">✉</span>
           <span className="truncate">Contact support</span>
         </a>
+        {/* Account menu — the old footer had sign-out only as an
+            unlabeled ⇥ icon (founder couldn't find it) and no way to
+            change a password at all. */}
+        {accountMenuOpen && (
+          <div className="mb-2 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <button
+              onClick={() => { setShowChangePassword(true); setAccountMenuOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-800 transition-colors"
+            >
+              <span className="w-4 text-center flex-shrink-0">🔑</span> Change password…
+            </button>
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-800 hover:text-red-300 transition-colors border-t border-slate-800/60"
+            >
+              <span className="w-4 text-center flex-shrink-0">⇥</span> Sign out
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-            {user?.name?.[0] ?? 'U'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-slate-200 truncate">{user?.name}</div>
-            <div className="text-[10px] text-slate-500 truncate">{user?.role?.replace(/_/g, ' ')}</div>
-          </div>
-          <div className="flex gap-1">
-            <button onClick={() => setCollapsed(true)} className="w-6 h-6 rounded text-slate-600 hover:text-slate-300 text-xs flex items-center justify-center">
-              ←
-            </button>
-            <button onClick={onLogout} className="w-6 h-6 rounded text-slate-600 hover:text-red-400 text-xs flex items-center justify-center">
-              ⇥
-            </button>
-          </div>
+          <button
+            onClick={() => setAccountMenuOpen(v => !v)}
+            className="flex items-center gap-2 flex-1 min-w-0 text-left rounded-md px-1 py-0.5 hover:bg-slate-900/60 transition-colors"
+            title="Account menu"
+          >
+            <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+              {user?.name?.[0] ?? 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-slate-200 truncate">{user?.name}</div>
+              <div className="text-[10px] text-slate-500 truncate">{user?.role?.replace(/_/g, ' ')}</div>
+            </div>
+            <span className={`text-slate-600 text-[10px] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`}>⌃</span>
+          </button>
+          <button onClick={() => setCollapsed(true)} className="w-6 h-6 rounded text-slate-600 hover:text-slate-300 text-xs flex items-center justify-center flex-shrink-0">
+            ←
+          </button>
         </div>
+        {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
         {godModeActive && (
           <button onClick={exitGodMode} className="mt-2 w-full text-[10px] text-amber-500 hover:text-amber-300 text-center">
             Exit Remote Access
