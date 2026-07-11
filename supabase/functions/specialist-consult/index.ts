@@ -672,7 +672,8 @@ async function runResolveInquiry(
     });
     if (res2.ok) {
       const d2 = await res2.json();
-      answerText = String(d2.content?.[0]?.text ?? '');
+      // Claude 5 models can emit a 'thinking' block before the text block.
+      answerText = String((d2.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '');
       const usageDeId = opts.deId ?? (subjectKind === 'de' ? subjectId : null);
       admin.rpc('record_de_token_usage', {
         p_tenant_id: tenantId, p_de_id: usageDeId, p_model_id: MODEL,
@@ -1618,7 +1619,8 @@ ${groundedContext}`;
       return json({ error: 'llm_error', status: res.status, consultation_id: row?.id ?? null, retrieved_sources: retrieved }, 502);
     }
     const data = await res.json();
-    const parsed = parseModelJson(data.content?.[0]?.text ?? '');
+    // Claude 5 models can emit a 'thinking' block before the text block.
+    const parsed = parseModelJson((data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '');
     await bump('llm_calls');
     // No de_id here -- this is a specialist consult (specialist_profiles),
     // not a digital_employees row; de_token_usage.de_id is nullable and

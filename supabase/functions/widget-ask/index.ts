@@ -418,7 +418,11 @@ ${context}`;
       return json({ error: 'llm_error', status: res.status, conversation_id: convId }, 502);
     }
     const data = await res.json();
-    const raw: string = data.content?.[0]?.text ?? '';
+    // Claude 5 models can emit a 'thinking' block BEFORE the text block —
+    // content[0].text is then undefined and the answer silently comes back
+    // empty (found live during DE-A2 verification). Take the first block
+    // that is actually text.
+    const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
     if (subjectDeId) {
       admin.rpc('record_de_token_usage', {

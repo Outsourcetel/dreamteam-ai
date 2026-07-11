@@ -1,9 +1,14 @@
 /**
  * ingest-chunks — chunk + embed a knowledge_doc into knowledge_doc_chunks.
  *
- * Input:  { doc_id }
+ * Input:  { doc_id, tenant_id? }
  * Auth:   caller JWT (same pattern as de-answer) — tenant resolved from profile,
- *         and the doc must belong to that tenant.
+ *         and the doc must belong to that tenant. ALSO accepts the
+ *         x-dispatch-secret header or the service-role key directly
+ *         (same dual pattern as knowledge-gap-detect) with an explicit
+ *         tenant_id — this is what lets automated/connector-driven
+ *         ingestion (e.g. the TCP community corpus load, DE-A2) chunk
+ *         and embed without a human's browser session.
  * Embeds: Supabase.ai.Session('gte-small') — free, local to the edge runtime,
  *         384 dimensions. If unavailable, chunks are stored with null
  *         embeddings (keyword retrieval still works) and embedded = 0.
@@ -16,7 +21,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-dispatch-secret',
 };
 
 const json = (body: unknown, status = 200) =>
@@ -68,20 +73,37 @@ serve(async (req) => {
     const { doc_id, tenant_id: assertedTenantId } = await req.json();
     if (!doc_id || typeof doc_id !== 'string') return json({ error: 'doc_id required' }, 400);
 
-    // ── Auth: resolve the caller from their JWT ──
+    // ── Auth: service/dispatch caller with an explicit tenant, or a
+    // user JWT (tenant resolved from their profile) ──
     const authHeader = req.headers.get('Authorization') ?? '';
     const jwt = authHeader.replace(/^Bearer\s+/i, '');
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
-    if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
 
-    const { data: profile } = await admin
-      .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
-    const tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, assertedTenantId);
-    if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
+
+    let tenantId: string | null = null;
+    if (isServiceRole || isDispatchCron) {
+      // Automated caller — must name the tenant explicitly, and it must
+      // be a real one (the doc's own tenant_id is re-checked below).
+      if (typeof assertedTenantId !== 'string' || !/^[0-9a-f-]{36}$/i.test(assertedTenantId)) {
+        return json({ error: 'tenant_id required for service calls' }, 400);
+      }
+      tenantId = assertedTenantId;
+    } else {
+      const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+      if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+
+      const { data: profile } = await admin
+        .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
+      tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, assertedTenantId);
+      if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    }
 
     // ── Fetch the doc (must belong to the caller's tenant) ──
     const { data: doc, error: docErr } = await admin
@@ -102,13 +124,19 @@ serve(async (req) => {
       const SupabaseAI = (globalThis as any).Supabase?.ai;
       if (SupabaseAI) {
         const session = new SupabaseAI.Session('gte-small');
-        embeddings = await Promise.all(chunks.map(async (c) => {
+        // Sequential, not Promise.all: embedding every chunk in parallel
+        // blows the edge worker's compute limit (WORKER_RESOURCE_LIMIT)
+        // on any doc with more than a handful of chunks — found live
+        // during the DE-A2 TCP corpus load, where multi-chunk docs
+        // failed consistently even with no concurrent invocations.
+        embeddings = [];
+        for (const c of chunks) {
           try {
             const out = await session.run(c, { mean_pool: true, normalize: true });
             const vec = Array.from(out as Iterable<number>);
-            return vec.length === 384 ? vec : null;
-          } catch { return null; }
-        }));
+            embeddings.push(vec.length === 384 ? vec : null);
+          } catch { embeddings.push(null); }
+        }
         embedded = embeddings.filter((e) => e !== null).length;
       }
     } catch (e) {

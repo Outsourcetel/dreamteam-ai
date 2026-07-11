@@ -361,7 +361,9 @@ ${context}`;
       return json({ error: 'llm_error', status: res.status, conversation_id: convId }, 502);
     }
     const data = await res.json();
-    const raw: string = data.content?.[0]?.text ?? '';
+    // Claude 5 models can emit a 'thinking' block before the text block —
+    // take the first block that is actually text (see widget-ask, DE-A2).
+    const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
     await bump('llm_calls');
     if (subjectDeId) {
