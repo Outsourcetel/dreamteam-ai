@@ -1194,6 +1194,109 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
   );
 }
 
+// ── Escalation rules panel — per-employee with workspace fallback ──
+// Frustration threshold + always-escalate topics (migration 124).
+// The same cascade as the trust dial: this employee's own rules win,
+// else the workspace default, else the platform default (50, none).
+// Guardrails always outrank these; the confidence floor lives on the
+// trust dial and is deliberately not duplicated here.
+type EscalationRow = { de_id: string | null; frustration_threshold: number | null; always_escalate_topics: string[] };
+function DeEscalationPanel({ deId }: { deId: string }) {
+  const [deRow, setDeRow] = useState<EscalationRow | null>(null);
+  const [tenantRow, setTenantRow] = useState<EscalationRow | null>(null);
+  const [threshold, setThreshold] = useState('');
+  const [topics, setTopics] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error: err } = await supabase.from('de_escalation_rules')
+      .select('de_id, frustration_threshold, always_escalate_topics')
+      .or(`de_id.eq.${deId},de_id.is.null`);
+    if (err) { setError(err.message); return; }
+    const rows = (data ?? []) as EscalationRow[];
+    const mine = rows.find(r => r.de_id === deId) ?? null;
+    setDeRow(mine);
+    setTenantRow(rows.find(r => r.de_id === null) ?? null);
+    setThreshold(mine?.frustration_threshold != null ? String(mine.frustration_threshold) : '');
+    setTopics((mine?.always_escalate_topics ?? []).join(', '));
+  }, [deId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const isPersonal = deRow !== null;
+  const effectiveThreshold = deRow?.frustration_threshold ?? tenantRow?.frustration_threshold ?? 50;
+  const effectiveTopics = (deRow?.always_escalate_topics?.length ? deRow.always_escalate_topics
+    : tenantRow?.always_escalate_topics) ?? [];
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    const thr = threshold.trim() === '' ? null
+      : Math.max(0, Math.min(100, Math.round(Number(threshold) || 0)));
+    const list = topics.split(',').map(t => t.trim()).filter(Boolean);
+    const { error: err } = await supabase.rpc('set_de_escalation_rules', {
+      p_de_id: deId, p_frustration_threshold: thr, p_topics: list,
+    });
+    if (err) setError(err.message);
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500); }
+    await load();
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Escalation rules</h3>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${isPersonal ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
+          {isPersonal ? 'personal' : 'workspace default'}
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        When this employee hands work to a human no matter how confident it is. Guardrails always
+        outrank these; the confidence floor lives on the trust dial below.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Frustration threshold</p>
+          <input
+            type="number" min={0} max={100} value={threshold} disabled={busy}
+            onChange={e => setThreshold(e.target.value)}
+            placeholder={`inherited (${tenantRow?.frustration_threshold ?? 50})`}
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+          />
+          <p className="text-[10px] text-slate-600 mt-1">
+            A customer scoring ≥ {effectiveThreshold}% on frustration signals always gets a human. Blank = inherit.
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Always-escalate topics</p>
+          <input
+            type="text" value={topics} disabled={busy}
+            onChange={e => setTopics(e.target.value)}
+            placeholder="e.g. refund, contract renewal"
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+          />
+          <p className="text-[10px] text-slate-600 mt-1">
+            Comma-separated phrases — any match routes to a human regardless of confidence.
+            {effectiveTopics.length > 0 && !isPersonal ? ` Inherited: ${effectiveTopics.join(', ')}.` : ''}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button onClick={() => void save()} disabled={busy}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved</span>}
+        {isPersonal && (
+          <span className="text-[10px] text-slate-600">Clear both fields and save to fall back to the workspace default.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
@@ -1417,6 +1520,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               consults (primary/secondary specialists, migration 122) */}
           <DeSystemAccessPanel deId={selectedDe.id} setPage={setPage} />
           <DeSpecialistsPanel deId={selectedDe.id} />
+          <DeEscalationPanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
           <DeDevelopmentPanel de={selectedDe} />
 
