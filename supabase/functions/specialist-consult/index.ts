@@ -949,6 +949,9 @@ async function handlePollDeWorkSources(
         // see replyDef above. Falls back to the category's generic
         // (non-destructive-first) action otherwise.
         const chosenDef = (result.answer && result.answer.trim() && replyDef) ? replyDef : actionDef;
+        if (decision === 'would_auto_send' && !chosenDef) {
+          reasoning = `${reasoning} (No registered action was resolvable for ${t.category} — answer_present=${!!(result.answer && result.answer.trim())}, reply_registered=${!!replyDef}, generic_registered=${!!actionDef}.)`;
+        }
         if (decision === 'would_auto_send' && chosenDef) {
           // Only attempt params we can honestly fill — a v1, honest
           // limit: an action needing OTHER fields is skipped here and
@@ -967,6 +970,11 @@ async function handlePollDeWorkSources(
           };
           if (result.answer && result.answer.trim()) fillable.body = result.answer.slice(0, 4000);
           const missing = (chosenDef.param_schema ?? []).filter((p) => p.required && !(p.name in fillable));
+          if (missing.length > 0) {
+            // Honest telemetry: this silent fall-through cost hours of
+            // live debugging — say WHY no action was attempted.
+            reasoning = `${reasoning} (Action "${chosenDef.label}" considered but not attempted — missing required param(s): ${missing.map((m) => m.name).join(', ')}; answer_present=${!!(result.answer && result.answer.trim())}, reply_registered=${!!replyDef}.)`;
+          }
           if (missing.length === 0) {
             const params: Record<string, string> = {};
             for (const p of chosenDef.param_schema ?? []) {

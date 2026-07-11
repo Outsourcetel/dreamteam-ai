@@ -19,11 +19,20 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export async function getAIKey(admin: SupabaseClient, keyName: string): Promise<string | undefined> {
-  try {
-    const { data, error } = await admin.rpc('platform_config_get', { p_key: keyName });
-    if (!error && typeof data === 'string' && data.length > 0) return data;
-  } catch {
-    // fall through to the env secret below
+  // Two attempts: a transient platform_config_get/Vault hiccup used to
+  // silently degrade to "key not configured" (observed live on a cron
+  // tick 2026-07-11: one tick reported llm_not_configured while the
+  // ticks around it resolved the same key fine). One retry after a
+  // short pause covers the transient case; a genuinely missing key
+  // still falls through to the env secret and then undefined.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data, error } = await admin.rpc('platform_config_get', { p_key: keyName });
+      if (!error && typeof data === 'string' && data.length > 0) return data;
+    } catch {
+      // fall through to retry / env secret
+    }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
   }
   return Deno.env.get(keyName) ?? undefined;
 }
