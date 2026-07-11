@@ -68,20 +68,35 @@ serve(async (req) => {
       if (['manual', 'knowledge_publish', 'scheduled'].includes(body?.trigger)) trigger = body.trigger;
     } catch { /* empty body → manual */ }
 
-    // ── Auth: resolve the caller from their JWT ──
+    // ── Auth: service/dispatch caller with an explicit tenant (enables
+    // headless + scheduled runs — same dual pattern as ingest-chunks),
+    // or a user JWT ──
     const authHeader = req.headers.get('Authorization') ?? '';
     const jwt = authHeader.replace(/^Bearer\s+/i, '');
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
-    if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
 
-    const { data: profile } = await admin
-      .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
-    const tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, body?.tenant_id);
-    if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isServiceCaller = isServiceRole || (dispatchSecret !== '' && headerSecret === dispatchSecret);
+
+    let tenantId: string | null = null;
+    if (isServiceCaller) {
+      const asserted = (typeof body?.tenant_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.tenant_id)) ? body.tenant_id : null;
+      if (!asserted) return json({ error: 'tenant_id required for service calls' }, 400);
+      tenantId = asserted;
+    } else {
+      const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+      if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+
+      const { data: profile } = await admin
+        .from('profiles').select('tenant_id, layer').eq('user_id', userData.user.id).single();
+      tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, body?.tenant_id);
+      if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    }
 
     // ── Load the suite (active questions, capped) ──
     const { data: qas, error: qaErr } = await admin
@@ -94,17 +109,37 @@ serve(async (req) => {
     if (qaErr) return json({ error: qaErr.message }, 500);
     if (!qas || qas.length === 0) return json({ error: 'no_active_questions' }, 400);
 
-    // ── Create the run row ──
-    const { data: run, error: runErr } = await admin
-      .from('eval_runs')
-      .insert({ tenant_id: tenantId, trigger, status: 'running', total: qas.length })
-      .select('id').single();
-    if (runErr || !run) return json({ error: runErr?.message ?? 'run_insert_failed' }, 500);
-    const runId: string = run.id;
+    // ── Create OR resume the run row ──
+    //
+    // Resumable batching: one invocation answers at most BATCH questions
+    // (each de-answer call spends thousands of LLM input tokens; running
+    // a whole suite in one invocation blows both the org's per-minute
+    // token rate limit and the edge wall clock). Callers re-invoke with
+    // the returned run_id until `remaining` hits 0 — the same loop
+    // contract ingest-chunks established.
+    const BATCH = 2;
+    let runId: string;
+    let results: QuestionResult[] = [];
+    if (typeof body?.run_id === 'string' && body.run_id) {
+      const { data: existing } = await admin
+        .from('eval_runs').select('id, results, status')
+        .eq('id', body.run_id).eq('tenant_id', tenantId).single();
+      if (!existing) return json({ error: 'run_not_found' }, 404);
+      if (existing.status !== 'running') return json({ error: 'run_already_finished', status: existing.status }, 400);
+      runId = existing.id;
+      results = Array.isArray(existing.results) ? existing.results as QuestionResult[] : [];
+    } else {
+      const { data: run, error: runErr } = await admin
+        .from('eval_runs')
+        .insert({ tenant_id: tenantId, trigger, status: 'running', total: qas.length })
+        .select('id').single();
+      if (runErr || !run) return json({ error: runErr?.message ?? 'run_insert_failed' }, 500);
+      runId = run.id;
+    }
 
-    const results: QuestionResult[] = [];
-    let passed = 0;
-    let failed = 0;
+    const answeredIds = new Set(results.map((r) => r.qa_id));
+    let passed = results.filter((r) => r.passed).length;
+    let failed = results.length - passed;
     let finalStatus: 'passed' | 'failed' | 'blocked_llm' = 'passed';
 
     const deAnswerUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`;
@@ -118,18 +153,26 @@ serve(async (req) => {
       if (error) console.error('eval_runs update:', error.message);
     };
 
-    for (let i = 0; i < (qas as GoldenQA[]).length; i++) {
-      const qa = (qas as GoldenQA[])[i];
+    const pendingQas = (qas as GoldenQA[]).filter((q) => !answeredIds.has(q.id)).slice(0, BATCH);
+
+    for (let i = 0; i < pendingQas.length; i++) {
+      const qa = pendingQas[i];
       try {
         const res = await fetch(deAnswerUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            // Forward the caller's JWT — de-answer resolves the SAME tenant.
+            // Forward the caller's own auth: user JWT as-is, or (for
+            // service/scheduled callers) the same dispatch secret this
+            // function was invoked with — de-answer accepts the same
+            // dual pattern. Passing the raw service-role key as a
+            // Bearer gets rejected at the gateway before de-answer
+            // ever runs (verified live on the first suite run).
             'Authorization': authHeader,
             'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+            ...(isServiceCaller && headerSecret ? { 'x-dispatch-secret': headerSecret } : {}),
           },
-          body: JSON.stringify({ question: qa.question }),
+          body: JSON.stringify(isServiceCaller ? { question: qa.question, tenant_id: tenantId } : { question: qa.question }),
         });
         const data = await res.json().catch(() => ({} as Record<string, unknown>));
 
@@ -175,14 +218,20 @@ serve(async (req) => {
         results.push({ qa_id: qa.id, question: qa.question, passed: false, reason: `runner error: ${String(err)}` });
       }
       await saveProgress(false);
-      if (i < qas.length - 1) await new Promise((r) => setTimeout(r, DELAY_MS));
+      if (i < pendingQas.length - 1) await new Promise((r) => setTimeout(r, DELAY_MS));
+    }
+
+    const remaining = (qas as GoldenQA[]).length - results.length;
+    if (remaining > 0) {
+      // Batch done, suite not finished — caller re-invokes with run_id.
+      return json({ run_id: runId, status: 'running', total: qas.length, passed, failed, remaining });
     }
 
     finalStatus = failed === 0 ? 'passed' : 'failed';
     await saveProgress(true);
     await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
 
-    return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed });
+    return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed, remaining: 0 });
   } catch (err) {
     console.error('eval-run error:', err);
     return json({ error: String(err) }, 500);

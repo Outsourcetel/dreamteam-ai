@@ -37,7 +37,15 @@ const json = (body: unknown, status = 200) =>
 const ESCALATION_THRESHOLD = 60; // confidence below this → human task
 const MAX_CONTEXT_CHARS = 6000;
 const MODEL = 'claude-sonnet-5';
-const CACHE_MAX_DISTANCE = 0.15; // cosine distance for semantic cache hits
+// Cosine distance for semantic cache hits. 0.05 = near-verbatim repeats
+// only. The previous 0.15 sat exactly at the collision boundary between
+// DIFFERENT questions in the same product domain (measured live on Acme:
+// distinct support questions bottom out at 0.152 pairwise) — the golden
+// QA suite's first run caught the cache serving the trade-shift answer
+// to "how do I view schedules" and 5 other crossed pairs at confidence
+// 95. The cache exists for the 400th phrasing of the SAME question, not
+// for its topical neighbors.
+const CACHE_MAX_DISTANCE = 0.05;
 
 // ── Simple keyword-overlap retrieval (last-resort fallback only, when
 // hybrid_match_knowledge returns nothing at all — e.g. truly empty KB) ──
@@ -151,28 +159,43 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { question, conversation_id, de_id } = await req.json();
+    const { question, conversation_id, de_id, tenant_id } = await req.json();
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
 
-    // ── Auth: resolve the caller from their JWT ──
+    // ── Auth: service/dispatch caller with an explicit tenant (what
+    // lets eval-run drive the suite headless — same dual pattern as
+    // ingest-chunks/knowledge-gap-detect), or a user JWT ──
     const authHeader = req.headers.get('Authorization') ?? '';
     const jwt = authHeader.replace(/^Bearer\s+/i, '');
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
-    if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
 
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('tenant_id')
-      .eq('user_id', userData.user.id)
-      .single();
-    const tenantId: string | null = profile?.tenant_id ?? null;
-    if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
+
+    let tenantId: string | null = null;
+    if (isServiceRole || isDispatchCron) {
+      const asserted = (typeof tenant_id === 'string' && /^[0-9a-f-]{36}$/i.test(tenant_id)) ? tenant_id : null;
+      if (!asserted) return json({ error: 'tenant_id required for service calls' }, 400);
+      tenantId = asserted;
+    } else {
+      const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+      if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('tenant_id')
+        .eq('user_id', userData.user.id)
+        .single();
+      tenantId = profile?.tenant_id ?? null;
+      if (!tenantId) return json({ error: 'no_tenant' }, 403);
+    }
 
     const { data: tenant } = await admin
       .from('tenants').select('name').eq('id', tenantId).single();

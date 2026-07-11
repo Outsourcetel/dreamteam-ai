@@ -220,34 +220,50 @@ export class EvalRunError extends Error {
   }
 }
 
-/** Start an eval run. Resolves when the run has FINISHED (the edge
- *  function runs the suite synchronously); the UI live-polls the run
- *  row in parallel for progressive results. */
+/** Start an eval run. Resolves when the run has FINISHED; the UI
+ *  live-polls the run row in parallel for progressive results.
+ *
+ *  The edge function answers the suite in small resumable batches (a
+ *  whole suite in one invocation blows the org's per-minute LLM token
+ *  rate limit and the edge wall clock), so this loops with the
+ *  returned run_id until it reports a terminal status. A short pause
+ *  between batches keeps the token spend under the rate limit. */
 export async function startEvalRun(trigger: EvalTrigger = 'manual'): Promise<{ run_id: string; status: EvalStatus }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new EvalRunError('server', 'Not signed in.');
 
   const tid = await getSessionTenantId();
-  let res: Response;
-  try {
-    res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/eval-run`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify(tid ? { trigger, tenant_id: tid } : { trigger }),
-    });
-  } catch (err) {
-    throw new EvalRunError('network', String(err));
+  let runId: string | undefined;
+  // 60 batches × 2 questions comfortably covers MAX_QUESTIONS (50).
+  for (let batch = 0; batch < 60; batch++) {
+    let res: Response;
+    try {
+      res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/eval-run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ trigger, ...(tid ? { tenant_id: tid } : {}), ...(runId ? { run_id: runId } : {}) }),
+      });
+    } catch (err) {
+      throw new EvalRunError('network', String(err));
+    }
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (data.error === 'no_active_questions') {
+      throw new EvalRunError('no_questions', 'No active golden questions — add some first.');
+    }
+    if (!res.ok || data.error) {
+      throw new EvalRunError('server', String(data.error ?? `HTTP ${res.status}`));
+    }
+    runId = String(data.run_id);
+    if (data.status !== 'running' || !Number(data.remaining)) {
+      return { run_id: runId, status: data.status as EvalStatus };
+    }
+    // Pace batches for the org LLM rate limit (2 answers ≈ most of a
+    // 10K-tokens/min budget).
+    await new Promise((r) => setTimeout(r, 25000));
   }
-  const data = await res.json().catch(() => ({} as Record<string, unknown>));
-  if (data.error === 'no_active_questions') {
-    throw new EvalRunError('no_questions', 'No active golden questions — add some first.');
-  }
-  if (!res.ok || data.error) {
-    throw new EvalRunError('server', String(data.error ?? `HTTP ${res.status}`));
-  }
-  return { run_id: String(data.run_id), status: data.status as EvalStatus };
+  throw new EvalRunError('server', 'Eval run did not finish within the expected number of batches.');
 }
