@@ -602,6 +602,105 @@ function DeHealthInline({ deId }: { deId: string }) {
 // ── Development — evidence-grounded Development Plan items (Wave 4,
 // migration 112). Proposed from real 8-week performance data or
 // created manually; never fabricated categories. ───────────────────
+// ── Skills panel — evidence-assessed proficiency (DE-C1, migration
+// 127). Five platform skills, each from a real 30-day signal. Never
+// self-reported; "not yet assessed" is an honest state, not a gap.
+// Auto-assessment caps at level 4 — level 5 is human-awarded.
+type SkillRow = {
+  skill_key: string; proficiency: number | null; sample_size: number;
+  signal_value: number | null; detail: string;
+  skill_catalog: { name: string; category: string; description: string; signal_label: string } | null;
+};
+const SKILL_CATEGORY_LABEL: Record<string, string> = {
+  domain: 'Domain', process: 'Process', communication: 'Communication',
+  analytical: 'Analytical', integration: 'Integration',
+};
+const PROFICIENCY_NAME = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert'];
+function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
+  const [skills, setSkills] = useState<SkillRow[] | null>(null);
+  const [assessing, setAssessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data, error: err } = await supabase
+      .from('de_skills')
+      .select('skill_key, proficiency, sample_size, signal_value, detail, skill_catalog(name, category, description, signal_label)')
+      .eq('de_id', de.id);
+    if (err) { setError(err.message); return; }
+    const rows = (data ?? []) as unknown as SkillRow[];
+    // Stable order by catalog sort — resolve via a fixed key order.
+    const order = ['case_resolution', 'judgment_calibration', 'domain_grounding', 'communication_quality', 'system_integration'];
+    rows.sort((a, b) => order.indexOf(a.skill_key) - order.indexOf(b.skill_key));
+    setSkills(rows);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const assess = async () => {
+    setAssessing(true); setError(null);
+    const { error: err } = await supabase.rpc('assess_de_skills');
+    if (err) setError(err.message);
+    await load();
+    setAssessing(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Skills</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">evidence-assessed</span>
+        <button onClick={() => void assess()} disabled={assessing}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-50">
+          {assessing ? 'Assessing…' : 'Assess now'}
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Proficiency is measured from real 30-day evidence, never self-reported. Level 5 (Expert) is
+        awarded by a person, not the assessment — so it tops out at Advanced automatically.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {skills === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : skills.length === 0 ? (
+        <p className="text-xs text-slate-500">No assessment yet — run one with “Assess now”.</p>
+      ) : (
+        <div className="space-y-3">
+          {skills.map(s => {
+            const cat = s.skill_catalog?.category ?? '';
+            const assessed = s.proficiency != null;
+            return (
+              <div key={s.skill_key} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-white font-medium">{s.skill_catalog?.name ?? s.skill_key}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{SKILL_CATEGORY_LABEL[cat] ?? cat}</span>
+                  {assessed ? (
+                    <span className={`ml-auto text-xs font-semibold ${
+                      s.proficiency! >= 4 ? 'text-emerald-300' : s.proficiency! >= 3 ? 'text-teal-300' : 'text-amber-300'}`}>
+                      L{s.proficiency} · {PROFICIENCY_NAME[s.proficiency!]}
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-xs text-slate-600">Not yet assessed</span>
+                  )}
+                </div>
+                {/* proficiency dots 1..5 */}
+                {assessed && (
+                  <div className="flex gap-1 mt-2">
+                    {[1, 2, 3, 4, 5].map(l => (
+                      <span key={l} className={`h-1.5 flex-1 rounded-full ${
+                        l <= s.proficiency! ? (s.proficiency! >= 4 ? 'bg-emerald-400' : s.proficiency! >= 3 ? 'bg-teal-400' : 'bg-amber-400')
+                        : l === 5 ? 'bg-slate-800 border border-dashed border-slate-700' : 'bg-slate-800'}`} />
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5">{s.detail}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -1706,6 +1805,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           <DeSpecialistsPanel deId={selectedDe.id} />
           <DeEscalationPanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
+          <DeSkillsPanel de={selectedDe} />
           <DeDevelopmentPanel de={selectedDe} />
 
           {/* Governance — config editing/versioning, ownership/transfer, retirement */}
