@@ -1555,6 +1555,9 @@ serve(async (req) => {
       const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
+      if (def.provider === 'internal') {
+        return json({ ok: false, error: 'internal_action', detail: `"${def.label}" is an internal platform action executed by the playbook engine, not through a connector.` }, 200);
+      }
 
       const params = (payload.params ?? {}) as Record<string, unknown>;
       const validated = validateActionParams(def, params);
@@ -1601,6 +1604,9 @@ serve(async (req) => {
       const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
+      if (def.provider === 'internal') {
+        return json({ ok: false, error: 'internal_action', detail: `"${def.label}" is an internal platform action executed by the playbook engine, not through a connector.` }, 200);
+      }
 
       const params = (payload.params ?? {}) as Record<string, unknown>;
       const validated = validateActionParams(def, params);
@@ -1645,8 +1651,13 @@ serve(async (req) => {
         // ── 2. THE COMPOSITION: destructive-always-gates, THEN guardrail,
         //    THEN trust — decide_action_execution implements all three in
         //    that exact order (see migration 035 for the SQL).
+        // p_de_id (migration 125): the trust tier now resolves through
+        // the per-employee cascade — a DE subject's own dial override
+        // applies to registered actions, not just triage (the Wave 1.1
+        // completion this sibling never received).
         const { data: decisionRaw } = await admin.rpc('decide_action_execution', {
           p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
+          p_de_id: subjectKind === 'de' ? subjectId : null,
         });
         const decision = decisionRaw as { decision: string; guardrail_rule_id: string | null; guardrail_rule: string | null; trust_level: number | null; reasoning: string };
 

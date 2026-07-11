@@ -873,33 +873,45 @@ async function executeDefinitionSteps(
             continue;
           }
 
-          // Guardrail threshold + trust dial (R5 composition — identical to renewal_v1).
-          let thresholdCents = 10_000 * 100;
-          const { data: rules } = await admin
-            .from('guardrail_rules').select('threshold')
-            .eq('tenant_id', tenantId).eq('rule_type', 'require_approval_over_cents').eq('active', true)
-            .order('updated_at', { ascending: false }).limit(1);
-          if (rules?.length && typeof rules[0].threshold === 'number') thresholdCents = rules[0].threshold;
-
-          // Trust dial resolution is per-employee first now (Wave 1.1):
-          // this run's DE gets its own override if one exists, falling
-          // back to the tenant-wide default otherwise — the same
-          // cascade decide_work_item_triage/decide_inquiry_triage use,
-          // via the shared resolve_de_autonomy() RPC so the logic is
-          // written once, not duplicated in TypeScript.
-          let autonomy: { enabled: boolean; max_amount_cents: number | null } | null = null;
+          // THE UNIFIED GATE (DE-B3, migration 125): the guardrail
+          // threshold + per-DE trust dial composition that used to live
+          // as a private TypeScript copy here is now
+          // decide_action_execution's amount mode — one decision brain
+          // for registered actions AND this step. On RPC failure the
+          // step fails toward human review (gated), never toward
+          // auto-sending.
           const invoiceRunDeId = await resolveRunDeId();
+          // Registry identity (DE-B3): admin off switch + ledger id.
+          // A missing row never blocks execution (defensive).
+          let invDefId: string | null = null;
           try {
-            const { data: auto } = await admin.rpc('resolve_de_autonomy', {
-              p_tenant_id: tenantId, p_action_type: 'invoice_auto_send', p_de_id: invoiceRunDeId, p_source_category: null,
-            }).then(r => ({ data: (r.data as Array<{ enabled: boolean; max_amount_cents: number | null }> | null)?.[0] ?? null }));
-            autonomy = auto ?? null;
-          } catch { autonomy = null; }
-
-          const guardrailAllows = amount <= thresholdCents;
-          const autonomyAllows = !autonomy ||
-            (autonomy.enabled && autonomy.max_amount_cents !== null && amount <= autonomy.max_amount_cents);
-          const gated = !(guardrailAllows && autonomyAllows);
+            const { data: invDef } = await admin.from('action_definitions')
+              .select('id, status').eq('scope', 'platform').eq('category', 'billing')
+              .eq('action_key', 'generate_invoice').maybeSingle();
+            if (invDef?.status === 'disabled') {
+              step.status = 'skipped'; step.at = now();
+              step.detail = 'skipped: an admin disabled the "Generate a renewal invoice" action (Systems & Actions)';
+              await stepAudit(i, { disabled_by: 'action_definition' });
+              await saveRun(admin, run);
+              continue;
+            }
+            invDefId = invDef?.id ?? null;
+          } catch { /* defensive — proceed without registry identity */ }
+          let gated = true;
+          let gateReasoning = 'Gated: the decision service was unavailable — routed to human approval as the safe default.';
+          let gateDecision = 'human_gated_trust';
+          try {
+            const { data: decisionRaw, error: decErr } = await admin.rpc('decide_action_execution', {
+              p_tenant_id: tenantId, p_action_label: 'Generate a renewal invoice', p_category: 'billing',
+              p_destructive: false, p_de_id: invoiceRunDeId, p_amount_cents: amount, p_action_type: 'invoice_auto_send',
+            });
+            if (!decErr && decisionRaw) {
+              const d = decisionRaw as { decision: string; reasoning: string };
+              gated = d.decision !== 'auto_executed';
+              gateReasoning = d.reasoning;
+              gateDecision = d.decision;
+            }
+          } catch { /* fail-safe default above */ }
 
           const { data: invoice, error: invErr } = await admin
             .from('renewal_invoices')
@@ -916,14 +928,36 @@ async function executeDefinitionSteps(
           ctx.gated = gated;
           step.status = 'done'; step.at = now();
           step.detail = `Invoice ${fmtMoney(amount)} created (${invoice.status})`;
-          await stepAudit(i, { invoice_id: invoice.id, amount_cents: amount, gated, threshold_cents: thresholdCents, composition: 'autonomy_narrows_within_guardrails' });
+          await stepAudit(i, { invoice_id: invoice.id, amount_cents: amount, gated, gate_reasoning: gateReasoning, composition: 'autonomy_narrows_within_guardrails' });
           await audit(admin, tenantId,
             gated
-              ? `Guardrail GATED — invoice ${fmtMoney(amount)} for ${acct()}: exceeds guardrail/trust-dial limits — routed to human approval`
+              ? `Guardrail GATED — invoice ${fmtMoney(amount)} for ${acct()}: ${gateReasoning}`
               : `Guardrail passed — invoice ${fmtMoney(amount)} for ${acct()}: within guardrail and trust dial — auto-approved`,
             'guardrail_check',
-            { run_id: run.id, invoice_id: invoice.id, amount_cents: amount, threshold_cents: thresholdCents, resolved_de_id: invoiceRunDeId, result: gated ? 'gated' : 'passed', composition: 'autonomy_narrows_within_guardrails' },
+            { run_id: run.id, invoice_id: invoice.id, amount_cents: amount, resolved_de_id: invoiceRunDeId, result: gated ? 'gated' : 'passed', composition: 'autonomy_narrows_within_guardrails' },
             'Playbook DE');
+          // THE LEDGER (DE-B3): this execution now exists in
+          // action_executions like every registered action. The
+          // approval UX for a gated invoice is the playbook's own
+          // human_approval step (which parks and resumes the run), so
+          // p_create_task=false prevents a duplicate action_approval
+          // task competing for the same invoice. Ledger failure never
+          // fails the step — observability must not break execution.
+          try {
+            if (invDefId) {
+              await admin.rpc('record_action_execution', {
+                p_tenant_id: tenantId, p_action_definition_id: invDefId, p_connector_id: null,
+                p_subject_kind: invoiceRunDeId ? 'de' : null, p_subject_id: invoiceRunDeId,
+                p_mode: 'execute', p_params: { amount_cents: amount, account_name: ctx.account_name ?? null, invoice_id: invoice.id, run_id: run.id },
+                p_decision: gated ? gateDecision : 'auto_executed',
+                p_destructive: false, p_idempotent: false, p_dedupe_key: null,
+                p_request_summary: `Generate a renewal invoice for ${fmtMoney(amount)} — ${acct()}`,
+                p_receipt: gated ? null : `Invoice ${fmtMoney(amount)} created and sent for ${acct()}.`,
+                p_result: { invoice_id: invoice.id, status: invoice.status, gate_reasoning: gateReasoning },
+                p_task_title: null, p_task_detail: null, p_create_task: false,
+              });
+            }
+          } catch { /* ledger is best-effort */ }
           await saveRun(admin, run);
           continue; // audit already appended above
         }
@@ -1660,6 +1694,25 @@ async function executeDefinitionSteps(
             await stepAudit(i); await saveRun(admin, run);
             continue;
           }
+          // Registry identity (DE-B3, migration 125): the definition
+          // gives admins a real off switch (Systems & Actions →
+          // disable) and gives every execution a ledger row below. A
+          // missing definition row never blocks execution (defensive:
+          // observability infra must not break the live flow).
+          let onbDefId: string | null = null;
+          try {
+            const { data: onbDef } = await admin.from('action_definitions')
+              .select('id, status').eq('scope', 'platform').eq('category', 'other')
+              .eq('action_key', 'start_onboarding').maybeSingle();
+            if (onbDef?.status === 'disabled') {
+              step.status = 'skipped'; step.at = now();
+              step.detail = 'skipped: an admin disabled the "Start an onboarding project" action (Systems & Actions)';
+              await stepAudit(i, { disabled_by: 'action_definition' });
+              await saveRun(admin, run);
+              continue;
+            }
+            onbDefId = onbDef?.id ?? null;
+          } catch { /* defensive — proceed without registry identity */ }
           const { data: projRes, error: projErr } = await admin.rpc('create_onboarding_project', {
             p_account_id: ctx.account_id, p_version_id: params.template_version_id,
             p_name: (params.name as string) || null, p_target: null, p_tenant_id: tenantId,
@@ -1687,6 +1740,26 @@ async function executeDefinitionSteps(
           step.detail = `Onboarding project created — ${acct()}`;
           ctx.onboarding_project_id = projectId;
           await stepAudit(i, { project_id: projectId, account_id: ctx.account_id, template_version_id: params.template_version_id });
+          // THE LEDGER (DE-B3): an internal record write from a
+          // human-published playbook — executed ungated by design
+          // (same class as log_activity/update_record), recorded
+          // honestly as auto_executed. Best-effort.
+          try {
+            if (onbDefId) {
+              const onbRunDeId = await resolveRunDeId();
+              await admin.rpc('record_action_execution', {
+                p_tenant_id: tenantId, p_action_definition_id: onbDefId, p_connector_id: null,
+                p_subject_kind: onbRunDeId ? 'de' : null, p_subject_id: onbRunDeId,
+                p_mode: 'execute', p_params: { template_version_id: params.template_version_id, account_name: ctx.account_name ?? null, project_id: projectId, run_id: run.id },
+                p_decision: 'auto_executed',
+                p_destructive: false, p_idempotent: false, p_dedupe_key: null,
+                p_request_summary: `Start an onboarding project — ${acct()}`,
+                p_receipt: `Onboarding project created for ${acct()} from a published template.`,
+                p_result: { project_id: projectId },
+                p_task_title: null, p_task_detail: null, p_create_task: false,
+              });
+            }
+          } catch { /* ledger is best-effort */ }
           await saveRun(admin, run);
           continue;
         }
