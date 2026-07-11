@@ -100,11 +100,18 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
     'dt_support',
     'dt_billing',
   ].includes(role) || layer === 'platform';
+  // Every real tenant role from useUsers' TenantRole — this list missing
+  // knowledge_manager/approver/read_only meant those three roles could be
+  // invited but could never navigate to ANY page (handleSetPage silently
+  // no-ops on a false return here, with no error shown).
   const isTenantRole = [
     'tenant_owner',
     'tenant_admin',
     'tenant_manager',
+    'knowledge_manager',
+    'approver',
     'tenant_user',
+    'read_only',
   ].includes(role);
   const dtOnlyPages = [
     'platform_home',

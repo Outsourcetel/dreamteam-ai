@@ -57,9 +57,14 @@ const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) =
 };
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
-const PAGE_TO_URL: Record<string, string> = {
+// Record<Page, string> (not Record<string, string>) so adding a new Page
+// without a URL mapping is a compile error, not a silently-dead nav link —
+// an unmapped page used to make URLSync bounce every click straight back.
+const PAGE_TO_URL: Record<Page, string> = {
   platform_home:          '/platform',
   platform_tenants:       '/platform/tenants',
+  platform_team:          '/platform/team',
+  platform_security:      '/platform/security',
   platform_remote_access: '/platform/remote-access',
   platform_health:        '/platform/health',
   platform_revenue:       '/platform/revenue',
@@ -159,8 +164,16 @@ function URLSync() {
       return;
     }
 
+    // Only adopt the URL's page when the PATHNAME is what changed (deep
+    // link on first mount, browser back/forward). Without this guard, a
+    // page-state change to any page whose URL mapping is missing (or maps
+    // to the current pathname) fell through to here and got instantly
+    // reverted to the URL's page — the click "did nothing". That exact
+    // regression shipped twice (platform_team, platform_security).
+    const pathnameChanged = lastSynced.current === null
+      || lastSynced.current.pathname !== location.pathname;
     const page = URL_TO_PAGE[location.pathname];
-    if (page && page !== currentPage) {
+    if (pathnameChanged && page && page !== currentPage) {
       lastSynced.current = { page, pathname: location.pathname };
       handleSetPage(page);
       return;

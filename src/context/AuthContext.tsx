@@ -593,7 +593,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // lands the user on their brand-new, empty live dashboard.
   const completeOrgSetup = async (tenantId: string) => {
     setProfileHasNoTenant(false);
-    setAuthedUser(prev => (prev ? { ...prev, tenantId } : prev));
+    // complete_signup just set profiles.role = 'tenant_owner' (migration
+    // 115); reflect it immediately. Leaving authedUser.role at whatever the
+    // signup metadata seeded gives the brand-new owner up to a full
+    // syncProfile tick (60s) where canAccessPage may silently reject
+    // every nav click on their brand-new workspace.
+    setAuthedUser(prev => (prev ? { ...prev, tenantId, role: 'tenant_owner' } : prev));
     const t = await fetchTenantById(tenantId);
     setDbCurrentTenant(t);
     setCurrentPage('dashboard');
