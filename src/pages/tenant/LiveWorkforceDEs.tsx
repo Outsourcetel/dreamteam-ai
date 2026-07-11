@@ -701,6 +701,175 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
+// ── Certifications & Reviews panel (DE-C3, migration 129). Durable,
+// expiring certifications issued by a named human; quarterly
+// performance reviews with honest verdicts (insufficient data is a
+// verdict, not a gap to hide). A 'below' review opens a PIP in the
+// Development panel below, with a written consequence.
+type CertRow = {
+  id: string; cert_type: string; scope: string; note: string;
+  issued_by_name: string; issued_at: string; expires_at: string; status: string;
+};
+type ReviewRow = {
+  id: string; period_start: string; verdict: string; summary: string; status: string; created_at: string;
+};
+function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
+  const [certs, setCerts] = useState<CertRow[] | null>(null);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [showCertify, setShowCertify] = useState(false);
+  const [certType, setCertType] = useState('workspace');
+  const [scope, setScope] = useState('');
+  const [note, setNote] = useState('');
+  const [validDays, setValidDays] = useState('180');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: c, error: cErr }, { data: r }] = await Promise.all([
+      supabase.from('de_certifications')
+        .select('id, cert_type, scope, note, issued_by_name, issued_at, expires_at, status')
+        .eq('de_id', de.id).order('issued_at', { ascending: false }).limit(10),
+      supabase.from('de_performance_reviews')
+        .select('id, period_start, verdict, summary, status, created_at')
+        .eq('de_id', de.id).order('created_at', { ascending: false }).limit(3),
+    ]);
+    if (cErr) { setError(cErr.message); return; }
+    setCerts((c ?? []) as CertRow[]);
+    setReviews((r ?? []) as ReviewRow[]);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
+    setBusy(true); setError(null);
+    const { error: err } = await fn();
+    if (err) setError(err.message);
+    await load();
+    setBusy(false);
+  };
+
+  const certify = () => run(async () => {
+    const res = await supabase.rpc('certify_digital_employee', {
+      p_de_id: de.id, p_cert_type: certType, p_scope: scope.trim(), p_note: note.trim(),
+      p_valid_days: Math.max(1, Math.min(730, Math.round(Number(validDays) || 180))),
+    });
+    if (!res.error) { setScope(''); setNote(''); setShowCertify(false); }
+    return res;
+  });
+
+  const daysLeft = (expiresAt: string) => Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000);
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">expiring attestations</span>
+        <button onClick={() => setShowCertify(s => !s)}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">
+          {showCertify ? 'Cancel' : 'Certify…'}
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        A certification is a named person attesting this employee is fit for purpose — it expires and
+        must be renewed. Quarterly reviews record an honest verdict from real metrics; a below-threshold
+        verdict opens an improvement plan with a written consequence.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+
+      {showCertify && (
+        <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+          <div className="flex gap-2">
+            <select value={certType} onChange={e => setCertType(e.target.value)} disabled={busy}
+              className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+              <option value="workspace">Workspace</option>
+              <option value="compliance">Compliance</option>
+              <option value="capability">Capability</option>
+            </select>
+            <input type="text" value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope — e.g. helpdesk replies"
+              className="flex-1 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            <input type="number" min={1} max={730} value={validDays} onChange={e => setValidDays(e.target.value)}
+              title="Validity (days)"
+              className="w-20 bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="What did you review? (required)"
+            className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <button onClick={() => void certify()} disabled={busy || !note.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+            Issue certification
+          </button>
+        </div>
+      )}
+
+      {certs === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : certs.length === 0 ? (
+        <p className="text-xs text-slate-500 mb-3">No certifications yet — advancing the lifecycle to Certified issues one automatically.</p>
+      ) : (
+        <div className="space-y-1.5 mb-4">
+          {certs.map(c => {
+            const left = daysLeft(c.expires_at);
+            return (
+              <div key={c.id} className="flex items-center gap-2 text-xs flex-wrap">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                  c.status === 'active' ? (left <= 14 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')
+                  : c.status === 'expired' ? 'bg-rose-500/15 text-rose-300' : 'bg-slate-800 text-slate-500'}`}>
+                  {c.status === 'active' ? (left <= 14 ? `expires in ${left}d` : 'active') : c.status}
+                </span>
+                <span className="text-slate-300 capitalize">{c.cert_type}</span>
+                {c.scope && <span className="text-slate-500">· {c.scope}</span>}
+                <span className="text-slate-600">by {c.issued_by_name} · until {new Date(c.expires_at).toLocaleDateString()}</span>
+                {c.status === 'active' && (
+                  <button onClick={() => { const reason = window.prompt('Revocation reason (required):'); if (reason?.trim()) void run(() => supabase.rpc('revoke_de_certification', { p_cert_id: c.id, p_reason: reason.trim() })); }}
+                    disabled={busy}
+                    className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                    Revoke
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-1.5">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">Performance reviews</p>
+        <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy}
+          className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+          {busy ? 'Working…' : 'Run review now'}
+        </button>
+      </div>
+      {reviews.length === 0 ? (
+        <p className="text-xs text-slate-500">No reviews yet — they run quarterly, or on demand.</p>
+      ) : (
+        <div className="space-y-2">
+          {reviews.map(r => (
+            <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                  r.verdict === 'meets' ? 'bg-emerald-500/15 text-emerald-300'
+                  : r.verdict === 'below' ? 'bg-amber-500/15 text-amber-300'
+                  : 'bg-slate-800 text-slate-400'}`}>
+                  {r.verdict === 'insufficient_data' ? 'insufficient data' : r.verdict}
+                </span>
+                <span className="text-[11px] text-slate-500">quarter starting {r.period_start}</span>
+                {r.status === 'open' ? (
+                  <button onClick={() => void run(() => supabase.rpc('acknowledge_de_performance_review', { p_review_id: r.id }))}
+                    disabled={busy}
+                    className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300">
+                    Acknowledge
+                  </button>
+                ) : (
+                  <span className="ml-auto text-[10px] text-slate-600">acknowledged</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">{r.summary}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -1963,6 +2132,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           <DeEscalationPanel deId={selectedDe.id} />
           <DeIncidentsPanel de={selectedDe} setPage={setPage} />
           <DeSkillsPanel de={selectedDe} />
+          <DeCertificationsPanel de={selectedDe} />
           <DeDevelopmentPanel de={selectedDe} />
 
           {/* Governance — config editing/versioning, ownership/transfer, retirement */}
