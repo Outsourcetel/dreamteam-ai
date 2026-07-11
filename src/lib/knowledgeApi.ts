@@ -215,7 +215,12 @@ export async function listChunkStatus(): Promise<Record<string, DocChunkStatus>>
 }
 
 /** Fire the ingest-chunks edge function for a doc (chunk + embed).
- *  Fire-and-forget friendly: resolves with the result, throws on failure. */
+ *  Fire-and-forget friendly: resolves with the result, throws on failure.
+ *
+ *  Embedding is resumable server-side (a single invocation embeds at
+ *  most a small batch of chunks — a whole large doc in one call blew
+ *  the edge worker's compute limit), so this loops until the function
+ *  reports 0 remaining. Small docs still complete in one call. */
 export async function ingestDocChunks(docId: string): Promise<DocChunkStatus> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
@@ -224,18 +229,27 @@ export async function ingestDocChunks(docId: string): Promise<DocChunkStatus> {
   // ordinary tenant user it's redundant with their own profile and
   // never gets used (see resolveTenantWithRemoteAccess).
   const tid = await requireTenantId();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-chunks`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ doc_id: docId, tenant_id: tid }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error) throw new CustomerApiError(String(data.error ?? `HTTP ${res.status}`), false);
-  return { chunks: Number(data.chunks) || 0, embedded: Number(data.embedded) || 0 };
+  let chunks = 0;
+  let embedded = 0;
+  // Bounded loop: EMBED_BATCH is 4 server-side, so 50 rounds covers a
+  // ~200-chunk (~300KB) doc — far beyond any realistic upload.
+  for (let round = 0; round < 50; round++) {
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-chunks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ doc_id: docId, tenant_id: tid }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw new CustomerApiError(String(data.error ?? `HTTP ${res.status}`), false);
+    chunks = Number(data.chunks) || 0;
+    embedded += Number(data.embedded) || 0;
+    if (!Number(data.remaining)) break;
+  }
+  return { chunks, embedded };
 }
 
 // ── de-answer edge function (the real DE brain) ───────────────────

@@ -114,51 +114,85 @@ serve(async (req) => {
       .single();
     if (docErr || !doc) return json({ error: 'doc_not_found' }, 404);
 
-    const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
+    // ── Store chunks FIRST, embed in bounded batches after ──
+    //
+    // Embedding is resumable by design: a single invocation embedding a
+    // whole large doc exceeds the edge worker's compute budget
+    // (WORKER_RESOURCE_LIMIT — confirmed live on an ~11K-char doc during
+    // the DE-A2 corpus load, even with strictly sequential embedding).
+    // So each call (1) chunks + stores immediately with null embeddings
+    // unless the chunks already exist, then (2) embeds at most
+    // EMBED_BATCH of the doc's still-null chunks, and (3) reports
+    // `remaining` so the caller loops until it hits 0. Retrieval
+    // degrades gracefully meanwhile: lexical search sees the doc at
+    // once; semantic search picks chunks up as their embeddings land.
+    const EMBED_BATCH = 4;
 
-    // ── Embed via free edge AI (gte-small, 384 dims); degrade gracefully ──
-    let embeddings: (number[] | null)[] = chunks.map(() => null);
-    let embedded = 0;
+    const { count: existingCount } = await admin
+      .from('knowledge_doc_chunks')
+      .select('id', { count: 'exact', head: true })
+      .eq('doc_id', doc.id);
+
+    let totalChunks = existingCount ?? 0;
+    if (!existingCount || existingCount === 0) {
+      const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
+      await admin.from('knowledge_doc_chunks').delete().eq('doc_id', doc.id);
+      if (chunks.length > 0) {
+        const rows = chunks.map((content, i) => ({
+          tenant_id: tenantId,
+          account_id: doc.account_id ?? null,
+          doc_id: doc.id,
+          chunk_index: i,
+          content,
+          embedding: null,
+        }));
+        const { error: insErr } = await admin.from('knowledge_doc_chunks').insert(rows);
+        if (insErr) return json({ error: insErr.message }, 500);
+      }
+      totalChunks = chunks.length;
+    }
+
+    let embeddedThisCall = 0;
     try {
       // deno-lint-ignore no-explicit-any
       const SupabaseAI = (globalThis as any).Supabase?.ai;
       if (SupabaseAI) {
+        const { data: pending } = await admin
+          .from('knowledge_doc_chunks')
+          .select('id, content')
+          .eq('doc_id', doc.id)
+          .is('embedding', null)
+          .order('chunk_index', { ascending: true })
+          .limit(EMBED_BATCH);
         const session = new SupabaseAI.Session('gte-small');
-        // Sequential, not Promise.all: embedding every chunk in parallel
-        // blows the edge worker's compute limit (WORKER_RESOURCE_LIMIT)
-        // on any doc with more than a handful of chunks — found live
-        // during the DE-A2 TCP corpus load, where multi-chunk docs
-        // failed consistently even with no concurrent invocations.
-        embeddings = [];
-        for (const c of chunks) {
+        for (const c of (pending ?? []) as { id: string; content: string }[]) {
           try {
-            const out = await session.run(c, { mean_pool: true, normalize: true });
+            const out = await session.run(c.content, { mean_pool: true, normalize: true });
             const vec = Array.from(out as Iterable<number>);
-            embeddings.push(vec.length === 384 ? vec : null);
-          } catch { embeddings.push(null); }
+            if (vec.length === 384) {
+              const { error: updErr } = await admin
+                .from('knowledge_doc_chunks').update({ embedding: vec }).eq('id', c.id);
+              if (!updErr) embeddedThisCall++;
+            }
+          } catch { /* leave null; a later call picks it up */ }
         }
-        embedded = embeddings.filter((e) => e !== null).length;
       }
     } catch (e) {
       console.error('gte-small embedding unavailable:', e);
     }
 
-    // ── Replace old chunks for the doc ──
-    await admin.from('knowledge_doc_chunks').delete().eq('doc_id', doc.id);
-    if (chunks.length > 0) {
-      const rows = chunks.map((content, i) => ({
-        tenant_id: tenantId,
-        account_id: doc.account_id ?? null,
-        doc_id: doc.id,
-        chunk_index: i,
-        content,
-        embedding: embeddings[i],
-      }));
-      const { error: insErr } = await admin.from('knowledge_doc_chunks').insert(rows);
-      if (insErr) return json({ error: insErr.message }, 500);
-    }
+    const { count: stillNull } = await admin
+      .from('knowledge_doc_chunks')
+      .select('id', { count: 'exact', head: true })
+      .eq('doc_id', doc.id)
+      .is('embedding', null);
 
-    return json({ doc_id: doc.id, chunks: chunks.length, embedded });
+    return json({
+      doc_id: doc.id,
+      chunks: totalChunks,
+      embedded: embeddedThisCall,
+      remaining: stillNull ?? 0,
+    });
   } catch (err) {
     console.error('ingest-chunks error:', err);
     return json({ error: String(err) }, 500);
