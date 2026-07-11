@@ -1577,6 +1577,162 @@ function DeEscalationPanel({ deId }: { deId: string }) {
   );
 }
 
+// ── Workforce Teams panel — fallback chains (DE-C2, migration 128).
+// Rank 1 = primary responder; higher ranks are backups that take over
+// a shared work source automatically when everyone ranked above them
+// is paused or unavailable. Teams never grant access — a backup still
+// needs its own grant on the source (Control Fabric stays sovereign).
+type TeamRow = { id: string; name: string; purpose: string; status: string };
+type TeamMemberRow = {
+  id: string; team_id: string; de_id: string; fallback_rank: number;
+  digital_employees: { name: string; persona_name: string | null; lifecycle_status: string; status: string } | null;
+};
+function TeamsPanel() {
+  const [teams, setTeams] = useState<TeamRow[] | null>(null);
+  const [members, setMembers] = useState<TeamMemberRow[]>([]);
+  const [des, setDes] = useState<Array<{ id: string; name: string; lifecycle_status: string }>>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [name, setName] = useState('');
+  const [purpose, setPurpose] = useState('');
+  const [addDe, setAddDe] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: t, error: tErr }, { data: m }, { data: d }] = await Promise.all([
+      supabase.from('workforce_teams').select('id, name, purpose, status').eq('status', 'active').order('created_at'),
+      supabase.from('workforce_team_members')
+        .select('id, team_id, de_id, fallback_rank, digital_employees(name, persona_name, lifecycle_status, status)')
+        .order('fallback_rank'),
+      supabase.from('digital_employees').select('id, name, lifecycle_status')
+        .not('lifecycle_status', 'in', '(retired,archived)').order('name'),
+    ]);
+    if (tErr) { setError(tErr.message); return; }
+    setTeams((t ?? []) as TeamRow[]);
+    setMembers((m ?? []) as unknown as TeamMemberRow[]);
+    setDes((d ?? []) as typeof des);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
+    setBusy(true); setError(null);
+    const { error: err } = await fn();
+    if (err) setError(err.message);
+    await load();
+    setBusy(false);
+  };
+
+  const createTeam = () => run(async () => {
+    const res = await supabase.rpc('upsert_workforce_team', { p_name: name.trim(), p_purpose: purpose.trim() });
+    if (!res.error) { setName(''); setPurpose(''); setShowCreate(false); }
+    return res;
+  });
+
+  const addMember = (teamId: string) => {
+    const deId = addDe[teamId];
+    if (!deId) return;
+    const teamMembers = members.filter(m => m.team_id === teamId);
+    const nextRank = teamMembers.length === 0 ? 1 : Math.max(...teamMembers.map(m => m.fallback_rank)) + 1;
+    void run(() => supabase.rpc('set_workforce_team_member', { p_team_id: teamId, p_de_id: deId, p_fallback_rank: nextRank }));
+    setAddDe(prev => ({ ...prev, [teamId]: '' }));
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 mt-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Workforce Teams</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">fallback chains</span>
+        <button onClick={() => setShowCreate(s => !s)}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">
+          {showCreate ? 'Cancel' : '+ New team'}
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Within a team, the highest-ranked available employee owns each shared inbox; backups take
+        over automatically when it is paused or unavailable, and the specialist desk covers after
+        that. Teams never grant access — a backup still needs its own grant on the system it covers.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+
+      {showCreate && (
+        <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+          <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Team name — e.g. Support Workforce"
+            className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
+            className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <button onClick={() => void createTeam()} disabled={busy || !name.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+            Create team
+          </button>
+        </div>
+      )}
+
+      {teams === null ? (
+        <p className="text-xs text-slate-500">Loading…</p>
+      ) : teams.length === 0 ? (
+        <p className="text-xs text-slate-500">No teams yet — a team defines who owns an inbox and who covers when they can’t.</p>
+      ) : (
+        <div className="space-y-4">
+          {teams.map(team => {
+            const teamMembers = members.filter(m => m.team_id === team.id).sort((a, b) => a.fallback_rank - b.fallback_rank);
+            const memberIds = new Set(teamMembers.map(m => m.de_id));
+            return (
+              <div key={team.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-white font-medium">{team.name}</span>
+                  <button onClick={() => { if (window.confirm(`Archive "${team.name}"? Its fallback chain will stop applying.`)) void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id })); }}
+                    disabled={busy}
+                    className="ml-auto text-[10px] text-slate-500 hover:text-rose-300">
+                    Archive
+                  </button>
+                </div>
+                {team.purpose && <p className="text-[11px] text-slate-500 mt-0.5">{team.purpose}</p>}
+                <div className="mt-2 space-y-1">
+                  {teamMembers.length === 0 && <p className="text-[11px] text-slate-600">No members yet.</p>}
+                  {teamMembers.map(m => {
+                    const de = m.digital_employees;
+                    const eligible = de && ['assigned', 'active', 'improving'].includes(de.lifecycle_status) && de.status === 'active';
+                    return (
+                      <div key={m.id} className="flex items-center gap-2 text-xs">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${m.fallback_rank === 1 ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
+                          {m.fallback_rank === 1 ? 'Primary' : `Backup #${m.fallback_rank - 1}`}
+                        </span>
+                        <span className="text-slate-300">{de?.persona_name || de?.name || 'Unknown'}</span>
+                        <span className={`text-[10px] ${eligible ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {eligible ? 'on duty' : (de?.lifecycle_status ?? '')}
+                        </span>
+                        <button onClick={() => void run(() => supabase.rpc('set_workforce_team_member', { p_team_id: team.id, p_de_id: m.de_id, p_fallback_rank: null }))}
+                          disabled={busy}
+                          className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <select value={addDe[team.id] ?? ''} disabled={busy}
+                    onChange={e => setAddDe(prev => ({ ...prev, [team.id]: e.target.value }))}
+                    className="flex-1 bg-slate-900 border border-slate-800 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                    <option value="">Add a member…</option>
+                    {des.filter(d => !memberIds.has(d.id)).map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => addMember(team.id)} disabled={busy || !addDe[team.id]}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40">
+                    Add
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
@@ -1743,6 +1899,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
         </div>
         <div className="max-w-3xl">
           <RosterPanel onSelect={setSelectedDe} />
+          <TeamsPanel />
         </div>
       </div>
     );
