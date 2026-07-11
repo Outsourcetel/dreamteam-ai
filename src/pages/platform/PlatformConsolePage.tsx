@@ -635,9 +635,16 @@ const PlatformConsolePage = ({
           className="w-72 bg-slate-900 border border-slate-800 text-white text-sm rounded-xl px-4 py-2 mb-4 focus:outline-none focus:border-amber-500"
         />
         {(() => {
-          const activeTenants = tenants.filter((t) => t.status === 'active');
+          // Every operable tenant, not just status==='active' — new tenants
+          // are 'trial' for their first 14 days, and filtering them out here
+          // made every newly signed-up tenant invisible to Remote Access
+          // (the founder's exact "console doesn't show new tenants" report).
+          // Suspended tenants and test debris stay hidden.
+          const accessibleTenants = tenants.filter(
+            (t) => t.status !== 'suspended' && !t.name.startsWith('[TEST DEBRIS')
+          );
           const term = remoteAccessSearch.trim().toLowerCase();
-          const matched = term ? activeTenants.filter((t) => t.name.toLowerCase().includes(term)) : activeTenants;
+          const matched = term ? accessibleTenants.filter((t) => t.name.toLowerCase().includes(term)) : accessibleTenants;
           const shown = matched.slice(0, remoteAccessLimit);
           return (
             <>
@@ -658,8 +665,13 @@ const PlatformConsolePage = ({
                     {t.name[0]}
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-white">
+                    <div className="text-sm font-semibold text-white flex items-center gap-2">
                       {t.name}
+                      {t.status !== 'active' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide bg-amber-500/15 text-amber-300">
+                          {t.status}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-slate-500">{t.industry}</div>
                   </div>
