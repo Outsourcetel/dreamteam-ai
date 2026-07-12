@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../types';
+import { useVocabulary } from '../lib/vocabulary';
+import type { Vocabulary } from '../lib/vocabulary';
 import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';
@@ -115,7 +117,7 @@ export async function fetchLiveNavCounts(): Promise<NavCounts> {
   }
 }
 
-function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): NavSection[] {
+function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vocab: Vocabulary): NavSection[] {
   // CompanyId keys DEMO content only (Wave 1.3): live tenants get one
   // neutral label set and never see demo-company badges or branching.
   const isTCP = companyId === 'tcp';
@@ -227,7 +229,10 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): N
       groups: [
         {
           id: 'customer',
-          label: 'Customers',
+          // Wave 4: the served-party noun and lifecycle labels come from
+          // the tenant's vocabulary (industry-seeded, editable). Demo
+          // tenants resolve to the SaaS defaults, so nothing changes there.
+          label: vocab.section_label,
           icon: '◎',
           page: 'entity_customer',
           children: [
@@ -235,8 +240,8 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): N
             { id: 'entity_customer_sales', label: 'Sales', indicator: { count: live.salesPipeline, color: '#6366f1' } },
             { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: { count: live.onboardingActive, color: '#f59e0b' } },
             { id: 'entity_customer_support', label: 'Support', indicator: { count: live.supportTickets, color: '#22c55e' } },
-            { id: 'entity_customer_success', label: 'Customer Success', indicator: { count: live.atRiskAccounts, color: '#ef4444' } },
-            { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: { count: live.renewalsDue, color: '#f59e0b' } },
+            { id: 'entity_customer_success', label: `${vocab.party_singular} Success`, indicator: { count: live.atRiskAccounts, color: '#ef4444' } },
+            { id: 'entity_customer_renewal', label: `${vocab.renewal_label} & Expansion`, indicator: { count: live.renewalsDue, color: '#f59e0b' } },
           ],
         },
         // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
@@ -321,7 +326,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
     };
   }, [refreshCounts]);
 
-  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live');
+  const vocab = useVocabulary();
+  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live', vocab);
 
   const toggleGroup = (id: string) => {
     setOpenGroups(prev => {

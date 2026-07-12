@@ -8,6 +8,7 @@ import {
 } from '../../../lib/customerApi';
 import type { CustomerAccount, RenewalInvoice, InvoiceStatus } from '../../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../../lib/guardrailApi';
+import { useVocabulary } from '../../../lib/vocabulary';
 import { startRenewalRun, listPlaybookRuns } from '../../../lib/playbookApi';
 import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -440,6 +441,7 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
 
 function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
+  const vocab = useVocabulary();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
   const [runs, setRuns] = useState<PlaybookRun[]>([]);
@@ -541,8 +543,8 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer Lifecycle</h1>
-        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live renewal pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
+        <h1 className="text-2xl font-bold text-white">{vocab.renewal_label} &amp; Expansion — {vocab.party_singular} Lifecycle</h1>
+        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live {vocab.renewal_label.toLowerCase()} pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -555,7 +557,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
         <LiveEmptyState
           icon="↻"
           title="No accounts to renew yet"
-          body="Add or import your customer accounts first — renewals are generated from account ARR and renewal dates."
+          body={`Add or import your ${vocab.party_plural.toLowerCase()} first — ${vocab.renewal_label.toLowerCase()}s are generated from each record's ${vocab.value_metric} and ${vocab.renewal_label.toLowerCase()} dates.`}
           primaryLabel="Go to Customer Success"
           onPrimary={() => setPage('entity_customer_success')}
         />
@@ -585,7 +587,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-left">
-                    {['Account', 'Amount', 'Status', 'Due date', 'Action'].map(h => (
+                    {[vocab.party_singular, 'Amount', 'Status', 'Due date', 'Action'].map(h => (
                       <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
                     ))}
                   </tr>
@@ -629,7 +631,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-left">
-                    {['Account', 'ARR', 'Renewal date', 'Action'].map(h => (
+                    {[vocab.party_singular, vocab.value_metric, `${vocab.renewal_label} date`, 'Action'].map(h => (
                       <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
                     ))}
                   </tr>

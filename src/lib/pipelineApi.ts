@@ -18,17 +18,47 @@ import type { ImportResult, ImportRowError } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export type OppStage = 'prospect' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
+// Wave 4: stages are TENANT-CONFIGURABLE (tenant_pipeline_stages,
+// migration 135). 'won'/'lost' remain fixed terminal semantics. A tenant
+// with no configured stages uses the platform default four — these
+// constants are that fallback (and stay the demo vocabulary).
+export type OppStage = string;
 
 export const OPEN_STAGES: OppStage[] = ['prospect', 'qualified', 'proposal', 'negotiation'];
 export const BD_STAGES: OppStage[] = ['prospect'];
 export const SALES_STAGES: OppStage[] = ['qualified', 'proposal', 'negotiation'];
 export const ALL_STAGES: OppStage[] = ['prospect', 'qualified', 'proposal', 'negotiation', 'won', 'lost'];
 
-export const STAGE_LABELS: Record<OppStage, string> = {
+export const STAGE_LABELS: Record<string, string> = {
   prospect: 'Prospect', qualified: 'Qualified', proposal: 'Proposal',
   negotiation: 'Negotiation', won: 'Won', lost: 'Lost',
 };
+
+export interface PipelineStage { id: string; stage_key: string; label: string; position: number }
+
+/** The tenant's configured open stages, ordered — falls back to the
+ *  platform default four when none are configured (same rule the
+ *  server-side stage validation applies). */
+export async function listPipelineStages(): Promise<PipelineStage[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('tenant_pipeline_stages')
+    .select('id, stage_key, label, position')
+    .eq('tenant_id', tid)
+    .order('position', { ascending: true });
+  if (error || !data || data.length === 0) {
+    return OPEN_STAGES.map((k, i) => ({ id: k, stage_key: k, label: STAGE_LABELS[k] ?? k, position: i + 1 }));
+  }
+  return data as PipelineStage[];
+}
+
+/** Replace the tenant's open-stage list (owner/admin, server-enforced).
+ *  Refuses to drop a stage that open opportunities still occupy. */
+export async function setPipelineStages(stages: Array<{ key: string; label: string }>): Promise<PipelineStage[]> {
+  const { data, error } = await supabase.rpc('set_pipeline_stages', { p_stages: stages });
+  if (error) raise('setPipelineStages', error);
+  return (data ?? []) as PipelineStage[];
+}
 
 export interface StageHistoryEntry { stage: OppStage; at: string; by: string }
 
@@ -78,7 +108,9 @@ export async function listOpportunities(): Promise<Opportunity[]> {
 }
 
 export async function createOpportunity(o: {
-  name: string; company_name?: string; stage?: 'prospect' | 'qualified';
+  // Wave 4: any configured open stage (the DB guard validates; won/lost
+  // are rejected on insert regardless).
+  name: string; company_name?: string; stage?: OppStage;
   amount_cents?: number | null; close_date?: string | null; owner?: string;
 }): Promise<Opportunity> {
   const tid = await requireTenantId();

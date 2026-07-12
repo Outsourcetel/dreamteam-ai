@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { COMPANY_SUMMARY } from '../../data/companies';
 import { computeRoi, roiK } from '../../data/roi';
 import { computeLiveCounts } from '../../components/Sidebar';
+import { useVocabulary } from '../../lib/vocabulary';
 import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
 import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
@@ -295,6 +296,7 @@ function liveActivityAge(iso: string): string {
 
 function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
+  const vocab = useVocabulary();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
@@ -342,11 +344,11 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const arrCents = accounts.reduce((s, a) => s + a.arr_cents, 0);
 
   const kpis = [
-    { icon: '◎', value: String(accounts.length), label: 'Accounts', navPage: 'entity_customer_success' as Page, alert: false },
+    { icon: '◎', value: String(accounts.length), label: vocab.party_plural, navPage: 'entity_customer_success' as Page, alert: false },
     { icon: '💬', value: String(openTickets), label: 'Open Tickets', navPage: 'entity_customer_support' as Page, alert: false },
     { icon: '✋', value: `${pendingTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: pendingTasks > 0 },
-    { icon: '↻', value: String(renewalsDue), label: 'Renewals Open', navPage: 'entity_customer_renewal' as Page, alert: false },
-    { icon: '⚑', value: String(atRisk), label: 'At-Risk Accounts', navPage: 'entity_customer_success' as Page, alert: atRisk > 0 },
+    { icon: '↻', value: String(renewalsDue), label: `${vocab.renewal_label}s Open`, navPage: 'entity_customer_renewal' as Page, alert: false },
+    { icon: '⚑', value: String(atRisk), label: `At-Risk ${vocab.party_plural}`, navPage: 'entity_customer_success' as Page, alert: atRisk > 0 },
     { icon: '📚', value: `${knowledgeGaps} detected`, label: 'Knowledge Gaps', navPage: 'ops_human_tasks' as Page, alert: knowledgeGaps > 0 },
   ];
 

@@ -3,10 +3,11 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
   listOpportunities, createOpportunity, updateOpportunity, moveStage, closeWon, closeLost,
-  getPipelineSummary, importOpportunitiesCsv,
-  STAGE_LABELS, SALES_STAGES,
+  getPipelineSummary, importOpportunitiesCsv, listPipelineStages,
+  STAGE_LABELS,
 } from '../../../lib/pipelineApi';
-import type { Opportunity, OppStage, PipelineSummaryRow, OpportunityImportRow } from '../../../lib/pipelineApi';
+import type { Opportunity, OppStage, PipelineSummaryRow, OpportunityImportRow, PipelineStage } from '../../../lib/pipelineApi';
+import { useVocabulary } from '../../../lib/vocabulary';
 import { listAccounts, fmtMoneyK, parseCsv, CustomerApiError } from '../../../lib/customerApi';
 import type { CustomerAccount } from '../../../lib/customerApi';
 import { listPublishedVersions, installStarterTemplate } from '../../../lib/onboardingApi';
@@ -61,16 +62,18 @@ function SorBanner() {
 }
 
 // ── Summary strip (shared by both lenses) ─────────────────────────
-function SummaryStrip({ summary }: { summary: PipelineSummaryRow[] }) {
+// Wave 4: one card per CONFIGURED stage (tenant-defined order), not the
+// hardcoded SaaS four.
+function SummaryStrip({ summary, stages }: { summary: PipelineSummaryRow[]; stages: PipelineStage[] }) {
   const bystage = (s: OppStage) => summary.find(r => r.stage === s);
   const openTotal = summary.filter(r => !['won', 'lost'].includes(r.stage))
     .reduce((acc, r) => acc + r.amount_cents, 0);
   const winRate = summary.find(r => r.win_rate_90d != null)?.win_rate_90d ?? null;
   const cards = [
     { label: 'Open pipeline', value: fmtMoneyK(openTotal), color: 'text-white' },
-    ...(['prospect', 'qualified', 'proposal', 'negotiation'] as OppStage[]).map(s => ({
-      label: STAGE_LABELS[s],
-      value: `${bystage(s)?.opp_count ?? 0} · ${fmtAmount(bystage(s)?.amount_cents ?? 0)}`,
+    ...stages.map(st => ({
+      label: st.label,
+      value: `${bystage(st.stage_key)?.opp_count ?? 0} · ${fmtAmount(bystage(st.stage_key)?.amount_cents ?? 0)}`,
       color: 'text-slate-200',
     })),
     { label: 'Win rate (90d)', value: winRate == null ? '—' : `${winRate}%`, color: winRate == null ? 'text-slate-500' : winRate >= 50 ? 'text-emerald-300' : 'text-amber-300' },
@@ -231,6 +234,7 @@ function WonModal({ opp, onClose, onWon }: {
   opp: Opportunity; onClose: () => void;
   onWon: (msg: string) => void;
 }) {
+  const vocab = useVocabulary();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [versions, setVersions] = useState<TemplateVersion[]>([]);
   const [linkAccountId, setLinkAccountId] = useState<string>('');
@@ -290,20 +294,20 @@ function WonModal({ opp, onClose, onWon }: {
       <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <h3 className="text-white font-semibold mb-1">Close won — {opp.name}</h3>
         <p className="text-xs text-slate-500 mb-4">
-          Winning creates the customer account and hands the relationship to the lifecycle:
+          Winning creates the {vocab.party_singular.toLowerCase()} record and hands the relationship to the lifecycle:
           onboarding → health monitoring → renewals. No re-entry.
         </p>
 
         <div className="space-y-3 mb-5">
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1">Customer account</label>
+            <label className="text-xs font-medium text-slate-400 block mb-1">{vocab.party_singular} record</label>
             <select value={linkAccountId} onChange={e => setLinkAccountId(e.target.value)} className={`w-full ${inputCls}`}>
               <option value="">Create new — “{opp.company_name || opp.name}”</option>
               {accounts.map(a => <option key={a.id} value={a.id}>Link existing — {a.name}</option>)}
             </select>
             {!linkAccountId && (
               <p className="text-[10px] text-slate-600 mt-1">
-                New account ARR = deal amount ({fmtAmount(opp.amount_cents)}) — adjust later in Customer Success if needed.
+                New record {vocab.value_metric} = deal amount ({fmtAmount(opp.amount_cents)}) — adjust later in {vocab.party_singular} Success if needed.
               </p>
             )}
           </div>
@@ -383,6 +387,8 @@ function LostModal({ opp, onClose, onLost }: { opp: Opportunity; onClose: () => 
 function usePipeline() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [summary, setSummary] = useState<PipelineSummaryRow[]>([]);
+  // Wave 4: the tenant's configured open stages (fallback = platform four).
+  const [stages, setStages] = useState<PipelineStage[]>([]);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -390,8 +396,11 @@ function usePipeline() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [o, s] = await Promise.all([listOpportunities(), getPipelineSummary()]);
-      setOpps(o); setSummary(s); setMissingTables(false);
+      const [o, s, st] = await Promise.all([
+        listOpportunities(), getPipelineSummary(),
+        listPipelineStages().catch(() => [] as PipelineStage[]),
+      ]);
+      setOpps(o); setSummary(s); setStages(st); setMissingTables(false);
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError((err as Error)?.message || 'Failed to load pipeline.');
@@ -399,7 +408,7 @@ function usePipeline() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  return { opps, summary, loading, missingTables, error, refresh };
+  return { opps, summary, stages, loading, missingTables, error, refresh };
 }
 
 function useToast(): [string | null, (m: string) => void] {
@@ -417,7 +426,8 @@ function useToast(): [string | null, (m: string) => void] {
 // ══════════════════════════════════════════════════════════════════
 export function CustomerBDLive() {
   const { liveTenantName } = useAuth();
-  const { opps, summary, loading, missingTables, error, refresh } = usePipeline();
+  const vocab = useVocabulary();
+  const { opps, summary, stages, loading, missingTables, error, refresh } = usePipeline();
   const [toast, setToast] = useToast();
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -427,8 +437,13 @@ export function CustomerBDLive() {
   const [saving, setSaving] = useState(false);
   const [qualifying, setQualifying] = useState<string | null>(null);
 
-  const prospects = useMemo(() => opps.filter(o => o.stage === 'prospect'), [opps]);
-  const qualifiedCount = useMemo(() => opps.filter(o => o.stage === 'qualified').length, [opps]);
+  // Wave 4: the BD lens is the FIRST configured stage; qualifying moves
+  // a deal to the SECOND (the top of the Sales lens).
+  const bdStage = stages[0]?.stage_key ?? 'prospect';
+  const nextStage = stages[1]?.stage_key ?? 'qualified';
+  const nextStageLabel = stages[1]?.label ?? 'Qualified';
+  const prospects = useMemo(() => opps.filter(o => o.stage === bdStage), [opps, bdStage]);
+  const qualifiedCount = useMemo(() => opps.filter(o => o.stage === nextStage).length, [opps, nextStage]);
 
   const addProspect = async () => {
     if (!newCompany.trim()) return;
@@ -437,7 +452,7 @@ export function CustomerBDLive() {
       await createOpportunity({
         name: newName.trim() || `${newCompany.trim()} — opportunity`,
         company_name: newCompany.trim(),
-        stage: 'prospect',
+        stage: bdStage,
         owner: newOwner.trim(),
       });
       setShowAdd(false); setNewCompany(''); setNewName(''); setNewOwner('');
@@ -449,8 +464,8 @@ export function CustomerBDLive() {
   const qualify = async (o: Opportunity) => {
     setQualifying(o.id);
     try {
-      await moveStage(o.id, 'qualified');
-      setToast(`${o.company_name || o.name} qualified — now in the Sales pipeline.`);
+      await moveStage(o.id, nextStage);
+      setToast(`${o.company_name || o.name} moved to ${nextStageLabel} — now in the Sales pipeline.`);
       void refresh();
     } catch (e) { setToast((e as Error).message); }
     finally { setQualifying(null); }
@@ -460,7 +475,7 @@ export function CustomerBDLive() {
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
-          title="Business Development — Customer Lifecycle"
+          title={`Business Development — ${vocab.party_singular} Lifecycle`}
           subtitle={`${liveTenantName || 'Your company'} · top of funnel — qualify prospects into the Sales pipeline`}
         />
         {!missingTables && !loading && (
@@ -481,7 +496,7 @@ export function CustomerBDLive() {
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
         <>
-          <SummaryStrip summary={summary} />
+          <SummaryStrip summary={summary} stages={stages} />
           {prospects.length === 0 ? (
             <LiveEmptyState
               icon="◎"
@@ -570,7 +585,8 @@ export function CustomerBDLive() {
 // ══════════════════════════════════════════════════════════════════
 export function CustomerSalesLive() {
   const { liveTenantName } = useAuth();
-  const { opps, summary, loading, missingTables, error, refresh } = usePipeline();
+  const vocab = useVocabulary();
+  const { opps, summary, stages, loading, missingTables, error, refresh } = usePipeline();
   const [toast, setToast] = useToast();
   const [stageFilter, setStageFilter] = useState<'open' | OppStage>('open');
   const [wonOpp, setWonOpp] = useState<Opportunity | null>(null);
@@ -579,13 +595,19 @@ export function CustomerSalesLive() {
   const [editAmount, setEditAmount] = useState('');
   const [editClose, setEditClose] = useState('');
 
-  const deals = useMemo(() => {
-    const inSales = opps.filter(o => o.stage !== 'prospect');
-    if (stageFilter === 'open') return inSales.filter(o => SALES_STAGES.includes(o.stage));
-    return inSales.filter(o => o.stage === stageFilter);
-  }, [opps, stageFilter]);
+  // Wave 4: the Sales lens = every configured stage AFTER the first
+  // (the first is the BD lens). Labels come from the tenant's config.
+  const bdStage = stages[0]?.stage_key ?? 'prospect';
+  const salesStages = useMemo(() => stages.slice(1).map(s => s.stage_key), [stages]);
+  const stageLabel = (k: string) => stages.find(s => s.stage_key === k)?.label ?? STAGE_LABELS[k] ?? k;
 
-  const prospectCount = useMemo(() => opps.filter(o => o.stage === 'prospect').length, [opps]);
+  const deals = useMemo(() => {
+    const inSales = opps.filter(o => o.stage !== bdStage);
+    if (stageFilter === 'open') return inSales.filter(o => salesStages.includes(o.stage));
+    return inSales.filter(o => o.stage === stageFilter);
+  }, [opps, stageFilter, bdStage, salesStages]);
+
+  const prospectCount = useMemo(() => opps.filter(o => o.stage === bdStage).length, [opps, bdStage]);
 
   const onStageSelect = async (o: Opportunity, next: string) => {
     if (next === o.stage) return;
@@ -616,7 +638,7 @@ export function CustomerSalesLive() {
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
-        title="Sales — Customer Lifecycle"
+        title={`Sales — ${vocab.party_singular} Lifecycle`}
         subtitle={`${liveTenantName || 'Your company'} · qualified deals through to won/lost — winning hands off to Onboarding automatically`}
       />
       <SorBanner />
@@ -625,7 +647,7 @@ export function CustomerSalesLive() {
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
         <>
-          <SummaryStrip summary={summary} />
+          <SummaryStrip summary={summary} stages={stages} />
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
               <div>
@@ -676,12 +698,12 @@ export function CustomerSalesLive() {
                           </td>
                           <td className={td}>
                             {closed ? (
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${stageChip(o.stage)}`}>{STAGE_LABELS[o.stage]}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${stageChip(o.stage)}`}>{stageLabel(o.stage)}</span>
                             ) : (
                               <select value={o.stage} onChange={e => void onStageSelect(o, e.target.value)}
                                 className="bg-slate-950 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500">
-                                {(['qualified', 'proposal', 'negotiation'] as OppStage[]).map(s => (
-                                  <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                                {salesStages.map(s => (
+                                  <option key={s} value={s}>{stageLabel(s)}</option>
                                 ))}
                                 <option value="won">✓ Won…</option>
                                 <option value="lost">✗ Lost…</option>

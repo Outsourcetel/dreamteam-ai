@@ -182,3 +182,155 @@ export const INDUSTRY_NAMES = INDUSTRY_TEMPLATES.map(t => t.name);
 export function industryTemplate(name: string | null | undefined): IndustryTemplate {
   return INDUSTRY_TEMPLATES.find(t => t.name === name) ?? INDUSTRY_TEMPLATES[INDUSTRY_TEMPLATES.length - 1];
 }
+
+// ============================================================
+// Wave 4 — per-industry work-object configuration seeds: what the
+// served party is CALLED, what the value metric is CALLED, the
+// pipeline stages the industry actually moves work through, and the
+// extra fields worth tracking on each served-party record. These are
+// SEEDS (same honesty rule as guardrails above): Company Setup writes
+// them as ordinary tenant config — vocabulary on tenants.vocabulary,
+// stages into tenant_pipeline_stages, fields into tenant_entity_fields
+// — all editable afterwards. Omitted keys fall back to SaaS defaults.
+// ============================================================
+
+export interface IndustryWorkConfig {
+  vocabulary: {
+    party_singular: string; party_plural: string;
+    value_metric: string; value_metric_hint: string;
+    renewal_label: string; section_label: string;
+  };
+  stages: Array<{ key: string; label: string }>;
+  entity_fields: Array<{ key: string; label: string; type: 'text' | 'number' | 'date' }>;
+}
+
+const SAAS_STAGES = [
+  { key: 'prospect', label: 'Prospect' },
+  { key: 'qualified', label: 'Qualified' },
+  { key: 'proposal', label: 'Proposal' },
+  { key: 'negotiation', label: 'Negotiation' },
+];
+
+export const INDUSTRY_WORK_CONFIG: Record<string, IndustryWorkConfig> = {
+  Technology: {
+    vocabulary: { party_singular: 'Customer', party_plural: 'Customers', value_metric: 'ARR', value_metric_hint: '$/year', renewal_label: 'Renewal', section_label: 'Customers' },
+    stages: SAAS_STAGES,
+    entity_fields: [
+      { key: 'plan_tier', label: 'Plan tier', type: 'text' },
+      { key: 'seats', label: 'Seats', type: 'number' },
+    ],
+  },
+  Finance: {
+    vocabulary: { party_singular: 'Client', party_plural: 'Clients', value_metric: 'AUM / fees', value_metric_hint: '$/year', renewal_label: 'Review', section_label: 'Clients' },
+    stages: [
+      { key: 'prospect', label: 'Prospect' },
+      { key: 'kyc_review', label: 'KYC review' },
+      { key: 'proposal', label: 'Proposal' },
+      { key: 'documentation', label: 'Documentation' },
+    ],
+    entity_fields: [
+      { key: 'risk_profile', label: 'Risk profile', type: 'text' },
+      { key: 'next_review_date', label: 'Next review', type: 'date' },
+    ],
+  },
+  Healthcare: {
+    vocabulary: { party_singular: 'Patient', party_plural: 'Patients', value_metric: 'Annual care value', value_metric_hint: '$/year', renewal_label: 'Re-enrollment', section_label: 'Patients' },
+    stages: [
+      { key: 'referral', label: 'Referral' },
+      { key: 'intake', label: 'Intake' },
+      { key: 'insurance_check', label: 'Insurance check' },
+      { key: 'scheduled', label: 'Scheduled' },
+    ],
+    entity_fields: [
+      { key: 'insurer', label: 'Insurer', type: 'text' },
+      { key: 'next_appointment', label: 'Next appointment', type: 'date' },
+    ],
+  },
+  Retail: {
+    vocabulary: { party_singular: 'Customer', party_plural: 'Customers', value_metric: 'Annual spend', value_metric_hint: '$/year', renewal_label: 'Reorder', section_label: 'Customers' },
+    stages: [
+      { key: 'lead', label: 'Lead' },
+      { key: 'quote', label: 'Quote' },
+      { key: 'order_placed', label: 'Order placed' },
+      { key: 'fulfillment', label: 'Fulfillment' },
+    ],
+    entity_fields: [
+      { key: 'loyalty_tier', label: 'Loyalty tier', type: 'text' },
+      { key: 'last_order_date', label: 'Last order', type: 'date' },
+    ],
+  },
+  'Professional Services': {
+    vocabulary: { party_singular: 'Client', party_plural: 'Clients', value_metric: 'Engagement value', value_metric_hint: '$/year', renewal_label: 'Re-engagement', section_label: 'Clients' },
+    stages: [
+      { key: 'lead', label: 'Lead' },
+      { key: 'scoping', label: 'Scoping' },
+      { key: 'proposal', label: 'Proposal' },
+      { key: 'contracting', label: 'Contracting' },
+    ],
+    entity_fields: [
+      { key: 'engagement_partner', label: 'Engagement partner', type: 'text' },
+      { key: 'engagement_end', label: 'Engagement end', type: 'date' },
+    ],
+  },
+  Manufacturing: {
+    vocabulary: { party_singular: 'Account', party_plural: 'Accounts', value_metric: 'Annual order volume', value_metric_hint: '$/year', renewal_label: 'Contract renewal', section_label: 'Accounts' },
+    stages: [
+      { key: 'inquiry', label: 'Inquiry' },
+      { key: 'rfq', label: 'RFQ' },
+      { key: 'quote', label: 'Quote' },
+      { key: 'po_received', label: 'PO received' },
+    ],
+    entity_fields: [
+      { key: 'plant', label: 'Plant / site', type: 'text' },
+      { key: 'payment_terms', label: 'Payment terms', type: 'text' },
+    ],
+  },
+  Education: {
+    vocabulary: { party_singular: 'Student', party_plural: 'Students', value_metric: 'Annual tuition', value_metric_hint: '$/year', renewal_label: 'Re-enrollment', section_label: 'Students' },
+    stages: [
+      { key: 'inquiry', label: 'Inquiry' },
+      { key: 'applied', label: 'Applied' },
+      { key: 'interview', label: 'Interview' },
+      { key: 'offer', label: 'Offer' },
+    ],
+    entity_fields: [
+      { key: 'program', label: 'Program', type: 'text' },
+      { key: 'start_term', label: 'Start term', type: 'text' },
+    ],
+  },
+  'Real Estate': {
+    vocabulary: { party_singular: 'Client', party_plural: 'Clients', value_metric: 'Transaction value', value_metric_hint: '$', renewal_label: 'Repeat business', section_label: 'Clients' },
+    stages: [
+      { key: 'lead', label: 'Lead' },
+      { key: 'viewing', label: 'Viewing' },
+      { key: 'offer_made', label: 'Offer made' },
+      { key: 'under_contract', label: 'Under contract' },
+    ],
+    entity_fields: [
+      { key: 'property_interest', label: 'Property interest', type: 'text' },
+      { key: 'budget', label: 'Budget', type: 'number' },
+    ],
+  },
+  Legal: {
+    vocabulary: { party_singular: 'Client', party_plural: 'Clients', value_metric: 'Matter value', value_metric_hint: '$/year', renewal_label: 'Retainer renewal', section_label: 'Clients' },
+    stages: [
+      { key: 'intake', label: 'Intake' },
+      { key: 'conflict_check', label: 'Conflict check' },
+      { key: 'engagement_letter', label: 'Engagement letter' },
+      { key: 'active_matter', label: 'Active matter' },
+    ],
+    entity_fields: [
+      { key: 'matter_type', label: 'Matter type', type: 'text' },
+      { key: 'responsible_partner', label: 'Responsible partner', type: 'text' },
+    ],
+  },
+  Other: {
+    vocabulary: { party_singular: 'Customer', party_plural: 'Customers', value_metric: 'Annual value', value_metric_hint: '$/year', renewal_label: 'Renewal', section_label: 'Customers' },
+    stages: SAAS_STAGES,
+    entity_fields: [],
+  },
+};
+
+export function industryWorkConfig(name: string | null | undefined): IndustryWorkConfig {
+  return INDUSTRY_WORK_CONFIG[name ?? ''] ?? INDUSTRY_WORK_CONFIG.Other;
+}

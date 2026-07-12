@@ -441,6 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           plan:         dbCurrentTenant.plan,
           status:       dbCurrentTenant.status,
           industry:     dbCurrentTenant.industry ?? '',
+          vocabulary:   dbCurrentTenant.vocabulary ?? {},
           contactEmail: '',
           agentsActive: 0,
           usersCount:   0,

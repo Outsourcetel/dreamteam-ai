@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { PageHeader } from '../../components/ui';
 import type { Page } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { INDUSTRY_TEMPLATES, industryTemplate } from '../../lib/industries';
+import { INDUSTRY_TEMPLATES, industryTemplate, industryWorkConfig } from '../../lib/industries';
 import type { IndustryGuardrail, IndustryHire } from '../../lib/industries';
 import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listGuardrailRules, addGuardrailRule, appendAuditEvent } from '../../lib/guardrailApi';
 import { updateTenant } from '../../lib/api';
+import { setPipelineStages } from '../../lib/pipelineApi';
+import { listEntityFields, addEntityField } from '../../lib/customerApi';
 
 // ============================================================
 // Company Setup — the REAL wizard (Wave 1.1).
@@ -75,10 +77,27 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
     const created: string[] = [];
     const rulesMade: string[] = [];
     try {
-      // 1. Industry onto the tenant record (the real update RPC).
-      if (industryName && industryName !== currentTenant.industry) {
-        await updateTenant(currentTenant.id, { industry: industryName });
+      // 1. Industry + vocabulary onto the tenant record (Wave 4: the
+      //    industry's work-object vocabulary — what you call the people
+      //    you serve, your value metric — is seeded here, editable later).
+      const work = industryWorkConfig(industryName || null);
+      if (industryName) {
+        await updateTenant(currentTenant.id, { industry: industryName, vocabulary: work.vocabulary });
       }
+      // 1b. Industry pipeline stages. The server refuses to drop a stage
+      //     that open deals still occupy — in that case keep what exists.
+      try { await setPipelineStages(work.stages); } catch { /* keep existing stages */ }
+      // 1c. Custom fields on the served-party record (skip existing keys;
+      //     additive sugar — never blocks setup).
+      try {
+        const existing = new Set((await listEntityFields()).map(f => f.field_key));
+        let pos = existing.size;
+        for (const f of work.entity_fields) {
+          if (existing.has(f.key)) continue;
+          pos += 1;
+          await addEntityField({ field_key: f.key, label: f.label, field_type: f.type, position: pos });
+        }
+      } catch { /* never block setup on custom fields */ }
       // 2. Real Digital Employees — lifecycle 'designed', no shortcuts.
       for (const h of template.hires) {
         if (!pickedHires.has(h.name) || existingDeNames.has(h.name.toLowerCase())) continue;

@@ -23,6 +23,38 @@ export interface CustomerAccount {
   updated_at: string;
   /** transparent computed-health breakdown (migration 021); null until first compute */
   health_components?: import('./successApi').HealthComponents | null;
+  /** Wave 4 — tenant-defined custom field values, keyed by tenant_entity_fields.field_key */
+  attributes?: Record<string, string | number>;
+}
+
+// Wave 4 — tenant-defined custom fields on the served-party record
+// (tenant_entity_fields, migration 135). Values live in
+// customer_accounts.attributes; these rows define what the fields ARE.
+export interface EntityField { id: string; field_key: string; label: string; field_type: 'text' | 'number' | 'date'; position: number }
+
+export async function listEntityFields(): Promise<EntityField[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('tenant_entity_fields')
+    .select('id, field_key, label, field_type, position')
+    .eq('tenant_id', tid)
+    .order('position', { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    raise('listEntityFields', error);
+  }
+  return (data ?? []) as EntityField[];
+}
+
+export async function addEntityField(f: { field_key: string; label: string; field_type: 'text' | 'number' | 'date'; position?: number }): Promise<EntityField> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('tenant_entity_fields')
+    .insert({ ...f, tenant_id: tid })
+    .select('id, field_key, label, field_type, position')
+    .single();
+  if (error) raise('addEntityField', error);
+  return data as EntityField;
 }
 
 export type TicketStatus = 'open' | 'pending' | 'resolved' | 'escalated';

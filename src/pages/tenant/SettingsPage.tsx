@@ -35,6 +35,8 @@ const SettingsPage = ({
   const [industry, setIndustry] = useState(tenant?.industry || 'Technology');
   const [contactEmail, setContactEmail] = useState(tenant?.contactEmail || user?.email || '');
   const [brandColor, setBrandColor] = useState(tenant?.primaryColor || '#6366f1');
+  // Wave 4 — work-object vocabulary draft (see lib/vocabulary.ts).
+  const [vocabDraft, setVocabDraft] = useState<Record<string, string>>(tenant?.vocabulary ?? {});
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
@@ -72,6 +74,7 @@ const SettingsPage = ({
     setIndustry(tenant?.industry || 'Technology');
     setContactEmail(tenant?.contactEmail || user?.email || '');
     setBrandColor(tenant?.primaryColor || '#6366f1');
+    setVocabDraft(tenant?.vocabulary ?? {});
   }, [tenant, user]);
 
   useEffect(() => {
@@ -104,10 +107,16 @@ const SettingsPage = ({
   const handleSaveGeneral = async () => {
     if (!tenant?.id) { setSaveStatus('error'); return; }
     setSaving(true);
+    // Vocabulary: trim values, drop empties (empty = fall back to default).
+    const vocabulary: Record<string, string> = {};
+    for (const [k, v] of Object.entries(vocabDraft)) {
+      if (typeof v === 'string' && v.trim()) vocabulary[k] = v.trim();
+    }
     const ok = await updateTenant(tenant.id, {
       name: orgName.trim() || tenant.name,
       industry,
       accent_color: brandColor,
+      vocabulary,
     });
     setSaving(false);
     setSaveStatus(ok ? 'saved' : 'error');
@@ -251,6 +260,27 @@ const SettingsPage = ({
                 >
                   {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
+              </div>
+              {/* Wave 4 — work-object vocabulary: what YOU call the people
+                  you serve and your value metric. Read by every live page. */}
+              <div className="md:col-span-2 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <p className="text-xs font-semibold text-white mb-0.5">Your vocabulary</p>
+                <p className="text-[11px] text-slate-500 mb-3">Relabels the whole workspace — Patients instead of Customers, Contract value instead of ARR. Seeded from your industry; yours to change.</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {([
+                    ['party_singular', 'You serve one…', 'Customer'],
+                    ['party_plural', '…and many', 'Customers'],
+                    ['value_metric', 'Value metric', 'ARR'],
+                    ['renewal_label', 'Recurring commitment', 'Renewal'],
+                  ] as const).map(([k, label, ph]) => (
+                    <div key={k}>
+                      <label className="text-[11px] font-medium text-slate-400 block mb-1">{label}</label>
+                      <input value={vocabDraft[k] ?? ''} placeholder={ph}
+                        onChange={e => setVocabDraft(v => ({ ...v, [k]: e.target.value }))}
+                        className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                    </div>
+                  ))}
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-400 block mb-1.5">Contact Email</label>

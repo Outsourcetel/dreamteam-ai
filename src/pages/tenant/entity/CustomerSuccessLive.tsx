@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
-  listAccounts, createAccount, fmtMoneyK, fmtMoney, CustomerApiError,
+  listAccounts, createAccount, fmtMoneyK, fmtMoney, CustomerApiError, listEntityFields,
 } from '../../../lib/customerApi';
-import type { CustomerAccount } from '../../../lib/customerApi';
+import type { CustomerAccount, EntityField } from '../../../lib/customerApi';
+import { useVocabulary } from '../../../lib/vocabulary';
 import {
   getHealthConfig, saveHealthConfig, recomputeHealth, getAccountSignals, describeComponents,
   DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS,
@@ -318,6 +319,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
 // ── Page ──────────────────────────────────────────────────────────
 export default function CustomerSuccessLive() {
   const { liveTenantName } = useAuth();
+  const vocab = useVocabulary();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
@@ -333,10 +335,14 @@ export default function CustomerSuccessLive() {
   const [newName, setNewName] = useState('');
   const [newArr, setNewArr] = useState('');
   const [newCsm, setNewCsm] = useState('');
+  // Wave 4 — tenant-defined custom fields (definitions + new-record values).
+  const [entityFields, setEntityFields] = useState<EntityField[]>([]);
+  const [newAttrs, setNewAttrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     setAccounts(await listAccounts());
+    setEntityFields(await listEntityFields().catch(() => []));
     const cfg = await getHealthConfig();
     if (cfg) {
       setWeights({ ...DEFAULT_WEIGHTS, ...cfg.weights });
@@ -388,16 +394,24 @@ export default function CustomerSuccessLive() {
     if (!newName.trim()) return;
     setSaving(true);
     try {
+      // Custom-field values: keep only non-empty, coerce numbers.
+      const attributes: Record<string, string | number> = {};
+      for (const f of entityFields) {
+        const raw = (newAttrs[f.field_key] ?? '').trim();
+        if (!raw) continue;
+        attributes[f.field_key] = f.field_type === 'number' ? Number(raw) || 0 : raw;
+      }
       await createAccount({
         name: newName.trim(),
         arr_cents: Math.round((parseFloat(newArr) || 0) * 100),
         csm: newCsm.trim(),
+        ...(Object.keys(attributes).length > 0 ? { attributes } : {}),
       });
       setShowAdd(false);
-      setNewName(''); setNewArr(''); setNewCsm('');
+      setNewName(''); setNewArr(''); setNewCsm(''); setNewAttrs({});
       void refresh(false);
     } catch (err) {
-      setError((err as Error)?.message || 'Failed to add account.');
+      setError((err as Error)?.message || `Failed to add ${vocab.party_singular.toLowerCase()}.`);
     } finally {
       setSaving(false);
     }
@@ -407,7 +421,7 @@ export default function CustomerSuccessLive() {
     <div className="flex-1 overflow-auto bg-slate-950 p-6" onClick={() => setPopoverId(null)}>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
-          title="Customer Success — Customer Lifecycle"
+          title={`${vocab.party_singular} Success — ${vocab.party_singular} Lifecycle`}
           subtitle={`${liveTenantName || 'Your company'} · health computed from tickets, invoices, and activity`}
         />
         {!missingTables && !loading && accounts.length > 0 && (
@@ -416,7 +430,7 @@ export default function CustomerSuccessLive() {
               + Import CSV
             </button>
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
-              + Add account
+              + Add {vocab.party_singular.toLowerCase()}
             </button>
           </div>
         )}
@@ -432,11 +446,11 @@ export default function CustomerSuccessLive() {
       ) : accounts.length === 0 ? (
         <LiveEmptyState
           icon="◎"
-          title="No accounts yet"
-          body="Bring your customer accounts into DreamTeam so your Digital Employees can monitor health, renewals, and support in one place."
+          title={`No ${vocab.party_plural.toLowerCase()} yet`}
+          body={`Bring your ${vocab.party_plural.toLowerCase()} into DreamTeam so your Digital Employees can monitor health, ${vocab.renewal_label.toLowerCase()}s, and support in one place.`}
           primaryLabel="Import CSV"
           onPrimary={() => setShowImport(true)}
-          secondaryLabel="Add account"
+          secondaryLabel={`Add ${vocab.party_singular.toLowerCase()}`}
           onSecondary={() => setShowAdd(true)}
         />
       ) : (
@@ -444,10 +458,10 @@ export default function CustomerSuccessLive() {
           {/* Header stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             {[
-              { label: 'Accounts', value: String(stats.total), color: 'text-white' },
+              { label: vocab.party_plural, value: String(stats.total), color: 'text-white' },
               { label: 'At risk', value: String(stats.atRisk), color: stats.atRisk > 0 ? 'text-red-300' : 'text-emerald-300' },
               { label: 'Avg health', value: String(stats.avgHealth), color: healthText(stats.avgHealth) },
-              { label: 'ARR at risk', value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-slate-300' },
+              { label: `${vocab.value_metric} at risk`, value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-slate-300' },
             ].map(s => (
               <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
@@ -470,7 +484,8 @@ export default function CustomerSuccessLive() {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800">
-                    {['Account', 'Health', 'Status', 'ARR', 'Renewal', 'CSM', 'Last activity'].map(h => <th key={h} className={th}>{h}</th>)}
+                    {[vocab.party_singular, 'Health', 'Status', vocab.value_metric, vocab.renewal_label, 'CSM', 'Last activity',
+                      ...entityFields.map(f => f.label)].map(h => <th key={h} className={th}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -506,6 +521,9 @@ export default function CustomerSuccessLive() {
                         <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>
                           {days == null ? (a.health_components ? 'never' : '—') : days === 0 ? 'today' : `${days}d ago`}
                         </td>
+                        {entityFields.map(f => (
+                          <td key={f.id} className={`${td} text-slate-400 text-xs`}>{String(a.attributes?.[f.field_key] ?? '—')}</td>
+                        ))}
                       </tr>
                     );
                   })}
@@ -524,25 +542,33 @@ export default function CustomerSuccessLive() {
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-4">Add account</h3>
+            <h3 className="text-white font-semibold mb-4">Add {vocab.party_singular.toLowerCase()}</h3>
             <div className="space-y-3 mb-5">
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Account name</label>
+                <label className="text-xs font-medium text-slate-400 block mb-1">{vocab.party_singular} name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Acme Corp" className={`w-full ${inputCls}`} />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">ARR ($/year)</label>
+                <label className="text-xs font-medium text-slate-400 block mb-1">{vocab.value_metric} ({vocab.value_metric_hint})</label>
                 <input value={newArr} onChange={e => setNewArr(e.target.value)} placeholder="84000" type="number" className={`w-full ${inputCls}`} />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-400 block mb-1">CSM</label>
                 <input value={newCsm} onChange={e => setNewCsm(e.target.value)} placeholder="P. Sharma" className={`w-full ${inputCls}`} />
               </div>
+              {entityFields.map(f => (
+                <div key={f.id}>
+                  <label className="text-xs font-medium text-slate-400 block mb-1">{f.label}</label>
+                  <input value={newAttrs[f.field_key] ?? ''} type={f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : 'text'}
+                    onChange={e => setNewAttrs(prev => ({ ...prev, [f.field_key]: e.target.value }))}
+                    className={`w-full ${inputCls}`} />
+                </div>
+              ))}
             </div>
             <div className="flex gap-3">
               <button onClick={() => void addAccount()} disabled={saving || !newName.trim()}
                 className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
-                {saving ? 'Saving…' : 'Add account'}
+                {saving ? 'Saving…' : `Add ${vocab.party_singular.toLowerCase()}`}
               </button>
               <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">
                 Cancel

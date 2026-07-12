@@ -128,6 +128,8 @@ export interface Tenant {
   createdAt: string;
   industry: string;
   contactEmail: string;
+  /** Wave 4 — per-tenant work-object relabeling (see lib/vocabulary.ts). */
+  vocabulary?: Record<string, string>;
   // Tenant hierarchy (migration 050) — parentTenantId null = top-level tenant.
   parentTenantId?: string | null;
   allowSelfServeSubtenants?: boolean;

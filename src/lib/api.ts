@@ -12,6 +12,7 @@ export interface DBTenant {
   industry?: string;
   accent_color?: string;
   logo_url?: string;
+  vocabulary?: Record<string, string>;  // Wave 4 tenant relabeling layer
   settings?: Record<string, unknown>;
   monthly_token_budget?: number;
   parent_tenant_id?: string | null;
@@ -98,13 +99,15 @@ interface DBMessage {
 // that tenant (or a platform account with tenants.manage).
 export const updateTenant = async (
   id: string,
-  updates: Partial<Pick<DBTenant, 'name' | 'industry' | 'accent_color'>>
+  updates: Partial<Pick<DBTenant, 'name' | 'industry' | 'accent_color'>> & { vocabulary?: Record<string, string> }
 ): Promise<boolean> => {
   const { data, error } = await supabase.rpc('update_tenant_general_settings', {
     p_tenant_id: id,
     p_name: updates.name ?? null,
     p_industry: updates.industry ?? null,
     p_accent_color: updates.accent_color ?? null,
+    // Wave 4: vocabulary applied only when provided (server keeps existing otherwise).
+    p_vocabulary: updates.vocabulary ?? null,
   });
   if (error) { console.error('updateTenant:', error.message); return false; }
   return !!(data as { ok?: boolean })?.ok;
