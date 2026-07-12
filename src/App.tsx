@@ -46,6 +46,7 @@ import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/
 import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
 import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
 import { OutcomeRevenuePage, OutcomeDeliveryPage, OutcomeFinancialPage, OutcomeRiskPage } from './pages/tenant/outcome/OutcomePages';
+import OutcomesPage from './pages/tenant/outcome/LiveOutcomesPage';
 import type { Page, PlatformPage } from './types';
 
 // Live tenants get the real onboarding workspace (migration 022);
@@ -90,6 +91,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   entity_workforce_development:'/workforce-entity/development',
   entity_workforce_payroll:   '/workforce-entity/payroll',
   // Outcomes
+  outcomes:           '/outcomes',
   outcome_revenue:    '/outcomes/revenue',
   outcome_delivery:   '/outcomes/delivery',
   outcome_financial:  '/outcomes/financial',
@@ -261,6 +263,7 @@ function AppShell() {
     completePasswordRecovery,
   } = useAuth();
   const location = useLocation();
+  const dataMode = useDataMode();
 
   // Platform-invite redemption: a small, self-contained entry point that
   // must work whether or not the visitor is logged in yet (the redeem
@@ -387,14 +390,19 @@ function AppShell() {
       case 'entity_workforce_payroll':
         return <WorkforcePayrollPage setPage={handleSetPage} />;
       // ── Outcome pages ─────────────────────────────────────────
+      // Wave 3: live tenants get the single consolidated Outcomes page;
+      // the 4 legacy keys keep working (deep links) — in live mode they
+      // render the same consolidated page, in demo the original previews.
+      case 'outcomes':
+        return <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_revenue':
-        return <OutcomeRevenuePage setPage={handleSetPage} />;
+        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeRevenuePage setPage={handleSetPage} />;
       case 'outcome_delivery':
-        return <OutcomeDeliveryPage setPage={handleSetPage} />;
+        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeDeliveryPage setPage={handleSetPage} />;
       case 'outcome_financial':
-        return <OutcomeFinancialPage setPage={handleSetPage} />;
+        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeFinancialPage setPage={handleSetPage} />;
       case 'outcome_risk':
-        return <OutcomeRiskPage setPage={handleSetPage} />;
+        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeRiskPage setPage={handleSetPage} />;
       // ── Specialist pages ──────────────────────────────────────
       case 'specialist_technical':
         return <SpecialistsPage domain="technical" setPage={handleSetPage} />;

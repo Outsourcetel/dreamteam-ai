@@ -37,6 +37,7 @@ export type TenantPage =
   | 'entity_workforce_payroll'
 
   // ── Outcomes (what the company achieves) ─────────
+  | 'outcomes'                  // Wave 3: THE single real reporting surface (live tenants)
   | 'outcome_revenue'           // Revenue & pipeline health
   | 'outcome_delivery'          // Product/service delivery (industry-named)
   | 'outcome_financial'         // Financial health: AP/AR, reporting, tax

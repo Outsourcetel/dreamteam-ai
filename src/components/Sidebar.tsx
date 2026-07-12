@@ -154,18 +154,24 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): N
         },
         { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
-        {
-          id: 'outcomes',
-          label: 'Outcomes',
-          icon: '↑',
-          badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
-          children: [
-            { id: 'outcome_revenue', label: 'Revenue & Growth' },
-            { id: 'outcome_delivery', label: 'Delivery' },
-            { id: 'outcome_financial', label: 'Financial Health' },
-            { id: 'outcome_risk', label: 'Risk Posture' },
-          ],
-        },
+        // Wave 3: live tenants get the single consolidated Outcomes page
+        // (real economics/delivery/risk rollup). Demo keeps the 4-page
+        // preview group. The alerts badge was demo-seeded (s.alerts) —
+        // demo-only now, never shown to live tenants.
+        isLiveMode
+          ? { id: 'outcomes', label: 'Outcomes', icon: '↑', page: 'outcomes' as Page }
+          : {
+              id: 'outcomes',
+              label: 'Outcomes',
+              icon: '↑',
+              badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
+              children: [
+                { id: 'outcome_revenue', label: 'Revenue & Growth' },
+                { id: 'outcome_delivery', label: 'Delivery' },
+                { id: 'outcome_financial', label: 'Financial Health' },
+                { id: 'outcome_risk', label: 'Risk Posture' },
+              ],
+            },
         { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
         { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
         { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
@@ -233,29 +239,35 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): N
             { id: 'entity_customer_renewal', label: 'Renewal & Expansion', indicator: { count: live.renewalsDue, color: '#f59e0b' } },
           ],
         },
-        {
-          id: 'vendor',
-          label: 'Vendors & Partners',
-          icon: '◈',
-          page: 'entity_vendor',
-          children: [
-            { id: 'entity_vendor_sourcing', label: 'Sourcing' },
-            { id: 'entity_vendor_contracts', label: 'Contracts' },
-            { id: 'entity_vendor_management', label: 'Relationship Mgmt' },
-          ],
-        },
-        {
-          id: 'workforce_entity',
-          label: 'Our People',
-          icon: '◉',
-          page: 'entity_workforce',
-          children: [
-            { id: 'entity_workforce_talent', label: 'Talent Acquisition' },
-            { id: 'entity_workforce_onboarding', label: 'Onboarding' },
-            { id: 'entity_workforce_development', label: 'Performance & Dev' },
-            { id: 'entity_workforce_payroll', label: 'Payroll & Benefits' },
-          ],
-        },
+        // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
+        // live tenants (descoped 2026-07-09) — hiding dead nav sections
+        // from live workspaces instead of advertising empty pages. The
+        // routes stay valid for deep links; demo keeps the full tree.
+        ...(isLiveMode ? [] : [
+          {
+            id: 'vendor',
+            label: 'Vendors & Partners',
+            icon: '◈',
+            page: 'entity_vendor' as Page,
+            children: [
+              { id: 'entity_vendor_sourcing' as Page, label: 'Sourcing' },
+              { id: 'entity_vendor_contracts' as Page, label: 'Contracts' },
+              { id: 'entity_vendor_management' as Page, label: 'Relationship Mgmt' },
+            ],
+          },
+          {
+            id: 'workforce_entity',
+            label: 'Our People',
+            icon: '◉',
+            page: 'entity_workforce' as Page,
+            children: [
+              { id: 'entity_workforce_talent' as Page, label: 'Talent Acquisition' },
+              { id: 'entity_workforce_onboarding' as Page, label: 'Onboarding' },
+              { id: 'entity_workforce_development' as Page, label: 'Performance & Dev' },
+              { id: 'entity_workforce_payroll' as Page, label: 'Payroll & Benefits' },
+            ],
+          },
+        ]),
       ],
     },
     {
