@@ -3,7 +3,7 @@ import { supabase } from '../supabase';
 import type { AuthUser } from '../types';
 import { Spinner } from '../components';
 
-const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Professional Services', 'Manufacturing', 'Education', 'Real Estate', 'Legal', 'Other'];
+import { INDUSTRY_NAMES as INDUSTRIES } from '../lib/industries';
 
 const LoginPage = ({
   onLogin,

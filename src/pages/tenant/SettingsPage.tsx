@@ -9,11 +9,9 @@ import {
   WIDGET_ASK_URL, type WidgetKeyRow, type EndUserSessionRow,
 } from '../../lib/widgetApi';
 
-const INDUSTRIES = [
-  'Technology', 'Financial Services', 'Healthcare', 'Retail & E-commerce',
-  'Manufacturing', 'Legal & Compliance', 'Education', 'Real Estate',
-  'Logistics & Supply Chain', 'Media & Entertainment',
-];
+// THE canonical list (Wave 1.1) — the same one signup and Company
+// Setup use, so a tenant's stored industry always matches a template.
+import { INDUSTRY_NAMES as INDUSTRIES } from '../../lib/industries';
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

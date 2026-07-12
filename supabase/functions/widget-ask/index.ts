@@ -25,6 +25,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
+import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -40,7 +41,7 @@ const json = (body: unknown, status = 200) =>
 
 const ESCALATION_THRESHOLD = 60;
 const MAX_CONTEXT_CHARS = 6000;
-const MODEL = 'claude-sonnet-5';
+
 const RATE_LIMIT_PER_MIN = 100;
 
 // Per-isolate sliding window: keyId -> timestamps (ms) of recent requests.
@@ -404,6 +405,7 @@ serve(async (req) => {
 Knowledge documents:
 ${context}`;
 
+    const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -412,7 +414,7 @@ ${context}`;
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_tokens: 1024,
         system,
         messages: [{ role: 'user', content: question }],
@@ -432,7 +434,7 @@ ${context}`;
     const parsed = parseModelJson(raw);
     if (subjectDeId) {
       admin.rpc('record_de_token_usage', {
-        p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: MODEL,
+        p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
         p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
       }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
     }

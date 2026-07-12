@@ -1610,6 +1610,73 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
   );
 }
 
+// ── AI Engine panel (Wave 1.2, migration 132). Which Claude model this
+// employee answers with. The choice list is the platform-managed
+// pricing table (ai_model_pricing) — a pickable model always has real
+// cost tracking. Blank = the platform default.
+const MODEL_LABELS: Record<string, string> = {
+  'claude-sonnet-5': 'Claude Sonnet 5 — balanced (default)',
+  'claude-haiku-4-5': 'Claude Haiku 4.5 — fastest, most economical',
+  'claude-opus-4-8': 'Claude Opus 4.8 — most capable',
+};
+function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [models, setModels] = useState<Array<{ model_id: string; input_price_per_million: number; output_price_per_million: number }>>([]);
+  const [selected, setSelected] = useState(de.model_id || 'claude-sonnet-5');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.from('ai_model_pricing')
+      .select('model_id, input_price_per_million, output_price_per_million')
+      .order('input_price_per_million')
+      .then(({ data }) => setModels((data ?? []) as typeof models));
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      const updated = await updateDigitalEmployee(de.id, { modelId: selected || 'claude-sonnet-5' });
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+      onUpdated(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save.');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">AI Engine</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+          {de.model_id && MODEL_LABELS[de.model_id] ? de.model_id : 'platform default'}
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        The Claude model this employee thinks with. Every listed model has verified pricing, so the
+        Economics and cost numbers stay real whichever you choose. Takes effect on the next answer.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}
+          className="flex-1 min-w-[260px] bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+          {models.map(m => (
+            <option key={m.model_id} value={m.model_id}>
+              {MODEL_LABELS[m.model_id] ?? m.model_id} · ${m.input_price_per_million}/{'$'}{m.output_price_per_million} per M tokens
+            </option>
+          ))}
+        </select>
+        <button onClick={() => void save()} disabled={busy || selected === (de.model_id || 'claude-sonnet-5')}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved</span>}
+      </div>
+    </div>
+  );
+}
+
 // ── KPIs panel (DE-C4). Targets are stored; CURRENT is computed live
 // from the same real metrics the Performance page uses — never stale,
 // never fabricated. No measurable sample → "no data yet", not zero.
@@ -2512,6 +2579,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
           {/* Availability — schedule with team/specialist coverage (DE-C4) */}
           <DeAvailabilityPanel de={selectedDe} onUpdated={setSelectedDe} />
+
+          {/* AI Engine — per-employee model choice (Wave 1.2) */}
+          <DeModelPanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* DE operating charter */}
           <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />

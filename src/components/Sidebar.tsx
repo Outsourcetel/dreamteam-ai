@@ -115,7 +115,9 @@ export async function fetchLiveNavCounts(): Promise<NavCounts> {
   }
 }
 
-function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
+function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean): NavSection[] {
+  // CompanyId keys DEMO content only (Wave 1.3): live tenants get one
+  // neutral label set and never see demo-company badges or branching.
   const isTCP = companyId === 'tcp';
   const s = COMPANY_SUMMARY[companyId];
 
@@ -146,7 +148,9 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
           label: 'Roster',
           icon: '⚡',
           page: 'workforce_des',
-          badge: { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
+          // Demo-only badge: NavCounts has no real DE/human headcount, so
+          // live tenants get NO badge here rather than a demo company's.
+          badge: isLiveMode ? undefined : { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
         { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
@@ -157,7 +161,7 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
           badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
           children: [
             { id: 'outcome_revenue', label: 'Revenue & Growth' },
-            { id: 'outcome_delivery', label: isTCP ? 'Product & Engineering' : 'Practice Delivery' },
+            { id: 'outcome_delivery', label: 'Delivery' },
             { id: 'outcome_financial', label: 'Financial Health' },
             { id: 'outcome_risk', label: 'Risk Posture' },
           ],
@@ -172,7 +176,7 @@ function buildNav(companyId: CompanyId, live: NavCounts): NavSection[] {
           children: [
             { id: 'specialist_technical', label: 'Technical' },
             { id: 'specialist_legal', label: 'Legal' },
-            { id: 'specialist_finance_deep', label: 'Finance', indicator: !isTCP ? { dot: true, color: '#14b8a6' } : undefined },
+            { id: 'specialist_finance_deep', label: 'Finance' },
             { id: 'specialist_people', label: 'People' },
           ],
         },
@@ -305,7 +309,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
     };
   }, [refreshCounts]);
 
-  const nav = buildNav(activeCompany.id, liveCounts);
+  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live');
 
   const toggleGroup = (id: string) => {
     setOpenGroups(prev => {

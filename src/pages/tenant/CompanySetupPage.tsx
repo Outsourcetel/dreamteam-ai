@@ -1,139 +1,168 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PageHeader } from '../../components/ui';
 import type { Page } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { INDUSTRY_TEMPLATES, industryTemplate } from '../../lib/industries';
+import type { IndustryGuardrail, IndustryHire } from '../../lib/industries';
+import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
+import { listGuardrailRules, addGuardrailRule, appendAuditEvent } from '../../lib/guardrailApi';
+import { updateTenant } from '../../lib/api';
 
-// ── Types & seed data ─────────────────────────────────────────────
+// ============================================================
+// Company Setup — the REAL wizard (Wave 1.1).
+//
+// The previous version of this page was theater: four steps that
+// persisted to localStorage and a "Finish" button that navigated to
+// the dashboard. Nothing was ever provisioned. This version:
+//   - uses THE canonical industry list (src/lib/industries.ts — the
+//     same list signup and Settings use),
+//   - saves the industry choice to the tenant record,
+//   - creates the selected Digital Employees for real (they start at
+//     lifecycle 'designed' and walk the same gated chain as any hire),
+//   - creates the selected guardrails as real, editable
+//     guardrail_rules rows — every one with an enforceable pattern,
+//     shown before creation,
+//   - and writes an audit event recording what setup provisioned.
+//
+// In demo mode nothing is provisioned (honest banner instead).
+// ============================================================
 
-interface Industry {
-  id: string;
-  name: string;
-  icon: string;
-  templatePreview: string;
-  recommendedHires: { role: string; why: string }[];
-  guardrails: string[];
-}
-
-const INDUSTRIES: Industry[] = [
-  {
-    id: 'saas', name: 'Technology / SaaS', icon: '⚡',
-    templatePreview: 'Support-heavy template: ticket resolution, renewal automation, developer-facing knowledge, and product-led onboarding flows.',
-    recommendedHires: [
-      { role: 'Customer Support DE', why: 'Highest-volume function in SaaS — fastest time-to-value' },
-      { role: 'Renewal DE', why: 'Automates the renewal lifecycle from invoice to close' },
-      { role: 'HR & People DE', why: 'Internal workforce requests once the team scales' },
-    ],
-    guardrails: ['No billing adjustments above threshold without approval', 'Never quote competitor pricing', 'No SLA commitments outside standard tier', 'PII masking on all customer data'],
-  },
-  {
-    id: 'financial', name: 'Financial Services', icon: '$',
-    templatePreview: 'Compliance-first template: KYC/AML workflows, partner review gates, strict PII redaction, and regulatory knowledge collections.',
-    recommendedHires: [
-      { role: 'Client Relations DE', why: 'Client communications, KYC intake, and engagement cadence' },
-      { role: 'Research Specialist DE', why: 'Deep-domain research with mandatory human review' },
-    ],
-    guardrails: ['All client deliverables require partner review', 'No regulatory filings without human approval', 'PII redaction enforced', 'Sanctions screening on all new entities'],
-  },
-  {
-    id: 'healthcare', name: 'Healthcare', icon: '＋',
-    templatePreview: 'HIPAA-aligned template: patient-communication limits, PHI redaction everywhere, and clinician-in-the-loop gates on anything clinical.',
-    recommendedHires: [
-      { role: 'Patient Services DE', why: 'Scheduling, billing questions, and intake paperwork' },
-      { role: 'HR & People DE', why: 'Credentialing reminders and staff onboarding' },
-    ],
-    guardrails: ['No clinical advice — ever', 'PHI redaction on every channel', 'Clinician review gate on all patient-facing health content', 'Consent verification before any record access'],
-  },
-  {
-    id: 'ecommerce', name: 'E-commerce / Retail', icon: '◧',
-    templatePreview: 'Volume-optimized template: order status, returns automation, refund approval gates, and seasonal-surge playbooks.',
-    recommendedHires: [
-      { role: 'Customer Support DE', why: 'Order status and returns are 70%+ of inbound volume' },
-      { role: 'Vendor Management DE', why: 'Supplier communications and PO follow-ups' },
-    ],
-    guardrails: ['Refunds above threshold require approval', 'No price-match commitments without policy check', 'Fraud-pattern escalation mandatory', 'PII masking on payment data'],
-  },
-  {
-    id: 'professional', name: 'Professional Services', icon: '◈',
-    templatePreview: 'Engagement-centric template: client onboarding, deliverable review gates, time-and-billing hygiene, and knowledge capture from every engagement.',
-    recommendedHires: [
-      { role: 'Client Relations DE', why: 'Engagement intake, status updates, and satisfaction monitoring' },
-      { role: 'Finance DE', why: 'WIP, billing, and collections hygiene' },
-    ],
-    guardrails: ['Client commitments above threshold require partner sign-off', 'No advice outside engaged scope', 'Deliverable review gate before client delivery', 'Conflict-of-interest check on new engagements'],
-  },
-];
-
-const UNIVERSAL_FUNCTIONS = [
-  { id: 'support', label: 'Customer Support', desc: 'Inbound question resolution and escalation' },
-  { id: 'sales', label: 'Sales & Business Development', desc: 'Pipeline and outreach assistance' },
-  { id: 'onboarding', label: 'Customer Onboarding', desc: 'Implementation and activation flows' },
-  { id: 'renewal', label: 'Renewal & Expansion', desc: 'Renewal lifecycle automation' },
-  { id: 'hr', label: 'HR & People', desc: 'Internal workforce requests' },
-  { id: 'finance', label: 'Finance Operations', desc: 'Invoicing, AR/AP, and reporting' },
-  { id: 'vendor', label: 'Vendor Management', desc: 'Supplier and partner coordination' },
-  { id: 'knowledge', label: 'Knowledge Management', desc: 'Gap detection and library upkeep' },
-];
-
-const OPTIONAL_FUNCTIONS = [
-  { id: 'legal', label: 'Legal (optional)', desc: 'Contract review support and policy lookups — specialist function, consulted on demand' },
-];
-
-const STEPS = ['Industry', 'Functions', 'First hires', 'Guardrails'];
-
-// ── Page ──────────────────────────────────────────────────────────
-
-interface SetupState {
-  step: number;
-  industryId: string | null;
-  functions: string[];
-}
-
-const LS_KEY = 'dt_company_setup_draft';
+const STEPS = ['Industry', 'First hires', 'Guardrails', 'Review & create'];
 
 export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => void }) {
-  const load = (): SetupState => {
+  const { currentTenant, dataMode } = useAuth();
+  const isLive = dataMode === 'live';
+
+  const [step, setStep] = useState(0);
+  const [industryName, setIndustryName] = useState<string>(currentTenant?.industry ?? '');
+  const [existingDeNames, setExistingDeNames] = useState<Set<string>>(new Set());
+  const [existingRules, setExistingRules] = useState<Set<string>>(new Set());
+  const [pickedHires, setPickedHires] = useState<Set<string>>(new Set());
+  const [pickedRules, setPickedRules] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ des: string[]; rules: string[] } | null>(null);
+
+  const template = industryTemplate(industryName || null);
+
+  // Real current state: which recommended hires/rules already exist.
+  useEffect(() => {
+    if (!isLive) return;
+    void (async () => {
+      try {
+        const [des, rules] = await Promise.all([listDigitalEmployees(), listGuardrailRules()]);
+        setExistingDeNames(new Set(des.map(d => d.name.toLowerCase())));
+        setExistingRules(new Set(rules.map(r => r.rule.toLowerCase())));
+      } catch { /* new tenant with empty tables is fine */ }
+    })();
+  }, [isLive]);
+
+  // Default selections when the industry changes: everything new.
+  useEffect(() => {
+    setPickedHires(new Set(template.hires.filter(h => !existingDeNames.has(h.name.toLowerCase())).map(h => h.name)));
+    setPickedRules(new Set(template.guardrails.filter(g => !existingRules.has(g.rule.toLowerCase())).map(g => g.rule)));
+  }, [industryName, existingDeNames, existingRules]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (set: Set<string>, key: string, apply: (s: Set<string>) => void) => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    apply(next);
+  };
+
+  const finish = async () => {
+    if (!isLive || !currentTenant?.id) return;
+    setBusy(true); setError(null);
+    const created: string[] = [];
+    const rulesMade: string[] = [];
     try {
-      const s = localStorage.getItem(LS_KEY);
-      if (s) return JSON.parse(s);
-    } catch { /* noop */ }
-    return { step: 0, industryId: null, functions: ['support', 'hr', 'knowledge'] };
+      // 1. Industry onto the tenant record (the real update RPC).
+      if (industryName && industryName !== currentTenant.industry) {
+        await updateTenant(currentTenant.id, { industry: industryName });
+      }
+      // 2. Real Digital Employees — lifecycle 'designed', no shortcuts.
+      for (const h of template.hires) {
+        if (!pickedHires.has(h.name) || existingDeNames.has(h.name.toLowerCase())) continue;
+        await createDigitalEmployee({ name: h.name, description: h.description, category: h.category, department: h.department });
+        created.push(h.name);
+      }
+      // 3. Real, editable guardrail rows — enforceable from the moment
+      //    they exist.
+      for (const g of template.guardrails) {
+        if (!pickedRules.has(g.rule) || existingRules.has(g.rule.toLowerCase())) continue;
+        await addGuardrailRule({
+          rule: g.rule,
+          rule_type: g.rule_type,
+          pattern: g.pattern ?? null,
+          threshold: g.threshold ?? null,
+          severity: 'blocking',
+        });
+        rulesMade.push(g.rule);
+      }
+      // 4. Durable record of what setup did.
+      await appendAuditEvent({
+        actor: 'You', actor_type: 'human', category: 'config_change',
+        action: `Company setup completed — industry "${industryName}", ${created.length} employee(s) hired, ${rulesMade.length} guardrail(s) created`,
+        detail: { kind: 'company_setup_completed', industry: industryName, des_created: created, guardrails_created: rulesMade },
+      });
+      setDone({ des: created, rules: rulesMade });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Setup failed — nothing further was created.');
+    }
+    setBusy(false);
   };
 
-  const [state, setState] = useState<SetupState>(load);
+  const canNext = step === 0 ? !!industryName : true;
 
-  const save = (next: SetupState) => {
-    setState(next);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch { /* noop */ }
-  };
-
-  const industry = INDUSTRIES.find(i => i.id === state.industryId) ?? null;
-  const canNext = state.step === 0 ? !!industry : true;
-
-  const toggleFn = (id: string) => {
-    const next = state.functions.includes(id) ? state.functions.filter(f => f !== id) : [...state.functions, id];
-    save({ ...state, functions: next });
-  };
+  if (done) {
+    return (
+      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+        <PageHeader title="Company Setup" subtitle="Done — everything below is real and editable" />
+        <div className="max-w-2xl rounded-2xl border border-emerald-800/50 bg-emerald-500/5 p-6">
+          <h3 className="text-base font-semibold text-white mb-2">✓ Setup complete</h3>
+          <p className="text-sm text-slate-300 mb-4">
+            {done.des.length > 0
+              ? <>Hired <span className="text-white">{done.des.join(', ')}</span> — each starts at the Designed lifecycle stage and earns its way to live work through the same gates as any employee.</>
+              : 'No new employees were needed — your roster already covers the recommendations.'}
+            {' '}{done.rules.length > 0
+              ? <>Created {done.rules.length} enforceable guardrail{done.rules.length === 1 ? '' : 's'} — review or edit them any time.</>
+              : 'No new guardrails were needed.'}
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setPage('workforce_des')} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Meet your employees →</button>
+            <button onClick={() => setPage('gov_compliance')} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm">Review guardrails</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-auto bg-slate-950 p-6">
       <PageHeader
         title="Company Setup"
-        subtitle="Configure your industry template, activate the functions you need, and get Digital Employee hiring recommendations"
+        subtitle="Pick your industry, choose your first Digital Employees, and start with guardrails that actually enforce"
       />
 
+      {!isLive && (
+        <div className="mb-6 rounded-xl border border-amber-800/50 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+          Demo workspace — the wizard is fully interactive but nothing is provisioned here. In a live workspace, Finish creates real employees and guardrails.
+        </div>
+      )}
+
       {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-8">
+      <div className="flex items-center gap-2 mb-8 flex-wrap">
         {STEPS.map((s, i) => (
           <React.Fragment key={s}>
             <button
-              onClick={() => (i <= state.step || (i === state.step + 1 && canNext)) && save({ ...state, step: i })}
+              onClick={() => (i <= step || (i === step + 1 && canNext)) && setStep(i)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs transition-colors ${
-                i === state.step ? 'bg-indigo-600 text-white'
-                : i < state.step ? 'bg-emerald-500/15 text-emerald-400'
+                i === step ? 'bg-indigo-600 text-white'
+                : i < step ? 'bg-emerald-500/15 text-emerald-400'
                 : 'bg-slate-900 border border-slate-800 text-slate-500'
               }`}
             >
               <span className="w-4 h-4 rounded-full bg-slate-950/40 flex items-center justify-center text-[9px] font-bold">
-                {i < state.step ? '✓' : i + 1}
+                {i < step ? '✓' : i + 1}
               </span>
               {s}
             </button>
@@ -142,147 +171,143 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
         ))}
       </div>
 
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
       {/* Step 1: Industry */}
-      {state.step === 0 && (
+      {step === 0 && (
         <div>
           <h3 className="text-sm font-semibold text-white mb-3">Choose your industry</h3>
-          <p className="text-xs text-slate-500 mb-4">Your industry sets the guardrail template, knowledge structure, and default playbooks every DE inherits.</p>
+          <p className="text-xs text-slate-500 mb-4">
+            Sets the recommended first hires and the starter guardrail set. Saved to your workspace —
+            everything it creates stays editable.
+          </p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {INDUSTRIES.map(ind => (
+            {INDUSTRY_TEMPLATES.map(ind => (
               <button
-                key={ind.id}
-                onClick={() => save({ ...state, industryId: ind.id })}
-                className={`text-left rounded-xl border p-4 transition-all ${state.industryId === ind.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
+                key={ind.name}
+                onClick={() => setIndustryName(ind.name)}
+                className={`text-left rounded-xl border p-4 transition-all ${industryName === ind.name ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
               >
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-1.5">
                   <span className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">{ind.icon}</span>
                   <span className="text-sm font-semibold text-white">{ind.name}</span>
-                  {state.industryId === ind.id && <span className="ml-auto text-indigo-400 text-xs">✓ selected</span>}
+                  {industryName === ind.name && <span className="ml-auto text-indigo-400 text-xs">✓ selected</span>}
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed">{ind.templatePreview}</p>
+                <p className="text-xs text-slate-400 leading-relaxed">{ind.blurb}</p>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Step 2: Functions */}
-      {state.step === 1 && (
+      {/* Step 2: First hires */}
+      {step === 1 && (
         <div>
-          <h3 className="text-sm font-semibold text-white mb-3">Activate functions</h3>
-          <p className="text-xs text-slate-500 mb-4">Eight universal functions cover most businesses. You can activate more later — each function maps to entity and outcome pages in the sidebar.</p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 mb-4">
-            {UNIVERSAL_FUNCTIONS.map(f => (
-              <button
-                key={f.id}
-                onClick={() => toggleFn(f.id)}
-                className={`flex items-center gap-3 text-left rounded-xl border px-4 py-3 transition-all ${state.functions.includes(f.id) ? 'border-indigo-500/50 bg-indigo-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
-              >
-                <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${state.functions.includes(f.id) ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-600'}`}>
-                  {state.functions.includes(f.id) ? '✓' : ''}
-                </span>
-                <div>
-                  <p className="text-sm text-slate-200">{f.label}</p>
-                  <p className="text-[11px] text-slate-500">{f.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] font-bold tracking-widest text-slate-600 uppercase mb-2">Optional</p>
-          {OPTIONAL_FUNCTIONS.map(f => (
-            <button
-              key={f.id}
-              onClick={() => toggleFn(f.id)}
-              className={`flex items-center gap-3 text-left rounded-xl border px-4 py-3 transition-all w-full lg:w-1/2 ${state.functions.includes(f.id) ? 'border-purple-500/50 bg-purple-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
-            >
-              <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${state.functions.includes(f.id) ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-600'}`}>
-                {state.functions.includes(f.id) ? '✓' : ''}
-              </span>
-              <div>
-                <p className="text-sm text-slate-200">{f.label}</p>
-                <p className="text-[11px] text-slate-500">{f.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Step 3: First hires */}
-      {state.step === 2 && industry && (
-        <div>
-          <h3 className="text-sm font-semibold text-white mb-3">Recommended first hires — {industry.name}</h3>
-          <p className="text-xs text-slate-500 mb-4">Based on your industry, these Digital Employees deliver value fastest. Every DE starts in training and earns autonomy through the trust ladder.</p>
+          <h3 className="text-sm font-semibold text-white mb-3">First hires — {template.name}</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Each becomes a real Digital Employee at the Designed stage. It earns live work through the
+            lifecycle gates — knowledge, testing, your certification — like any hire. Untick any you don't want.
+          </p>
           <div className="space-y-3">
-            {industry.recommendedHires.map((h, i) => (
-              <div key={h.role} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-900 p-4">
-                <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">{i + 1}</span>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">{h.role}</p>
-                  <p className="text-xs text-slate-400">{h.why}</p>
-                </div>
-                <button onClick={() => setPage('workforce_des')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors flex-shrink-0">
-                  View DE roster
+            {template.hires.map((h: IndustryHire) => {
+              const exists = existingDeNames.has(h.name.toLowerCase());
+              const picked = pickedHires.has(h.name);
+              return (
+                <button key={h.name} disabled={exists}
+                  onClick={() => toggle(pickedHires, h.name, setPickedHires)}
+                  className={`w-full flex items-center gap-4 text-left rounded-xl border p-4 transition-all ${
+                    exists ? 'border-slate-800 bg-slate-900/40 opacity-60'
+                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
+                >
+                  <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-600'}`}>
+                    {exists || picked ? '✓' : ''}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-white">{h.name} <span className="text-xs text-slate-500 font-normal">· {h.department}</span></p>
+                    <p className="text-xs text-slate-400">{h.description}</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">{exists ? 'Already on your roster' : h.why}</p>
+                  </div>
                 </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
-      {state.step === 2 && !industry && (
-        <p className="text-sm text-slate-500">Choose an industry first to see hiring recommendations.</p>
+
+      {/* Step 3: Guardrails */}
+      {step === 2 && (
+        <div>
+          <h3 className="text-sm font-semibold text-white mb-3">Starter guardrails — {template.name}</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Every rule here carries a real matching pattern and enforces from the moment it exists —
+            these are not policy statements. All editable later under Compliance &amp; Guardrails.
+          </p>
+          <div className="space-y-2">
+            {template.guardrails.map((g: IndustryGuardrail) => {
+              const exists = existingRules.has(g.rule.toLowerCase());
+              const picked = pickedRules.has(g.rule);
+              return (
+                <button key={g.rule} disabled={exists}
+                  onClick={() => toggle(pickedRules, g.rule, setPickedRules)}
+                  className={`w-full flex items-start gap-3 text-left rounded-xl border px-4 py-3 transition-all ${
+                    exists ? 'border-slate-800 bg-slate-900/40 opacity-60'
+                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-800 bg-slate-900 hover:border-slate-600'}`}
+                >
+                  <span className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-600'}`}>
+                    {exists || picked ? '✓' : ''}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-sm text-slate-200">{g.rule}</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5 font-mono break-all">
+                      {g.rule_type === 'require_approval_over_cents'
+                        ? `threshold: $${((g.threshold ?? 0) / 100).toLocaleString()}`
+                        : `matches: ${g.pattern}`}
+                    </p>
+                    {exists && <p className="text-[11px] text-slate-600">Already exists in your guardrails</p>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
-      {/* Step 4: Guardrails */}
-      {state.step === 3 && industry && (
-        <div>
-          <h3 className="text-sm font-semibold text-white mb-3">Guardrail template — {industry.name}</h3>
-          <p className="text-xs text-slate-500 mb-4">Every DE you hire inherits this industry template on day one. You can add company-specific overrides in Compliance &amp; Guardrails.</p>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-4">
-            <div className="space-y-2">
-              {industry.guardrails.map(g => (
-                <div key={g} className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2.5">
-                  <span className="text-red-400 text-xs flex-shrink-0">⚑</span>
-                  <span className="text-sm text-slate-300">{g}</span>
-                  <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">template</span>
-                </div>
-              ))}
-            </div>
+      {/* Step 4: Review & create */}
+      {step === 3 && (
+        <div className="max-w-2xl">
+          <h3 className="text-sm font-semibold text-white mb-3">Review</h3>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 space-y-3 mb-4 text-sm text-slate-300">
+            <p><span className="text-slate-500">Industry:</span> {industryName || '—'}{industryName !== (currentTenant?.industry ?? '') ? <span className="text-[11px] text-slate-500"> (will be saved)</span> : ''}</p>
+            <p><span className="text-slate-500">New employees:</span> {template.hires.filter(h => pickedHires.has(h.name) && !existingDeNames.has(h.name.toLowerCase())).map(h => h.name).join(', ') || 'none'}</p>
+            <p><span className="text-slate-500">New guardrails:</span> {template.guardrails.filter(g => pickedRules.has(g.rule) && !existingRules.has(g.rule.toLowerCase())).length} rule(s)</p>
           </div>
-          <button onClick={() => setPage('gov_compliance')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-            Open Compliance &amp; Guardrails to review the full template →
+          <button
+            onClick={() => void finish()}
+            disabled={busy || !isLive || !industryName}
+            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm transition-colors disabled:opacity-40"
+          >
+            {busy ? 'Creating…' : isLive ? 'Finish setup — create for real' : 'Finish (demo — nothing created)'}
           </button>
         </div>
-      )}
-      {state.step === 3 && !industry && (
-        <p className="text-sm text-slate-500">Choose an industry first to preview its guardrail template.</p>
       )}
 
       {/* Nav buttons */}
-      <div className="flex items-center gap-3 mt-8">
-        {state.step > 0 && (
-          <button onClick={() => save({ ...state, step: state.step - 1 })} className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm transition-colors">
-            ← Back
-          </button>
-        )}
-        {state.step < STEPS.length - 1 ? (
+      {step < 3 && (
+        <div className="flex items-center gap-3 mt-8">
+          {step > 0 && (
+            <button onClick={() => setStep(step - 1)} className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm transition-colors">
+              ← Back
+            </button>
+          )}
           <button
-            onClick={() => canNext && save({ ...state, step: state.step + 1 })}
+            onClick={() => canNext && setStep(step + 1)}
             disabled={!canNext}
             className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Continue →
           </button>
-        ) : (
-          <button
-            onClick={() => setPage('dashboard')}
-            disabled={!industry}
-            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm transition-colors disabled:opacity-40"
-          >
-            Finish setup → Command Centre
-          </button>
-        )}
-        <span className="text-[11px] text-slate-600 ml-2">Progress is saved automatically.</span>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

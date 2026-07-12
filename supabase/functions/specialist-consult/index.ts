@@ -55,6 +55,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { resolveDeModel } from '../_shared/deModel.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -661,11 +662,15 @@ async function runResolveInquiry(
   let answerText: string | null = null;
   if (answerStatus === 'answered') {
     const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
+    // Per-DE model (Wave 1.2): the answering model follows the same DE
+    // the token usage is attributed to.
+    const usageDeId = opts.deId ?? (subjectKind === 'de' ? subjectId : null);
+    const model = await resolveDeModel(admin, tenantId, usageDeId);
     const res2 = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': resolveApiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 1024,
+        model, max_tokens: 1024,
         system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
         messages: [{ role: 'user', content: inquiry }],
       }),
@@ -674,9 +679,8 @@ async function runResolveInquiry(
       const d2 = await res2.json();
       // Claude 5 models can emit a 'thinking' block before the text block.
       answerText = String((d2.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '');
-      const usageDeId = opts.deId ?? (subjectKind === 'de' ? subjectId : null);
       admin.rpc('record_de_token_usage', {
-        p_tenant_id: tenantId, p_de_id: usageDeId, p_model_id: MODEL,
+        p_tenant_id: tenantId, p_de_id: usageDeId, p_model_id: model,
         p_input_tokens: d2.usage?.input_tokens ?? 0, p_output_tokens: d2.usage?.output_tokens ?? 0,
       }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
     }

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabase';
 import { Spinner } from '../components';
 
-const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Professional Services', 'Manufacturing', 'Education', 'Real Estate', 'Legal', 'Other'];
+import { INDUSTRY_NAMES as INDUSTRIES } from '../lib/industries';
 
 /**
  * Shown when AuthContext detects a genuinely authenticated, confirmed user

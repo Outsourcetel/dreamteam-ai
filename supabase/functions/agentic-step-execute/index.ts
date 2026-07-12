@@ -70,10 +70,13 @@ const MAX_TURNS_HARD_CEILING = 40; // absolute backstop even if a policy misconf
 // circuit breaker (not billing) — matched by model-name substring,
 // falling back to a conservative default for anything unrecognized so
 // the breaker never silently under-counts an unknown model's cost.
+// Rates verified against the current Anthropic price list (2026-07):
+// Opus 4.6+ is $5/$25 (the old $15/$75 was Opus 4.5-era and made the
+// breaker trip ~3x early on opus runs); Haiku 4.5 is $1/$5.
 const PRICING: Array<{ match: string; inPerM: number; outPerM: number }> = [
-  { match: 'opus', inPerM: 15, outPerM: 75 },
+  { match: 'opus', inPerM: 5, outPerM: 25 },
   { match: 'sonnet', inPerM: 3, outPerM: 15 },
-  { match: 'haiku', inPerM: 0.8, outPerM: 4 },
+  { match: 'haiku', inPerM: 1, outPerM: 5 },
 ];
 function estimateCostCents(model: string, inputTokens: number, outputTokens: number): number {
   const rate = PRICING.find((p) => model.toLowerCase().includes(p.match)) ?? { inPerM: 5, outPerM: 25 };
