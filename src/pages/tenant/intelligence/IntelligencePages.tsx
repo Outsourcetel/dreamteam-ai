@@ -569,7 +569,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
             }`}
           >
             <div className="flex items-center gap-2 flex-wrap mb-1.5">
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${KIND_META[ins.kind].cls}`}>{KIND_META[ins.kind].label}</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${KIND_META[ins.kind]?.cls}`}>{KIND_META[ins.kind]?.label ?? ins.kind}</span>
               <span className="text-sm font-medium text-white">{ins.title}</span>
               <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${
                 ins.severity === 'high' ? 'bg-red-500/15 text-red-300' : ins.severity === 'medium' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800 text-slate-400'

@@ -231,7 +231,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                             </p>
                           )}
                         </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_META[st.status].cls}`}>{STATUS_META[st.status].label}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_META[st.status]?.cls}`}>{STATUS_META[st.status]?.label ?? st.status}</span>
                         {item.verify && !locked && !awaitingSignoff && (
                           <button onClick={() => void runCheckNow(item.key)} disabled={busy} className={btnGhost}>
                             {busy ? 'Checking…' : 'Check now'}

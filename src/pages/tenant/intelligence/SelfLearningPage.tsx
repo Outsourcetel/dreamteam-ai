@@ -598,10 +598,10 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                           </span>
                         ) : <span className="text-xs text-slate-600">—</span>}
                       </td>
-                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VERDICT_META[c.verdict_type].cls}`}>{VERDICT_META[c.verdict_type].label}</span></td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VERDICT_META[c.verdict_type]?.cls}`}>{VERDICT_META[c.verdict_type]?.label ?? c.verdict_type}</span></td>
                       <td className={`${td} text-xs text-slate-300`}>{c.member_count}</td>
                       <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
-                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status].cls}`}>{LIVE_STATUS_META[c.status].label}</span></td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status]?.cls}`}>{LIVE_STATUS_META[c.status]?.label ?? c.status}</span></td>
                     </tr>
                   );
                 })}

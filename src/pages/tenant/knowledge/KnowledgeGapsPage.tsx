@@ -379,7 +379,7 @@ const DemoKnowledgeGapsPage = () => {
                     </span>
                   </td>
                   <td className={td}><span className={`text-xs font-medium capitalize ${SEVERITY_CLS[g.severity]}`}>{g.severity}</span></td>
-                  <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_META[st].cls}`}>{STATUS_META[st].label}</span></td>
+                  <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_META[st]?.cls}`}>{STATUS_META[st]?.label ?? st}</span></td>
                 </tr>
               );
             })}
@@ -399,7 +399,7 @@ const DemoKnowledgeGapsPage = () => {
                 <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
               </div>
               <div className="flex items-center gap-2 mb-5">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_META[st].cls}`}>{STATUS_META[st].label}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_META[st]?.cls}`}>{STATUS_META[st]?.label ?? st}</span>
                 <span className="text-xs text-slate-500">{selected.frequency} · affects {selected.de}</span>
               </div>
 
@@ -725,7 +725,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                         ) : <span className="text-xs text-slate-600">—</span>}
                       </td>
                       <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
-                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status].cls}`}>{LIVE_STATUS_META[c.status].label}</span></td>
+                      <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status]?.cls}`}>{LIVE_STATUS_META[c.status]?.label ?? c.status}</span></td>
                     </tr>
                   );
                 })}

@@ -674,8 +674,8 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
               </div>
               <div className="col-span-4">
                 <p className={`text-xs leading-snug ${e.actionType === 'guardrail_violation' ? 'text-red-300' : 'text-slate-300'}`}>{e.action}</p>
-                <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${ACTION_TYPE_META[e.actionType].style}`}>
-                  {ACTION_TYPE_META[e.actionType].label}
+                <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${ACTION_TYPE_META[e.actionType]?.style}`}>
+                  {ACTION_TYPE_META[e.actionType]?.label ?? e.actionType}
                 </span>
               </div>
               <div className="col-span-1 text-xs text-slate-400 pt-0.5">{e.entity}</div>

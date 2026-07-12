@@ -294,8 +294,8 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
                 {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>{de.status}</span>
                 {health[de.id] && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state].color}`}>
-                    {DE_HEALTH_LABELS[health[de.id].state].label}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
+                    {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
                   </span>
                 )}
               </div>
