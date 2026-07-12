@@ -864,6 +864,30 @@ function candidatePasses(c: Candidate, f: IngestFilters): boolean {
   return true;
 }
 
+// Enforce the SAME exclusions on live read-through results (search /
+// fetch_record / list_recent) as on ingest — so an excluded or out-of-scope
+// file never surfaces even in a live lookup. Security-focused: folder scope
+// + exclude patterns are hard; allow_types only applies when the customer
+// set one (read-through isn't about extractability, so 'other' is allowed
+// through unless a type allow-list is configured).
+function readThroughFilterItems(provider: string, items: HubItem[] | undefined, f: IngestFilters): HubItem[] {
+  const list = items ?? [];
+  if (provider !== 'sharepoint' && provider !== 'gdrive') return list;
+  if (!(f.exclude_patterns?.length || f.allow_types?.length || f.folder)) return list;
+  const scope = String(f.folder ?? '').replace(/^\/+|\/+$/g, '').toLowerCase();
+  return list.filter((it) => {
+    const raw = (it.raw ?? {}) as Record<string, unknown>;
+    const name = it.title || String(raw.name ?? '');
+    const mime = String(raw.mimeType ?? '');
+    const pr = raw.parentReference as { path?: string } | undefined;
+    const path = pr?.path ? String(pr.path).replace(/^.*root:\/?/, '') : '';
+    if (scope && !`${path}/${name}`.toLowerCase().includes(scope)) return false;
+    if (isExcluded(name, path, f.exclude_patterns)) return false;
+    if (f.allow_types?.length && !f.allow_types.includes(fileTypeOf(name, mime))) return false;
+    return true;
+  });
+}
+
 async function pdfBytesToText(bytes: Uint8Array): Promise<string> {
   try {
     const pdf = await getDocumentProxy(bytes);
@@ -1797,6 +1821,9 @@ serve(async (req) => {
       }
       const ms = Date.now() - started;
       const health = await recordHealth(r.ok, r.error);
+      if (r.ok && (connector.provider === 'sharepoint' || connector.provider === 'gdrive')) {
+        r.items = readThroughFilterItems(connector.provider, r.items, ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters);
+      }
       const items = r.ok ? toCanonical(r.items ?? [], opDef.object, connector) : [];
       await audit('connector_action',
         r.ok
@@ -1824,6 +1851,9 @@ serve(async (req) => {
         r = await adapter.fetchRecord(ctx, String(payload.record_type ?? ''), ref);
       } else {
         r = await adapter.listRecent(ctx);
+      }
+      if (r.ok && (connector.provider === 'sharepoint' || connector.provider === 'gdrive')) {
+        r.items = readThroughFilterItems(connector.provider, r.items, ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters);
       }
       const ms = Date.now() - started;
       const health = await recordHealth(r.ok, r.error);

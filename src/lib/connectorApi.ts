@@ -154,7 +154,7 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'client_id', label: 'Application (client) ID', placeholder: '11111111-1111-1111-1111-111111111111', secret: false },
       { key: 'client_secret', label: 'Client secret value', placeholder: '••••••••', secret: true },
     ],
-    help: 'App-only access (no per-person sign-in). In the Azure portal → App registrations → New registration; then Certificates & secrets → New client secret (copy the Value); then API permissions → Microsoft Graph → Application permissions → add Sites.Read.All (or Sites.Selected) and click "Grant admin consent". Copy the Directory (tenant) ID and Application (client) ID from the app\'s Overview page.',
+    help: 'App-only access (no per-person sign-in). SECURITY: prefer least privilege — put shareable docs in ONE dedicated site, grant the app Sites.Selected (starts with access to nothing, then grant read on just that site) rather than Sites.Read.All (which exposes every site in your tenant). Steps: Azure portal → App registrations → New registration; Certificates & secrets → New client secret (copy the Value); API permissions → Microsoft Graph → Application permissions → add Sites.Selected → "Grant admin consent"; then grant the app read on your knowledge site (Graph: POST /sites/{id}/permissions with role read + your app). Copy the Directory (tenant) ID and Application (client) ID from the app\'s Overview page.',
     knowledgeSync: true, implemented: true,
   },
   gdrive: {

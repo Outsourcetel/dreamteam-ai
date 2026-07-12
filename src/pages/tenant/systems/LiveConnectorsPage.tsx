@@ -402,9 +402,10 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
       <div>
         <p className="text-[11px] font-medium text-slate-400 mb-1">What gets ingested — filters</p>
         <p className="text-[11px] text-slate-600 mb-3">
-          These control which readable files land in knowledge. They are hygiene, not a security boundary —
-          the hard boundary is what you share with the connector at the source
-          ({connector.provider === 'gdrive' ? 'the folders shared with the service account' : 'the site / Sites.Selected permission'}).
+          These control which files land in knowledge <span className="text-slate-500">and surface in live lookups</span>. They are hygiene, not a security wall —
+          the real wall is least-privilege at the source: {connector.provider === 'gdrive'
+            ? 'share only the intended folder(s) with the service account (it sees nothing else).'
+            : 'grant the app Sites.Selected on one dedicated site instead of Sites.Read.All (it sees nothing else).'}
         </p>
         <div className="space-y-3">
           <div>
