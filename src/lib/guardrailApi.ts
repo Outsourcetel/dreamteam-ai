@@ -17,6 +17,12 @@ export type GuardrailRuleType =
   | 'require_approval_over_cents'
   | 'max_discount_pct';
 
+// Wave 2a — where a rule applies. 'workspace' = the whole tenant (the
+// pre-2a behavior and the default). 'department' matches a DE's free-text
+// department; 'employee' matches a specific DE id. ('playbook' is honored
+// by the resolver but not yet surfaced in the UI.)
+export type GuardrailScope = 'workspace' | 'department' | 'employee' | 'playbook';
+
 export interface GuardrailRule {
   id: string;
   tenant_id: string;
@@ -25,6 +31,8 @@ export interface GuardrailRule {
   pattern: string | null;
   threshold: number | null;
   applies_to: string;
+  scope: GuardrailScope;
+  scope_ref: string | null;
   severity: 'blocking' | 'warning';
   active: boolean;
   version: number;

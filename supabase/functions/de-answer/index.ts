@@ -95,18 +95,20 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
 
 // deno-lint-ignore no-explicit-any
-async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string): Promise<GuardrailRule | null> {
+async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   try {
+    // Scope-aware (Wave 2a): the resolver returns workspace rules plus any
+    // department/employee-scoped rules for this DE. A null DE → workspace only.
     const { data: rules } = await admin
-      .from('guardrail_rules')
-      .select('id, rule, rule_type, pattern, applies_to')
-      .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .eq('severity', 'blocking')
-      .in('rule_type', ['blocked_phrase', 'blocked_topic']);
+      .rpc('guardrail_rules_for_de', {
+        p_tenant_id: tenantId,
+        p_de_id: deId,
+        p_rule_types: ['blocked_phrase', 'blocked_topic'],
+      });
     if (!Array.isArray(rules)) return null;
+    const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
     const text = answer.toLowerCase();
-    for (const r of rules as GuardrailRule[]) {
+    for (const r of blocking as GuardrailRule[]) {
       if (!r.pattern) continue;
       for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
         let hit = false;
@@ -408,7 +410,7 @@ ${context}`;
     }
 
     // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
-    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);
+    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
     if (blockedBy) {
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       if (convId) {

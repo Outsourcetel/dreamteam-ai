@@ -102,16 +102,20 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
 
 // ── Guardrail answer-check (same blocking contract as de-answer) ──
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null }
-async function checkAnswerGuardrails(admin: SupabaseClient, tenantId: string, answer: string): Promise<GuardrailRule | null> {
+async function checkAnswerGuardrails(admin: SupabaseClient, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   try {
+    // Scope-aware (Wave 2a). A consult is a specialist_profiles call, not a
+    // DE, so deId is null here → workspace-scoped rules only, as before.
     const { data: rules } = await admin
-      .from('guardrail_rules')
-      .select('id, rule, rule_type, pattern')
-      .eq('tenant_id', tenantId).eq('active', true).eq('severity', 'blocking')
-      .in('rule_type', ['blocked_phrase', 'blocked_topic']);
+      .rpc('guardrail_rules_for_de', {
+        p_tenant_id: tenantId,
+        p_de_id: deId,
+        p_rule_types: ['blocked_phrase', 'blocked_topic'],
+      });
     if (!Array.isArray(rules)) return null;
+    const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
     const text = answer.toLowerCase();
-    for (const r of rules as GuardrailRule[]) {
+    for (const r of blocking as GuardrailRule[]) {
       if (!r.pattern) continue;
       for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
         let hit = false;
@@ -1672,7 +1676,7 @@ ${groundedContext}`;
     }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
 
     // ── Guardrail answer-check (blocking) ──
-    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer);
+    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, null);
     if (blockedBy) {
       const { data: row } = await admin.from('spec_consultations').insert({
         tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,

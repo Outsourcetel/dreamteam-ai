@@ -9,7 +9,9 @@ import { CustomerApiError } from '../../../lib/customerApi'
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
 } from '../../../lib/guardrailApi'
-import type { GuardrailRule, GuardrailRuleType } from '../../../lib/guardrailApi'
+import type { GuardrailRule, GuardrailRuleType, GuardrailScope } from '../../../lib/guardrailApi'
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi'
+import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 import { ConfirmDeleteModal } from '../../../components'
 
@@ -27,6 +29,14 @@ const RULE_TYPE_META: Record<GuardrailRuleType, { label: string; hint: string }>
   max_discount_pct: { label: 'Discount cap', hint: 'Maximum discount without human approval' },
 }
 
+// Wave 2a — the scopes surfaced in the UI. All three are honored across
+// the answer, triage, and action-gate paths.
+const SCOPE_META: Record<'workspace' | 'department' | 'employee', { label: string; hint: string }> = {
+  workspace: { label: 'Whole workspace', hint: 'Applies to every Digital Employee' },
+  department: { label: 'A department', hint: 'Applies only to DEs in the chosen department' },
+  employee: { label: 'One employee', hint: 'Applies only to the chosen Digital Employee' },
+}
+
 function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const [rules, setRules] = useState<GuardrailRule[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,14 +44,21 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState<{ rule: string; rule_type: GuardrailRuleType; pattern: string; threshold: string; severity: 'blocking' | 'warning' }>(
-    { rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking' })
+  const [des, setDes] = useState<DigitalEmployee[]>([])
+  const [form, setForm] = useState<{ rule: string; rule_type: GuardrailRuleType; pattern: string; threshold: string; severity: 'blocking' | 'warning'; scope: 'workspace' | 'department' | 'employee'; scope_ref: string }>(
+    { rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
+
+  // Distinct, non-empty departments across the roster — the options for a
+  // department-scoped rule. Employee scope uses the DE list directly.
+  const departments = Array.from(new Set(des.map(d => (d.department || '').trim()).filter(Boolean))).sort()
 
   const refresh = async () => {
     setLoading(true)
     setError(null)
     try {
-      setRules(await listGuardrailRules())
+      const [r, d] = await Promise.all([listGuardrailRules(), listDigitalEmployees().catch(() => [])])
+      setRules(r)
+      setDes(d)
       setMissingTables(false)
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
@@ -51,6 +68,14 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     }
   }
   useEffect(() => { void refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resolve a rule's scope to a human label for the table.
+  const scopeLabel = (r: GuardrailRule): string => {
+    if (r.scope === 'department') return `Dept · ${r.scope_ref || '—'}`
+    if (r.scope === 'employee') return `DE · ${des.find(d => d.id === r.scope_ref)?.name || r.scope_ref || '—'}`
+    if (r.scope === 'playbook') return `Playbook · ${r.scope_ref || '—'}`
+    return 'Workspace'
+  }
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -69,10 +94,15 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       pattern: (!isMoney && !isPct && form.pattern.trim()) ? form.pattern.trim() : null,
       threshold: isMoney ? Math.round(Number(form.threshold) * 100) || null : isPct ? Math.round(Number(form.threshold)) || null : null,
       severity: form.severity,
+      scope: form.scope,
+      scope_ref: form.scope === 'workspace' ? null : (form.scope_ref || null),
     })
     setShowAdd(false)
-    setForm({ rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking' })
+    setForm({ rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
   })
+
+  // A non-workspace rule needs a target chosen before it can be saved.
+  const scopeIncomplete = form.scope !== 'workspace' && !form.scope_ref
 
   const active = rules.filter(r => r.active)
 
@@ -129,7 +159,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-left">
-                    {['Rule', 'Type', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
+                    {['Rule', 'Type', 'Scope', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
                       <th key={h} className={th}>{h}</th>
                     ))}
                   </tr>
@@ -140,6 +170,9 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={`${td} text-slate-200 text-xs`}>{r.rule}</td>
                       <td className={td}>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{RULE_TYPE_META[r.rule_type].label}</span>
+                      </td>
+                      <td className={td}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-slate-800 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{scopeLabel(r)}</span>
                       </td>
                       <td className={`${td} text-xs text-slate-400 font-mono`}>
                         {r.rule_type === 'require_approval_over_cents' && r.threshold != null ? `$${Math.round(r.threshold / 100).toLocaleString()}`
@@ -199,6 +232,43 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </select>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1">Applies to</label>
+                  <select value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'workspace' | 'department' | 'employee', scope_ref: '' }))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    {(Object.keys(SCOPE_META) as Array<'workspace' | 'department' | 'employee'>).map(s => (
+                      <option key={s} value={s}>{SCOPE_META[s].label}</option>
+                    ))}
+                  </select>
+                </div>
+                {form.scope === 'department' ? (
+                  <div>
+                    <label className="block text-slate-400 mb-1">Department</label>
+                    <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                      <option value="">Choose a department…</option>
+                      {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                ) : form.scope === 'employee' ? (
+                  <div>
+                    <label className="block text-slate-400 mb-1">Employee</label>
+                    <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                      <option value="">Choose an employee…</option>
+                      {des.map(d => <option key={d.id} value={d.id}>{d.name}{d.department ? ` · ${d.department}` : ''}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-end">
+                    <p className="text-[11px] text-slate-500 pb-2">{SCOPE_META[form.scope].hint}.</p>
+                  </div>
+                )}
+              </div>
+              {form.scope === 'department' && departments.length === 0 && (
+                <p className="text-[11px] text-amber-400/80">No departments found on your roster yet — set a department on a Digital Employee's profile first, or scope to a specific employee.</p>
+              )}
               {(form.rule_type === 'blocked_phrase' || form.rule_type === 'blocked_topic') ? (
                 <div>
                   <label className="block text-slate-400 mb-1">Patterns (separate alternatives with |)</label>
@@ -221,7 +291,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setShowAdd(false)}
                 className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
-              <button onClick={submitAdd} disabled={busy || !form.rule.trim()}
+              <button onClick={submitAdd} disabled={busy || !form.rule.trim() || scopeIncomplete}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors">
                 {busy ? 'Saving…' : 'Add rule'}
               </button>
