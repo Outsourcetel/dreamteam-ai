@@ -83,7 +83,9 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   intercom: '💬', generic_rest: '🔌', sharepoint: '📁', gdrive: '📄', hubspot: '🧡', slack: '#️⃣',
   notion: '📓', teams: '👥', box: '📦', freshdesk: '🌱', freshservice: '🛠️',
   servicenow: '🟢', dynamics: '🔷', github: '🐙', gitlab: '🦊', guru: '🧠', document360: '📗',
-  asana: '🎯', clickup: '⬆️', monday: '📅', linear: '📐', template: '🧱',
+  asana: '🎯', clickup: '⬆️', monday: '📅', linear: '📐',
+  stripe: '💳', shopify: '🛍️', woocommerce: '🛒', bigcommerce: '🏬', square: '⬛',
+  bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -121,7 +123,8 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
     if (!provider || !meta) return;
     setErr(null);
     const noBaseUrl: ConnectorProvider[] = ['gdrive', 'hubspot', 'slack', 'notion', 'teams', 'box',
-      'github', 'guru', 'document360', 'asana', 'clickup', 'monday', 'linear'];
+      'github', 'guru', 'document360', 'asana', 'clickup', 'monday', 'linear',
+      'stripe', 'bigcommerce', 'square', 'bamboohr', 'greenhouse', 'lever', 'buildium'];
     if (!noBaseUrl.includes(provider) && !baseUrl.trim()) { setErr(`${meta.baseUrlLabel} is required.`); return; }
     if (provider === 'generic_rest' && !searchPath.trim()) { setErr('A search endpoint path is required so DreamTeam knows how to look things up.'); return; }
     setBusy(true);

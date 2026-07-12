@@ -2220,6 +2220,293 @@ const linear = {
   },
 };
 
+// ── stripe ── secret: { api_key } · fixed base. billing (invoices/subs).
+const STRIPE = 'https://api.stripe.com/v1';
+const stripe = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.api_key ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${STRIPE}/customers?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Stripe secret key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${STRIPE}/invoices?limit=25`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? data.filter((i) => String(i.number ?? '').toLowerCase().includes(ql) || String(i.customer_email ?? '').toLowerCase().includes(ql)) : data;
+    return { ok: true, items: f.slice(0, 10).map((i) => ({ ref: String(i.id), type: 'invoice', title: clip(`${i.number ?? i.id} — ${i.customer_email ?? ''}`, 160), snippet: clip(`${(Number(i.total) || 0) / 100} ${String(i.currency ?? '').toUpperCase()} · ${i.status ?? ''}`, 400), url: i.hosted_invoice_url ? String(i.hosted_invoice_url) : null, raw: { id: i.id, status: i.status } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${STRIPE}/invoices/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'invoice', title: clip(`${i.number ?? ref}`, 160), snippet: clip(`${(Number(i.total) || 0) / 100} ${String(i.currency ?? '').toUpperCase()} · ${i.status ?? ''}`, 400), url: i.hosted_invoice_url ? String(i.hosted_invoice_url) : null, raw: i }] };
+  },
+  async subscription(c: Ctx, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${STRIPE}/subscriptions/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const s = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'subscription', title: clip(`Subscription ${ref} · ${s.status ?? ''}`, 160), snippet: clip(`customer ${s.customer ?? ''}`, 400), url: null, raw: s }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── shopify ── secret: { access_token } · base = store.myshopify.com. pos.
+const shopify = {
+  hdrs: (c: Ctx) => ({ 'X-Shopify-Access-Token': c.secret.access_token ?? '', Accept: 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/admin/api/2024-01/shop.json`, { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Shopify Admin API token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/admin/api/2024-01/orders.json?status=any&limit=25`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const orders = ((r.body as { orders?: Array<Record<string, unknown>> })?.orders) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? orders.filter((o) => String(o.name ?? '').toLowerCase().includes(ql) || String(o.email ?? '').toLowerCase().includes(ql)) : orders;
+    return { ok: true, items: f.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'order', title: clip(`${o.name} — ${o.email ?? ''}`, 160), snippet: clip(`${o.total_price ?? ''} ${o.currency ?? ''} · ${o.financial_status ?? ''} · ${o.fulfillment_status ?? 'unfulfilled'}`, 400), url: null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/admin/api/2024-01/orders/${encodeURIComponent(ref)}.json`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const o = ((r.body as { order?: Record<string, unknown> })?.order) ?? {};
+    return { ok: true, items: [{ ref, type: 'order', title: clip(`${o.name} — ${o.email ?? ''}`, 160), snippet: clip(`${o.total_price ?? ''} ${o.currency ?? ''} · ${o.financial_status ?? ''}`, 400), url: null, raw: o }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── woocommerce ── secret: { consumer_key, consumer_secret } · base = store URL. pos.
+const woocommerce = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.consumer_key ?? ''}:${c.secret.consumer_secret ?? ''}`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/wp-json/wc/v3/orders?per_page=1`, { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'WooCommerce keys verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/wp-json/wc/v3/orders?per_page=10&search=${encodeURIComponent(query)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const orders = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: orders.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'order', title: clip(`#${o.number ?? o.id} — ${(o.billing as { email?: string })?.email ?? ''}`, 160), snippet: clip(`${o.total ?? ''} ${o.currency ?? ''} · ${o.status ?? ''}`, 400), url: null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/wp-json/wc/v3/orders/${encodeURIComponent(ref)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const o = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'order', title: clip(`#${o.number ?? ref}`, 160), snippet: clip(`${o.total ?? ''} ${o.currency ?? ''} · ${o.status ?? ''}`, 400), url: null, raw: o }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── bigcommerce ── secret: { store_hash, access_token } · fixed base. pos.
+const bigcommerce = {
+  base: (c: Ctx) => `https://api.bigcommerce.com/stores/${c.secret.store_hash ?? ''}`,
+  hdrs: (c: Ctx) => ({ 'X-Auth-Token': c.secret.access_token ?? '', Accept: 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${this.base(c)}/v2/store`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'BigCommerce token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/v2/orders?limit=25&sort=date_created:desc`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const orders = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? orders.filter((o) => String(o.id).includes(query) || String((o.billing_address as { email?: string })?.email ?? '').toLowerCase().includes(ql)) : orders;
+    return { ok: true, items: f.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'order', title: clip(`Order #${o.id} — ${(o.billing_address as { email?: string })?.email ?? ''}`, 160), snippet: clip(`${o.total_inc_tax ?? ''} ${o.currency_code ?? ''} · ${o.status ?? ''}`, 400), url: null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/v2/orders/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const o = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'order', title: clip(`Order #${ref}`, 160), snippet: clip(`${o.total_inc_tax ?? ''} ${o.currency_code ?? ''} · ${o.status ?? ''}`, 400), url: null, raw: o }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── square ── secret: { access_token } · fixed base. pos.
+const SQUARE = 'https://connect.squareup.com/v2';
+const square = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.access_token ?? ''}`, 'Square-Version': '2024-01-18', 'Content-Type': 'application/json' }),
+  async location(c: Ctx): Promise<string | null> {
+    const r = await httpJson(`${SQUARE}/locations`, { headers: this.hdrs(c) });
+    if (!r.ok) return null;
+    const locs = ((r.body as { locations?: Array<{ id?: string }> })?.locations) ?? [];
+    return locs[0]?.id ?? null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${SQUARE}/locations`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Square access token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const loc = await this.location(c);
+    if (!loc) return { ok: false, error: 'no_location' };
+    const r = await httpJson(`${SQUARE}/orders/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ location_ids: [loc], limit: 20, sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } }) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const orders = ((r.body as { orders?: Array<Record<string, unknown>> })?.orders) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? orders.filter((o) => String(o.id).toLowerCase().includes(ql)) : orders;
+    return { ok: true, items: f.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'order', title: clip(`Order ${String(o.id).slice(0, 8)} · ${o.state ?? ''}`, 160), snippet: clip(`${(Number((o.total_money as { amount?: number })?.amount) || 0) / 100} ${(o.total_money as { currency?: string })?.currency ?? ''}`, 400), url: null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${SQUARE}/orders/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const o = ((r.body as { order?: Record<string, unknown> })?.order) ?? {};
+    return { ok: true, items: [{ ref, type: 'order', title: clip(`Order ${String(ref).slice(0, 8)}`, 160), snippet: clip(`${(Number((o.total_money as { amount?: number })?.amount) || 0) / 100}`, 400), url: null, raw: o }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── bamboohr ── secret: { subdomain, api_key } · fixed base. payroll_hcm.
+const bamboohr = {
+  base: (c: Ctx) => `https://api.bamboohr.com/api/gateway.php/${c.secret.subdomain ?? ''}`,
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.api_key ?? ''}:x`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${this.base(c)}/v1/employees/directory`, { headers: { Authorization: this.auth(c), Accept: 'application/json' } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'BambooHR API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/v1/employees/directory`, { headers: { Authorization: this.auth(c), Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const emps = ((r.body as { employees?: Array<Record<string, unknown>> })?.employees) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? emps.filter((e) => `${e.firstName} ${e.lastName} ${e.workEmail}`.toLowerCase().includes(ql)) : emps;
+    return { ok: true, items: f.slice(0, 10).map((e) => ({ ref: String(e.id), type: 'employee', title: clip(`${e.firstName ?? ''} ${e.lastName ?? ''}`, 160), snippet: clip(`${e.jobTitle ?? ''} · ${e.department ?? ''}`, 400), url: null, raw: { id: e.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/v1/employees/${encodeURIComponent(ref)}?fields=firstName,lastName,jobTitle,department,workEmail,hireDate,supervisor`, { headers: { Authorization: this.auth(c), Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'employee', title: clip(`${e.firstName ?? ''} ${e.lastName ?? ''}`, 160), snippet: clip(`${e.jobTitle ?? ''} · ${e.department ?? ''} · ${e.workEmail ?? ''}`, 400), url: null, raw: e }] };
+  },
+  async timeOff(c: Ctx, query: string): Promise<AdapterResult> {
+    const now = new Date();
+    const start = new Date(now.getTime() - 30 * 864e5).toISOString().slice(0, 10);
+    const end = new Date(now.getTime() + 90 * 864e5).toISOString().slice(0, 10);
+    const r = await httpJson(`${this.base(c)}/v1/time_off/requests?start=${start}&end=${end}`, { headers: { Authorization: this.auth(c), Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const reqs = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? reqs.filter((t) => String((t.employee as { displayName?: string })?.displayName ?? t.name ?? '').toLowerCase().includes(ql)) : reqs;
+    return { ok: true, items: f.slice(0, 10).map((t) => ({ ref: String(t.id), type: 'time_off', title: clip(`${(t.employee as { displayName?: string })?.displayName ?? t.name ?? 'Time off'} · ${(t.type as { name?: string })?.name ?? ''}`, 160), snippet: clip(`${t.start ?? ''} → ${t.end ?? ''} · ${t.status ?? ''}`, 400), url: null, raw: { id: t.id } })) };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── greenhouse ── secret: { api_key } · fixed base (Harvest). product_system.
+const greenhouse = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.api_key ?? ''}:`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson('https://harvest.greenhouse.io/v1/candidates?per_page=1', { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Greenhouse Harvest key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson('https://harvest.greenhouse.io/v1/candidates?per_page=25', { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cands = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? cands.filter((cd) => `${cd.first_name} ${cd.last_name}`.toLowerCase().includes(ql)) : cands;
+    return { ok: true, items: f.slice(0, 10).map((cd) => ({ ref: String(cd.id), type: 'record', title: clip(`${cd.first_name ?? ''} ${cd.last_name ?? ''}`, 160), snippet: clip(String(cd.company ?? (cd.applications as Array<{ jobs?: Array<{ name?: string }> }>)?.[0]?.jobs?.[0]?.name ?? ''), 400), url: cd.url ? String(cd.url) : null, raw: { id: cd.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`https://harvest.greenhouse.io/v1/candidates/${encodeURIComponent(ref)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cd = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${cd.first_name ?? ''} ${cd.last_name ?? ''}`, 160), snippet: clip(String(cd.company ?? ''), 400), url: null, raw: cd }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── lever ── secret: { api_key } · fixed base. product_system.
+const lever = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.api_key ?? ''}:`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson('https://api.lever.co/v1/opportunities?limit=1', { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Lever API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson('https://api.lever.co/v1/opportunities?limit=25', { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? data.filter((o) => String(o.name ?? '').toLowerCase().includes(ql)) : data;
+    return { ok: true, items: f.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'record', title: clip(o.name, 160), snippet: clip(String(o.headline ?? (o.stage as { text?: string })?.text ?? ''), 400), url: (o.urls as { show?: string })?.show ? String((o.urls as { show?: string }).show) : null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`https://api.lever.co/v1/opportunities/${encodeURIComponent(ref)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const o = ((r.body as { data?: Record<string, unknown> })?.data) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(o.name, 160), snippet: clip(String(o.headline ?? ''), 400), url: null, raw: o }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── buildium ── secret: { client_id, client_secret } · fixed base. product_system.
+const buildium = {
+  hdrs: (c: Ctx) => ({ 'x-buildium-client-id': c.secret.client_id ?? '', 'x-buildium-client-secret': c.secret.client_secret ?? '', Accept: 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson('https://api.buildium.com/v1/leases?limit=1', { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Buildium credentials verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson('https://api.buildium.com/v1/leases?limit=25&orderby=Id desc', { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const leases = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? leases.filter((l) => JSON.stringify(l).toLowerCase().includes(ql)) : leases;
+    return { ok: true, items: f.slice(0, 10).map((l) => ({ ref: String(l.Id), type: 'record', title: clip(`Lease ${l.Id} · ${l.LeaseStatus ?? ''}`, 160), snippet: clip(`Unit ${l.UnitId ?? ''} · ${l.LeaseFromDate ?? ''} → ${l.LeaseToDate ?? ''}`, 400), url: null, raw: { id: l.Id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`https://api.buildium.com/v1/leases/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const l = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`Lease ${ref}`, 160), snippet: clip(String(l.LeaseStatus ?? ''), 400), url: null, raw: l }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── canvas ── secret: { token } · base = institution URL. product_system.
+const canvas = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/api/v1/courses?per_page=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Canvas access token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/v1/courses?per_page=25`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const courses = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? courses.filter((co) => String(co.name ?? '').toLowerCase().includes(ql)) : courses;
+    return { ok: true, items: f.slice(0, 10).map((co) => ({ ref: String(co.id), type: 'record', title: clip(co.name, 160), snippet: clip(`${co.course_code ?? ''} · ${co.workflow_state ?? ''}`, 400), url: `${c.baseUrl}/courses/${co.id}`, raw: { id: co.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/v1/courses/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const co = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(co.name, 160), snippet: clip(String(co.course_code ?? ''), 400), url: `${c.baseUrl}/courses/${ref}`, raw: co }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -2387,6 +2674,46 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   linear: {
     search_records: (c, p) => linear.search(c, p.query ?? ''),
     get_record: (c, p) => linear.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  stripe: {
+    search_invoices: (c, p) => stripe.search(c, p.query ?? ''),
+    get_subscription: (c, p) => stripe.subscription(c, p.external_ref ?? ''),
+  },
+  shopify: {
+    search_orders: (c, p) => shopify.search(c, p.query ?? ''),
+    get_order: (c, p) => shopify.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  woocommerce: {
+    search_orders: (c, p) => woocommerce.search(c, p.query ?? ''),
+    get_order: (c, p) => woocommerce.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  bigcommerce: {
+    search_orders: (c, p) => bigcommerce.search(c, p.query ?? ''),
+    get_order: (c, p) => bigcommerce.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  square: {
+    search_orders: (c, p) => square.search(c, p.query ?? ''),
+    get_order: (c, p) => square.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  bamboohr: {
+    get_employee: (c, p) => bamboohr.fetchRecord(c, 'employee', p.external_ref ?? ''),
+    search_time_off: (c, p) => bamboohr.timeOff(c, p.query ?? ''),
+  },
+  greenhouse: {
+    search_records: (c, p) => greenhouse.search(c, p.query ?? ''),
+    get_record: (c, p) => greenhouse.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  lever: {
+    search_records: (c, p) => lever.search(c, p.query ?? ''),
+    get_record: (c, p) => lever.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  buildium: {
+    search_records: (c, p) => buildium.search(c, p.query ?? ''),
+    get_record: (c, p) => buildium.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  canvas: {
+    search_records: (c, p) => canvas.search(c, p.query ?? ''),
+    get_record: (c, p) => canvas.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -2682,6 +3009,7 @@ serve(async (req) => {
     const adapters: Record<string, any> = {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
+      stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

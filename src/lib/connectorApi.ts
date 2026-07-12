@@ -22,7 +22,9 @@ export type ConnectorProvider =
   | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'slack'
   | 'notion' | 'teams' | 'box' | 'freshdesk' | 'freshservice'
   | 'servicenow' | 'dynamics' | 'github' | 'gitlab' | 'guru' | 'document360'
-  | 'asana' | 'clickup' | 'monday' | 'linear' | 'template';
+  | 'asana' | 'clickup' | 'monday' | 'linear'
+  | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
+  | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -158,6 +160,110 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'access_token', label: 'Private-app token', placeholder: 'pat-na1-••••••••', secret: true },
     ],
     help: 'In HubSpot: Settings → Integrations → Private Apps → Create a private app → on the Scopes tab enable the read scopes you want (crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read, tickets) → Create → copy the access token. One token covers CRM (companies, contacts, deals) and Service Hub (tickets). Set this connector\'s category to "helpdesk" to use it as a support desk, or "CRM" for sales/account context.',
+    knowledgeSync: false, implemented: true,
+  },
+  stripe: {
+    label: 'Stripe', tagline: 'Payments & billing — invoices, subscriptions',
+    defaultCategory: 'billing',
+    baseUrlLabel: 'Stripe API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Stripe',
+    fields: [
+      { key: 'api_key', label: 'Secret key', placeholder: 'sk_live_••••••••', secret: true },
+    ],
+    help: 'In Stripe: Developers → API keys → use a Restricted key with read access to Invoices, Subscriptions and Customers (safer than the full secret key). Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  shopify: {
+    label: 'Shopify', tagline: 'E-commerce — orders, products, customers',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'Store URL', baseUrlPlaceholder: 'https://yourstore.myshopify.com',
+    fields: [
+      { key: 'access_token', label: 'Admin API access token', placeholder: 'shpat_••••••••', secret: true },
+    ],
+    help: 'In Shopify admin: Settings → Apps and sales channels → Develop apps → Create an app → Configuration → Admin API access scopes (add read_orders, read_products, read_customers) → Install → reveal the Admin API access token (shpat_…). Paste it plus your store URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  woocommerce: {
+    label: 'WooCommerce', tagline: 'E-commerce — orders on WordPress',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'Store URL', baseUrlPlaceholder: 'https://yourstore.com',
+    fields: [
+      { key: 'consumer_key', label: 'Consumer key', placeholder: 'ck_••••••••', secret: false },
+      { key: 'consumer_secret', label: 'Consumer secret', placeholder: 'cs_••••••••', secret: true },
+    ],
+    help: 'In WordPress: WooCommerce → Settings → Advanced → REST API → Add key → set Read permissions → copy the Consumer key & secret. Paste them plus your store URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  bigcommerce: {
+    label: 'BigCommerce', tagline: 'E-commerce — orders, catalog, customers',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'BigCommerce API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for BigCommerce',
+    fields: [
+      { key: 'store_hash', label: 'Store hash', placeholder: 'abc123', secret: false },
+      { key: 'access_token', label: 'API account token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In BigCommerce: Settings → API → Store-level API accounts → Create → give it read scopes for Orders, Products, Customers → copy the Access Token. The store hash is in your control-panel URL (store-XXXX → the XXXX is the hash).',
+    knowledgeSync: false, implemented: true,
+  },
+  square: {
+    label: 'Square', tagline: 'POS — orders, payments, customers',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'Square API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Square',
+    fields: [
+      { key: 'access_token', label: 'Access token', placeholder: 'EAAA••••••••', secret: true },
+    ],
+    help: 'In the Square Developer Dashboard: create an application → Production → copy the Access Token (or use OAuth for a merchant). Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  bamboohr: {
+    label: 'BambooHR', tagline: 'HR — employees, org, time off',
+    defaultCategory: 'payroll_hcm',
+    baseUrlLabel: 'BambooHR API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for BambooHR',
+    fields: [
+      { key: 'subdomain', label: 'Company subdomain', placeholder: 'acme (from acme.bamboohr.com)', secret: false },
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In BambooHR: your avatar → API Keys → Add New Key. Paste the key plus your company subdomain (the acme in acme.bamboohr.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  greenhouse: {
+    label: 'Greenhouse', tagline: 'Recruiting — candidates, jobs, applications',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Greenhouse API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Greenhouse',
+    fields: [
+      { key: 'api_key', label: 'Harvest API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Greenhouse: Configure → Dev Center → API Credential Management → Create New API Key → type Harvest → grant read on Candidates/Jobs. Paste the key.',
+    knowledgeSync: false, implemented: true,
+  },
+  lever: {
+    label: 'Lever', tagline: 'Recruiting — opportunities & candidates',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Lever API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Lever',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Lever: Settings → Integrations and API → API credentials → Generate a new key with read access. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  buildium: {
+    label: 'Buildium', tagline: 'Property management — leases, work orders',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Buildium API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Buildium',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: 'from Buildium', secret: false },
+      { key: 'client_secret', label: 'Client secret', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Buildium: Settings → API settings → enable the API and create an API key → copy the Client ID & Secret.',
+    knowledgeSync: false, implemented: true,
+  },
+  canvas: {
+    label: 'Canvas LMS', tagline: 'Education — courses, students, assignments',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Canvas URL', baseUrlPlaceholder: 'https://yourschool.instructure.com',
+    fields: [
+      { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
     knowledgeSync: false, implemented: true,
   },
   servicenow: {
