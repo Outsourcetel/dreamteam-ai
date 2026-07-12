@@ -20,7 +20,9 @@ import { computeHealth } from './categoryContracts';
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
   | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'slack'
-  | 'notion' | 'teams' | 'box' | 'freshdesk' | 'freshservice' | 'template';
+  | 'notion' | 'teams' | 'box' | 'freshdesk' | 'freshservice'
+  | 'servicenow' | 'dynamics' | 'github' | 'gitlab' | 'guru' | 'document360'
+  | 'asana' | 'clickup' | 'monday' | 'linear' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -156,6 +158,110 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'access_token', label: 'Private-app token', placeholder: 'pat-na1-••••••••', secret: true },
     ],
     help: 'In HubSpot: Settings → Integrations → Private Apps → Create a private app → on the Scopes tab enable the read scopes you want (crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read, tickets) → Create → copy the access token. One token covers CRM (companies, contacts, deals) and Service Hub (tickets). Set this connector\'s category to "helpdesk" to use it as a support desk, or "CRM" for sales/account context.',
+    knowledgeSync: false, implemented: true,
+  },
+  servicenow: {
+    label: 'ServiceNow', tagline: 'ITSM — incidents, requests & knowledge base',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Instance URL', baseUrlPlaceholder: 'https://yourinstance.service-now.com',
+    fields: [
+      { key: 'username', label: 'Integration user', placeholder: 'svc_dreamteam', secret: false },
+      { key: 'password', label: 'Password', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Create a dedicated integration user in ServiceNow (User Administration → Users) with read access to the incident and kb_knowledge tables (and write to incident work_notes if you want the DE to add notes). Use its username + password. For least privilege, scope the user\'s roles to only the tables you need.',
+    knowledgeSync: true, implemented: true,
+  },
+  dynamics: {
+    label: 'Microsoft Dynamics 365', tagline: 'CRM — accounts, cases, opportunities',
+    defaultCategory: 'crm',
+    baseUrlLabel: 'Organization URL', baseUrlPlaceholder: 'https://yourorg.crm.dynamics.com',
+    fields: [
+      { key: 'tenant_id', label: 'Directory (tenant) ID', placeholder: '00000000-0000-0000-0000-000000000000', secret: false },
+      { key: 'client_id', label: 'Application (client) ID', placeholder: '11111111-1111-1111-1111-111111111111', secret: false },
+      { key: 'client_secret', label: 'Client secret value', placeholder: '••••••••', secret: true },
+    ],
+    help: 'App-only access via Entra (Azure AD). Register an app, add a client secret, then in Dynamics create an Application User (Power Platform admin → Environments → Settings → Users → Application users) bound to that app with a security role granting read on accounts/contacts/opportunities/incidents. Paste the Directory (tenant) ID, Application (client) ID, secret, and your org URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  github: {
+    label: 'GitHub', tagline: 'Engineering — issues & pull requests',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'GitHub API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for GitHub',
+    fields: [
+      { key: 'token', label: 'Personal access token', placeholder: 'github_pat_••••••••', secret: true },
+    ],
+    help: 'In GitHub: Settings → Developer settings → Personal access tokens → generate a token with repo (or read-only: issues) scope. Fine-grained tokens work too — grant the repositories and Issues (read, and read/write if the DE should comment).',
+    knowledgeSync: false, implemented: true,
+  },
+  gitlab: {
+    label: 'GitLab', tagline: 'Engineering — issues & merge requests',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'GitLab URL', baseUrlPlaceholder: 'https://gitlab.com',
+    fields: [
+      { key: 'token', label: 'Personal access token', placeholder: 'glpat-••••••••', secret: true },
+    ],
+    help: 'In GitLab: your avatar → Edit profile → Access tokens → create one with the read_api scope (or api if the DE should post notes). Paste it plus your GitLab URL (https://gitlab.com, or your self-managed URL).',
+    knowledgeSync: false, implemented: true,
+  },
+  guru: {
+    label: 'Guru', tagline: 'Knowledge — verified cards & answers',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Guru API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Guru',
+    fields: [
+      { key: 'username', label: 'User email', placeholder: 'you@acme.com', secret: false },
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Guru: Settings → API Access → create a User or Collection API token. Use your Guru user email plus that token.',
+    knowledgeSync: true, implemented: true,
+  },
+  document360: {
+    label: 'Document360', tagline: 'Help center — knowledge base articles',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Document360 API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Document360',
+    fields: [
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Document360: Settings → API tokens → generate a token. Paste it here. (Article ingest traverses versions → categories → articles; if your plan returns article content separately, tell us and we\'ll fetch per-article.)',
+    knowledgeSync: true, implemented: true,
+  },
+  asana: {
+    label: 'Asana', tagline: 'Work management — tasks & projects',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Asana API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Asana',
+    fields: [
+      { key: 'token', label: 'Personal access token', placeholder: '1/••••••••', secret: true },
+    ],
+    help: 'In Asana: Settings → Apps → Manage Developer Apps → Personal access tokens → Create new token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  clickup: {
+    label: 'ClickUp', tagline: 'Work management — tasks, lists, docs',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'ClickUp API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for ClickUp',
+    fields: [
+      { key: 'token', label: 'Personal API token', placeholder: 'pk_••••••••', secret: true },
+    ],
+    help: 'In ClickUp: your avatar → Settings → Apps → API Token → Generate. Paste the personal token (starts pk_).',
+    knowledgeSync: false, implemented: true,
+  },
+  monday: {
+    label: 'monday.com', tagline: 'Work management — boards & items',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'monday API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for monday',
+    fields: [
+      { key: 'token', label: 'API token', placeholder: 'eyJ••••••••', secret: true },
+    ],
+    help: 'In monday.com: your avatar → Developers → My access tokens → copy your personal API token (v2). Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  linear: {
+    label: 'Linear', tagline: 'Engineering — issues, projects, cycles',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Linear API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Linear',
+    fields: [
+      { key: 'api_key', label: 'Personal API key', placeholder: 'lin_api_••••••••', secret: true },
+    ],
+    help: 'In Linear: Settings → Security & access → Personal API keys → New API key. Paste it here.',
     knowledgeSync: false, implemented: true,
   },
   salesforce: {

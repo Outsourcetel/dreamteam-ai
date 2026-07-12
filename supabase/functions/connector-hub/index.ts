@@ -1205,7 +1205,7 @@ async function gdriveFetchText(id: string, fileType: string, token: string): Pro
 
 // ════════════════════════════════════════════════════════════════
 
-const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive', 'notion', 'box']);
+const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive', 'notion', 'box', 'servicenow', 'guru', 'document360']);
 
 // ════════════════════════════════════════════════════════════════
 // THE GENERALIZED ACTION LAYER (migration 035) — resolve + render +
@@ -1479,9 +1479,9 @@ const slackActions: Record<string, NativeAction> = {
   },
 };
 
-// All native write-side executors, keyed by execution_key. New providers add
-// their own <provider>Actions object and spread it here.
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions };
+// NATIVE_ACTIONS (all write-side executors, keyed by execution_key) is
+// defined AFTER every <provider>Actions object below, so its spread doesn't
+// hit an uninitialized const at module load. Used only at request time.
 
 // ── notion ── secret: { token } (internal integration token). Fixed base;
 // the integration only sees pages explicitly shared with it. Knowledge-
@@ -1756,6 +1756,470 @@ function makeFreshAdapter(ticketPath: string) {
 const freshdesk = makeFreshAdapter('/a/tickets/');
 const freshservice = makeFreshAdapter('/a/tickets/');
 
+// ── servicenow ── secret: { username, password } · base = instance URL.
+// Helpdesk (incidents) + KB (kb_knowledge, syncDocs). Table API, Basic auth.
+const snAuth = (c: Ctx) => 'Basic ' + btoa(`${c.secret.username ?? ''}:${c.secret.password ?? ''}`);
+const servicenow = {
+  async table(c: Ctx, table: string, qs: string): Promise<{ ok: boolean; error?: string; result: Array<Record<string, unknown>> }> {
+    const r = await httpJson(`${c.baseUrl}/api/now/table/${table}?${qs}`, { headers: { Authorization: snAuth(c), Accept: 'application/json' } });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed', result: [] };
+    if (!r.ok) return { ok: false, error: r.error, result: [] };
+    return { ok: true, result: ((r.body as { result?: Array<Record<string, unknown>> })?.result) ?? [] };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.table(c, 'incident', 'sysparm_limit=1');
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'ServiceNow instance reachable with these credentials' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const q = encodeURIComponent(query.replace(/[\^=]/g, ' '));
+    const r = await this.table(c, 'incident', `sysparm_query=short_descriptionLIKE${q}^ORdescriptionLIKE${q}^ORDERBYDESCsys_updated_on&sysparm_limit=8&sysparm_fields=sys_id,number,short_description,description,state`);
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: r.result.map((t) => ({ ref: String(t.sys_id), type: 'ticket', title: clip(`${t.number}: ${t.short_description ?? ''}`, 160), snippet: clip(t.description, 400), url: `${c.baseUrl}/nav_to.do?uri=incident.do?sys_id=${t.sys_id}`, raw: { sys_id: t.sys_id, state: t.state } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await this.table(c, 'incident', `sysparm_query=sys_id=${encodeURIComponent(ref)}&sysparm_limit=1`);
+    if (!r.ok) return { ok: false, error: r.error };
+    const t = r.result[0] ?? {};
+    return { ok: true, items: [{ ref, type: 'ticket', title: clip(`${t.number ?? ''}: ${t.short_description ?? ''}`, 160), snippet: clip(t.description, 400), url: `${c.baseUrl}/nav_to.do?uri=incident.do?sys_id=${ref}`, raw: t }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const r = await this.table(c, 'incident', 'sysparm_query=ORDERBYDESCsys_updated_on&sysparm_limit=10&sysparm_fields=sys_id,number,short_description');
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: r.result.map((t) => ({ ref: String(t.sys_id), type: 'ticket', title: clip(`${t.number}: ${t.short_description ?? ''}`, 160), snippet: '', url: `${c.baseUrl}/nav_to.do?uri=incident.do?sys_id=${t.sys_id}`, raw: { sys_id: t.sys_id } })) };
+  },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const r = await this.table(c, 'kb_knowledge', 'sysparm_query=workflow_state=published^ORDERBYDESCsys_updated_on&sysparm_limit=50&sysparm_fields=sys_id,short_description,text');
+    if (!r.ok) return { ok: false, error: r.error };
+    const docs = r.result.map((k) => ({ external_ref: `servicenow:${k.sys_id}`, title: clip(k.short_description, 200), content: stripHtml(String(k.text ?? '')).slice(0, MAX_DOC_CHARS), url: `${c.baseUrl}/kb_view.do?sysparm_article=${k.sys_id}` })).filter((d) => d.content);
+    if (!docs.length) return { ok: false, error: 'no_published_articles', detail: 'No published knowledge articles found.' };
+    return { ok: true, docs };
+  },
+};
+const servicenowActions: Record<string, NativeAction> = {
+  servicenow_add_work_note: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (incident sys_id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return { ok: true, method: 'PATCH', url: `${c.baseUrl}/api/now/table/incident/${encodeURIComponent(p.external_ref)}`, body: { work_notes: p.note } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PATCH', headers: { Authorization: snAuth(c), 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added a work note to incident ${p.external_ref}.` };
+    },
+  },
+};
+
+// ── dynamics ── secret: { tenant_id, client_id, client_secret } · base = org
+// URL (https://org.crm.dynamics.com). Entra client-credentials → Dataverse.
+const dynamics = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const tenant = (c.secret.tenant_id ?? '').trim();
+    if (!tenant) return { ok: false, error: 'missing_tenant_id' };
+    const r = await httpJson(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: c.secret.client_id ?? '', client_secret: c.secret.client_secret ?? '', scope: `${c.baseUrl.replace(/\/+$/, '')}/.default` }).toString(),
+    });
+    const b = r.body as { access_token?: string; error_description?: string } | null;
+    if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? r.error ?? 'oauth_failed' };
+    return { ok: true, token: b.access_token };
+  },
+  async odata(c: Ctx, token: string, path: string): Promise<{ ok: boolean; error?: string; value: Array<Record<string, unknown>> }> {
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/data/v9.2/${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0' } });
+    if (!r.ok) return { ok: false, error: r.error, value: [] };
+    return { ok: true, value: ((r.body as { value?: Array<Record<string, unknown>> })?.value) ?? [] };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/data/v9.2/WhoAmI`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Dynamics 365 Dataverse reachable (app-only token verified)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const q = query.replace(/'/g, "''");
+    const items: HubItem[] = [];
+    const acc = await this.odata(c, t.token!, `accounts?$filter=contains(name,'${encodeURIComponent(q)}')&$select=accountid,name,websiteurl&$top=5`);
+    if (acc.ok) for (const a of acc.value) items.push({ ref: String(a.accountid), type: 'account', title: clip(a.name, 160), snippet: clip(a.websiteurl, 400), url: `${c.baseUrl}/main.aspx?pagetype=entityrecord&etn=account&id=${a.accountid}`, raw: a });
+    const inc = await this.odata(c, t.token!, `incidents?$filter=contains(title,'${encodeURIComponent(q)}')&$select=incidentid,title,ticketnumber,description&$top=5`);
+    if (inc.ok) for (const i of inc.value) items.push({ ref: String(i.incidentid), type: 'conversation', title: clip(`${i.ticketnumber ?? ''} ${i.title ?? ''}`, 160), snippet: clip(i.description, 400), url: null, raw: i });
+    const opp = await this.odata(c, t.token!, `opportunities?$filter=contains(name,'${encodeURIComponent(q)}')&$select=opportunityid,name,estimatedvalue&$top=5`);
+    if (opp.ok) for (const o of opp.value) items.push({ ref: String(o.opportunityid), type: 'opportunity', title: clip(o.name, 160), snippet: clip(`Est. value: ${o.estimatedvalue ?? '?'}`, 400), url: null, raw: o });
+    return { ok: true, items };
+  },
+  async fetchRecord(c: Ctx, type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const set = type === 'account' ? 'accounts' : type === 'opportunity' ? 'opportunities' : type === 'conversation' ? 'incidents' : 'accounts';
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/data/v9.2/${set}(${encodeURIComponent(ref)})`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rec = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type, title: clip(rec.name ?? rec.title ?? rec.fullname ?? ref, 160), snippet: clip(rec.description ?? rec.websiteurl ?? '', 400), url: null, raw: rec }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await this.odata(c, t.token!, 'incidents?$select=incidentid,title,ticketnumber&$orderby=modifiedon desc&$top=10');
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: r.value.map((i) => ({ ref: String(i.incidentid), type: 'conversation', title: clip(`${i.ticketnumber ?? ''} ${i.title ?? ''}`, 160), snippet: '', url: null, raw: i })) };
+  },
+};
+
+// ── github ── secret: { token } (PAT) · fixed base api.github.com.
+// product_system: issues (search_records / get_record) + comment write.
+const GITHUB = 'https://api.github.com';
+const github = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}`, Accept: 'application/vnd.github+json', 'User-Agent': 'DreamTeam-DE' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${GITHUB}/user`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: `authenticated as ${(r.body as { login?: string })?.login ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${GITHUB}/search/issues?q=${encodeURIComponent(query)}&per_page=10`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = ((r.body as { items?: Array<Record<string, unknown>> })?.items) ?? [];
+    return { ok: true, items: items.map((i) => { const repo = String(i.repository_url ?? '').replace(`${GITHUB}/repos/`, ''); return { ref: `${repo}/${i.number}`, type: 'record', title: clip(`#${i.number} ${i.title ?? ''}`, 160), snippet: clip(i.body, 400), url: i.html_url ? String(i.html_url) : null, raw: { number: i.number, state: i.state } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const m = ref.match(/^(.+)\/(\d+)$/);
+    if (!m) return { ok: false, error: 'bad_ref', detail: 'ref must be owner/repo/number.' };
+    const r = await httpJson(`${GITHUB}/repos/${m[1]}/issues/${m[2]}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`#${i.number} ${i.title ?? ''}`, 160), snippet: clip(i.body, 400), url: i.html_url ? String(i.html_url) : null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> {
+    return this.search(c, 'is:issue is:open sort:updated-desc');
+  },
+};
+const githubActions: Record<string, NativeAction> = {
+  github_add_comment: {
+    render(_c, p) {
+      const m = (p.external_ref ?? '').match(/^(.+)\/(\d+)$/);
+      if (!m) return { ok: false, error: 'param_required', detail: 'external_ref must be owner/repo/number.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'body is required.' };
+      return { ok: true, method: 'POST', url: `${GITHUB}/repos/${m[1]}/issues/${m[2]}/comments`, body: { body: p.body } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...github.hdrs(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Commented on ${p.external_ref} in GitHub.` };
+    },
+  },
+};
+
+// ── gitlab ── secret: { token } (PAT) · base = gitlab.com or self-managed.
+// product_system: issues (search) + note write.
+const gitlab = {
+  hdrs: (c: Ctx) => ({ 'PRIVATE-TOKEN': c.secret.token ?? '' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/api/v4/user`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: `authenticated as ${(r.body as { username?: string })?.username ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/v4/search?scope=issues&search=${encodeURIComponent(query)}&per_page=10`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: items.map((i) => ({ ref: `${i.project_id}/${i.iid}`, type: 'record', title: clip(`#${i.iid} ${i.title ?? ''}`, 160), snippet: clip(i.description, 400), url: i.web_url ? String(i.web_url) : null, raw: { iid: i.iid, state: i.state } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const m = ref.match(/^(\d+)\/(\d+)$/);
+    if (!m) return { ok: false, error: 'bad_ref', detail: 'ref must be projectId/iid.' };
+    const r = await httpJson(`${c.baseUrl}/api/v4/projects/${m[1]}/issues/${m[2]}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`#${i.iid} ${i.title ?? ''}`, 160), snippet: clip(i.description, 400), url: i.web_url ? String(i.web_url) : null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> {
+    return httpJson(`${c.baseUrl}/api/v4/issues?scope=all&order_by=updated_at&per_page=10`, { headers: this.hdrs(c) }).then((r) => {
+      if (!r.ok) return { ok: false, error: r.error };
+      const items = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+      return { ok: true, items: items.map((i) => ({ ref: `${i.project_id}/${i.iid}`, type: 'record', title: clip(`#${i.iid} ${i.title ?? ''}`, 160), snippet: '', url: i.web_url ? String(i.web_url) : null, raw: { iid: i.iid } })) };
+    });
+  },
+};
+const gitlabActions: Record<string, NativeAction> = {
+  gitlab_add_note: {
+    render(c, p) {
+      const m = (p.external_ref ?? '').match(/^(\d+)\/(\d+)$/);
+      if (!m) return { ok: false, error: 'param_required', detail: 'external_ref must be projectId/iid.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'body is required.' };
+      return { ok: true, method: 'POST', url: `${c.baseUrl}/api/v4/projects/${m[1]}/issues/${m[2]}/notes`, body: { body: p.body } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...gitlab.hdrs(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added a note to GitLab issue ${p.external_ref}.` };
+    },
+  },
+};
+
+// ── guru ── secret: { username, api_token } · fixed base. knowledge_base +
+// syncDocs. Basic auth (user:token).
+const GURU = 'https://api.getguru.com/api/v1';
+const guruAuth = (c: Ctx) => 'Basic ' + btoa(`${c.secret.username ?? ''}:${c.secret.api_token ?? ''}`);
+const guru = {
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${GURU}/teams`, { headers: { Authorization: guruAuth(c) } });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Guru API token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${GURU}/search/query?searchTerms=${encodeURIComponent(query)}&maxResults=10`, { headers: { Authorization: guruAuth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cards = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: cards.slice(0, 10).map((cd) => ({ ref: String(cd.id), type: 'article', title: clip(cd.preferredPhrase || cd.title, 160), snippet: clip(stripHtml(String(cd.content ?? '')), 400), url: cd.slug ? `https://app.getguru.com/card/${cd.slug}` : null, raw: { id: cd.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${GURU}/cards/${encodeURIComponent(ref)}`, { headers: { Authorization: guruAuth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cd = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'article', title: clip(cd.preferredPhrase || ref, 160), snippet: clip(stripHtml(String(cd.content ?? '')), 400), url: null, raw: cd }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const r = await httpJson(`${GURU}/search/query?searchTerms=&maxResults=50`, { headers: { Authorization: guruAuth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cards = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const docs = cards.map((cd) => ({ external_ref: `guru:${cd.id}`, title: clip(cd.preferredPhrase || 'Card', 200), content: stripHtml(String(cd.content ?? '')).slice(0, MAX_DOC_CHARS), url: null })).filter((d) => d.content);
+    if (!docs.length) return { ok: false, error: 'no_cards', detail: 'No Guru cards returned.' };
+    return { ok: true, docs };
+  },
+};
+
+// ── document360 ── secret: { api_token } · fixed base. knowledge_base +
+// syncDocs. NOTE: v2 API article traversal (versions → categories → articles)
+// is multi-step and response shapes vary by plan — verify against live creds.
+const D360 = 'https://apihub.document360.io/v2';
+const d360 = {
+  hdrs: (c: Ctx) => ({ api_token: c.secret.api_token ?? '', Accept: 'application/json' }),
+  async articleList(c: Ctx): Promise<{ ok: boolean; error?: string; articles: Array<Record<string, unknown>> }> {
+    const v = await httpJson(`${D360}/ProjectVersions`, { headers: this.hdrs(c) });
+    if (!v.ok) return { ok: false, error: v.error, articles: [] };
+    const versions = ((v.body as { data?: Array<Record<string, unknown>> })?.data) ?? (Array.isArray(v.body) ? (v.body as Array<Record<string, unknown>>) : []);
+    const arts: Array<Record<string, unknown>> = [];
+    for (const ver of versions.slice(0, 1)) {
+      const cats = await httpJson(`${D360}/ProjectVersions/${ver.id}/categories`, { headers: this.hdrs(c) });
+      const catList = ((cats.body as { data?: Array<Record<string, unknown>> })?.data) ?? (Array.isArray(cats.body) ? (cats.body as Array<Record<string, unknown>>) : []);
+      const walk = (nodes: Array<Record<string, unknown>>) => { for (const n of nodes) { if (Array.isArray(n.articles)) arts.push(...(n.articles as Array<Record<string, unknown>>)); if (Array.isArray(n.child_categories)) walk(n.child_categories as Array<Record<string, unknown>>); } };
+      walk(catList);
+    }
+    return { ok: true, articles: arts };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${D360}/ProjectVersions`, { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Document360 API token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const l = await this.articleList(c);
+    if (!l.ok) return { ok: false, error: l.error };
+    const ql = query.toLowerCase();
+    const filtered = l.articles.filter((a) => !ql || String(a.title ?? '').toLowerCase().includes(ql));
+    return { ok: true, items: filtered.slice(0, 10).map((a) => ({ ref: String(a.id), type: 'article', title: clip(a.title, 160), snippet: '', url: a.url ? String(a.url) : null, raw: { id: a.id } })) };
+  },
+  fetchRecord(_c: Ctx, _type: string, _ref: string): Promise<AdapterResult> {
+    return Promise.resolve({ ok: false, error: 'fetch_by_id_unsupported', detail: 'Document360 articles are returned by search / ingested by sync.' });
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const l = await this.articleList(c);
+    if (!l.ok) return { ok: false, error: l.error };
+    const docs: SyncDoc[] = [];
+    for (const a of l.articles.slice(0, MAX_SYNC_FILES)) {
+      const content = stripHtml(String(a.html_content ?? a.content ?? '')).slice(0, MAX_DOC_CHARS);
+      if (content) docs.push({ external_ref: `d360:${a.id}`, title: clip(a.title, 200), content, url: a.url ? String(a.url) : null });
+    }
+    if (!docs.length) return { ok: false, error: 'no_article_content', detail: 'No inline article content found — this Document360 plan may require fetching each article separately.' };
+    return { ok: true, docs };
+  },
+};
+
+// ── asana ── secret: { token } (PAT) · fixed base. product_system (tasks) +
+// comment write.
+const ASANA = 'https://app.asana.com/api/1.0';
+const asana = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async workspace(c: Ctx): Promise<string | null> {
+    const r = await httpJson(`${ASANA}/workspaces?limit=1`, { headers: this.hdrs(c) });
+    if (!r.ok) return null;
+    const ws = ((r.body as { data?: Array<{ gid?: string }> })?.data) ?? [];
+    return ws[0]?.gid ?? null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${ASANA}/users/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: `authenticated as ${((r.body as { data?: { name?: string } })?.data?.name) ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const ws = await this.workspace(c);
+    if (!ws) return { ok: false, error: 'no_workspace' };
+    const r = await httpJson(`${ASANA}/workspaces/${ws}/typeahead?resource_type=task&query=${encodeURIComponent(query)}&count=10&opt_fields=name`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const tasks = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: tasks.map((t) => ({ ref: String(t.gid), type: 'record', title: clip(t.name, 160), snippet: '', url: `https://app.asana.com/0/0/${t.gid}`, raw: { gid: t.gid } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${ASANA}/tasks/${encodeURIComponent(ref)}?opt_fields=name,notes,completed`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const t = ((r.body as { data?: Record<string, unknown> })?.data) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(t.name, 160), snippet: clip(t.notes, 400), url: `https://app.asana.com/0/0/${ref}`, raw: t }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const ws = await this.workspace(c);
+    if (!ws) return { ok: false, error: 'no_workspace' };
+    const r = await httpJson(`${ASANA}/tasks?workspace=${ws}&assignee=me&limit=10&opt_fields=name&completed_since=now`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: true, items: [] };
+    const tasks = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: tasks.map((t) => ({ ref: String(t.gid), type: 'record', title: clip(t.name, 160), snippet: '', url: `https://app.asana.com/0/0/${t.gid}`, raw: { gid: t.gid } })) };
+  },
+};
+const asanaActions: Record<string, NativeAction> = {
+  asana_add_comment: {
+    render(_c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (task gid) is required.' };
+      if (!p.text?.trim()) return { ok: false, error: 'param_required', detail: 'text is required.' };
+      return { ok: true, method: 'POST', url: `${ASANA}/tasks/${encodeURIComponent(p.external_ref)}/stories`, body: { data: { text: p.text } } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...asana.hdrs(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Commented on Asana task ${p.external_ref}.` };
+    },
+  },
+};
+
+// All native write-side executors, keyed by execution_key. Defined here —
+// after every <provider>Actions object — so the spread is safe at module load.
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions };
+
+// ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
+// base. product_system (tasks).
+const CLICKUP = 'https://api.clickup.com/api/v2';
+const clickup = {
+  hdrs: (c: Ctx) => ({ Authorization: c.secret.token ?? '' }),
+  async team(c: Ctx): Promise<string | null> {
+    const r = await httpJson(`${CLICKUP}/team`, { headers: this.hdrs(c) });
+    if (!r.ok) return null;
+    const teams = ((r.body as { teams?: Array<{ id?: string }> })?.teams) ?? [];
+    return teams[0]?.id ?? null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${CLICKUP}/user`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'ClickUp token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const team = await this.team(c);
+    if (!team) return { ok: false, error: 'no_team' };
+    const r = await httpJson(`${CLICKUP}/team/${team}/task?order_by=updated&reverse=true&page=0`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const tasks = ((r.body as { tasks?: Array<Record<string, unknown>> })?.tasks) ?? [];
+    const ql = query.toLowerCase();
+    const filtered = ql ? tasks.filter((t) => String(t.name ?? '').toLowerCase().includes(ql)) : tasks;
+    return { ok: true, items: filtered.slice(0, 10).map((t) => ({ ref: String(t.id), type: 'record', title: clip(t.name, 160), snippet: clip(t.text_content ?? t.description ?? '', 400), url: t.url ? String(t.url) : null, raw: { id: t.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${CLICKUP}/task/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const t = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(t.name, 160), snippet: clip(t.text_content ?? t.description ?? '', 400), url: t.url ? String(t.url) : null, raw: t }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── monday ── secret: { token } · fixed base. GraphQL. product_system.
+const MONDAY = 'https://api.monday.com/v2';
+const monday = {
+  async gql(c: Ctx, query: string): Promise<{ ok: boolean; error?: string; data: Record<string, unknown> | null }> {
+    const r = await httpJson(MONDAY, { method: 'POST', headers: { Authorization: c.secret.token ?? '', 'Content-Type': 'application/json', 'API-Version': '2024-01' }, body: JSON.stringify({ query }) });
+    const b = r.body as { data?: Record<string, unknown>; errors?: Array<{ message?: string }> } | null;
+    if (!r.ok) return { ok: false, error: r.error, data: null };
+    if (b?.errors?.length) return { ok: false, error: String(b.errors[0]?.message ?? 'monday_error'), data: null };
+    return { ok: true, data: b?.data ?? null };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.gql(c, '{ me { id name } }');
+    if (!r.ok) return { ok: false, error: (r.error ?? '').toLowerCase().includes('auth') ? 'auth_failed' : r.error };
+    return { ok: true, detail: `authenticated as ${((r.data?.me as { name?: string })?.name) ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await this.gql(c, '{ boards(limit:10){ id name items_page(limit:25){ items { id name url } } } }');
+    if (!r.ok) return { ok: false, error: r.error };
+    const ql = query.toLowerCase();
+    const items: HubItem[] = [];
+    for (const b of ((r.data?.boards as Array<{ name?: string; items_page?: { items?: Array<Record<string, unknown>> } }>) ?? [])) {
+      for (const it of (b.items_page?.items ?? [])) {
+        if (items.length >= 10) break;
+        if (!ql || String(it.name ?? '').toLowerCase().includes(ql)) items.push({ ref: String(it.id), type: 'record', title: clip(it.name, 160), snippet: clip(b.name, 400), url: it.url ? String(it.url) : null, raw: { id: it.id } });
+      }
+    }
+    return { ok: true, items: items.slice(0, 10) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await this.gql(c, `{ items(ids:[${JSON.stringify(ref)}]){ id name url column_values{ text } } }`);
+    if (!r.ok) return { ok: false, error: r.error };
+    const it = (((r.data?.items as Array<Record<string, unknown>>) ?? [])[0]) ?? {};
+    const cols = ((it.column_values as Array<{ text?: string }>) ?? []).map((cv) => cv.text).filter(Boolean).join(' · ');
+    return { ok: true, items: [{ ref, type: 'record', title: clip(it.name, 160), snippet: clip(cols, 400), url: it.url ? String(it.url) : null, raw: it }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── linear ── secret: { api_key } · fixed base. GraphQL. product_system.
+const LINEAR = 'https://api.linear.app/graphql';
+const linear = {
+  async gql(c: Ctx, query: string, variables?: Record<string, unknown>): Promise<{ ok: boolean; error?: string; data: Record<string, unknown> | null }> {
+    const r = await httpJson(LINEAR, { method: 'POST', headers: { Authorization: c.secret.api_key ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }) });
+    const b = r.body as { data?: Record<string, unknown>; errors?: Array<{ message?: string }> } | null;
+    if (!r.ok) return { ok: false, error: r.error, data: null };
+    if (b?.errors?.length) return { ok: false, error: String(b.errors[0]?.message ?? 'linear_error'), data: null };
+    return { ok: true, data: b?.data ?? null };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.gql(c, '{ viewer { id name } }');
+    if (!r.ok) return { ok: false, error: (r.error ?? '').toLowerCase().includes('auth') ? 'auth_failed' : r.error };
+    return { ok: true, detail: `authenticated as ${((r.data?.viewer as { name?: string })?.name) ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await this.gql(c, 'query($q:String!){ issues(filter:{ or:[{title:{containsIgnoreCase:$q}},{description:{containsIgnoreCase:$q}}] }, first:10){ nodes { id identifier title description url } } }', { q: query });
+    if (!r.ok) return { ok: false, error: r.error };
+    const nodes = ((r.data?.issues as { nodes?: Array<Record<string, unknown>> })?.nodes) ?? [];
+    return { ok: true, items: nodes.map((n) => ({ ref: String(n.id), type: 'record', title: clip(`${n.identifier ?? ''} ${n.title ?? ''}`, 160), snippet: clip(n.description, 400), url: n.url ? String(n.url) : null, raw: { id: n.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await this.gql(c, 'query($id:String!){ issue(id:$id){ id identifier title description url } }', { id: ref });
+    if (!r.ok) return { ok: false, error: r.error };
+    const n = (r.data?.issue as Record<string, unknown>) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${n.identifier ?? ''} ${n.title ?? ''}`, 160), snippet: clip(n.description, 400), url: n.url ? String(n.url) : null, raw: n }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const r = await this.gql(c, '{ issues(first:10){ nodes { id identifier title url } } }');
+    if (!r.ok) return { ok: false, error: r.error };
+    const nodes = ((r.data?.issues as { nodes?: Array<Record<string, unknown>> })?.nodes) ?? [];
+    return { ok: true, items: nodes.map((n) => ({ ref: String(n.id), type: 'record', title: clip(`${n.identifier ?? ''} ${n.title ?? ''}`, 160), snippet: '', url: n.url ? String(n.url) : null, raw: { id: n.id } })) };
+  },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -1875,6 +2339,54 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   freshservice: {
     search_tickets: (c, p) => freshservice.search(c, p.query ?? ''),
     get_ticket: (c, p) => freshservice.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  servicenow: {
+    search_tickets: (c, p) => servicenow.search(c, p.query ?? ''),
+    get_ticket: (c, p) => servicenow.fetchRecord(c, 'incident', p.external_ref ?? ''),
+    search_articles: async (c, p) => {
+      const q = encodeURIComponent((p.query ?? '').replace(/[\^=]/g, ' '));
+      const r = await servicenow.table(c, 'kb_knowledge', `sysparm_query=short_descriptionLIKE${q}^ORtextLIKE${q}&sysparm_limit=10&sysparm_fields=sys_id,short_description,text`);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: r.result.map((k) => ({ ref: String(k.sys_id), type: 'article', title: clip(k.short_description, 160), snippet: clip(stripHtml(String(k.text ?? '')), 400), url: `${c.baseUrl}/kb_view.do?sysparm_article=${k.sys_id}`, raw: { sys_id: k.sys_id } })) };
+    },
+  },
+  dynamics: {
+    search_accounts: (c, p) => dynamics.search(c, p.query ?? '').then((r) => ({ ...r, items: (r.items ?? []).filter((i) => i.type === 'account') })),
+    get_account: (c, p) => dynamics.fetchRecord(c, 'account', p.external_ref ?? ''),
+    search_conversations: (c, p) => dynamics.search(c, p.query ?? '').then((r) => ({ ...r, items: (r.items ?? []).filter((i) => i.type === 'conversation') })),
+    search_opportunities: (c, p) => dynamics.search(c, p.query ?? '').then((r) => ({ ...r, items: (r.items ?? []).filter((i) => i.type === 'opportunity') })),
+  },
+  github: {
+    search_records: (c, p) => github.search(c, p.query ?? ''),
+    get_record: (c, p) => github.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  gitlab: {
+    search_records: (c, p) => gitlab.search(c, p.query ?? ''),
+    get_record: (c, p) => gitlab.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  guru: {
+    search_articles: (c, p) => guru.search(c, p.query ?? ''),
+    get_article: (c, p) => guru.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
+  document360: {
+    search_articles: (c, p) => d360.search(c, p.query ?? ''),
+    get_article: (c, p) => d360.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
+  asana: {
+    search_records: (c, p) => asana.search(c, p.query ?? ''),
+    get_record: (c, p) => asana.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  clickup: {
+    search_records: (c, p) => clickup.search(c, p.query ?? ''),
+    get_record: (c, p) => clickup.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  monday: {
+    search_records: (c, p) => monday.search(c, p.query ?? ''),
+    get_record: (c, p) => monday.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  linear: {
+    search_records: (c, p) => linear.search(c, p.query ?? ''),
+    get_record: (c, p) => linear.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -2166,8 +2678,10 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot | typeof slack | typeof notion | typeof teams | typeof box | typeof freshdesk> = {
+    // deno-lint-ignore no-explicit-any
+    const adapters: Record<string, any> = {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
+      servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
