@@ -19,7 +19,7 @@ import { computeHealth } from './categoryContracts';
 
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
-  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'template';
+  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -82,6 +82,16 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  hubspot: {
+    label: 'HubSpot', tagline: 'CRM + Service Hub — companies, deals, tickets in one',
+    defaultCategory: 'crm',
+    baseUrlLabel: 'HubSpot API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for HubSpot',
+    fields: [
+      { key: 'access_token', label: 'Private-app token', placeholder: 'pat-na1-••••••••', secret: true },
+    ],
+    help: 'In HubSpot: Settings → Integrations → Private Apps → Create a private app → on the Scopes tab enable the read scopes you want (crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read, tickets) → Create → copy the access token. One token covers CRM (companies, contacts, deals) and Service Hub (tickets). Set this connector\'s category to "helpdesk" to use it as a support desk, or "CRM" for sales/account context.',
+    knowledgeSync: false, implemented: true,
   },
   salesforce: {
     label: 'Salesforce', tagline: 'CRM — accounts, cases, knowledge articles',

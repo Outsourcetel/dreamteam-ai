@@ -1348,6 +1348,53 @@ async function runRegisteredAction(
 interface OpParams { query?: string; external_ref?: string }
 type OpTranslator = (c: Ctx, p: OpParams) => Promise<AdapterResult>;
 
+// ── hubspot ── secret: { access_token } (private-app token). One build
+// covers CRM (companies/contacts/deals) + Service Hub (tickets). Base URL
+// is fixed for all accounts, so no per-tenant base_url. Read-through; not a
+// document corpus, so no syncDocs / not knowledge-capable.
+const HUBSPOT = 'https://api.hubapi.com';
+const hubspot = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.access_token ?? ''}`, 'Content-Type': 'application/json' }),
+  async searchObject(c: Ctx, objectType: string, query: string, properties: string[], sorts?: Array<Record<string, string>>) {
+    const r = await httpJson(`${HUBSPOT}/crm/v3/objects/${objectType}/search`, {
+      method: 'POST', headers: this.hdrs(c),
+      body: JSON.stringify({ query: query || undefined, limit: 10, properties, ...(sorts ? { sorts } : {}) }),
+    });
+    if (!r.ok) return { ok: false as const, error: r.error, results: [] as Array<Record<string, unknown>> };
+    return { ok: true as const, results: (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [] };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${HUBSPOT}/crm/v3/objects/contacts?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'HubSpot private-app token verified (CRM read access)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const items: HubItem[] = [];
+    const tk = await this.searchObject(c, 'tickets', query, ['subject', 'content', 'hs_pipeline_stage']);
+    if (tk.ok) for (const t of tk.results.slice(0, 5)) { const p = (t.properties ?? {}) as Record<string, unknown>; items.push({ ref: String(t.id), type: 'ticket', title: clip(p.subject || `Ticket ${t.id}`, 160), snippet: clip(stripHtml(String(p.content ?? '')), 400), url: `https://app.hubspot.com/contacts/tickets/${t.id}`, raw: t }); }
+    const co = await this.searchObject(c, 'companies', query, ['name', 'domain', 'industry']);
+    if (co.ok) for (const x of co.results.slice(0, 3)) { const p = (x.properties ?? {}) as Record<string, unknown>; items.push({ ref: String(x.id), type: 'account', title: clip(p.name || p.domain || `Company ${x.id}`, 160), snippet: clip(`${p.industry ?? ''} ${p.domain ?? ''}`, 400), url: null, raw: x }); }
+    const dl = await this.searchObject(c, 'deals', query, ['dealname', 'dealstage', 'amount']);
+    if (dl.ok) for (const x of dl.results.slice(0, 3)) { const p = (x.properties ?? {}) as Record<string, unknown>; items.push({ ref: String(x.id), type: 'opportunity', title: clip(p.dealname || `Deal ${x.id}`, 160), snippet: clip(`Stage: ${p.dealstage ?? '?'} · Amount: ${p.amount ?? '?'}`, 400), url: null, raw: x }); }
+    return { ok: true, items };
+  },
+  async fetchRecord(c: Ctx, type: string, ref: string): Promise<AdapterResult> {
+    const objectType = type === 'account' ? 'companies' : type === 'opportunity' ? 'deals' : type === 'ticket' ? 'tickets' : type === 'contact' ? 'contacts' : (type || 'tickets');
+    const r = await httpJson(`${HUBSPOT}/crm/v3/objects/${objectType}/${encodeURIComponent(ref)}?properties=subject,content,name,domain,industry,dealname,amount,dealstage,firstname,lastname,email`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rec = r.body as { properties?: Record<string, unknown> };
+    const p = rec.properties ?? {};
+    const title = String(p.subject || p.name || p.dealname || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || p.email || ref);
+    return { ok: true, items: [{ ref, type, title: clip(title, 160), snippet: clip(stripHtml(String(p.content ?? p.domain ?? '')), 400), url: null, raw: rec }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const r = await this.searchObject(c, 'tickets', '', ['subject', 'hs_pipeline_stage'], [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }]);
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: r.results.map((t) => { const p = (t.properties ?? {}) as Record<string, unknown>; return { ref: String(t.id), type: 'ticket', title: clip(p.subject || `Ticket ${t.id}`, 160), snippet: '', url: `https://app.hubspot.com/contacts/tickets/${t.id}`, raw: t }; }) };
+  },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -1392,6 +1439,15 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
       if (!r.ok) return { ok: false, error: r.error ?? 'knowledge_not_available_in_org' };
       return { ok: true, items: sfSoqlItems(r.records, undefined, 'Knowledge__kav', 'article', (x) => String(x.Title ?? ''), (x) => String(x.Summary ?? '')) };
     },
+    // helpdesk (Service Cloud) — Cases surfaced as tickets, so a Salesforce
+    // connector set to the "helpdesk" category acts as a support desk.
+    search_tickets: async (c, p) => {
+      const s = soqlSafe(p.query ?? '');
+      const r = await salesforce.soql(c, `SELECT Id, CaseNumber, Subject, Description, Status FROM Case WHERE Subject LIKE '%${s}%' OR Description LIKE '%${s}%' ORDER BY LastModifiedDate DESC LIMIT 10`);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: sfSoqlItems(r.records, r.instance, 'Case', 'ticket', (x) => `Case ${x.CaseNumber}: ${x.Subject ?? ''}`, (x) => String(x.Description ?? '')) };
+    },
+    get_ticket: (c, p) => salesforce.fetchRecord(c, 'case', p.external_ref ?? ''),
   },
   zendesk: {
     search_tickets: (c, p) => zendesk.search(c, p.query ?? ''),
@@ -1407,6 +1463,32 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   jira: {
     search_tickets: (c, p) => jira.search(c, p.query ?? ''),
     get_ticket: (c, p) => jira.fetchRecord(c, 'issue', p.external_ref ?? ''),
+  },
+  hubspot: {
+    // crm — companies as accounts, deals as opportunities, tickets as conversations
+    search_accounts: async (c, p) => {
+      const r = await hubspot.searchObject(c, 'companies', p.query ?? '', ['name', 'domain', 'industry']);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: r.results.map((x) => { const q = (x.properties ?? {}) as Record<string, unknown>; return { ref: String(x.id), type: 'account', title: clip(q.name || q.domain || `Company ${x.id}`, 160), snippet: clip(`${q.industry ?? ''} ${q.domain ?? ''}`, 400), url: null, raw: x }; }) };
+    },
+    get_account: (c, p) => hubspot.fetchRecord(c, 'account', p.external_ref ?? ''),
+    search_conversations: async (c, p) => {
+      const r = await hubspot.searchObject(c, 'tickets', p.query ?? '', ['subject', 'content', 'hs_pipeline_stage']);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: r.results.map((x) => { const q = (x.properties ?? {}) as Record<string, unknown>; return { ref: String(x.id), type: 'conversation', title: clip(q.subject || `Ticket ${x.id}`, 160), snippet: clip(stripHtml(String(q.content ?? '')), 400), url: `https://app.hubspot.com/contacts/tickets/${x.id}`, raw: x }; }) };
+    },
+    search_opportunities: async (c, p) => {
+      const r = await hubspot.searchObject(c, 'deals', p.query ?? '', ['dealname', 'dealstage', 'amount']);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: r.results.map((x) => { const q = (x.properties ?? {}) as Record<string, unknown>; return { ref: String(x.id), type: 'opportunity', title: clip(q.dealname || `Deal ${x.id}`, 160), snippet: clip(`Stage: ${q.dealstage ?? '?'} · Amount: ${q.amount ?? '?'}`, 400), url: null, raw: x }; }) };
+    },
+    // helpdesk — Service Hub tickets
+    search_tickets: async (c, p) => {
+      const r = await hubspot.searchObject(c, 'tickets', p.query ?? '', ['subject', 'content', 'hs_pipeline_stage']);
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: r.results.map((x) => { const q = (x.properties ?? {}) as Record<string, unknown>; return { ref: String(x.id), type: 'ticket', title: clip(q.subject || `Ticket ${x.id}`, 160), snippet: clip(stripHtml(String(q.content ?? '')), 400), url: `https://app.hubspot.com/contacts/tickets/${x.id}`, raw: x }; }) };
+    },
+    get_ticket: (c, p) => hubspot.fetchRecord(c, 'ticket', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -1698,8 +1780,8 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive> = {
-      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive,
+    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot> = {
+      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
