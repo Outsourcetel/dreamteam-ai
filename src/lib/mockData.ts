@@ -123,5 +123,23 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
     'platform_security',
   ];
   if (dtOnlyPages.includes(page)) return isDtRole;
-  return isTenantRole || isDtRole;
+  if (isDtRole) return true;
+  if (!isTenantRole) return false;
+
+  // Wave 5 — per-role page tiers WITHIN the tenant (was: any tenant role
+  // saw every tenant page). Matches the intent of the ROLE_PERMISSIONS
+  // matrix the Security page already displays:
+  //   ADMIN tier  — workspace administration: owners/admins only.
+  //   MANAGE tier — governance & workforce config: + department managers.
+  //   Everything else — all tenant roles (read_only's protection is
+  //   server-side: RLS write policies exclude it since migration 136).
+  const ADMIN_PAGES: Page[] = ['settings', 'users', 'gov_security', 'company_setup'];
+  const MANAGE_PAGES: Page[] = ['gov_compliance', 'gov_trust', 'gov_data_access', 'gov_identity_inventory'];
+  if (ADMIN_PAGES.includes(page)) {
+    return ['tenant_owner', 'tenant_admin'].includes(role);
+  }
+  if (MANAGE_PAGES.includes(page)) {
+    return ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(role);
+  }
+  return true;
 };

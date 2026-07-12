@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../types';
 import { useVocabulary } from '../lib/vocabulary';
 import type { Vocabulary } from '../lib/vocabulary';
+import { canAccessPage } from '../lib/mockData';
 import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';
@@ -327,7 +328,23 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   }, [refreshCounts]);
 
   const vocab = useVocabulary();
-  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live', vocab);
+  // Wave 5 — RBAC nav filtering: hide pages the user's role can't open
+  // (canAccessPage tiers; handleSetPage already blocks them server of
+  // navigation, this stops advertising dead links).
+  const role = (user?.role ?? 'tenant_user') as Parameters<typeof canAccessPage>[0];
+  const layer = user?.layer as Parameters<typeof canAccessPage>[2];
+  const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer);
+  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live', vocab)
+    .map(section => ({
+      ...section,
+      groups: section.groups
+        .map(g => ({
+          ...g,
+          children: g.children?.filter(c => allowed(c.id as string)),
+        }))
+        .filter(g => allowed(g.page as string | undefined) && (g.page || (g.children && g.children.length > 0))),
+    }))
+    .filter(section => section.groups.length > 0);
 
   const toggleGroup = (id: string) => {
     setOpenGroups(prev => {

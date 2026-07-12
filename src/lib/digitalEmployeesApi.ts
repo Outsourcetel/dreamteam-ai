@@ -35,10 +35,51 @@ export interface DigitalEmployee {
   primary_business_outcome: string;
   responsibilities: string[];
   availability: { mode: string; timezone?: string; start_hour?: number; end_hour?: number; days?: number[] };
+  /** Migration 136 — standard workforce-record fields + custom-field values */
+  employee_code: string;
+  location: string;
+  cost_center: string;
+  attributes: Record<string, string | number>;
 }
 
 export async function listDigitalEmployees(): Promise<DigitalEmployee[]> {
   return listTenantRows<DigitalEmployee>('digital_employees', 'created_at', true, 'listDigitalEmployees');
+}
+
+// ── DE custom profile fields (migration 136) ──────────────────────
+// Definitions live in de_profile_fields (tenant-scoped, owner/admin/
+// manager writable via RLS); values live in digital_employees.attributes
+// via set_de_attributes (config-versioned + audited).
+export interface DeProfileField { id: string; field_key: string; label: string; field_type: 'text' | 'number' | 'date'; position: number }
+
+export async function listDeProfileFields(): Promise<DeProfileField[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('de_profile_fields')
+    .select('id, field_key, label, field_type, position')
+    .eq('tenant_id', tid)
+    .order('position', { ascending: true });
+  if (error) raise('listDeProfileFields', error);
+  return (data ?? []) as DeProfileField[];
+}
+
+export async function addDeProfileField(f: { field_key: string; label: string; field_type: 'text' | 'number' | 'date'; position?: number }): Promise<DeProfileField> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('de_profile_fields')
+    .insert({ ...f, tenant_id: tid })
+    .select('id, field_key, label, field_type, position')
+    .single();
+  if (error) raise('addDeProfileField', error);
+  return data as DeProfileField;
+}
+
+/** Set custom-field values on a DE. Keys must be defined in
+ *  de_profile_fields (server-enforced); a null value removes the key. */
+export async function setDeAttributes(deId: string, attributes: Record<string, string | number | null>): Promise<DigitalEmployee> {
+  const { data, error } = await supabase.rpc('set_de_attributes', { p_de_id: deId, p_attributes: attributes });
+  if (error) raise('setDeAttributes', error);
+  return data as DigitalEmployee;
 }
 
 export interface CreateDEInput {

@@ -6,6 +6,8 @@ import {
   isMissingTableError,
 } from '../lib/customerApi';
 import type { ImportResult } from '../lib/customerApi';
+import { useVocabulary } from '../lib/vocabulary';
+import type { Vocabulary } from '../lib/vocabulary';
 
 // ============================================================
 // Import Customers modal — paste or upload CSV, map columns,
@@ -16,13 +18,15 @@ type Tab = 'accounts' | 'tickets';
 
 interface FieldDef { key: string; label: string; required?: boolean; aliases: string[] }
 
-const ACCOUNT_FIELDS: FieldDef[] = [
-  { key: 'name', label: 'Account name', required: true, aliases: ['name', 'account', 'account name', 'company', 'customer'] },
-  { key: 'arr', label: 'ARR', aliases: ['arr', 'arr_cents', 'annual revenue', 'revenue', 'value', 'amount'] },
+// Wave 4: labels come from the tenant's vocabulary (aliases stay broad —
+// they match incoming CSV headers, which may use any wording).
+const accountFields = (v: Vocabulary): FieldDef[] => [
+  { key: 'name', label: `${v.party_singular} name`, required: true, aliases: ['name', 'account', 'account name', 'company', 'customer', 'patient', 'client'] },
+  { key: 'arr', label: v.value_metric, aliases: ['arr', 'arr_cents', 'annual revenue', 'revenue', 'value', 'amount'] },
   { key: 'health_score', label: 'Health (0-100)', aliases: ['health', 'health_score', 'health score', 'score'] },
   { key: 'csm', label: 'CSM', aliases: ['csm', 'owner', 'account manager', 'manager'] },
   { key: 'status', label: 'Status', aliases: ['status', 'state'] },
-  { key: 'renewal_date', label: 'Renewal date (YYYY-MM-DD)', aliases: ['renewal', 'renewal_date', 'renewal date', 'renews'] },
+  { key: 'renewal_date', label: `${v.renewal_label} date (YYYY-MM-DD)`, aliases: ['renewal', 'renewal_date', 'renewal date', 'renews'] },
   { key: 'notes', label: 'Notes', aliases: ['notes', 'note', 'comments'] },
 ];
 
@@ -55,6 +59,7 @@ export default function ImportCustomersModal({
   onClose: () => void;
   onImported: () => void;
 }) {
+  const vocab = useVocabulary();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [csvText, setCsvText] = useState('');
   const [mapping, setMapping] = useState<Record<string, number>>({});
@@ -63,7 +68,7 @@ export default function ImportCustomersModal({
   const [result, setResult] = useState<ImportResult | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
 
-  const fields = tab === 'accounts' ? ACCOUNT_FIELDS : TICKET_FIELDS;
+  const fields = tab === 'accounts' ? accountFields(vocab) : TICKET_FIELDS;
 
   const parsed = useMemo(() => {
     if (!csvText.trim()) return null;
@@ -145,7 +150,7 @@ export default function ImportCustomersModal({
                 onClick={() => { setTab(t); setResult(null); setFatalError(null); }}
                 className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
               >
-                {t === 'accounts' ? 'Accounts' : 'Support tickets'}
+                {t === 'accounts' ? vocab.party_plural : 'Support tickets'}
               </button>
             ))}
           </div>

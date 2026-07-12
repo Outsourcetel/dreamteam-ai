@@ -272,6 +272,9 @@ const SettingsPage = ({
                     ['party_plural', '…and many', 'Customers'],
                     ['value_metric', 'Value metric', 'ARR'],
                     ['renewal_label', 'Recurring commitment', 'Renewal'],
+                    // Wave 5 — AI output style: every DE answer honors these.
+                    ['ai_language', 'DE reply language', 'English (default)'],
+                    ['ai_tone', 'DE tone of voice', 'e.g. warm, concise, formal'],
                   ] as const).map(([k, label, ph]) => (
                     <div key={k}>
                       <label className="text-[11px] font-medium text-slate-400 block mb-1">{label}</label>

@@ -23,6 +23,7 @@ import type {
   PreviewResult, PreviewRunStep, ActionDefinition, EventDefinition,
 } from '../../../lib/playbookBuilderApi';
 import { SUPABASE_URL } from '../../../lib/env';
+import { useVocabulary } from '../../../lib/vocabulary';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -83,6 +84,7 @@ const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 
 const selectCls = inputCls;
 
 function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const vocab = useVocabulary();
   const p = step.params ?? {};
   const set = (k: string, v: unknown) => onChange({ ...p, [k]: v });
   switch (step.key) {
@@ -90,7 +92,8 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       return (
         <div className="flex gap-2 items-center flex-wrap">
           <select className={selectCls + ' !w-44'} value={String(p.amount_source ?? 'account_arr')} onChange={e => set('amount_source', e.target.value)}>
-            <option value="account_arr">Amount = account ARR</option>
+            {/* value stays 'account_arr' — the executor's param contract; only the label relabels */}
+            <option value="account_arr">Amount = {vocab.party_singular.toLowerCase()} {vocab.value_metric}</option>
             <option value="fixed">Fixed amount</option>
           </select>
           {p.amount_source === 'fixed' && (

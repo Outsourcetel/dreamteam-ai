@@ -36,13 +36,34 @@ export interface DePersona {
 
 const FALLBACK_NAME = 'your Digital Employee';
 
+/** Wave 5 — the tenant's configured reply language/tone (stored on
+ *  tenants.vocabulary as ai_language / ai_tone; both optional). English
+ *  and no tone directive when unset — exactly today's behavior. */
+async function styleDirective(admin: SupabaseClient, tenantId: string): Promise<string> {
+  try {
+    const { data } = await admin.from('tenants').select('vocabulary').eq('id', tenantId).maybeSingle();
+    const v = (data?.vocabulary ?? {}) as { ai_language?: string; ai_tone?: string };
+    const parts: string[] = [];
+    if (typeof v.ai_language === 'string' && v.ai_language.trim()) {
+      parts.push(` Always reply in ${v.ai_language.trim()}.`);
+    }
+    if (typeof v.ai_tone === 'string' && v.ai_tone.trim()) {
+      parts.push(` Tone of voice: ${v.ai_tone.trim()}.`);
+    }
+    return parts.join('');
+  } catch {
+    return '';
+  }
+}
+
 export async function resolveDePersona(
   admin: SupabaseClient, tenantId: string, deId: string | null, tenantName: string,
 ): Promise<DePersona> {
+  const style = await styleDirective(admin, tenantId);
   if (!deId) {
     return {
       name: FALLBACK_NAME,
-      preamble: `You are a Digital Employee for ${tenantName}.`,
+      preamble: `You are a Digital Employee for ${tenantName}.${style}`,
     };
   }
   const { data: de } = await admin
@@ -52,7 +73,7 @@ export async function resolveDePersona(
   if (!de) {
     return {
       name: FALLBACK_NAME,
-      preamble: `You are a Digital Employee for ${tenantName}.`,
+      preamble: `You are a Digital Employee for ${tenantName}.${style}`,
     };
   }
   const name = de.persona_name || de.name || FALLBACK_NAME;
@@ -71,6 +92,6 @@ export async function resolveDePersona(
   const description = de.description ? ` ${de.description}` : '';
   return {
     name,
-    preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description}`,
+    preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description}${style}`,
   };
 }

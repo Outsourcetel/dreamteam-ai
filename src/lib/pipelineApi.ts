@@ -228,14 +228,23 @@ export async function importOpportunitiesCsv(rows: OpportunityImportRow[]): Prom
   const tid = await requireTenantId();
   const errors: ImportRowError[] = [];
   const inserts: Record<string, unknown>[] = [];
+  // Wave 4 leftover fix: accept the TENANT'S configured stages (matched by
+  // key or label, case-insensitive), not just the platform default four.
+  const stages = await listPipelineStages();
+  const stageByToken = new Map<string, string>();
+  for (const s of stages) {
+    stageByToken.set(s.stage_key.toLowerCase(), s.stage_key);
+    stageByToken.set(s.label.toLowerCase(), s.stage_key);
+  }
+  const defaultStage = stages[0]?.stage_key ?? 'prospect';
   rows.forEach((r, i) => {
     const company = (r.company || '').trim();
     const name = (r.name || '').trim() || (company ? `${company} — opportunity` : '');
     if (!name) { errors.push({ row: i + 1, message: 'Missing company/opportunity name' }); return; }
     const stageRaw = (r.stage || '').trim().toLowerCase();
-    // won/lost can't be imported (guarded transitions) — clamp to open stages.
-    const stage = (['prospect', 'qualified', 'proposal', 'negotiation'] as string[]).includes(stageRaw)
-      ? stageRaw : 'prospect';
+    // won/lost can't be imported (guarded transitions) — clamp to the
+    // tenant's open stages; unknown → the first (top-of-funnel) stage.
+    const stage = stageByToken.get(stageRaw) ?? defaultStage;
     const closeDate = (r.close_date || '').trim();
     inserts.push({
       tenant_id: tid,

@@ -26,9 +26,11 @@ import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
+  listDeProfileFields, addDeProfileField, setDeAttributes,
 } from '../../lib/digitalEmployeesApi';
 import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
+  DeProfileField,
 } from '../../lib/digitalEmployeesApi';
 import { useUsers } from '../../lib/useUsers';
 import Modal from '../../components/Modal';
@@ -1471,6 +1473,10 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
   const [purpose, setPurpose] = useState(de.purpose_statement ?? '');
   const [outcome, setOutcome] = useState(de.primary_business_outcome ?? '');
   const [resp, setResp] = useState((de.responsibilities ?? []).join('\n'));
+  // Migration 136 — standard workforce-record fields.
+  const [empCode, setEmpCode] = useState(de.employee_code ?? '');
+  const [location, setLocation] = useState(de.location ?? '');
+  const [costCenter, setCostCenter] = useState(de.cost_center ?? '');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1483,6 +1489,9 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
       p_purpose_statement: purpose.trim(),
       p_primary_business_outcome: outcome.trim(),
       p_responsibilities: resp.split('\n').map(r => r.trim()).filter(Boolean),
+      p_employee_code: empCode.trim(),
+      p_location: location.trim(),
+      p_cost_center: costCenter.trim(),
     });
     if (err) setError(err.message);
     else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
@@ -1514,6 +1523,19 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
         <textarea value={resp} disabled={busy} onChange={e => setResp(e.target.value)} rows={3}
           placeholder={'Responsibilities — one per line, e.g.\nAnswer customer product questions\nDraft ticket replies for approval'}
           className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        {/* Standard workforce-record fields (migration 136) — org bookkeeping,
+            NOT fed into the answering persona. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input type="text" value={empCode} disabled={busy} onChange={e => setEmpCode(e.target.value)}
+            placeholder="Employee code — e.g. DE-0042"
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          <input type="text" value={location} disabled={busy} onChange={e => setLocation(e.target.value)}
+            placeholder="Location — e.g. HQ / EU region"
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          <input type="text" value={costCenter} disabled={busy} onChange={e => setCostCenter(e.target.value)}
+            placeholder="Cost center — e.g. CC-SUPPORT"
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button onClick={() => void save()} disabled={busy}
@@ -1521,6 +1543,113 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
           {busy ? 'Saving…' : 'Save identity'}
         </button>
         {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Custom profile fields (migration 136): tenant-defined field
+// definitions (de_profile_fields) + per-DE values (attributes jsonb,
+// written via set_de_attributes → config-versioned + audited).
+function DeProfileFieldsPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [fields, setFields] = useState<DeProfileField[]>([]);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [newKey, setNewKey] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [newType, setNewType] = useState<'text' | 'number' | 'date'>('text');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listDeProfileFields().then(setFields).catch(() => setFields([]));
+  }, []);
+  useEffect(() => {
+    const v: Record<string, string> = {};
+    for (const [k, val] of Object.entries(de.attributes ?? {})) v[k] = String(val);
+    setValues(v);
+  }, [de.id, de.attributes]);
+
+  const addField = async () => {
+    const key = newKey.trim();
+    if (!key) return;
+    setBusy(true); setError(null);
+    try {
+      const f = await addDeProfileField({
+        field_key: key, label: newLabel.trim() || key, field_type: newType,
+        position: fields.length + 1,
+      });
+      setFields(prev => [...prev, f]);
+      setNewKey(''); setNewLabel('');
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      const payload: Record<string, string | number | null> = {};
+      for (const f of fields) {
+        const raw = (values[f.field_key] ?? '').trim();
+        payload[f.field_key] = raw === '' ? null : (f.field_type === 'number' ? Number(raw) || 0 : raw);
+      }
+      const updated = await setDeAttributes(de.id, payload);
+      onUpdated(updated);
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+      <h3 className="text-base font-semibold text-white mb-1">Profile fields</h3>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Your workspace's own employee-record fields — defined once, shown on every profile.
+        Changes are config-versioned and land in the audit history like any other profile edit.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {fields.length === 0 ? (
+        <p className="text-xs text-slate-500 mb-3">No custom fields defined yet — add the first below.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+          {fields.map(f => (
+            <div key={f.id}>
+              <label className="text-[11px] text-slate-400 block mb-1">{f.label}</label>
+              <input value={values[f.field_key] ?? ''} disabled={busy}
+                type={f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : 'text'}
+                onChange={e => setValues(prev => ({ ...prev, [f.field_key]: e.target.value }))}
+                className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-3 mb-4">
+        {fields.length > 0 && (
+          <button onClick={() => void save()} disabled={busy}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save fields'}
+          </button>
+        )}
+        {saved && <span className="text-xs text-emerald-400">Saved</span>}
+      </div>
+      <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+        <p className="text-[11px] font-medium text-slate-400 mb-2">Add a field (applies to every employee's profile)</p>
+        <div className="flex gap-2 flex-wrap items-end">
+          <input value={newKey} placeholder="field_key (e.g. region)" disabled={busy}
+            onChange={e => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+            className="w-40 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <input value={newLabel} placeholder="Label (e.g. Region)" disabled={busy}
+            onChange={e => setNewLabel(e.target.value)}
+            className="w-44 bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <select value={newType} disabled={busy} onChange={e => setNewType(e.target.value as 'text' | 'number' | 'date')}
+            className="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+            <option value="text">Text</option><option value="number">Number</option><option value="date">Date</option>
+          </select>
+          <button onClick={() => void addField()} disabled={busy || !newKey.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-50 transition-colors">
+            Add field
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2573,6 +2702,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
           {/* Identity & Purpose — feeds every answer (DE-C4) */}
           <DeIdentityPanel de={selectedDe} onUpdated={setSelectedDe} />
+          <DeProfileFieldsPanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* Lifecycle — the governance gate (DE-B4) */}
           <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />

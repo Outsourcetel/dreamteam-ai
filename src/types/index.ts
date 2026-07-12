@@ -100,7 +100,12 @@ export type UserRole =
   | 'tenant_owner'
   | 'tenant_admin'
   | 'tenant_manager'
-  | 'tenant_user';
+  // Wave 5: the three assignable roles this union was silently missing —
+  // they were second-class at the type level (see useUsers.ts TenantRole).
+  | 'knowledge_manager'
+  | 'approver'
+  | 'tenant_user'
+  | 'read_only';
 
 export interface AuthUser {
   id: string;
