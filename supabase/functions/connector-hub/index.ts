@@ -1202,7 +1202,7 @@ async function gdriveFetchText(id: string, fileType: string, token: string): Pro
 
 // ════════════════════════════════════════════════════════════════
 
-const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive']);
+const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive', 'notion', 'box']);
 
 // ════════════════════════════════════════════════════════════════
 // THE GENERALIZED ACTION LAYER (migration 035) — resolve + render +
@@ -1454,6 +1454,244 @@ const slack = {
   },
 };
 
+// ── notion ── secret: { token } (internal integration token). Fixed base;
+// the integration only sees pages explicitly shared with it. Knowledge-
+// capable: syncDocs ingests shared page text.
+const NOTION = 'https://api.notion.com/v1';
+const NOTION_VERSION = '2022-06-28';
+function notionTitle(obj: Record<string, unknown>): string {
+  const props = (obj.properties ?? {}) as Record<string, { type?: string; title?: Array<{ plain_text?: string }> }>;
+  for (const k of Object.keys(props)) {
+    const pr = props[k];
+    if (pr?.type === 'title' && Array.isArray(pr.title)) return pr.title.map((t) => t.plain_text ?? '').join('') || 'Untitled';
+  }
+  const dbTitle = obj.title as Array<{ plain_text?: string }> | undefined;
+  if (Array.isArray(dbTitle)) return dbTitle.map((t) => t.plain_text ?? '').join('') || 'Untitled';
+  return 'Untitled';
+}
+function notionBlockText(blocks: Array<Record<string, unknown>>): string {
+  const out: string[] = [];
+  for (const b of blocks) {
+    const type = String(b.type ?? '');
+    const data = (b[type] ?? {}) as { rich_text?: Array<{ plain_text?: string }> };
+    if (Array.isArray(data.rich_text)) { const t = data.rich_text.map((r) => r.plain_text ?? '').join(''); if (t.trim()) out.push(t); }
+  }
+  return out.join('\n');
+}
+const notion = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}`, 'Notion-Version': NOTION_VERSION, 'Content-Type': 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${NOTION}/users/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Notion integration token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${NOTION}/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ query, page_size: 10 }) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const results = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
+    return { ok: true, items: results.slice(0, 10).map((o) => ({ ref: String(o.id), type: o.object === 'database' ? 'database' : 'page', title: clip(notionTitle(o), 160), snippet: '', url: o.url ? String(o.url) : null, raw: { id: o.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const pg = await httpJson(`${NOTION}/pages/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    const title = pg.ok ? notionTitle(pg.body as Record<string, unknown>) : ref;
+    const url = pg.ok ? ((pg.body as { url?: string }).url ?? null) : null;
+    const bl = await httpJson(`${NOTION}/blocks/${encodeURIComponent(ref)}/children?page_size=50`, { headers: this.hdrs(c) });
+    const text = bl.ok ? notionBlockText(((bl.body as { results?: Array<Record<string, unknown>> })?.results) ?? []) : '';
+    return { ok: true, items: [{ ref, type: 'page', title: clip(title, 160), snippet: clip(text, 400), url, raw: { id: ref } }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const r = await httpJson(`${NOTION}/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ page_size: 10, sort: { direction: 'descending', timestamp: 'last_edited_time' } }) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const results = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
+    return { ok: true, items: results.map((o) => ({ ref: String(o.id), type: 'page', title: clip(notionTitle(o), 160), snippet: '', url: o.url ? String(o.url) : null, raw: { id: o.id } })) };
+  },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const r = await httpJson(`${NOTION}/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ page_size: 30, filter: { value: 'page', property: 'object' } }) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const pages = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
+    const docs: SyncDoc[] = [];
+    for (const p of pages.slice(0, MAX_SYNC_FILES)) {
+      const bl = await httpJson(`${NOTION}/blocks/${encodeURIComponent(String(p.id))}/children?page_size=100`, { headers: this.hdrs(c) });
+      const text = bl.ok ? notionBlockText(((bl.body as { results?: Array<Record<string, unknown>> })?.results) ?? []) : '';
+      if (text.trim()) docs.push({ external_ref: `notion:${p.id}`, title: clip(notionTitle(p), 200), content: text.slice(0, MAX_DOC_CHARS), url: p.url ? String(p.url) : null });
+    }
+    if (!docs.length) return { ok: false, error: 'no_readable_pages', detail: 'No text-bearing pages are shared with this Notion integration.' };
+    return { ok: true, docs };
+  },
+};
+
+// ── teams ── secret: { tenant_id, client_id, client_secret } (Graph app-only,
+// same shape as SharePoint). Reads channel messages via the Graph Search API —
+// which needs the PROTECTED ChannelMessage.Read.All permission (admin consent +
+// Microsoft approval, metered). Honest error until granted. Read-through search.
+const teams = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const tenant = (c.secret.tenant_id ?? '').trim();
+    if (!tenant) return { ok: false, error: 'missing_tenant_id' };
+    const r = await httpJson(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: c.secret.client_id ?? '', client_secret: c.secret.client_secret ?? '', scope: 'https://graph.microsoft.com/.default' }).toString(),
+    });
+    const b = r.body as { access_token?: string; error_description?: string } | null;
+    if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? r.error ?? 'oauth_failed' };
+    return { ok: true, token: b.access_token };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${GRAPH}/teams?$top=1`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (r.status === 403) return { ok: false, error: 'graph_permission_missing' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Microsoft Graph app-only token verified (Teams read access)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${GRAPH}/search/query`, {
+      method: 'POST', headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: [{ entityTypes: ['chatMessage'], query: { queryString: query }, from: 0, size: 10 }] }),
+    });
+    if (r.status === 403) return { ok: false, error: 'graph_permission_missing' };
+    if (!r.ok) return { ok: false, error: r.error };
+    const hits = (((r.body as { value?: Array<{ hitsContainers?: Array<{ hits?: Array<Record<string, unknown>> }> }> })?.value?.[0]?.hitsContainers?.[0]?.hits) ?? []);
+    return {
+      ok: true,
+      items: hits.slice(0, 10).map((h) => {
+        const rs = (h.resource ?? {}) as { id?: unknown; from?: { user?: { displayName?: string }; application?: { displayName?: string } }; body?: { content?: string }; webUrl?: string };
+        const from = rs.from?.user?.displayName ?? rs.from?.application?.displayName ?? '';
+        return { ref: String(rs.id ?? h.hitId ?? ''), type: 'message', title: clip(`Teams — ${from}`, 160), snippet: clip(stripHtml(String(rs.body?.content ?? h.summary ?? '')), 400), url: rs.webUrl ? String(rs.webUrl) : null, raw: { id: rs.id } };
+      }),
+    };
+  },
+  fetchRecord(_c: Ctx, _type: string, _ref: string): Promise<AdapterResult> {
+    return Promise.resolve({ ok: false, error: 'fetch_by_id_unsupported', detail: 'Teams messages are returned inline by search.' });
+  },
+  listRecent(_c: Ctx): Promise<AdapterResult> {
+    return Promise.resolve({ ok: true, items: [] });
+  },
+};
+
+// ── box ── secret: { client_id, client_secret, enterprise_id } (Client
+// Credentials Grant, app-only — no user redirect). Enterprise file store;
+// knowledge-capable via syncDocs (text + PDF; Box has no on-the-fly convert).
+const BOX = 'https://api.box.com/2.0';
+const box = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const r = await httpJson('https://api.box.com/oauth2/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: c.secret.client_id ?? '', client_secret: c.secret.client_secret ?? '', box_subject_type: 'enterprise', box_subject_id: c.secret.enterprise_id ?? '' }).toString(),
+    });
+    const b = r.body as { access_token?: string; error_description?: string } | null;
+    if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? r.error ?? 'oauth_failed' };
+    return { ok: true, token: b.access_token };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${BOX}/users/me`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Box app token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${BOX}/search?query=${encodeURIComponent(query)}&limit=10&type=file`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const entries = (r.body as { entries?: Array<Record<string, unknown>> })?.entries ?? [];
+    return { ok: true, items: entries.slice(0, 10).map((e) => ({ ref: String(e.id), type: 'document', title: clip(e.name, 160), snippet: clip(e.description ?? '', 400), url: `https://app.box.com/file/${e.id}`, raw: { id: e.id, name: e.name } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${BOX}/files/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const f = r.body as { name?: unknown; description?: unknown };
+    return { ok: true, items: [{ ref, type: 'document', title: clip(f.name, 160), snippet: clip(f.description ?? '', 400), url: `https://app.box.com/file/${ref}`, raw: f }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${BOX}/folders/0/items?limit=10&sort=date&direction=DESC&fields=id,name,type`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const entries = (r.body as { entries?: Array<Record<string, unknown>> })?.entries ?? [];
+    return { ok: true, items: entries.filter((e) => e.type === 'file').map((e) => ({ ref: String(e.id), type: 'document', title: clip(e.name, 160), snippet: '', url: `https://app.box.com/file/${e.id}`, raw: { id: e.id } })) };
+  },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const auth = { Authorization: `Bearer ${t.token}` };
+    const docs: SyncDoc[] = [];
+    const queue: string[] = ['0'];
+    let folders = 0;
+    while (queue.length && docs.length < MAX_SYNC_FILES && folders < 40) {
+      const fid = queue.shift()!;
+      folders++;
+      const r = await httpJson(`${BOX}/folders/${fid}/items?limit=200&fields=id,name,type,size`, { headers: auth });
+      if (!r.ok) break;
+      const entries = (r.body as { entries?: Array<Record<string, unknown>> })?.entries ?? [];
+      for (const e of entries) {
+        if (docs.length >= MAX_SYNC_FILES) break;
+        if (e.type === 'folder') { queue.push(String(e.id)); continue; }
+        if (e.type !== 'file') continue;
+        const name = String(e.name ?? '');
+        const ft = fileTypeOf(name);
+        if (ft !== 'text' && ft !== 'pdf') continue;   // Box: no on-the-fly convert — text + PDF only
+        const text = await boxFileText(String(e.id), ft, t.token!);
+        if (text) docs.push({ external_ref: `box:${e.id}`, title: clip(name, 200), content: text, url: `https://app.box.com/file/${e.id}` });
+      }
+    }
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text or PDF files found in this Box account.' };
+    return { ok: true, docs };
+  },
+};
+async function boxFileText(id: string, ft: string, token: string): Promise<string> {
+  const res = await safeFetch(`${BOX}/files/${id}/content`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res) return '';
+  if (ft === 'pdf') return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+  const raw = await res.text();
+  const looksHtml = /<\/?[a-z][\s\S]*>/i.test(raw.slice(0, 4000));
+  return (looksHtml ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+}
+
+// ── freshdesk / freshservice ── secret: { api_key } · base_url = the account
+// subdomain. Basic auth (api_key as username). Tickets as the helpdesk surface.
+const freshAuth = (c: Ctx) => 'Basic ' + btoa(`${c.secret.api_key ?? ''}:X`);
+function freshTicketItems(tickets: unknown, baseUrl: string, path: string, query?: string): HubItem[] {
+  const list = Array.isArray(tickets) ? (tickets as Array<Record<string, unknown>>) : [];
+  const q = (query ?? '').toLowerCase();
+  const filtered = q ? list.filter((t) => String(t.subject ?? '').toLowerCase().includes(q) || String(t.description_text ?? '').toLowerCase().includes(q)) : list;
+  return filtered.slice(0, 10).map((t) => ({ ref: String(t.id), type: 'ticket', title: clip(t.subject || `Ticket ${t.id}`, 160), snippet: clip(stripHtml(String(t.description_text ?? t.description ?? '')), 400), url: `${baseUrl}${path}${t.id}`, raw: { id: t.id, status: t.status } }));
+}
+function makeFreshAdapter(ticketPath: string) {
+  return {
+    async test(c: Ctx): Promise<TestResult> {
+      const r = await httpJson(`${c.baseUrl}/api/v2/tickets?per_page=1`, { headers: { Authorization: freshAuth(c) } });
+      if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, detail: 'API key verified' };
+    },
+    async search(c: Ctx, query: string): Promise<AdapterResult> {
+      const r = await httpJson(`${c.baseUrl}/api/v2/tickets?per_page=30&order_by=updated_at&order_type=desc`, { headers: { Authorization: freshAuth(c) } });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: freshTicketItems(r.body, c.baseUrl, ticketPath, query) };
+    },
+    async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+      const r = await httpJson(`${c.baseUrl}/api/v2/tickets/${encodeURIComponent(ref)}`, { headers: { Authorization: freshAuth(c) } });
+      if (!r.ok) return { ok: false, error: r.error };
+      const t = r.body as Record<string, unknown>;
+      return { ok: true, items: [{ ref, type: 'ticket', title: clip(t.subject || `Ticket ${ref}`, 160), snippet: clip(stripHtml(String(t.description_text ?? t.description ?? '')), 400), url: `${c.baseUrl}${ticketPath}${ref}`, raw: t }] };
+    },
+    async listRecent(c: Ctx): Promise<AdapterResult> {
+      const r = await httpJson(`${c.baseUrl}/api/v2/tickets?per_page=10&order_by=updated_at&order_type=desc`, { headers: { Authorization: freshAuth(c) } });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, items: freshTicketItems(r.body, c.baseUrl, ticketPath) };
+    },
+  };
+}
+const freshdesk = makeFreshAdapter('/a/tickets/');
+const freshservice = makeFreshAdapter('/a/tickets/');
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -1553,6 +1791,26 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
     // knowledge_base — past Slack messages/answers as searchable knowledge
     search_articles: (c, p) => slack.search(c, p.query ?? ''),
     get_article: (c, p) => slack.fetchRecord(c, 'message', p.external_ref ?? ''),
+  },
+  notion: {
+    search_articles: (c, p) => notion.search(c, p.query ?? ''),
+    get_article: (c, p) => notion.fetchRecord(c, 'page', p.external_ref ?? ''),
+  },
+  teams: {
+    search_articles: (c, p) => teams.search(c, p.query ?? ''),
+    get_article: (c, p) => teams.fetchRecord(c, 'message', p.external_ref ?? ''),
+  },
+  box: {
+    search_articles: (c, p) => box.search(c, p.query ?? ''),
+    get_article: (c, p) => box.fetchRecord(c, 'document', p.external_ref ?? ''),
+  },
+  freshdesk: {
+    search_tickets: (c, p) => freshdesk.search(c, p.query ?? ''),
+    get_ticket: (c, p) => freshdesk.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  freshservice: {
+    search_tickets: (c, p) => freshservice.search(c, p.query ?? ''),
+    get_ticket: (c, p) => freshservice.fetchRecord(c, 'ticket', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -1844,8 +2102,8 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot | typeof slack> = {
-      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack,
+    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot | typeof slack | typeof notion | typeof teams | typeof box | typeof freshdesk> = {
+      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

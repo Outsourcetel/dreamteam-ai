@@ -19,7 +19,8 @@ import { computeHealth } from './categoryContracts';
 
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
-  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'slack' | 'template';
+  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'slack'
+  | 'notion' | 'teams' | 'box' | 'freshdesk' | 'freshservice' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -82,6 +83,60 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  notion: {
+    label: 'Notion', tagline: 'Wiki & docs — pages, databases, processes',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Notion API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Notion',
+    fields: [
+      { key: 'token', label: 'Internal integration token', placeholder: 'ntn_••••••••', secret: true },
+    ],
+    help: 'In Notion: notion.so/my-integrations → New integration → copy the Internal Integration Token. Then SHARE the pages/databases you want the DE to read WITH the integration (open a page → ••• → Connections → add your integration). The integration only sees pages you share — that sharing is your security boundary.',
+    knowledgeSync: true, implemented: true,
+  },
+  teams: {
+    label: 'Microsoft Teams', tagline: 'Channel messages — search past discussions',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Microsoft Graph (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Teams',
+    fields: [
+      { key: 'tenant_id', label: 'Directory (tenant) ID', placeholder: '00000000-0000-0000-0000-000000000000', secret: false },
+      { key: 'client_id', label: 'Application (client) ID', placeholder: '11111111-1111-1111-1111-111111111111', secret: false },
+      { key: 'client_secret', label: 'Client secret value', placeholder: '••••••••', secret: true },
+    ],
+    help: 'App-only access (same Azure app registration as SharePoint). Reading Teams channel messages needs the PROTECTED Microsoft Graph permission ChannelMessage.Read.All — add it under API permissions → Application permissions, click "Grant admin consent", and note Microsoft meters/approves this API. Copy the Directory (tenant) ID and Application (client) ID from the app Overview, and a client secret from Certificates & secrets.',
+    knowledgeSync: false, implemented: true,
+  },
+  box: {
+    label: 'Box', tagline: 'Enterprise files — documents & PDFs into knowledge',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Box API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Box',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: 'from your Box app', secret: false },
+      { key: 'client_secret', label: 'Client secret', placeholder: '••••••••', secret: true },
+      { key: 'enterprise_id', label: 'Enterprise ID', placeholder: 'your Box enterprise id', secret: false },
+    ],
+    help: 'App-only access (no user sign-in). In the Box Developer Console → Create a Custom App → Server Authentication (Client Credentials Grant) → copy the Client ID & Secret; authorize the app in the Box Admin Console (Apps → Custom Apps Manager). Enterprise ID is in the Admin Console under Account & Billing. The app sees only the folders you grant it — that scoping is your security boundary.',
+    knowledgeSync: true, implemented: true,
+  },
+  freshdesk: {
+    label: 'Freshdesk', tagline: 'Support desk — tickets & conversations',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Freshdesk URL', baseUrlPlaceholder: 'https://yourco.freshdesk.com',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Freshdesk: click your profile → Profile Settings → your API key is on the right. Paste it plus your Freshdesk URL (https://yourcompany.freshdesk.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  freshservice: {
+    label: 'Freshservice', tagline: 'IT service desk — tickets, incidents, requests',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Freshservice URL', baseUrlPlaceholder: 'https://yourco.freshservice.com',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Freshservice: profile picture → Profile Settings → your API key is on the right panel. Paste it plus your Freshservice URL (https://yourcompany.freshservice.com).',
+    knowledgeSync: false, implemented: true,
   },
   slack: {
     label: 'Slack', tagline: 'Team chat — search past answers & decisions',
