@@ -10,6 +10,8 @@ import {
   hubHealthCheck, updateConnectorFieldMap, connectorHealth,
   updateConnectorObject, updateConnectorAction, disconnectConnector,
   connectorErrorLabel, fmtSince,
+  IngestFilters, IngestCandidate, INGEST_TYPES, readIngestFilters,
+  setIngestConfig, listIngestCandidates, decideIngestCandidates, discoverConnector,
 } from '../../../lib/connectorApi';
 import {
   SystemCategory, CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT,
@@ -333,6 +335,178 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
   );
 }
 
+// ── Ingest control — filters + review-before-ingest queue ───────────
+const CAND_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: 'Awaiting review', cls: 'text-amber-300 bg-amber-500/10' },
+  approved: { label: 'Approved', cls: 'text-emerald-300 bg-emerald-500/10' },
+  rejected: { label: 'Excluded', cls: 'text-slate-400 bg-slate-500/10' },
+  ingested: { label: 'In knowledge', cls: 'text-indigo-300 bg-indigo-500/10' },
+};
+const TYPE_LABEL: Record<string, string> = { pdf: 'PDF', doc: 'Doc', slide: 'Slides', sheet: 'Sheet', text: 'Text', other: 'Other' };
+
+function IngestControlPanel({ connector, onToast }: { connector: Connector; onToast: (m: string) => void }) {
+  const [filters, setFilters] = useState<IngestFilters>(() => readIngestFilters(connector));
+  const [excludeText, setExcludeText] = useState<string>(() => readIngestFilters(connector).exclude_patterns.join(', '));
+  const [cands, setCands] = useState<IngestCandidate[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try { setCands(await listIngestCandidates(connector.id)); }
+    catch { /* table may be empty */ }
+    finally { setLoaded(true); }
+  }, [connector.id]);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const commitFilters = (next: IngestFilters) => setFilters(next);
+  const toggleType = (t: string) => {
+    const cur = filters.allow_types ?? [];
+    const has = cur.includes(t);
+    const nextList = has ? cur.filter(x => x !== t) : [...cur, t];
+    commitFilters({ ...filters, allow_types: nextList.length ? nextList : null });
+  };
+
+  const saveFilters = async () => {
+    setBusy('save');
+    try {
+      const next: IngestFilters = { ...filters, exclude_patterns: excludeText.split(',').map(s => s.trim()).filter(Boolean) };
+      await setIngestConfig(connector.id, next);
+      setFilters(next);
+      onToast('Ingest settings saved. Run a scan to apply them.');
+    } catch (e) { onToast(e instanceof CustomerApiError ? e.message : 'Could not save ingest settings.'); }
+    finally { setBusy(null); }
+  };
+
+  const scan = async () => {
+    setBusy('scan');
+    try {
+      const r = await discoverConnector(connector.id);
+      if (r.ok) { onToast(`Scan complete — ${r.found ?? 0} file(s) match your filters, ${r.new ?? 0} new to review.`); await refresh(); }
+      else onToast(`Scan failed: ${connectorErrorLabel(r.error)}${r.detail ? ` — ${r.detail}` : ''}`);
+    } finally { setBusy(null); }
+  };
+
+  const decide = async (refs: string[] | null, decision: 'approved' | 'rejected' | 'pending') => {
+    setBusy('decide');
+    try { await decideIngestCandidates(connector.id, refs, decision); await refresh(); }
+    catch (e) { onToast(e instanceof CustomerApiError ? e.message : 'Could not update the review queue.'); }
+    finally { setBusy(null); }
+  };
+
+  const pending = cands.filter(c => c.status === 'pending');
+  const approved = cands.filter(c => c.status === 'approved');
+  const isBusy = busy !== null;
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4 space-y-4">
+      <div>
+        <p className="text-[11px] font-medium text-slate-400 mb-1">What gets ingested — filters</p>
+        <p className="text-[11px] text-slate-600 mb-3">
+          These control which readable files land in knowledge. They are hygiene, not a security boundary —
+          the hard boundary is what you share with the connector at the source
+          ({connector.provider === 'gdrive' ? 'the folders shared with the service account' : 'the site / Sites.Selected permission'}).
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">
+              {connector.provider === 'gdrive' ? 'Folder / Shared Drive ID (optional — blank = everything shared)' : 'Sub-folder to sync (optional — blank = whole library)'}
+            </label>
+            <input value={filters.folder ?? ''} onChange={e => commitFilters({ ...filters, folder: e.target.value || null })}
+              placeholder={connector.provider === 'gdrive' ? 'folder id' : 'e.g. Policies/Public'} className={`${inputCls} text-xs`} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">Exclude files/folders whose name contains (comma-separated)</label>
+            <input value={excludeText} onChange={e => setExcludeText(e.target.value)}
+              placeholder="draft, confidential, archive, HR" className={`${inputCls} text-xs`} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">Only ingest these file types (none checked = all supported types)</label>
+            <div className="flex flex-wrap gap-2">
+              {INGEST_TYPES.map(t => {
+                const on = filters.allow_types?.includes(t.key) ?? false;
+                return (
+                  <button key={t.key} onClick={() => toggleType(t.key)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={filters.require_review} onChange={e => commitFilters({ ...filters, require_review: e.target.checked })} />
+            Review before ingest — nothing enters knowledge until you approve it here
+          </label>
+        </div>
+        <button disabled={isBusy} onClick={() => void saveFilters()}
+          className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+          {busy === 'save' ? 'Saving…' : 'Save settings'}
+        </button>
+      </div>
+
+      <div className="border-t border-slate-800 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-medium text-slate-400">Review queue{loaded ? ` — ${cands.length} file(s)` : ''}</p>
+          <div className="flex gap-2">
+            <button disabled={isBusy} onClick={() => void scan()}
+              className="px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+              {busy === 'scan' ? 'Scanning…' : 'Scan for documents'}
+            </button>
+            {pending.length > 0 && (
+              <>
+                <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'approved')}
+                  className="px-2.5 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve all</button>
+                <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'rejected')}
+                  className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-700 hover:border-slate-500 disabled:opacity-50">Exclude all</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {!loaded ? (
+          <p className="text-[11px] text-slate-600">Loading…</p>
+        ) : cands.length === 0 ? (
+          <p className="text-[11px] text-slate-600">No documents scanned yet. Click "Scan for documents" to list what would be ingested — nothing is stored until you sync.</p>
+        ) : (
+          <div className="rounded-lg border border-slate-800 max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+            {cands.map(c => {
+              const meta = CAND_STATUS_META[c.status] ?? CAND_STATUS_META.pending;
+              return (
+                <div key={c.id} className="flex items-center gap-2 px-3 py-2">
+                  <span className="text-[10px] font-mono text-slate-500 w-10 flex-shrink-0">{TYPE_LABEL[c.file_type] ?? c.file_type}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-slate-200 truncate">{c.title}</p>
+                    {c.path && <p className="text-[10px] text-slate-600 truncate">{c.path}</p>}
+                  </div>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${meta.cls} flex-shrink-0`}>{meta.label}</span>
+                  {c.status !== 'ingested' && (
+                    <div className="flex gap-1 flex-shrink-0">
+                      {c.status !== 'approved' && (
+                        <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'approved')}
+                          className="px-2 py-0.5 rounded text-[10px] text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve</button>
+                      )}
+                      {c.status !== 'rejected' && (
+                        <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'rejected')}
+                          className="px-2 py-0.5 rounded text-[10px] text-slate-400 border border-slate-700 hover:border-slate-500 disabled:opacity-50">Exclude</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {filters.require_review && approved.length > 0 && (
+          <p className="text-[11px] text-emerald-400/80 mt-2">{approved.length} file(s) approved — click "Sync knowledge" above to ingest them.</p>
+        )}
+        {!filters.require_review && (
+          <p className="text-[11px] text-slate-600 mt-2">Review is off — "Sync knowledge" ingests every file that matches your filters directly.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function LiveConnectorsPage() {
@@ -350,6 +524,7 @@ export default function LiveConnectorsPage() {
   const [useTemplate, setUseTemplate] = useState<AdapterTemplate | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [fieldMapFor, setFieldMapFor] = useState<string | null>(null);
+  const [ingestFor, setIngestFor] = useState<string | null>(null);
 
   // Read-through search demo
   const [rtQuery, setRtQuery] = useState('');
@@ -562,6 +737,11 @@ export default function LiveConnectorsPage() {
                     <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Field mapping
                     </button>
+                    {(c.provider === 'sharepoint' || c.provider === 'gdrive') && (
+                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                        What gets ingested
+                      </button>
+                    )}
                     {meta?.knowledgeSync && (
                       <button disabled={isBusy} onClick={() => void doKnowledgeSync(c)}
                         title={c.access_mode === 'fetch_only' ? 'Fetch-only connectors refuse sync server-side — try it.' : 'Ingest help articles / pages into knowledge'}
@@ -586,6 +766,10 @@ export default function LiveConnectorsPage() {
 
                 {fieldMapFor === c.id && (
                   <FieldMapEditor connector={c} isBusy={isBusy} onSave={(m) => void saveFieldMap(c, m)} />
+                )}
+
+                {ingestFor === c.id && (
+                  <IngestControlPanel connector={c} onToast={showToast} />
                 )}
 
                 {/* Zendesk-only: per-object mode + write-back registry */}

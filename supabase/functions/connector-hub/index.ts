@@ -831,6 +831,39 @@ function templateAdapter(t: TemplateExec) {
 const MAX_DOC_CHARS = 200_000;   // per-document text cap handed to the ingester
 const MAX_SYNC_FILES = 100;      // files walked per sync run
 
+// ── Ingest control (migration 138): filters live in config.ingest ──
+interface IngestFilters {
+  exclude_patterns?: string[];   // skip any file/folder whose path contains one of these (case-insensitive)
+  allow_types?: string[] | null; // if set, only these coarse types ingest (pdf|doc|slide|sheet|text)
+  folder?: string | null;        // SharePoint sub-folder path / Google Drive folder id to scope to
+  require_review?: boolean;      // if true, only approved candidates ingest
+}
+interface Candidate { external_ref: string; title: string; path: string; file_type: string; size_bytes: number | null }
+
+// Coarse, ingest-relevant file type from a name and/or MIME.
+function fileTypeOf(name: string, mime?: string): string {
+  const l = (name ?? '').toLowerCase();
+  if (/\.pdf$/.test(l) || mime === 'application/pdf') return 'pdf';
+  if (/\.(docx?|odt|rtf)$/.test(l) || mime === 'application/vnd.google-apps.document') return 'doc';
+  if (/\.(pptx?|odp)$/.test(l) || mime === 'application/vnd.google-apps.presentation') return 'slide';
+  if (/\.(xlsx?|csv|ods)$/.test(l) || mime === 'application/vnd.google-apps.spreadsheet') return 'sheet';
+  if (/\.(txt|md|json|html?|xml)$/.test(l) || (mime ?? '').startsWith('text/')) return 'text';
+  return 'other';
+}
+function isExcluded(name: string, path: string, patterns?: string[]): boolean {
+  if (!patterns?.length) return false;
+  const hay = `${path}/${name}`.toLowerCase();
+  return patterns.some((p) => { const s = String(p ?? '').trim().toLowerCase(); return s.length > 0 && hay.includes(s); });
+}
+// A candidate is INGESTABLE if its type is extractable, allowed by the
+// allow-list (if any), and not excluded by pattern.
+function candidatePasses(c: Candidate, f: IngestFilters): boolean {
+  if (c.file_type === 'other') return false;                        // can't extract text
+  if (f.allow_types?.length && !f.allow_types.includes(c.file_type)) return false;
+  if (isExcluded(c.title, c.path, f.exclude_patterns)) return false;
+  return true;
+}
+
 async function pdfBytesToText(bytes: Uint8Array): Promise<string> {
   try {
     const pdf = await getDocumentProxy(bytes);
@@ -957,57 +990,83 @@ const sharepoint = {
     const items = (r.body as { value?: Array<Record<string, unknown>> })?.value ?? [];
     return { ok: true, items: items.filter((it) => it.file).map((it) => ({ ref: String(it.id), type: 'document', title: clip(it.name, 160), snippet: '', url: it.webUrl ? String(it.webUrl) : null, raw: it })) };
   },
-  async syncDocs(c: Ctx): Promise<SyncResult> {
+  // List candidate files (filters applied) WITHOUT extracting text.
+  async discoverDocs(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }> {
     const t = await this.token(c);
     if (!t.ok) return { ok: false, error: t.error };
     const s = await this.siteId(c, t.token!);
     if (!s.ok) return { ok: false, error: s.error };
     const auth = { Authorization: `Bearer ${t.token}` };
-    const docs: SyncDoc[] = [];
-    const queue: string[] = ['root'];
+    const scope = String(f.folder ?? '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    const out: Candidate[] = [];
+    const queue: Array<{ id: string; path: string }> = [{ id: 'root', path: '' }];
     let folders = 0;
-    while (queue.length && docs.length < MAX_SYNC_FILES && folders < 60) {
-      const folder = queue.shift()!;
+    while (queue.length && out.length < MAX_SYNC_FILES && folders < 60) {
+      const cur = queue.shift()!;
       folders++;
-      const listUrl = folder === 'root'
+      const listUrl = cur.id === 'root'
         ? `${GRAPH}/sites/${s.id}/drive/root/children?$top=200`
-        : `${GRAPH}/sites/${s.id}/drive/items/${folder}/children?$top=200`;
+        : `${GRAPH}/sites/${s.id}/drive/items/${cur.id}/children?$top=200`;
       const r = await httpJson(listUrl, { headers: auth });
       if (!r.ok) break;
       const items = (r.body as { value?: Array<Record<string, unknown>> })?.value ?? [];
       for (const it of items) {
-        if (docs.length >= MAX_SYNC_FILES) break;
-        if (it.folder) { queue.push(String(it.id)); continue; }
+        if (out.length >= MAX_SYNC_FILES) break;
+        const name = String(it.name ?? '');
+        const childPath = cur.path ? `${cur.path}/${name}` : name;
+        if (it.folder) { queue.push({ id: String(it.id), path: childPath }); continue; }
         if (!it.file) continue;
-        const text = await sharepointItemText(String(s.id), String(it.id), String(it.name ?? ''), t.token!);
-        if (text) docs.push({ external_ref: `sharepoint:${it.id}`, title: clip(it.name, 200), content: text, url: it.webUrl ? String(it.webUrl) : null });
+        if (scope && !childPath.toLowerCase().startsWith(scope)) continue;   // folder scope
+        const cand: Candidate = { external_ref: `sharepoint:${it.id}`, title: clip(name, 200), path: cur.path, file_type: fileTypeOf(name), size_bytes: typeof it.size === 'number' ? it.size : null };
+        if (candidatePasses(cand, f)) out.push(cand);
       }
     }
-    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable documents were found in this library (text, PDF, Word, PowerPoint are supported).' };
+    return { ok: true, candidates: out };
+  },
+  // Extract text for a set of approved candidates (creds resolved once).
+  async fetchTexts(c: Ctx, items: Candidate[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const t = await this.token(c);
+    if (!t.ok) return out;
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return out;
+    for (const it of items) {
+      out[it.external_ref] = await sharepointFetchText(String(s.id), it.external_ref.replace(/^sharepoint:/, ''), it.file_type, t.token!);
+    }
+    return out;
+  },
+  // Direct sync (review off) = discover + fetch each matching file.
+  async syncDocs(c: Ctx, f: IngestFilters = {}): Promise<SyncResult> {
+    const d = await this.discoverDocs(c, f);
+    if (!d.ok) return { ok: false, error: d.error };
+    const cands = d.candidates ?? [];
+    if (!cands.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable documents matched your ingest settings.' };
+    const texts = await this.fetchTexts(c, cands);
+    const docs: SyncDoc[] = cands.map((cd) => ({ external_ref: cd.external_ref, title: cd.title, content: texts[cd.external_ref] ?? '', url: null })).filter((dd) => dd.content);
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'Matching files had no extractable text.' };
     return { ok: true, docs };
   },
 };
 
-async function sharepointItemText(siteId: string, itemId: string, name: string, token: string): Promise<string> {
+// Extract text for one SharePoint item, keyed on coarse file type.
+async function sharepointFetchText(siteId: string, itemId: string, fileType: string, token: string): Promise<string> {
   const auth = { Authorization: `Bearer ${token}` };
-  const lower = name.toLowerCase();
   const base = `${GRAPH}/sites/${siteId}/drive/items/${itemId}/content`;
-  if (/\.(txt|md|csv|json|html?|xml)$/.test(lower)) {
+  if (fileType === 'text') {
     const res = await safeFetch(base, { headers: auth });
     if (!res) return '';
     const raw = await res.text();
-    return (/\.html?$/.test(lower) ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+    const looksHtml = /<\/?[a-z][\s\S]*>/i.test(raw.slice(0, 4000));
+    return (looksHtml ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
   }
-  if (/\.pdf$/.test(lower)) {
+  if (fileType === 'pdf') {
     const res = await safeFetch(base, { headers: auth });
-    if (!res) return '';
-    return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+    return res ? (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS) : '';
   }
-  if (/\.(docx?|pptx?|xlsx?|odt|odp|ods|rtf)$/.test(lower)) {
+  if (fileType === 'doc' || fileType === 'slide' || fileType === 'sheet') {
     // Graph converts Office documents to PDF on the fly; unpdf reads them.
     const res = await safeFetch(`${base}?format=pdf`, { headers: auth });
-    if (!res) return '';
-    return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+    return res ? (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS) : '';
   }
   return '';
 }
@@ -1053,45 +1112,66 @@ const gdrive = {
     const files = (r.body as { files?: Array<Record<string, unknown>> })?.files ?? [];
     return { ok: true, items: files.map((f) => ({ ref: String(f.id), type: 'document', title: clip(f.name, 160), snippet: '', url: f.webViewLink ? String(f.webViewLink) : null, raw: f })) };
   },
-  async syncDocs(c: Ctx): Promise<SyncResult> {
+  async discoverDocs(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }> {
     const t = await this.token(c);
     if (!t.ok) return { ok: false, error: t.error };
-    const folder = (c.baseUrl ?? '').trim().replace(/^https?:\/\/[^ ]*\/folders\//, '').replace(/[?#].*$/, '');
+    const folder = String(f.folder ?? c.baseUrl ?? '').trim().replace(/^https?:\/\/[^ ]*\/folders\//, '').replace(/[?#].*$/, '');
     let q = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
     if (folder) q = `'${folder.replace(/'/g, '')}' in parents and ${q}`;
-    const r = await httpJson(`${DRIVE}/files?q=${encodeURIComponent(q)}&pageSize=${MAX_SYNC_FILES}&fields=files(id,name,mimeType,webViewLink)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    const r = await httpJson(`${DRIVE}/files?q=${encodeURIComponent(q)}&pageSize=${MAX_SYNC_FILES}&fields=files(id,name,mimeType,size)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
     if (!r.ok) return { ok: false, error: r.error };
     const files = (r.body as { files?: Array<Record<string, unknown>> })?.files ?? [];
-    const docs: SyncDoc[] = [];
-    for (const f of files) {
-      if (docs.length >= MAX_SYNC_FILES) break;
-      const text = await gdriveFileText(String(f.id), String(f.mimeType ?? ''), t.token!);
-      if (text) docs.push({ external_ref: `gdrive:${f.id}`, title: clip(f.name, 200), content: text, url: f.webViewLink ? String(f.webViewLink) : null });
+    const out: Candidate[] = [];
+    for (const fl of files) {
+      if (out.length >= MAX_SYNC_FILES) break;
+      const name = String(fl.name ?? '');
+      const cand: Candidate = { external_ref: `gdrive:${fl.id}`, title: clip(name, 200), path: '', file_type: fileTypeOf(name, String(fl.mimeType ?? '')), size_bytes: fl.size != null ? Number(fl.size) : null };
+      if (candidatePasses(cand, f)) out.push(cand);
     }
-    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable files found (Google Docs/Slides/Sheets, PDFs, and text files are supported; uploaded Office files are skipped).' };
+    return { ok: true, candidates: out };
+  },
+  async fetchTexts(c: Ctx, items: Candidate[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const t = await this.token(c);
+    if (!t.ok) return out;
+    for (const it of items) {
+      out[it.external_ref] = await gdriveFetchText(it.external_ref.replace(/^gdrive:/, ''), it.file_type, t.token!);
+    }
+    return out;
+  },
+  async syncDocs(c: Ctx, f: IngestFilters = {}): Promise<SyncResult> {
+    const d = await this.discoverDocs(c, f);
+    if (!d.ok) return { ok: false, error: d.error };
+    const cands = d.candidates ?? [];
+    if (!cands.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable files matched your ingest settings.' };
+    const texts = await this.fetchTexts(c, cands);
+    const docs: SyncDoc[] = cands.map((cd) => ({ external_ref: cd.external_ref, title: cd.title, content: texts[cd.external_ref] ?? '', url: null })).filter((dd) => dd.content);
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'Matching files had no extractable text.' };
     return { ok: true, docs };
   },
 };
 
-async function gdriveFileText(id: string, mime: string, token: string): Promise<string> {
+// Extract text for one Drive file, keyed on coarse file type.
+async function gdriveFetchText(id: string, fileType: string, token: string): Promise<string> {
   const auth = { Authorization: `Bearer ${token}` };
-  if (mime === 'application/vnd.google-apps.document' || mime === 'application/vnd.google-apps.presentation') {
+  if (fileType === 'doc' || fileType === 'slide') {
     const res = await safeFetch(`${DRIVE}/files/${id}/export?mimeType=text/plain`, { headers: auth });
     return res ? (await res.text()).slice(0, MAX_DOC_CHARS) : '';
   }
-  if (mime === 'application/vnd.google-apps.spreadsheet') {
+  if (fileType === 'sheet') {
     const res = await safeFetch(`${DRIVE}/files/${id}/export?mimeType=text/csv`, { headers: auth });
     return res ? (await res.text()).slice(0, MAX_DOC_CHARS) : '';
   }
-  if (mime === 'application/pdf') {
+  if (fileType === 'pdf') {
     const res = await safeFetch(`${DRIVE}/files/${id}?alt=media&${DRIVE_SHARED}`, { headers: auth });
     return res ? (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS) : '';
   }
-  if (mime.startsWith('text/') || mime === 'application/json') {
+  if (fileType === 'text') {
     const res = await safeFetch(`${DRIVE}/files/${id}?alt=media&${DRIVE_SHARED}`, { headers: auth });
     if (!res) return '';
     const raw = await res.text();
-    return (mime === 'text/html' ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+    const looksHtml = /<\/?[a-z][\s\S]*>/i.test(raw.slice(0, 4000));
+    return (looksHtml ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
   }
   return '';   // uploaded Office/binary files: Drive can't export them — skipped honestly
 }
@@ -1757,6 +1837,40 @@ serve(async (req) => {
     }
 
     // ════════ sync — knowledge ingest (REFUSED for fetch_only) ════════
+    // ════════ discover — list source documents into the review queue ════════
+    // Applies the connector's ingest filters, then upserts candidates.
+    // Prior approve/reject decisions are PRESERVED (only new files are added
+    // as 'pending'); nothing is ingested here.
+    if (action === 'discover') {
+      if (!KNOWLEDGE_CAPABLE.has(connector.provider) || typeof (adapter as { discoverDocs?: unknown }).discoverDocs !== 'function') {
+        return json({ ok: false, error: 'discover_not_supported_for_provider', detail: `${connector.provider} does not support document discovery — use it directly.` }, 400);
+      }
+      const filters = ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters;
+      const d = await adapter.discoverDocs(ctx, filters);
+      if (!d.ok) {
+        await recordHealth(false, d.error ?? 'discover_failed');
+        return json({ ok: false, error: d.error ?? 'discover_failed' }, 200);
+      }
+      await recordHealth(true);
+      const cands: Candidate[] = (d.candidates ?? []).slice(0, MAX_SYNC_FILES);
+      const { data: existingRows } = await admin.from('connector_ingest_candidates')
+        .select('external_ref').eq('connector_id', connectorId);
+      const seen = new Set((existingRows ?? []).map((r: { external_ref: string }) => r.external_ref));
+      const fresh = cands.filter((c2) => !seen.has(c2.external_ref));
+      if (fresh.length) {
+        await admin.from('connector_ingest_candidates').insert(fresh.map((c2) => ({
+          tenant_id: tenantId, connector_id: connectorId, external_ref: c2.external_ref,
+          title: c2.title, path: c2.path, file_type: c2.file_type, size_bytes: c2.size_bytes,
+        })));
+      }
+      const { data: allRows } = await admin.from('connector_ingest_candidates')
+        .select('status').eq('connector_id', connectorId);
+      const counts: Record<string, number> = { pending: 0, approved: 0, rejected: 0, ingested: 0 };
+      for (const r of allRows ?? []) counts[(r as { status: string }).status] = (counts[(r as { status: string }).status] ?? 0) + 1;
+      await audit('connector_sync', `Document scan on ${connector.provider} — ${cands.length} matched filters, ${fresh.length} new for review`, { found: cands.length, new: fresh.length, ...counts });
+      return json({ ok: true, found: cands.length, new: fresh.length, ...counts });
+    }
+
     if (action === 'sync') {
       // Access grants: syncing stores content in DreamTeam → "ingest".
       const denied = await enforceAccess('ingest', 'sync');
@@ -1772,29 +1886,18 @@ serve(async (req) => {
       if (!KNOWLEDGE_CAPABLE.has(connector.provider) || typeof adapter.syncDocs !== 'function') {
         return json({ ok: false, error: 'sync_not_supported_for_provider', detail: `${connector.provider} has no knowledge ingest path; use read-through search instead.` }, 400);
       }
-      const r: SyncResult = await adapter.syncDocs(ctx);
-      if (!r.ok) {
-        await setStatus('error', r.error ?? 'sync_failed');
-        await recordHealth(false, r.error ?? 'sync_failed');
-        return json({ ok: false, error: r.error ?? 'sync_failed' }, 200);
-      }
-      await recordHealth(true);
-      let upserted = 0, chunked = 0, embedded = 0;
-      const errors: string[] = [];
-      for (const doc of (r.docs ?? []).slice(0, 50)) {
-        if (!doc.content) continue;
-        const { data: docRow, error: upErr } = await admin.from('knowledge_docs')
-          .upsert({
-            tenant_id: tenantId, title: doc.title, content: doc.content,
-            source: 'connector', external_ref: doc.external_ref,
-            tags: [`connector:${connector.provider}`],
-          }, { onConflict: 'tenant_id,source,external_ref' })
-          .select('id').single();
-        if (upErr || !docRow) { errors.push(`${doc.external_ref}: ${upErr?.message}`); continue; }
-        upserted++;
-        // Chunk + embed — same path as ingest-chunks.
+
+      // Ingest one document (upsert knowledge_docs + re-chunk + embed).
+      const ingestDoc = async (doc: SyncDoc): Promise<{ ok: boolean; chunks: number; embedded: number; error?: string }> => {
+        if (!doc.content) return { ok: false, chunks: 0, embedded: 0, error: 'empty' };
+        const { data: docRow, error: upErr } = await admin.from('knowledge_docs').upsert({
+          tenant_id: tenantId, title: doc.title, content: doc.content,
+          source: 'connector', external_ref: doc.external_ref, tags: [`connector:${connector.provider}`],
+        }, { onConflict: 'tenant_id,source,external_ref' }).select('id').single();
+        if (upErr || !docRow) return { ok: false, chunks: 0, embedded: 0, error: upErr?.message ?? 'upsert_failed' };
         const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
         await admin.from('knowledge_doc_chunks').delete().eq('doc_id', docRow.id);
+        let embedded = 0, chErr: string | undefined;
         if (chunks.length > 0) {
           const rows = [];
           for (let i = 0; i < chunks.length; i++) {
@@ -1802,16 +1905,61 @@ serve(async (req) => {
             if (emb) embedded++;
             rows.push({ tenant_id: tenantId, account_id: null, doc_id: docRow.id, chunk_index: i, content: chunks[i], embedding: emb });
           }
-          const { error: chErr } = await admin.from('knowledge_doc_chunks').insert(rows);
-          if (chErr) errors.push(`chunks ${doc.external_ref}: ${chErr.message}`);
-          else chunked += chunks.length;
+          const ins = await admin.from('knowledge_doc_chunks').insert(rows);
+          if (ins.error) chErr = ins.error.message;
         }
+        return { ok: true, chunks: chErr ? 0 : chunks.length, embedded, error: chErr };
+      };
+
+      const filters = ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters;
+      const reviewMode = (connector.provider === 'sharepoint' || connector.provider === 'gdrive')
+        && filters.require_review === true && typeof (adapter as { fetchTexts?: unknown }).fetchTexts === 'function';
+
+      let docs: SyncDoc[] = [];
+      if (reviewMode) {
+        // Review on: ingest ONLY the files an admin has approved.
+        const { data: approved } = await admin.from('connector_ingest_candidates')
+          .select('external_ref,file_type,title').eq('connector_id', connectorId).eq('status', 'approved');
+        const items: Candidate[] = (approved ?? []).map((a: { external_ref: string; file_type: string; title: string }) =>
+          ({ external_ref: a.external_ref, title: a.title, path: '', file_type: a.file_type, size_bytes: null }));
+        if (!items.length) {
+          return json({ ok: true, upserted: 0, chunked: 0, embedded: 0, detail: 'No approved documents to ingest yet — scan, then approve the files you want in the review queue.' });
+        }
+        const texts = await adapter.fetchTexts(ctx, items);
+        docs = items.map((it) => ({ external_ref: it.external_ref, title: it.title, content: texts[it.external_ref] ?? '', url: null }));
+        await recordHealth(true);
+      } else {
+        // Review off: walk the source with filters applied, ingest matches.
+        const r: SyncResult = await adapter.syncDocs(ctx, filters);
+        if (!r.ok) {
+          await setStatus('error', r.error ?? 'sync_failed');
+          await recordHealth(false, r.error ?? 'sync_failed');
+          return json({ ok: false, error: r.error ?? 'sync_failed' }, 200);
+        }
+        await recordHealth(true);
+        docs = r.docs ?? [];
+      }
+
+      let upserted = 0, chunked = 0, embedded = 0;
+      const errors: string[] = [];
+      const ingestedRefs: string[] = [];
+      for (const doc of docs.slice(0, 50)) {
+        const res = await ingestDoc(doc);
+        if (!res.ok) { if (res.error && res.error !== 'empty') errors.push(`${doc.external_ref}: ${res.error}`); continue; }
+        upserted++; chunked += res.chunks; embedded += res.embedded;
+        if (res.error) errors.push(`chunks ${doc.external_ref}: ${res.error}`);
+        ingestedRefs.push(doc.external_ref);
+      }
+      if (reviewMode && ingestedRefs.length) {
+        await admin.from('connector_ingest_candidates')
+          .update({ status: 'ingested', ingested_at: new Date().toISOString() })
+          .eq('connector_id', connectorId).in('external_ref', ingestedRefs);
       }
       const now = new Date().toISOString();
       await admin.from('connectors').update({ status: 'connected', last_sync_at: now, last_error: errors[0] ?? null }).eq('id', connectorId);
       await audit('connector_sync',
-        `Knowledge sync from ${connector.provider} — ${upserted} doc(s) ingested into knowledge (source=connector), ${chunked} chunks, ${embedded} embedded`,
-        { upserted, chunked, embedded, errors: errors.slice(0, 5) });
+        `Knowledge sync from ${connector.provider}${reviewMode ? ' (approved only)' : ''} — ${upserted} doc(s) ingested into knowledge (source=connector), ${chunked} chunks, ${embedded} embedded`,
+        { upserted, chunked, embedded, review_mode: reviewMode, errors: errors.slice(0, 5) });
       return json({ ok: true, upserted, chunked, embedded, errors });
     }
 

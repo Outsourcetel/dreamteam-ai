@@ -480,6 +480,86 @@ export async function hubSync(connectorId: string): Promise<{ ok: boolean; upser
   return invokeHub({ action: 'sync', connector_id: connectorId });
 }
 
+// ── Ingest control (migration 138): filters + review-before-ingest queue ──
+
+export interface IngestFilters {
+  exclude_patterns: string[];        // skip files/folders whose path contains one of these
+  allow_types: string[] | null;      // if set, only these coarse types (pdf|doc|slide|sheet|text)
+  folder: string | null;             // SharePoint sub-folder path / Drive folder id to scope to
+  require_review: boolean;           // only approved files ingest
+}
+export const INGEST_TYPES: { key: string; label: string }[] = [
+  { key: 'pdf', label: 'PDFs' }, { key: 'doc', label: 'Documents (Word/Docs)' },
+  { key: 'slide', label: 'Slides' }, { key: 'sheet', label: 'Spreadsheets' },
+  { key: 'text', label: 'Text / Markdown' },
+];
+export const DEFAULT_INGEST_FILTERS: IngestFilters = { exclude_patterns: [], allow_types: null, folder: null, require_review: true };
+
+export function readIngestFilters(c: Connector): IngestFilters {
+  const raw = ((c.config ?? {}) as { ingest?: Partial<IngestFilters> }).ingest ?? {};
+  return {
+    exclude_patterns: Array.isArray(raw.exclude_patterns) ? raw.exclude_patterns : [],
+    allow_types: Array.isArray(raw.allow_types) ? raw.allow_types : null,
+    folder: typeof raw.folder === 'string' && raw.folder.trim() ? raw.folder.trim() : null,
+    require_review: raw.require_review !== false,   // default ON
+  };
+}
+
+/** Owner/admin: persist the connector's ingest filters + review toggle. */
+export async function setIngestConfig(connectorId: string, filters: IngestFilters): Promise<void> {
+  const { error } = await supabase.rpc('set_connector_ingest_config', {
+    p_connector_id: connectorId,
+    p_config: {
+      exclude_patterns: filters.exclude_patterns.map((s) => s.trim()).filter(Boolean),
+      allow_types: filters.allow_types?.length ? filters.allow_types : null,
+      folder: filters.folder?.trim() || null,
+      require_review: !!filters.require_review,
+    },
+  });
+  if (error) raise('setIngestConfig', error);
+}
+
+export interface IngestCandidate {
+  id: string;
+  external_ref: string;
+  title: string;
+  path: string;
+  file_type: string;
+  size_bytes: number | null;
+  status: 'pending' | 'approved' | 'rejected' | 'ingested';
+  discovered_at: string;
+  ingested_at: string | null;
+}
+
+export async function listIngestCandidates(connectorId: string): Promise<IngestCandidate[]> {
+  const { data, error } = await supabase
+    .from('connector_ingest_candidates')
+    .select('id, external_ref, title, path, file_type, size_bytes, status, discovered_at, ingested_at')
+    .eq('connector_id', connectorId)
+    .order('status', { ascending: true })
+    .order('title', { ascending: true });
+  if (error) raise('listIngestCandidates', error);
+  return (data ?? []) as IngestCandidate[];
+}
+
+/** Owner/admin: approve / reject / reset candidates (null refs = all). */
+export async function decideIngestCandidates(
+  connectorId: string,
+  refs: string[] | null,
+  decision: 'approved' | 'rejected' | 'pending',
+): Promise<number> {
+  const { data, error } = await supabase.rpc('decide_ingest_candidates', {
+    p_connector_id: connectorId, p_refs: refs, p_decision: decision,
+  });
+  if (error) raise('decideIngestCandidates', error);
+  return (data as number) ?? 0;
+}
+
+/** Scan the source, applying filters, into the review queue (no ingest). */
+export async function discoverConnector(connectorId: string): Promise<{ ok: boolean; found?: number; new?: number; pending?: number; approved?: number; rejected?: number; ingested?: number; error?: string; detail?: string }> {
+  return invokeHub({ action: 'discover', connector_id: connectorId });
+}
+
 // ── Category contract (migration 027) ─────────────────────────────
 
 /** THE CATEGORY CONTRACT: run a canonical category op ({query} or
