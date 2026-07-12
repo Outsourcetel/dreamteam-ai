@@ -87,7 +87,7 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   asana: '🎯', clickup: '⬆️', monday: '📅', linear: '📐',
   stripe: '💳', shopify: '🛍️', woocommerce: '🛒', bigcommerce: '🏬', square: '⬛',
   bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓',
-  quickbooks: '💵', xero: '🧾', template: '🧱',
+  quickbooks: '💵', xero: '🧾', clio: '⚖️', gusto: '🌯', procore: '🏗️', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';

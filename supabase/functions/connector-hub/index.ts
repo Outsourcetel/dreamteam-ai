@@ -2527,10 +2527,12 @@ async function oauthAccessToken(c: Ctx, provider: string): Promise<{ ok: boolean
   const { data: clientId } = await c.admin.rpc('platform_config_get', { p_key: `oauth:${provider}:client_id` });
   const { data: clientSecret } = await c.admin.rpc('platform_config_get', { p_key: `oauth:${provider}:client_secret` });
   if (!clientId || !clientSecret) return { ok: false, error: 'oauth_app_not_configured' };
-  const res = await fetch(meta.tokenUrl, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`) },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString(),
-  });
+  const useBasic = (meta.tokenAuth ?? 'basic') === 'basic';
+  const rBody: Record<string, string> = { grant_type: 'refresh_token', refresh_token: refresh };
+  const rHeaders: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' };
+  if (useBasic) rHeaders.Authorization = 'Basic ' + btoa(`${clientId}:${clientSecret}`);
+  else { rBody.client_id = String(clientId); rBody.client_secret = String(clientSecret); }
+  const res = await fetch(meta.tokenUrl, { method: 'POST', headers: rHeaders, body: new URLSearchParams(rBody).toString() });
   const tok = await res.json().catch(() => null) as { access_token?: string; refresh_token?: string; expires_in?: number } | null;
   if (!res.ok || !tok?.access_token) return { ok: false, error: 'refresh_failed' };
   const next = { ...s, access_token: tok.access_token, refresh_token: tok.refresh_token ?? refresh, expires_at: Date.now() + (Number(tok.expires_in ?? 3600) - 60) * 1000 };
@@ -2607,6 +2609,129 @@ const xero = {
     if (!r.ok) return { ok: false, error: r.error };
     const i = (((r.body as { Invoices?: Array<Record<string, unknown>> })?.Invoices) ?? [])[0] ?? {};
     return { ok: true, items: [{ ref, type: 'invoice', title: clip(`${i.InvoiceNumber ?? ref}`, 160), snippet: clip(`${i.Total ?? ''} ${i.CurrencyCode ?? ''} · ${i.Status ?? ''}`, 400), url: null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── clio ── user-OAuth · product_system (matters).
+const CLIO = 'https://app.clio.com/api/v4';
+const clio = {
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await oauthAccessToken(c, 'clio');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${CLIO}/users/who_am_i.json`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Clio reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'clio');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${CLIO}/matters.json?query=${encodeURIComponent(query)}&limit=10&fields=id,display_number,description,status`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: data.map((m) => ({ ref: String(m.id), type: 'record', title: clip(`${m.display_number ?? ''} ${m.description ?? ''}`, 160), snippet: clip(String(m.status ?? ''), 400), url: null, raw: { id: m.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'clio');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${CLIO}/matters/${encodeURIComponent(ref)}.json?fields=id,display_number,description,status`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = ((r.body as { data?: Record<string, unknown> })?.data) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${m.display_number ?? ''} ${m.description ?? ''}`, 160), snippet: clip(String(m.status ?? ''), 400), url: null, raw: m }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── gusto ── user-OAuth · payroll_hcm (employees, time off). Resolves the
+// company from /v1/me. NOTE: /v1/me role shape varies — verify with live creds.
+const GUSTO = 'https://api.gusto.com';
+const gusto = {
+  async company(token: string): Promise<string | null> {
+    const r = await httpJson(`${GUSTO}/v1/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const roles = (r.body as { roles?: { payroll_admin?: { companies?: Array<{ uuid?: string }> } } })?.roles;
+    return roles?.payroll_admin?.companies?.[0]?.uuid ?? null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await oauthAccessToken(c, 'gusto');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${GUSTO}/v1/me`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Gusto reachable' };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'gusto');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${GUSTO}/v1/employees/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = r.body as Record<string, unknown>;
+    const job = (e.jobs as Array<{ title?: string }>)?.[0]?.title ?? '';
+    return { ok: true, items: [{ ref, type: 'employee', title: clip(`${e.first_name ?? ''} ${e.last_name ?? ''}`, 160), snippet: clip(`${job} · ${e.email ?? ''}`, 400), url: null, raw: e }] };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'gusto');
+    if (!t.ok) return { ok: false, error: t.error };
+    const cid = await this.company(t.token!);
+    if (!cid) return { ok: false, error: 'no_company' };
+    const r = await httpJson(`${GUSTO}/v1/companies/${cid}/employees`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const emps = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? emps.filter((e) => `${e.first_name} ${e.last_name} ${e.email}`.toLowerCase().includes(ql)) : emps;
+    return { ok: true, items: f.slice(0, 10).map((e) => ({ ref: String(e.uuid ?? e.id), type: 'employee', title: clip(`${e.first_name ?? ''} ${e.last_name ?? ''}`, 160), snippet: clip(String((e.jobs as Array<{ title?: string }>)?.[0]?.title ?? ''), 400), url: null, raw: { id: e.uuid ?? e.id } })) };
+  },
+  async timeOff(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'gusto');
+    if (!t.ok) return { ok: false, error: t.error };
+    const cid = await this.company(t.token!);
+    if (!cid) return { ok: false, error: 'no_company' };
+    const r = await httpJson(`${GUSTO}/v1/companies/${cid}/time_off_requests`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const reqs = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? reqs.filter((rq) => String((rq.employee as { full_name?: string })?.full_name ?? '').toLowerCase().includes(ql)) : reqs;
+    return { ok: true, items: f.slice(0, 10).map((rq) => ({ ref: String(rq.uuid ?? rq.id), type: 'time_off', title: clip(`${(rq.employee as { full_name?: string })?.full_name ?? 'Time off'} · ${rq.request_type ?? ''}`, 160), snippet: clip(String(rq.status ?? ''), 400), url: null, raw: { id: rq.uuid ?? rq.id } })) };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── procore ── user-OAuth · product_system (projects). Resolves company from
+// /companies; ref = companyId/projectId. Verify field shapes with live creds.
+const PROCORE = 'https://api.procore.com/rest/v1.0';
+const procore = {
+  async company(token: string): Promise<string | null> {
+    const r = await httpJson(`${PROCORE}/companies`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const cs = Array.isArray(r.body) ? (r.body as Array<{ id?: string | number }>) : [];
+    return cs[0]?.id != null ? String(cs[0].id) : null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await oauthAccessToken(c, 'procore');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${PROCORE}/companies`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Procore reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'procore');
+    if (!t.ok) return { ok: false, error: t.error };
+    const cid = await this.company(t.token!);
+    if (!cid) return { ok: false, error: 'no_company' };
+    const r = await httpJson(`${PROCORE}/projects?company_id=${cid}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const projs = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? projs.filter((p) => String(p.name ?? '').toLowerCase().includes(ql)) : projs;
+    return { ok: true, items: f.slice(0, 10).map((p) => ({ ref: `${cid}/${p.id}`, type: 'record', title: clip(p.name, 160), snippet: clip(`${p.project_number ?? ''} · ${p.stage ?? ''}`, 400), url: null, raw: { id: p.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'procore');
+    if (!t.ok) return { ok: false, error: t.error };
+    const [cid, pid] = ref.split('/');
+    const r = await httpJson(`${PROCORE}/projects/${encodeURIComponent(pid ?? ref)}?company_id=${cid ?? ''}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const p = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(p.name, 160), snippet: clip(String(p.project_number ?? ''), 400), url: null, raw: p }] };
   },
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
@@ -2826,6 +2951,18 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   xero: {
     search_invoices: (c, p) => xero.search(c, p.query ?? ''),
     get_invoice: (c, p) => xero.fetchRecord(c, 'invoice', p.external_ref ?? ''),
+  },
+  clio: {
+    search_records: (c, p) => clio.search(c, p.query ?? ''),
+    get_record: (c, p) => clio.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  gusto: {
+    get_employee: (c, p) => gusto.fetchRecord(c, 'employee', p.external_ref ?? ''),
+    search_time_off: (c, p) => gusto.timeOff(c, p.query ?? ''),
+  },
+  procore: {
+    search_records: (c, p) => procore.search(c, p.query ?? ''),
+    get_record: (c, p) => procore.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3124,7 +3261,7 @@ serve(async (req) => {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
-      quickbooks, xero,
+      quickbooks, xero, clio, gusto, procore,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

@@ -45,13 +45,15 @@ Deno.serve(async (req) => {
     const { data: clientSecret } = await admin.rpc('platform_config_get', { p_key: `oauth:${provider}:client_secret` });
     if (!clientId || !clientSecret) return page('App not configured', `${meta.label} is not fully set up. A platform admin must set its client id and secret.`, false);
 
-    // Exchange the code for tokens (Basic auth — QuickBooks & Xero style).
+    // Exchange the code for tokens. Client creds go in the Basic header
+    // (QuickBooks/Xero) or the form body (Clio/Gusto/Procore) per provider.
     const redirectUri = `${SUPABASE_URL}${OAUTH_CALLBACK_PATH}`;
-    const tokRes = await fetch(meta.tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`) },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }).toString(),
-    });
+    const useBasic = (meta.tokenAuth ?? 'basic') === 'basic';
+    const bodyParams: Record<string, string> = { grant_type: 'authorization_code', code, redirect_uri: redirectUri };
+    const tokHeaders: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' };
+    if (useBasic) tokHeaders.Authorization = 'Basic ' + btoa(`${clientId}:${clientSecret}`);
+    else { bodyParams.client_id = String(clientId); bodyParams.client_secret = String(clientSecret); }
+    const tokRes = await fetch(meta.tokenUrl, { method: 'POST', headers: tokHeaders, body: new URLSearchParams(bodyParams).toString() });
     const tok = await tokRes.json().catch(() => null) as { access_token?: string; refresh_token?: string; expires_in?: number; token_type?: string; error_description?: string } | null;
     if (!tokRes.ok || !tok?.access_token) {
       return page('Sign-in failed', `Could not complete the token exchange (${tok?.error_description ?? tokRes.status}). Please try again.`, false);

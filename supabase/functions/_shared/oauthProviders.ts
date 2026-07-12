@@ -10,6 +10,9 @@ export interface OAuthProviderMeta {
   tokenUrl: string;
   scopes: string;               // space-separated
   defaultCategory: string;      // connector category the DE speaks
+  // How the token endpoint wants the client credentials:
+  //  'basic' (default) = HTTP Basic auth header; 'body' = client_id/secret in the form body.
+  tokenAuth?: 'basic' | 'body';
   // Provider-specific callback post-processing the token exchange needs:
   //  - 'realm'  : the provider returns a realmId query param (QuickBooks) to store
   //  - 'xero'   : call /connections after token to resolve the org tenant id
@@ -35,13 +38,13 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderMeta> = {
     defaultCategory: 'erp_financials',
     postExchange: 'xero',
   },
-  // Metadata-ready follow-ons (add a read adapter in connector-hub to enable):
   clio: {
     label: 'Clio',
     authorizeUrl: 'https://app.clio.com/oauth/authorize',
     tokenUrl: 'https://app.clio.com/oauth/token',
     scopes: '',
     defaultCategory: 'product_system',
+    tokenAuth: 'body',
   },
   gusto: {
     label: 'Gusto',
@@ -49,6 +52,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderMeta> = {
     tokenUrl: 'https://api.gusto.com/oauth/token',
     scopes: '',
     defaultCategory: 'payroll_hcm',
+    tokenAuth: 'body',
   },
   procore: {
     label: 'Procore',
@@ -56,6 +60,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderMeta> = {
     tokenUrl: 'https://login.procore.com/oauth/token',
     scopes: '',
     defaultCategory: 'product_system',
+    tokenAuth: 'body',
   },
 };
 

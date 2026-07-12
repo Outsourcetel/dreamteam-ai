@@ -25,7 +25,7 @@ export type ConnectorProvider =
   | 'asana' | 'clickup' | 'monday' | 'linear'
   | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
   | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
-  | 'quickbooks' | 'xero' | 'template';
+  | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -163,6 +163,30 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In HubSpot: Settings → Integrations → Private Apps → Create a private app → on the Scopes tab enable the read scopes you want (crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read, tickets) → Create → copy the access token. One token covers CRM (companies, contacts, deals) and Service Hub (tickets). Set this connector\'s category to "helpdesk" to use it as a support desk, or "CRM" for sales/account context.',
     knowledgeSync: false, implemented: true,
+  },
+  clio: {
+    label: 'Clio', tagline: 'Legal — matters, clients, billing',
+    defaultCategory: 'product_system',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Clio — no keys to paste. (A platform admin registers the Clio app once.)',
+    knowledgeSync: false, implemented: true, oauth: true,
+  },
+  gusto: {
+    label: 'Gusto', tagline: 'Payroll & HR — employees, time off',
+    defaultCategory: 'payroll_hcm',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Gusto — no keys to paste. (A platform admin registers the Gusto app once.)',
+    knowledgeSync: false, implemented: true, oauth: true,
+  },
+  procore: {
+    label: 'Procore', tagline: 'Construction — projects, RFIs, documents',
+    defaultCategory: 'product_system',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Procore — no keys to paste. (A platform admin registers the Procore app once.)',
+    knowledgeSync: false, implemented: true, oauth: true,
   },
   quickbooks: {
     label: 'QuickBooks Online', tagline: 'Accounting — invoices, bills, customers',
