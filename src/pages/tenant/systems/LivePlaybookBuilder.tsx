@@ -11,16 +11,18 @@ import {
   PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST, DECISION_OPERATORS, BRANCH_PRIMITIVES,
   validateStepsClient, listDefinitions, createDefinition, updateDefinition,
   publishDefinition, startDefinitionRun, previewRun, uploadPlaybookMedia, getPlaybookMediaUrlByAssetId,
-  DISPATCH_MODE, WEEKDAYS, EVENT_META, describeSchedule, describeEventRule,
+  DISPATCH_MODE, WEEKDAYS, EVENT_META, POLLED_EVENT_KEYS, describeSchedule, describeEventRule,
   listSchedules, createSchedule, setScheduleActive, deleteSchedule,
   listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
   listTriggerFires, dispatchTriggersOpportunistic, listActionDefinitions,
+  listEventDefinitions, upsertEventDefinition, emitEvent,
 } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
-  PreviewResult, PreviewRunStep, ActionDefinition,
+  PreviewResult, PreviewRunStep, ActionDefinition, EventDefinition,
 } from '../../../lib/playbookBuilderApi';
+import { SUPABASE_URL } from '../../../lib/env';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -105,6 +107,8 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       );
     case 'connector_action':
       return <ConnectorActionEditor step={step} onChange={onChange} />;
+    case 'emit_event':
+      return <EmitEventEditor step={step} onChange={onChange} />;
     case 'update_record': {
       const table = String(p.table ?? 'renewal_invoices');
       const allowed = UPDATE_WHITELIST[table] ?? [];
@@ -252,6 +256,33 @@ function ConnectorActionEditor({ step, onChange }: { step: DefinitionStep; onCha
         <p className="text-[10px] text-amber-500">No registered actions yet. A workspace owner/admin can register them; platform helpdesk actions appear once a connector is set up.</p>
       )}
       <p className="text-[10px] text-slate-600">No connected system for the action's category → step records as skipped and the run continues (honest degradation). Every action passes the same access grants, guardrails and trust dial.</p>
+    </div>
+  );
+}
+
+// ── Emit event editor: pick a trigger event to fire (Wave 2b) ─────
+
+function EmitEventEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const [events, setEvents] = useState<EventDefinition[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    listEventDefinitions().then(setEvents).catch(() => setEvents([])).finally(() => setLoading(false));
+  }, []);
+  const key = String(p.event_key ?? '');
+  return (
+    <div className="space-y-2">
+      <select className={selectCls + ' !w-64'} disabled={loading} value={key}
+        onChange={e => onChange({ ...p, event_key: e.target.value })}>
+        <option value="">{loading ? 'Loading events…' : 'Pick an event to fire…'}</option>
+        {events.map(d => <option key={d.id} value={d.event_key}>{d.label}{d.scope === 'tenant' ? ' (yours)' : ''}</option>)}
+      </select>
+      <input className={inputCls} placeholder="Note (optional, templates supported — recorded on the fire)"
+        value={String(p.payload_template ?? '')} onChange={e => onChange({ ...p, payload_template: e.target.value })} />
+      {!loading && events.length === 0 && (
+        <p className="text-[10px] text-amber-500">No events defined yet — create one under Triggers → Manage events.</p>
+      )}
+      <p className="text-[10px] text-slate-600">Fires the event when this step runs — any playbook wired to it starts on the next dispatch cycle. Unknown event → step recorded as skipped, run continues.</p>
     </div>
   );
 }
@@ -874,6 +905,33 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   const [minAmount, setMinAmount] = useState(0); // dollars; 0 = any deal size
   const [cooldown, setCooldown] = useState(24);
 
+  // Wave 2b — the data-driven event set (platform polled + tenant emitted).
+  const [eventDefs, setEventDefs] = useState<EventDefinition[]>([]);
+  const reloadEvents = () => listEventDefinitions().then(setEventDefs).catch(() => setEventDefs([]));
+  useEffect(() => { void reloadEvents(); }, []);
+  const selectedDef = eventDefs.find(d => d.event_key === eventKey);
+  const isPolled = (POLLED_EVENT_KEYS as readonly string[]).includes(eventKey);
+  const eventDesc = selectedDef?.description ?? EVENT_META[eventKey]?.description ?? '';
+
+  // Custom-event management (create + manual fire + webhook).
+  const [showEvents, setShowEvents] = useState(false);
+  const [newKey, setNewKey] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [note, setNote] = useState<string | null>(null);
+  const customEvents = eventDefs.filter(d => d.scope === 'tenant');
+
+  const createCustomEvent = () => guard(async () => {
+    await upsertEventDefinition({ event_key: newKey.trim(), label: newLabel.trim() || newKey.trim() });
+    setNewKey(''); setNewLabel(''); await reloadEvents();
+  });
+  const fireEvent = async (key: string) => {
+    setNote(null);
+    try {
+      const r = await emitEvent({ event_key: key });
+      setNote(r.ok ? `Fired "${key}" — ${r.fires_created ?? 0} playbook(s) triggered.` : `Could not fire "${key}": ${r.error ?? 'unknown'}`);
+    } catch (e) { setNote((e as Error).message); }
+  };
+
   const guard = async (fn: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
     try { await fn(); onChanged(); setAdding(null); }
@@ -895,7 +953,8 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
     params: eventKey === 'invoice_overdue' ? { overdue_days: overdueDays }
       : eventKey === 'account_at_risk' ? { min_arr_cents: Math.max(0, Math.round(minArr)) * 100 }
       : eventKey === 'opportunity_won' ? { min_amount_cents: Math.max(0, Math.round(minAmount)) * 100 }
-      : { priority },
+      : eventKey === 'ticket_synced_high_priority' ? { priority }
+      : {}, // custom emitted event — no poll-filter; data comes from the emit payload
     cooldown_hours: cooldown,
   }));
 
@@ -911,6 +970,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
             className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
             ⚡ Add event rule
+          </button>
+          <button onClick={() => setShowEvents(v => !v)}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            ◆ Manage events
           </button>
         </div>
       </div>
@@ -972,8 +1035,15 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {adding === 'event' && (
         <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-2">
           <div className="flex gap-2 flex-wrap items-center">
-            <select className={selectCls + ' !w-64'} value={eventKey} onChange={e => setEventKey(e.target.value as EventKey)}>
-              {(Object.keys(EVENT_META) as EventKey[]).map(k => <option key={k} value={k}>{EVENT_META[k].label}</option>)}
+            <select className={selectCls + ' !w-64'} value={eventKey} onChange={e => setEventKey(e.target.value)}>
+              <optgroup label="Built-in">
+                {eventDefs.filter(d => d.scope === 'platform').map(d => <option key={d.id} value={d.event_key}>{d.label}</option>)}
+              </optgroup>
+              {customEvents.length > 0 && (
+                <optgroup label="Your events">
+                  {customEvents.map(d => <option key={d.id} value={d.event_key}>{d.label}</option>)}
+                </optgroup>
+              )}
             </select>
             {eventKey === 'invoice_overdue' ? (
               <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
@@ -993,22 +1063,69 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minAmount} onChange={e => setMinAmount(Number(e.target.value))} />
                 (0 = any)
               </label>
-            ) : (
+            ) : eventKey === 'ticket_synced_high_priority' ? (
               <select className={selectCls + ' !w-28'} value={priority} onChange={e => setPriority(e.target.value)}>
                 <option value="p1">p1</option><option value="p2">p2</option>
               </select>
-            )}
+            ) : null}
             <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
               cooldown
               <input className={inputCls + ' !w-16'} type="number" min={1} max={720} value={cooldown} onChange={e => setCooldown(Number(e.target.value))} />
               h per target
             </label>
           </div>
-          <p className="text-[10px] text-slate-600">{EVENT_META[eventKey].description}</p>
+          <p className="text-[10px] text-slate-600">{eventDesc}{!isPolled && selectedDef ? ' — fired via the Emit event step, manual fire, or the webhook.' : ''}</p>
           <button onClick={() => void addRule()} disabled={busy}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
             {busy ? 'Adding…' : 'Add event rule'}
           </button>
+        </div>
+      )}
+
+      {/* Wave 2b — custom (emitted) event management */}
+      {showEvents && (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-white mb-1">Your events</p>
+            <p className="text-[11px] text-slate-500 mb-2">
+              Define an event your business can fire — from an Emit-event step in a playbook, the Fire button here, or the webhook below. Any playbook with a matching event rule runs when it fires.
+            </p>
+            <div className="flex gap-2 flex-wrap items-end">
+              <input className={inputCls + ' !w-40'} placeholder="event_key (e.g. deal_signed)"
+                value={newKey} onChange={e => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))} />
+              <input className={inputCls + ' !w-44'} placeholder="Label (e.g. Deal signed)"
+                value={newLabel} onChange={e => setNewLabel(e.target.value)} />
+              <button onClick={() => void createCustomEvent()} disabled={busy || !newKey.trim()}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+                Create event
+              </button>
+            </div>
+          </div>
+
+          {customEvents.length > 0 && (
+            <div className="space-y-1">
+              {customEvents.map(d => (
+                <div key={d.id} className="flex items-center justify-between gap-2 bg-slate-900/60 rounded-lg px-3 py-1.5">
+                  <span className="text-[11px] text-slate-300">{d.label} <span className="text-slate-600 font-mono">· {d.event_key}</span></span>
+                  <button onClick={() => void fireEvent(d.event_key)}
+                    className="text-[10px] px-2 py-1 rounded border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                    Fire now
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {note && <p className="text-[11px] text-emerald-400">{note}</p>}
+
+          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+            <p className="text-[11px] font-semibold text-slate-300 mb-1">Webhook — fire an event from an external system</p>
+            <p className="text-[10px] text-slate-500 mb-1.5">POST with a workspace API key (create one under Security &amp; Access):</p>
+            <pre className="text-[10px] text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap">{`POST ${SUPABASE_URL}/functions/v1/emit-event
+{ "tenant_id": "<your workspace id>",
+  "event_key": "deal_signed",
+  "api_key": "dt_live_…",
+  "payload": { } }`}</pre>
+          </div>
         </div>
       )}
 

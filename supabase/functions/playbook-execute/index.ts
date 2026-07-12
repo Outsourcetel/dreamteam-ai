@@ -158,7 +158,7 @@ const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
   'connector_action', 'update_record', 'log_activity', 'consult_specialist',
   'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
-  'start_onboarding', 'complete',
+  'start_onboarding', 'emit_event', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -177,6 +177,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   sub_playbook: 'Run another playbook',
   agentic_step: 'Agentic step',
   start_onboarding: 'Start onboarding',
+  emit_event: 'Emit event',
   complete: 'Complete',
 };
 
@@ -187,6 +188,7 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
   'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'start_onboarding',
+  'emit_event',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
@@ -348,6 +350,13 @@ function validateSteps(steps: unknown): ValidationError[] {
       case 'log_activity':
         if (typeof p.text_template !== 'string' || !p.text_template.trim()) {
           errs.push({ index: i, code: 'bad_params', message: 'log_activity needs a non-empty text_template.' });
+        }
+        break;
+      case 'emit_event':
+        // Event existence is TENANT RUNTIME STATE (checked at execution time,
+        // honest no-op if missing) — shape-only validation here.
+        if (typeof p.event_key !== 'string' || !p.event_key.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'emit_event needs an event_key (e.g. "deal_signed").' });
         }
         break;
       case 'consult_specialist': {
@@ -1314,6 +1323,45 @@ async function executeDefinitionSteps(
             tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'resolved', text,
           });
           step.status = 'done'; step.at = now(); step.detail = text;
+          break;
+        }
+
+        // ────────────────────────────────────────────────
+        case 'emit_event': {
+          // Fires a tenant-defined trigger event (Wave 2b). Any playbook
+          // wired to this event runs on the next dispatch cycle — the same
+          // rails polled events ride. Honest no-op if the event isn't found.
+          const eventKey = String(params.event_key ?? '').trim();
+          const note = renderTemplate((params.payload_template as string) ?? '', ctx, run.id);
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would emit event "${eventKey}"`;
+            break;
+          }
+          if (!eventKey) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'skipped: no event_key configured';
+            break;
+          }
+          const { data: emit, error: emitErr } = await admin.rpc('emit_tenant_event', {
+            p_tenant_id: tenantId,
+            p_event_key: eventKey,
+            p_target_account_id: ctx.account_id ?? null,
+            p_payload: { source: 'playbook', run_id: run.id, ...(note ? { note } : {}) },
+          });
+          const e = emit as { ok?: boolean; error?: string; fires_created?: number } | null;
+          if (emitErr || !e?.ok) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `skipped: event "${eventKey}" ${e?.error ?? emitErr?.message ?? 'could not be emitted'}`;
+          } else {
+            step.status = 'done'; step.at = now();
+            step.detail = `Emitted "${eventKey}" — ${e.fires_created ?? 0} playbook(s) triggered`;
+            await audit(admin, tenantId,
+              `Playbook [${acct()}] — emitted event "${eventKey}" (${e.fires_created ?? 0} triggered)`,
+              'playbook_step',
+              { run_id: run.id, definition_id: run.definition_id, step_index: i, event_key: eventKey, fires_created: e.fires_created ?? 0 },
+              'Playbook DE');
+          }
           break;
         }
 

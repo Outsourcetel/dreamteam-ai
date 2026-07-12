@@ -19,7 +19,7 @@ export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
   | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist'
   | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'agentic_step'
-  | 'start_onboarding' | 'complete';
+  | 'start_onboarding' | 'emit_event' | 'complete';
 
 export interface StepMedia {
   asset_id?: string;
@@ -107,6 +107,9 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'start_onboarding', label: 'Start onboarding', gate: false, group: 'work',
     defaultParams: { template_version_id: '', name: '' },
     description: 'Creates a real onboarding project for the run\'s account, from a published template version you pick. Degrades honestly: a deleted/unpublished template version or no account in context → step recorded as skipped, run continues.' },
+  { key: 'emit_event', label: 'Emit event', gate: false, group: 'flow',
+    defaultParams: { event_key: '', payload_template: '' },
+    description: 'Fires one of your trigger events — any playbook wired to that event runs next (event-driven chaining). Degrades honestly: an unknown event → step recorded as skipped, run continues.' },
   { key: 'complete', label: 'Complete', gate: false, group: 'work', defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
@@ -413,7 +416,11 @@ export async function startDefinitionRun(definitionId: string, accountId: string
 export const DISPATCH_MODE: 'cron' | 'opportunistic' = 'cron';
 
 export type ScheduleCadence = 'daily' | 'weekly' | 'monthly';
-export type EventKey = 'invoice_overdue' | 'ticket_synced_high_priority' | 'account_at_risk' | 'opportunity_won';
+// Wave 2b — the event set is now data-driven (event_definitions registry).
+// The 4 platform 'polled' events keep rich metadata in EVENT_META; tenant
+// 'emitted' events are arbitrary lowercase keys, so this is a plain string.
+export type EventKey = string;
+export const POLLED_EVENT_KEYS = ['invoice_overdue', 'ticket_synced_high_priority', 'account_at_risk', 'opportunity_won'] as const;
 
 export interface PlaybookSchedule {
   id: string;
@@ -495,7 +502,68 @@ export function describeEventRule(r: PlaybookEventRule): string {
     const min = r.params.min_amount_cents ?? 0;
     return min > 0 ? `on opportunity won (deal ≥ $${Math.round(min / 100).toLocaleString()})` : 'on opportunity won';
   }
-  return `on ${r.params.priority ?? 'p1'} ticket synced`;
+  if (r.event_key === 'ticket_synced_high_priority') return `on ${r.params.priority ?? 'p1'} ticket synced`;
+  // Tenant emitted event.
+  return `on "${r.event_key}" emitted`;
+}
+
+// ── Event definitions registry (Wave 2b, migration 134) ───────────
+export interface EventParamField { name: string; type?: string; required?: boolean; help?: string }
+export interface EventDefinition {
+  id: string;
+  scope: 'platform' | 'tenant';
+  event_key: string;
+  label: string;
+  description: string;
+  kind: 'polled' | 'emitted';
+  params_schema: EventParamField[];
+  active: boolean;
+}
+
+/** Events available to bind a rule to (platform + own-tenant, active, via RLS). */
+export async function listEventDefinitions(): Promise<EventDefinition[]> {
+  const { data, error } = await supabase
+    .from('event_definitions')
+    .select('id, scope, event_key, label, description, kind, params_schema, active')
+    .eq('active', true)
+    .order('scope', { ascending: true })
+    .order('label', { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw new CustomerApiError(error.message, false);
+  }
+  return (data ?? []).map((r) => ({
+    ...r,
+    params_schema: Array.isArray(r.params_schema) ? (r.params_schema as EventParamField[]) : [],
+  })) as EventDefinition[];
+}
+
+/** Register/update a tenant-defined (emitted) event. */
+export async function upsertEventDefinition(input: {
+  id?: string; event_key: string; label: string; description?: string;
+}): Promise<EventDefinition> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('upsert_event_definition', {
+    p_id: input.id ?? null, p_scope: 'tenant', p_tenant_id: tid,
+    p_event_key: input.event_key, p_label: input.label,
+    p_description: input.description ?? '', p_kind: 'emitted', p_params_schema: [],
+  });
+  if (error) raise('upsertEventDefinition', error);
+  return data as EventDefinition;
+}
+
+/** Manually fire an emitted event (owner/admin only, server-enforced). */
+export async function emitEvent(input: {
+  event_key: string; target_account_id?: string | null; payload?: Record<string, unknown>;
+}): Promise<{ ok: boolean; fires_created?: number; error?: string }> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('emit_tenant_event', {
+    p_tenant_id: tid, p_event_key: input.event_key,
+    p_target_ref: null, p_target_account_id: input.target_account_id ?? null,
+    p_payload: { source: 'manual', ...(input.payload ?? {}) },
+  });
+  if (error) raise('emitEvent', error);
+  return data as { ok: boolean; fires_created?: number; error?: string };
 }
 
 // ── Schedules CRUD ────────────────────────────────────────────────
