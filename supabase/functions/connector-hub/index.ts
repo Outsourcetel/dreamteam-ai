@@ -1395,6 +1395,65 @@ const hubspot = {
   },
 };
 
+// ── slack ── secret: { token } (User OAuth Token xoxp- with search:read for
+// message search; bot tokens can read channels but not search). Fixed base,
+// so no per-tenant base_url. Read-through: search past messages/answers as a
+// knowledge source. Posting replies is a follow-on write-back action.
+const SLACK = 'https://slack.com/api';
+const slack = {
+  // Slack returns HTTP 200 with { ok:false, error } on logical failures.
+  async api(c: Ctx, method: string, params: Record<string, string>): Promise<{ ok: boolean; body?: Record<string, unknown>; error?: string }> {
+    const qs = new URLSearchParams(params).toString();
+    const r = await httpJson(`${SLACK}/${method}${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${c.secret.token ?? ''}` } });
+    const body = (r.body ?? null) as Record<string, unknown> | null;
+    if (!r.ok && !body) return { ok: false, error: r.error };
+    if (!body?.ok) {
+      const e = String(body?.error ?? r.error ?? 'slack_error');
+      return { ok: false, error: e === 'invalid_auth' || e === 'not_authed' ? 'auth_failed' : e };
+    }
+    return { ok: true, body };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.api(c, 'auth.test', {});
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: `authenticated to ${r.body?.team ?? 'workspace'} as ${r.body?.user ?? 'token'}` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await this.api(c, 'search.messages', { query, count: '10' });
+    if (!r.ok) {
+      if (r.error === 'not_allowed_token_type') return { ok: false, error: 'slack_needs_user_token' };
+      return { ok: false, error: r.error };
+    }
+    const matches = ((r.body?.messages as { matches?: Array<Record<string, unknown>> } | undefined)?.matches) ?? [];
+    return {
+      ok: true,
+      items: matches.slice(0, 10).map((m) => {
+        const ch = (m.channel ?? {}) as Record<string, unknown>;
+        return { ref: `${ch.id ?? ''}:${m.ts ?? ''}`, type: 'message', title: clip(`#${ch.name ?? 'dm'} — ${m.username ?? m.user ?? ''}`, 160), snippet: clip(String(m.text ?? ''), 400), url: m.permalink ? String(m.permalink) : null, raw: { channel: ch.id, ts: m.ts } };
+      }),
+    };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const [channel, ts] = ref.split(':');
+    if (!channel || !ts) return { ok: false, error: 'bad_ref' };
+    const r = await this.api(c, 'conversations.history', { channel, latest: ts, oldest: ts, inclusive: 'true', limit: '1' });
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = (((r.body?.messages as Array<Record<string, unknown>>) ?? [])[0] ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'message', title: clip(`Message in ${channel}`, 160), snippet: clip(String(m.text ?? ''), 400), url: null, raw: m }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const ch = await this.api(c, 'conversations.list', { types: 'public_channel', limit: '5', exclude_archived: 'true' });
+    if (!ch.ok) return { ok: false, error: ch.error };
+    const channels = ((ch.body?.channels as Array<Record<string, unknown>>) ?? []);
+    if (!channels.length) return { ok: true, items: [] };
+    const first = channels[0];
+    const h = await this.api(c, 'conversations.history', { channel: String(first.id), limit: '8' });
+    if (!h.ok) return { ok: true, items: [] };
+    const msgs = ((h.body?.messages as Array<Record<string, unknown>>) ?? []);
+    return { ok: true, items: msgs.map((m) => ({ ref: `${first.id}:${m.ts}`, type: 'message', title: clip(`#${first.name}`, 160), snippet: clip(String(m.text ?? ''), 400), url: null, raw: { ts: m.ts } })) };
+  },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -1489,6 +1548,11 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
       return { ok: true, items: r.results.map((x) => { const q = (x.properties ?? {}) as Record<string, unknown>; return { ref: String(x.id), type: 'ticket', title: clip(q.subject || `Ticket ${x.id}`, 160), snippet: clip(stripHtml(String(q.content ?? '')), 400), url: `https://app.hubspot.com/contacts/tickets/${x.id}`, raw: x }; }) };
     },
     get_ticket: (c, p) => hubspot.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  slack: {
+    // knowledge_base — past Slack messages/answers as searchable knowledge
+    search_articles: (c, p) => slack.search(c, p.query ?? ''),
+    get_article: (c, p) => slack.fetchRecord(c, 'message', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -1780,8 +1844,8 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot> = {
-      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot,
+    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive | typeof hubspot | typeof slack> = {
+      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

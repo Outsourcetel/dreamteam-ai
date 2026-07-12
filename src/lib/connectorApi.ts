@@ -19,7 +19,7 @@ import { computeHealth } from './categoryContracts';
 
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
-  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'template';
+  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'hubspot' | 'slack' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -82,6 +82,16 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  slack: {
+    label: 'Slack', tagline: 'Team chat — search past answers & decisions',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Slack API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Slack',
+    fields: [
+      { key: 'token', label: 'User OAuth Token', placeholder: 'xoxp-••••••••', secret: true },
+    ],
+    help: 'To let a DE search past Slack messages you need a User OAuth Token (xoxp-) with the search:read scope — bot tokens cannot search. In Slack: api.slack.com/apps → Create/select an app → OAuth & Permissions → add the "search:read" User Token Scope → Install to Workspace → copy the "User OAuth Token" (starts xoxp-). Paste it here. The DE reads past answers as knowledge; it never posts unless you add a posting action later.',
+    knowledgeSync: false, implemented: true,
   },
   hubspot: {
     label: 'HubSpot', tagline: 'CRM + Service Hub — companies, deals, tickets in one',
