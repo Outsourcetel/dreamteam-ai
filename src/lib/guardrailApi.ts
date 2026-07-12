@@ -15,7 +15,12 @@ export type GuardrailRuleType =
   | 'blocked_topic'
   | 'blocked_phrase'
   | 'require_approval_over_cents'
-  | 'max_discount_pct';
+  | 'max_discount_pct'
+  // migration 070 — '|'-separated phrases that score customer frustration
+  // (25 pts per matching rule; ≥ threshold forces human review). This was
+  // missing from the union while real rows existed, which crashed the
+  // Compliance page for any tenant with seeded frustration signals.
+  | 'frustration_signal';
 
 // Wave 2a — where a rule applies. 'workspace' = the whole tenant (the
 // pre-2a behavior and the default). 'department' matches a DE's free-text

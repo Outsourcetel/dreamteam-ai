@@ -27,7 +27,13 @@ const RULE_TYPE_META: Record<GuardrailRuleType, { label: string; hint: string }>
   blocked_phrase: { label: 'Blocked phrase', hint: 'DE answers containing these phrases are withheld and escalated' },
   require_approval_over_cents: { label: 'Approval threshold', hint: 'Invoices above this amount route to Human Tasks' },
   max_discount_pct: { label: 'Discount cap', hint: 'Maximum discount without human approval' },
+  frustration_signal: { label: 'Frustration signal', hint: 'Phrases that score customer frustration — enough matches force a human, regardless of confidence' },
 }
+
+// A rule type the UI doesn't know yet must never crash the page again —
+// render it honestly instead (this exact gap took the page down when
+// frustration_signal rows existed but the map didn't have the key).
+const ruleTypeMeta = (t: string) => RULE_TYPE_META[t as GuardrailRuleType] ?? { label: t.split('_').join(' '), hint: 'Custom rule type' }
 
 // Wave 2a — the scopes surfaced in the UI. All three are honored across
 // the answer, triage, and action-gate paths.
@@ -169,7 +175,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                     <tr key={r.id} className={`border-b border-slate-800/60 last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
                       <td className={`${td} text-slate-200 text-xs`}>{r.rule}</td>
                       <td className={td}>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{RULE_TYPE_META[r.rule_type].label}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{ruleTypeMeta(r.rule_type).label}</span>
                       </td>
                       <td className={td}>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-slate-800 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{scopeLabel(r)}</span>
@@ -269,7 +275,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               {form.scope === 'department' && departments.length === 0 && (
                 <p className="text-[11px] text-amber-400/80">No departments found on your roster yet — set a department on a Digital Employee's profile first, or scope to a specific employee.</p>
               )}
-              {(form.rule_type === 'blocked_phrase' || form.rule_type === 'blocked_topic') ? (
+              {(form.rule_type === 'blocked_phrase' || form.rule_type === 'blocked_topic' || form.rule_type === 'frustration_signal') ? (
                 <div>
                   <label className="block text-slate-400 mb-1">Patterns (separate alternatives with |)</label>
                   <input value={form.pattern} onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
@@ -286,7 +292,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
                 </div>
               )}
-              <p className="text-[11px] text-slate-500">{RULE_TYPE_META[form.rule_type].hint}.</p>
+              <p className="text-[11px] text-slate-500">{ruleTypeMeta(form.rule_type).hint}.</p>
             </div>
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setShowAdd(false)}
