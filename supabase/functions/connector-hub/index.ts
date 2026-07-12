@@ -81,6 +81,7 @@ import {
   walkPath, renderTemplate, renderBody, renderAction,
 } from '../_shared/adapterTemplates.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
@@ -819,8 +820,285 @@ function templateAdapter(t: TemplateExec) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// DOCUMENT-REPOSITORY ADAPTERS (app-only, no per-user OAuth redirect)
+// SharePoint via Microsoft Graph client-credentials; Google Drive via a
+// service-account JWT-bearer grant. Both are knowledge-capable: syncDocs
+// pulls document text into the corpus, extracting PDFs (and Office files
+// converted to PDF) with unpdf — the same reader the extract-document
+// edge function uses.
+// ════════════════════════════════════════════════════════════════
 
-const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom']);
+const MAX_DOC_CHARS = 200_000;   // per-document text cap handed to the ingester
+const MAX_SYNC_FILES = 100;      // files walked per sync run
+
+async function pdfBytesToText(bytes: Uint8Array): Promise<string> {
+  try {
+    const pdf = await getDocumentProxy(bytes);
+    const { text } = await extractText(pdf, { mergePages: true });
+    return (Array.isArray(text) ? text.join('\n\n') : String(text ?? '')).trim();
+  } catch { return ''; }
+}
+
+// A binary/text fetch that still honours the SSRF guard on the (fixed,
+// vendor-owned) URL. httpJson can't be used — it JSON-parses the body.
+async function safeFetch(url: string, init: RequestInit = {}): Promise<Response | null> {
+  if (!isSafeExternalUrl(url)) return null;
+  try {
+    const res = await fetch(url, init);
+    return res.ok ? res : null;
+  } catch { return null; }
+}
+
+const b64url = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+// ── Google service-account → access token (RS256 JWT-bearer grant) ──
+async function googleAccessToken(saJson: string, scope: string): Promise<{ ok: boolean; token?: string; error?: string }> {
+  let sa: { client_email?: string; private_key?: string; token_uri?: string };
+  try { sa = JSON.parse(saJson); } catch { return { ok: false, error: 'invalid_service_account_json' }; }
+  if (!sa.client_email || !sa.private_key) return { ok: false, error: 'service_account_missing_client_email_or_private_key' };
+  const tokenUri = sa.token_uri ?? 'https://oauth2.googleapis.com/token';
+  const now = Math.floor(Date.now() / 1000);
+  const enc = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const signingInput = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc({ iss: sa.client_email, scope, aud: tokenUri, iat: now, exp: now + 3600 })}`;
+  let jwt: string;
+  try {
+    const pem = sa.private_key.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\s+/g, '');
+    const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+    const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, key, new TextEncoder().encode(signingInput));
+    jwt = `${signingInput}.${b64url(new Uint8Array(sig))}`;
+  } catch (e) {
+    return { ok: false, error: `could_not_sign_jwt: ${String((e as Error)?.message ?? e).slice(0, 80)}` };
+  }
+  const r = await httpJson(tokenUri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }).toString(),
+  });
+  const b = r.body as { access_token?: string; error_description?: string; error?: string } | null;
+  if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? b?.error ?? r.error ?? 'jwt_bearer_failed' };
+  return { ok: true, token: b.access_token };
+}
+
+// ── SharePoint (Microsoft Graph, app-only) ──
+// secrets: { tenant_id (Azure AD directory id), client_id, client_secret }
+// base_url: the site, e.g. https://acme.sharepoint.com/sites/kb
+const GRAPH = 'https://graph.microsoft.com/v1.0';
+const sharepoint = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const tenant = (c.secret.tenant_id ?? '').trim();
+    if (!tenant) return { ok: false, error: 'missing_tenant_id' };
+    const r = await httpJson(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: c.secret.client_id ?? '',
+        client_secret: c.secret.client_secret ?? '',
+        scope: 'https://graph.microsoft.com/.default',
+      }).toString(),
+    });
+    const b = r.body as { access_token?: string; error_description?: string } | null;
+    if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? r.error ?? 'oauth_failed' };
+    return { ok: true, token: b.access_token };
+  },
+  siteSegment(baseUrl: string): string {
+    // Graph addresses a site as {hostname}:{server-relative-path}:
+    try {
+      const u = new URL(baseUrl);
+      const path = u.pathname.replace(/\/+$/, '');
+      return path ? `${u.hostname}:${path}:` : u.hostname;
+    } catch { return baseUrl.replace(/^https?:\/\//, '').replace(/\/+$/, ''); }
+  },
+  async siteId(c: Ctx, token: string): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const r = await httpJson(`${GRAPH}/sites/${this.siteSegment(c.baseUrl)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const b = r.body as { id?: string } | null;
+    if (!r.ok || !b?.id) return { ok: false, error: r.error ?? 'site_not_found' };
+    return { ok: true, id: b.id };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return { ok: false, error: s.error };
+    return { ok: true, detail: `app-only token issued; SharePoint site reachable` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return { ok: false, error: s.error };
+    const r = await httpJson(`${GRAPH}/sites/${s.id}/drive/root/search(q='${encodeURIComponent(query)}')?$top=10`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = (r.body as { value?: Array<Record<string, unknown>> })?.value ?? [];
+    return { ok: true, items: items.slice(0, 10).map((it) => ({ ref: String(it.id ?? ''), type: 'document', title: clip(it.name, 160), snippet: clip(it.description ?? '', 400), url: it.webUrl ? String(it.webUrl) : null, raw: it })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return { ok: false, error: s.error };
+    const r = await httpJson(`${GRAPH}/sites/${s.id}/drive/items/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const it = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'document', title: clip(it.name, 160), snippet: clip(it.description ?? '', 400), url: it.webUrl ? String(it.webUrl) : null, raw: it }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return { ok: false, error: s.error };
+    const r = await httpJson(`${GRAPH}/sites/${s.id}/drive/root/children?$top=10&$orderby=lastModifiedDateTime desc`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = (r.body as { value?: Array<Record<string, unknown>> })?.value ?? [];
+    return { ok: true, items: items.filter((it) => it.file).map((it) => ({ ref: String(it.id), type: 'document', title: clip(it.name, 160), snippet: '', url: it.webUrl ? String(it.webUrl) : null, raw: it })) };
+  },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const s = await this.siteId(c, t.token!);
+    if (!s.ok) return { ok: false, error: s.error };
+    const auth = { Authorization: `Bearer ${t.token}` };
+    const docs: SyncDoc[] = [];
+    const queue: string[] = ['root'];
+    let folders = 0;
+    while (queue.length && docs.length < MAX_SYNC_FILES && folders < 60) {
+      const folder = queue.shift()!;
+      folders++;
+      const listUrl = folder === 'root'
+        ? `${GRAPH}/sites/${s.id}/drive/root/children?$top=200`
+        : `${GRAPH}/sites/${s.id}/drive/items/${folder}/children?$top=200`;
+      const r = await httpJson(listUrl, { headers: auth });
+      if (!r.ok) break;
+      const items = (r.body as { value?: Array<Record<string, unknown>> })?.value ?? [];
+      for (const it of items) {
+        if (docs.length >= MAX_SYNC_FILES) break;
+        if (it.folder) { queue.push(String(it.id)); continue; }
+        if (!it.file) continue;
+        const text = await sharepointItemText(String(s.id), String(it.id), String(it.name ?? ''), t.token!);
+        if (text) docs.push({ external_ref: `sharepoint:${it.id}`, title: clip(it.name, 200), content: text, url: it.webUrl ? String(it.webUrl) : null });
+      }
+    }
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable documents were found in this library (text, PDF, Word, PowerPoint are supported).' };
+    return { ok: true, docs };
+  },
+};
+
+async function sharepointItemText(siteId: string, itemId: string, name: string, token: string): Promise<string> {
+  const auth = { Authorization: `Bearer ${token}` };
+  const lower = name.toLowerCase();
+  const base = `${GRAPH}/sites/${siteId}/drive/items/${itemId}/content`;
+  if (/\.(txt|md|csv|json|html?|xml)$/.test(lower)) {
+    const res = await safeFetch(base, { headers: auth });
+    if (!res) return '';
+    const raw = await res.text();
+    return (/\.html?$/.test(lower) ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+  }
+  if (/\.pdf$/.test(lower)) {
+    const res = await safeFetch(base, { headers: auth });
+    if (!res) return '';
+    return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+  }
+  if (/\.(docx?|pptx?|xlsx?|odt|odp|ods|rtf)$/.test(lower)) {
+    // Graph converts Office documents to PDF on the fly; unpdf reads them.
+    const res = await safeFetch(`${base}?format=pdf`, { headers: auth });
+    if (!res) return '';
+    return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+  }
+  return '';
+}
+
+// ── Google Drive (service account, read-only) ──
+// secrets: { service_account_json } ; base_url: optional folder / shared-drive id to scope to
+const DRIVE = 'https://www.googleapis.com/drive/v3';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+const DRIVE_SHARED = 'supportsAllDrives=true&includeItemsFromAllDrives=true';
+const gdrive = {
+  token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    return googleAccessToken(c.secret.service_account_json ?? '', DRIVE_SCOPE);
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${DRIVE}/files?pageSize=1&fields=files(id)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'service-account token issued; Google Drive reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const q = `fullText contains ${JSON.stringify(query)} and trashed=false`;
+    const r = await httpJson(`${DRIVE}/files?q=${encodeURIComponent(q)}&pageSize=10&fields=files(id,name,mimeType,webViewLink)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const files = (r.body as { files?: Array<Record<string, unknown>> })?.files ?? [];
+    return { ok: true, items: files.slice(0, 10).map((f) => ({ ref: String(f.id), type: 'document', title: clip(f.name, 160), snippet: '', url: f.webViewLink ? String(f.webViewLink) : null, raw: f })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${DRIVE}/files/${encodeURIComponent(ref)}?fields=id,name,mimeType,webViewLink&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const f = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'document', title: clip(f.name, 160), snippet: '', url: f.webViewLink ? String(f.webViewLink) : null, raw: f }] };
+  },
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${DRIVE}/files?q=trashed=false&orderBy=modifiedTime desc&pageSize=10&fields=files(id,name,mimeType,webViewLink)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const files = (r.body as { files?: Array<Record<string, unknown>> })?.files ?? [];
+    return { ok: true, items: files.map((f) => ({ ref: String(f.id), type: 'document', title: clip(f.name, 160), snippet: '', url: f.webViewLink ? String(f.webViewLink) : null, raw: f })) };
+  },
+  async syncDocs(c: Ctx): Promise<SyncResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const folder = (c.baseUrl ?? '').trim().replace(/^https?:\/\/[^ ]*\/folders\//, '').replace(/[?#].*$/, '');
+    let q = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
+    if (folder) q = `'${folder.replace(/'/g, '')}' in parents and ${q}`;
+    const r = await httpJson(`${DRIVE}/files?q=${encodeURIComponent(q)}&pageSize=${MAX_SYNC_FILES}&fields=files(id,name,mimeType,webViewLink)&${DRIVE_SHARED}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const files = (r.body as { files?: Array<Record<string, unknown>> })?.files ?? [];
+    const docs: SyncDoc[] = [];
+    for (const f of files) {
+      if (docs.length >= MAX_SYNC_FILES) break;
+      const text = await gdriveFileText(String(f.id), String(f.mimeType ?? ''), t.token!);
+      if (text) docs.push({ external_ref: `gdrive:${f.id}`, title: clip(f.name, 200), content: text, url: f.webViewLink ? String(f.webViewLink) : null });
+    }
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text-extractable files found (Google Docs/Slides/Sheets, PDFs, and text files are supported; uploaded Office files are skipped).' };
+    return { ok: true, docs };
+  },
+};
+
+async function gdriveFileText(id: string, mime: string, token: string): Promise<string> {
+  const auth = { Authorization: `Bearer ${token}` };
+  if (mime === 'application/vnd.google-apps.document' || mime === 'application/vnd.google-apps.presentation') {
+    const res = await safeFetch(`${DRIVE}/files/${id}/export?mimeType=text/plain`, { headers: auth });
+    return res ? (await res.text()).slice(0, MAX_DOC_CHARS) : '';
+  }
+  if (mime === 'application/vnd.google-apps.spreadsheet') {
+    const res = await safeFetch(`${DRIVE}/files/${id}/export?mimeType=text/csv`, { headers: auth });
+    return res ? (await res.text()).slice(0, MAX_DOC_CHARS) : '';
+  }
+  if (mime === 'application/pdf') {
+    const res = await safeFetch(`${DRIVE}/files/${id}?alt=media&${DRIVE_SHARED}`, { headers: auth });
+    return res ? (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS) : '';
+  }
+  if (mime.startsWith('text/') || mime === 'application/json') {
+    const res = await safeFetch(`${DRIVE}/files/${id}?alt=media&${DRIVE_SHARED}`, { headers: auth });
+    if (!res) return '';
+    const raw = await res.text();
+    return (mime === 'text/html' ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+  }
+  return '';   // uploaded Office/binary files: Drive can't export them — skipped honestly
+}
+
+// ════════════════════════════════════════════════════════════════
+
+const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive']);
 
 // ════════════════════════════════════════════════════════════════
 // THE GENERALIZED ACTION LAYER (migration 035) — resolve + render +
@@ -1284,11 +1562,6 @@ serve(async (req) => {
       }, 200);
     };
 
-    // sharepoint: registered honestly, adapter not implemented yet.
-    if (connector.provider === 'sharepoint') {
-      return json({ ok: false, error: 'not_implemented', detail: 'SharePoint is registered but its adapter is not built yet — documented honestly, no pretending.' }, 200);
-    }
-
     // ── Credentials (service-role-only view over Vault-encrypted
     // storage, migration 088). generic_rest and template (auth recipe
     // "none") may run open. ──
@@ -1321,8 +1594,8 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom> = {
-      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest,
+    const adapters: Record<string, typeof genericRest | typeof zendesk | typeof salesforce | typeof confluence | typeof jira | typeof intercom | typeof sharepoint | typeof gdrive> = {
+      zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

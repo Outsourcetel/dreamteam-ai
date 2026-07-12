@@ -19,7 +19,7 @@ import { computeHealth } from './categoryContracts';
 
 export type ConnectorProvider =
   | 'zendesk' | 'salesforce' | 'confluence' | 'jira' | 'intercom'
-  | 'generic_rest' | 'sharepoint' | 'template';
+  | 'generic_rest' | 'sharepoint' | 'gdrive' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -58,7 +58,7 @@ export const ACCESS_MODE_EXPLAIN: Record<ConnectorAccessMode, string> = {
 };
 
 /** Per-provider setup metadata: credential fields + how to get them. */
-export interface ProviderField { key: string; label: string; placeholder: string; secret: boolean }
+export interface ProviderField { key: string; label: string; placeholder: string; secret: boolean; multiline?: boolean }
 export interface ProviderMeta {
   label: string;
   tagline: string;
@@ -146,12 +146,26 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     knowledgeSync: false, implemented: true,
   },
   sharepoint: {
-    label: 'SharePoint', tagline: 'Documents — registered now, adapter coming',
+    label: 'SharePoint', tagline: 'Documents & pages — a whole document library into knowledge',
     defaultCategory: 'knowledge_base',
     baseUrlLabel: 'Site URL', baseUrlPlaceholder: 'https://acme.sharepoint.com/sites/kb',
-    fields: [],
-    help: 'SharePoint can be registered today so it appears in your system map, but its adapter is not built yet — every call returns an honest "not implemented" until it ships.',
-    knowledgeSync: false, implemented: false,
+    fields: [
+      { key: 'tenant_id', label: 'Directory (tenant) ID', placeholder: '00000000-0000-0000-0000-000000000000', secret: false },
+      { key: 'client_id', label: 'Application (client) ID', placeholder: '11111111-1111-1111-1111-111111111111', secret: false },
+      { key: 'client_secret', label: 'Client secret value', placeholder: '••••••••', secret: true },
+    ],
+    help: 'App-only access (no per-person sign-in). In the Azure portal → App registrations → New registration; then Certificates & secrets → New client secret (copy the Value); then API permissions → Microsoft Graph → Application permissions → add Sites.Read.All (or Sites.Selected) and click "Grant admin consent". Copy the Directory (tenant) ID and Application (client) ID from the app\'s Overview page.',
+    knowledgeSync: true, implemented: true,
+  },
+  gdrive: {
+    label: 'Google Drive', tagline: 'Docs, Slides, Sheets & PDFs from a shared folder into knowledge',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Folder or Shared Drive ID (optional)', baseUrlPlaceholder: 'leave blank for everything shared with the service account',
+    fields: [
+      { key: 'service_account_json', label: 'Service account key (JSON)', placeholder: '{ "type": "service_account", "client_email": "...", "private_key": "..." }', secret: true, multiline: true },
+    ],
+    help: 'App-only access via a service account (no per-person sign-in). In Google Cloud Console → APIs & Services: enable the Google Drive API; then IAM & Admin → Service Accounts → Create; then Keys → Add key → JSON and paste the downloaded file here. Finally, in Google Drive, share the folder(s) you want ingested with the service account\'s email (…@….iam.gserviceaccount.com) as a Viewer.',
+    knowledgeSync: true, implemented: true,
   },
 };
 

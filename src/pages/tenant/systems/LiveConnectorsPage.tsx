@@ -78,7 +78,7 @@ const CONNECTION_LADDER: { rung: string; how: string; note?: string }[] = [
 ];
 const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   zendesk: '🎫', salesforce: '☁️', confluence: '📘', jira: '🧩',
-  intercom: '💬', generic_rest: '🔌', sharepoint: '📁', template: '🧱',
+  intercom: '💬', generic_rest: '🔌', sharepoint: '📁', gdrive: '📄', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -115,7 +115,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
   const submit = async () => {
     if (!provider || !meta) return;
     setErr(null);
-    if (!baseUrl.trim()) { setErr(`${meta.baseUrlLabel} is required.`); return; }
+    if (provider !== 'gdrive' && !baseUrl.trim()) { setErr(`${meta.baseUrlLabel} is required.`); return; }
     if (provider === 'generic_rest' && !searchPath.trim()) { setErr('A search endpoint path is required so DreamTeam knows how to look things up.'); return; }
     setBusy(true);
     try {
@@ -219,8 +219,13 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                 {meta!.fields.map(f => (
                   <div key={f.key}>
                     <label className="block text-xs text-slate-400 mb-1">{f.label}</label>
-                    <input value={secrets[f.key] ?? ''} onChange={e => setSecrets(s => ({ ...s, [f.key]: e.target.value }))}
-                      type={f.secret ? 'password' : 'text'} placeholder={f.placeholder} className={inputCls} />
+                    {f.multiline ? (
+                      <textarea value={secrets[f.key] ?? ''} onChange={e => setSecrets(s => ({ ...s, [f.key]: e.target.value }))}
+                        placeholder={f.placeholder} rows={5} className={`${inputCls} font-mono text-xs`} />
+                    ) : (
+                      <input value={secrets[f.key] ?? ''} onChange={e => setSecrets(s => ({ ...s, [f.key]: e.target.value }))}
+                        type={f.secret ? 'password' : 'text'} placeholder={f.placeholder} className={inputCls} />
+                    )}
                   </div>
                 ))}
                 {meta!.fields.some(f => f.secret) && (
