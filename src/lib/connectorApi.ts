@@ -25,7 +25,7 @@ export type ConnectorProvider =
   | 'asana' | 'clickup' | 'monday' | 'linear'
   | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
   | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
-  | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'template';
+  | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -186,6 +186,14 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     baseUrlLabel: '', baseUrlPlaceholder: '',
     fields: [],
     help: 'Connect by signing in to Procore — no keys to paste. (A platform admin registers the Procore app once.)',
+    knowledgeSync: false, implemented: true, oauth: true,
+  },
+  jobber: {
+    label: 'Jobber', tagline: 'Field service — jobs, clients, quotes',
+    defaultCategory: 'product_system',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Jobber — no keys to paste. (A platform admin registers the Jobber app once.)',
     knowledgeSync: false, implemented: true, oauth: true,
   },
   quickbooks: {

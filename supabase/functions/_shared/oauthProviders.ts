@@ -62,6 +62,14 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderMeta> = {
     defaultCategory: 'product_system',
     tokenAuth: 'body',
   },
+  jobber: {
+    label: 'Jobber',
+    authorizeUrl: 'https://api.getjobber.com/api/oauth/authorize',
+    tokenUrl: 'https://api.getjobber.com/api/oauth/token',
+    scopes: '',
+    defaultCategory: 'product_system',
+    tokenAuth: 'body',
+  },
 };
 
 export const OAUTH_CALLBACK_PATH = '/functions/v1/oauth-callback';

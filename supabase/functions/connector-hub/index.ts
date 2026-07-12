@@ -2736,6 +2736,41 @@ const procore = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── jobber ── user-OAuth · GraphQL · product_system (jobs). Field/version
+// shapes should be confirmed against live creds.
+const JOBBER = 'https://api.getjobber.com/api/graphql';
+const jobber = {
+  async gql(c: Ctx, query: string): Promise<{ ok: boolean; error?: string; data: Record<string, unknown> | null }> {
+    const t = await oauthAccessToken(c, 'jobber');
+    if (!t.ok) return { ok: false, error: t.error, data: null };
+    const r = await httpJson(JOBBER, { method: 'POST', headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json', 'X-JOBBER-GRAPHQL-VERSION': '2023-11-15' }, body: JSON.stringify({ query }) });
+    const b = r.body as { data?: Record<string, unknown>; errors?: Array<{ message?: string }> } | null;
+    if (!r.ok) return { ok: false, error: r.error, data: null };
+    if (b?.errors?.length) return { ok: false, error: String(b.errors[0]?.message ?? 'jobber_error'), data: null };
+    return { ok: true, data: b?.data ?? null };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.gql(c, '{ jobs(first:1){ nodes { id } } }');
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Jobber reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await this.gql(c, '{ jobs(first:15){ nodes { id jobNumber title client { name } } } }');
+    if (!r.ok) return { ok: false, error: r.error };
+    const nodes = ((r.data?.jobs as { nodes?: Array<Record<string, unknown>> })?.nodes) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? nodes.filter((j) => String(j.title ?? '').toLowerCase().includes(ql) || String((j.client as { name?: string })?.name ?? '').toLowerCase().includes(ql)) : nodes;
+    return { ok: true, items: f.slice(0, 10).map((j) => ({ ref: String(j.id), type: 'record', title: clip(`#${j.jobNumber ?? ''} ${j.title ?? ''}`, 160), snippet: clip(String((j.client as { name?: string })?.name ?? ''), 400), url: null, raw: { id: j.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await this.gql(c, `{ job(id:${JSON.stringify(ref)}){ id jobNumber title } }`);
+    if (!r.ok) return { ok: false, error: r.error };
+    const j = (r.data?.job as Record<string, unknown>) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`#${j.jobNumber ?? ''} ${j.title ?? ''}`, 160), snippet: '', url: null, raw: j }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -2963,6 +2998,10 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   procore: {
     search_records: (c, p) => procore.search(c, p.query ?? ''),
     get_record: (c, p) => procore.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  jobber: {
+    search_records: (c, p) => jobber.search(c, p.query ?? ''),
+    get_record: (c, p) => jobber.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3261,7 +3300,7 @@ serve(async (req) => {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
-      quickbooks, xero, clio, gusto, procore,
+      quickbooks, xero, clio, gusto, procore, jobber,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

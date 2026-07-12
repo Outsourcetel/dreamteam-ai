@@ -87,7 +87,7 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   asana: '🎯', clickup: '⬆️', monday: '📅', linear: '📐',
   stripe: '💳', shopify: '🛍️', woocommerce: '🛒', bigcommerce: '🏬', square: '⬛',
   bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓',
-  quickbooks: '💵', xero: '🧾', clio: '⚖️', gusto: '🌯', procore: '🏗️', template: '🧱',
+  quickbooks: '💵', xero: '🧾', clio: '⚖️', gusto: '🌯', procore: '🏗️', jobber: '🔧', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -110,6 +110,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
   const [recordPath, setRecordPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [providerQuery, setProviderQuery] = useState('');
 
   const meta = provider ? PROVIDERS[provider] : null;
 
@@ -186,15 +187,20 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
             <>
               <button onClick={() => setCategory(null)} className="text-xs text-slate-500 hover:text-white mb-2">← Categories</button>
               <h2 className="text-sm font-semibold text-white mb-1">Which system is your {CATEGORY_SHORT[category]}?</h2>
-              <p className="text-xs text-slate-500 mb-4">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
+              <p className="text-xs text-slate-500 mb-3">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
+              <input value={providerQuery} onChange={e => setProviderQuery(e.target.value)} placeholder="Search 30+ systems…"
+                className={`${inputCls} mb-3`} />
               <div className="grid grid-cols-2 gap-2">
+                {!providerQuery.trim() && (
                 <button onClick={() => { onClose(); onCustom(); }}
                   className="text-left rounded-xl border p-3 transition-colors bg-slate-950 border-indigo-500/40 hover:border-indigo-400">
                   <p className="text-sm font-semibold text-white">🧱 Custom system — build a template</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
                 </button>
+                )}
                 {(Object.keys(PROVIDERS) as ConnectorProvider[])
                   .filter(p => p !== 'template')
+                  .filter(p => { const q = providerQuery.trim().toLowerCase(); return !q || `${PROVIDERS[p].label} ${PROVIDERS[p].tagline}`.toLowerCase().includes(q); })
                   .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
                   .map(p => (
                     <button key={p} onClick={() => pick(p)}
