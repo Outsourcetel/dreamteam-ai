@@ -19,7 +19,7 @@ export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
   | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist'
   | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'agentic_step'
-  | 'start_onboarding' | 'emit_event' | 'complete';
+  | 'start_onboarding' | 'emit_event' | 'check_knowledge' | 'read_reference' | 'complete';
 
 export interface StepMedia {
   asset_id?: string;
@@ -27,6 +27,20 @@ export interface StepMedia {
   kind: 'image' | 'video';
   caption?: string;
 }
+
+// PB2.0 — read_reference: a document/link the DE reads into its working
+// context. 'doc' = a knowledge-base doc; 'url' = a public web page; 'asset'
+// = an uploaded text document (media_assets kind 'document').
+export interface StepReference {
+  kind: 'doc' | 'url' | 'asset';
+  doc_id?: string;
+  url?: string;
+  asset_id?: string;
+  label?: string;
+}
+
+// PB2.0 — an optional per-step assertion on that step's recorded outcome.
+export interface StepRule { pattern: string; on_violation: 'escalate' | 'fail' }
 
 export interface DefinitionStep {
   key: PrimitiveKey;
@@ -51,6 +65,7 @@ export const DECISION_OPERATORS = [
 export const BRANCH_PRIMITIVES: PrimitiveKey[] = [
   'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
   'connector_action', 'guardrail_check', 'consult_specialist',
+  'check_knowledge', 'read_reference',
 ];
 
 export interface PrimitiveMeta {
@@ -64,7 +79,7 @@ export interface PrimitiveMeta {
 
 export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'check_account', label: 'Check account', gate: false, group: 'work', defaultParams: {},
-    description: 'Loads the target account into the run context. Must be the first step.' },
+    description: 'Loads the target record (its name, value, renewal date, and your custom fields) into the run so later steps can use {{account.name}} / {{party.YOUR_FIELD}}. Place it before any step that needs those — no longer forced to be step 1.' },
   { key: 'generate_invoice', label: 'Generate invoice', gate: true, group: 'work',
     defaultParams: { amount_source: 'account_arr' },
     description: 'Creates a renewal invoice. Runs the guardrail + trust-dial composition — over-limit amounts route to human approval.' },
@@ -110,14 +125,24 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'emit_event', label: 'Emit event', gate: false, group: 'flow',
     defaultParams: { event_key: '', payload_template: '' },
     description: 'Fires one of your trigger events — any playbook wired to that event runs next (event-driven chaining). Degrades honestly: an unknown event → step recorded as skipped, run continues.' },
+  { key: 'check_knowledge', label: 'Check knowledge', gate: false, group: 'work',
+    defaultParams: { query_template: '', match_count: 5, on_miss: 'escalate' },
+    description: 'Look something up in your knowledge base and decide what happens if it is not found — continue, escalate to a human, or stop. What it finds is read into the run for later Agentic / Consult steps. Uses the same search every DE answer uses; scoped to this playbook\'s employee.' },
+  { key: 'read_reference', label: 'Read reference', gate: false, group: 'work',
+    defaultParams: { title: '', refs: [] },
+    description: 'Give the employee documents or links to read into its working context before it acts — a knowledge-base doc, a public URL, or an uploaded text document. Later Agentic / Consult steps receive this material. (PDF extraction is not built yet — text, markdown, and web pages only.)' },
   { key: 'complete', label: 'Complete', gate: false, group: 'work', defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
 
 export const TEMPLATE_VARS = [
-  { token: '{{account.name}}', meaning: 'Account name from the run context' },
+  { token: '{{account.name}}', meaning: 'The served record\'s name (after a Check account step)' },
   { token: '{{invoice.amount}}', meaning: 'Invoice amount (formatted, e.g. $12,000)' },
   { token: '{{run.id}}', meaning: 'The playbook run id' },
+  { token: '{{party.FIELD}}', meaning: 'A custom field on the served record, e.g. {{party.region}} (after Check account)' },
+  { token: '{{event.ref}}', meaning: 'What triggered an event-started run (e.g. the ticket/invoice id)' },
+  { token: '{{event.note}}', meaning: 'A short description of the triggering event' },
+  { token: '{{steps.N.FIELD}}', meaning: 'A prior step\'s result, e.g. {{steps.2.item_count}} (0-based)' },
 ];
 
 export const UPDATE_WHITELIST: Record<string, string[]> = {
@@ -211,7 +236,7 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
   const postGateAllowed = new Set([
     'guardrail_check', 'connector_action', 'update_record', 'log_activity',
     'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'consult_specialist', 'agentic_step',
-    'start_onboarding', 'complete',
+    'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
   ]);
   let invoiceIdx = -1, approvalIdx = -1, completeCount = 0;
   steps.forEach((s, i) => {
@@ -269,6 +294,34 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
     if (s.key === 'start_onboarding' && !(typeof p.template_version_id === 'string' && p.template_version_id.trim())) {
       errs.push({ index: i, code: 'bad_params', message: 'Pick which onboarding template version this step should create a project from.' });
     }
+    if (s.key === 'check_knowledge') {
+      if (!(typeof p.query_template === 'string' && p.query_template.trim())) {
+        errs.push({ index: i, code: 'bad_params', message: 'A knowledge check needs something to look up.' });
+      }
+      if (p.on_miss !== undefined && !['continue', 'escalate', 'fail'].includes(String(p.on_miss))) {
+        errs.push({ index: i, code: 'bad_params', message: 'On-miss must be continue, escalate, or stop.' });
+      }
+    }
+    if (s.key === 'read_reference') {
+      const refs = Array.isArray(p.refs) ? p.refs as Array<Record<string, unknown>> : [];
+      if (refs.length < 1) errs.push({ index: i, code: 'bad_params', message: 'Add at least one document, link, or upload to read.' });
+      if (refs.length > 5) errs.push({ index: i, code: 'bad_params', message: 'A read-reference step can hold up to 5 references.' });
+      refs.forEach(r => {
+        const kind = String(r?.kind ?? '');
+        if (kind === 'url' && !/^https?:\/\//i.test(String(r.url ?? ''))) {
+          errs.push({ index: i, code: 'bad_params', message: 'A link reference needs a full http(s) address.' });
+        }
+        if (kind === 'doc' && !r.doc_id) errs.push({ index: i, code: 'bad_params', message: 'Pick a knowledge document for the reference.' });
+        if (kind === 'asset' && !r.asset_id) errs.push({ index: i, code: 'bad_params', message: 'Upload the document for the reference.' });
+      });
+    }
+    // PB2.0 — per-step rule (optional; on any step).
+    const rule = (p as Record<string, unknown>).rule as { pattern?: string; on_violation?: string } | undefined;
+    if (rule !== undefined && rule !== null) {
+      if (!(typeof rule.pattern === 'string' && rule.pattern.trim())) {
+        errs.push({ index: i, code: 'bad_rule', message: 'A step rule needs a pattern to look for.' });
+      }
+    }
     if (s.key === 'decision') validateDecisionClient(s, i, 0, errs);
     if (s.key === 'complete') completeCount++;
   });
@@ -282,7 +335,7 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
       errs.push({ index: i, code: 'decision_forward_reference', message: `This decision points at step ${parseInt(m[1], 10) + 1}, which runs at or after it — decisions can only look at earlier steps.` });
     }
   });
-  if (steps[0]?.key !== 'check_account') errs.push({ index: 0, code: 'first_step', message: 'Step 1 must be Check account.' });
+  // PB2.0: check_account is no longer forced as step 1 — free ordering.
   if (steps[steps.length - 1]?.key !== 'complete') errs.push({ index: steps.length - 1, code: 'last_step', message: 'The last step must be Complete.' });
   if (completeCount > 1) errs.push({ index: -1, code: 'multiple_complete', message: 'Only one Complete step is allowed (at the end).' });
   if (approvalIdx !== -1 && (invoiceIdx === -1 || invoiceIdx > approvalIdx)) {
@@ -744,7 +797,7 @@ export interface PlaybookMediaAsset {
   mime: string; size_bytes: number; created_at: string;
 }
 
-export async function uploadPlaybookMedia(file: File, definitionId: string): Promise<PlaybookMediaAsset> {
+export async function uploadPlaybookMedia(file: File, definitionId: string | null): Promise<PlaybookMediaAsset> {
   const tid = await requireTenantId();
   const { data: { user } } = await supabase.auth.getUser();
   const path = `${tid}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;

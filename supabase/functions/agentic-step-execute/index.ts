@@ -213,11 +213,17 @@ async function runLoop(
   admin: SupabaseClient, tenantId: string, runId: string, goal: string,
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
   tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
+  contextDocuments = '',
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
     + `Use the tools available to you to accomplish the goal — search knowledge, take actions in connected systems, or ask a human if you're stuck. `
     + `Any action that could affect an external system is automatically checked against this company's safety rules; if one requires human approval, it will be routed there for review and you should decide how to proceed without waiting for the outcome. `
-    + `When the goal is accomplished (or you've genuinely determined it cannot be), call mark_goal_complete with a short summary — that is the only way to finish.`;
+    + `When the goal is accomplished (or you've genuinely determined it cannot be), call mark_goal_complete with a short summary — that is the only way to finish.`
+    // PB2.0: reference material the playbook gathered for this task
+    // (instruction bodies, knowledge-check results, documents/links).
+    + (contextDocuments
+      ? `\n\n--- Reference material provided for this task (read before acting) ---\n${contextDocuments}\n--- end reference material ---`
+      : '');
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: goal }];
   await persistMessage(admin, runId, 0, 'user', goal);
@@ -373,6 +379,11 @@ serve(async (req) => {
     const playbookRunId = String(body.playbook_run_id ?? '');
     const stepIndex = Number(body.step_index ?? -1);
     const goal = String(body.goal ?? '').trim();
+    // PB2.0: reference material the playbook assembled from instruction,
+    // check_knowledge and read_reference steps — the DE reads it before
+    // acting (optional; empty for legacy callers). Capped defensively.
+    const contextDocuments = typeof body.context_documents === 'string'
+      ? body.context_documents.slice(0, 24000) : '';
     if (!deId || !playbookRunId || stepIndex < 0 || !goal) {
       return json({ error: 'de_id, playbook_run_id, step_index, goal are all required' }, 400);
     }
@@ -419,7 +430,7 @@ serve(async (req) => {
       admin, tenantId!, runId, goal, deRow.name ?? 'Digital employee',
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
-      tools, policy, deId, apiKey,
+      tools, policy, deId, apiKey, contextDocuments,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',

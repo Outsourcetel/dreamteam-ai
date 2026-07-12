@@ -1642,12 +1642,17 @@ serve(async (req) => {
     }
 
     // ── Claude (grounded-only contract) ──
+    // PB2.0: a playbook consult can hand the specialist the reference
+    // material its earlier steps gathered (context.documents) — this
+    // field was parsed but unused until now. It joins the grounded
+    // sources as an explicitly-labeled, citable block.
+    const runDocuments = typeof context.documents === 'string' ? context.documents.slice(0, 16000) : '';
     const system = `${prof.charter}
 
 Answer ONLY from the source excerpts below. Every claim must trace to a cited source. If the sources don't support an answer, say so plainly, set confidence low, and set needs_escalation true. Always output JSON: {"answer": string, "confidence": 0-100, "citations": [source titles used], "needs_escalation": boolean}. Never invent facts.
 
 Source excerpts:
-${groundedContext}`;
+${groundedContext}${runDocuments ? `\n\n--- Reference material supplied by the requesting playbook ---\n${runDocuments}` : ''}`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

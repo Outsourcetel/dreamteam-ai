@@ -18,10 +18,12 @@ import {
   listEventDefinitions, upsertEventDefinition, emitEvent,
 } from '../../../lib/playbookBuilderApi';
 import type {
-  PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia,
+  PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia, StepReference,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
   PreviewResult, PreviewRunStep, ActionDefinition, EventDefinition,
 } from '../../../lib/playbookBuilderApi';
+import { listKnowledgeDocs } from '../../../lib/knowledgeApi';
+import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 import { SUPABASE_URL } from '../../../lib/env';
 import { useVocabulary } from '../../../lib/vocabulary';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
@@ -112,6 +114,10 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
       return <ConnectorActionEditor step={step} onChange={onChange} />;
     case 'emit_event':
       return <EmitEventEditor step={step} onChange={onChange} />;
+    case 'check_knowledge':
+      return <CheckKnowledgeEditor step={step} onChange={onChange} />;
+    case 'read_reference':
+      return <ReadReferenceEditor step={step} onChange={onChange} />;
     case 'update_record': {
       const table = String(p.table ?? 'renewal_invoices');
       const allowed = UPDATE_WHITELIST[table] ?? [];
@@ -286,6 +292,135 @@ function EmitEventEditor({ step, onChange }: { step: DefinitionStep; onChange: (
         <p className="text-[10px] text-amber-500">No events defined yet — create one under Triggers → Manage events.</p>
       )}
       <p className="text-[10px] text-slate-600">Fires the event when this step runs — any playbook wired to it starts on the next dispatch cycle. Unknown event → step recorded as skipped, run continues.</p>
+    </div>
+  );
+}
+
+// ── PB2.0 — Check knowledge editor: what to look up, how many, what
+//    happens on a miss ─────────────────────────────────────────────
+function CheckKnowledgeEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const set = (k: string, v: unknown) => onChange({ ...p, [k]: v });
+  return (
+    <div className="space-y-2">
+      <input className={inputCls} placeholder="What to look up (templates supported, e.g. {{account.name}} refund policy)"
+        value={String(p.query_template ?? '')} onChange={e => set('query_template', e.target.value)} />
+      <div className="flex gap-2 flex-wrap items-center">
+        <label className="text-[11px] text-slate-500">Fetch</label>
+        <input className={inputCls + ' !w-16'} type="number" min={1} max={10}
+          value={typeof p.match_count === 'number' ? p.match_count : 5}
+          onChange={e => set('match_count', Math.max(1, Math.min(10, Number(e.target.value))))} />
+        <label className="text-[11px] text-slate-500">matches · if nothing is found</label>
+        <select className={selectCls + ' !w-40'} value={String(p.on_miss ?? 'escalate')} onChange={e => set('on_miss', e.target.value)}>
+          <option value="escalate">Escalate to a human</option>
+          <option value="continue">Continue anyway</option>
+          <option value="fail">Stop the run</option>
+        </select>
+      </div>
+      <p className="text-[10px] text-slate-600">Searches your knowledge base the same way a DE answer does, scoped to this playbook's employee. What it finds is read into the run for later Agentic / Consult steps. Branch on the result with a Decision on <span className="font-mono">step:N.found</span>.</p>
+    </div>
+  );
+}
+
+// ── PB2.0 — Read reference editor: knowledge docs, URLs, uploaded
+//    text documents the DE reads into its working context ──────────
+function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const refs = (Array.isArray(p.refs) ? p.refs : []) as StepReference[];
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { listKnowledgeDocs().then(setDocs).catch(() => setDocs([])); }, []);
+
+  const setRefs = (next: StepReference[]) => onChange({ ...p, refs: next });
+  const addRef = (r: StepReference) => { if (refs.length < 5) setRefs([...refs, r]); };
+  const removeRef = (i: number) => setRefs(refs.filter((_, idx) => idx !== i));
+
+  const onUpload = async (file: File) => {
+    setErr(null);
+    const okType = file.type.startsWith('text/') || /\.(txt|md|markdown|json)$/i.test(file.name);
+    if (!okType) { setErr('Only text, markdown, and JSON documents can be read (PDF extraction is not built yet).'); return; }
+    setUploading(true);
+    try {
+      const asset = await uploadPlaybookMedia(file, null);
+      addRef({ kind: 'asset', asset_id: asset.id, label: file.name });
+    } catch (e) { setErr((e as Error).message); }
+    setUploading(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      <input className={inputCls} placeholder="Reference set name (optional, e.g. Refund policy pack)"
+        value={String(p.title ?? '')} onChange={e => onChange({ ...p, title: e.target.value })} />
+      {refs.length > 0 && (
+        <div className="space-y-1">
+          {refs.map((r, i) => (
+            <div key={i} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{r.kind}</span>
+              <span className="text-[11px] text-slate-300 flex-1 truncate">
+                {r.kind === 'doc' ? (docs.find(d => d.id === r.doc_id)?.title ?? r.doc_id) : r.kind === 'url' ? r.url : (r.label ?? r.asset_id)}
+              </span>
+              <button onClick={() => removeRef(i)} className="text-[11px] text-slate-500 hover:text-rose-400">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {refs.length < 5 && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <select className={selectCls + ' !w-52'} value="" onChange={e => { if (e.target.value) addRef({ kind: 'doc', doc_id: e.target.value }); }}>
+            <option value="">+ Add a knowledge document…</option>
+            {docs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+          </select>
+          <UrlAdder onAdd={(url) => addRef({ kind: 'url', url })} />
+          <label className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 cursor-pointer">
+            {uploading ? 'Uploading…' : '+ Upload document'}
+            <input type="file" accept=".txt,.md,.markdown,.json,text/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
+          </label>
+        </div>
+      )}
+      {err && <p className="text-[10px] text-rose-400">{err}</p>}
+      <p className="text-[10px] text-slate-600">The employee reads all of these into its working context before later Agentic / Consult steps act. Scoped knowledge docs are only readable by an employee they're scoped to. Text, markdown, JSON, and web pages only.</p>
+    </div>
+  );
+}
+
+// ── PB2.0 — optional per-step rule: an assertion on the step's recorded
+//    outcome. Collapsed by default; guardrails still always win. ──────
+function StepRuleRow({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const rule = (p.rule ?? null) as { pattern?: string; on_violation?: string } | null;
+  const [open, setOpen] = useState(!!rule);
+  const setRule = (next: { pattern?: string; on_violation?: string } | null) => {
+    const { rule: _drop, ...rest } = p;
+    onChange(next ? { ...rest, rule: next } : rest);
+  };
+  if (!open && !rule) {
+    return <button onClick={() => setOpen(true)} className="mt-1.5 text-[10px] text-slate-500 hover:text-slate-300">+ Add a rule to this step</button>;
+  }
+  return (
+    <div className="mt-1.5 flex gap-2 flex-wrap items-center bg-rose-500/5 border border-rose-500/15 rounded-lg px-2 py-1.5">
+      <span className="text-[10px] text-rose-300/80">⚑ Rule:</span>
+      <input className={inputCls + ' !w-52'} placeholder="pattern (separate alternatives with |)"
+        value={String(rule?.pattern ?? '')} onChange={e => setRule({ pattern: e.target.value, on_violation: rule?.on_violation ?? 'escalate' })} />
+      <select className={selectCls + ' !w-40'} value={String(rule?.on_violation ?? 'escalate')}
+        onChange={e => setRule({ pattern: rule?.pattern ?? '', on_violation: e.target.value })}>
+        <option value="escalate">→ escalate to a human</option>
+        <option value="fail">→ stop the run</option>
+      </select>
+      <button onClick={() => { setRule(null); setOpen(false); }} className="text-[10px] text-slate-500 hover:text-rose-400">remove</button>
+      <p className="text-[10px] text-slate-600 w-full">If this step's result matches the pattern, the run stops. An extra per-step assertion — your workspace guardrails still apply on top.</p>
+    </div>
+  );
+}
+
+function UrlAdder({ onAdd }: { onAdd: (url: string) => void }) {
+  const [url, setUrl] = useState('');
+  return (
+    <div className="flex gap-1 items-center">
+      <input className={inputCls + ' !w-44'} placeholder="https://…" value={url} onChange={e => setUrl(e.target.value)} />
+      <button className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40"
+        disabled={!/^https?:\/\//i.test(url)} onClick={() => { onAdd(url.trim()); setUrl(''); }}>Add link</button>
     </div>
   );
 }
@@ -605,6 +740,9 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
       {s.key === 'checklist' && <span className="text-[10px] text-slate-600">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
       {s.key === 'wait' && <span className="text-[10px] text-slate-600">{String(p.duration_minutes ?? 0)} min</span>}
       {s.key === 'sub_playbook' && <span className="text-[10px] text-slate-600">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
+      {s.key === 'check_knowledge' && <span className="text-[10px] text-slate-600 truncate">🔎 {String(p.query_template ?? '')} · miss: {String(p.on_miss ?? 'escalate')}</span>}
+      {s.key === 'read_reference' && <span className="text-[10px] text-slate-600">📄 {Array.isArray(p.refs) ? (p.refs as unknown[]).length : 0} reference(s)</span>}
+      {(p.rule as { pattern?: string } | undefined)?.pattern && <span className="text-[10px] text-rose-400/70" title={`Step rule: ${String((p.rule as { pattern?: string }).pattern)}`}>⚑ rule</span>}
     </div>
   );
 }
@@ -729,6 +867,12 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
                     }} />
                   ) : (
                     <StepParamsEditor step={s} onChange={params => {
+                      const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
+                    }} />
+                  )}
+                  {/* PB2.0 — optional per-step rule (assertion on this step's outcome). */}
+                  {s.key !== 'complete' && s.key !== 'decision' && (
+                    <StepRuleRow step={s} onChange={params => {
                       const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
                     }} />
                   )}

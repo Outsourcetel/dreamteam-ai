@@ -91,6 +91,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+// PB2.0 — check_knowledge uses the same free built-in embeddings every
+// DE answer uses; read_reference URL fetches pass the shared SSRF guard.
+import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -158,7 +162,7 @@ const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
   'connector_action', 'update_record', 'log_activity', 'consult_specialist',
   'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
-  'start_onboarding', 'emit_event', 'complete',
+  'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -178,6 +182,8 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   agentic_step: 'Agentic step',
   start_onboarding: 'Start onboarding',
   emit_event: 'Emit event',
+  check_knowledge: 'Check knowledge',
+  read_reference: 'Read reference',
   complete: 'Complete',
 };
 
@@ -188,13 +194,14 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
   'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'start_onboarding',
-  'emit_event',
+  'emit_event', 'check_knowledge', 'read_reference',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
 const BRANCH_ALLOWED = new Set([
   'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
   'connector_action', 'guardrail_check', 'consult_specialist',
+  'check_knowledge', 'read_reference',
 ]);
 const DECISION_OPERATORS = ['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'exists'] as const;
 
@@ -359,6 +366,37 @@ function validateSteps(steps: unknown): ValidationError[] {
           errs.push({ index: i, code: 'bad_params', message: 'emit_event needs an event_key (e.g. "deal_signed").' });
         }
         break;
+      case 'check_knowledge': {
+        if (typeof p.query_template !== 'string' || !p.query_template.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'check_knowledge needs a query_template (what to look up).' });
+        }
+        if (p.match_count !== undefined && (typeof p.match_count !== 'number' || p.match_count < 1 || p.match_count > 10)) {
+          errs.push({ index: i, code: 'bad_params', message: 'check_knowledge.match_count must be 1-10.' });
+        }
+        if (p.on_miss !== undefined && !['continue', 'escalate', 'fail'].includes(String(p.on_miss))) {
+          errs.push({ index: i, code: 'bad_params', message: 'check_knowledge.on_miss must be "continue", "escalate" or "fail".' });
+        }
+        break;
+      }
+      case 'read_reference': {
+        const refs = Array.isArray(p.refs) ? p.refs as Array<Record<string, unknown>> : [];
+        if (refs.length < 1 || refs.length > 5) {
+          errs.push({ index: i, code: 'bad_params', message: 'read_reference needs 1-5 references (knowledge doc, URL, or uploaded text document).' });
+        }
+        refs.forEach((r) => {
+          const kind = String(r?.kind ?? '');
+          if (kind === 'doc' && (typeof r.doc_id !== 'string' || !r.doc_id)) {
+            errs.push({ index: i, code: 'bad_params', message: 'A knowledge-doc reference needs its doc_id.' });
+          } else if (kind === 'url' && (typeof r.url !== 'string' || !/^https?:\/\//i.test(String(r.url)))) {
+            errs.push({ index: i, code: 'bad_params', message: 'A URL reference needs a full http(s) address.' });
+          } else if (kind === 'asset' && (typeof r.asset_id !== 'string' || !r.asset_id)) {
+            errs.push({ index: i, code: 'bad_params', message: 'An uploaded-document reference needs its asset_id.' });
+          } else if (!['doc', 'url', 'asset'].includes(kind)) {
+            errs.push({ index: i, code: 'bad_params', message: 'Each reference must be a knowledge doc, a URL, or an uploaded document.' });
+          }
+        });
+        break;
+      }
       case 'consult_specialist': {
         // Profile existence/active is TENANT RUNTIME STATE, not definition
         // shape — checked at execution time (honest skip), warn-only here.
@@ -463,12 +501,25 @@ function validateSteps(steps: unknown): ValidationError[] {
     }
   });
 
-  if (list[0]?.key !== 'check_account') {
-    errs.push({ index: 0, code: 'first_step', message: 'Step 1 must be check_account (loads the account into run context).' });
-  }
+  // PB2.0: check_account is no longer forced as step 1 — it is optional
+  // and placeable anywhere. Steps that use account fields before (or
+  // without) it degrade honestly, the executor's existing convention.
   if (list[list.length - 1]?.key !== 'complete') {
     errs.push({ index: list.length - 1, code: 'last_step', message: 'The last step must be complete.' });
   }
+
+  // PB2.0: optional per-step rule — an assertion on any step's recorded
+  // outcome. Shape-only validation here; matching happens at run time.
+  list.forEach((s, i) => {
+    const rule = (s?.params as Record<string, unknown> | undefined)?.rule as Record<string, unknown> | undefined;
+    if (rule === undefined || rule === null) return;
+    if (typeof rule !== 'object' || typeof rule.pattern !== 'string' || !String(rule.pattern).trim()) {
+      errs.push({ index: i, code: 'bad_rule', message: 'A step rule needs a non-empty pattern (separate alternatives with |).' });
+    }
+    if (rule && rule.on_violation !== undefined && !['escalate', 'fail'].includes(String(rule.on_violation))) {
+      errs.push({ index: i, code: 'bad_rule', message: 'A step rule\'s on_violation must be "escalate" or "fail".' });
+    }
+  });
   if (completeCount > 1) errs.push({ index: -1, code: 'multiple_complete', message: 'Only one complete step is allowed (at the end).' });
   if (invoiceCount > 1) errs.push({ index: -1, code: 'multiple_invoice', message: 'At most one generate_invoice step is allowed.' });
   if (approvalCount > 1) errs.push({ index: -1, code: 'multiple_approval', message: 'At most one human_approval step is allowed.' });
@@ -554,11 +605,56 @@ async function validateSubPlaybookRefs(
   return errs;
 }
 
-function renderTemplate(t: string, ctx: RunContext, runId: string): string {
-  return t
-    .replaceAll('{{account.name}}', ctx.account_name ?? 'account')
-    .replaceAll('{{invoice.amount}}', fmtMoney(ctx.invoice_amount_cents ?? 0))
-    .replaceAll('{{run.id}}', runId);
+// PB2.0: the single template choke-point, now a real token pass instead
+// of three replaceAll chains. New tokens beyond the original three:
+//   {{event.ref}} / {{event.note}}   — what triggered an event-started run
+//   {{party.KEY}}                    — custom fields on the served-party
+//                                      record (loaded by check_account)
+//   {{steps.N}} / {{steps.N.FIELD}}  — a prior step's recorded output
+//                                      (same resolver decisions use)
+// Unknown tokens render as '' (never leak braces to a customer-facing
+// string). `steps` is optional so pre-run callers keep working.
+function renderTemplate(t: string, ctx: RunContext, runId: string, steps?: RunStep[]): string {
+  return t.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_all, token: string) => {
+    if (token === 'account.name') return ctx.account_name ?? 'account';
+    if (token === 'invoice.amount') return fmtMoney(ctx.invoice_amount_cents ?? 0);
+    if (token === 'run.id') return runId;
+    if (token === 'event.ref') return String(ctx.event_ref ?? '');
+    if (token === 'event.note') return String(ctx.event_note ?? '');
+    if (token.startsWith('party.')) {
+      const attrs = (ctx.party_attributes ?? {}) as Record<string, unknown>;
+      const v = attrs[token.slice('party.'.length)];
+      return v == null ? '' : String(v);
+    }
+    if (token.startsWith('steps.') && steps) {
+      const ref = 'step:' + token.slice('steps.'.length);
+      const v = resolveStepRef(steps, ref);
+      return v == null ? '' : String(v);
+    }
+    return '';
+  });
+}
+
+// PB2.0 — the run's assembled working context: everything instruction,
+// check_knowledge and read_reference steps accumulated, newest-first
+// hard-capped so a long run can't blow out an LLM prompt. This is what
+// agentic_step and consult_specialist receive as reference material.
+function collectRunContextDocs(ctx: RunContext, capChars = 24000): string {
+  const parts = [
+    ...((ctx.reference_context as string[] | undefined) ?? []),
+    ...((ctx.knowledge_context as string[] | undefined) ?? []),
+    ...((ctx.instructions_context as string[] | undefined) ?? []),
+  ];
+  if (parts.length === 0) return '';
+  let out = '';
+  for (const p of parts) {
+    if (out.length + p.length > capChars) {
+      out += '\n\n[…additional reference material truncated…]';
+      break;
+    }
+    out += (out ? '\n\n' : '') + p;
+  }
+  return out;
 }
 
 // ── Audit helpers ───────────────────────────────────────────────────
@@ -706,7 +802,7 @@ async function executeDefinitionSteps(
     }
     const actionParams: Record<string, unknown> = {};
     const templates = (p.param_templates ?? {}) as Record<string, string>;
-    for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id).trim();
+    for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id, run.steps).trim();
     try {
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
         method: 'POST',
@@ -784,7 +880,7 @@ async function executeDefinitionSteps(
         break;
       }
       case 'log_activity': {
-        const text = renderTemplate((p.text_template as string) ?? 'Playbook step executed', ctx, run.id);
+        const text = renderTemplate((p.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
         if (!run.preview) {
           await admin.from('activity_events').insert({
             tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'resolved', text,
@@ -828,13 +924,54 @@ async function executeDefinitionSteps(
     const params = (step.params ?? {}) as Record<string, unknown>;
     run.current_step = i;
 
+    // PB2.0 — per-step rule: an author-defined assertion on the PREVIOUS
+    // step's recorded outcome, checked before advancing (loop-top so it
+    // also covers steps that resumed after a human gate). Same
+    // '|'-fragment matching as guardrails. Top-level steps only in v1.
+    // Guardrails still always win — this is an additional assertion,
+    // never a replacement.
+    if (i > 0) {
+      const prev = run.steps[i - 1];
+      const prevRule = ((prev?.params ?? {}) as Record<string, unknown>).rule as
+        { pattern?: string; on_violation?: string } | undefined;
+      if (prevRule?.pattern && !(prev.output?.rule_checked) && ['done', 'skipped'].includes(prev.status)) {
+        const hay = `${prev.detail} ${JSON.stringify(prev.output ?? {})}`;
+        let hit = false; let hitFrag = '';
+        for (const frag of String(prevRule.pattern).split('|').map((p) => p.trim()).filter(Boolean)) {
+          try { hit = new RegExp(frag, 'i').test(hay); } catch { hit = hay.toLowerCase().includes(frag.toLowerCase()); }
+          if (hit) { hitFrag = frag; break; }
+        }
+        prev.output = { ...(prev.output ?? {}), rule_checked: true, rule_violated: hit };
+        if (hit) {
+          const behavior = String(prevRule.on_violation ?? 'escalate');
+          prev.status = 'failed';
+          prev.detail = `${prev.detail} — STEP RULE VIOLATED (matched "${hitFrag}")`;
+          run.status = 'failed';
+          if (behavior === 'escalate' && !run.preview) {
+            await admin.from('human_tasks').insert({
+              tenant_id: tenantId, type: 'escalation', source: 'de',
+              title: `Playbook step rule violated — ${prev.label}`,
+              detail: `Step "${prev.label}" output matched its step rule pattern ("${hitFrag}"). The run was stopped for review. Run ${run.id}.`,
+            });
+          }
+          await saveRun(admin, run);
+          await audit(admin, tenantId,
+            `Playbook [${acct()}] — step "${prev.label}" violated its step rule (matched "${hitFrag}") — run stopped${behavior === 'escalate' ? ', escalated to a human' : ''}`,
+            'guardrail_block',
+            { run_id: run.id, definition_id: run.definition_id, step_index: i - 1, rule_pattern: prevRule.pattern, matched: hitFrag },
+            'Playbook DE');
+          return { status: 'failed' };
+        }
+      }
+    }
+
     try {
       switch (step.key) {
         // ────────────────────────────────────────────────
         case 'check_account': {
           const { data: account } = await admin
             .from('customer_accounts')
-            .select('id, name, arr_cents, renewal_date')
+            .select('id, name, arr_cents, renewal_date, attributes')
             .eq('id', ctx.account_id).eq('tenant_id', tenantId).single();
           if (!account) {
             step.status = 'failed'; step.at = now(); step.detail = 'Account not found or not eligible';
@@ -845,6 +982,8 @@ async function executeDefinitionSteps(
           ctx.account_name = account.name;
           ctx.arr_cents = account.arr_cents;
           ctx.renewal_date = account.renewal_date;
+          // PB2.0: tenant custom fields (Wave 4) become {{party.KEY}} tokens.
+          ctx.party_attributes = (account.attributes ?? {}) as Record<string, unknown>;
           step.status = 'done'; step.at = now();
           step.detail = account.renewal_date
             ? `${account.name} · ARR ${fmtMoney(account.arr_cents)} · renews ${account.renewal_date}`
@@ -984,7 +1123,7 @@ async function executeDefinitionSteps(
             break;
           }
           const title = renderTemplate(
-            (params.title_template as string) || 'Playbook approval — {{account.name}}', ctx, run.id);
+            (params.title_template as string) || 'Playbook approval — {{account.name}}', ctx, run.id, run.steps);
           const { data: task, error: taskErr } = await admin
             .from('human_tasks')
             .insert({
@@ -1096,8 +1235,8 @@ async function executeDefinitionSteps(
               break;
             }
             const opParams: Record<string, unknown> = {};
-            if (params.query_template) opParams.query = renderTemplate(params.query_template as string, ctx, run.id).trim();
-            if (params.ref_template) opParams.external_ref = renderTemplate(params.ref_template as string, ctx, run.id).trim();
+            if (params.query_template) opParams.query = renderTemplate(params.query_template as string, ctx, run.id, run.steps).trim();
+            if (params.ref_template) opParams.external_ref = renderTemplate(params.ref_template as string, ctx, run.id, run.steps).trim();
             try {
               const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
                 method: 'POST',
@@ -1117,12 +1256,21 @@ async function executeDefinitionSteps(
                   `the ${runDeId ? 'assigned DE' : 'DE'} needs "${data.denial?.needed ?? 'access'}" permission on ${catConn.display_name || catConn.provider} and has ${data.denial?.has ? `only "${data.denial.has}"` : 'no grant'}.`);
               }
               if (data.ok) {
+                const items = (data.items ?? []) as unknown[];
                 step.status = 'done'; step.at = now();
-                step.detail = `${category}.${op} on ${catConn.display_name || catConn.provider} → ${(data.items ?? []).length} item(s), read-through`;
+                step.detail = `${category}.${op} on ${catConn.display_name || catConn.provider} → ${items.length} item(s), read-through`;
+                // PB2.0: expose the count so a later decision/template can
+                // react ({{steps.N.item_count}}, "if item_count > 0"), and
+                // surface the read items to the run's working context.
+                step.output = { item_count: items.length, category, op };
+                if (items.length > 0) {
+                  ctx.reference_context = [...((ctx.reference_context as string[] | undefined) ?? []),
+                    `## ${category}.${op} result (${items.length} item(s))\n${JSON.stringify(items).slice(0, 6000)}`];
+                }
                 await audit(admin, tenantId,
-                  `Playbook [${acct()}] — category op ${category}.${op} on ${catConn.display_name || catConn.provider} (${(data.items ?? []).length} item(s), read-through, not persisted)`,
+                  `Playbook [${acct()}] — category op ${category}.${op} on ${catConn.display_name || catConn.provider} (${items.length} item(s), read-through, not persisted)`,
                   'connector_action',
-                  { run_id: run.id, definition_id: run.definition_id, connector_id: catConn.id, category, op, provider: catConn.provider, item_count: (data.items ?? []).length },
+                  { run_id: run.id, definition_id: run.definition_id, connector_id: catConn.id, category, op, provider: catConn.provider, item_count: items.length },
                   'Playbook DE');
               } else {
                 step.status = 'skipped'; step.at = now();
@@ -1161,7 +1309,7 @@ async function executeDefinitionSteps(
             }
             const actionParams: Record<string, unknown> = {};
             const templates = (params.param_templates ?? {}) as Record<string, string>;
-            for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id).trim();
+            for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id, run.steps).trim();
             try {
               const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
                 method: 'POST',
@@ -1215,7 +1363,7 @@ async function executeDefinitionSteps(
             .eq('tenant_id', tenantId).eq('provider', 'zendesk').eq('status', 'connected')
             .limit(1).maybeSingle();
           const externalRef = params.external_ref_template
-            ? renderTemplate(params.external_ref_template as string, ctx, run.id).trim()
+            ? renderTemplate(params.external_ref_template as string, ctx, run.id, run.steps).trim()
             : '';
           let skip: string | null = null;
           if (!connector) skip = 'skipped: no connected Zendesk connector for this workspace';
@@ -1255,7 +1403,7 @@ async function executeDefinitionSteps(
               try {
                 const creds = JSON.parse(secretRow.secret) as { email: string; api_token: string };
                 const auth = 'Basic ' + btoa(`${creds.email}/token:${creds.api_token}`);
-                const payloadText = renderTemplate((params.payload_template as string) ?? '', ctx, run.id);
+                const payloadText = renderTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
                 const body = params.op === 'add_internal_note'
                   ? { ticket: { comment: { body: payloadText, public: false } } }
                   : { ticket: { status: payloadText || 'open' } };
@@ -1314,7 +1462,7 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'log_activity': {
-          const text = renderTemplate((params.text_template as string) ?? 'Playbook step executed', ctx, run.id);
+          const text = renderTemplate((params.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
           if (run.preview) {
             step.status = 'done'; step.at = now(); step.detail = `PREVIEW — would log: ${text}`;
             break;
@@ -1332,7 +1480,7 @@ async function executeDefinitionSteps(
           // wired to this event runs on the next dispatch cycle — the same
           // rails polled events ride. Honest no-op if the event isn't found.
           const eventKey = String(params.event_key ?? '').trim();
-          const note = renderTemplate((params.payload_template as string) ?? '', ctx, run.id);
+          const note = renderTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
           if (run.preview) {
             step.status = 'done'; step.at = now();
             step.detail = `PREVIEW — would emit event "${eventKey}"`;
@@ -1413,7 +1561,7 @@ async function executeDefinitionSteps(
               continue;
             }
           }
-          const questionText = renderTemplate(String(params.question_template ?? ''), ctx, run.id).trim()
+          const questionText = renderTemplate(String(params.question_template ?? ''), ctx, run.id, run.steps).trim()
             || `Specialist review for ${acct()}`;
 
           const escalateTask = async (why: string) => {
@@ -1436,7 +1584,10 @@ async function executeDefinitionSteps(
               body: JSON.stringify({
                 action: 'consult', tenant_id: tenantId, profile_key: profileKey,
                 question: questionText, requested_by: 'playbook', run_id: run.id,
-                context: { account_name: ctx.account_name ?? null },
+                // PB2.0: the run's accumulated reference material now
+                // actually reaches the specialist (this field was parsed
+                // but unused server-side until now).
+                context: { account_name: ctx.account_name ?? null, documents: collectRunContextDocs(ctx) || null },
               }),
             });
             consultRes = await r.json().catch(() => null);
@@ -1663,7 +1814,7 @@ async function executeDefinitionSteps(
             await stepAudit(i); await saveRun(admin, run);
             continue;
           }
-          const goal = renderTemplate(String(params.goal_template ?? ''), ctx, run.id).trim()
+          const goal = renderTemplate(String(params.goal_template ?? ''), ctx, run.id, run.steps).trim()
             || `Complete step ${i + 1} of this playbook.`;
           const runDeId = await resolveRunDeId();
           if (!runDeId) {
@@ -1684,6 +1835,9 @@ async function executeDefinitionSteps(
               body: JSON.stringify({
                 action: 'start', tenant_id: tenantId, de_id: runDeId,
                 playbook_run_id: run.id, step_index: i, goal,
+                // PB2.0: instructions + knowledge checks + references the
+                // run accumulated — the DE reads them before acting.
+                context_documents: collectRunContextDocs(ctx) || null,
               }),
             });
             agenticRes = await r.json().catch(() => null);
@@ -1813,6 +1967,158 @@ async function executeDefinitionSteps(
         }
 
         // ────────────────────────────────────────────────
+        // ────────────────────────────────────────────────
+        // PB2.0 — check_knowledge: scripted knowledge verification. The
+        // author defines WHAT to look up (templated query), HOW MANY
+        // matches to fetch, and WHAT HAPPENS on a miss. Retrieval is the
+        // same hybrid path every DE answer uses (lexical+semantic RRF,
+        // migration 046), scoped to the run's DE (migration 030) — free
+        // built-in embeddings, degrades to lexical-only without them.
+        case 'check_knowledge': {
+          const query = renderTemplate(String(params.query_template ?? ''), ctx, run.id, run.steps).trim();
+          const matchCount = Math.min(10, Math.max(1, Number(params.match_count ?? 5)));
+          const onMiss = ['continue', 'escalate', 'fail'].includes(String(params.on_miss)) ? String(params.on_miss) : 'escalate';
+          if (!query) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = 'skipped: query template rendered empty';
+            break;
+          }
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would search the knowledge base for "${query.slice(0, 80)}" (${matchCount} matches, on miss: ${onMiss})`;
+            step.output = { found: true, matches: matchCount, preview: true };
+            break;
+          }
+          const ckRunDeId = await resolveRunDeId();
+          const qEmbedding = await embedText(query);
+          const { data: chunks, error: ckErr } = await admin.rpc('hybrid_match_knowledge', {
+            p_tenant_id: tenantId, p_query_text: query, p_account_id: null,
+            p_query_embedding: qEmbedding, p_match_count: matchCount,
+            p_subject_kind: ckRunDeId ? 'de' : null, p_subject_id: ckRunDeId,
+          });
+          if (ckErr) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `skipped: knowledge search failed honestly (${ckErr.message.slice(0, 120)})`;
+            break;
+          }
+          const rows = (chunks ?? []) as Array<{ doc_title: string; content: string; distance: number | null }>;
+          const found = rows.length > 0;
+          step.output = {
+            found, matches: rows.length,
+            top_title: rows[0]?.doc_title ?? null,
+            top_distance: rows[0]?.distance ?? null,
+          };
+          if (found) {
+            // Feed what was found into the run's working context (capped)
+            // so later agentic / specialist steps actually read it.
+            const bundle = rows.map((r) => `### ${r.doc_title}\n${r.content}`).join('\n\n').slice(0, 6000);
+            ctx.knowledge_context = [...((ctx.knowledge_context as string[] | undefined) ?? []), `## Knowledge check: ${query.slice(0, 120)}\n${bundle}`];
+            step.status = 'done'; step.at = now();
+            step.detail = `Found ${rows.length} knowledge match(es) for "${query.slice(0, 80)}" — top: ${rows[0]?.doc_title ?? '—'}`;
+            break;
+          }
+          // Miss — author-chosen behavior.
+          if (onMiss === 'continue') {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `No knowledge found for "${query.slice(0, 80)}" — continuing (author's choice)`;
+            break;
+          }
+          step.status = 'failed'; step.at = now();
+          step.detail = `No knowledge found for "${query.slice(0, 80)}" — ${onMiss === 'escalate' ? 'escalated to a human' : 'run stopped'} (author's choice)`;
+          run.status = 'failed';
+          if (onMiss === 'escalate') {
+            await admin.from('human_tasks').insert({
+              tenant_id: tenantId, type: 'escalation', source: 'de',
+              title: `Playbook knowledge check failed — ${step.label}`,
+              detail: `The knowledge base has no answer for "${query.slice(0, 200)}". The run was stopped for review. Run ${run.id}.`,
+            });
+          }
+          await saveRun(admin, run); await stepAudit(i);
+          return { status: 'failed' };
+        }
+
+        // ────────────────────────────────────────────────
+        // PB2.0 — read_reference: documents/links the DE actually READS.
+        // Content lands in the run's working context, which later
+        // agentic / specialist steps receive. URL fetches pass the SSRF
+        // guard; storage assets must be text-like (PDF extraction is
+        // deliberately not faked — no extractor exists yet).
+        case 'read_reference': {
+          const refs = (Array.isArray(params.refs) ? params.refs : []) as Array<Record<string, unknown>>;
+          const title = String(params.title ?? step.label ?? 'Reference');
+          if (run.preview) {
+            step.status = 'done'; step.at = now();
+            step.detail = `PREVIEW — would read ${refs.length} reference(s) into the run context`;
+            step.output = { sources: refs.length, chars: 0, preview: true };
+            break;
+          }
+          const readParts: string[] = [];
+          const readNotes: string[] = [];
+          for (const r of refs.slice(0, 5)) {
+            const kind = String(r.kind ?? '');
+            try {
+              if (kind === 'doc') {
+                const { data: doc } = await admin.from('knowledge_docs')
+                  .select('id, title, content, visibility')
+                  .eq('id', r.doc_id).eq('tenant_id', tenantId).maybeSingle();
+                if (!doc) { readNotes.push(`doc ${String(r.doc_id).slice(0, 8)}… not found`); continue; }
+                if (doc.visibility === 'scoped') {
+                  // Mirror the retrieval RPC's scope filter: a scoped doc
+                  // is readable only if the run's DE is on its scope list.
+                  const rrDeId = await resolveRunDeId();
+                  const { data: scopeRow } = rrDeId ? await admin.from('knowledge_doc_scopes')
+                    .select('id').eq('doc_id', doc.id).eq('subject_kind', 'de').eq('subject_id', rrDeId).maybeSingle()
+                    : { data: null };
+                  if (!scopeRow) { readNotes.push(`"${doc.title}" is scoped to other employees — not readable in this run`); continue; }
+                }
+                readParts.push(`## ${doc.title}\n${String(doc.content ?? '').slice(0, 20000)}`);
+              } else if (kind === 'url') {
+                const url = String(r.url ?? '');
+                if (!isSafeExternalUrl(url)) { readNotes.push(`URL blocked by safety policy: ${url.slice(0, 80)}`); continue; }
+                const resp = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { 'Accept': 'text/html, text/plain, text/markdown, application/json' } });
+                if (!resp.ok) { readNotes.push(`URL returned ${resp.status}: ${url.slice(0, 80)}`); continue; }
+                const raw = (await resp.text()).slice(0, 200000);
+                // Naive HTML strip — scripts/styles out, tags out, entities kept simple.
+                const text = raw
+                  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 20000);
+                if (!text) { readNotes.push(`URL had no readable text: ${url.slice(0, 80)}`); continue; }
+                readParts.push(`## ${url}\n${text}`);
+              } else if (kind === 'asset') {
+                const { data: asset } = await admin.from('media_assets')
+                  .select('id, storage_path, mime, kind')
+                  .eq('id', r.asset_id).eq('tenant_id', tenantId).maybeSingle();
+                if (!asset) { readNotes.push(`document ${String(r.asset_id).slice(0, 8)}… not found`); continue; }
+                const mime = String(asset.mime ?? '');
+                const textLike = mime.startsWith('text/') || mime.includes('markdown') || mime.includes('json');
+                if (!textLike) { readNotes.push(`"${asset.storage_path.split('/').pop()}" is ${mime || 'binary'} — only text documents are readable (PDF extraction not built yet)`); continue; }
+                const { data: blob } = await admin.storage.from('playbook-media').download(asset.storage_path);
+                if (!blob) { readNotes.push(`could not read stored document ${String(r.asset_id).slice(0, 8)}…`); continue; }
+                const text = (await blob.text()).slice(0, 20000);
+                readParts.push(`## ${asset.storage_path.split('/').pop()}\n${text}`);
+              } else {
+                readNotes.push(`unknown reference kind "${kind}"`);
+              }
+            } catch (e) {
+              readNotes.push(`reference failed honestly: ${String((e as Error)?.message ?? e).slice(0, 100)}`);
+            }
+          }
+          const totalChars = readParts.reduce((s, p) => s + p.length, 0);
+          if (readParts.length > 0) {
+            ctx.reference_context = [...((ctx.reference_context as string[] | undefined) ?? []), `# ${title}\n${readParts.join('\n\n')}`];
+          }
+          step.output = { sources: readParts.length, chars: totalChars, skipped: readNotes.length };
+          step.status = readParts.length > 0 ? 'done' : 'skipped'; step.at = now();
+          step.detail = readParts.length > 0
+            ? `Read ${readParts.length} reference(s) (${totalChars.toLocaleString()} chars) into the run context${readNotes.length ? ` · ${readNotes.length} skipped: ${readNotes.join('; ').slice(0, 160)}` : ''}`
+            : `skipped: no readable references (${readNotes.join('; ').slice(0, 200)})`;
+          break;
+        }
+
         case 'complete': {
           step.status = 'done'; step.at = now(); step.detail = 'Run completed';
           run.status = 'completed';
@@ -1858,7 +2164,7 @@ interface StartDefResult { run_id?: string; status: string; task_id?: string; er
 
 async function startDefinitionRunServer(
   admin: SupabaseClient, tenantId: string, definitionId: string, accountId: string,
-  opts?: { parentRunId?: string | null; deSubjectId?: string | null },
+  opts?: { parentRunId?: string | null; deSubjectId?: string | null; eventRef?: string | null; eventNote?: string | null },
 ): Promise<StartDefResult> {
   const { data: def } = await admin.from('playbook_definitions')
     .select('*').eq('id', definitionId).eq('tenant_id', tenantId).maybeSingle();
@@ -1901,6 +2207,10 @@ async function startDefinitionRunServer(
   const context: RunContext = {
     account_id: accountId,
     ...(opts?.deSubjectId ? { de_subject_id: opts.deSubjectId } : {}),
+    // PB2.0: event-triggered runs finally know WHAT triggered them —
+    // {{event.ref}} / {{event.note}} template tokens read these.
+    ...(opts?.eventRef ? { event_ref: opts.eventRef } : {}),
+    ...(opts?.eventNote ? { event_note: opts.eventNote } : {}),
   };
   const { data: runRow, error: runErr } = await admin
     .from('playbook_runs')
@@ -1989,7 +2299,12 @@ serve(async (req) => {
         if (!fire.definition_id || !fire.target_account_id) {
           outcome = { status: 'error', error: 'fire missing definition or target account' };
         } else {
-          outcome = await startDefinitionRunServer(admin, fire.tenant_id, fire.definition_id, fire.target_account_id);
+          // PB2.0: thread what triggered this fire into the run context
+          // so the playbook can reference {{event.ref}} / {{event.note}}.
+          outcome = await startDefinitionRunServer(admin, fire.tenant_id, fire.definition_id, fire.target_account_id, {
+            eventRef: fire.target_ref ?? null,
+            eventNote: fire.detail ?? null,
+          });
         }
         const ok = !!outcome.run_id;
         await admin.from('playbook_trigger_fires').update({
