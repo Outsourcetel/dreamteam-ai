@@ -7,6 +7,7 @@ import {
   DocChunkStatus, listChunkStatus, ingestDocChunks,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
+  extractPdf, extractUrl,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
@@ -51,6 +52,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // gate v1 — the server-side hard gate is the hardening step.
   const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // PDF/URL ingestion (removes the text-only wall).
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
+  const [showUrl, setShowUrl] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
   // Knowledge Feedback Loop (migration 032): pending revision requests
   // drafted from evidence-run feedback, awaiting human approve/reject.
   const [revisions, setRevisions] = useState<KnowledgeRevisionRequest[]>([]);
@@ -231,16 +236,37 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     e.target.value = '';
     if (!file) return;
     setError(null);
-    const title = file.name.replace(/\.(txt|md|markdown)$/i, '');
+    const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+    const title = file.name.replace(/\.(txt|md|markdown|pdf)$/i, '');
     await withEvalGate(title, async () => {
       try {
-        const text = await file.text();
+        setBusyMsg(isPdf ? `Extracting text from ${file.name}…` : null);
+        // PDF → server-side text extraction; text/markdown read in-browser.
+        const text = isPdf ? (await extractPdf(file)).text : await file.text();
         const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
         await load();
         index(created.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-      }
+      } finally { setBusyMsg(null); }
+    });
+  };
+
+  const importUrl = async () => {
+    const url = urlInput.trim();
+    if (!/^https?:\/\//i.test(url)) { setError('Enter a full http(s) URL.'); return; }
+    setError(null);
+    await withEvalGate(url, async () => {
+      try {
+        setBusyMsg(`Reading ${url}…`);
+        const { title, text } = await extractUrl(url);
+        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+        setUrlInput(''); setShowUrl(false);
+        await load();
+        index(created.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally { setBusyMsg(null); }
     });
   };
 
@@ -280,11 +306,32 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           onClick={() => fileRef.current?.click()}
           className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
         >
-          Upload .txt / .md
+          Upload file
         </button>
-        <input ref={fileRef} type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" className="hidden" onChange={onFile} />
+        <button
+          onClick={() => setShowUrl(v => !v)}
+          className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+        >
+          Import from URL
+        </button>
+        <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" className="hidden" onChange={onFile} />
+        {busyMsg && <span className="text-xs text-indigo-300">{busyMsg}</span>}
         <span className="text-xs text-slate-500 ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
       </div>
+
+      {showUrl && (
+        <div className="flex items-center gap-2 mb-4 rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+          <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            placeholder="https://help.yourcompany.com/article/…"
+            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+            onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }} />
+          <button onClick={() => void importUrl()} disabled={!!busyMsg || !urlInput.trim()}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+            Fetch & add
+          </button>
+          <button onClick={() => { setShowUrl(false); setUrlInput(''); }} className="text-xs px-2 py-1.5 text-slate-500 hover:text-slate-300">✕</button>
+        </div>
+      )}
 
       {/* Table / empty state */}
       {loading ? (
@@ -292,7 +339,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       ) : docs.length === 0 ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center">
           <p className="text-sm text-slate-300 font-medium mb-1">Alex answers from these documents — add your first</p>
-          <p className="text-xs text-slate-500 mb-4">Paste your FAQs, policies, product docs, or upload .txt/.md files. Alex will only answer what these documents support.</p>
+          <p className="text-xs text-slate-500 mb-4">Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support.</p>
           <button
             onClick={() => setEditor({ ...emptyEditor })}
             className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"

@@ -65,6 +65,33 @@ export async function createKnowledgeDoc(
   return data as KnowledgeDoc;
 }
 
+// Extract plain text from a PDF file or a web page via the
+// extract-document edge function, so it can then be saved as a normal
+// knowledge doc (chunk/embed path unchanged). Removes the text-only wall.
+export async function extractPdf(file: File): Promise<{ title: string; text: string; chars: number }> {
+  const file_base64 = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('could not read the file'));
+    r.readAsDataURL(file);
+  });
+  const { data, error } = await supabase.functions.invoke('extract-document', {
+    body: { kind: 'pdf', file_base64, filename: file.name },
+  });
+  if (error) throw new Error((data as { error?: string })?.error || error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as { title: string; text: string; chars: number };
+}
+
+export async function extractUrl(url: string): Promise<{ title: string; text: string; chars: number }> {
+  const { data, error } = await supabase.functions.invoke('extract-document', {
+    body: { kind: 'url', url },
+  });
+  if (error) throw new Error((data as { error?: string })?.error || error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  return data as { title: string; text: string; chars: number };
+}
+
 export async function updateKnowledgeDoc(
   id: string,
   updates: Partial<Pick<KnowledgeDoc, 'title' | 'content' | 'tags'>>
