@@ -12,6 +12,7 @@ import {
   connectorErrorLabel, fmtSince,
   IngestFilters, IngestCandidate, INGEST_TYPES, readIngestFilters,
   setIngestConfig, listIngestCandidates, decideIngestCandidates, discoverConnector,
+  oauthStart, oauthAppStatus, setOAuthApp, OAUTH_CALLBACK_URL,
 } from '../../../lib/connectorApi';
 import {
   SystemCategory, CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT,
@@ -85,7 +86,8 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   servicenow: '🟢', dynamics: '🔷', github: '🐙', gitlab: '🦊', guru: '🧠', document360: '📗',
   asana: '🎯', clickup: '⬆️', monday: '📅', linear: '📐',
   stripe: '💳', shopify: '🛍️', woocommerce: '🛒', bigcommerce: '🏬', square: '⬛',
-  bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓', template: '🧱',
+  bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓',
+  quickbooks: '💵', xero: '🧾', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -216,6 +218,9 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
               <h2 className="text-sm font-semibold text-white mb-1">Connect {meta!.label}</h2>
               <p className="text-xs text-slate-500 mb-4">{meta!.tagline}</p>
 
+              {meta!.oauth ? (
+                <OAuthConnectSection provider={provider!} label={meta!.label} name={name} onClose={onClose} />
+              ) : (<>
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4">
                 <p className="text-[11px] font-medium text-slate-400 mb-1">How to get credentials</p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">{meta!.help}</p>
@@ -305,11 +310,91 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                   {busy ? 'Testing…' : meta!.implemented ? 'Test & Save' : 'Register (no adapter yet)'}
                 </button>
               </div>
+              </>)}
             </>
           )}
         </div>
       </div>
     </>
+  );
+}
+
+// ── User-OAuth connect: platform app setup + "Connect with…" redirect ──
+function OAuthConnectSection({ provider, label, name, onClose }: {
+  provider: ConnectorProvider; label: string; name: string; onClose: () => void;
+}) {
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [showSetup, setShowSetup] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const s = await oauthAppStatus();
+    const cfg = s.has(provider);
+    setConfigured(cfg);
+    setShowSetup(!cfg);
+  }, [provider]);
+  useEffect(() => { void load(); }, [load]);
+
+  const saveApp = async () => {
+    setBusy(true); setErr(null);
+    try { await setOAuthApp(provider, clientId, clientSecret); setClientSecret(''); await load(); }
+    catch (e) { setErr(e instanceof CustomerApiError ? e.message : 'Only platform admins can set this up.'); }
+    finally { setBusy(false); }
+  };
+  const connect = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await oauthStart(provider, name);
+      if (r.ok && r.authorize_url) { window.location.href = r.authorize_url; return; }
+      setErr(r.detail || connectorErrorLabel(r.error));
+    } catch (e) { setErr(e instanceof CustomerApiError ? e.message : 'Could not start sign-in.'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          Connect by signing in — no keys to paste. You'll be sent to {label} to approve access, then returned here.
+        </p>
+      </div>
+
+      {configured === false && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-1.5">
+          <p className="text-[11px] text-amber-300 font-medium">One-time platform setup</p>
+          <p className="text-[11px] text-slate-400">Register the {label} developer app once, and add this exact redirect URL in its settings:</p>
+          <code className="block text-[10px] text-slate-300 bg-slate-950 rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
+        </div>
+      )}
+
+      {(showSetup || configured === false) && (
+        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+          <p className="text-[11px] font-medium text-slate-400">{label} app credentials — platform admin only</p>
+          <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Client ID" className={inputCls} />
+          <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type="password" placeholder="Client secret" className={inputCls} />
+          <button disabled={busy || !clientId.trim()} onClick={() => void saveApp()}
+            className="px-3 py-1.5 rounded-lg text-xs bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50">
+            Save app credentials
+          </button>
+        </div>
+      )}
+
+      {err && <p className="text-xs text-red-300">{err}</p>}
+      <div className="flex gap-3">
+        <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs disabled:opacity-50">Cancel</button>
+        <button disabled={busy || configured !== true} onClick={() => void connect()}
+          title={configured !== true ? 'A platform admin must add the app credentials first.' : ''}
+          className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">
+          {busy ? 'Starting…' : `Connect with ${label}`}
+        </button>
+      </div>
+      {configured === true && !showSetup && (
+        <button onClick={() => setShowSetup(true)} className="text-[11px] text-slate-500 hover:text-white">Update app credentials</button>
+      )}
+    </div>
   );
 }
 

@@ -81,6 +81,7 @@ import {
   walkPath, renderTemplate, renderBody, renderAction,
 } from '../_shared/adapterTemplates.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { OAUTH_PROVIDERS } from '../_shared/oauthProviders.ts';
 import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
@@ -113,6 +114,10 @@ interface Ctx {
   baseUrl: string;
   secret: Record<string, string>;
   config: Record<string, unknown>;
+  // Set for user-OAuth connectors so the token-refresh helper can persist a
+  // freshly refreshed access token back to this connector.
+  connectorId?: string;
+  admin?: SupabaseClient;
 }
 
 const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -2507,6 +2512,105 @@ const canvas = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── user-OAuth token refresh ── returns a valid access token for an
+// OAuth connector, refreshing (and persisting) via the refresh token when
+// the stored access token has expired. Client id/secret come from the
+// Vault-encrypted platform_config OAuth app config.
+async function oauthAccessToken(c: Ctx, provider: string): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const s = c.secret as Record<string, unknown>;
+  const access = String(s.access_token ?? '');
+  const expiresAt = Number(s.expires_at ?? 0);
+  if (access && Date.now() < expiresAt) return { ok: true, token: access };
+  const refresh = String(s.refresh_token ?? '');
+  const meta = OAUTH_PROVIDERS[provider];
+  if (!refresh || !meta || !c.admin || !c.connectorId) return access ? { ok: true, token: access } : { ok: false, error: 'token_expired_no_refresh' };
+  const { data: clientId } = await c.admin.rpc('platform_config_get', { p_key: `oauth:${provider}:client_id` });
+  const { data: clientSecret } = await c.admin.rpc('platform_config_get', { p_key: `oauth:${provider}:client_secret` });
+  if (!clientId || !clientSecret) return { ok: false, error: 'oauth_app_not_configured' };
+  const res = await fetch(meta.tokenUrl, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`) },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }).toString(),
+  });
+  const tok = await res.json().catch(() => null) as { access_token?: string; refresh_token?: string; expires_in?: number } | null;
+  if (!res.ok || !tok?.access_token) return { ok: false, error: 'refresh_failed' };
+  const next = { ...s, access_token: tok.access_token, refresh_token: tok.refresh_token ?? refresh, expires_at: Date.now() + (Number(tok.expires_in ?? 3600) - 60) * 1000 };
+  await c.admin.rpc('set_connector_secret_sysadmin', { p_connector_id: c.connectorId, p_secret: JSON.stringify(next) });
+  s.access_token = tok.access_token; s.refresh_token = next.refresh_token; s.expires_at = next.expires_at;
+  return { ok: true, token: tok.access_token };
+}
+
+// ── quickbooks ── user-OAuth · realm_id from callback · erp_financials.
+const QBO = 'https://quickbooks.api.intuit.com/v3/company';
+const quickbooks = {
+  realm: (c: Ctx) => String((c.secret as Record<string, unknown>).realm_id ?? ''),
+  async q(c: Ctx, query: string): Promise<{ ok: boolean; error?: string; rows: Record<string, unknown> }> {
+    const t = await oauthAccessToken(c, 'quickbooks');
+    if (!t.ok) return { ok: false, error: t.error, rows: {} };
+    const r = await httpJson(`${QBO}/${this.realm(c)}/query?query=${encodeURIComponent(query)}&minorversion=65`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error, rows: {} };
+    return { ok: true, rows: ((r.body as { QueryResponse?: Record<string, unknown> })?.QueryResponse) ?? {} };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await oauthAccessToken(c, 'quickbooks');
+    if (!t.ok) return { ok: false, error: t.error };
+    const realm = this.realm(c);
+    const r = await httpJson(`${QBO}/${realm}/companyinfo/${realm}?minorversion=65`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'QuickBooks company reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const res = await this.q(c, 'SELECT * FROM Invoice ORDERBY MetaData.LastUpdatedTime DESC MAXRESULTS 15');
+    if (!res.ok) return { ok: false, error: res.error };
+    const invs = ((res.rows.Invoice as Array<Record<string, unknown>>) ?? []);
+    const ql = query.toLowerCase();
+    const f = ql ? invs.filter((i) => String(i.DocNumber ?? '').toLowerCase().includes(ql) || String((i.CustomerRef as { name?: string })?.name ?? '').toLowerCase().includes(ql)) : invs;
+    return { ok: true, items: f.slice(0, 10).map((i) => ({ ref: String(i.Id), type: 'invoice', title: clip(`Invoice ${i.DocNumber ?? i.Id} — ${(i.CustomerRef as { name?: string })?.name ?? ''}`, 160), snippet: clip(`${i.TotalAmt ?? ''} · balance ${i.Balance ?? ''} · due ${i.DueDate ?? ''}`, 400), url: null, raw: { id: i.Id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const res = await this.q(c, `SELECT * FROM Invoice WHERE Id = '${ref.replace(/'/g, '')}'`);
+    if (!res.ok) return { ok: false, error: res.error };
+    const i = ((res.rows.Invoice as Array<Record<string, unknown>>) ?? [])[0] ?? {};
+    return { ok: true, items: [{ ref, type: 'invoice', title: clip(`Invoice ${i.DocNumber ?? ref}`, 160), snippet: clip(`${i.TotalAmt ?? ''} · balance ${i.Balance ?? ''}`, 400), url: null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── xero ── user-OAuth · xero_tenant_id from callback · erp_financials.
+const XERO = 'https://api.xero.com/api.xro/2.0';
+const xero = {
+  async hdrs(c: Ctx): Promise<Record<string, string> | null> {
+    const t = await oauthAccessToken(c, 'xero');
+    if (!t.ok) return null;
+    return { Authorization: `Bearer ${t.token}`, 'Xero-tenant-id': String((c.secret as Record<string, unknown>).xero_tenant_id ?? ''), Accept: 'application/json' };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const r = await httpJson(`${XERO}/Organisation`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Xero organisation reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const r = await httpJson(`${XERO}/Invoices?order=UpdatedDateUTC DESC&page=1`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const invs = ((r.body as { Invoices?: Array<Record<string, unknown>> })?.Invoices) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? invs.filter((i) => String(i.InvoiceNumber ?? '').toLowerCase().includes(ql) || String((i.Contact as { Name?: string })?.Name ?? '').toLowerCase().includes(ql)) : invs;
+    return { ok: true, items: f.slice(0, 10).map((i) => ({ ref: String(i.InvoiceID), type: 'invoice', title: clip(`${i.InvoiceNumber ?? i.InvoiceID} — ${(i.Contact as { Name?: string })?.Name ?? ''}`, 160), snippet: clip(`${i.Total ?? ''} ${i.CurrencyCode ?? ''} · ${i.Status ?? ''}`, 400), url: null, raw: { id: i.InvoiceID } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const r = await httpJson(`${XERO}/Invoices/${encodeURIComponent(ref)}`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = (((r.body as { Invoices?: Array<Record<string, unknown>> })?.Invoices) ?? [])[0] ?? {};
+    return { ok: true, items: [{ ref, type: 'invoice', title: clip(`${i.InvoiceNumber ?? ref}`, 160), snippet: clip(`${i.Total ?? ''} ${i.CurrencyCode ?? ''} · ${i.Status ?? ''}`, 400), url: null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -2714,6 +2818,14 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   canvas: {
     search_records: (c, p) => canvas.search(c, p.query ?? ''),
     get_record: (c, p) => canvas.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  quickbooks: {
+    search_invoices: (c, p) => quickbooks.search(c, p.query ?? ''),
+    get_invoice: (c, p) => quickbooks.fetchRecord(c, 'invoice', p.external_ref ?? ''),
+  },
+  xero: {
+    search_invoices: (c, p) => xero.search(c, p.query ?? ''),
+    get_invoice: (c, p) => xero.fetchRecord(c, 'invoice', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -2989,6 +3101,8 @@ serve(async (req) => {
       baseUrl: String(connector.base_url ?? '').replace(/\/+$/, ''),
       secret,
       config: (connector.config ?? {}) as Record<string, unknown>,
+      connectorId,
+      admin,
     };
 
     // ── template provider: resolve the declarative adapter (DATA → adapter) ──
@@ -3010,6 +3124,7 @@ serve(async (req) => {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
+      quickbooks, xero,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

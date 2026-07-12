@@ -24,7 +24,8 @@ export type ConnectorProvider =
   | 'servicenow' | 'dynamics' | 'github' | 'gitlab' | 'guru' | 'document360'
   | 'asana' | 'clickup' | 'monday' | 'linear'
   | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
-  | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas' | 'template';
+  | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
+  | 'quickbooks' | 'xero' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -74,6 +75,7 @@ export interface ProviderMeta {
   help: string;                    // plain-language "how to get credentials"
   knowledgeSync: boolean;          // provider can ingest articles/pages
   implemented: boolean;
+  oauth?: boolean;                 // connect via "Sign in with…" redirect (no pasted token)
 }
 
 export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
@@ -161,6 +163,22 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In HubSpot: Settings → Integrations → Private Apps → Create a private app → on the Scopes tab enable the read scopes you want (crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read, tickets) → Create → copy the access token. One token covers CRM (companies, contacts, deals) and Service Hub (tickets). Set this connector\'s category to "helpdesk" to use it as a support desk, or "CRM" for sales/account context.',
     knowledgeSync: false, implemented: true,
+  },
+  quickbooks: {
+    label: 'QuickBooks Online', tagline: 'Accounting — invoices, bills, customers',
+    defaultCategory: 'erp_financials',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to QuickBooks — no keys to paste. (A platform admin registers the QuickBooks app once, then anyone can connect their company.)',
+    knowledgeSync: false, implemented: true, oauth: true,
+  },
+  xero: {
+    label: 'Xero', tagline: 'Accounting — invoices, contacts, bank transactions',
+    defaultCategory: 'erp_financials',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Xero — no keys to paste. (A platform admin registers the Xero app once, then anyone can connect their organisation.)',
+    knowledgeSync: false, implemented: true, oauth: true,
   },
   stripe: {
     label: 'Stripe', tagline: 'Payments & billing — invoices, subscriptions',
@@ -1073,6 +1091,36 @@ async function invokeHub<T = Record<string, unknown>>(
   const data = await res.json().catch(() => ({}));
   if (!res.ok && !data?.error) throw new CustomerApiError(`HTTP ${res.status}`, false);
   return { items: [], ...data, ok: !!data.ok } as T & { ok: boolean; error?: string; items: HubItem[] };
+}
+
+// ── User-OAuth (authorization-code) connect flow ──────────────────
+
+/** The public redirect URI a platform admin registers in each OAuth app. */
+export const OAUTH_CALLBACK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oauth-callback`;
+
+/** Which OAuth apps a platform admin has configured (client id set). */
+export async function oauthAppStatus(): Promise<Set<string>> {
+  const { data, error } = await supabase.rpc('oauth_app_status');
+  if (error) return new Set();
+  return new Set(((data ?? []) as { provider: string }[]).map((r) => r.provider));
+}
+
+/** Platform admin: register an OAuth app's client id + secret (Vault-encrypted). */
+export async function setOAuthApp(provider: ConnectorProvider, clientId: string, clientSecret: string): Promise<void> {
+  const { error } = await supabase.rpc('set_oauth_app', { p_provider: provider, p_client_id: clientId.trim(), p_client_secret: clientSecret.trim() });
+  if (error) raise('setOAuthApp', error);
+}
+
+/** Begin an OAuth connection: returns the provider's authorize URL to redirect to. */
+export async function oauthStart(provider: ConnectorProvider, displayName: string): Promise<{ ok: boolean; authorize_url?: string; error?: string; detail?: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oauth-start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ provider, display_name: displayName }),
+  });
+  return res.json().catch(() => ({ ok: false, error: 'network_error' }));
 }
 
 // ── Edge function invocation (legacy zendesk fn — sync/write-back) ─
