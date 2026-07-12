@@ -405,18 +405,24 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
         <p className="text-[11px] font-medium text-slate-400 mb-1">What gets ingested — filters</p>
         <p className="text-[11px] text-slate-600 mb-3">
           These control which files land in knowledge <span className="text-slate-500">and surface in live lookups</span>. They are hygiene, not a security wall —
-          the real wall is least-privilege at the source: {connector.provider === 'gdrive'
-            ? 'share only the intended folder(s) with the service account (it sees nothing else).'
+          the real wall is least-privilege at the source: {
+            connector.provider === 'gdrive' ? 'share only the intended folder(s) with the service account (it sees nothing else).'
+            : connector.provider === 'notion' ? 'share only the intended pages with the Notion integration (it sees nothing else).'
+            : connector.provider === 'box' ? 'grant the app access to only the intended folders in the Box Admin Console (it sees nothing else).'
             : 'grant the app Sites.Selected on one dedicated site instead of Sites.Read.All (it sees nothing else).'}
         </p>
         <div className="space-y-3">
+          {connector.provider !== 'notion' && (
           <div>
             <label className="block text-[11px] text-slate-400 mb-1">
-              {connector.provider === 'gdrive' ? 'Folder / Shared Drive ID (optional — blank = everything shared)' : 'Sub-folder to sync (optional — blank = whole library)'}
+              {connector.provider === 'gdrive' ? 'Folder / Shared Drive ID (optional — blank = everything shared)'
+                : connector.provider === 'box' ? 'Folder ID to sync (optional — blank = whole account)'
+                : 'Sub-folder to sync (optional — blank = whole library)'}
             </label>
             <input value={filters.folder ?? ''} onChange={e => commitFilters({ ...filters, folder: e.target.value || null })}
-              placeholder={connector.provider === 'gdrive' ? 'folder id' : 'e.g. Policies/Public'} className={`${inputCls} text-xs`} />
+              placeholder={connector.provider === 'gdrive' ? 'folder id' : connector.provider === 'box' ? 'Box folder id' : 'e.g. Policies/Public'} className={`${inputCls} text-xs`} />
           </div>
+          )}
           <div>
             <label className="block text-[11px] text-slate-400 mb-1">Exclude files/folders whose name contains (comma-separated)</label>
             <input value={excludeText} onChange={e => setExcludeText(e.target.value)}
@@ -740,7 +746,7 @@ export default function LiveConnectorsPage() {
                     <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Field mapping
                     </button>
-                    {(c.provider === 'sharepoint' || c.provider === 'gdrive') && (
+                    {(['sharepoint', 'gdrive', 'notion', 'box'] as ConnectorProvider[]).includes(c.provider) && (
                       <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                         What gets ingested
                       </button>

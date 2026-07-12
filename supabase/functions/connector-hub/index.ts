@@ -870,9 +870,10 @@ function candidatePasses(c: Candidate, f: IngestFilters): boolean {
 // + exclude patterns are hard; allow_types only applies when the customer
 // set one (read-through isn't about extractability, so 'other' is allowed
 // through unless a type allow-list is configured).
+const INGEST_CONTROL_PROVIDERS = new Set(['sharepoint', 'gdrive', 'notion', 'box']);
 function readThroughFilterItems(provider: string, items: HubItem[] | undefined, f: IngestFilters): HubItem[] {
   const list = items ?? [];
-  if (provider !== 'sharepoint' && provider !== 'gdrive') return list;
+  if (!INGEST_CONTROL_PROVIDERS.has(provider)) return list;
   if (!(f.exclude_patterns?.length || f.allow_types?.length || f.folder)) return list;
   const scope = String(f.folder ?? '').replace(/^\/+|\/+$/g, '').toLowerCase();
   return list.filter((it) => {
@@ -881,9 +882,11 @@ function readThroughFilterItems(provider: string, items: HubItem[] | undefined, 
     const mime = String(raw.mimeType ?? '');
     const pr = raw.parentReference as { path?: string } | undefined;
     const path = pr?.path ? String(pr.path).replace(/^.*root:\/?/, '') : '';
-    if (scope && !`${path}/${name}`.toLowerCase().includes(scope)) return false;
+    // folder scope only applies where items carry a path (sharepoint); skip for notion (no folders)
+    if (scope && path && !`${path}/${name}`.toLowerCase().includes(scope)) return false;
     if (isExcluded(name, path, f.exclude_patterns)) return false;
-    if (f.allow_types?.length && !f.allow_types.includes(fileTypeOf(name, mime))) return false;
+    // allow_types only filters TYPED items — untyped (e.g. Notion pages → 'other') pass through
+    if (f.allow_types?.length) { const t = fileTypeOf(name, mime); if (t !== 'other' && !f.allow_types.includes(t)) return false; }
     return true;
   });
 }
@@ -1299,7 +1302,7 @@ async function renderRegisteredAction(
   }
   // Native provider — execution.execution_key names a NativeAction.
   const executionKey = String(def.execution?.execution_key ?? '');
-  const native = zendeskActions[executionKey];
+  const native = NATIVE_ACTIONS[executionKey];
   if (!native) return { ok: false, error: 'execution_not_implemented', detail: `No native execution path for "${executionKey}".` };
   const r = native.render(ctx, values);
   return r;
@@ -1330,7 +1333,7 @@ async function runRegisteredAction(
     };
   }
   const executionKey = String(def.execution?.execution_key ?? '');
-  const native = zendeskActions[executionKey];
+  const native = NATIVE_ACTIONS[executionKey];
   if (!native) return { ok: false, error: 'execution_not_implemented' };
   return native.run(ctx, values);
 }
@@ -1454,6 +1457,32 @@ const slack = {
   },
 };
 
+// Slack write-back — post a message/reply (the DE answering in-channel).
+// Requires the token to have chat:write. Merged into NATIVE_ACTIONS below.
+const slackActions: Record<string, NativeAction> = {
+  slack_post_message: {
+    render(_c, p) {
+      if (!p.channel?.trim()) return { ok: false, error: 'param_required', detail: 'channel (id or #name) is required.' };
+      if (!p.text?.trim()) return { ok: false, error: 'param_required', detail: 'text is required.' };
+      const body: Record<string, unknown> = { channel: p.channel.trim(), text: p.text };
+      if (p.thread_ts?.trim()) body.thread_ts = p.thread_ts.trim();
+      return { ok: true, method: 'POST', url: `${SLACK}/chat.postMessage`, body };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: `Bearer ${c.secret.token ?? ''}`, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      const b = res.body as { ok?: boolean; error?: string; ts?: string } | null;
+      if (!b?.ok) return { ok: false, status: res.status, error: b?.error ?? res.error ?? 'slack_post_failed', raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Posted a message to ${p.channel} in Slack.` };
+    },
+  },
+};
+
+// All native write-side executors, keyed by execution_key. New providers add
+// their own <provider>Actions object and spread it here.
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions };
+
 // ── notion ── secret: { token } (internal integration token). Fixed base;
 // the integration only sees pages explicitly shared with it. Knowledge-
 // capable: syncDocs ingests shared page text.
@@ -1506,17 +1535,35 @@ const notion = {
     const results = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
     return { ok: true, items: results.map((o) => ({ ref: String(o.id), type: 'page', title: clip(notionTitle(o), 160), snippet: '', url: o.url ? String(o.url) : null, raw: { id: o.id } })) };
   },
-  async syncDocs(c: Ctx): Promise<SyncResult> {
-    const r = await httpJson(`${NOTION}/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ page_size: 30, filter: { value: 'page', property: 'object' } }) });
+  async discoverDocs(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }> {
+    const r = await httpJson(`${NOTION}/search`, { method: 'POST', headers: this.hdrs(c), body: JSON.stringify({ page_size: MAX_SYNC_FILES, filter: { value: 'page', property: 'object' } }) });
     if (!r.ok) return { ok: false, error: r.error };
     const pages = (r.body as { results?: Array<Record<string, unknown>> })?.results ?? [];
-    const docs: SyncDoc[] = [];
-    for (const p of pages.slice(0, MAX_SYNC_FILES)) {
-      const bl = await httpJson(`${NOTION}/blocks/${encodeURIComponent(String(p.id))}/children?page_size=100`, { headers: this.hdrs(c) });
-      const text = bl.ok ? notionBlockText(((bl.body as { results?: Array<Record<string, unknown>> })?.results) ?? []) : '';
-      if (text.trim()) docs.push({ external_ref: `notion:${p.id}`, title: clip(notionTitle(p), 200), content: text.slice(0, MAX_DOC_CHARS), url: p.url ? String(p.url) : null });
+    const out: Candidate[] = [];
+    for (const p of pages) {
+      if (out.length >= MAX_SYNC_FILES) break;
+      const cand: Candidate = { external_ref: `notion:${p.id}`, title: clip(notionTitle(p), 200), path: '', file_type: 'text', size_bytes: null };
+      if (candidatePasses(cand, f)) out.push(cand);
     }
-    if (!docs.length) return { ok: false, error: 'no_readable_pages', detail: 'No text-bearing pages are shared with this Notion integration.' };
+    return { ok: true, candidates: out };
+  },
+  async fetchTexts(c: Ctx, items: Candidate[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    for (const it of items) {
+      const id = it.external_ref.replace(/^notion:/, '');
+      const bl = await httpJson(`${NOTION}/blocks/${encodeURIComponent(id)}/children?page_size=100`, { headers: this.hdrs(c) });
+      out[it.external_ref] = bl.ok ? notionBlockText(((bl.body as { results?: Array<Record<string, unknown>> })?.results) ?? []).slice(0, MAX_DOC_CHARS) : '';
+    }
+    return out;
+  },
+  async syncDocs(c: Ctx, f: IngestFilters = {}): Promise<SyncResult> {
+    const d = await this.discoverDocs(c, f);
+    if (!d.ok) return { ok: false, error: d.error };
+    const cands = d.candidates ?? [];
+    if (!cands.length) return { ok: false, error: 'no_readable_pages', detail: 'No pages shared with this Notion integration match your ingest settings.' };
+    const texts = await this.fetchTexts(c, cands);
+    const docs: SyncDoc[] = cands.map((cd) => ({ external_ref: cd.external_ref, title: cd.title, content: texts[cd.external_ref] ?? '', url: null })).filter((dd) => dd.content);
+    if (!docs.length) return { ok: false, error: 'no_readable_pages', detail: 'Matching pages had no text.' };
     return { ok: true, docs };
   },
 };
@@ -1617,31 +1664,48 @@ const box = {
     const entries = (r.body as { entries?: Array<Record<string, unknown>> })?.entries ?? [];
     return { ok: true, items: entries.filter((e) => e.type === 'file').map((e) => ({ ref: String(e.id), type: 'document', title: clip(e.name, 160), snippet: '', url: `https://app.box.com/file/${e.id}`, raw: { id: e.id } })) };
   },
-  async syncDocs(c: Ctx): Promise<SyncResult> {
+  async discoverDocs(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }> {
     const t = await this.token(c);
     if (!t.ok) return { ok: false, error: t.error };
     const auth = { Authorization: `Bearer ${t.token}` };
-    const docs: SyncDoc[] = [];
-    const queue: string[] = ['0'];
+    const out: Candidate[] = [];
+    const queue: Array<{ id: string; path: string }> = [{ id: String(f.folder || '0'), path: '' }];
     let folders = 0;
-    while (queue.length && docs.length < MAX_SYNC_FILES && folders < 40) {
-      const fid = queue.shift()!;
+    while (queue.length && out.length < MAX_SYNC_FILES && folders < 40) {
+      const cur = queue.shift()!;
       folders++;
-      const r = await httpJson(`${BOX}/folders/${fid}/items?limit=200&fields=id,name,type,size`, { headers: auth });
+      const r = await httpJson(`${BOX}/folders/${cur.id}/items?limit=200&fields=id,name,type,size`, { headers: auth });
       if (!r.ok) break;
       const entries = (r.body as { entries?: Array<Record<string, unknown>> })?.entries ?? [];
       for (const e of entries) {
-        if (docs.length >= MAX_SYNC_FILES) break;
-        if (e.type === 'folder') { queue.push(String(e.id)); continue; }
-        if (e.type !== 'file') continue;
+        if (out.length >= MAX_SYNC_FILES) break;
         const name = String(e.name ?? '');
+        const childPath = cur.path ? `${cur.path}/${name}` : name;
+        if (e.type === 'folder') { queue.push({ id: String(e.id), path: childPath }); continue; }
+        if (e.type !== 'file') continue;
         const ft = fileTypeOf(name);
         if (ft !== 'text' && ft !== 'pdf') continue;   // Box: no on-the-fly convert — text + PDF only
-        const text = await boxFileText(String(e.id), ft, t.token!);
-        if (text) docs.push({ external_ref: `box:${e.id}`, title: clip(name, 200), content: text, url: `https://app.box.com/file/${e.id}` });
+        const cand: Candidate = { external_ref: `box:${e.id}`, title: clip(name, 200), path: cur.path, file_type: ft, size_bytes: typeof e.size === 'number' ? e.size : null };
+        if (candidatePasses(cand, f)) out.push(cand);
       }
     }
-    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'No text or PDF files found in this Box account.' };
+    return { ok: true, candidates: out };
+  },
+  async fetchTexts(c: Ctx, items: Candidate[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const t = await this.token(c);
+    if (!t.ok) return out;
+    for (const it of items) out[it.external_ref] = await boxFileText(it.external_ref.replace(/^box:/, ''), it.file_type, t.token!);
+    return out;
+  },
+  async syncDocs(c: Ctx, f: IngestFilters = {}): Promise<SyncResult> {
+    const d = await this.discoverDocs(c, f);
+    if (!d.ok) return { ok: false, error: d.error };
+    const cands = d.candidates ?? [];
+    if (!cands.length) return { ok: false, error: 'no_readable_documents', detail: 'No text/PDF files match your ingest settings.' };
+    const texts = await this.fetchTexts(c, cands);
+    const docs: SyncDoc[] = cands.map((cd) => ({ external_ref: cd.external_ref, title: cd.title, content: texts[cd.external_ref] ?? '', url: `https://app.box.com/file/${cd.external_ref.replace(/^box:/, '')}` })).filter((dd) => dd.content);
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'Matching files had no extractable text.' };
     return { ok: true, docs };
   },
 };
@@ -2225,7 +2289,7 @@ serve(async (req) => {
       }
       const ms = Date.now() - started;
       const health = await recordHealth(r.ok, r.error);
-      if (r.ok && (connector.provider === 'sharepoint' || connector.provider === 'gdrive')) {
+      if (r.ok) {
         r.items = readThroughFilterItems(connector.provider, r.items, ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters);
       }
       const items = r.ok ? toCanonical(r.items ?? [], opDef.object, connector) : [];
@@ -2256,7 +2320,7 @@ serve(async (req) => {
       } else {
         r = await adapter.listRecent(ctx);
       }
-      if (r.ok && (connector.provider === 'sharepoint' || connector.provider === 'gdrive')) {
+      if (r.ok) {
         r.items = readThroughFilterItems(connector.provider, r.items, ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters);
       }
       const ms = Date.now() - started;
@@ -2346,8 +2410,7 @@ serve(async (req) => {
       };
 
       const filters = ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters;
-      const reviewMode = (connector.provider === 'sharepoint' || connector.provider === 'gdrive')
-        && filters.require_review === true && typeof (adapter as { fetchTexts?: unknown }).fetchTexts === 'function';
+      const reviewMode = filters.require_review === true && typeof (adapter as { fetchTexts?: unknown }).fetchTexts === 'function';
 
       let docs: SyncDoc[] = [];
       if (reviewMode) {
