@@ -75,8 +75,8 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
     defaultParams: { check: 'invoice_threshold' },
     description: 'Explicit re-check point — records the threshold comparison in the audit chain. Never pauses.' },
   { key: 'connector_action', label: 'Connector action', gate: false, group: 'work',
-    defaultParams: { provider: 'zendesk', op: 'add_internal_note', payload_template: 'Playbook update for {{account.name}}: invoice {{invoice.amount}}', external_ref_template: '' },
-    description: 'Write-back into the system of record (Zendesk). Degrades honestly: no connector → step recorded as skipped, run continues.' },
+    defaultParams: { action_key: '', action_category: '', param_templates: {} },
+    description: 'Runs any registered action against a connected system — pick from your Action Library (helpdesk, CRM, ERP/finance, …), not just Zendesk. Every action passes the same access grants, guardrails and trust dial. Degrades honestly: no connected system for that category → step recorded as skipped, run continues.' },
   { key: 'update_record', label: 'Update record', gate: false, group: 'work',
     defaultParams: { table: 'renewal_invoices', set: { status: 'sent' } },
     description: 'Whitelisted status flip only (invoices: sent/paid · tickets: open/pending/resolved/escalated).' },
@@ -121,6 +121,46 @@ export const UPDATE_WHITELIST: Record<string, string[]> = {
   renewal_invoices: ['sent', 'paid'],
   support_tickets: ['open', 'pending', 'resolved', 'escalated'],
 };
+
+// ── Action Library (migration 035 action_definitions) ─────────────
+// The registered actions a connector_action step can invoke. Platform
+// actions (e.g. the Zendesk helpdesk ops) plus any the tenant registered
+// via upsert_action_definition are both visible via RLS. Each field of
+// param_schema becomes a templated input in the builder.
+export interface ActionParamField { name: string; type?: string; required?: boolean; help?: string }
+export interface ActionDefinition {
+  id: string;
+  scope: 'platform' | 'tenant';
+  category: string;
+  action_key: string;
+  label: string;
+  description: string;
+  provider: string;
+  param_schema: ActionParamField[];
+  risk: { destructive?: boolean; idempotent?: boolean };
+}
+
+/** Active actions available to this tenant (platform + own-tenant, via RLS).
+ *  Excludes provider='internal' — those are engine primitives with their
+ *  own step types (generate_invoice, start_onboarding), not connector calls. */
+export async function listActionDefinitions(): Promise<ActionDefinition[]> {
+  const { data, error } = await supabase
+    .from('action_definitions')
+    .select('id, scope, category, action_key, label, description, provider, param_schema, risk')
+    .eq('status', 'active')
+    .neq('provider', 'internal')
+    .order('category', { ascending: true })
+    .order('label', { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw new CustomerApiError(error.message, false);
+  }
+  return (data ?? []).map((r) => ({
+    ...r,
+    param_schema: Array.isArray(r.param_schema) ? (r.param_schema as ActionParamField[]) : [],
+    risk: (r.risk ?? {}) as { destructive?: boolean; idempotent?: boolean },
+  })) as ActionDefinition[];
+}
 
 // Client-side mirror of the server validator — instant feedback in the
 // builder. The server re-validates on publish regardless.

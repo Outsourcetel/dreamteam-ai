@@ -14,12 +14,12 @@ import {
   DISPATCH_MODE, WEEKDAYS, EVENT_META, describeSchedule, describeEventRule,
   listSchedules, createSchedule, setScheduleActive, deleteSchedule,
   listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
-  listTriggerFires, dispatchTriggersOpportunistic,
+  listTriggerFires, dispatchTriggersOpportunistic, listActionDefinitions,
 } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
-  PreviewResult, PreviewRunStep,
+  PreviewResult, PreviewRunStep, ActionDefinition,
 } from '../../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
 
@@ -104,24 +104,7 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
           onChange={e => set('title_template', e.target.value)} />
       );
     case 'connector_action':
-      return (
-        <div className="space-y-2">
-          <div className="flex gap-2 flex-wrap">
-            <select className={selectCls + ' !w-32'} value={String(p.provider ?? 'zendesk')} onChange={e => set('provider', e.target.value)}>
-              <option value="zendesk">Zendesk</option>
-            </select>
-            <select className={selectCls + ' !w-44'} value={String(p.op ?? 'add_internal_note')} onChange={e => set('op', e.target.value)}>
-              <option value="add_internal_note">Add internal note</option>
-              <option value="update_status">Update status</option>
-            </select>
-            <input className={inputCls + ' !w-44'} placeholder="Ticket ref template (optional)"
-              value={String(p.external_ref_template ?? '')} onChange={e => set('external_ref_template', e.target.value)} />
-          </div>
-          <input className={inputCls} placeholder="Payload template" value={String(p.payload_template ?? '')}
-            onChange={e => set('payload_template', e.target.value)} />
-          <p className="text-[10px] text-slate-600">No connected connector or empty ticket ref → step records as skipped and the run continues (honest degradation).</p>
-        </div>
-      );
+      return <ConnectorActionEditor step={step} onChange={onChange} />;
     case 'update_record': {
       const table = String(p.table ?? 'renewal_invoices');
       const allowed = UPDATE_WHITELIST[table] ?? [];
@@ -187,6 +170,90 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
     default:
       return null;
   }
+}
+
+// ── Connector action editor: pick any registered action + fill its
+//    param_schema as templates (migration 035 generalized action layer).
+//    Not pinned to Zendesk — lists platform + tenant-registered actions.
+
+function ConnectorActionEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
+  const p = step.params ?? {};
+  const [actions, setActions] = useState<ActionDefinition[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    listActionDefinitions().then(setActions).catch(() => setActions([])).finally(() => setLoading(false));
+  }, []);
+
+  const selectedKey = String(p.action_key ?? '');
+  const selected = actions.find(a => a.action_key === selectedKey && a.category === String(p.action_category ?? ''));
+  const templates = (p.param_templates ?? {}) as Record<string, string>;
+  const isLegacy = !selectedKey && (p.op != null || p.provider != null);
+
+  const pickAction = (composite: string) => {
+    if (!composite) { onChange({ action_key: '', action_category: '', param_templates: {} }); return; }
+    const [category, action_key] = composite.split('::');
+    const def = actions.find(a => a.category === category && a.action_key === action_key);
+    const next: Record<string, string> = {};
+    for (const f of def?.param_schema ?? []) next[f.name] = templates[f.name] ?? '';
+    onChange({ action_key, action_category: category, param_templates: next });
+  };
+
+  const setTemplate = (name: string, val: string) =>
+    onChange({ ...p, param_templates: { ...templates, [name]: val } });
+
+  // Group actions by category for the dropdown.
+  const byCategory = actions.reduce<Record<string, ActionDefinition[]>>((acc, a) => {
+    (acc[a.category] ??= []).push(a); return acc;
+  }, {});
+
+  return (
+    <div className="space-y-2">
+      {isLegacy && (
+        <p className="text-[10px] text-amber-500">
+          This step uses the old Zendesk form (still runs). Pick a registered action below to modernize it.
+        </p>
+      )}
+      <select className={selectCls + ' !w-72'} disabled={loading}
+        value={selected ? `${selected.category}::${selected.action_key}` : ''}
+        onChange={e => pickAction(e.target.value)}>
+        <option value="">{loading ? 'Loading actions…' : 'Pick a registered action…'}</option>
+        {Object.entries(byCategory).map(([cat, list]) => (
+          <optgroup key={cat} label={cat.replace(/_/g, ' ')}>
+            {list.map(a => (
+              <option key={a.id} value={`${a.category}::${a.action_key}`}>
+                {a.label}{a.risk?.destructive ? ' ⚠' : ''}{a.scope === 'tenant' ? ' (yours)' : ''}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+
+      {selected && (
+        <>
+          {selected.description && <p className="text-[10px] text-slate-500">{selected.description}</p>}
+          {selected.param_schema.length === 0 ? (
+            <p className="text-[10px] text-slate-600">This action takes no parameters.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {selected.param_schema.map(f => (
+                <input key={f.name} className={inputCls}
+                  placeholder={`${f.name}${f.required ? ' *' : ''}${f.help ? ` — ${f.help}` : ''} (templates supported)`}
+                  value={templates[f.name] ?? ''} onChange={e => setTemplate(f.name, e.target.value)} />
+              ))}
+            </div>
+          )}
+          {selected.risk?.destructive && (
+            <p className="text-[10px] text-amber-500">⚠ Marked destructive — always routes to a human for approval, regardless of the trust dial.</p>
+          )}
+        </>
+      )}
+
+      {!loading && actions.length === 0 && (
+        <p className="text-[10px] text-amber-500">No registered actions yet. A workspace owner/admin can register them; platform helpdesk actions appear once a connector is set up.</p>
+      )}
+      <p className="text-[10px] text-slate-600">No connected system for the action's category → step records as skipped and the run continues (honest degradation). Every action passes the same access grants, guardrails and trust dial.</p>
+    </div>
+  );
 }
 
 // ── Start onboarding editor: pick a published template version ────
@@ -499,7 +566,7 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
     <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-slate-800/60'}`}>
       {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>{index + 1}</span>}
       <span className="text-slate-300">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
-      {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">{String(p.category ?? p.provider ?? '')} · {String(p.op ?? '')}</span>}
+      {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">{String(p.action_category ?? p.category ?? p.provider ?? '—')}{(p.action_key || p.op) ? ` · ${String(p.action_key ?? p.op)}` : ''}</span>}
       {s.key === 'log_activity' && <span className="text-[10px] text-slate-600 truncate">{String(p.text_template ?? '')}</span>}
       {s.key === 'checklist' && <span className="text-[10px] text-slate-600">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
       {s.key === 'wait' && <span className="text-[10px] text-slate-600">{String(p.duration_minutes ?? 0)} min</span>}
