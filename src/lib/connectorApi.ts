@@ -26,7 +26,8 @@ export type ConnectorProvider =
   | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
   | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
   | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber'
-  | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry' | 'template';
+  | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry'
+  | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -315,6 +316,58 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  pipedrive: {
+    label: 'Pipedrive', tagline: 'CRM — deals, organizations, contacts',
+    defaultCategory: 'crm',
+    baseUrlLabel: 'Pipedrive API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Pipedrive',
+    fields: [
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Pipedrive: your avatar → Personal preferences → API → copy your personal API token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  smartsheet: {
+    label: 'Smartsheet', tagline: 'Work management — sheets & rows',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Smartsheet API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Smartsheet',
+    fields: [
+      { key: 'token', label: 'API access token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Smartsheet: Account → Personal Settings → API Access → Generate new access token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  wrike: {
+    label: 'Wrike', tagline: 'Work management — tasks & folders',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Wrike API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Wrike',
+    fields: [
+      { key: 'token', label: 'Permanent access token', placeholder: 'eyJ••••••••', secret: true },
+    ],
+    help: 'In Wrike: Apps & Integrations → API → create a Permanent access token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  trello: {
+    label: 'Trello', tagline: 'Kanban — boards, lists, cards',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Trello API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Trello',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'from trello.com/app-key', secret: false },
+      { key: 'token', label: 'Token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Get an API key at trello.com/app-key, then generate a Token from the link on that page. Paste both.',
+    knowledgeSync: false, implemented: true,
+  },
+  datadog: {
+    label: 'Datadog', tagline: 'Observability — monitors & alerts',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Datadog API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Datadog',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+      { key: 'app_key', label: 'Application key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Datadog: Organization Settings → API Keys (create one) and Application Keys (create one). Paste both. (US1 site; tell us if you use EU/other.)',
     knowledgeSync: false, implemented: true,
   },
   gorgias: {

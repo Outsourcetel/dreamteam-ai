@@ -2908,6 +2908,152 @@ const sentry = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, 'is:unresolved'); },
 };
 
+// ── pipedrive ── secret: { api_token } · fixed base. crm (query-param auth).
+const PIPEDRIVE = 'https://api.pipedrive.com/v1';
+const pipedrive = {
+  tok: (c: Ctx) => encodeURIComponent(c.secret.api_token ?? ''),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${PIPEDRIVE}/users/me?api_token=${this.tok(c)}`, {});
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Pipedrive API token verified' };
+  },
+  async searchType(c: Ctx, kind: string, query: string): Promise<Array<Record<string, unknown>>> {
+    const r = await httpJson(`${PIPEDRIVE}/${kind}/search?term=${encodeURIComponent(query || 'a')}&api_token=${this.tok(c)}`, {});
+    if (!r.ok) return [];
+    return (((r.body as { data?: { items?: Array<{ item?: Record<string, unknown> }> } })?.data?.items) ?? []).map((x) => x.item ?? {});
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const orgs = await this.searchType(c, 'organizations', query);
+    const deals = await this.searchType(c, 'deals', query);
+    const items: HubItem[] = [];
+    for (const o of orgs.slice(0, 5)) items.push({ ref: String(o.id), type: 'account', title: clip(o.name, 160), snippet: '', url: null, raw: { id: o.id } });
+    for (const d of deals.slice(0, 5)) items.push({ ref: String(d.id), type: 'opportunity', title: clip(d.title, 160), snippet: clip(`value ${d.value ?? ''} · ${d.status ?? ''}`, 400), url: null, raw: { id: d.id } });
+    return { ok: true, items };
+  },
+  async fetchRecord(c: Ctx, type: string, ref: string): Promise<AdapterResult> {
+    const set = type === 'opportunity' ? 'deals' : type === 'conversation' ? 'persons' : 'organizations';
+    const r = await httpJson(`${PIPEDRIVE}/${set}/${encodeURIComponent(ref)}?api_token=${this.tok(c)}`, {});
+    if (!r.ok) return { ok: false, error: r.error };
+    const d = ((r.body as { data?: Record<string, unknown> })?.data) ?? {};
+    return { ok: true, items: [{ ref, type, title: clip(d.name ?? d.title ?? ref, 160), snippet: clip(String(d.status ?? d.value ?? ''), 400), url: null, raw: d }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── smartsheet ── secret: { token } · fixed base. product_system.
+const SMARTSHEET = 'https://api.smartsheet.com/2.0';
+const smartsheet = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${SMARTSHEET}/users/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Smartsheet token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const path = query.trim() ? `/search?query=${encodeURIComponent(query)}` : '/sheets?pageSize=15';
+    const r = await httpJson(`${SMARTSHEET}${path}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const results = query.trim()
+      ? (((r.body as { results?: Array<Record<string, unknown>> })?.results) ?? [])
+      : (((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? []);
+    return { ok: true, items: results.slice(0, 10).map((x) => ({ ref: String(x.objectId ?? x.id), type: 'record', title: clip(x.text ?? x.name, 160), snippet: clip(String(x.objectType ?? ''), 400), url: x.permalink ? String(x.permalink) : null, raw: { id: x.objectId ?? x.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${SMARTSHEET}/sheets/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const s = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(s.name, 160), snippet: clip(`${(s.rows as unknown[])?.length ?? 0} rows`, 400), url: s.permalink ? String(s.permalink) : null, raw: s }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── wrike ── secret: { token } · fixed base. product_system.
+const WRIKE = 'https://www.wrike.com/api/v4';
+const wrike = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${WRIKE}/account`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Wrike token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${WRIKE}/tasks?limit=25&fields=["description"]`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const tasks = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? tasks.filter((t) => String(t.title ?? '').toLowerCase().includes(ql)) : tasks;
+    return { ok: true, items: f.slice(0, 10).map((t) => ({ ref: String(t.id), type: 'record', title: clip(t.title, 160), snippet: clip(t.description ?? t.status ?? '', 400), url: t.permalink ? String(t.permalink) : null, raw: { id: t.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${WRIKE}/tasks/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const t = (((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [])[0] ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(t.title, 160), snippet: clip(t.description ?? '', 400), url: t.permalink ? String(t.permalink) : null, raw: t }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── trello ── secret: { api_key, token } · fixed base. product_system.
+const TRELLO = 'https://api.trello.com/1';
+const trello = {
+  auth: (c: Ctx) => `key=${encodeURIComponent(c.secret.api_key ?? '')}&token=${encodeURIComponent(c.secret.token ?? '')}`,
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${TRELLO}/members/me?${this.auth(c)}`, {});
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Trello credentials verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    if (!query.trim()) {
+      const r = await httpJson(`${TRELLO}/members/me/cards?limit=15&${this.auth(c)}`, {});
+      if (!r.ok) return { ok: false, error: r.error };
+      const cards = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+      return { ok: true, items: cards.slice(0, 10).map((cd) => ({ ref: String(cd.id), type: 'record', title: clip(cd.name, 160), snippet: '', url: cd.url ? String(cd.url) : null, raw: { id: cd.id } })) };
+    }
+    const r = await httpJson(`${TRELLO}/search?query=${encodeURIComponent(query)}&modelTypes=cards&cards_limit=15&${this.auth(c)}`, {});
+    if (!r.ok) return { ok: false, error: r.error };
+    const cards = ((r.body as { cards?: Array<Record<string, unknown>> })?.cards) ?? [];
+    return { ok: true, items: cards.slice(0, 10).map((cd) => ({ ref: String(cd.id), type: 'record', title: clip(cd.name, 160), snippet: clip(cd.desc, 400), url: cd.url ? String(cd.url) : null, raw: { id: cd.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${TRELLO}/cards/${encodeURIComponent(ref)}?${this.auth(c)}`, {});
+    if (!r.ok) return { ok: false, error: r.error };
+    const cd = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(cd.name, 160), snippet: clip(cd.desc, 400), url: cd.url ? String(cd.url) : null, raw: cd }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── datadog ── secret: { api_key, app_key } · fixed base. product_system.
+const DATADOG = 'https://api.datadoghq.com';
+const datadog = {
+  hdrs: (c: Ctx) => ({ 'DD-API-KEY': c.secret.api_key ?? '', 'DD-APPLICATION-KEY': c.secret.app_key ?? '' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${DATADOG}/api/v1/validate`, { headers: { 'DD-API-KEY': c.secret.api_key ?? '' } });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Datadog API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${DATADOG}/api/v1/monitor`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const monitors = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    const ql = query.toLowerCase();
+    const f = ql ? monitors.filter((m) => String(m.name ?? '').toLowerCase().includes(ql)) : monitors;
+    return { ok: true, items: f.slice(0, 10).map((m) => ({ ref: String(m.id), type: 'record', title: clip(m.name, 160), snippet: clip(`${m.type ?? ''} · ${(m.overall_state ?? '')}`, 400), url: null, raw: { id: m.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${DATADOG}/api/v1/monitor/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(m.name, 160), snippet: clip(`${m.type ?? ''} · ${m.overall_state ?? ''}`, 400), url: null, raw: m }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3159,6 +3305,28 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   sentry: {
     search_records: (c, p) => sentry.search(c, p.query ?? ''),
     get_record: (c, p) => sentry.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  pipedrive: {
+    search_accounts: async (c, p) => { const orgs = await pipedrive.searchType(c, 'organizations', p.query ?? ''); return { ok: true, items: orgs.slice(0, 10).map((o) => ({ ref: String(o.id), type: 'account', title: clip(o.name, 160), snippet: '', url: null, raw: { id: o.id } })) }; },
+    get_account: (c, p) => pipedrive.fetchRecord(c, 'account', p.external_ref ?? ''),
+    search_conversations: async (c, p) => { const ps = await pipedrive.searchType(c, 'persons', p.query ?? ''); return { ok: true, items: ps.slice(0, 10).map((x) => ({ ref: String(x.id), type: 'conversation', title: clip(x.name, 160), snippet: '', url: null, raw: { id: x.id } })) }; },
+    search_opportunities: async (c, p) => { const ds = await pipedrive.searchType(c, 'deals', p.query ?? ''); return { ok: true, items: ds.slice(0, 10).map((d) => ({ ref: String(d.id), type: 'opportunity', title: clip(d.title, 160), snippet: clip(`value ${d.value ?? ''}`, 400), url: null, raw: { id: d.id } })) }; },
+  },
+  smartsheet: {
+    search_records: (c, p) => smartsheet.search(c, p.query ?? ''),
+    get_record: (c, p) => smartsheet.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  wrike: {
+    search_records: (c, p) => wrike.search(c, p.query ?? ''),
+    get_record: (c, p) => wrike.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  trello: {
+    search_records: (c, p) => trello.search(c, p.query ?? ''),
+    get_record: (c, p) => trello.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  datadog: {
+    search_records: (c, p) => datadog.search(c, p.query ?? ''),
+    get_record: (c, p) => datadog.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3459,6 +3627,7 @@ serve(async (req) => {
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
       quickbooks, xero, clio, gusto, procore, jobber,
       gorgias, front, coda, pagerduty, sentry,
+      pipedrive, smartsheet, wrike, trello, datadog,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

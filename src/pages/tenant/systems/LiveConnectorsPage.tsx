@@ -88,7 +88,8 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   stripe: '💳', shopify: '🛍️', woocommerce: '🛒', bigcommerce: '🏬', square: '⬛',
   bamboohr: '🎋', greenhouse: '🌿', lever: '🎚️', buildium: '🏢', canvas: '🎓',
   quickbooks: '💵', xero: '🧾', clio: '⚖️', gusto: '🌯', procore: '🏗️', jobber: '🔧',
-  gorgias: '🛎️', front: '📨', coda: '📄', pagerduty: '🚨', sentry: '🐛', template: '🧱',
+  gorgias: '🛎️', front: '📨', coda: '📄', pagerduty: '🚨', sentry: '🐛',
+  pipedrive: '🟩', smartsheet: '📊', wrike: '🗂️', trello: '📋', datadog: '🐕', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -129,7 +130,8 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
     const noBaseUrl: ConnectorProvider[] = ['gdrive', 'hubspot', 'slack', 'notion', 'teams', 'box',
       'github', 'guru', 'document360', 'asana', 'clickup', 'monday', 'linear',
       'stripe', 'bigcommerce', 'square', 'bamboohr', 'greenhouse', 'lever', 'buildium',
-      'front', 'coda', 'pagerduty', 'sentry'];
+      'front', 'coda', 'pagerduty', 'sentry',
+      'pipedrive', 'smartsheet', 'wrike', 'trello', 'datadog'];
     if (!noBaseUrl.includes(provider) && !baseUrl.trim()) { setErr(`${meta.baseUrlLabel} is required.`); return; }
     if (provider === 'generic_rest' && !searchPath.trim()) { setErr('A search endpoint path is required so DreamTeam knows how to look things up.'); return; }
     setBusy(true);
