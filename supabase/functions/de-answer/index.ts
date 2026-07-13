@@ -23,6 +23,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
+import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -201,9 +202,12 @@ serve(async (req) => {
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 
-    const { data: tenant } = await admin
-      .from('tenants').select('name').eq('id', tenantId).single();
-    const tenantName = tenant?.name ?? 'your company';
+    // ── Trial/suspension gate (teeth for expire_trials): a suspended
+    // workspace does no paid AI work — refuse BEFORE any conversation
+    // write or LLM spend. ──
+    const gate = await loadTenantGate(admin, tenantId);
+    if (gate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
+    const tenantName = gate.name;
 
     // ── KNOWLEDGE SCOPES (migration 030): resolve the answering DE
     // subject. Optional body.de_id (must be in-tenant); default = the
