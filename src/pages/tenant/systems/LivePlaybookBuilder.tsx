@@ -164,6 +164,14 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
           <p className="text-[10px] text-slate-600">Missing/paused profile or dormant specialist brain → step records as skipped (honest degradation); escalation still fires when chosen.</p>
         </div>
       );
+    case 'custom_step':
+      return (
+        <div className="space-y-2">
+          <textarea className={inputCls + ' min-h-[80px] resize-y'} placeholder="Describe what this step should do, in your own words — e.g. &quot;Look up the customer's plan in our knowledge base, check their payment status in QuickBooks, and if it's overdue, draft a reminder following our dunning policy.&quot; (templates supported, e.g. {{account.name}})"
+            value={String(p.instructions ?? '')} onChange={e => set('instructions', e.target.value)} />
+          <p className="text-[10px] text-slate-600">Your own step. The employee reads your instructions and carries them out — pulling from your knowledge base, acting in your connected systems, consulting a specialist, or following the rules you write. Every action still passes your access grants, guardrails and trust dial. Dormant reasoning brain → step records as skipped (honest degradation).</p>
+        </div>
+      );
     case 'agentic_step':
       return (
         <div className="space-y-2">
@@ -742,6 +750,7 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
       {s.key === 'sub_playbook' && <span className="text-[10px] text-slate-600">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
       {s.key === 'check_knowledge' && <span className="text-[10px] text-slate-600 truncate">🔎 {String(p.query_template ?? '')} · miss: {String(p.on_miss ?? 'escalate')}</span>}
       {s.key === 'read_reference' && <span className="text-[10px] text-slate-600">📄 {Array.isArray(p.refs) ? (p.refs as unknown[]).length : 0} reference(s)</span>}
+      {s.key === 'custom_step' && <span className="text-[10px] text-slate-600 truncate">✦ {String(p.instructions ?? '')}</span>}
       {(p.rule as { pattern?: string } | undefined)?.pattern && <span className="text-[10px] text-rose-400/70" title={`Step rule: ${String((p.rule as { pattern?: string }).pattern)}`}>⚑ rule</span>}
     </div>
   );

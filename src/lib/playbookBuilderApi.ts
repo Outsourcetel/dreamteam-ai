@@ -19,6 +19,7 @@ export type PrimitiveKey =
   | 'check_account' | 'generate_invoice' | 'human_approval' | 'guardrail_check'
   | 'connector_action' | 'update_record' | 'log_activity' | 'consult_specialist'
   | 'instruction' | 'decision' | 'checklist' | 'wait' | 'sub_playbook' | 'agentic_step'
+  | 'custom_step'
   | 'start_onboarding' | 'emit_event' | 'check_knowledge' | 'read_reference' | 'complete';
 
 export interface StepMedia {
@@ -116,6 +117,9 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'sub_playbook', label: 'Run another playbook', gate: false, group: 'flow',
     defaultParams: { playbook_id: '' },
     description: 'Runs a published playbook as a child of this one. The child inherits this playbook’s access — it can never do more than its parent is allowed to.' },
+  { key: 'custom_step', label: 'Custom step', gate: false, group: 'work',
+    defaultParams: { instructions: '' },
+    description: 'Your own step. Describe in plain language what it should do — what to look up in your knowledge, which connected system to use, which specialist to check with, and the rules to follow. The employee reads your instructions and does it, and every action still passes your guardrails, access grants and trust dial. Dormant LLM → step skipped honestly.' },
   { key: 'agentic_step', label: 'Agentic step', gate: false, group: 'work',
     defaultParams: { goal_template: '' },
     description: 'Hands this step to a reasoning loop instead of a fixed script — the DE decides what to do (search knowledge, act in connected systems, ask a human) based on a goal, not a pre-written sequence. Every action it takes still passes through the same access grants, guardrails, and trust dial as a Connector action step. Dormant LLM → step skipped honestly.' },
@@ -236,7 +240,7 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
   const postGateAllowed = new Set([
     'guardrail_check', 'connector_action', 'update_record', 'log_activity',
     'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'consult_specialist', 'agentic_step',
-    'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
+    'custom_step', 'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
   ]);
   let invoiceIdx = -1, approvalIdx = -1, completeCount = 0;
   steps.forEach((s, i) => {
@@ -290,6 +294,9 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
     }
     if (s.key === 'agentic_step' && !(typeof p.goal_template === 'string' && p.goal_template.trim())) {
       errs.push({ index: i, code: 'bad_params', message: 'An agentic step needs a goal — describe what it should accomplish.' });
+    }
+    if (s.key === 'custom_step' && !(typeof p.instructions === 'string' && p.instructions.trim())) {
+      errs.push({ index: i, code: 'bad_params', message: 'Describe what this custom step should do — what to look up, which system to use, and the rules to follow.' });
     }
     if (s.key === 'start_onboarding' && !(typeof p.template_version_id === 'string' && p.template_version_id.trim())) {
       errs.push({ index: i, code: 'bad_params', message: 'Pick which onboarding template version this step should create a project from.' });

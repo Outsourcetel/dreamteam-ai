@@ -162,6 +162,7 @@ const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
   'connector_action', 'update_record', 'log_activity', 'consult_specialist',
   'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
+  'custom_step',
   'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
 ] as const;
 
@@ -180,6 +181,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   wait: 'Wait',
   sub_playbook: 'Run another playbook',
   agentic_step: 'Agentic step',
+  custom_step: 'Custom step',
   start_onboarding: 'Start onboarding',
   emit_event: 'Emit event',
   check_knowledge: 'Check knowledge',
@@ -193,7 +195,7 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 // the HTTP executor and is allowed to sit after a human gate.
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
-  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'start_onboarding',
+  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'custom_step', 'start_onboarding',
   'emit_event', 'check_knowledge', 'read_reference',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
@@ -454,14 +456,18 @@ function validateSteps(steps: unknown): ValidationError[] {
         }
         break;
       }
+      case 'custom_step':
       case 'agentic_step': {
         // Budget (max_iterations/token/cost) is a TENANT policy
         // (agentic_step_policies), not step shape — checked at run time,
         // same "definition shape here, runtime state there" split as
         // consult_specialist.profile_key. Validation here is just: does
         // this step actually say what it's trying to accomplish.
-        if (typeof p.goal_template !== 'string' || !p.goal_template.trim()) {
-          errs.push({ index: i, code: 'bad_params', message: 'An agentic step needs a goal — describe what it should accomplish.' });
+        // custom_step is the customer-facing name for the same engine —
+        // it carries its plain-language brief in `instructions`.
+        const brief = (p.instructions as string) ?? (p.goal_template as string);
+        if (typeof brief !== 'string' || !brief.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'Describe what this step should do — what to look up, which system to use, and the rules to follow.' });
         }
         break;
       }
@@ -1807,14 +1813,19 @@ async function executeDefinitionSteps(
         // existing approval hook (resolveActionExecution, connectorApi.ts)
         // already owns that; teaching two systems to coordinate on the
         // same gate without double-executing needs its own design pass).
+        case 'custom_step':
         case 'agentic_step': {
+          // custom_step and agentic_step run the SAME reasoning engine —
+          // the customer-facing "Custom step" carries its brief in
+          // `instructions`; the original agentic_step used `goal_template`.
+          const briefTpl = String(params.instructions ?? params.goal_template ?? '');
           if (run.preview) {
             step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would run an agentic step toward: "${String(params.goal_template ?? '').slice(0, 120)}" (not actually run)`;
+            step.detail = `PREVIEW — would run this step toward: "${briefTpl.slice(0, 120)}" (not actually run)`;
             await stepAudit(i); await saveRun(admin, run);
             continue;
           }
-          const goal = renderTemplate(String(params.goal_template ?? ''), ctx, run.id, run.steps).trim()
+          const goal = renderTemplate(briefTpl, ctx, run.id, run.steps).trim()
             || `Complete step ${i + 1} of this playbook.`;
           const runDeId = await resolveRunDeId();
           if (!runDeId) {
