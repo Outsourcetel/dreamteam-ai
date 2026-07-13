@@ -25,7 +25,8 @@ export type ConnectorProvider =
   | 'asana' | 'clickup' | 'monday' | 'linear'
   | 'stripe' | 'shopify' | 'woocommerce' | 'bigcommerce' | 'square'
   | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
-  | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber' | 'template';
+  | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber'
+  | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -314,6 +315,57 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  gorgias: {
+    label: 'Gorgias', tagline: 'E-commerce support — tickets & customers',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Gorgias URL', baseUrlPlaceholder: 'https://yourstore.gorgias.com',
+    fields: [
+      { key: 'email', label: 'Account email', placeholder: 'you@store.com', secret: false },
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Gorgias: Settings → REST API → generate an API key. Use your account email + that key, plus your Gorgias URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  front: {
+    label: 'Front', tagline: 'Shared inbox — conversations & contacts',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Front API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Front',
+    fields: [
+      { key: 'token', label: 'API token', placeholder: 'eyJ••••••••', secret: true },
+    ],
+    help: 'In Front: Settings → Developers → API tokens → create a token with read scope. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  coda: {
+    label: 'Coda', tagline: 'Docs & tables — knowledge base',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Coda API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Coda',
+    fields: [
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Coda: Account Settings → API Settings → Generate API token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  pagerduty: {
+    label: 'PagerDuty', tagline: 'Incidents — on-call & response',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'PagerDuty API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for PagerDuty',
+    fields: [
+      { key: 'api_key', label: 'REST API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In PagerDuty: Integrations → API Access Keys → Create New API Key (read-only is fine). Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  sentry: {
+    label: 'Sentry', tagline: 'Engineering — errors & issues',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Sentry API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Sentry',
+    fields: [
+      { key: 'token', label: 'Auth token', placeholder: 'sntrys_••••••••', secret: true },
+    ],
+    help: 'In Sentry: Settings → Account → API → Auth Tokens (or an Internal Integration) with project:read / event:read. Paste the token.',
     knowledgeSync: false, implemented: true,
   },
   servicenow: {

@@ -2771,6 +2771,143 @@ const jobber = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── gorgias ── secret: { email, api_key } · base = store URL. helpdesk (e-comm).
+const gorgias = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.email ?? ''}:${c.secret.api_key ?? ''}`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/api/tickets?limit=1`, { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Gorgias credentials verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/tickets?limit=20&order_by=updated_datetime:desc`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? data.filter((t) => `${t.subject ?? ''} ${(t.customer as { email?: string })?.email ?? ''}`.toLowerCase().includes(ql)) : data;
+    return { ok: true, items: f.slice(0, 10).map((t) => ({ ref: String(t.id), type: 'ticket', title: clip(`#${t.id} ${t.subject ?? ''}`, 160), snippet: clip(`${(t.customer as { email?: string })?.email ?? ''} · ${t.status ?? ''}`, 400), url: null, raw: { id: t.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/tickets/${encodeURIComponent(ref)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const t = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'ticket', title: clip(`#${ref} ${t.subject ?? ''}`, 160), snippet: clip(String(t.status ?? ''), 400), url: null, raw: t }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── front ── secret: { token } · fixed base. helpdesk (shared inbox).
+const FRONT = 'https://api2.frontapp.com';
+const front = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}`, 'Content-Type': 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${FRONT}/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Front token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const path = query.trim() ? `/conversations/search/${encodeURIComponent(query)}` : '/conversations';
+    const r = await httpJson(`${FRONT}${path}?limit=15`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const results = ((r.body as { _results?: Array<Record<string, unknown>>; results?: Array<Record<string, unknown>> })?._results) ?? ((r.body as { results?: Array<Record<string, unknown>> })?.results) ?? [];
+    return { ok: true, items: results.slice(0, 10).map((cv) => ({ ref: String(cv.id), type: 'ticket', title: clip(String(cv.subject || `Conversation ${cv.id}`), 160), snippet: clip(String(cv.status ?? ''), 400), url: null, raw: { id: cv.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${FRONT}/conversations/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cv = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'ticket', title: clip(String(cv.subject || ref), 160), snippet: clip(String(cv.status ?? ''), 400), url: null, raw: cv }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── coda ── secret: { api_token } · fixed base. knowledge_base (docs/pages).
+const CODA = 'https://coda.io/apis/v1';
+const coda = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.api_token ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${CODA}/whoami`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Coda API token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${CODA}/docs?limit=25${query.trim() ? `&query=${encodeURIComponent(query)}` : ''}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = ((r.body as { items?: Array<Record<string, unknown>> })?.items) ?? [];
+    return { ok: true, items: items.slice(0, 10).map((d) => ({ ref: String(d.id), type: 'article', title: clip(d.name, 160), snippet: clip(String((d.folder as { name?: string })?.name ?? ''), 400), url: d.browserLink ? String(d.browserLink) : null, raw: { id: d.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${CODA}/docs/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const d = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'article', title: clip(d.name, 160), snippet: '', url: d.browserLink ? String(d.browserLink) : null, raw: d }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── pagerduty ── secret: { api_key } · fixed base. product_system (incidents).
+const PAGERDUTY = 'https://api.pagerduty.com';
+const pagerduty = {
+  hdrs: (c: Ctx) => ({ Authorization: `Token token=${c.secret.api_key ?? ''}`, Accept: 'application/vnd.pagerduty+json;version=2' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${PAGERDUTY}/users?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'PagerDuty API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${PAGERDUTY}/incidents?limit=20&sort_by=created_at:desc`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const incidents = ((r.body as { incidents?: Array<Record<string, unknown>> })?.incidents) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? incidents.filter((i) => `${i.title ?? ''} ${i.incident_number ?? ''}`.toLowerCase().includes(ql)) : incidents;
+    return { ok: true, items: f.slice(0, 10).map((i) => ({ ref: String(i.id), type: 'record', title: clip(`#${i.incident_number} ${i.title ?? ''}`, 160), snippet: clip(`${i.status ?? ''} · ${i.urgency ?? ''}`, 400), url: i.html_url ? String(i.html_url) : null, raw: { id: i.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${PAGERDUTY}/incidents/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = ((r.body as { incident?: Record<string, unknown> })?.incident) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`#${i.incident_number ?? ''} ${i.title ?? ''}`, 160), snippet: clip(`${i.status ?? ''}`, 400), url: i.html_url ? String(i.html_url) : null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── sentry ── secret: { token } · fixed base. product_system (issues/errors).
+const SENTRY = 'https://sentry.io/api/0';
+const sentry = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async org(c: Ctx): Promise<string | null> {
+    const r = await httpJson(`${SENTRY}/organizations/`, { headers: this.hdrs(c) });
+    if (!r.ok) return null;
+    const orgs = Array.isArray(r.body) ? (r.body as Array<{ slug?: string }>) : [];
+    return orgs[0]?.slug ?? null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${SENTRY}/organizations/`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Sentry token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const org = await this.org(c);
+    if (!org) return { ok: false, error: 'no_organization' };
+    const r = await httpJson(`${SENTRY}/organizations/${org}/issues/?query=${encodeURIComponent(query || 'is:unresolved')}&limit=15`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const issues = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: issues.slice(0, 10).map((i) => ({ ref: String(i.id), type: 'record', title: clip(i.title, 160), snippet: clip(`${i.culprit ?? ''} · ${i.count ?? ''} events`, 400), url: i.permalink ? String(i.permalink) : null, raw: { id: i.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${SENTRY}/issues/${encodeURIComponent(ref)}/`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(i.title, 160), snippet: clip(String(i.culprit ?? ''), 400), url: i.permalink ? String(i.permalink) : null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, 'is:unresolved'); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3002,6 +3139,26 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   jobber: {
     search_records: (c, p) => jobber.search(c, p.query ?? ''),
     get_record: (c, p) => jobber.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  gorgias: {
+    search_tickets: (c, p) => gorgias.search(c, p.query ?? ''),
+    get_ticket: (c, p) => gorgias.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  front: {
+    search_tickets: (c, p) => front.search(c, p.query ?? ''),
+    get_ticket: (c, p) => front.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  coda: {
+    search_articles: (c, p) => coda.search(c, p.query ?? ''),
+    get_article: (c, p) => coda.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
+  pagerduty: {
+    search_records: (c, p) => pagerduty.search(c, p.query ?? ''),
+    get_record: (c, p) => pagerduty.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  sentry: {
+    search_records: (c, p) => sentry.search(c, p.query ?? ''),
+    get_record: (c, p) => sentry.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3301,6 +3458,7 @@ serve(async (req) => {
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
       quickbooks, xero, clio, gusto, procore, jobber,
+      gorgias, front, coda, pagerduty, sentry,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
