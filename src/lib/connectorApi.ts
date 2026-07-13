@@ -27,7 +27,8 @@ export type ConnectorProvider =
   | 'bamboohr' | 'greenhouse' | 'lever' | 'buildium' | 'canvas'
   | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber'
   | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry'
-  | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog' | 'template';
+  | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog'
+  | 'close' | 'kustomer' | 'mailchimp' | 'gitbook' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -316,6 +317,46 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  close: {
+    label: 'Close', tagline: 'CRM — leads, opportunities, activities',
+    defaultCategory: 'crm',
+    baseUrlLabel: 'Close API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Close',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'api_••••••••', secret: true },
+    ],
+    help: 'In Close: Settings → API Keys → New API Key. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  kustomer: {
+    label: 'Kustomer', tagline: 'CX — conversations & customers',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Kustomer API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Kustomer',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Kustomer: Settings → API Keys → Add API Key (read roles). Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  mailchimp: {
+    label: 'Mailchimp', tagline: 'Marketing — campaigns & audiences',
+    defaultCategory: 'other',
+    baseUrlLabel: 'Mailchimp API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Mailchimp',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: '••••••••-us21', secret: true },
+    ],
+    help: 'In Mailchimp: Account → Extras → API keys → Create A Key. The datacenter (e.g. us21) is read from the key\'s suffix automatically.',
+    knowledgeSync: false, implemented: true,
+  },
+  gitbook: {
+    label: 'GitBook', tagline: 'Docs — spaces & pages',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'GitBook API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for GitBook',
+    fields: [
+      { key: 'token', label: 'API token', placeholder: 'gb_api_••••••••', secret: true },
+    ],
+    help: 'In GitBook: Settings → Developer → Personal Access Tokens → create one. Paste it here.',
     knowledgeSync: false, implemented: true,
   },
   pipedrive: {

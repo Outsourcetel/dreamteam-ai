@@ -3054,6 +3054,123 @@ const datadog = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── close ── secret: { api_key } · fixed base. crm.
+const CLOSE = 'https://api.close.com/api/v1';
+const close = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.api_key ?? ''}:`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${CLOSE}/me/`, { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Close API key verified' };
+  },
+  async leads(c: Ctx, query: string): Promise<Array<Record<string, unknown>>> {
+    const r = await httpJson(`${CLOSE}/lead/?${query.trim() ? `query=${encodeURIComponent(query)}&` : ''}_limit=15`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return [];
+    return ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const leads = await this.leads(c, query);
+    return { ok: true, items: leads.slice(0, 10).map((l) => ({ ref: String(l.id), type: 'account', title: clip(l.display_name ?? l.name, 160), snippet: clip(String(l.description ?? ''), 400), url: l.html_url ? String(l.html_url) : null, raw: { id: l.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${CLOSE}/lead/${encodeURIComponent(ref)}/`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const l = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'account', title: clip(l.display_name ?? ref, 160), snippet: clip(String(l.description ?? ''), 400), url: l.html_url ? String(l.html_url) : null, raw: l }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── kustomer ── secret: { api_key } · fixed base. helpdesk (conversations).
+const KUSTOMER = 'https://api.kustomerapp.com/v1';
+const kustomer = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.api_key ?? ''}`, 'Content-Type': 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${KUSTOMER}/conversations?page[size]=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Kustomer API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${KUSTOMER}/conversations?page[size]=20`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const data = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? data.filter((cv) => String((cv.attributes as { name?: string })?.name ?? '').toLowerCase().includes(ql)) : data;
+    return { ok: true, items: f.slice(0, 10).map((cv) => { const a = (cv.attributes ?? {}) as Record<string, unknown>; return { ref: String(cv.id), type: 'ticket', title: clip(a.name || `Conversation ${cv.id}`, 160), snippet: clip(`${a.status ?? ''} · ${a.priority ?? ''}`, 400), url: null, raw: { id: cv.id } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${KUSTOMER}/conversations/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const cv = ((r.body as { data?: Record<string, unknown> })?.data) ?? {};
+    const a = (cv.attributes ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'ticket', title: clip(a.name || ref, 160), snippet: clip(String(a.status ?? ''), 400), url: null, raw: cv }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── mailchimp ── secret: { api_key } (dc in suffix) · derived base. other (campaigns).
+const mcBase = (c: Ctx) => { const k = c.secret.api_key ?? ''; const dc = k.includes('-') ? k.split('-').pop() : 'us1'; return `https://${dc}.api.mailchimp.com/3.0`; };
+const mailchimp = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`anystring:${c.secret.api_key ?? ''}`),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${mcBase(c)}/ping`, { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Mailchimp API key verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${mcBase(c)}/campaigns?count=20&sort_field=create_time&sort_dir=DESC`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const camps = ((r.body as { campaigns?: Array<Record<string, unknown>> })?.campaigns) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? camps.filter((m) => String((m.settings as { title?: string; subject_line?: string })?.title ?? (m.settings as { subject_line?: string })?.subject_line ?? '').toLowerCase().includes(ql)) : camps;
+    return { ok: true, items: f.slice(0, 10).map((m) => { const s = (m.settings ?? {}) as Record<string, unknown>; return { ref: String(m.id), type: 'record', title: clip(s.title || s.subject_line || `Campaign ${m.id}`, 160), snippet: clip(`${m.status ?? ''} · ${(m.emails_sent ?? 0)} sent`, 400), url: (m.archive_url) ? String(m.archive_url) : null, raw: { id: m.id } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${mcBase(c)}/campaigns/${encodeURIComponent(ref)}`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = r.body as Record<string, unknown>;
+    const s = (m.settings ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(s.title || s.subject_line || ref, 160), snippet: clip(String(m.status ?? ''), 400), url: null, raw: m }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── gitbook ── secret: { token } · fixed base. knowledge_base (spaces). Org/space
+// traversal shapes should be confirmed against live creds.
+const GITBOOK = 'https://api.gitbook.com/v1';
+const gitbook = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async spaces(c: Ctx): Promise<Array<Record<string, unknown>>> {
+    const o = await httpJson(`${GITBOOK}/orgs`, { headers: this.hdrs(c) });
+    const orgs = ((o.body as { items?: Array<{ id?: string }> })?.items) ?? [];
+    if (!orgs.length) return [];
+    const s = await httpJson(`${GITBOOK}/orgs/${orgs[0].id}/spaces`, { headers: this.hdrs(c) });
+    return ((s.body as { items?: Array<Record<string, unknown>> })?.items) ?? [];
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${GITBOOK}/user`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'GitBook token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const spaces = await this.spaces(c);
+    const ql = query.toLowerCase();
+    const f = ql ? spaces.filter((s) => String(s.title ?? '').toLowerCase().includes(ql)) : spaces;
+    return { ok: true, items: f.slice(0, 10).map((s) => ({ ref: String(s.id), type: 'article', title: clip(s.title, 160), snippet: '', url: (s.urls as { app?: string })?.app ? String((s.urls as { app?: string }).app) : null, raw: { id: s.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${GITBOOK}/spaces/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const s = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'article', title: clip(s.title, 160), snippet: '', url: (s.urls as { app?: string })?.app ? String((s.urls as { app?: string }).app) : null, raw: s }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3327,6 +3444,22 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   datadog: {
     search_records: (c, p) => datadog.search(c, p.query ?? ''),
     get_record: (c, p) => datadog.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  close: {
+    search_accounts: (c, p) => close.search(c, p.query ?? ''),
+    get_account: (c, p) => close.fetchRecord(c, 'account', p.external_ref ?? ''),
+  },
+  kustomer: {
+    search_tickets: (c, p) => kustomer.search(c, p.query ?? ''),
+    get_ticket: (c, p) => kustomer.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
+  mailchimp: {
+    search_records: (c, p) => mailchimp.search(c, p.query ?? ''),
+    get_record: (c, p) => mailchimp.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  gitbook: {
+    search_articles: (c, p) => gitbook.search(c, p.query ?? ''),
+    get_article: (c, p) => gitbook.fetchRecord(c, 'article', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3628,6 +3761,7 @@ serve(async (req) => {
       quickbooks, xero, clio, gusto, procore, jobber,
       gorgias, front, coda, pagerduty, sentry,
       pipedrive, smartsheet, wrike, trello, datadog,
+      close, kustomer, mailchimp, gitbook,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
