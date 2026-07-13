@@ -83,6 +83,7 @@ export type TenantPage =
 
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
+  | 'onboarding_architect'   // Quick Start — Ada proposes your DreamTeam setup
 
   // ── Admin ─────────────────────────────────────────
   | 'settings'

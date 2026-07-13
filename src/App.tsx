@@ -35,6 +35,7 @@ import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
 import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
 import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
+import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
 import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
@@ -129,6 +130,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   gov_identity_inventory: '/governance/identity-credentials',
   // Setup
   company_setup:  '/setup',
+  onboarding_architect: '/setup/quick-start',
 };
 
 const URL_TO_PAGE: Record<string, Page> = Object.fromEntries(
@@ -460,6 +462,8 @@ function AppShell() {
         return <IdentityInventoryPage />;
       case 'company_setup':
         return <CompanySetupPage setPage={handleSetPage} />;
+      case 'onboarding_architect':
+        return <OnboardingArchitectPage setPage={handleSetPage} />;
       default:
         return <DashboardPage {...commonProps} />;
     }

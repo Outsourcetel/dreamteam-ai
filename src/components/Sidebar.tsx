@@ -290,6 +290,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
     {
       title: 'SETUP',
       groups: [
+        { id: 'onboarding_architect', label: 'Quick Start', icon: '✦', page: 'onboarding_architect' },
         { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
       ],
     },
