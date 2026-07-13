@@ -8,6 +8,7 @@ import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalation
 import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import { useDataMode } from '../../lib/dataMode';
+import GettingStartedGuide from '../../components/GettingStartedGuide';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
   getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
@@ -295,7 +296,7 @@ function liveActivityAge(iso: string): string {
 }
 
 function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
-  const { liveTenantName } = useAuth();
+  const { liveTenantName, currentTenant } = useAuth();
   const vocab = useVocabulary();
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -377,6 +378,9 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
             ↻
           </button>
         </div>
+
+        {/* Always-available getting-started guide (dismissible, reopenable) */}
+        <GettingStartedGuide setPage={setPage} tenantId={currentTenant?.id} />
 
         {loading ? (
           <LiveLoadingSkeleton rows={6} />
