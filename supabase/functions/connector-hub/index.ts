@@ -2143,6 +2143,17 @@ const dtSlug = (s: string) =>
   (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'item';
 const dtSuffix = () => crypto.randomUUID().slice(0, 6);
 
+// Wave 5 safety ceiling: a generous per-tenant hard cap on what the
+// Onboarding Architect can create — a belt-and-suspenders backstop against
+// a runaway (every build is already human-approved, and a single agentic
+// run is capped at max_iterations). Returns an error message if over cap.
+async function dtQuota(c: Ctx, table: string, cap: number, noun: string): Promise<string | null> {
+  if (!c.admin || !c.tenantId) return 'no_admin_context';
+  const { count } = await c.admin.from(table).select('id', { count: 'exact', head: true }).eq('tenant_id', c.tenantId);
+  if ((count ?? 0) >= cap) return `This workspace has reached its limit of ${cap} ${noun}. Remove some before adding more.`;
+  return null;
+}
+
 const dreamteamActions: Record<string, NativeAction> = {
   dt_create_digital_employee: {
     render(_c, p) {
@@ -2152,6 +2163,8 @@ const dreamteamActions: Record<string, NativeAction> = {
     async run(c, p) {
       if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const deCap = await dtQuota(c, 'digital_employees', 50, 'Digital Employees');
+      if (deCap) return { ok: false, error: 'quota_exceeded', detail: deCap };
       const category = p.category === 'Internal' ? 'Internal' : 'Customer';
       const model = p.model_id && /^claude-/.test(p.model_id) ? p.model_id : 'claude-sonnet-5';
       const { data, error } = await c.admin.from('digital_employees').insert({
@@ -2174,6 +2187,8 @@ const dreamteamActions: Record<string, NativeAction> = {
     async run(c, p) {
       if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const pbCap = await dtQuota(c, 'playbook_definitions', 100, 'playbooks');
+      if (pbCap) return { ok: false, error: 'quota_exceeded', detail: pbCap };
       const outline = (p.outline ?? p.description ?? '').slice(0, 4000);
       const desc = outline ? `Proposed by a Digital Employee. Outline:\n${outline}` : 'Proposed by a Digital Employee.';
       const { data, error } = await c.admin.from('playbook_definitions').insert({
@@ -2193,6 +2208,8 @@ const dreamteamActions: Record<string, NativeAction> = {
     async run(c, p) {
       if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const spCap = await dtQuota(c, 'specialist_profiles', 30, 'specialist desks');
+      if (spCap) return { ok: false, error: 'quota_exceeded', detail: spCap };
       const { data, error } = await c.admin.from('specialist_profiles').insert({
         tenant_id: c.tenantId, key: `${dtSlug(p.name)}_${dtSuffix()}`,
         name: p.name.trim().slice(0, 120), charter: (p.charter ?? p.description ?? '').slice(0, 2000) || null,
@@ -2209,6 +2226,8 @@ const dreamteamActions: Record<string, NativeAction> = {
     },
     async run(c, p) {
       if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      const connCap = await dtQuota(c, 'connectors', 40, 'connectors');
+      if (connCap) return { ok: false, error: 'quota_exceeded', detail: connCap };
       const provider = (p.provider ?? '').trim().toLowerCase();
       const builtIn = ['zendesk', 'salesforce', 'confluence', 'jira', 'intercom', 'generic_rest', 'sharepoint'];
       const useProvider = builtIn.includes(provider) ? provider : 'generic_rest';
