@@ -2189,15 +2189,46 @@ const dreamteamActions: Record<string, NativeAction> = {
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
       const pbCap = await dtQuota(c, 'playbook_definitions', 100, 'playbooks');
       if (pbCap) return { ok: false, error: 'quota_exceeded', detail: pbCap };
-      const outline = (p.outline ?? p.description ?? '').slice(0, 4000);
-      const desc = outline ? `Proposed by a Digital Employee. Outline:\n${outline}` : 'Proposed by a Digital Employee.';
+      const outline = (p.outline ?? p.description ?? '').slice(0, 4000).trim();
+      // Build a REAL, runnable step sequence (not an empty draft):
+      //  load the record → run the procedure as a SMART step (the agentic
+      //  loop reads the instructions and routes to knowledge / connectors /
+      //  rules on its own) → optional specialist accuracy check → human
+      //  approval → complete. Every step is a genuine playbook primitive.
+      const wantsSpecialist = String(p.needs_specialist ?? '').toLowerCase() === 'true' || !!p.specialist_key;
+      const steps: Array<Record<string, unknown>> = [
+        { key: 'check_account', label: 'Load the record', params: {} },
+        { key: 'agentic_step', label: p.name.trim().slice(0, 60),
+          params: { goal_template: outline || `Carry out: ${p.name.trim()}. Use your knowledge, connected systems and your employer's rules as needed.` } },
+      ];
+      if (wantsSpecialist) {
+        steps.push({ key: 'consult_specialist', label: 'Accuracy check',
+          params: { profile_key: String(p.specialist_key ?? 'technical').slice(0, 60),
+            question_template: `Review this "${p.name.trim()}" for {{account.name}} — is it correct and complete?`,
+            min_confidence: 60, on_low: 'escalate' } });
+      }
+      steps.push({ key: 'human_approval', label: 'Human review',
+        params: { title_template: `Review — ${p.name.trim()} for {{account.name}}`, task_type: 'approval_gate' } });
+      steps.push({ key: 'complete', label: 'Done', params: {} });
+
+      // Best-effort: attach to the employee this was built for (by role name).
+      let deId: string | null = null;
+      if (p.for_de?.trim()) {
+        const { data: de } = await c.admin.from('digital_employees')
+          .select('id').eq('tenant_id', c.tenantId).ilike('name', p.for_de.trim()).limit(1).maybeSingle();
+        deId = (de as { id?: string } | null)?.id ?? null;
+      }
+
       const { data, error } = await c.admin.from('playbook_definitions').insert({
         tenant_id: c.tenantId, key: `${dtSlug(p.name)}_${dtSuffix()}`,
-        name: p.name.trim().slice(0, 120), description: desc.slice(0, 2000), status: 'draft',
+        name: p.name.trim().slice(0, 120),
+        description: (p.description ?? outline ?? '').slice(0, 2000) || 'Proposed by the Onboarding Architect.',
+        status: 'draft', steps, de_id: deId,
       }).select('id').single();
       if (error) return { ok: false, error: 'create_failed', detail: error.message };
+      const attach = deId ? ` and attached it to ${p.for_de!.trim()}` : '';
       return { ok: true, raw: { playbook_id: data?.id },
-        receipt: `Drafted playbook "${p.name.trim()}" (status: draft) with the proposed procedure captured. A human refines the steps in the Playbook Builder and publishes it.` };
+        receipt: `Drafted a runnable playbook "${p.name.trim()}" — ${steps.length} real steps (load the record → run the procedure as a smart step${wantsSpecialist ? ' → specialist accuracy check' : ''} → human approval → complete)${attach}. A human can refine and publish it in the Playbook Builder.` };
     },
   },
   dt_create_specialist: {
