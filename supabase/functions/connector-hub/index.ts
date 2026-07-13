@@ -2175,8 +2175,18 @@ const dreamteamActions: Record<string, NativeAction> = {
         model_id: model, lifecycle_status: 'designed', status: 'idle', trust_level: 'supervised',
       }).select('id').single();
       if (error) return { ok: false, error: 'create_failed', detail: error.message };
-      return { ok: true, raw: { de_id: data?.id },
-        receipt: `Created Digital Employee "${p.name.trim()}" (${category}, model ${model}) at lifecycle stage "designed", trust "supervised". It still needs knowledge, guardrails and certification before it can go live.` };
+      // Back-attach any playbooks that were drafted for this employee before
+      // it existed (approval order no longer matters — migration 146).
+      let attached = 0;
+      if (data?.id) {
+        const { data: linked } = await c.admin.from('playbook_definitions')
+          .update({ de_id: data.id })
+          .eq('tenant_id', c.tenantId).is('de_id', null)
+          .ilike('intended_de_name', p.name.trim()).select('id');
+        attached = linked?.length ?? 0;
+      }
+      return { ok: true, raw: { de_id: data?.id, attached_playbooks: attached },
+        receipt: `Created Digital Employee "${p.name.trim()}" (${category}, model ${model}) at lifecycle stage "designed", trust "supervised"${attached ? `, and linked ${attached} playbook(s) already drafted for it` : ''}. It still needs knowledge, guardrails and certification before it can go live.` };
     },
   },
   dt_draft_playbook: {
@@ -2224,6 +2234,9 @@ const dreamteamActions: Record<string, NativeAction> = {
         name: p.name.trim().slice(0, 120),
         description: (p.description ?? outline ?? '').slice(0, 2000) || 'Proposed by the Onboarding Architect.',
         status: 'draft', steps, de_id: deId,
+        // Record the intended employee even if it doesn't exist yet, so
+        // dt_create_digital_employee can back-attach (order-independent).
+        intended_de_name: p.for_de?.trim()?.slice(0, 120) || null,
       }).select('id').single();
       if (error) return { ok: false, error: 'create_failed', detail: error.message };
       const attach = deId ? ` and attached it to ${p.for_de!.trim()}` : '';

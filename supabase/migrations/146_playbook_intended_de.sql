@@ -1,0 +1,12 @@
+-- ============================================================
+-- 146 — Order-independent playbook→employee attachment.
+--
+-- Ada proposes a Digital Employee and a playbook as separate approvals.
+-- Before, the playbook attached to the employee only if the employee was
+-- approved FIRST (dt_draft_playbook looked it up by name at approval time).
+-- Now the playbook records the employee it was drafted for (intended_de_name)
+-- even if that employee doesn't exist yet, and dt_create_digital_employee
+-- back-attaches any unattached playbooks that named it — so approval order
+-- no longer matters.
+-- ============================================================
+alter table playbook_definitions add column if not exists intended_de_name text;
