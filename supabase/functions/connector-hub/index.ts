@@ -875,7 +875,7 @@ function candidatePasses(c: Candidate, f: IngestFilters): boolean {
 // + exclude patterns are hard; allow_types only applies when the customer
 // set one (read-through isn't about extractability, so 'other' is allowed
 // through unless a type allow-list is configured).
-const INGEST_CONTROL_PROVIDERS = new Set(['sharepoint', 'gdrive', 'notion', 'box']);
+const INGEST_CONTROL_PROVIDERS = new Set(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox']);
 function readThroughFilterItems(provider: string, items: HubItem[] | undefined, f: IngestFilters): HubItem[] {
   const list = items ?? [];
   if (!INGEST_CONTROL_PROVIDERS.has(provider)) return list;
@@ -1210,7 +1210,7 @@ async function gdriveFetchText(id: string, fileType: string, token: string): Pro
 
 // ════════════════════════════════════════════════════════════════
 
-const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive', 'notion', 'box', 'servicenow', 'guru', 'document360']);
+const KNOWLEDGE_CAPABLE = new Set(['zendesk', 'salesforce', 'confluence', 'intercom', 'sharepoint', 'gdrive', 'notion', 'box', 'servicenow', 'guru', 'document360', 'dropbox']);
 
 // ════════════════════════════════════════════════════════════════
 // THE GENERALIZED ACTION LAYER (migration 035) — resolve + render +
@@ -3437,6 +3437,90 @@ const athenahealth = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── dropbox ── user-OAuth · knowledge_base + syncDocs (text/PDF). Mirrors Box:
+// discover (filters) + fetchTexts (extract chosen) + review-queue integration.
+const DROPBOX = 'https://api.dropboxapi.com/2';
+const DROPBOX_CONTENT = 'https://content.dropboxapi.com/2';
+async function dropboxFileText(path: string, fileType: string, token: string): Promise<string> {
+  const res = await safeFetch(`${DROPBOX_CONTENT}/files/download`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) } });
+  if (!res) return '';
+  if (fileType === 'pdf') return (await pdfBytesToText(new Uint8Array(await res.arrayBuffer()))).slice(0, MAX_DOC_CHARS);
+  const raw = await res.text();
+  const looksHtml = /<\/?[a-z][\s\S]*>/i.test(raw.slice(0, 4000));
+  return (looksHtml ? stripHtml(raw) : raw).slice(0, MAX_DOC_CHARS);
+}
+const dropbox = {
+  async rpc(token: string, path: string, body: unknown): Promise<{ ok: boolean; error?: string; body: Record<string, unknown> | null }> {
+    const r = await httpJson(`${DROPBOX}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, ...(body !== null ? { 'Content-Type': 'application/json' } : {}) }, body: body !== null ? JSON.stringify(body) : undefined });
+    return { ok: r.ok, error: r.error, body: (r.body ?? null) as Record<string, unknown> | null };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await oauthAccessToken(c, 'dropbox');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await this.rpc(t.token!, '/users/get_current_account', null);
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Dropbox account reachable' };
+  },
+  async discoverDocs(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }> {
+    const t = await oauthAccessToken(c, 'dropbox');
+    if (!t.ok) return { ok: false, error: t.error };
+    const out: Candidate[] = [];
+    let r = await this.rpc(t.token!, '/files/list_folder', { path: f.folder ? f.folder : '', recursive: true, limit: 500 });
+    let guard = 0;
+    while (r.ok && guard < 10 && out.length < MAX_SYNC_FILES) {
+      guard++;
+      const entries = ((r.body?.entries as Array<Record<string, unknown>>) ?? []);
+      for (const e of entries) {
+        if (out.length >= MAX_SYNC_FILES) break;
+        if (e['.tag'] !== 'file') continue;
+        const name = String(e.name ?? '');
+        const ft = fileTypeOf(name);
+        if (ft !== 'text' && ft !== 'pdf') continue;
+        const path = String(e.path_display ?? e.path_lower ?? '');
+        const cand: Candidate = { external_ref: `dropbox:${e.id}|${path}`, title: clip(name, 200), path: path.replace(/\/[^/]*$/, '').replace(/^\//, ''), file_type: ft, size_bytes: typeof e.size === 'number' ? e.size : null };
+        if (candidatePasses(cand, f)) out.push(cand);
+      }
+      if (r.body?.has_more) r = await this.rpc(t.token!, '/files/list_folder/continue', { cursor: r.body.cursor });
+      else break;
+    }
+    return { ok: true, candidates: out };
+  },
+  async fetchTexts(c: Ctx, items: Candidate[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const t = await oauthAccessToken(c, 'dropbox');
+    if (!t.ok) return out;
+    for (const it of items) { const path = it.external_ref.split('|').slice(1).join('|'); out[it.external_ref] = await dropboxFileText(path, it.file_type, t.token!); }
+    return out;
+  },
+  async syncDocs(c: Ctx, f: IngestFilters = {}): Promise<SyncResult> {
+    const d = await this.discoverDocs(c, f);
+    if (!d.ok) return { ok: false, error: d.error };
+    const cands = d.candidates ?? [];
+    if (!cands.length) return { ok: false, error: 'no_readable_documents', detail: 'No text/PDF files match your ingest settings.' };
+    const texts = await this.fetchTexts(c, cands);
+    const docs: SyncDoc[] = cands.map((cd) => ({ external_ref: cd.external_ref, title: cd.title, content: texts[cd.external_ref] ?? '', url: null })).filter((dd) => dd.content);
+    if (!docs.length) return { ok: false, error: 'no_readable_documents', detail: 'Matching files had no extractable text.' };
+    return { ok: true, docs };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'dropbox');
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await this.rpc(t.token!, '/files/search_v2', { query: query || 'a', options: { max_results: 15 } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const matches = ((r.body?.matches as Array<{ metadata?: { metadata?: Record<string, unknown> } }>) ?? []);
+    return { ok: true, items: matches.slice(0, 10).map((m) => { const md = m.metadata?.metadata ?? {}; return { ref: `dropbox:${md.id}|${md.path_display ?? ''}`, type: 'article', title: clip(md.name, 160), snippet: '', url: null, raw: { id: md.id } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await oauthAccessToken(c, 'dropbox');
+    if (!t.ok) return { ok: false, error: t.error };
+    const path = ref.split('|').slice(1).join('|');
+    const r = await this.rpc(t.token!, '/files/get_metadata', { path });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [{ ref, type: 'article', title: clip(r.body?.name, 160), snippet: '', url: null, raw: r.body }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3755,6 +3839,10 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
     search_records: (c, p) => cerner.search(c, p.query ?? ''),
     get_record: (c, p) => cerner.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
+  dropbox: {
+    search_articles: (c, p) => dropbox.search(c, p.query ?? ''),
+    get_article: (c, p) => dropbox.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
   intercom: {
     search_tickets: async (c, p) => {
       // conversations only — articles come via search_articles
@@ -4057,6 +4145,7 @@ serve(async (req) => {
       pipedrive, smartsheet, wrike, trello, datadog,
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
+      dropbox,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

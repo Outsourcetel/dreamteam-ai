@@ -91,7 +91,8 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   gorgias: '🛎️', front: '📨', coda: '📄', pagerduty: '🚨', sentry: '🐛',
   pipedrive: '🟩', smartsheet: '📊', wrike: '🗂️', trello: '📋', datadog: '🐕',
   close: '🎯', kustomer: '🫂', mailchimp: '🐵', gitbook: '📘',
-  netsuite: '📒', powerschool: '🎒', ellucian: '🎓', toast: '🍞', athenahealth: '⚕️', epic: '🏥', cerner: '🩺', template: '🧱',
+  netsuite: '📒', powerschool: '🎒', ellucian: '🎓', toast: '🍞', athenahealth: '⚕️', epic: '🏥', cerner: '🩺',
+  dropbox: '🗄️', template: '🧱',
 };
 
 const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
@@ -514,6 +515,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
             connector.provider === 'gdrive' ? 'share only the intended folder(s) with the service account (it sees nothing else).'
             : connector.provider === 'notion' ? 'share only the intended pages with the Notion integration (it sees nothing else).'
             : connector.provider === 'box' ? 'grant the app access to only the intended folders in the Box Admin Console (it sees nothing else).'
+            : connector.provider === 'dropbox' ? 'share only the intended folder(s) with the app, or scope the app folder (it sees nothing else).'
             : 'grant the app Sites.Selected on one dedicated site instead of Sites.Read.All (it sees nothing else).'}
         </p>
         <div className="space-y-3">
@@ -522,10 +524,11 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
             <label className="block text-[11px] text-slate-400 mb-1">
               {connector.provider === 'gdrive' ? 'Folder / Shared Drive ID (optional — blank = everything shared)'
                 : connector.provider === 'box' ? 'Folder ID to sync (optional — blank = whole account)'
+                : connector.provider === 'dropbox' ? 'Folder path to sync (optional — blank = everything shared)'
                 : 'Sub-folder to sync (optional — blank = whole library)'}
             </label>
             <input value={filters.folder ?? ''} onChange={e => commitFilters({ ...filters, folder: e.target.value || null })}
-              placeholder={connector.provider === 'gdrive' ? 'folder id' : connector.provider === 'box' ? 'Box folder id' : 'e.g. Policies/Public'} className={`${inputCls} text-xs`} />
+              placeholder={connector.provider === 'gdrive' ? 'folder id' : connector.provider === 'box' ? 'Box folder id' : connector.provider === 'dropbox' ? '/Policies' : 'e.g. Policies/Public'} className={`${inputCls} text-xs`} />
           </div>
           )}
           <div>
@@ -851,7 +854,7 @@ export default function LiveConnectorsPage() {
                     <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Field mapping
                     </button>
-                    {(['sharepoint', 'gdrive', 'notion', 'box'] as ConnectorProvider[]).includes(c.provider) && (
+                    {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
                       <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
                         What gets ingested
                       </button>

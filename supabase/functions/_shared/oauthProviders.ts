@@ -70,6 +70,15 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderMeta> = {
     defaultCategory: 'product_system',
     tokenAuth: 'body',
   },
+  dropbox: {
+    label: 'Dropbox',
+    authorizeUrl: 'https://www.dropbox.com/oauth2/authorize',
+    tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
+    scopes: 'files.metadata.read files.content.read',
+    defaultCategory: 'knowledge_base',
+    tokenAuth: 'body',
+    extraAuthorize: { token_access_type: 'offline' },
+  },
 };
 
 export const OAUTH_CALLBACK_PATH = '/functions/v1/oauth-callback';

@@ -29,7 +29,8 @@ export type ConnectorProvider =
   | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry'
   | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog'
   | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
-  | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner' | 'template';
+  | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
+  | 'dropbox' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -319,6 +320,14 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
     knowledgeSync: false, implemented: true,
+  },
+  dropbox: {
+    label: 'Dropbox', tagline: 'Files — documents & PDFs into knowledge',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: '', baseUrlPlaceholder: '',
+    fields: [],
+    help: 'Connect by signing in to Dropbox — no keys to paste. (A platform admin registers the Dropbox app once.) Then use "What gets ingested" to choose folders, exclude patterns, and review files before they enter knowledge. SECURITY: the real boundary is sharing only the intended folder(s) with the app.',
+    knowledgeSync: true, implemented: true, oauth: true,
   },
   netsuite: {
     label: 'NetSuite', tagline: 'ERP — invoices, orders, financials',
