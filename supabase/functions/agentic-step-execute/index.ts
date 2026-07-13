@@ -115,31 +115,53 @@ async function persistMessage(
   await admin.from('agentic_step_messages').insert({ agentic_step_run_id: runId, turn_index: turnIndex, role, content });
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Anthropic call with bounded retry-with-backoff on transient failures
+// (429 rate-limit, 529 overloaded, 5xx). A persistent 429/529 throws an
+// error tagged `rateLimited` so the loop can end in an honest, retryable
+// 'rate_limited' state instead of a hard 'failed'. Backoffs are kept
+// short enough to stay well inside the edge worker's wall clock.
 async function callAnthropic(
   apiKey: string, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: AnthropicTool[],
 ): Promise<{ content: ContentBlock[]; stop_reason: string; usage: { input_tokens: number; output_tokens: number } }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model, max_tokens: 2048, system, messages,
-      tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-    }),
-  });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error(`anthropic_error_${res.status}: ${errBody.slice(0, 300)}`);
+  const backoffs = [1500, 4000, 8000];
+  let lastStatus = 0;
+  let lastBody = '';
+  for (let attempt = 0; attempt <= backoffs.length; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, max_tokens: 2048, system, messages,
+          tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+        }),
+      });
+    } catch (netErr) {
+      // network blip — treat as transient
+      lastStatus = 0; lastBody = String(netErr).slice(0, 200);
+      if (attempt < backoffs.length) { await sleep(backoffs[attempt]); continue; }
+      break;
+    }
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        content: (data.content ?? []) as ContentBlock[],
+        stop_reason: String(data.stop_reason ?? 'end_turn'),
+        usage: { input_tokens: Number(data.usage?.input_tokens ?? 0), output_tokens: Number(data.usage?.output_tokens ?? 0) },
+      };
+    }
+    lastStatus = res.status;
+    lastBody = await res.text().catch(() => '');
+    const transient = res.status === 429 || res.status === 529 || (res.status >= 500 && res.status < 600);
+    if (transient && attempt < backoffs.length) { await sleep(backoffs[attempt]); continue; }
+    break;
   }
-  const data = await res.json();
-  return {
-    content: (data.content ?? []) as ContentBlock[],
-    stop_reason: String(data.stop_reason ?? 'end_turn'),
-    usage: { input_tokens: Number(data.usage?.input_tokens ?? 0), output_tokens: Number(data.usage?.output_tokens ?? 0) },
-  };
+  const err = new Error(`anthropic_error_${lastStatus}: ${lastBody.slice(0, 300)}`) as Error & { rateLimited?: boolean };
+  err.rateLimited = lastStatus === 429 || lastStatus === 529;
+  throw err;
 }
 
 async function callExecuteAction(
@@ -213,9 +235,12 @@ async function runLoop(
   admin: SupabaseClient, tenantId: string, runId: string, goal: string,
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
   tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
-  contextDocuments = '',
+  contextDocuments = '', charter = '',
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
+    // The DE's configured purpose/charter — this is what makes it "trained":
+    // an Onboarding Architect carries its DreamTeam expertise here.
+    + (charter ? `About you (your role and expertise):\n${charter}\n\n` : '')
     + `Use the tools available to you to accomplish the goal — search knowledge, take actions in connected systems, or ask a human if you're stuck. `
     + `Any action that could affect an external system is automatically checked against this company's safety rules; if one requires human approval, it will be routed there for review and you should decide how to proceed without waiting for the outcome. `
     + `When the goal is accomplished (or you've genuinely determined it cannot be), call mark_goal_complete with a short summary — that is the only way to finish.`
@@ -267,8 +292,16 @@ async function runLoop(
     try {
       resp = await callAnthropic(apiKey, useModel, system, messages, tools);
     } catch (e) {
-      await markTerminal(admin, runId, 'failed', { reason: 'model_call_failed', detail: String(e).slice(0, 300) });
-      return { status: 'failed', agentic_step_run_id: runId };
+      // A persistent rate-limit/overload ends in an honest, retryable
+      // 'rate_limited' state (the run can be re-driven later) rather than
+      // a hard 'failed' — the difference matters operationally.
+      const rl = (e as { rateLimited?: boolean })?.rateLimited === true;
+      const status = rl ? 'rate_limited' : 'failed';
+      await markTerminal(admin, runId, status, {
+        reason: rl ? 'rate_limited_after_retries' : 'model_call_failed',
+        detail: String(e).slice(0, 300),
+      });
+      return { status, agentic_step_run_id: runId };
     }
 
     const costThisTurn = estimateCostCents(useModel, resp.usage.input_tokens, resp.usage.output_tokens);
@@ -403,9 +436,10 @@ serve(async (req) => {
     const policy: Policy = policyRow ? (policyRow as Policy) : POLICY_DEFAULTS;
 
     const { data: deRow } = await admin.from('digital_employees')
-      .select('id, name, model_id, escalation_model_id, escalation_threshold')
+      .select('id, name, model_id, escalation_model_id, escalation_threshold, description, purpose_statement')
       .eq('id', deId).eq('tenant_id', tenantId).maybeSingle();
     if (!deRow) return json({ error: 'digital_employee_not_found' }, 404);
+    const charter = String(deRow.purpose_statement || deRow.description || '').slice(0, 6000);
 
     const { data: runRow, error: runErr } = await admin.from('agentic_step_runs').insert({
       tenant_id: tenantId, playbook_run_id: playbookRunId, step_index: stepIndex,
@@ -439,7 +473,7 @@ serve(async (req) => {
       admin, tenantId!, runId, goal, deRow.name ?? 'Digital employee',
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
-      tools, policy, deId, apiKey, contextDocuments,
+      tools, policy, deId, apiKey, contextDocuments, charter,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
