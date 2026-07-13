@@ -118,6 +118,9 @@ interface Ctx {
   // freshly refreshed access token back to this connector.
   connectorId?: string;
   admin?: SupabaseClient;
+  // Set for the DreamTeam self-connector so its self-management executors
+  // know which tenant they are building machinery for.
+  tenantId?: string;
 }
 
 const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -2114,7 +2117,117 @@ const asanaActions: Record<string, NativeAction> = {
 
 // All native write-side executors, keyed by execution_key. Defined here —
 // after every <provider>Actions object — so the spread is safe at module load.
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions };
+// ════════════════════════════════════════════════════════════════
+// DreamTeam self-management — "the product operating itself".
+//
+// A Digital Employee that has been trained on the DreamTeam knowledge
+// base can, from a customer's stated requirement, DRAFT the setup to
+// onboard them: a new Digital Employee, a draft playbook, a specialist
+// desk, or a proposed connector. Every one of these action_definitions
+// is registered destructive:true, so decide_action_execution ALWAYS
+// routes it to human approval — the employee proposes, a human reviews
+// and approves, and only THEN is anything created. This is the deliberate,
+// gated opening of the door the `provider <> 'internal'` wall keeps shut:
+// these use provider 'dreamteam' (a real executor), never 'internal'.
+//
+// Safety properties held here:
+//  - No credentials are ever handled by the employee. propose_connector
+//    creates a DISCONNECTED shell; a human authenticates it separately.
+//  - New Digital Employees are created at lifecycle 'designed' / trust
+//    'supervised' — they cannot themselves answer or act until a human
+//    walks them through the lifecycle gates.
+//  - Playbooks are created as 'draft'; a human refines and publishes.
+//  - Writes go through the service-role admin client already on the Ctx,
+//    scoped to c.tenantId (the connector's own tenant) — never cross-tenant.
+const dtSlug = (s: string) =>
+  (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'item';
+const dtSuffix = () => crypto.randomUUID().slice(0, 6);
+
+const dreamteamActions: Record<string, NativeAction> = {
+  dt_create_digital_employee: {
+    render(_c, p) {
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name (the role/label) is required.' };
+      return { ok: true, method: 'INTERNAL', url: 'dreamteam://create_digital_employee', body: p };
+    },
+    async run(c, p) {
+      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const category = p.category === 'Internal' ? 'Internal' : 'Customer';
+      const model = p.model_id && /^claude-/.test(p.model_id) ? p.model_id : 'claude-sonnet-5';
+      const { data, error } = await c.admin.from('digital_employees').insert({
+        tenant_id: c.tenantId, name: p.name.trim().slice(0, 120),
+        persona_name: p.persona_name?.trim()?.slice(0, 60) || null,
+        category, department: p.department?.trim()?.slice(0, 80) || null,
+        description: p.description?.slice(0, 1000) || null,
+        model_id: model, lifecycle_status: 'designed', status: 'idle', trust_level: 'supervised',
+      }).select('id').single();
+      if (error) return { ok: false, error: 'create_failed', detail: error.message };
+      return { ok: true, raw: { de_id: data?.id },
+        receipt: `Created Digital Employee "${p.name.trim()}" (${category}, model ${model}) at lifecycle stage "designed", trust "supervised". It still needs knowledge, guardrails and certification before it can go live.` };
+    },
+  },
+  dt_draft_playbook: {
+    render(_c, p) {
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      return { ok: true, method: 'INTERNAL', url: 'dreamteam://draft_playbook', body: p };
+    },
+    async run(c, p) {
+      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const outline = (p.outline ?? p.description ?? '').slice(0, 4000);
+      const desc = outline ? `Proposed by a Digital Employee. Outline:\n${outline}` : 'Proposed by a Digital Employee.';
+      const { data, error } = await c.admin.from('playbook_definitions').insert({
+        tenant_id: c.tenantId, key: `${dtSlug(p.name)}_${dtSuffix()}`,
+        name: p.name.trim().slice(0, 120), description: desc.slice(0, 2000), status: 'draft',
+      }).select('id').single();
+      if (error) return { ok: false, error: 'create_failed', detail: error.message };
+      return { ok: true, raw: { playbook_id: data?.id },
+        receipt: `Drafted playbook "${p.name.trim()}" (status: draft) with the proposed procedure captured. A human refines the steps in the Playbook Builder and publishes it.` };
+    },
+  },
+  dt_create_specialist: {
+    render(_c, p) {
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      return { ok: true, method: 'INTERNAL', url: 'dreamteam://create_specialist', body: p };
+    },
+    async run(c, p) {
+      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
+      const { data, error } = await c.admin.from('specialist_profiles').insert({
+        tenant_id: c.tenantId, key: `${dtSlug(p.name)}_${dtSuffix()}`,
+        name: p.name.trim().slice(0, 120), charter: (p.charter ?? p.description ?? '').slice(0, 2000) || null,
+      }).select('id').single();
+      if (error) return { ok: false, error: 'create_failed', detail: error.message };
+      return { ok: true, raw: { specialist_id: data?.id },
+        receipt: `Created specialist desk "${p.name.trim()}". Assign it to the Digital Employees that need this expertise.` };
+    },
+  },
+  dt_propose_connector: {
+    render(_c, p) {
+      if (!p.provider?.trim()) return { ok: false, error: 'param_required', detail: 'provider is required.' };
+      return { ok: true, method: 'INTERNAL', url: 'dreamteam://propose_connector', body: p };
+    },
+    async run(c, p) {
+      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      const provider = (p.provider ?? '').trim().toLowerCase();
+      const builtIn = ['zendesk', 'salesforce', 'confluence', 'jira', 'intercom', 'generic_rest', 'sharepoint'];
+      const useProvider = builtIn.includes(provider) ? provider : 'generic_rest';
+      const { data, error } = await c.admin.from('connectors').insert({
+        tenant_id: c.tenantId, provider: useProvider,
+        base_url: (p.base_url ?? 'https://example.com').slice(0, 300),
+        category: (p.category ?? 'product_system').trim().slice(0, 40),
+        status: 'disconnected',
+        display_name: (p.display_name ?? `${provider || useProvider} (proposed)`).slice(0, 120),
+      }).select('id').single();
+      if (error) return { ok: false, error: 'create_failed', detail: error.message };
+      const note = builtIn.includes(provider) ? '' : ` (mapped to a generic REST connector — "${provider}" isn't a built-in yet)`;
+      return { ok: true, raw: { connector_id: data?.id },
+        receipt: `Proposed a "${provider || useProvider}" connector${note}, created DISCONNECTED. A human must add credentials and connect it — the employee handled no credentials.` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
@@ -4135,12 +4248,19 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // ── Auth: caller JWT → tenant, or service role + tenant_id ──
+    // ── Auth: caller JWT → tenant, or service role / dispatch secret + tenant_id
+    //    (dispatch secret = same dual pattern as de-answer / ingest-chunks —
+    //    lets the dispatch cron and headless flows drive registered actions
+    //    without a browser session; the asserted tenant is used verbatim). ──
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
     let tenantId: string | null = null;
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (isServiceRole || isDispatchCron) {
       tenantId = payload.tenant_id ?? null;
-      if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
+      if (!tenantId) return json({ error: 'tenant_id required for service calls' }, 400);
     } else {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
@@ -4266,7 +4386,7 @@ serve(async (req) => {
     let secret: Record<string, string> = {};
     if (secretRow?.secret) {
       try { secret = JSON.parse(secretRow.secret); } catch { return json({ error: 'invalid_credentials_format' }, 400); }
-    } else if (connector.provider !== 'generic_rest' && connector.provider !== 'template') {
+    } else if (connector.provider !== 'generic_rest' && connector.provider !== 'template' && connector.provider !== 'dreamteam') {
       return json({ error: 'no_credentials' }, 400);
     }
 
@@ -4276,6 +4396,7 @@ serve(async (req) => {
       config: (connector.config ?? {}) as Record<string, unknown>,
       connectorId,
       admin,
+      tenantId,
     };
 
     // ── template provider: resolve the declarative adapter (DATA → adapter) ──
@@ -4306,7 +4427,10 @@ serve(async (req) => {
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
-    if (!adapter) return json({ error: 'unsupported_provider' }, 400);
+    // The 'dreamteam' self-connector has no read adapter — it is write-only,
+    // serving the platform-builder actions via NATIVE_ACTIONS at execute time.
+    // execute_action never dereferences `adapter`, so it may run without one.
+    if (!adapter && connector.provider !== 'dreamteam') return json({ error: 'unsupported_provider' }, 400);
 
     const audit = (category: string, actionText: string, detail: Record<string, unknown>) =>
       admin.rpc('append_audit_event', {

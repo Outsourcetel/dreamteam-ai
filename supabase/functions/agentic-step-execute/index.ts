@@ -58,7 +58,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-dispatch-secret',
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -361,10 +361,19 @@ serve(async (req) => {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
 
+    // Service callers: the edge service-role key directly, OR the shared
+    // dispatch secret (same dual pattern as de-answer / ingest-chunks —
+    // lets the dispatch cron and headless verification drive the loop
+    // without a browser session). Either way the tenant is asserted.
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
+
     let tenantId: string | null = null;
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (isServiceRole || isDispatchCron) {
       tenantId = body?.tenant_id ?? null;
-      if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
+      if (!tenantId) return json({ error: 'tenant_id required for service calls' }, 400);
     } else {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
