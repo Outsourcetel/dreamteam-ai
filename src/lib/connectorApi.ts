@@ -30,7 +30,7 @@ export type ConnectorProvider =
   | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog'
   | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
   | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
-  | 'dropbox' | 'template';
+  | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -319,6 +319,58 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  twilio: {
+    label: 'Twilio', tagline: 'Messaging — SMS & call logs',
+    defaultCategory: 'other',
+    baseUrlLabel: 'Twilio API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Twilio',
+    fields: [
+      { key: 'account_sid', label: 'Account SID', placeholder: 'AC••••••••', secret: false },
+      { key: 'auth_token', label: 'Auth token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In the Twilio Console dashboard: copy your Account SID and Auth Token. (An API Key SID/Secret also works in place of the auth token.)',
+    knowledgeSync: false, implemented: true,
+  },
+  typeform: {
+    label: 'Typeform', tagline: 'Forms & survey responses',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Typeform API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Typeform',
+    fields: [
+      { key: 'token', label: 'Personal access token', placeholder: 'tfp_••••••••', secret: true },
+    ],
+    help: 'In Typeform: Settings → Personal tokens → Generate a new token. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  calendly: {
+    label: 'Calendly', tagline: 'Scheduling — events & invitees',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Calendly API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Calendly',
+    fields: [
+      { key: 'token', label: 'Personal access token', placeholder: 'eyJ••••••••', secret: true },
+    ],
+    help: 'In Calendly: Integrations → API & Webhooks → Personal Access Tokens → Generate. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  okta: {
+    label: 'Okta', tagline: 'Identity — users & groups',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Okta org URL', baseUrlPlaceholder: 'https://yourorg.okta.com',
+    fields: [
+      { key: 'token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Okta admin: Security → API → Tokens → Create Token (SSWS). Paste it plus your Okta org URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  contentful: {
+    label: 'Contentful', tagline: 'Headless CMS — content entries',
+    defaultCategory: 'knowledge_base',
+    baseUrlLabel: 'Contentful API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Contentful',
+    fields: [
+      { key: 'space_id', label: 'Space ID', placeholder: '', secret: false },
+      { key: 'access_token', label: 'Content Delivery API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Contentful: Settings → API keys → add an API key → copy the Space ID and the Content Delivery API access token.',
     knowledgeSync: false, implemented: true,
   },
   dropbox: {

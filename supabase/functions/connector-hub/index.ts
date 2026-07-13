@@ -3521,6 +3521,143 @@ const dropbox = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ── twilio ── secret: { account_sid, auth_token } · fixed base. other (messages).
+const twilio = {
+  auth: (c: Ctx) => 'Basic ' + btoa(`${c.secret.account_sid ?? ''}:${c.secret.auth_token ?? ''}`),
+  base: (c: Ctx) => `https://api.twilio.com/2010-04-01/Accounts/${c.secret.account_sid ?? ''}`,
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${this.base(c)}.json`, { headers: { Authorization: this.auth(c) } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Twilio credentials verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/Messages.json?PageSize=20`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const msgs = ((r.body as { messages?: Array<Record<string, unknown>> })?.messages) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? msgs.filter((m) => `${m.body ?? ''} ${m.from ?? ''} ${m.to ?? ''}`.toLowerCase().includes(ql)) : msgs;
+    return { ok: true, items: f.slice(0, 10).map((m) => ({ ref: String(m.sid), type: 'record', title: clip(`${m.from} → ${m.to}`, 160), snippet: clip(`${m.body ?? ''} · ${m.status ?? ''}`, 400), url: null, raw: { sid: m.sid } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/Messages/${encodeURIComponent(ref)}.json`, { headers: { Authorization: this.auth(c) } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${m.from} → ${m.to}`, 160), snippet: clip(String(m.body ?? ''), 400), url: null, raw: m }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── typeform ── secret: { token } · fixed base. product_system (forms).
+const TYPEFORM = 'https://api.typeform.com';
+const typeform = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}` }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${TYPEFORM}/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Typeform token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${TYPEFORM}/forms?page_size=20${query.trim() ? `&search=${encodeURIComponent(query)}` : ''}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = ((r.body as { items?: Array<Record<string, unknown>> })?.items) ?? [];
+    return { ok: true, items: items.slice(0, 10).map((fm) => ({ ref: String(fm.id), type: 'record', title: clip(fm.title, 160), snippet: '', url: (fm._links as { display?: string })?.display ? String((fm._links as { display?: string }).display) : null, raw: { id: fm.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${TYPEFORM}/forms/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const fm = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(fm.title, 160), snippet: clip(`${(fm.fields as unknown[])?.length ?? 0} fields`, 400), url: null, raw: fm }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── calendly ── secret: { token } · fixed base. product_system (events).
+const CALENDLY = 'https://api.calendly.com';
+const calendly = {
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.token ?? ''}`, 'Content-Type': 'application/json' }),
+  async org(c: Ctx): Promise<string | null> {
+    const r = await httpJson(`${CALENDLY}/users/me`, { headers: this.hdrs(c) });
+    if (!r.ok) return null;
+    return String((r.body as { resource?: { current_organization?: string } })?.resource?.current_organization ?? '') || null;
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${CALENDLY}/users/me`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Calendly token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const org = await this.org(c);
+    if (!org) return { ok: false, error: 'no_organization' };
+    const r = await httpJson(`${CALENDLY}/scheduled_events?organization=${encodeURIComponent(org)}&count=20`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const events = ((r.body as { collection?: Array<Record<string, unknown>> })?.collection) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? events.filter((e) => String(e.name ?? '').toLowerCase().includes(ql)) : events;
+    return { ok: true, items: f.slice(0, 10).map((e) => { const uri = String(e.uri ?? ''); return { ref: uri.split('/').pop() ?? uri, type: 'record', title: clip(e.name, 160), snippet: clip(`${e.status ?? ''} · ${e.start_time ?? ''}`, 400), url: null, raw: { uri } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${CALENDLY}/scheduled_events/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = ((r.body as { resource?: Record<string, unknown> })?.resource) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(e.name, 160), snippet: clip(`${e.status ?? ''} · ${e.start_time ?? ''}`, 400), url: null, raw: e }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── okta ── secret: { token } · base = org URL. product_system (users).
+const okta = {
+  hdrs: (c: Ctx) => ({ Authorization: `SSWS ${c.secret.token ?? ''}`, Accept: 'application/json' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/v1/users?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Okta token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/v1/users?limit=15${query.trim() ? `&q=${encodeURIComponent(query)}` : ''}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const users = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: users.slice(0, 10).map((u) => { const p = (u.profile ?? {}) as Record<string, unknown>; return { ref: String(u.id), type: 'record', title: clip(`${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || p.email, 160), snippet: clip(`${p.email ?? ''} · ${u.status ?? ''}`, 400), url: null, raw: { id: u.id } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/api/v1/users/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const u = r.body as Record<string, unknown>;
+    const p = (u.profile ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || p.email, 160), snippet: clip(String(p.email ?? ''), 400), url: null, raw: u }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── contentful ── secret: { space_id, access_token } · derived base. knowledge_base.
+const contentful = {
+  base: (c: Ctx) => `https://cdn.contentful.com/spaces/${c.secret.space_id ?? ''}`,
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.access_token ?? ''}` }),
+  entryTitle: (fields: Record<string, unknown>) => String(fields.title ?? fields.name ?? fields.heading ?? Object.values(fields)[0] ?? 'Entry'),
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${this.base(c)}/entries?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Contentful token verified' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/entries?limit=15${query.trim() ? `&query=${encodeURIComponent(query)}` : ''}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = ((r.body as { items?: Array<{ sys?: { id?: string }; fields?: Record<string, unknown> }> })?.items) ?? [];
+    return { ok: true, items: items.slice(0, 10).map((e) => ({ ref: String(e.sys?.id), type: 'article', title: clip(this.entryTitle(e.fields ?? {}), 160), snippet: '', url: null, raw: { id: e.sys?.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/entries/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = r.body as { fields?: Record<string, unknown> };
+    return { ok: true, items: [{ ref, type: 'article', title: clip(this.entryTitle(e.fields ?? {}), 160), snippet: '', url: null, raw: e }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3843,6 +3980,26 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
     search_articles: (c, p) => dropbox.search(c, p.query ?? ''),
     get_article: (c, p) => dropbox.fetchRecord(c, 'article', p.external_ref ?? ''),
   },
+  twilio: {
+    search_records: (c, p) => twilio.search(c, p.query ?? ''),
+    get_record: (c, p) => twilio.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  typeform: {
+    search_records: (c, p) => typeform.search(c, p.query ?? ''),
+    get_record: (c, p) => typeform.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  calendly: {
+    search_records: (c, p) => calendly.search(c, p.query ?? ''),
+    get_record: (c, p) => calendly.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  okta: {
+    search_records: (c, p) => okta.search(c, p.query ?? ''),
+    get_record: (c, p) => okta.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  contentful: {
+    search_articles: (c, p) => contentful.search(c, p.query ?? ''),
+    get_article: (c, p) => contentful.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
   intercom: {
     search_tickets: async (c, p) => {
       // conversations only — articles come via search_articles
@@ -4145,7 +4302,7 @@ serve(async (req) => {
       pipedrive, smartsheet, wrike, trello, datadog,
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
-      dropbox,
+      dropbox, twilio, typeform, calendly, okta, contentful,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
