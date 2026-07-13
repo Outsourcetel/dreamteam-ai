@@ -3171,6 +3171,272 @@ const gitbook = {
   listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
 };
 
+// ════════════════════════════════════════════════════════════════
+// GATED / REGULATED-VERTICAL CONNECTORS (NetSuite, PowerSchool, Ellucian,
+// Toast, athenahealth, Epic, Cerner). The auth machinery is real; access is
+// gated by partner programs / district provisioning / per-health-system
+// authorization + BAA — none self-serve. Endpoint/field shapes must be
+// confirmed against a live, authorized instance.
+// ════════════════════════════════════════════════════════════════
+
+const b64std = (buf: ArrayBuffer): string => { let bin = ''; for (const x of new Uint8Array(buf)) bin += String.fromCharCode(x); return btoa(bin); };
+
+// client-credentials OAuth2 token (Basic or body-style client auth).
+async function clientCredsToken(tokenUrl: string, clientId: string, clientSecret: string, scope?: string, style: 'basic' | 'body' = 'basic'): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const body = new URLSearchParams({ grant_type: 'client_credentials', ...(scope ? { scope } : {}) });
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  if (style === 'basic') headers.Authorization = 'Basic ' + btoa(`${clientId}:${clientSecret}`);
+  else { body.set('client_id', clientId); body.set('client_secret', clientSecret); }
+  const r = await httpJson(tokenUrl, { method: 'POST', headers, body: body.toString() });
+  const b = r.body as { access_token?: string; error_description?: string; error?: string } | null;
+  if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? b?.error ?? r.error ?? 'token_failed' };
+  return { ok: true, token: b.access_token };
+}
+
+// SMART-on-FHIR Backend Services token (RS256 JWT client assertion).
+async function fhirBackendToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const clientId = (c.secret.client_id ?? '').trim();
+  const tokenUrl = (c.secret.token_url ?? '').trim();
+  const pem = c.secret.private_key ?? '';
+  if (!clientId || !tokenUrl || !pem) return { ok: false, error: 'missing_client_id_token_url_or_private_key' };
+  const now = Math.floor(Date.now() / 1000);
+  const enc = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const jti = `${now}-${Math.random().toString(36).slice(2)}`;
+  const signingInput = `${enc({ alg: 'RS256', typ: 'JWT' })}.${enc({ iss: clientId, sub: clientId, aud: tokenUrl, jti, exp: now + 300, iat: now })}`;
+  let assertion: string;
+  try {
+    const der = Uint8Array.from(atob(pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')), (x) => x.charCodeAt(0));
+    const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, key, new TextEncoder().encode(signingInput));
+    assertion = `${signingInput}.${b64url(new Uint8Array(sig))}`;
+  } catch (e) { return { ok: false, error: `could_not_sign_assertion: ${String((e as Error)?.message ?? e).slice(0, 60)}` }; }
+  const r = await httpJson(tokenUrl, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: assertion, scope: c.secret.scope || 'system/*.read' }).toString(),
+  });
+  const b = r.body as { access_token?: string; error_description?: string } | null;
+  if (!r.ok || !b?.access_token) return { ok: false, error: b?.error_description ?? r.error ?? 'fhir_token_failed' };
+  return { ok: true, token: b.access_token };
+}
+
+// Shared FHIR R4 read surface (Epic, Cerner). base_url = the org FHIR base.
+function makeFhirAdapter(label: string) {
+  return {
+    async test(c: Ctx): Promise<TestResult> {
+      const t = await fhirBackendToken(c);
+      if (!t.ok) return { ok: false, error: t.error };
+      const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/Patient?_count=1`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/fhir+json' } });
+      if (!r.ok) return { ok: false, error: r.error };
+      return { ok: true, detail: `${label} FHIR endpoint reachable (SMART backend token issued)` };
+    },
+    async search(c: Ctx, query: string): Promise<AdapterResult> {
+      const t = await fhirBackendToken(c);
+      if (!t.ok) return { ok: false, error: t.error };
+      const q = query.trim() ? `name=${encodeURIComponent(query)}&` : '';
+      const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/Patient?${q}_count=10`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/fhir+json' } });
+      if (!r.ok) return { ok: false, error: r.error };
+      const entries = ((r.body as { entry?: Array<{ resource?: Record<string, unknown> }> })?.entry) ?? [];
+      return { ok: true, items: entries.slice(0, 10).map((e) => { const p = e.resource ?? {}; const nm = ((p.name as Array<{ text?: string; family?: string; given?: string[] }>) ?? [])[0]; return { ref: String(p.id), type: 'record', title: clip(nm?.text || `${(nm?.given ?? []).join(' ')} ${nm?.family ?? ''}`.trim() || `Patient ${p.id}`, 160), snippet: clip(`${p.gender ?? ''} · ${p.birthDate ?? ''}`, 400), url: null, raw: { id: p.id } }; }) };
+    },
+    async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+      const t = await fhirBackendToken(c);
+      if (!t.ok) return { ok: false, error: t.error };
+      const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/Patient/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/fhir+json' } });
+      if (!r.ok) return { ok: false, error: r.error };
+      const p = r.body as Record<string, unknown>;
+      const nm = ((p.name as Array<{ text?: string }>) ?? [])[0];
+      return { ok: true, items: [{ ref, type: 'record', title: clip(nm?.text || `Patient ${ref}`, 160), snippet: clip(`${p.gender ?? ''} · ${p.birthDate ?? ''}`, 400), url: null, raw: p }] };
+    },
+    listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+  };
+}
+const epic = makeFhirAdapter('Epic');
+const cerner = makeFhirAdapter('Oracle Health (Cerner)');
+
+// ── netsuite ── secret: { account_id, consumer_key, consumer_secret, token_id,
+// token_secret } · base = SuiteTalk REST base. OAuth 1.0a (TBA), HMAC-SHA256.
+const nsPctEncode = (s: string) => encodeURIComponent(s).replace(/[!*'()]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
+async function nsAuthHeader(c: Ctx, method: string, url: string): Promise<string> {
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: c.secret.consumer_key ?? '',
+    oauth_token: c.secret.token_id ?? '',
+    oauth_signature_method: 'HMAC-SHA256',
+    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
+    oauth_nonce: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+    oauth_version: '1.0',
+  };
+  const u = new URL(url);
+  const params: Record<string, string> = { ...oauth };
+  for (const [k, v] of u.searchParams) params[k] = v;
+  const baseParams = Object.keys(params).sort().map((k) => `${nsPctEncode(k)}=${nsPctEncode(params[k])}`).join('&');
+  const sigBase = `${method.toUpperCase()}&${nsPctEncode(`${u.origin}${u.pathname}`)}&${nsPctEncode(baseParams)}`;
+  const signingKey = `${nsPctEncode(c.secret.consumer_secret ?? '')}&${nsPctEncode(c.secret.token_secret ?? '')}`;
+  const hk = await crypto.subtle.importKey('raw', new TextEncoder().encode(signingKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = b64std(await crypto.subtle.sign('HMAC', hk, new TextEncoder().encode(sigBase)));
+  const realm = (c.secret.account_id ?? '').toUpperCase().replace(/-/g, '_');
+  const hp: Record<string, string> = { ...oauth, oauth_signature: sig };
+  return `OAuth realm="${realm}", ` + Object.keys(hp).sort().map((k) => `${nsPctEncode(k)}="${nsPctEncode(hp[k])}"`).join(', ');
+}
+const netsuite = {
+  async req(c: Ctx, path: string): Promise<{ ok: boolean; error?: string; body: unknown }> {
+    const url = `${c.baseUrl.replace(/\/+$/, '')}${path}`;
+    const auth = await nsAuthHeader(c, 'GET', url);
+    const r = await httpJson(url, { headers: { Authorization: auth, 'Content-Type': 'application/json', Prefer: 'transient' } });
+    return { ok: r.ok, error: r.error, body: r.body };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await this.req(c, '/record/v1/invoice?limit=1');
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'NetSuite SuiteTalk reachable (TBA signature accepted)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await this.req(c, '/record/v1/invoice?limit=20');
+    if (!r.ok) return { ok: false, error: r.error };
+    const items = ((r.body as { items?: Array<Record<string, unknown>> })?.items) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? items.filter((i) => String(i.tranId ?? i.id ?? '').toLowerCase().includes(ql)) : items;
+    return { ok: true, items: f.slice(0, 10).map((i) => ({ ref: String(i.id), type: 'invoice', title: clip(`Invoice ${i.tranId ?? i.id}`, 160), snippet: clip(String(i.total ?? ''), 400), url: null, raw: { id: i.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await this.req(c, `/record/v1/invoice/${encodeURIComponent(ref)}`);
+    if (!r.ok) return { ok: false, error: r.error };
+    const i = r.body as Record<string, unknown>;
+    return { ok: true, items: [{ ref, type: 'invoice', title: clip(`Invoice ${i.tranId ?? ref}`, 160), snippet: clip(String(i.total ?? ''), 400), url: null, raw: i }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── powerschool ── secret: { client_id, client_secret } · base = district URL.
+// client-credentials. product_system (students).
+const powerschool = {
+  async token(c: Ctx) { return clientCredsToken(`${c.baseUrl.replace(/\/+$/, '')}/oauth/access_token`, c.secret.client_id ?? '', c.secret.client_secret ?? '', undefined, 'basic'); },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    return { ok: true, detail: 'PowerSchool token issued (plugin must be installed by the district)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/ws/v1/district/student?pagesize=25`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const students = (((r.body as { students?: { student?: Array<Record<string, unknown>> } })?.students?.student)) ?? [];
+    const ql = query.toLowerCase();
+    const f = ql ? students.filter((s) => JSON.stringify((s.name ?? {})).toLowerCase().includes(ql)) : students;
+    return { ok: true, items: f.slice(0, 10).map((s) => { const nm = (s.name ?? {}) as { first_name?: string; last_name?: string }; return { ref: String((s.id as unknown) ?? ''), type: 'record', title: clip(`${nm.first_name ?? ''} ${nm.last_name ?? ''}`, 160), snippet: '', url: null, raw: { id: s.id } }; }) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${c.baseUrl.replace(/\/+$/, '')}/ws/v1/student/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const s = ((r.body as { student?: Record<string, unknown> })?.student) ?? {};
+    const nm = (s.name ?? {}) as { first_name?: string; last_name?: string };
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${nm.first_name ?? ''} ${nm.last_name ?? ''}`, 160), snippet: '', url: null, raw: s }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── ellucian (Ethos) ── secret: { api_key } · fixed base. api-key→session token.
+const ELLUCIAN = 'https://integrate.elluciancloud.com';
+const ellucian = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const r = await httpJson(`${ELLUCIAN}/auth`, { method: 'POST', headers: { Authorization: `Bearer ${c.secret.api_key ?? ''}` } });
+    if (r.status === 401) return { ok: false, error: 'auth_failed' };
+    // Ethos returns the token as the plain response body.
+    const tok = typeof r.body === 'string' ? r.body : String((r.body as { token?: string })?.token ?? '');
+    if (!r.ok || !tok) return { ok: false, error: r.error ?? 'ethos_token_failed' };
+    return { ok: true, token: tok };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    return { ok: true, detail: 'Ellucian Ethos session token issued' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${ELLUCIAN}/api/persons?criteria=${encodeURIComponent(JSON.stringify({ names: [{ lastName: query }] }))}`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const persons = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: persons.slice(0, 10).map((p) => ({ ref: String(p.id), type: 'record', title: clip(JSON.stringify(p.names ?? p.id), 160), snippet: '', url: null, raw: { id: p.id } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${ELLUCIAN}/api/persons/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}`, Accept: 'application/json' } });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`Person ${ref}`, 160), snippet: '', url: null, raw: r.body }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── toast ── secret: { client_id, client_secret, restaurant_guid } · fixed base.
+// client-credentials (partner-gated). pos (orders).
+const TOAST = 'https://ws-api.toasttab.com';
+const toast = {
+  async token(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+    const r = await httpJson(`${TOAST}/authentication/v1/authentication/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: c.secret.client_id ?? '', clientSecret: c.secret.client_secret ?? '', userAccessType: 'TOAST_MACHINE_CLIENT' }),
+    });
+    const tok = ((r.body as { token?: { accessToken?: string } })?.token?.accessToken);
+    if (!r.ok || !tok) return { ok: false, error: r.error ?? 'toast_token_failed' };
+    return { ok: true, token: tok };
+  },
+  rhdr: (c: Ctx, token: string) => ({ Authorization: `Bearer ${token}`, 'Toast-Restaurant-External-ID': c.secret.restaurant_guid ?? '' }),
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    return { ok: true, detail: 'Toast partner token issued' };
+  },
+  async search(c: Ctx, _query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${TOAST}/orders/v2/ordersBulk?pageSize=15`, { headers: this.rhdr(c, t.token!) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const orders = Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : [];
+    return { ok: true, items: orders.slice(0, 10).map((o) => ({ ref: String(o.guid), type: 'order', title: clip(`Order ${String(o.guid).slice(0, 8)}`, 160), snippet: clip(String(o.source ?? ''), 400), url: null, raw: { guid: o.guid } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${TOAST}/orders/v2/orders/${encodeURIComponent(ref)}`, { headers: this.rhdr(c, t.token!) });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [{ ref, type: 'order', title: clip(`Order ${String(ref).slice(0, 8)}`, 160), snippet: '', url: null, raw: r.body }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── athenahealth ── secret: { client_id, client_secret, practiceid } · fixed
+// base. client-credentials (marketplace-gated + BAA). other (patients).
+const ATHENA = 'https://api.platform.athenahealth.com';
+const athenahealth = {
+  async token(c: Ctx) { return clientCredsToken(`${ATHENA}/oauth2/v1/token`, c.secret.client_id ?? '', c.secret.client_secret ?? '', 'athena/service/Athenanet.MDP.*', 'basic'); },
+  async test(c: Ctx): Promise<TestResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    return { ok: true, detail: 'athenahealth token issued (marketplace access + BAA required for PHI)' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${ATHENA}/v1/${encodeURIComponent(c.secret.practiceid ?? '')}/patients?limit=15${query.trim() ? `&lastname=${encodeURIComponent(query)}` : ''}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const patients = ((r.body as { patients?: Array<Record<string, unknown>> })?.patients) ?? (Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>) : []);
+    return { ok: true, items: patients.slice(0, 10).map((p) => ({ ref: String(p.patientid), type: 'record', title: clip(`${p.firstname ?? ''} ${p.lastname ?? ''}`, 160), snippet: clip(String(p.dob ?? ''), 400), url: null, raw: { id: p.patientid } })) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const t = await this.token(c);
+    if (!t.ok) return { ok: false, error: t.error };
+    const r = await httpJson(`${ATHENA}/v1/${encodeURIComponent(c.secret.practiceid ?? '')}/patients/${encodeURIComponent(ref)}`, { headers: { Authorization: `Bearer ${t.token}` } });
+    if (!r.ok) return { ok: false, error: r.error };
+    const p = (Array.isArray(r.body) ? (r.body as Array<Record<string, unknown>>)[0] : (r.body as Record<string, unknown>)) ?? {};
+    return { ok: true, items: [{ ref, type: 'record', title: clip(`${p.firstname ?? ''} ${p.lastname ?? ''}`, 160), snippet: clip(String(p.dob ?? ''), 400), url: null, raw: p }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 const sfSoqlItems = (
   records: Array<Record<string, unknown>>, instance: string | undefined,
   sobject: string, type: string,
@@ -3460,6 +3726,34 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
   gitbook: {
     search_articles: (c, p) => gitbook.search(c, p.query ?? ''),
     get_article: (c, p) => gitbook.fetchRecord(c, 'article', p.external_ref ?? ''),
+  },
+  netsuite: {
+    search_invoices: (c, p) => netsuite.search(c, p.query ?? ''),
+    get_invoice: (c, p) => netsuite.fetchRecord(c, 'invoice', p.external_ref ?? ''),
+  },
+  powerschool: {
+    search_records: (c, p) => powerschool.search(c, p.query ?? ''),
+    get_record: (c, p) => powerschool.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  ellucian: {
+    search_records: (c, p) => ellucian.search(c, p.query ?? ''),
+    get_record: (c, p) => ellucian.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  toast: {
+    search_orders: (c, p) => toast.search(c, p.query ?? ''),
+    get_order: (c, p) => toast.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  athenahealth: {
+    search_records: (c, p) => athenahealth.search(c, p.query ?? ''),
+    get_record: (c, p) => athenahealth.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  epic: {
+    search_records: (c, p) => epic.search(c, p.query ?? ''),
+    get_record: (c, p) => epic.fetchRecord(c, 'record', p.external_ref ?? ''),
+  },
+  cerner: {
+    search_records: (c, p) => cerner.search(c, p.query ?? ''),
+    get_record: (c, p) => cerner.fetchRecord(c, 'record', p.external_ref ?? ''),
   },
   intercom: {
     search_tickets: async (c, p) => {
@@ -3762,6 +4056,7 @@ serve(async (req) => {
       gorgias, front, coda, pagerduty, sentry,
       pipedrive, smartsheet, wrike, trello, datadog,
       close, kustomer, mailchimp, gitbook,
+      netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

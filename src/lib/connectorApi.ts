@@ -28,7 +28,8 @@ export type ConnectorProvider =
   | 'quickbooks' | 'xero' | 'clio' | 'gusto' | 'procore' | 'jobber'
   | 'gorgias' | 'front' | 'coda' | 'pagerduty' | 'sentry'
   | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog'
-  | 'close' | 'kustomer' | 'mailchimp' | 'gitbook' | 'template';
+  | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
+  | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner' | 'template';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -317,6 +318,89 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
       { key: 'token', label: 'Access token', placeholder: '••••••••', secret: true },
     ],
     help: 'In Canvas: Account → Settings → Approved Integrations → + New Access Token. Paste it plus your Canvas URL (https://yourschool.instructure.com).',
+    knowledgeSync: false, implemented: true,
+  },
+  netsuite: {
+    label: 'NetSuite', tagline: 'ERP — invoices, orders, financials',
+    defaultCategory: 'erp_financials',
+    baseUrlLabel: 'SuiteTalk REST base URL', baseUrlPlaceholder: 'https://ACCT.suitetalk.api.netsuite.com/services/rest',
+    fields: [
+      { key: 'account_id', label: 'Account ID', placeholder: '1234567 or 1234567_SB1', secret: false },
+      { key: 'consumer_key', label: 'Consumer key', placeholder: '', secret: false },
+      { key: 'consumer_secret', label: 'Consumer secret', placeholder: '••••••••', secret: true },
+      { key: 'token_id', label: 'Token ID', placeholder: '', secret: false },
+      { key: 'token_secret', label: 'Token secret', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Uses NetSuite Token-Based Auth (TBA). In NetSuite: enable the TBA feature, create an Integration record (get the Consumer key/secret), then create an Access Token for a role (get the Token ID/secret). Paste all four plus your Account ID and SuiteTalk REST base URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  powerschool: {
+    label: 'PowerSchool', tagline: 'K-12 SIS — students, enrollment, grades',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'District PowerSchool URL', baseUrlPlaceholder: 'https://yourdistrict.powerschool.com',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: '', secret: false },
+      { key: 'client_secret', label: 'Client secret', placeholder: '••••••••', secret: true },
+    ],
+    help: 'GATED: a PowerSchool plugin must be installed and enabled by the DISTRICT, which then provides the Client ID/Secret. Paste those plus the district URL. Without the district installing the plugin, this cannot connect.',
+    knowledgeSync: false, implemented: true,
+  },
+  ellucian: {
+    label: 'Ellucian (Banner/Colleague)', tagline: 'Higher-ed SIS via Ethos',
+    defaultCategory: 'product_system',
+    baseUrlLabel: 'Ellucian API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Ellucian',
+    fields: [
+      { key: 'api_key', label: 'Ethos API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'GATED: requires an Ellucian Ethos entitlement enabled by the institution, which provides the Ethos API key. Paste it here.',
+    knowledgeSync: false, implemented: true,
+  },
+  toast: {
+    label: 'Toast', tagline: 'Restaurant POS — orders, menus, checks',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'Toast API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Toast',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: '', secret: false },
+      { key: 'client_secret', label: 'Client secret', placeholder: '••••••••', secret: true },
+      { key: 'restaurant_guid', label: 'Restaurant GUID', placeholder: '', secret: false },
+    ],
+    help: 'GATED: Toast requires an approved integration-partner account (application + security review + signed agreement) before production API access. Once approved you get a Client ID/Secret; the Restaurant GUID identifies the location.',
+    knowledgeSync: false, implemented: true,
+  },
+  athenahealth: {
+    label: 'athenahealth', tagline: 'EHR — patients, appointments, billing',
+    defaultCategory: 'other',
+    baseUrlLabel: 'athenahealth API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for athenahealth',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: '', secret: false },
+      { key: 'client_secret', label: 'Client secret', placeholder: '••••••••', secret: true },
+      { key: 'practiceid', label: 'Practice ID', placeholder: '', secret: false },
+    ],
+    help: '⚠️ PHI — a signed BAA is REQUIRED before connecting real patient data (see the BAA steps in chat). GATED: register the app in the athenahealth Marketplace/Developer program to get Client ID/Secret; the Practice ID identifies your practice. Do not connect without a BAA in place.',
+    knowledgeSync: false, implemented: true,
+  },
+  epic: {
+    label: 'Epic', tagline: 'EHR — FHIR R4 (SMART Backend Services)',
+    defaultCategory: 'other',
+    baseUrlLabel: 'FHIR base URL', baseUrlPlaceholder: 'https://fhir.epic.com/.../api/FHIR/R4',
+    fields: [
+      { key: 'client_id', label: 'Client ID (non-production/production)', placeholder: '', secret: false },
+      { key: 'token_url', label: 'Token endpoint', placeholder: 'https://.../oauth2/token', secret: false },
+      { key: 'private_key', label: 'Private key (PEM, PKCS8)', placeholder: '-----BEGIN PRIVATE KEY-----', secret: true, multiline: true },
+    ],
+    help: '⚠️ PHI — a signed BAA is REQUIRED (see the BAA steps in chat). Uses SMART on FHIR "Backend Services": register your app at fhir.epic.com, upload your PUBLIC key, and each health system must authorize your Client ID against their Epic. Paste the Client ID, that system\'s token endpoint, the org\'s FHIR base URL, and your matching PRIVATE key. Do not connect without a BAA.',
+    knowledgeSync: false, implemented: true,
+  },
+  cerner: {
+    label: 'Oracle Health (Cerner)', tagline: 'EHR — FHIR R4 (SMART Backend Services)',
+    defaultCategory: 'other',
+    baseUrlLabel: 'FHIR base URL', baseUrlPlaceholder: 'https://fhir-.../r4',
+    fields: [
+      { key: 'client_id', label: 'Client ID', placeholder: '', secret: false },
+      { key: 'token_url', label: 'Token endpoint', placeholder: 'https://.../token', secret: false },
+      { key: 'private_key', label: 'Private key (PEM, PKCS8)', placeholder: '-----BEGIN PRIVATE KEY-----', secret: true, multiline: true },
+    ],
+    help: '⚠️ PHI — a signed BAA is REQUIRED (see the BAA steps in chat). Same SMART Backend Services model as Epic: register at code.cerner.com (Oracle Health), the org authorizes your Client ID, then paste the Client ID, token endpoint, FHIR base URL, and your private key. Do not connect without a BAA.',
     knowledgeSync: false, implemented: true,
   },
   close: {
