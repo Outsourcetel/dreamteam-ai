@@ -1,6 +1,10 @@
-// Thin speech abstraction. Phase 1 ships the FREE browser Web Speech API.
-// A premium provider (Deepgram/ElevenLabs) implements this same interface
-// later — the ChatCore never talks to a vendor directly, only to this.
+// Thin speech abstraction. Free browser Web Speech API by default; a premium
+// provider (via the voice-relay edge function) upgrades it when a key is
+// configured — the ChatCore never talks to a vendor directly, only to this.
+import { SUPABASE_URL } from './env';
+
+const RELAY = `${SUPABASE_URL}/functions/v1/voice-relay`;
+
 export interface SpeechProvider {
   readonly sttSupported: boolean;
   readonly ttsSupported: boolean;
@@ -72,3 +76,75 @@ class BrowserSpeechProvider implements SpeechProvider {
 }
 
 export const speechProvider: SpeechProvider = new BrowserSpeechProvider();
+
+// ── Premium provider (Phase 3): routes STT/TTS through the voice-relay,
+// which holds the vendor key server-side. Dormant until a key is set —
+// resolveSpeechProvider() only returns this when the relay reports it's on.
+async function relay(widgetKey: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(RELAY, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ widget_key: widgetKey, ...payload }),
+  });
+  return await res.json().catch(() => ({}));
+}
+function blobToB64(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onloadend = () => resolve(String(r.result).split(',')[1] || '');
+    r.readAsDataURL(blob);
+  });
+}
+
+class PremiumSpeechProvider implements SpeechProvider {
+  readonly sttSupported: boolean;
+  readonly ttsSupported = true;
+  private key: string;
+  private audio: HTMLAudioElement | null = null;
+  constructor(widgetKey: string) {
+    this.key = widgetKey;
+    this.sttSupported = typeof navigator !== 'undefined' && !!navigator.mediaDevices && typeof MediaRecorder !== 'undefined';
+  }
+  startListening(onResult: (text: string) => void, onEnd: () => void): () => void {
+    if (!this.sttSupported) { onEnd(); return () => {}; }
+    let stopped = false;
+    // deno-lint-ignore no-explicit-any
+    let recorder: any = null;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
+      const chunks: Blob[] = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e: BlobEvent) => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        try {
+          const r = await relay(this.key, { action: 'stt', audio: await blobToB64(blob), mime: blob.type });
+          if (typeof r.text === 'string' && r.text.trim()) onResult(r.text.trim());
+        } catch { /* noop */ }
+        onEnd();
+      };
+      recorder.start();
+    }).catch(() => onEnd());
+    return () => { stopped = true; try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch { /* noop */ } };
+  }
+  speak(text: string, lang?: string): void {
+    relay(this.key, { action: 'tts', text, lang }).then((r) => {
+      if (typeof r.audio === 'string') {
+        this.audio = new Audio(`data:${(r.mime as string) || 'audio/mpeg'};base64,${r.audio}`);
+        this.audio.play().catch(() => { /* autoplay may be blocked */ });
+      }
+    }).catch(() => { /* noop */ });
+  }
+  stopSpeaking(): void { try { this.audio?.pause(); } catch { /* noop */ } }
+}
+
+// Pick the best available voice: premium if the relay reports it's configured
+// (and this browser can record), else the free browser provider.
+export async function resolveSpeechProvider(widgetKey: string): Promise<SpeechProvider> {
+  try {
+    const cfg = await relay(widgetKey, { action: 'config' });
+    const premium = new PremiumSpeechProvider(widgetKey);
+    if (cfg.stt === true && cfg.tts === true && premium.sttSupported) return premium;
+  } catch { /* fall through */ }
+  return speechProvider;
+}

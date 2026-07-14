@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { askWidget, submitWidgetCsat, pollWidget, type WidgetAskResult } from '../../lib/widgetChatApi';
-import { speechProvider } from '../../lib/speech';
+import { speechProvider, resolveSpeechProvider, type SpeechProvider } from '../../lib/speech';
 
 // The shared, premium customer-support chat surface. INFRASTRUCTURE ONLY —
 // it renders whatever the DE (via widget-ask) decides: streamed (typewriter)
@@ -84,6 +84,9 @@ export default function ChatCore({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopListenRef = useRef<(() => void) | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
+  // Voice: browser by default; upgrades to premium if the relay reports a key.
+  const [voice, setVoice] = useState<SpeechProvider>(speechProvider);
+  useEffect(() => { resolveSpeechProvider(widgetKey).then(setVoice).catch(() => {}); }, [widgetKey]);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages]);
 
@@ -99,12 +102,12 @@ export default function ChatCore({
       if (fresh.length) {
         fresh.forEach(m => seenIds.current.add(m.id));
         setMessages(prev => [...prev, ...fresh.map(m => ({ id: nextId(), role: 'assistant' as const, full: m.content, animate: true }))]);
-        if (voiceMode && speechProvider.ttsSupported) fresh.forEach(m => speechProvider.speak(m.content, lastLang));
+        if (voiceMode && voice.ttsSupported) fresh.forEach(m => voice.speak(m.content, lastLang));
       }
     };
     const iv = setInterval(() => { void tick(); }, 5000);
     return () => { alive = false; clearInterval(iv); };
-  }, [conversationId, widgetKey, voiceMode, lastLang]);
+  }, [conversationId, widgetKey, voiceMode, lastLang, voice]);
 
   const send = useCallback(async (text: string) => {
     const q = text.trim();
@@ -130,7 +133,7 @@ export default function ChatCore({
       setMessages(prev => prev.map(m => m.id === placeholder.id
         ? { ...m, full: answer, pending: false, animate: true, sources: r.sources, delivery: r.delivery, needsHuman }
         : m));
-      if (voiceMode && speechProvider.ttsSupported && r.delivery === 'sent') speechProvider.speak(answer, r.language);
+      if (voiceMode && voice.ttsSupported && r.delivery === "sent") voice.speak(answer, r.language);
       if (!needsHuman && !r.error && r.conversation_id) setTimeout(() => setCsat('shown'), 900);
     } catch {
       setMessages(prev => prev.map(m => m.id === placeholder.id
@@ -139,19 +142,19 @@ export default function ChatCore({
     } finally {
       setSending(false);
     }
-  }, [widgetKey, conversationId, channel, accountRef, endUserRef, displayName, sending, voiceMode]);
+  }, [widgetKey, conversationId, channel, accountRef, endUserRef, displayName, sending, voiceMode, voice]);
 
   const toggleMic = useCallback(() => {
     if (listening) { stopListenRef.current?.(); setListening(false); return; }
-    if (!speechProvider.sttSupported) return;
+    if (!voice.sttSupported) return;
     setVoiceMode(true);
     setListening(true);
-    stopListenRef.current = speechProvider.startListening(
+    stopListenRef.current = voice.startListening(
       (text) => { setListening(false); void send(text); },
       () => setListening(false),
       lastLang,
     );
-  }, [listening, send, lastLang]);
+  }, [listening, send, lastLang, voice]);
 
   const rateCsat = async (score: 1 | -1) => {
     setCsat('done');
@@ -189,7 +192,7 @@ export default function ChatCore({
 
       <div className="border-t border-slate-200 bg-white px-3 py-3">
         <div className="flex items-end gap-2">
-          {speechProvider.sttSupported && (
+          {voice.sttSupported && (
             <button
               onClick={toggleMic}
               aria-label={listening ? 'Stop listening' : 'Speak'}
