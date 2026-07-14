@@ -8,9 +8,9 @@ import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import {
-  getDePerformanceMetrics, getDeCostMetrics, getDeCsatMetrics,
+  getDePerformanceMetrics, getDeCostMetrics, getDeCsatMetrics, getDeActionMetrics,
   getDeGuardrailActivity, getRecentEvalFailures,
-  type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics,
+  type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
   type DeGuardrailActivity, type RecentEvalFailure,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
@@ -268,11 +268,22 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ── Real Performance page (live tenants) — migrations 093-095 ──
+function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
+      <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-white'}`}>{value}</div>
+      <div className="text-[11px] text-slate-400 mt-0.5">{label}</div>
+      {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
 function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
   const [des, setDes] = useState<DigitalEmployee[]>([]);
   const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
   const [cost, setCost] = useState<DeCostMetrics[]>([]);
   const [csat, setCsat] = useState<DeCsatMetrics[]>([]);
+  const [actions, setActions] = useState<DeActionMetrics[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -283,12 +294,14 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       getDePerformanceMetrics(tenantId),
       getDeCostMetrics(tenantId),
       getDeCsatMetrics(tenantId),
-    ]).then(([d, m, c, s]) => {
+      getDeActionMetrics(tenantId),
+    ]).then(([d, m, c, s, a]) => {
       if (cancelled) return;
       setDes(d);
       setMetrics(m);
       setCost(c);
       setCsat(s);
+      setActions(a);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -297,14 +310,24 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
   const metricsByDe = new Map(metrics.map(m => [m.de_id, m]));
   const costByDe = new Map(cost.map(c => [c.de_id, c]));
   const csatByDe = new Map(csat.map(c => [c.de_id, c]));
+  const actionByDe = new Map(actions.map(a => [a.de_id, a]));
 
-  const totalDecisions = metrics.reduce((s, m) => s + m.total_decisions, 0);
+  // Workforce-level outcome roll-ups — the headline is what the team DID.
+  const totalInquiries = metrics.reduce((s, m) => s + m.total_decisions, 0);
+  const totalExecuted = actions.reduce((s, a) => s + a.executed, 0);
+  const totalAuto = actions.reduce((s, a) => s + a.auto_executed, 0);
+  const totalSentHuman = actions.reduce((s, a) => s + a.sent_to_human, 0);
+  const totalBlocked = actions.reduce((s, a) => s + a.blocked, 0);
+  const totalFailed = actions.reduce((s, a) => s + a.failed, 0);
+  const workforceAutonomy = totalExecuted > 0 ? Math.round(100 * totalAuto / totalExecuted) : null;
   const totalCostUsd = cost.reduce((s, c) => s + c.total_cost_usd, 0);
+  const totalCalls = cost.reduce((s, c) => s + c.total_calls, 0);
+  const anyActivity = totalInquiries > 0 || actions.some(a => a.total_events > 0);
 
   if (loading) {
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
-        <PageHeader title="Performance Analytics" subtitle="Loading real Digital Employee activity…" />
+        <PageHeader title="Performance" subtitle="Loading real Digital Employee activity…" />
       </div>
     );
   }
@@ -312,37 +335,53 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
-        title="Performance Analytics"
-        subtitle={`${des.length} DE${des.length === 1 ? '' : 's'} · ${totalDecisions.toLocaleString()} inquiries handled this period`}
+        title="Performance"
+        subtitle={`${des.length} Digital Employee${des.length === 1 ? '' : 's'} · what your workforce actually got done this period`}
       />
 
       <LiveUsageStrip />
 
-      {totalCostUsd > 0 && (
-        <div className="bg-slate-800 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Real AI usage cost</span>
-            <span className="text-sm text-slate-200">
-              ${totalCostUsd.toFixed(2)} across {cost.reduce((s, c) => s + c.total_calls, 0).toLocaleString()} LLM calls this period
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Computed from real token usage on every completion — no assumed human-cost comparison, since there's no real baseline to compare against yet.
-          </p>
+      {/* Outcome roll-up — the headline is throughput and autonomy, not
+          abstract AI-health scores. Every number is real. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        <StatTile label="Inquiries handled" value={totalInquiries.toLocaleString()} sub="questions answered" />
+        <StatTile label="Actions taken" value={totalExecuted.toLocaleString()} tone="text-emerald-400"
+          sub={`${totalAuto} on their own · ${Math.max(0, totalExecuted - totalAuto)} after approval`} />
+        <StatTile label="Autonomy" value={workforceAutonomy != null ? `${workforceAutonomy}%` : '—'}
+          tone={workforceAutonomy != null && workforceAutonomy >= 60 ? 'text-emerald-400' : 'text-slate-200'}
+          sub="of actions, done without a human" />
+        <StatTile label="Sent to your team" value={totalSentHuman.toLocaleString()}
+          tone={totalSentHuman > 0 ? 'text-amber-300' : 'text-slate-200'} sub="approvals routed to people" />
+        <StatTile label="AI cost" value={`$${totalCostUsd.toFixed(2)}`} sub={`${totalCalls.toLocaleString()} model calls`} />
+      </div>
+
+      {(totalBlocked > 0 || totalFailed > 0) && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 mb-6 text-xs text-slate-400 flex items-center gap-4 flex-wrap">
+          <span className="text-slate-500">Safety net this period:</span>
+          {totalBlocked > 0 && <span><span className="text-rose-300 font-medium">{totalBlocked}</span> action{totalBlocked === 1 ? '' : 's'} blocked by a guardrail or access rule</span>}
+          {totalFailed > 0 && <span><span className="text-red-400 font-medium">{totalFailed}</span> failed and recorded honestly</span>}
         </div>
       )}
 
       {des.length === 0 ? (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
-          No Digital Employees yet — add one under Workforce to start seeing real performance data here.
+          No Digital Employees yet — add one under Workforce to start seeing real performance here.
+        </div>
+      ) : !anyActivity ? (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
+          Your employees are set up, but haven't handled real work yet. Activity appears here as they answer inquiries and take actions — see <button onClick={() => setPage('ops_de_activity')} className="text-indigo-400 hover:text-indigo-300">DE at Work</button> to watch it happen live.
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           {des.map(de => {
             const m = metricsByDe.get(de.id);
+            const a = actionByDe.get(de.id);
             const c = costByDe.get(de.id);
+            const s = csatByDe.get(de.id);
             const trend = m?.trend ?? [];
             const trendValues = trend.map(t => t.resolution_rate);
+            const hasActivity = (m && m.total_decisions > 0) || (a && a.total_events > 0);
+            const acted = a?.executed ?? 0;
             return (
               <div key={de.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -356,38 +395,79 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                   <button onClick={() => setPage('workforce_des')} className="text-xs text-slate-500 hover:text-indigo-300 transition-colors">Profile →</button>
                 </div>
 
-                {!m || m.total_decisions === 0 ? (
-                  <p className="text-xs text-slate-600 py-4 text-center">No real activity recorded yet.</p>
+                {!hasActivity ? (
+                  <p className="text-xs text-slate-600 py-4 text-center">No activity recorded yet.</p>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between mb-4">
+                    {/* What it DID — the headline */}
+                    <div className="flex items-end justify-between mb-3">
                       <div>
-                        <p className={`text-2xl font-bold ${metricColor('resolution', m.resolution_rate)}`}>{m.resolution_rate}%</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">Resolution rate</p>
+                        <p className="text-3xl font-bold text-emerald-400 tabular-nums">{acted}</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">actions taken</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-semibold text-slate-200 tabular-nums">{m?.total_decisions ?? 0}</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">inquiries handled</p>
                       </div>
                       {trendValues.length > 1 && (
                         <div className="text-right">
                           <Sparkline data={trendValues} />
-                          <p className="text-[10px] text-slate-600 mt-0.5">{trend.length}-week trend</p>
+                          <p className="text-[10px] text-slate-600 mt-0.5">{trend.length}-wk trend</p>
                         </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2">
-                      {[
-                        { label: 'Confidence', value: `${m.avg_confidence}%`, color: metricColor('confidence', m.avg_confidence) },
-                        { label: 'Escalation', value: `${m.escalation_rate}%`, color: metricColor('escalation', m.escalation_rate) },
-                        { label: 'Error rate', value: `${m.error_rate}%`, color: metricColor('error', m.error_rate) },
-                        { label: 'Frustration', value: `${m.avg_frustration_score}%`, color: metricColor('frustration', m.avg_frustration_score) },
-                      ].map(x => (
-                        <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
-                          <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
-                          <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                    {/* Work breakdown from real action_executions */}
+                    {a && a.total_events > 0 && (
+                      <>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                          {[
+                            { label: 'On its own', value: a.auto_executed, color: 'text-emerald-400' },
+                            { label: 'After approval', value: a.approved_after_gate, color: 'text-slate-200' },
+                            { label: 'Sent to human', value: a.sent_to_human, color: a.sent_to_human > 0 ? 'text-amber-300' : 'text-slate-400' },
+                            { label: 'Blocked', value: a.blocked + a.failed, color: (a.blocked + a.failed) > 0 ? 'text-rose-300' : 'text-slate-400' },
+                          ].map(x => (
+                            <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                              <p className={`text-sm font-semibold tabular-nums ${x.color}`}>{x.value}</p>
+                              <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                        {a.autonomy_rate != null && (
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                              <span>Autonomy — done without a human</span>
+                              <span className="text-slate-300 font-medium">{a.autonomy_rate}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${a.autonomy_rate}%` }} />
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Quality — the second dimension, not the headline */}
+                    <div className="border-t border-slate-700 pt-3">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">Answer quality</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {m && m.total_decisions > 0 ? [
+                          { label: 'Resolution', value: `${m.resolution_rate}%`, color: metricColor('resolution', m.resolution_rate) },
+                          { label: 'Confidence', value: `${m.avg_confidence}%`, color: metricColor('confidence', m.avg_confidence) },
+                          { label: 'CSAT', value: s && s.total_ratings > 0 ? `${s.csat_pct}%` : '—', color: s && s.total_ratings > 0 ? (s.csat_pct >= 70 ? 'text-emerald-400' : s.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400') : 'text-slate-500' },
+                        ].map(x => (
+                          <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                            <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
+                            <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                          </div>
+                        )) : (
+                          <p className="col-span-3 text-[11px] text-slate-600 text-center py-1">This employee acts but hasn't answered inquiries yet.</p>
+                        )}
+                      </div>
                     </div>
+
                     <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-900 rounded-lg px-3 py-2">
-                      <span>{m.total_decisions} inquiries this period{m.high_frustration_count > 0 ? ` · ${m.high_frustration_count} auto-escalated for frustration` : ''}</span>
+                      <span>{m?.high_frustration_count ? `${m.high_frustration_count} auto-escalated for frustration` : `${a?.total_events ?? 0} action event(s) logged`}</span>
                       {c && c.total_calls > 0 && (
                         <span className="text-slate-300">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
                       )}
@@ -399,29 +479,6 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
           })}
         </div>
       )}
-
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold text-white mb-1">Customer satisfaction (CSAT)</h3>
-        <p className="text-xs text-slate-500 mb-4">Real thumbs-up/down from the support widget and portal chat</p>
-        {csat.length === 0 ? (
-          <p className="text-xs text-slate-600">No ratings submitted yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {csat.map(c => {
-              const de = des.find(d => d.id === c.de_id);
-              return (
-                <div key={c.de_id} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
-                  <span className="text-xs text-slate-300">{de?.name ?? 'Unknown DE'}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">{c.total_ratings} rating{c.total_ratings === 1 ? '' : 's'}</span>
-                    <span className={`text-sm font-medium ${c.csat_pct >= 70 ? 'text-emerald-400' : c.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400'}`}>{c.csat_pct}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

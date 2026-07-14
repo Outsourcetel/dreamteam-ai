@@ -1088,6 +1088,27 @@ export const getDeCsatMetrics = async (tenantId: string): Promise<DeCsatMetrics[
   return (data ?? []) as DeCsatMetrics[];
 };
 
+// The "doing" half of Performance — real actions each DE took in
+// connected systems (action_executions), not just its answer quality.
+export interface DeActionMetrics {
+  de_id: string;
+  total_events: number;
+  executed: number;         // really happened (auto + approved)
+  auto_executed: number;    // without a human
+  approved_after_gate: number;
+  sent_to_human: number;    // routed for approval (the gate load)
+  blocked: number;          // guardrail / access-denied
+  rejected: number;
+  failed: number;
+  autonomy_rate: number | null; // % of executed done without a human
+}
+
+export const getDeActionMetrics = async (tenantId: string): Promise<DeActionMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_action_metrics', { p_tenant_id: tenantId });
+  if (error) { console.error('getDeActionMetrics:', error.message); return []; }
+  return (data ?? []) as DeActionMetrics[];
+};
+
 export interface DeGuardrailActivity {
   de_id: string | null; de_name: string | null; gated_count: number; blocked_count: number;
   tenant_total_events: number; tenant_attributed_events: number;
