@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { askWidget, submitWidgetCsat, type WidgetAskResult } from '../../lib/widgetChatApi';
+import { askWidget, submitWidgetCsat, pollWidget, type WidgetAskResult } from '../../lib/widgetChatApi';
 import { speechProvider } from '../../lib/speech';
 
 // The shared, premium customer-support chat surface. INFRASTRUCTURE ONLY —
@@ -83,8 +83,28 @@ export default function ChatCore({
   const [lastLang, setLastLang] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopListenRef = useRef<(() => void) | null>(null);
+  const seenIds = useRef<Set<string>>(new Set());
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages]);
+
+  // Live receive: poll for delivered messages the customer didn't request —
+  // an approved draft or a human reply from the support inbox. Dedupes by id.
+  useEffect(() => {
+    if (!conversationId) return;
+    let alive = true;
+    const tick = async () => {
+      const r = await pollWidget(widgetKey, conversationId);
+      if (!alive) return;
+      const fresh = r.messages.filter(m => !seenIds.current.has(m.id));
+      if (fresh.length) {
+        fresh.forEach(m => seenIds.current.add(m.id));
+        setMessages(prev => [...prev, ...fresh.map(m => ({ id: nextId(), role: 'assistant' as const, full: m.content, animate: true }))]);
+        if (voiceMode && speechProvider.ttsSupported) fresh.forEach(m => speechProvider.speak(m.content, lastLang));
+      }
+    };
+    const iv = setInterval(() => { void tick(); }, 5000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [conversationId, widgetKey, voiceMode, lastLang]);
 
   const send = useCallback(async (text: string) => {
     const q = text.trim();
@@ -98,6 +118,8 @@ export default function ChatCore({
     try {
       const r = await askWidget({ widgetKey, question: q, conversationId, channel, accountRef, endUserRef, displayName });
       if (r.conversation_id) setConversationId(r.conversation_id);
+      // Don't let the live poll re-show the answer we already rendered.
+      if (r.message_id) seenIds.current.add(r.message_id);
       setLastLang(r.language ?? null);
       const answer = r.error
         ? (r.error === 'llm_not_configured' ? "I'm not fully set up to answer yet — please check back soon."

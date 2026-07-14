@@ -156,6 +156,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           badge: isLiveMode ? undefined : { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
         { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
+        { id: 'support_inbox', label: 'Support Inbox', icon: '✉', page: 'support_inbox' },
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
         // Wave 3: live tenants get the single consolidated Outcomes page
         // (real economics/delivery/risk rollup). Demo keeps the 4-page

@@ -7,6 +7,7 @@ const ENDPOINT = `${SUPABASE_URL}/functions/v1/widget-ask`;
 
 export interface WidgetAskResult {
   conversation_id: string | null;
+  message_id?: string | null;
   answer: string;
   confidence: number;
   sources: string[];
@@ -45,6 +46,22 @@ export async function askWidget(input: WidgetAskInput): Promise<WidgetAskResult>
     }),
   });
   return (await res.json()) as WidgetAskResult;
+}
+
+export interface WidgetPollMessage { id: string; content: string; created_at: string }
+export interface WidgetPollResult { status?: string; messages: WidgetPollMessage[] }
+
+// Fetch delivered assistant messages (approved drafts + human replies) so
+// they reach the customer live. Client dedupes by id.
+export async function pollWidget(widgetKey: string, conversationId: string): Promise<WidgetPollResult> {
+  try {
+    const res = await fetch(ENDPOINT, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widget_key: widgetKey, action: 'poll', conversation_id: conversationId }),
+    });
+    const d = await res.json().catch(() => ({ messages: [] }));
+    return { status: d.status, messages: Array.isArray(d.messages) ? d.messages : [] };
+  } catch { return { messages: [] }; }
 }
 
 export async function submitWidgetCsat(widgetKey: string, conversationId: string, score: 1 | -1): Promise<boolean> {

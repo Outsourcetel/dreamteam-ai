@@ -27,6 +27,7 @@
   var csatDone = false;
   var listening = false, recog = null;
   var msgs, input, sendBtn, micBtn;
+  var seen = {}, polling = false;
 
   function el(tag, attrs, html) {
     var e = document.createElement(tag);
@@ -147,11 +148,33 @@
     }).then(function (r) { return r.json(); }).then(function (res) {
       typing.remove();
       if (res.conversation_id) conversationId = res.conversation_id;
+      if (res.message_id) seen[res.message_id] = true;
       addAssistant(res);
+      startPoll();
     }).catch(function () {
       typing.remove();
       addAssistant({ answer: "I couldn't reach the server — please try again.", needs_escalation: true });
     }).finally(function () { sendBtn.disabled = false; });
+  }
+
+  // Live receive: an approved draft or a human reply from the support inbox.
+  function startPoll() {
+    if (polling || !conversationId) return;
+    polling = true;
+    setInterval(function () {
+      if (!conversationId) return;
+      fetch(cfg.apiUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ widget_key: cfg.key, action: 'poll', conversation_id: conversationId }),
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || !d.messages) return;
+        d.messages.forEach(function (m) {
+          if (seen[m.id]) return;
+          seen[m.id] = true;
+          addAssistant({ answer: m.content, delivery: 'sent', conversation_id: conversationId });
+        });
+      }).catch(function () { /* noop */ });
+    }, 5000);
   }
 
   function toggleMic() {

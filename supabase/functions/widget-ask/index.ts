@@ -169,6 +169,25 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
+    // ── Poll: the customer widget fetches DELIVERED assistant messages so
+    // approved drafts + human (inbox) replies reach it live. Returns all
+    // sent assistant messages; the client dedupes by id. ──
+    if (body.action === 'poll') {
+      const pHash = await sha256Hex(widgetKey.trim());
+      const { data: pKey } = await admin.from('widget_keys').select('tenant_id').eq('key_hash', pHash).eq('active', true).maybeSingle();
+      if (!pKey) return json({ error: 'invalid_widget_key' }, 401);
+      const pConv = typeof body.conversation_id === 'string' ? body.conversation_id : null;
+      if (!pConv) return json({ error: 'conversation_id required' }, 400);
+      const { data: conv } = await admin.from('de_conversations').select('id, status').eq('id', pConv).eq('tenant_id', pKey.tenant_id).maybeSingle();
+      if (!conv) return json({ error: 'conversation_not_found' }, 404);
+      const { data: msgs } = await admin.from('de_messages')
+        .select('id, content, created_at')
+        .eq('conversation_id', pConv).eq('tenant_id', pKey.tenant_id)
+        .eq('role', 'assistant').eq('delivery', 'sent')
+        .order('created_at', { ascending: true }).limit(50);
+      return json({ status: conv.status, messages: (msgs ?? []).map((m: { id: string; content: string; created_at: string }) => ({ id: m.id, content: m.content, created_at: m.created_at })) });
+    }
+
     const question = body.question;
     if (!question || typeof question !== 'string' || !question.trim()) return json({ error: 'question required' }, 400);
     const accountRef = typeof body.account_ref === 'string' ? body.account_ref : null;
@@ -304,13 +323,15 @@ serve(async (req) => {
       }
 
       // Auto-send: confident, guardrail-clean, DE trusted to reply on its own.
+      let messageId: string | null = null;
       if (convId) {
-        await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: false, delivery: 'sent', lang });
+        const { data: ins } = await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: false, delivery: 'sent', lang }).select('id').single();
+        messageId = ins?.id ?? null;
         await admin.from('de_conversations').update({ status: 'ai_handling', detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
       }
       await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved', text: `Answered a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' (from cache)' : ''} (${srcs.join(', ') || 'no sources cited'})`, confidence: conf });
       await auditEvent(admin, tenantId, persona.name, 'de', `Resolved a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' from cache' : ''}`, 'resolved', { confidence: conf, conversation_id: convId, channel, cached });
-      return json({ conversation_id: convId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached });
+      return json({ conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached });
     };
 
     // ── Cost governor #1: semantic answer cache (BEFORE any LLM call) ──
