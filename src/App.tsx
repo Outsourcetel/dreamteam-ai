@@ -5,6 +5,7 @@ import { Sidebar, MfaEnrollmentPanel } from './components';
 import DEChatDock from './components/DEChatDock';
 import LoginPage from './pages/LoginPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
+import HostedChatPage from './pages/chat/HostedChatPage';
 import OrgSetupScreen from './pages/OrgSetupScreen';
 import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
 import TermsOfServicePage from './pages/legal/TermsOfServicePage';
@@ -281,6 +282,11 @@ function AppShell() {
   // in — intercepted here for the same reason as /platform/redeem above.
   if (location.pathname === '/terms') return <TermsOfServicePage onBack={() => window.history.back()} />;
   if (location.pathname === '/privacy') return <PrivacyPolicyPage onBack={() => window.history.back()} />;
+
+  // Public hosted support chat (/chat?k=<widget key>) — a customer-facing
+  // surface, so it must render before any auth gate. The widget key is the
+  // auth (same as the embeddable widget); no app session required.
+  if (location.pathname === '/chat') return <HostedChatPage />;
 
   // Password recovery (self-requested or admin-triggered) establishes a
   // real signed-in session via the emailed link — this must take
