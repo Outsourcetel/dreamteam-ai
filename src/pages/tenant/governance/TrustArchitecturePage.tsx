@@ -20,7 +20,7 @@ const STATUS_META: Record<Status, { label: string; cls: string }> = {
   live: { label: 'Live', cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' },
   live_pending: { label: 'Live (pending activation)', cls: 'bg-emerald-500/10 text-emerald-300/90 border border-emerald-500/25' },
   designed: { label: 'Designed', cls: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' },
-  roadmap: { label: 'Roadmap', cls: 'bg-slate-700/40 text-slate-400 border border-slate-600' },
+  roadmap: { label: 'Roadmap', cls: 'bg-slate-600/40 text-slate-400 border border-slate-600' },
 }
 
 function Chip({ status }: { status: Status }) {
@@ -30,7 +30,7 @@ function Chip({ status }: { status: Status }) {
 
 function Card({ title, status, children }: { title: string; status?: Status; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
       <div className="flex items-center justify-between gap-3 mb-3">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{title}</p>
         {status && <Chip status={status} />}
@@ -42,7 +42,7 @@ function Card({ title, status, children }: { title: string; status?: Status; chi
 
 function Row({ label, status, children }: { label: string; status: Status; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-950 rounded-lg px-3 py-2.5">
+    <div className="bg-slate-900 rounded-lg px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs text-slate-200 font-medium">{label}</span>
         <Chip status={status} />
@@ -55,9 +55,9 @@ function Row({ label, status, children }: { label: string; status: Status; child
 // ── Layer diagram (pure divs) ──
 function LayerBox({ title, sub, tone }: { title: string; sub: string; tone: 'front' | 'core' | 'ext' }) {
   const tones = {
-    front: 'border-slate-700 bg-slate-900',
+    front: 'border-slate-600 bg-slate-800',
     core: 'border-indigo-500/40 bg-indigo-500/5',
-    ext: 'border-slate-700 bg-slate-950',
+    ext: 'border-slate-600 bg-slate-900',
   }
   return (
     <div className={`rounded-xl border px-4 py-3 ${tones[tone]}`}>
@@ -148,20 +148,20 @@ export default function TrustArchitecturePage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="flex items-start justify-between gap-4">
         <PageHeader
           title="Trust & Architecture"
           subtitle="How DreamTeam is built, what data goes where, and what we haven't done yet — honestly labeled"
         />
         <button onClick={copyDoc}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors">
           {copied ? '✓ Copied' : 'Copy as text'}
         </button>
       </div>
 
       {/* Labeling legend */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
         <span className="text-[11px] text-slate-500">Every claim on this page is labeled:</span>
         <span className="flex items-center gap-1.5"><Chip status="live" /><span className="text-[11px] text-slate-400">verified in production</span></span>
         <span className="flex items-center gap-1.5"><Chip status="designed" /><span className="text-[11px] text-slate-400">spec exists, hardening pending</span></span>
@@ -195,7 +195,7 @@ export default function TrustArchitecturePage() {
         <Card title="Data flow — one question, end to end" status="live_pending">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             {FLOW_STEPS.map((s, i) => (
-              <div key={s.title} className="bg-slate-950 rounded-lg p-3 border border-slate-800/60">
+              <div key={s.title} className="bg-slate-900 rounded-lg p-3 border border-slate-700/60">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
                   <p className="text-[11px] font-semibold text-slate-200">{s.title}</p>
@@ -334,13 +334,13 @@ export default function TrustArchitecturePage() {
             <div className="overflow-x-auto -mx-5">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-800">
+                  <tr className="border-b border-slate-700">
                     <th className={th}>Subprocessor</th>
                     <th className={th}>Role</th>
                     <th className={th}>Data touched</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/50">
+                <tbody className="divide-y divide-slate-700/50">
                   {SUBPROCESSORS.map(([name, role, data]) => (
                     <tr key={name}>
                       <td className={`${td} text-slate-200 text-xs font-medium`}>{name}</td>

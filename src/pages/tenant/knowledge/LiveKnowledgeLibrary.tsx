@@ -144,7 +144,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     if (s && s.embedded > 0) {
       return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {s.chunks} chunk{s.chunks === 1 ? '' : 's'}</span>;
     }
-    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">Keyword only</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">Keyword only</span>;
   };
 
   // ── Scope modal (Who can use this) ──
@@ -182,7 +182,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           : 'All digital employees and specialists use this document — click to limit it'}
         className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${scoped
           ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
-          : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
       >
         {scoped ? `Scoped · ${n}` : 'All digital employees'}
       </button>
@@ -272,7 +272,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Knowledge Library" subtitle="The documents Alex answers from." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
@@ -287,7 +287,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader title="Knowledge Library" subtitle="These documents are the only thing Alex answers from — keep them current." />
 
       {error && (
@@ -304,13 +304,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </button>
         <button
           onClick={() => fileRef.current?.click()}
-          className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
         >
           Upload file
         </button>
         <button
           onClick={() => setShowUrl(v => !v)}
-          className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
         >
           Import from URL
         </button>
@@ -320,10 +320,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       </div>
 
       {showUrl && (
-        <div className="flex items-center gap-2 mb-4 rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+        <div className="flex items-center gap-2 mb-4 rounded-xl border border-slate-700 bg-slate-800/50 px-3 py-2">
           <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
             placeholder="https://help.yourcompany.com/article/…"
-            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
             onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }} />
           <button onClick={() => void importUrl()} disabled={!!busyMsg || !urlInput.trim()}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
@@ -337,7 +337,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {loading ? (
         <p className="text-sm text-slate-500 py-8 text-center">Loading documents…</p>
       ) : docs.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center">
           <p className="text-sm text-slate-300 font-medium mb-1">Alex answers from these documents — add your first</p>
           <p className="text-xs text-slate-500 mb-4">Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support.</p>
           <button
@@ -348,9 +348,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
           <table className="w-full text-sm text-slate-300">
-            <thead className="bg-slate-900 border-b border-slate-800">
+            <thead className="bg-slate-800 border-b border-slate-700">
               <tr>
                 <th className={th}>Title</th>
                 <th className={th}>Preview</th>
@@ -364,7 +364,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </thead>
             <tbody>
               {docs.map(d => (
-                <tr key={d.id} className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                <tr key={d.id} className="border-b border-slate-700/60 hover:bg-slate-700/40 transition-colors">
                   <td className={`${td} text-white font-medium`}>{d.title}</td>
                   <td className={`${td} text-xs text-slate-400 max-w-xs`}>
                     <span className="line-clamp-2">{d.content.slice(0, 140)}{d.content.length > 140 ? '…' : ''}</span>
@@ -373,7 +373,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     <div className="flex flex-wrap gap-1">
                       {d.tags.length === 0 && <span className="text-xs text-slate-600">—</span>}
                       {d.tags.map(t => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{t}</span>
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{t}</span>
                       ))}
                     </div>
                   </td>
@@ -428,7 +428,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 const currentDoc = docs.find(d => d.id === r.source_doc_id);
                 const expanded = expandedRevisionId === r.id;
                 return (
-                  <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
                       onClick={() => setExpandedRevisionId(expanded ? null : r.id)}
@@ -442,7 +442,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     {expanded && (
                       <div className="px-3 pb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                          <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
                             <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">Current</p>
                             <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
                               {currentDoc ? currentDoc.content : '(no existing document — this proposes a brand-new one)'}
@@ -460,7 +460,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                           <button
                             onClick={() => void decideRevision(r, 'rejected')}
                             disabled={decidingRevisionId === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
+                            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
                           >
                             {decidingRevisionId === r.id ? 'Working…' : 'Reject'}
                           </button>
@@ -486,14 +486,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {editor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit document' : 'Add document'}</h2>
             <label className="block text-xs text-slate-500 mb-1">Title</label>
             <input
               value={editor.title}
               onChange={e => setEditor({ ...editor, title: e.target.value })}
               placeholder="e.g. Refund policy"
-              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <label className="block text-xs text-slate-500 mb-1">Content (plain text or Markdown)</label>
             <textarea
@@ -501,20 +501,20 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
               placeholder="Paste the document content Alex should answer from…"
-              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
             />
             <label className="block text-xs text-slate-500 mb-1">Tags (comma-separated, optional)</label>
             <input
               value={editor.tags}
               onChange={e => setEditor({ ...editor, tags: e.target.value })}
               placeholder="billing, refunds"
-              className="w-full mb-5 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-5 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setEditor(null)}
                 disabled={saving}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
               >
                 Cancel
               </button>
@@ -534,7 +534,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {scopeDoc && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !scopeSaving && setScopeDoc(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-1">Who can use this document?</h2>
             <p className="text-xs text-slate-500 mb-4">
               “{scopeDoc.title}” — by default every digital employee and specialist answers from it.
@@ -549,7 +549,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   const k = skey(s);
                   const checked = scopeSel.has(k);
                   return (
-                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800/60 cursor-pointer">
+                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-700/60 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -576,7 +576,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <button
                 onClick={() => setScopeDoc(null)}
                 disabled={scopeSaving}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
               >
                 Cancel
               </button>
@@ -596,7 +596,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {gateConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setGateConfirm(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-900 border border-red-500/40 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-red-500/40 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-2">Publishing gated by the Proving Ground</h2>
             <p className="text-sm text-slate-300 mb-1">
               Last eval run failed ({gateConfirm.gate.passed}/{gateConfirm.gate.total} passed). Publishing may worsen answers.
@@ -608,14 +608,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               {setPage && (
                 <button
                   onClick={() => { setGateConfirm(null); setPage('intelligence_evals'); }}
-                  className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors mr-auto"
+                  className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors mr-auto"
                 >
                   View Proving Ground
                 </button>
               )}
               <button
                 onClick={() => setGateConfirm(null)}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
               >
                 Cancel
               </button>

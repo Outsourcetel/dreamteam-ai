@@ -23,7 +23,7 @@ const PageTabs = ({
   setPage?: (p: Page) => void;
   accentColor?: string;
 }) => (
-  <div className="flex flex-wrap gap-1 bg-slate-800 rounded-xl p-1 mb-6 w-fit">
+  <div className="flex flex-wrap gap-1 bg-slate-700 rounded-xl p-1 mb-6 w-fit">
     {tabs.map((t) => (
       <button
         key={t.id}

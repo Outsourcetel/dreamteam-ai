@@ -31,10 +31,10 @@ import { ConfirmDeleteModal } from '../../components';
 // ============================================================
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-const inputCls = 'w-full text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500';
-const selectCls = 'text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500';
+const inputCls = 'w-full text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500';
+const selectCls = 'text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500';
 const btnPrimary = 'text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors';
-const btnGhost = 'text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors';
+const btnGhost = 'text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors';
 
 const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   knowledge: 'Knowledge (tag-scoped docs)',
@@ -52,12 +52,12 @@ const STATUS_CHIP: Record<string, string> = {
   pending_approval: 'bg-amber-500/20 text-amber-400',
   approved: 'bg-indigo-500/20 text-indigo-400',
   executed: 'bg-emerald-500/20 text-emerald-400',
-  rejected: 'bg-slate-700 text-slate-400',
+  rejected: 'bg-slate-600 text-slate-400',
   failed: 'bg-red-500/20 text-red-400',
 };
 
 const Chip = ({ label, cls }: { label: string; cls?: string }) => (
-  <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls ?? 'bg-slate-800 text-slate-400'}`}>{label}</span>
+  <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls ?? 'bg-slate-700 text-slate-400'}`}>{label}</span>
 );
 
 // ── Add-source form ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
     || s.source_type === 'media';
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
       <div className="flex gap-2 flex-wrap">
         <select className={selectCls} value={s.source_type}
           onChange={e => {
@@ -187,7 +187,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
-  skipped_not_connected: ['Not connected — skipped', 'bg-slate-700 text-slate-300'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-slate-600 text-slate-300'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked by your data access rules', 'bg-rose-500/20 text-rose-300'],
 };
@@ -234,7 +234,7 @@ function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId:
   if (past.length > 0 && !picked) {
     const latest = past[0];
     return (
-      <div className="mt-3 pt-3 border-t border-slate-800">
+      <div className="mt-3 pt-3 border-t border-slate-700">
         <p className="text-[11px] font-medium text-slate-400 mb-1">Reviewer verdict</p>
         <div className="flex items-center gap-2 flex-wrap">
           <Chip label={latest.verdict.replace('_', ' ')}
@@ -249,12 +249,12 @@ function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId:
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-slate-800">
+    <div className="mt-3 pt-3 border-t border-slate-700">
       <p className="text-[11px] font-medium text-slate-400 mb-1.5">Was this evidence accurate?</p>
       <div className="flex gap-1.5 flex-wrap mb-2">
         {VERDICT_OPTIONS.map((v) => (
           <button key={v.key}
-            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${picked === v.key ? v.cls : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${picked === v.key ? v.cls : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
             onClick={() => setPicked(v.key)}>
             {v.label}
           </button>
@@ -291,10 +291,10 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
   evidenceRunId?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
       <div className="space-y-2.5">
         {steps.map((s, i) => {
-          const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-800 text-slate-400'];
+          const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-700 text-slate-400'];
           return (
             <div key={i} className="flex gap-2.5">
               <span className="text-base leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
@@ -309,7 +309,7 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
                 {(s.citations ?? []).length > 0 && (
                   <div className="mt-1 space-y-1">
                     {s.citations.map((c, j) => (
-                      <div key={j} className="text-[11px] text-slate-500 pl-2 border-l border-slate-800">
+                      <div key={j} className="text-[11px] text-slate-500 pl-2 border-l border-slate-700">
                         <span className="text-slate-300">{c.title}</span>
                         <span className="text-slate-600"> · {c.system} · ref {c.ref}</span>
                         {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 ml-1">↗</a>}
@@ -325,21 +325,21 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
       </div>
 
       {confidence && (
-        <div className="mt-3 pt-3 border-t border-slate-800 flex gap-2 flex-wrap">
+        <div className="mt-3 pt-3 border-t border-slate-700 flex gap-2 flex-wrap">
           <Chip label={`${confidence.knowledge_hits ?? 0} knowledge hits`} cls="bg-indigo-500/15 text-indigo-300" />
           <Chip label={`${confidence.history_corroborations ?? 0} past-case corroborations`} cls="bg-teal-500/15 text-teal-300" />
           {(confidence.prior_experience_hits ?? 0) > 0 && (
             <Chip label={`${confidence.prior_experience_hits} prior experience citation(s) — handled before`} cls="bg-purple-500/15 text-purple-300" />
           )}
           <Chip label={confidence.account_context_found ? 'account context found' : 'no account context'}
-            cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-300'} />
+            cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600 text-slate-300'} />
           {(confidence.systems_skipped_not_connected ?? 0) > 0 && (
             <Chip label={`${confidence.systems_skipped_not_connected} system(s) not connected`} cls="bg-amber-500/15 text-amber-300" />
           )}
         </div>
       )}
 
-      <div className="mt-3 pt-3 border-t border-slate-800">
+      <div className="mt-3 pt-3 border-t border-slate-700">
         <p className="text-[11px] font-medium text-slate-400 mb-1">What Alex would answer from</p>
         {answerStatus === 'answered' && answer ? (
           <p className="text-xs text-slate-200 whitespace-pre-wrap">{answer}</p>
@@ -572,7 +572,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
@@ -584,7 +584,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
       </div>
@@ -593,10 +593,10 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
 
   if (!profile) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center max-w-2xl">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center max-w-2xl">
           <p className="text-sm text-slate-300 font-medium mb-1">Install the Technical Specialist</p>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
             Seeds a tenant-editable charter (answers only from configured sources, cites everything, escalates below the confidence floor).
@@ -612,7 +612,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader
         title="Technical Specialist — Live"
         subtitle="Configurable sources with per-customer access modes · grounded consultations · Scribe write-backs always human-gated"
@@ -620,7 +620,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
 
       {/* Profile / charter */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <div className="flex items-center gap-3 mb-3">
           <span className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 text-lg">⚙</span>
           <div className="flex-1">
@@ -641,7 +641,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       </div>
 
       {/* Sources */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">Sources</h3>
@@ -661,7 +661,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         ) : (
           <div className="space-y-2">
             {sources.map(src => (
-              <div key={src.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+              <div key={src.id} className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-white">{src.label}</span>
@@ -669,7 +669,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                     <Chip label={src.access_mode.replace('_', '-')} cls={
                       src.access_mode === 'ingest' ? 'bg-indigo-500/20 text-indigo-300'
                         : src.access_mode === 'fetch_only' ? 'bg-teal-500/20 text-teal-300'
-                        : 'bg-slate-700 text-slate-300'} />
+                        : 'bg-slate-600 text-slate-300'} />
                     {src.source_type === 'mcp_server' && (
                       src.config.mcp?.last_handshake
                         ? <Chip label={src.config.mcp.last_handshake.ok
@@ -720,7 +720,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       </div>
 
       {/* Media library */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">Media library</h3>
@@ -736,7 +736,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         ) : (
           <div className="space-y-2">
             {media.map(m => (
-              <div key={m.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+              <div key={m.id} className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-white truncate">{m.title}</span>
@@ -798,7 +798,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mt-4 mb-2">Past evidence runs</p>
             <div className="space-y-1.5">
               {pastRuns.map(r => (
-                <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
                   <button className="w-full flex items-center gap-2 px-3 py-2 text-left" onClick={() => setExpandedRun(expandedRun === r.id ? null : r.id)}>
                     <span className="text-xs text-slate-300 flex-1 truncate">{r.inquiry}</span>
                     {r.account_ref && <Chip label={r.account_ref} />}
@@ -818,7 +818,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       </div>
 
       {/* Consultation console */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-1">Consultation console</h3>
         <p className="text-[11px] text-slate-500 mb-3">Retrieval across configured sources runs now; the answer path unlocks when the specialist brain (ANTHROPIC_API_KEY) is activated.</p>
         <div className="flex gap-2 mb-3">
@@ -829,7 +829,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           </button>
         </div>
         {lastResult && (
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 mb-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 mb-4">
             {lastResult.error === 'llm_not_configured' ? (
               <p className="text-xs text-amber-300 mb-2">Specialist brain not activated — retrieval ran and is recorded below. Configure ANTHROPIC_API_KEY to unlock answers.</p>
             ) : lastResult.blocked ? (
@@ -844,7 +844,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             <div className="space-y-1">
               {(lastResult.retrieved_sources ?? []).map((r, i) => (
                 <div key={i} className="flex items-center gap-2 text-[11px]">
-                  <Chip label={r.kind} cls={r.kind === 'content' ? 'bg-emerald-500/20 text-emerald-400' : r.kind === 'reference' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-800 text-slate-500'} />
+                  <Chip label={r.kind} cls={r.kind === 'content' ? 'bg-emerald-500/20 text-emerald-400' : r.kind === 'reference' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-500'} />
                   <span className="text-slate-300">{r.label}</span>
                   <span className="text-slate-500">{r.detail}</span>
                 </div>
@@ -859,12 +859,12 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           <p className="text-xs text-slate-500 py-2">No consultations yet.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-950/60">
+            <thead className="bg-slate-900/60">
               <tr><th className={th}>When</th><th className={th}>By</th><th className={th}>Question</th><th className={th}>Status</th><th className={th}>Conf.</th><th className={th}></th></tr>
             </thead>
             <tbody>
               {consultations.map(c => (
-                <tr key={c.id} className="border-t border-slate-800/60">
+                <tr key={c.id} className="border-t border-slate-700/60">
                   <td className={`${td} text-xs text-slate-500 whitespace-nowrap`}>{fmtDate(c.created_at)}</td>
                   <td className={`${td} text-xs text-slate-400`}>{c.requested_by}</td>
                   <td className={`${td} text-xs text-slate-300 max-w-xs`}><span className="line-clamp-2">{c.question}</span></td>
@@ -896,7 +896,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
         ) : (
           <div className="space-y-2">
             {scribe.map(r => (
-              <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+              <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-xs font-medium text-white">
                     {r.action_key === 'add_internal_note' ? 'Internal note' : r.action_key === 'reply_to_ticket' ? 'Public reply' : 'Status update'} → ticket #{r.external_ref}
@@ -918,7 +918,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       {flagFor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setFlagFor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-3">Flag "{flagFor.title}"</h2>
             <select className={selectCls + ' w-full mb-3'} value={flagKind} onChange={e => setFlagKind(e.target.value as QualityFlag['flag'])}>
               <option value="stale">Stale</option>
@@ -975,7 +975,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
       {scribeFor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setScribeFor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-slate-800 border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-white mb-1">Scribe write-back</h2>
             <p className="text-xs text-slate-500 mb-4">
               Grounded in consultation <span className="font-mono">{scribeFor.id.slice(0, 8)}…</span>. The payload is built server-side from
@@ -1014,7 +1014,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Currently auto-executes once trusted</span>
                     )}
                     {actionDefFor(scribeAction)!.risk.idempotent && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Safe to retry</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-600 text-slate-400">Safe to retry</span>
                     )}
                     <span className="text-[10px] text-slate-600">{actionDefFor(scribeAction)!.description}</span>
                   </div>

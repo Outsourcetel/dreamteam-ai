@@ -67,7 +67,7 @@ export default function OrgSetupScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
@@ -91,7 +91,7 @@ export default function OrgSetupScreen() {
               type="text"
               placeholder="Acme Corp"
               autoFocus
-              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div>
@@ -99,7 +99,7 @@ export default function OrgSetupScreen() {
             <select
               value={industry}
               onChange={e => setIndustry(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
             >
               {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
             </select>
@@ -114,7 +114,7 @@ export default function OrgSetupScreen() {
           </button>
         </form>
 
-        <div className="border-t border-slate-800 mt-6 pt-5 text-center">
+        <div className="border-t border-slate-700 mt-6 pt-5 text-center">
           <p className="text-xs text-slate-600">
             Signed in as {authedUser?.email}.{' '}
             <button

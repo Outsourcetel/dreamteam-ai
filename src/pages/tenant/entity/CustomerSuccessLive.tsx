@@ -32,12 +32,12 @@ import type { Opportunity as PipelineOpportunity } from '../../../lib/pipelineAp
 const healthColor = (h: number) => (h >= 70 ? 'bg-emerald-500' : h >= 45 ? 'bg-amber-500' : 'bg-red-500');
 const healthText = (h: number) => (h >= 70 ? 'text-emerald-300' : h >= 45 ? 'text-amber-300' : 'text-red-300');
 
-const inputCls = 'bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 
 function StatusChip({ status }: { status: CustomerAccount['status'] }) {
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-      status === 'churned' ? 'bg-slate-700/50 text-slate-400'
+      status === 'churned' ? 'bg-slate-600/50 text-slate-400'
       : status === 'at_risk' ? 'bg-red-500/15 text-red-300'
       : 'bg-emerald-500/15 text-emerald-300'
     }`}>{status.replace('_', ' ')}</span>
@@ -52,7 +52,7 @@ function BreakdownPopover({ c }: { c: HealthComponents }) {
     { label: 'Activity recency', count: c.activity_recency?.days_since == null ? 'never' : `${c.activity_recency.days_since}d ago`, penalty: c.activity_recency?.penalty ?? 0, weight: c.activity_recency?.weight ?? 0 },
   ];
   return (
-    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-3">
+    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-slate-600 bg-slate-800 shadow-2xl p-3">
       <p className="text-[11px] font-semibold text-white mb-2">Health breakdown — score {c.score}</p>
       <div className="space-y-1">
         {rows.map(r => (
@@ -111,7 +111,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md h-full overflow-y-auto bg-slate-900 border-l border-slate-700 p-5" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md h-full overflow-y-auto bg-slate-800 border-l border-slate-600 p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <h3 className="text-white font-semibold">{account.name}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -127,14 +127,14 @@ function AccountDrawer({ account, onClose, onChanged }: {
         {err && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
         {/* Why this score */}
-        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4">
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4">
           <p className="text-[11px] font-semibold text-white mb-1">Why this score</p>
           <p className="text-xs text-slate-400">{describeComponents(c)}</p>
           <p className="text-[10px] text-slate-600 mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
 
         {wonOpps.length > 0 && (
-          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4">
             <p className="text-[11px] font-semibold text-white mb-1">Won from pipeline</p>
             {wonOpps.map(o => (
               <p key={o.id} className="text-xs text-slate-400">
@@ -147,7 +147,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
         )}
 
         {onboarding && (
-          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-4 flex items-center justify-between gap-2">
+          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4 flex items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-semibold text-white">Onboarding project</p>
               <p className="text-xs text-slate-400">{onboarding.name} · {onboarding.status.replace('_', ' ')} · {onboarding.progress_pct}%</p>
@@ -162,7 +162,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
               {signals.openTickets.length === 0 ? <Empty text="No open tickets." /> : signals.openTickets.map(t => (
                 <div key={t.id} className="flex items-center justify-between gap-2 text-xs py-1">
                   <span className="text-slate-300 truncate">{t.subject}</span>
-                  <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${t.status === 'escalated' ? 'bg-red-500/15 text-red-300' : 'bg-slate-800 text-slate-400'}`}>{t.priority} · {t.status}</span>
+                  <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${t.status === 'escalated' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-400'}`}>{t.priority} · {t.status}</span>
                 </div>
               ))}
             </Section>
@@ -188,7 +188,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
                   <span className="text-slate-400 truncate">{f.detail || f.status}</span>
                   <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${
                     f.status === 'started' ? 'bg-emerald-500/15 text-emerald-300'
-                    : f.status === 'skipped_dedup' ? 'bg-slate-800 text-slate-500'
+                    : f.status === 'skipped_dedup' ? 'bg-slate-700 text-slate-500'
                     : f.status === 'error' ? 'bg-red-500/15 text-red-300' : 'bg-indigo-500/15 text-indigo-300'
                   }`}>{f.status.replace('_', ' ')}</span>
                 </div>
@@ -198,7 +198,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
         )}
 
         {/* Run playbook */}
-        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mt-4">
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mt-4">
           <p className="text-[11px] font-semibold text-white mb-2">Run a playbook on this account</p>
           {defs.length === 0 ? (
             <p className="text-xs text-slate-500">No published playbooks yet — build one in Playbooks.</p>
@@ -222,7 +222,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 }
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mb-3">
+  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-3">
     <p className="text-[11px] font-semibold text-white mb-1.5">{title}</p>
     {children}
   </div>
@@ -269,7 +269,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
   );
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 mb-5">
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 mb-5">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 text-left">
         <span className="text-sm font-semibold text-white">Health scoring config</span>
         <span className="text-xs text-slate-500">
@@ -306,7 +306,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
               {busy === 'save' ? 'Saving…' : 'Save config'}
             </button>
             <button onClick={() => void recompute()} disabled={busy !== null}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
               {busy === 'compute' ? 'Recomputing…' : 'Recompute now'}
             </button>
           </div>
@@ -418,7 +418,7 @@ export default function CustomerSuccessLive() {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6" onClick={() => setPopoverId(null)}>
+    <div className="flex-1 overflow-auto bg-slate-900 p-6" onClick={() => setPopoverId(null)}>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
           title={`${vocab.party_singular} Success — ${vocab.party_singular} Lifecycle`}
@@ -426,7 +426,7 @@ export default function CustomerSuccessLive() {
         />
         {!missingTables && !loading && accounts.length > 0 && (
           <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 hover:text-white transition-colors">
+            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 hover:text-white transition-colors">
               + Import CSV
             </button>
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
@@ -463,7 +463,7 @@ export default function CustomerSuccessLive() {
               { label: 'Avg health', value: String(stats.avgHealth), color: healthText(stats.avgHealth) },
               { label: `${vocab.value_metric} at risk`, value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-slate-300' },
             ].map(s => (
-              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               </div>
@@ -477,13 +477,13 @@ export default function CustomerSuccessLive() {
           />
 
           {/* Accounts table */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
             <h3 className="text-sm font-semibold text-white mb-1">Account health</h3>
             <p className="text-[11px] text-slate-500 mb-3">Click a health bar for the component breakdown · click a row for signal detail.</p>
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <div className="overflow-x-auto rounded-xl border border-slate-700">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800">
+                  <tr className="border-b border-slate-700">
                     {[vocab.party_singular, 'Health', 'Status', vocab.value_metric, vocab.renewal_label, 'CSM', 'Last activity',
                       ...entityFields.map(f => f.label)].map(h => <th key={h} className={th}>{h}</th>)}
                   </tr>
@@ -494,21 +494,21 @@ export default function CustomerSuccessLive() {
                     const days = a.health_components?.activity_recency?.days_since;
                     return (
                       <tr key={a.id} onClick={() => setDrawerAccount(a)}
-                        className={`border-b border-slate-800/60 transition-colors cursor-pointer ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-800/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
+                        className={`border-b border-slate-700/60 transition-colors cursor-pointer ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-700/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
                         <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
                         <td className={td} onClick={e => e.stopPropagation()}>
                           <div className="relative">
                             <button className="flex items-center gap-2 min-w-[110px] w-full"
                               title={describeComponents(a.health_components)}
                               onClick={() => setPopoverId(popoverId === a.id ? null : a.id)}>
-                              <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                                 <div className={`h-full rounded-full ${healthColor(a.health_score)}`} style={{ width: `${a.health_score}%` }} />
                               </div>
                               <span className={`text-xs font-medium w-6 text-right ${healthText(a.health_score)}`}>{a.health_score}</span>
                             </button>
                             {popoverId === a.id && a.health_components && <BreakdownPopover c={a.health_components} />}
                             {popoverId === a.id && !a.health_components && (
-                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-3 text-[11px] text-slate-400">
+                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-slate-600 bg-slate-800 shadow-2xl p-3 text-[11px] text-slate-400">
                                 Not computed yet — use “Recompute now” in the health config panel.
                               </div>
                             )}
@@ -541,7 +541,7 @@ export default function CustomerSuccessLive() {
       {/* Add account modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-white font-semibold mb-4">Add {vocab.party_singular.toLowerCase()}</h3>
             <div className="space-y-3 mb-5">
               <div>
@@ -570,7 +570,7 @@ export default function CustomerSuccessLive() {
                 className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
                 {saving ? 'Saving…' : `Add ${vocab.party_singular.toLowerCase()}`}
               </button>
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">
+              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-all">
                 Cancel
               </button>
             </div>

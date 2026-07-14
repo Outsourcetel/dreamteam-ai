@@ -67,7 +67,7 @@ const PlatformInvitesPanel = () => {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-white">Your platform team</h2>
         <p className="text-xs text-slate-400 mt-0.5">
@@ -82,12 +82,12 @@ const PlatformInvitesPanel = () => {
           onChange={(e) => setEmail(e.target.value)}
           type="email"
           placeholder="teammate@company.com"
-          className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          className="flex-1 bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
         />
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as PlatformInviteRole)}
-          className="bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
+          className="bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
         >
           {ROLE_OPTIONS.map((r) => (
             <option key={r} value={r}>{PLATFORM_INVITE_ROLE_LABELS[r]}</option>
@@ -113,12 +113,12 @@ const PlatformInvitesPanel = () => {
             however you'd normally reach them).
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 text-[11px] text-slate-300 bg-slate-950 rounded-lg px-2 py-1.5 overflow-x-auto whitespace-nowrap">
+            <code className="flex-1 text-[11px] text-slate-300 bg-slate-900 rounded-lg px-2 py-1.5 overflow-x-auto whitespace-nowrap">
               {inviteLink(justCreated.code)}
             </code>
             <button
               onClick={() => copyToClipboard(inviteLink(justCreated.code), 'new')}
-              className="text-xs px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all whitespace-nowrap"
+              className="text-xs px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all whitespace-nowrap"
             >
               {copiedId === 'new' ? 'Copied!' : 'Copy link'}
             </button>
@@ -131,7 +131,7 @@ const PlatformInvitesPanel = () => {
       ) : invites.length === 0 ? (
         <p className="text-xs text-slate-500 text-center py-4">No invites yet.</p>
       ) : (
-        <div className="divide-y divide-slate-800">
+        <div className="divide-y divide-slate-700">
           {invites.map((inv) => (
             <div key={inv.id} className="py-2.5 flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -144,7 +144,7 @@ const PlatformInvitesPanel = () => {
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                   inv.status === 'pending' ? 'bg-amber-500/15 text-amber-300'
                   : inv.status === 'redeemed' ? 'bg-emerald-500/15 text-emerald-300'
-                  : 'bg-slate-700 text-slate-400'
+                  : 'bg-slate-600 text-slate-400'
                 }`}>
                   {inv.status}
                 </span>
@@ -152,7 +152,7 @@ const PlatformInvitesPanel = () => {
                   <>
                     <button
                       onClick={() => copyToClipboard(inviteLink(inv.invite_code), inv.id)}
-                      className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all"
+                      className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
                     >
                       {copiedId === inv.id ? 'Copied!' : 'Copy link'}
                     </button>

@@ -38,7 +38,7 @@ const ConfirmDeleteModal = ({
           <button
             onClick={onClose}
             disabled={busy}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>

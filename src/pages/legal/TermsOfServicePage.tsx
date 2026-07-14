@@ -6,7 +6,7 @@ import React from 'react';
 // with no actual document behind it anywhere. This is a first pass for a
 // lawyer to review before it's treated as real/binding.
 const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
-  <div className="min-h-screen bg-slate-950 text-slate-300 overflow-y-auto">
+  <div className="min-h-screen bg-slate-900 text-slate-300 overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
         <button onClick={onBack} className="text-sm text-indigo-400 hover:text-indigo-300 mb-6">← Back</button>

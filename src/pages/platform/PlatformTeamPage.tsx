@@ -11,7 +11,7 @@ import PlatformInvitesPanel from './PlatformInvitesPanel';
 
 const ROLE_OPTIONS: PlatformInviteRole[] = ['platform_support', 'platform_billing', 'platform_super_admin'];
 
-const inputCls = 'bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
 
 // ─────────────────────────────────────────────────────────────────
 // The real team roster (active accounts, not just pending invites),
@@ -72,7 +72,7 @@ const PlatformTeamPage = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Team & Permissions</h1>
         <p className="text-slate-400 text-sm mt-1">
@@ -85,8 +85,8 @@ const PlatformTeamPage = () => {
 
       <PlatformInvitesPanel />
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-800">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-700">
           <h2 className="text-sm font-semibold text-white">Platform team</h2>
           <p className="text-xs text-slate-500 mt-0.5">Everyone with platform-level access today — not just pending invites.</p>
         </div>
@@ -95,7 +95,7 @@ const PlatformTeamPage = () => {
         ) : members.length === 0 ? (
           <p className="text-xs text-slate-500 text-center py-6">No platform team members found.</p>
         ) : (
-          <div className="divide-y divide-slate-800/50">
+          <div className="divide-y divide-slate-700/50">
             {members.map((m) => {
               const isSelf = authedUser?.id === m.user_id;
               const busy = busyId === m.user_id;
@@ -122,14 +122,14 @@ const PlatformTeamPage = () => {
                     <button
                       onClick={() => !isSelf && setEditingRoleId(m.user_id)}
                       disabled={isSelf}
-                      className={`text-[11px] px-2 py-1 rounded-lg bg-slate-800 text-slate-300 ${isSelf ? 'cursor-default opacity-60' : 'hover:ring-1 hover:ring-slate-600 cursor-pointer'}`}
+                      className={`text-[11px] px-2 py-1 rounded-lg bg-slate-700 text-slate-300 ${isSelf ? 'cursor-default opacity-60' : 'hover:ring-1 hover:ring-slate-600 cursor-pointer'}`}
                       title={isSelf ? 'You cannot change your own role' : 'Click to change role'}
                     >
                       {PLATFORM_INVITE_ROLE_LABELS[m.role]}
                     </button>
                   )}
 
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-600 text-slate-400'}`}>
                     {m.is_active ? 'active' : 'inactive'}
                   </span>
 
@@ -139,7 +139,7 @@ const PlatformTeamPage = () => {
 
                   <button
                     onClick={() => setPermissionsFor(m)}
-                    className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+                    className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
                   >
                     Manage permissions
                   </button>
@@ -148,7 +148,7 @@ const PlatformTeamPage = () => {
                     <button
                       onClick={() => void handleResetPassword(m)}
                       disabled={busy}
-                      className="text-[11px] px-2 py-1 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
+                      className="text-[11px] px-2 py-1 rounded-lg text-slate-400 hover:bg-slate-700 transition-colors"
                       title="Email this person a password reset link"
                     >
                       Reset password
@@ -225,7 +225,7 @@ function PermissionsModal({ member, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <h3 className="text-white font-semibold">Permissions — {member.full_name || member.email}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -249,12 +249,12 @@ function PermissionsModal({ member, onClose, onChanged }: {
                   onClick={() => void cycle(cap, state)}
                   disabled={busy}
                   className={`w-full flex items-center justify-between gap-3 rounded-xl border p-2.5 text-left transition-colors ${
-                    effective ? 'border-emerald-800/50 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/50'
+                    effective ? 'border-emerald-800/50 bg-emerald-500/5' : 'border-slate-700 bg-slate-900/50'
                   } ${busy ? 'opacity-50' : 'hover:border-slate-600'}`}
                 >
                   <span className="text-xs text-slate-200">{PLATFORM_CAPABILITY_LABELS[cap]}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-500'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-500'}`}>
                       {effective ? 'allowed' : 'not allowed'}
                     </span>
                     <span className="text-[10px] text-slate-600 w-24 text-right">

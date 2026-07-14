@@ -90,7 +90,7 @@ const MfaEnrollmentPanel = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Two-Factor Authentication</h1>
         <p className="text-slate-400 text-sm mt-1">
@@ -101,7 +101,7 @@ const MfaEnrollmentPanel = () => {
       {loading ? (
         <div className="text-slate-500 text-sm">Checking your account…</div>
       ) : verifiedFactor ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-lg">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg">
           <div className="flex items-center gap-3 mb-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
             <span className="text-sm font-medium text-white">Two-factor authentication is on</span>
@@ -119,7 +119,7 @@ const MfaEnrollmentPanel = () => {
           </button>
         </div>
       ) : pendingFactorId ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-lg space-y-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg space-y-4">
           <div>
             <p className="text-sm font-medium text-white mb-2">1. Scan this with your authenticator app</p>
             <p className="text-xs text-slate-500 mb-3">Google Authenticator, Authy, 1Password, or any TOTP app.</p>
@@ -140,7 +140,7 @@ const MfaEnrollmentPanel = () => {
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest w-32 text-center"
+                className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest w-32 text-center"
               />
               <button
                 onClick={verifyCode}
@@ -159,7 +159,7 @@ const MfaEnrollmentPanel = () => {
           </div>
         </div>
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-lg">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg">
           <p className="text-sm text-white mb-1">Two-factor authentication is off</p>
           <p className="text-xs text-slate-500 mb-4">
             Remote Access works without it today, but adding a second factor closes the one real gap

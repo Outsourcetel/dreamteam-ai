@@ -160,7 +160,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-700 text-slate-400';
+  return 'bg-slate-600 text-slate-400';
 }
 
 function taskBadgeLabel(type: TaskType): string {
@@ -182,7 +182,7 @@ function statusBadge(status: TaskStatus) {
     pending: 'bg-amber-500/15 text-amber-400',
     approved: 'bg-emerald-500/15 text-emerald-400',
     rejected: 'bg-red-500/15 text-red-400',
-    completed: 'bg-slate-700 text-slate-400',
+    completed: 'bg-slate-600 text-slate-400',
   };
   const labels: Record<TaskStatus, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', completed: 'Completed' };
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${styles[status]}`}>{labels[status]}</span>;
@@ -301,7 +301,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const selectedStale = selected ? staleness.get(selected.id) ?? null : null;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Human Tasks"
         subtitle="The human command queue — approvals, reviews, escalations, and overrides raised by your Digital Employees"
@@ -331,7 +331,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               { label: 'Decided', value: String(decidedCount), color: 'text-white' },
               { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-white' },
             ].map(s => (
-              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               </div>
@@ -344,7 +344,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               <button
                 key={f.id}
                 onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'}`}
               >
                 {f.label}
               </button>
@@ -352,7 +352,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex-1" />
             <button
               onClick={() => setStalledOnly(v => !v)}
-              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'}`}
             >
               ⏱ Stalled work only{stalledCount > 0 ? ` (${stalledCount})` : ''}
             </button>
@@ -362,7 +362,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             {/* Task list */}
             <div className={`${selected ? 'col-span-3' : 'col-span-5'} space-y-1.5`}>
               {visible.length === 0 && (
-                <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+                <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
                   <p className="text-slate-500 text-sm">
                     {stalledOnly ? 'No stalled work right now — nothing has gone quiet past its threshold.' : 'No tasks match the current filter.'}
                   </p>
@@ -375,10 +375,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   key={task.id}
                   onClick={() => setSelectedId(task.id)}
                   className={`w-full text-left grid grid-cols-[100px_1fr_70px_80px] gap-2 items-center px-3 py-2.5 rounded-xl border transition-colors ${
-                    selectedId === task.id ? 'border-indigo-500/50 bg-slate-800/60'
+                    selectedId === task.id ? 'border-indigo-500/50 bg-slate-700/60'
                     : stale ? (stale.tier === 'breach' ? 'border-red-500/30 bg-red-500/5 hover:bg-red-500/10' : 'border-orange-500/25 bg-orange-500/5 hover:bg-orange-500/10')
-                    : task.status !== 'pending' ? 'border-slate-800/60 bg-slate-900/40 opacity-70 hover:opacity-100'
-                    : 'border-slate-800 bg-slate-900 hover:bg-slate-800/50'
+                    : task.status !== 'pending' ? 'border-slate-700/60 bg-slate-800/40 opacity-70 hover:opacity-100'
+                    : 'border-slate-700 bg-slate-800 hover:bg-slate-700/50'
                   }`}
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
@@ -400,10 +400,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
 
             {/* Detail panel */}
             {selected && (
-              <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-0">
+              <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-5 h-fit sticky top-0">
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
-                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
+                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <h3 className="text-sm font-semibold text-white">{selected.title}</h3>
@@ -418,28 +418,28 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 )}
 
                 <div className="space-y-3 text-xs">
-                  <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                     <span className="text-slate-500">Source</span>
                     <span className="text-slate-300">{selected.source === 'de' ? 'Digital Employee' : selected.source === 'chat' ? 'DE chat' : selectedStale ? 'Staleness watchdog' : 'System'}</span>
                   </div>
-                  <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                     <span className="text-slate-500">Raised</span>
                     <span className="text-slate-300">{taskAge(selected.created_at)} ago</span>
                   </div>
                   {selected.related_table === 'renewal_invoices' && (
-                    <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                       <span className="text-slate-500">Related</span>
                       <button onClick={() => setPage('entity_customer_renewal')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Renewal &amp; Expansion →</button>
                     </div>
                   )}
                   {selected.related_table === 'knowledge_revision_requests' && (
-                    <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                       <span className="text-slate-500">Related</span>
                       <button onClick={() => setPage('knowledge_library')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Knowledge Library → Revisions →</button>
                     </div>
                   )}
                   {selected.status !== 'pending' && (
-                    <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                       <span className="text-slate-500">Decided</span>
                       <span className="text-slate-300">{selected.decided_at ? new Date(selected.decided_at).toLocaleString() : '—'}</span>
                     </div>
@@ -451,11 +451,11 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
                       {gatedExec.destructive ? 'What will be sent / changed on approval' : 'What will happen on approval'}
                     </p>
-                    <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300">
+                    <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300">
                       <p className="font-medium text-slate-200 mb-1">{gatedExec.action_label}</p>
                       {gatedExec.request_summary && <p className="text-slate-400 mb-2">{gatedExec.request_summary}</p>}
                       {(gatedExec.params.body || gatedExec.params.note) && (
-                        <div className="border-t border-slate-800 pt-2 mt-1">
+                        <div className="border-t border-slate-700 pt-2 mt-1">
                           <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Full draft</p>
                           <p className="whitespace-pre-wrap text-slate-300">{gatedExec.params.body || gatedExec.params.note}</p>
                         </div>
@@ -467,7 +467,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 {selected.type === 'checklist' && selected.status === 'pending' && (
                   <div className="mt-4 space-y-1.5">
                     {(selected.checklist_state ?? []).map((item, idx) => (
-                      <label key={idx} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-950 rounded-lg px-3 py-2 cursor-pointer">
+                      <label key={idx} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900 rounded-lg px-3 py-2 cursor-pointer">
                         <input type="checkbox" checked={item.done} className="mt-0.5 accent-teal-500"
                           onChange={e => void toggleItem(selected, idx, e.target.checked)} />
                         <span className={item.done ? 'line-through text-slate-500' : ''}>{item.text}</span>
@@ -616,7 +616,7 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
   ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Human Tasks"
         subtitle="The human command queue — every approval gate, review gate, escalation, override, and training-feedback item awaiting a person"
@@ -625,7 +625,7 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Stats strip */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         {stats.map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
           </div>
@@ -638,7 +638,7 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'}`}
           >
             {f.label}
           </button>
@@ -646,7 +646,7 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
         <div className="flex-1" />
         <button
           onClick={() => setUrgentOnly(v => !v)}
-          className={`px-3 py-1.5 rounded-full text-xs transition-colors ${urgentOnly ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+          className={`px-3 py-1.5 rounded-full text-xs transition-colors ${urgentOnly ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'}`}
         >
           ⚑ Urgent only
         </button>
@@ -656,7 +656,7 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
         {/* Task list */}
         <div className={`${selected ? 'col-span-3' : 'col-span-5'} space-y-1.5`}>
           {visible.length === 0 && (
-            <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+            <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
               <p className="text-slate-500 text-sm">No tasks match the current filters.</p>
             </div>
           )}
@@ -665,10 +665,10 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
               key={task.id}
               onClick={() => setSelectedId(task.id)}
               className={`w-full text-left grid grid-cols-[100px_1fr_60px_70px_80px] gap-2 items-center px-3 py-2.5 rounded-xl border transition-colors ${
-                selectedId === task.id ? 'border-indigo-500/50 bg-slate-800/60'
-                : task.status !== 'pending' ? 'border-slate-800/60 bg-slate-900/40 opacity-70 hover:opacity-100'
+                selectedId === task.id ? 'border-indigo-500/50 bg-slate-700/60'
+                : task.status !== 'pending' ? 'border-slate-700/60 bg-slate-800/40 opacity-70 hover:opacity-100'
                 : task.urgent ? 'border-amber-500/25 bg-amber-500/5 hover:bg-amber-500/10'
-                : 'border-slate-800 bg-slate-900 hover:bg-slate-800/50'
+                : 'border-slate-700 bg-slate-800 hover:bg-slate-700/50'
               }`}
             >
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
@@ -692,10 +692,10 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
 
         {/* Detail panel */}
         {selected && (
-          <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 h-fit sticky top-0">
+          <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-5 h-fit sticky top-0">
             <div className="flex items-center justify-between mb-3">
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
-              <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
+              <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs">×</button>
             </div>
             <h3 className="text-sm font-semibold text-white mb-1">
               {selected.title}
@@ -716,21 +716,21 @@ function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
                 </p>
                 <p className="text-slate-300 leading-relaxed">{selected.reasoning}</p>
               </div>
-              <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Raised by</span>
                 <button onClick={() => setPage('workforce_des')} className="text-indigo-400 hover:text-indigo-300 transition-colors">{selected.de} →</button>
               </div>
-              <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                 <span className="text-slate-500">Related</span>
                 <button onClick={() => setPage(selected.relatedPage)} className="text-indigo-400 hover:text-indigo-300 transition-colors">{selected.relatedLabel} →</button>
               </div>
               {selected.status === 'pending' ? (
-                <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${selected.slaRemaining.includes('OVERDUE') ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-950'}`}>
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${selected.slaRemaining.includes('OVERDUE') ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-900'}`}>
                   <span className="text-slate-500">SLA</span>
                   <span className={selected.slaRemaining.includes('OVERDUE') ? 'text-red-300 font-medium' : 'text-slate-300'}>{selected.slaRemaining}</span>
                 </div>
               ) : (
-                <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                   <span className="text-slate-500">Resolved</span>
                   {(() => {
                     const person = selected.resolvedBy ? findPersonByName(activeCompanyId, selected.resolvedBy) : undefined;

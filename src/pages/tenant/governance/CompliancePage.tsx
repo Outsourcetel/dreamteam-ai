@@ -113,7 +113,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const active = rules.filter(r => r.active)
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Compliance & Guardrails"
         subtitle="Real guardrails, enforced in the real path — invoice approvals check them now; DE answers are checked at generation time. Every change lands in the immutable audit trail."
@@ -142,14 +142,14 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               { label: 'Blocking', value: String(active.filter(r => r.severity === 'blocking').length), color: 'text-red-300' },
               { label: 'Enforcement', value: 'Live', color: 'text-emerald-300' },
             ].map(s => (
-              <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               </div>
             ))}
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-base font-semibold text-white">Guardrail rules</h3>
@@ -161,10 +161,10 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <div className="overflow-x-auto rounded-xl border border-slate-700">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 text-left">
+                  <tr className="border-b border-slate-700 text-left">
                     {['Rule', 'Type', 'Scope', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
                       <th key={h} className={th}>{h}</th>
                     ))}
@@ -172,13 +172,13 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 </thead>
                 <tbody>
                   {rules.map(r => (
-                    <tr key={r.id} className={`border-b border-slate-800/60 last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
+                    <tr key={r.id} className={`border-b border-slate-700/60 last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
                       <td className={`${td} text-slate-200 text-xs`}>{r.rule}</td>
                       <td className={td}>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{ruleTypeMeta(r.rule_type).label}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{ruleTypeMeta(r.rule_type).label}</span>
                       </td>
                       <td className={td}>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-slate-800 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{scopeLabel(r)}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-slate-700 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{scopeLabel(r)}</span>
                       </td>
                       <td className={`${td} text-xs text-slate-400 font-mono`}>
                         {r.rule_type === 'require_approval_over_cents' && r.threshold != null ? `$${Math.round(r.threshold / 100).toLocaleString()}`
@@ -210,20 +210,20 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Add rule form */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAdd(false)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[440px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-[440px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-white mb-4">Add guardrail rule</h3>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-400 mb-1">Rule (plain English)</label>
                 <input value={form.rule} onChange={e => setForm(f => ({ ...f, rule: e.target.value }))}
                   placeholder='e.g. "Never quote competitor pricing"'
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1">Type</label>
                   <select value={form.rule_type} onChange={e => setForm(f => ({ ...f, rule_type: e.target.value as GuardrailRuleType }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
                     {(Object.keys(RULE_TYPE_META) as GuardrailRuleType[]).map(t => (
                       <option key={t} value={t}>{RULE_TYPE_META[t].label}</option>
                     ))}
@@ -232,7 +232,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <div>
                   <label className="block text-slate-400 mb-1">Severity</label>
                   <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value as 'blocking' | 'warning' }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
                     <option value="blocking">Blocking</option>
                     <option value="warning">Warning</option>
                   </select>
@@ -242,7 +242,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <div>
                   <label className="block text-slate-400 mb-1">Applies to</label>
                   <select value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'workspace' | 'department' | 'employee', scope_ref: '' }))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
                     {(Object.keys(SCOPE_META) as Array<'workspace' | 'department' | 'employee'>).map(s => (
                       <option key={s} value={s}>{SCOPE_META[s].label}</option>
                     ))}
@@ -252,7 +252,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <div>
                     <label className="block text-slate-400 mb-1">Department</label>
                     <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
                       <option value="">Choose a department…</option>
                       {departments.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
@@ -261,7 +261,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <div>
                     <label className="block text-slate-400 mb-1">Employee</label>
                     <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-indigo-500">
                       <option value="">Choose an employee…</option>
                       {des.map(d => <option key={d.id} value={d.id}>{d.name}{d.department ? ` · ${d.department}` : ''}</option>)}
                     </select>
@@ -280,7 +280,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <label className="block text-slate-400 mb-1">Patterns (separate alternatives with |)</label>
                   <input value={form.pattern} onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
                     placeholder="guarantee|we promise|legally binding"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
                 </div>
               ) : (
                 <div>
@@ -289,14 +289,14 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </label>
                   <input value={form.threshold} onChange={e => setForm(f => ({ ...f, threshold: e.target.value }))}
                     placeholder={form.rule_type === 'require_approval_over_cents' ? '10000' : '20'} inputMode="numeric"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-indigo-500" />
                 </div>
               )}
               <p className="text-[11px] text-slate-500">{ruleTypeMeta(form.rule_type).hint}.</p>
             </div>
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setShowAdd(false)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
               <button onClick={submitAdd} disabled={busy || !form.rule.trim() || scopeIncomplete}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors">
                 {busy ? 'Saving…' : 'Add rule'}
@@ -454,14 +454,14 @@ function SeverityBadge({ severity }: { severity: Severity }) {
 }
 
 function CategoryBadge({ category }: { category: string }) {
-  return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{category}</span>
+  return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{category}</span>
 }
 
 function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       onClick={() => !disabled && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-slate-800 cursor-not-allowed' : enabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-slate-700 cursor-not-allowed' : enabled ? 'bg-indigo-600' : 'bg-slate-600'}`}
       title={disabled ? 'Regulatory rule — cannot be disabled' : undefined}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
@@ -549,7 +549,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   }))
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Compliance & Guardrails"
         subtitle="Layered guardrail architecture — industry template, customer overrides, and per-DE restrictions. All versioned, all auditable."
@@ -559,7 +559,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       <div className="flex items-stretch gap-2 mb-6">
         {layerCards.map((l, i) => (
           <React.Fragment key={l.title}>
-            <div className="flex-1 bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-4">
               <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Layer {i + 1} · {l.sub}</p>
               <p className="text-sm font-semibold text-white">{l.title}</p>
               <p className="text-xs text-indigo-400 mt-1.5">{l.detail}</p>
@@ -575,7 +575,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       <div className="flex flex-wrap gap-2 mb-6">
         <span className="text-xs text-slate-500 self-center mr-1">Upcoming deadlines:</span>
         {calendar.map(c => (
-          <span key={c.item} className={`text-xs px-3 py-1.5 rounded-lg border ${c.overdue ? 'border-red-500/40 bg-red-500/10 text-red-300' : 'border-slate-800 bg-slate-900 text-slate-300'}`}>
+          <span key={c.item} className={`text-xs px-3 py-1.5 rounded-lg border ${c.overdue ? 'border-red-500/40 bg-red-500/10 text-red-300' : 'border-slate-700 bg-slate-800 text-slate-300'}`}>
             {c.item} · {c.date}{c.overdue && ' — overdue'}
           </span>
         ))}
@@ -583,7 +583,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
       <div className="space-y-6">
         {/* ── Section A: Industry Template ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Layer 1 — Industry Template</p>
@@ -591,15 +591,15 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
             <div className="relative">
               <button onClick={() => setTemplatePickerOpen(!templatePickerOpen)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors">
                 Change template ▾
               </button>
               {templatePickerOpen && (
-                <div className="absolute right-0 mt-1 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-xl z-20 py-1">
+                <div className="absolute right-0 mt-1 w-64 bg-slate-800 border border-slate-600 rounded-xl shadow-xl z-20 py-1">
                   {INDUSTRY_TEMPLATES.map(t => (
                     <button key={t.name}
                       onClick={() => { setTemplatePickerOpen(false); if (t.name !== template.name) setPendingTemplate(`${t.name} ${t.version}`) }}
-                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${t.name === template.name ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-300 hover:bg-slate-800'}`}>
+                      className={`w-full text-left px-3 py-2 text-xs transition-colors ${t.name === template.name ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-300 hover:bg-slate-700'}`}>
                       {t.name} <span className="text-slate-500">{t.version}</span>
                       {t.name === template.name && <span className="float-right">✓</span>}
                     </button>
@@ -617,7 +617,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   const isRegulatory = r.severity === 'regulatory'
                   const enabled = !disabledRules.includes(r.id)
                   return (
-                    <div key={r.id} className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2.5">
+                    <div key={r.id} className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2.5">
                       <span className={`text-sm flex-1 ${enabled ? 'text-slate-200' : 'text-slate-500 line-through'}`}>{r.text}</span>
                       <CategoryBadge category={r.category} />
                       <SeverityBadge severity={r.severity} />
@@ -635,8 +635,8 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
 
         {/* ── Section B: Customer Overrides ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Layer 2 — Customer Overrides</p>
               <p className="text-xs text-slate-400">Org-level rules layered on top of the industry template</p>
@@ -648,16 +648,16 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {showAddForm && (
-            <div className="px-5 py-4 border-b border-slate-800 bg-slate-950/50 flex flex-wrap gap-3 items-end">
+            <div className="px-5 py-4 border-b border-slate-700 bg-slate-900/50 flex flex-wrap gap-3 items-end">
               <div className="flex-1 min-w-[220px]">
                 <label className="text-xs text-slate-500 block mb-1">Rule</label>
                 <input value={newRule} onChange={e => setNewRule(e.target.value)} placeholder="e.g. No refunds over $1,000 without approval"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500" />
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-500" />
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Type</label>
                 <select value={newType} onChange={e => setNewType(e.target.value as 'allow' | 'restrict')}
-                  className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none">
+                  className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none">
                   <option value="restrict">Restrict</option>
                   <option value="allow">Allow</option>
                 </select>
@@ -665,7 +665,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Applies to</label>
                 <select value={newAppliesTo} onChange={e => setNewAppliesTo(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none">
+                  className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none">
                   <option>All DEs</option>
                   {des.map(d => <option key={d.id}>{d.name}</option>)}
                 </select>
@@ -676,7 +676,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 <th className={th}>Rule</th>
                 <th className={th}>Type</th>
                 <th className={th}>Applies to</th>
@@ -686,9 +686,9 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <th className={th}></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
+            <tbody className="divide-y divide-slate-700/50">
               {overrides.map(o => (
-                <tr key={o.id} className="hover:bg-slate-800/20 transition-colors">
+                <tr key={o.id} className="hover:bg-slate-700/20 transition-colors">
                   <td className={`${td} text-slate-200`}>{o.rule}</td>
                   <td className={td}>
                     <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${o.type === 'restrict' ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{o.type}</span>
@@ -715,7 +715,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Layer 3 — Per-DE Restrictions</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {des.map(de => (
-              <div key={de.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
+              <div key={de.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-sm font-semibold text-white">{de.name}</p>
@@ -727,7 +727,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${de.guardrails.piiHandling === 'redact' ? 'bg-red-500/15 text-red-300' : de.guardrails.piiHandling === 'hash' ? 'bg-amber-500/15 text-amber-300' : 'bg-indigo-500/15 text-indigo-300'}`}>
                     PII: {de.guardrails.piiHandling}
                   </span>
-                  <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${de.guardrails.contentFilter === 'strict' ? 'bg-red-500/15 text-red-300' : 'bg-slate-800 text-slate-400'}`}>
+                  <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${de.guardrails.contentFilter === 'strict' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-400'}`}>
                     Filter: {de.guardrails.contentFilter}
                   </span>
                 </div>
@@ -748,8 +748,8 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
 
         {/* ── Section D: Version History ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Version History</p>
             <div className="flex items-center gap-3">
               <button onClick={() => setPage('gov_audit')} className="text-xs text-slate-500">
@@ -762,7 +762,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 <th className={th}>Version</th>
                 <th className={th}>Date</th>
                 <th className={th}>Change summary</th>
@@ -770,13 +770,13 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <th className={th}></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
+            <tbody className="divide-y divide-slate-700/50">
               {versions.map(v => {
                 const key = `${v.version}-${v.date}`
                 const open = openDiff === key
                 return (
                   <React.Fragment key={key}>
-                    <tr className="hover:bg-slate-800/20 transition-colors">
+                    <tr className="hover:bg-slate-700/20 transition-colors">
                       <td className={`${td} text-indigo-400 font-mono text-xs`}>{v.version}</td>
                       <td className={`${td} text-slate-500 text-xs`}>{v.date}</td>
                       <td className={`${td} text-slate-200 text-xs`}>{v.summary}</td>
@@ -784,14 +784,14 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={`${td} text-right`}>
                         <button
                           onClick={() => setOpenDiff(open ? null : key)}
-                          className={`text-xs px-2 py-1 rounded-lg border transition-colors ${open ? 'border-indigo-500 text-indigo-300' : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'}`}>
+                          className={`text-xs px-2 py-1 rounded-lg border transition-colors ${open ? 'border-indigo-500 text-indigo-300' : 'border-slate-600 text-slate-400 hover:text-white hover:border-slate-500'}`}>
                           {open ? 'Hide diff' : 'Diff'}
                         </button>
                       </td>
                     </tr>
                     {open && (
                       <tr>
-                        <td colSpan={5} className="px-5 py-3 bg-slate-950/60">
+                        <td colSpan={5} className="px-5 py-3 bg-slate-900/60">
                           <div className="font-mono text-xs space-y-1">
                             {v.diff.removed.map((line, i) => (
                               <div key={`r${i}`} className="text-red-400/90 bg-red-500/5 rounded px-2 py-1">− {line}</div>
@@ -814,7 +814,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       {/* ── Template change confirm dialog ── */}
       {pendingTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setPendingTemplate(null)}>
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-[420px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-[420px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-white mb-2">Change industry template?</h3>
             <p className="text-xs text-slate-400 leading-relaxed mb-1">
               Switch from <span className="text-white">{template.name} {template.version}</span> to <span className="text-white">{pendingTemplate}</span>.
@@ -824,7 +824,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setPendingTemplate(null)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
               <button
                 onClick={() => {
                   const [name, version] = [pendingTemplate!.slice(0, pendingTemplate!.lastIndexOf(' ')), pendingTemplate!.slice(pendingTemplate!.lastIndexOf(' ') + 1)]

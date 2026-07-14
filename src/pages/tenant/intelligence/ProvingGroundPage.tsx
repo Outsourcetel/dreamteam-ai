@@ -234,11 +234,11 @@ const OUTCOME_CHIP: Record<RunOutcome, { label: string; cls: string }> = {
 };
 
 const TRIGGER_CLS: Record<RunRow['triggerType'], string> = {
-  'Nightly': 'bg-slate-700/50 text-slate-300',
+  'Nightly': 'bg-slate-600/50 text-slate-300',
   'Knowledge publish': 'bg-indigo-500/15 text-indigo-400',
   'Learned behavior': 'bg-sky-500/15 text-sky-400',
   'Recertification': 'bg-amber-500/15 text-amber-400',
-  'Manual': 'bg-slate-700/50 text-slate-400',
+  'Manual': 'bg-slate-600/50 text-slate-400',
   'Playbook publish': 'bg-purple-500/15 text-purple-400',
 };
 
@@ -334,7 +334,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
   const simProgress = suite.scenarios.length > 0 ? Math.min(100, Math.round((simStep / suite.scenarios.length) * 100)) : 0;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader
         title="Proving Ground"
         subtitle="Every Digital Employee is continuously tested against golden scenarios. No knowledge update, learned behavior, playbook change, or recertification ships without passing."
@@ -350,7 +350,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             <button
               key={s.deId}
               onClick={() => selectDe(s.deId)}
-              className={`text-left bg-slate-900 border rounded-2xl p-4 transition-colors ${active ? 'border-indigo-500/60' : 'border-slate-800 hover:border-slate-700'}`}
+              className={`text-left bg-slate-800 border rounded-2xl p-4 transition-colors ${active ? 'border-indigo-500/60' : 'border-slate-700 hover:border-slate-600'}`}
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-xs font-semibold">{s.name[0]}</span>
@@ -380,14 +380,14 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section B: Run history ─────────────────────────────── */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Run History — event-triggered</p>
           <p className="text-[11px] text-slate-500 mt-0.5">Suites run automatically on knowledge publish, playbook publish, learned-behavior approval, recertification, and nightly. A failing run blocks deployment — nothing ships around it.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-950/60">
+            <thead className="bg-slate-900/60">
               <tr>
                 <th className={th}>Time</th>
                 <th className={th}>Trigger</th>
@@ -399,7 +399,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             </thead>
             <tbody>
               {runs.map(r => (
-                <tr key={r.id} className={`border-t border-slate-800/60 ${r.outcome === 'blocked' ? 'bg-red-500/5' : r.outcome === 'failed' ? 'bg-red-500/[0.03]' : ''}`}>
+                <tr key={r.id} className={`border-t border-slate-700/60 ${r.outcome === 'blocked' ? 'bg-red-500/5' : r.outcome === 'failed' ? 'bg-red-500/[0.03]' : ''}`}>
                   <td className={`${td} text-xs text-slate-500 font-mono whitespace-nowrap`}>{r.time}</td>
                   <td className={td}>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full mr-2 whitespace-nowrap ${TRIGGER_CLS[r.triggerType]}`}>{r.triggerType}</span>
@@ -420,7 +420,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section C: Suite detail + E: simulated run ─────────── */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-3 flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Golden Scenario Suite — {suite.name}</p>
@@ -431,7 +431,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
               <button
                 key={s.deId}
                 onClick={() => selectDe(s.deId)}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${s.deId === selectedDeId ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : 'border-slate-800 text-slate-400 hover:text-slate-200'}`}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${s.deId === selectedDeId ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
               >
                 {s.name}
               </button>
@@ -450,7 +450,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
         {(simRunning || simDone) && (
           <div className="mx-5 mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4">
             <p className="text-[10px] uppercase tracking-wider text-indigo-400 mb-2">Simulated run — design preview</p>
-            <div className="w-full bg-slate-800 rounded-full h-1.5 mb-2">
+            <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
               <div className="h-1.5 rounded-full bg-indigo-500 transition-all duration-150" style={{ width: `${simProgress}%` }} />
             </div>
             {simRunning ? (
@@ -480,7 +480,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-950/60">
+            <thead className="bg-slate-900/60">
               <tr>
                 <th className={th}>Scenario</th>
                 <th className={th}>Category</th>
@@ -495,7 +495,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                 return (
                   <React.Fragment key={sc.id}>
                     <tr
-                      className={`border-t border-slate-800/60 ${isFail ? 'bg-red-500/5 cursor-pointer hover:bg-red-500/10' : ''}`}
+                      className={`border-t border-slate-700/60 ${isFail ? 'bg-red-500/5 cursor-pointer hover:bg-red-500/10' : ''}`}
                       onClick={() => isFail && setExpandedScenario(expanded ? null : sc.id)}
                     >
                       <td className={`${td} text-xs text-slate-300 leading-relaxed`}>
@@ -519,7 +519,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                       </td>
                     </tr>
                     {isFail && expanded && (
-                      <tr className="border-t border-slate-800/40 bg-slate-950/60">
+                      <tr className="border-t border-slate-700/40 bg-slate-900/60">
                         <td colSpan={4} className="px-4 py-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs mb-3">
                             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
@@ -549,7 +549,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section D: Calibration panel ───────────────────────── */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Calibration — {suite.name}</p>
         <p className="text-sm text-slate-200 mb-4">{suite.calibrationSummary}</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -557,7 +557,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             const gap = b.reported - b.actual;
             const flagged = !!b.flag;
             return (
-              <div key={b.band} className={`rounded-xl p-3 border ${flagged ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+              <div key={b.band} className={`rounded-xl p-3 border ${flagged ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-700 bg-slate-900'}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-slate-400">Reported {b.band}%</span>
                   {flagged && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">Overconfident</span>}
@@ -565,14 +565,14 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                 {/* reported bar */}
                 <div className="mb-1.5">
                   <div className="flex justify-between text-[10px] text-slate-500 mb-0.5"><span>Self-reported</span><span>{b.reported}%</span></div>
-                  <div className="w-full bg-slate-800 rounded-full h-1.5">
+                  <div className="w-full bg-slate-700 rounded-full h-1.5">
                     <div className="h-1.5 rounded-full bg-slate-500" style={{ width: `${b.reported}%` }} />
                   </div>
                 </div>
                 {/* actual bar */}
                 <div>
                   <div className="flex justify-between text-[10px] text-slate-500 mb-0.5"><span>Actually correct</span><span className={flagged ? 'text-amber-400' : ''}>{b.actual}%</span></div>
-                  <div className="w-full bg-slate-800 rounded-full h-1.5">
+                  <div className="w-full bg-slate-700 rounded-full h-1.5">
                     <div className={`h-1.5 rounded-full ${flagged ? 'bg-amber-500' : gap > 6 ? 'bg-amber-400/70' : 'bg-emerald-500'}`} style={{ width: `${b.actual}%` }} />
                   </div>
                 </div>

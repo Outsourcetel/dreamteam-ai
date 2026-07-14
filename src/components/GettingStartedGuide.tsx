@@ -28,7 +28,7 @@ export default function GettingStartedGuide({
     return (
       <button
         onClick={reopen}
-        className="self-start inline-flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:border-indigo-500/50 transition-colors"
+        className="self-start inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:border-indigo-500/50 transition-colors"
       >
         <span className="text-indigo-400">✦</span> Setup guide
       </button>
@@ -36,7 +36,7 @@ export default function GettingStartedGuide({
   }
 
   return (
-    <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-slate-900/40 p-5">
+    <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-slate-800/40 p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
           <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 text-lg">✦</div>
@@ -56,13 +56,13 @@ export default function GettingStartedGuide({
               </button>
               <button
                 onClick={() => setPage('knowledge_library')}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-[13px] text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
+                className="rounded-lg border border-slate-600 px-3 py-2 text-[13px] text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
               >
                 Add your knowledge
               </button>
               <button
                 onClick={() => setPage('systems_connectors')}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-[13px] text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
+                className="rounded-lg border border-slate-600 px-3 py-2 text-[13px] text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
               >
                 Connect a system
               </button>

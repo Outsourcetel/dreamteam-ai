@@ -96,7 +96,7 @@ const PlatformConsolePage = ({
   const tenantsGatedPage = page !== 'platform_team' && page !== 'platform_security';
   if (tenantsGatedPage && !dbTenantsLoaded) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6 flex items-center justify-center">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6 flex items-center justify-center">
         <p className="text-sm text-slate-500">Loading tenants…</p>
       </div>
     );
@@ -111,7 +111,7 @@ const PlatformConsolePage = ({
     const totalUsers = tenants.reduce((s, t) => s + t.usersCount, 0);
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Platform Overview</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -189,7 +189,7 @@ const PlatformConsolePage = ({
     const hasMoreRows = searchedRows.length > rowsToRender.length;
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Tenant Management</h1>
@@ -224,7 +224,7 @@ const PlatformConsolePage = ({
             value={tenantSearch}
             onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
             placeholder="Search tenants by name or slug…"
-            className="w-72 bg-slate-900 border border-slate-800 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+            className="w-72 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
           />
           <span className="text-xs text-slate-500">
             {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
@@ -240,10 +240,10 @@ const PlatformConsolePage = ({
 
         <PendingApprovalsPanel />
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {[
                   'Tenant',
                   'Plan',
@@ -262,11 +262,11 @@ const PlatformConsolePage = ({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-700">
               {rowsToRender.map(({ tenant: t, depth }) => (
                 <tr
                   key={t.id}
-                  className="hover:bg-slate-800/30 cursor-pointer transition-all"
+                  className="hover:bg-slate-700/30 cursor-pointer transition-all"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3" style={{ paddingLeft: depth * 24 }}>
@@ -329,7 +329,7 @@ const PlatformConsolePage = ({
                     <div className="text-sm text-white">
                       {(t.monthlyTokens / 1000000).toFixed(1)}M
                     </div>
-                    <div className="w-16 h-1 bg-slate-800 rounded-full mt-1">
+                    <div className="w-16 h-1 bg-slate-700 rounded-full mt-1">
                       <div
                         className="h-full rounded-full bg-indigo-500"
                         style={{
@@ -342,7 +342,7 @@ const PlatformConsolePage = ({
                     <div className="flex gap-2">
                       <button
                         onClick={() => setSelectedTenant(t)}
-                        className="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all"
+                        className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
                       >
                         View
                       </button>
@@ -369,7 +369,7 @@ const PlatformConsolePage = ({
           <div className="flex justify-center mt-4">
             <button
               onClick={() => setTenantRowLimit((n) => n + TENANT_PAGE_SIZE)}
-              className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+              className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
             >
               Show {Math.min(TENANT_PAGE_SIZE, searchedRows.length - rowsToRender.length)} more (of {searchedRows.length} total)
             </button>
@@ -397,7 +397,7 @@ const PlatformConsolePage = ({
                       (selectedTenant.monthlyTokens / 1000000).toFixed(1) + 'M',
                   },
                 ].map((item, i) => (
-                  <div key={i} className="bg-slate-800 rounded-xl p-3">
+                  <div key={i} className="bg-slate-700 rounded-xl p-3">
                     <div className="text-xs text-slate-400 mb-0.5">
                       {item.label}
                     </div>
@@ -408,7 +408,7 @@ const PlatformConsolePage = ({
                 ))}
               </div>
 
-              <div className="bg-slate-800 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="bg-slate-700 rounded-xl p-4 flex items-center justify-between gap-4">
                 <div>
                   <div className="text-sm font-medium text-white">
                     Let this tenant create sub-tenants instantly
@@ -422,7 +422,7 @@ const PlatformConsolePage = ({
                 <SelfServeToggle tenant={selectedTenant} onChanged={(v) => setSelectedTenant({ ...selectedTenant, allowSelfServeSubtenants: v })} />
               </div>
 
-              <div className="bg-slate-800 rounded-xl p-4">
+              <div className="bg-slate-700 rounded-xl p-4">
                 <div className="flex items-center justify-between gap-4 mb-1">
                   <div className="text-sm font-medium text-white">Plan</div>
                   <PlanSelector
@@ -522,7 +522,7 @@ const PlatformConsolePage = ({
     tenants.forEach((t) => { byPlan[t.plan] = (byPlan[t.plan] || 0) + 1; });
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Revenue</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -544,10 +544,10 @@ const PlatformConsolePage = ({
           <StatCard label="Enterprise" value={String(byPlan.enterprise)} icon="★" color="purple" trend="Plan tier" />
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {['Tenant', 'Plan', 'Status'].map((h) => (
                   <th
                     key={h}
@@ -558,9 +558,9 @@ const PlatformConsolePage = ({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-700">
               {tenants.slice(0, revenueRowLimit).map((t) => (
-                <tr key={t.id} className="hover:bg-slate-800/20 transition-all">
+                <tr key={t.id} className="hover:bg-slate-700/20 transition-all">
                   <td className="px-4 py-3 text-sm text-white">{t.name}</td>
                   <td className="px-4 py-3">
                     <Badge
@@ -595,7 +595,7 @@ const PlatformConsolePage = ({
           <div className="flex justify-center mt-4">
             <button
               onClick={() => setRevenueRowLimit((n) => n + 50)}
-              className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+              className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
             >
               Show 50 more (of {tenants.length} total)
             </button>
@@ -607,7 +607,7 @@ const PlatformConsolePage = ({
 
   if (page === 'platform_remote_access') {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Remote Access</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -632,7 +632,7 @@ const PlatformConsolePage = ({
           value={remoteAccessSearch}
           onChange={(e) => { setRemoteAccessSearch(e.target.value); setRemoteAccessLimit(30); }}
           placeholder="Search tenants by name…"
-          className="w-72 bg-slate-900 border border-slate-800 text-white text-sm rounded-xl px-4 py-2 mb-4 focus:outline-none focus:border-amber-500"
+          className="w-72 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 mb-4 focus:outline-none focus:border-amber-500"
         />
         {(() => {
           // Every operable tenant, not just status==='active' — new tenants
@@ -652,7 +652,7 @@ const PlatformConsolePage = ({
                 {shown.map((t) => (
               <div
                 key={t.id}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-5"
+                className="bg-slate-800 border border-slate-700 rounded-xl p-5"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div
@@ -699,7 +699,7 @@ const PlatformConsolePage = ({
                 <div className="flex justify-center mt-4">
                   <button
                     onClick={() => setRemoteAccessLimit((n) => n + 30)}
-                    className="px-4 py-2 text-sm text-slate-300 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl transition-all"
+                    className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
                   >
                     Show 30 more (of {matched.length} total)
                   </button>
@@ -812,7 +812,7 @@ const PlatformHealthPage = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">System Health</h1>
         <p className="text-slate-400 text-sm mt-1">
@@ -839,18 +839,18 @@ const PlatformHealthPage = () => {
         <p className="text-xs text-slate-500 text-center py-10">No connectors configured by any tenant yet.</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {['Tenant', 'Connector', 'Status', 'Consecutive Failures', 'Last OK', 'Last Error'].map((h) => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-700">
               {rows.map((r) => (
-                <tr key={r.connector_id} className="hover:bg-slate-800/20 transition-all">
+                <tr key={r.connector_id} className="hover:bg-slate-700/20 transition-all">
                   <td className="px-4 py-3 text-sm text-white">{r.tenant_name}</td>
                   <td className="px-4 py-3 text-sm text-slate-300">{r.display_name || r.provider}</td>
                   <td className="px-4 py-3">{statusBadge(r)}</td>
@@ -956,7 +956,7 @@ const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
       <h2 className="text-sm font-semibold text-white mb-4">Recent Platform Events</h2>
       {events === null && (
         <p className="text-xs text-slate-500 text-center py-6">Loading recent activity…</p>
@@ -1062,7 +1062,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
   const tenantIdsInLog = Array.from(new Set(rows.map((r) => r.tenant_id)));
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mt-6">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mt-6">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
@@ -1077,7 +1077,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-800 px-5 py-4">
+        <div className="border-t border-slate-700 px-5 py-4">
           {loading && <p className="text-xs text-slate-500 py-4 text-center">Loading write log…</p>}
           {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
 
@@ -1089,7 +1089,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                   <select
                     value={tenantFilter}
                     onChange={(e) => setTenantFilter(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
+                    className="bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
                   >
                     <option value="all">All tenants</option>
                     {tenantIdsInLog.map((tid) => (
@@ -1099,7 +1099,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                 </div>
                 <button
                   onClick={load}
-                  className="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all"
+                  className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
                 >
                   Refresh
                 </button>
@@ -1113,7 +1113,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="border-b border-slate-800">
+                      <tr className="border-b border-slate-700">
                         <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
                         <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
                         <th className="px-3 py-2 text-xs font-medium text-slate-500">Tenant</th>
@@ -1122,14 +1122,14 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                         <th className="px-3 py-2 text-xs font-medium text-slate-500">Changed fields</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800">
+                    <tbody className="divide-y divide-slate-700">
                       {visibleRows.map((row) => {
                         const fields = changedFields(row);
                         return (
                           <tr
                             key={row.id}
                             onClick={() => setDetailRow(row)}
-                            className="cursor-pointer hover:bg-slate-800/50 transition-all"
+                            className="cursor-pointer hover:bg-slate-700/50 transition-all"
                           >
                             <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
                               {new Date(row.created_at).toLocaleString()}
@@ -1142,7 +1142,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                             </td>
                             <td className="px-3 py-2.5 text-xs text-slate-300 font-mono">{row.table_name}</td>
                             <td className="px-3 py-2.5">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-700 text-slate-300'}`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-600 text-slate-300'}`}>
                                 {row.operation}
                               </span>
                             </td>
@@ -1180,7 +1180,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
               ) : (
                 <div className="space-y-2">
                   {changedFields(detailRow).map((field) => (
-                    <div key={field} className="bg-slate-800 rounded-xl p-3">
+                    <div key={field} className="bg-slate-700 rounded-xl p-3">
                       <div className="text-xs font-mono text-amber-300 mb-1">{field}</div>
                       <div className="text-xs text-slate-400 space-y-1">
                         <div>
@@ -1252,8 +1252,8 @@ const PendingApprovalsPanel = () => {
   if (requests.length === 0) return null;
 
   return (
-    <div className="bg-slate-900 border border-amber-500/30 rounded-xl overflow-hidden mb-6">
-      <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+    <div className="bg-slate-800 border border-amber-500/30 rounded-xl overflow-hidden mb-6">
+      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-white">Waiting on your approval</p>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -1264,7 +1264,7 @@ const PendingApprovalsPanel = () => {
           {requests.length} pending
         </span>
       </div>
-      <div className="divide-y divide-slate-800">
+      <div className="divide-y divide-slate-700">
         {requests.map((r) => (
           <div key={r.id} className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -1304,7 +1304,7 @@ const PendingApprovalsPanel = () => {
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="e.g. Please provide more detail about the intended use case"
-              className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
+              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
             />
             <button
               disabled={!rejectReason.trim()}
@@ -1344,7 +1344,7 @@ const SelfServeToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (v:
       onClick={toggle}
       disabled={saving}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
-        enabled ? 'bg-emerald-600' : 'bg-slate-700'
+        enabled ? 'bg-emerald-600' : 'bg-slate-600'
       }`}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -1399,7 +1399,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
       className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50 ${
         isSuspended
           ? 'text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30'
-          : 'text-slate-400 hover:text-white bg-slate-800'
+          : 'text-slate-400 hover:text-white bg-slate-700'
       }`}
     >
       {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
@@ -1439,7 +1439,7 @@ const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan:
         value={tenant.plan}
         onChange={(e) => void handleChange(e.target.value as Tenant['plan'])}
         disabled={saving}
-        className="bg-slate-900 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-slate-800 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
       >
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
@@ -1485,7 +1485,7 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Acme Manufacturing"
-            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <div>
@@ -1494,7 +1494,7 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="e.g. Manufacturing"
-            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -1553,7 +1553,7 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
               const hasOverride = Object.prototype.hasOwnProperty.call(overrides, r.key);
               const isOn = hasOverride ? overrides[r.key] : r.default_enabled;
               return (
-                <div key={r.key} className="bg-slate-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                <div key={r.key} className="bg-slate-700 rounded-xl p-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm text-white font-medium">{r.label}</div>
                     <div className="text-xs text-slate-500 mt-0.5">
@@ -1565,7 +1565,7 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
                     onClick={() => handleToggle(r.key, isOn)}
                     disabled={savingKey === r.key}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
-                      isOn ? 'bg-emerald-600' : 'bg-slate-700'
+                      isOn ? 'bg-emerald-600' : 'bg-slate-600'
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isOn ? 'translate-x-6' : 'translate-x-1'}`} />

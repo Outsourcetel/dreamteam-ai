@@ -198,7 +198,7 @@ function getStepStatusIcon(status: StepStatus): { icon: string; color: string } 
     case 'complete': return { icon: '✓', color: 'text-emerald-400 bg-emerald-400/10 border-emerald-500/30' };
     case 'in_progress': return { icon: '⟳', color: 'text-blue-400 bg-blue-400/10 border-blue-500/30' };
     case 'pending_review': return { icon: '⚠', color: 'text-amber-400 bg-amber-400/10 border-amber-500/30' };
-    case 'not_started': return { icon: '○', color: 'text-slate-500 bg-slate-800 border-slate-600/30' };
+    case 'not_started': return { icon: '○', color: 'text-slate-500 bg-slate-700 border-slate-600/30' };
   }
 }
 
@@ -350,19 +350,19 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
   // PWC — Onboarding is a lighter function (engagement setup)
   if (activeCompanyId !== 'tcp') {
     return (
-      <div className="flex-1 flex flex-col overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 flex flex-col overflow-auto bg-slate-900 p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Onboarding — Customer Lifecycle</h1>
           <p className="text-slate-400 text-sm mt-1">{activeCompany.name} · Client engagement setup</p>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">⚙</div>
+          <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl mb-4">⚙</div>
           <h2 className="text-lg font-semibold text-slate-200 mb-2">1 engagement setup in progress</h2>
           <p className="text-sm text-slate-500 max-w-sm mb-5">
             Harbor Financial — engagement setup is 60% complete. Morgan is verifying KYC documents
             and preparing the engagement letter for partner review.
           </p>
-          <div className="w-64 bg-slate-800 rounded-full h-1.5 mb-2">
+          <div className="w-64 bg-slate-700 rounded-full h-1.5 mb-2">
             <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: '60%' }} />
           </div>
           <p className="text-xs text-slate-600">Due 2026-07-20 · Handled by Morgan</p>
@@ -372,17 +372,17 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
   }
 
   return (
-    <div className="flex h-full bg-slate-950 overflow-hidden">
+    <div className="flex h-full bg-slate-900 overflow-hidden">
       {toastVisible && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-slate-600 text-white text-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-slate-600 text-white text-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2">
           <span className="text-emerald-400">✓</span>
           {toastMsg}
         </div>
       )}
 
       {/* Projects Sidebar */}
-      <div className="w-64 flex-shrink-0 bg-slate-900 border-r border-slate-700/50 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+      <div className="w-64 flex-shrink-0 bg-slate-800 border-r border-slate-600/50 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-600/50">
           <span className="text-sm font-semibold text-white">Onboarding Projects</span>
           <button
             onClick={() => setNewProjectModal(true)}
@@ -399,7 +399,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
               className={`w-full text-left p-3 rounded-xl border transition-all ${
                 activeProject?.id === proj.id
                   ? 'border-indigo-500/50 bg-indigo-500/10'
-                  : 'border-slate-700/50 bg-slate-800/50 hover:border-slate-600'
+                  : 'border-slate-600/50 bg-slate-700/50 hover:border-slate-600'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
@@ -408,7 +408,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
               </div>
               <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 mb-2">{proj.product}</span>
               <div className="text-xs text-slate-400 mb-2">{proj.specialist}</div>
-              <div className="w-full bg-slate-700 rounded-full h-1 mb-1">
+              <div className="w-full bg-slate-600 rounded-full h-1 mb-1">
                 <div className="h-1 rounded-full bg-indigo-500 transition-all" style={{ width: `${proj.progress}%` }} />
               </div>
               <div className="flex justify-between text-xs text-slate-500">
@@ -422,7 +422,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
 
       {/* Main content */}
       {!activeProject ? (
-        <div className="flex-1 flex items-center justify-center bg-slate-950">
+        <div className="flex-1 flex items-center justify-center bg-slate-900">
           <div className="text-center">
             <div className="text-4xl mb-4">📋</div>
             <div className="text-lg font-semibold text-white mb-1">Select or create a project</div>
@@ -439,7 +439,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
         <>
           {/* Session panel */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/50 bg-slate-900 flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-600/50 bg-slate-800 flex-shrink-0">
               <div className="flex items-center gap-2 text-sm flex-wrap">
                 <span className="text-slate-400">Onboarding — Customer Lifecycle</span>
                 <span className="text-slate-600">/</span>
@@ -450,26 +450,26 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                   activeProject.status === 'in_progress' ? 'text-blue-400 bg-blue-400/10 border-blue-500/30' :
                   activeProject.status === 'complete' ? 'text-emerald-400 bg-emerald-400/10 border-emerald-500/30' :
                   activeProject.status === 'blocked' ? 'text-red-400 bg-red-400/10 border-red-500/30' :
-                  'text-slate-400 bg-slate-700 border-slate-600'
+                  'text-slate-400 bg-slate-600 border-slate-600'
                 }`}>
                   {activeProject.status.replace('_', ' ')}
                 </span>
               </div>
               <button
                 onClick={() => setActiveTab('audit')}
-                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors flex-shrink-0"
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors flex-shrink-0"
               >
                 View Audit Log
               </button>
             </div>
 
-            <div className="flex items-center gap-1 px-5 py-2 border-b border-slate-700/50 bg-slate-900 flex-shrink-0">
+            <div className="flex items-center gap-1 px-5 py-2 border-b border-slate-600/50 bg-slate-800 flex-shrink-0">
               {(['checklist', 'upload', 'configuration', 'audit'] as ActiveTab[]).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    activeTab === tab ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    activeTab === tab ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
                   }`}
                 >
                   {tab === 'upload' ? 'Data Upload' : tab === 'audit' ? 'Audit Log' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -486,7 +486,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                     const { icon, color } = getStepStatusIcon(step.status);
                     const isOpen = openStepId === step.id;
                     return (
-                      <div key={step.id} className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden">
+                      <div key={step.id} className="bg-slate-800 border border-slate-600/50 rounded-xl overflow-hidden">
                         <div className="flex items-center gap-4 p-4">
                           <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-sm font-bold flex-shrink-0 ${color}`}>
                             {icon}
@@ -498,17 +498,17 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">DE handled</span>
                               )}
                               {step.handler === 'human' && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 border border-slate-600">Human handled</span>
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-slate-400 border border-slate-600">Human handled</span>
                               )}
                               {step.itemCount !== null && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">{step.itemCount} items</span>
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 border border-slate-600">{step.itemCount} items</span>
                               )}
                             </div>
                             <div className="text-xs text-slate-400 mt-0.5">{step.description}</div>
                           </div>
                           <div className="flex-shrink-0">
                             {step.status === 'complete' && (
-                              <button onClick={() => setOpenStepId(isOpen ? null : step.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">
+                              <button onClick={() => setOpenStepId(isOpen ? null : step.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">
                                 {isOpen ? 'Close' : 'View Details'}
                               </button>
                             )}
@@ -523,7 +523,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                               </button>
                             )}
                             {step.status === 'not_started' && (
-                              <button onClick={() => setOpenStepId(isOpen ? null : step.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors">
+                              <button onClick={() => setOpenStepId(isOpen ? null : step.id)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-400 border border-slate-600 transition-colors">
                                 {isOpen ? 'Close' : 'Start'}
                               </button>
                             )}
@@ -532,11 +532,11 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
 
                         {/* Step 4 — Leave Rules review */}
                         {isOpen && step.id === 'step-4' && (
-                          <div className="border-t border-slate-700/50 p-5 bg-slate-800/30">
+                          <div className="border-t border-slate-600/50 p-5 bg-slate-700/30">
                             <div className="flex items-center justify-between mb-4">
                               <h3 className="text-sm font-semibold text-white">Leave Rules — Proposed by DE</h3>
                               <div className="flex gap-2">
-                                <button className="text-xs px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Edit</button>
+                                <button className="text-xs px-2.5 py-1 rounded-lg bg-slate-600 hover:bg-slate-600 text-slate-300 transition-colors">Edit</button>
                                 <button onClick={() => showToast('All leave rules approved and applied.')} className="text-xs px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">Approve All</button>
                               </div>
                             </div>
@@ -564,13 +564,13 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                     <div className="text-xs text-slate-400 mt-0.5">{row.value}</div>
                                     {row.s === 'warn' && (
                                       <div className="mt-1.5">
-                                        <input placeholder="Set limit: ___ days" className="text-xs bg-slate-800 border border-slate-600 rounded px-2 py-1 text-white w-40 focus:outline-none focus:border-indigo-500" />
+                                        <input placeholder="Set limit: ___ days" className="text-xs bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white w-40 focus:outline-none focus:border-indigo-500" />
                                       </div>
                                     )}
                                     {row.s === 'error' && (
                                       <div className="mt-1.5 flex gap-2">
                                         <button className="text-xs px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">Add rule</button>
-                                        <button className="text-xs px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">Skip</button>
+                                        <button className="text-xs px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-600 text-slate-300 transition-colors">Skip</button>
                                       </div>
                                     )}
                                   </div>
@@ -582,7 +582,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                               <div className="text-xs text-slate-400">I've matched Lakeshore Analytics' leave policy from the HR handbook uploaded in step 1. The carryover cap and bereavement leave were not specified — please confirm or I can set standard defaults.</div>
                             </div>
                             <div className="flex justify-end gap-2 mt-4">
-                              <button className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">Request changes</button>
+                              <button className="text-xs px-3 py-1.5 rounded-lg bg-slate-600 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">Request changes</button>
                               <button
                                 onClick={() => { showToast('Leave rules approved and applied to Humanity.com.'); setOpenStepId(null); }}
                                 className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
@@ -595,12 +595,12 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
 
                         {/* Step 3 — Positions table */}
                         {isOpen && step.id === 'step-3' && (
-                          <div className="border-t border-slate-700/50 p-5 bg-slate-800/30">
+                          <div className="border-t border-slate-600/50 p-5 bg-slate-700/30">
                             <h3 className="text-sm font-semibold text-white mb-3">Positions & Roles</h3>
                             <div className="overflow-x-auto">
                               <table className="w-full text-xs">
                                 <thead>
-                                  <tr className="text-slate-400 border-b border-slate-700">
+                                  <tr className="text-slate-400 border-b border-slate-600">
                                     <th className="text-left py-2 pr-4">Position</th>
                                     <th className="text-left py-2 pr-4">Min Staff</th>
                                     <th className="text-left py-2 pr-4">Shift Eligible</th>
@@ -608,7 +608,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                     <th className="text-left py-2">Status</th>
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-800">
+                                <tbody className="divide-y divide-slate-700">
                                   {[
                                     { pos: 'Team Lead', min: 2, shift: true, grade: 'Grade 3' },
                                     { pos: 'Support Agent', min: 8, shift: true, grade: 'Grade 1' },
@@ -636,7 +636,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
 
                         {/* Generic panel */}
                         {isOpen && step.id !== 'step-3' && step.id !== 'step-4' && (
-                          <div className="border-t border-slate-700/50 p-4 bg-slate-800/30">
+                          <div className="border-t border-slate-600/50 p-4 bg-slate-700/30">
                             <div className="text-xs">
                               {step.status === 'complete' && (
                                 <span className="text-emerald-400">✓ This step was completed successfully. All items are configured in {activeProject.product}.</span>
@@ -663,7 +663,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                     <div>
                       <h2 className="text-sm font-semibold text-white mb-1">Data Upload</h2>
                       <p className="text-xs text-slate-400 mb-5">Upload employee, location, or position data. The DE will auto-map columns to {activeProject.product} fields.</p>
-                      <div className="border-2 border-dashed border-slate-600 hover:border-indigo-500/50 rounded-xl p-10 text-center mb-4 transition-colors cursor-pointer bg-slate-800/20">
+                      <div className="border-2 border-dashed border-slate-600 hover:border-indigo-500/50 rounded-xl p-10 text-center mb-4 transition-colors cursor-pointer bg-slate-700/20">
                         <div className="text-3xl mb-3">📂</div>
                         <div className="text-sm font-medium text-white mb-1">Drop a CSV or Excel file here, or click to browse</div>
                         <div className="text-xs text-slate-400">Supported: Employees, Locations, Positions, Leave Balances</div>
@@ -671,7 +671,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-xs text-slate-400">Or use a sample file:</span>
                         {['Employees CSV', 'Locations CSV', 'Positions CSV'].map(label => (
-                          <button key={label} onClick={() => setUploadStep(1)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">
+                          <button key={label} onClick={() => setUploadStep(1)} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">
                             {label}
                           </button>
                         ))}
@@ -686,7 +686,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <span className="text-xs text-slate-600">/</span>
                         <span className="text-xs text-white">File Preview</span>
                       </div>
-                      <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4 mb-4">
+                      <div className="bg-slate-800 border border-slate-600/50 rounded-xl p-4 mb-4">
                         <div className="flex items-center gap-2 mb-3">
                           <span>📄</span>
                           <span className="text-sm font-medium text-white">employees_tcp.csv</span>
@@ -695,13 +695,13 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="text-slate-400 border-b border-slate-700">
+                              <tr className="text-slate-400 border-b border-slate-600">
                                 {['First Name','Last Name','Email Address','Job Title','Department','Start Date','Emp Type','Mobile','Office','Manager'].map(h => (
                                   <th key={h} className="text-left py-2 pr-3 font-medium whitespace-nowrap">{h}</th>
                                 ))}
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800">
+                            <tbody className="divide-y divide-slate-700">
                               {[
                                 ['Sarah','Mitchell','s.m@tcp.com','Support Agent','Ops','2023-01-10','FT','07700900001','London HQ','J. Cooper'],
                                 ['James','Cooper','j.c@tcp.com','Team Lead','Ops','2022-03-01','FT','07700900002','New York',''],
@@ -729,7 +729,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <span className="text-xs text-slate-600">/</span>
                         <span className="text-xs text-white">AI Column Mapping</span>
                       </div>
-                      <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4 mb-4">
+                      <div className="bg-slate-800 border border-slate-600/50 rounded-xl p-4 mb-4">
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="text-sm font-semibold text-white">Column Mapping</h3>
                           <span className="text-xs text-slate-400">DE auto-mapped 8 of 10 columns</span>
@@ -737,7 +737,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="text-slate-400 border-b border-slate-700">
+                              <tr className="text-slate-400 border-b border-slate-600">
                                 <th className="text-left py-2 pr-4">Your Column</th>
                                 <th className="text-center py-2 pr-4">→</th>
                                 <th className="text-left py-2 pr-4">Humanity.com Field</th>
@@ -745,7 +745,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                 <th className="text-left py-2"></th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800">
+                            <tbody className="divide-y divide-slate-700">
                               {mappings.map(m => (
                                 <tr key={m.yourColumn} className={m.status === 'warn' ? 'bg-amber-500/5' : m.status === 'unmapped' ? 'bg-red-500/5' : ''}>
                                   <td className="py-2 pr-4 text-white font-medium">{m.yourColumn}</td>
@@ -753,7 +753,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                   <td className="py-2 pr-4">
                                     {editingMapping === m.yourColumn ? (
                                       <select
-                                        className="text-xs bg-slate-800 border border-indigo-500 rounded px-2 py-1 text-white focus:outline-none"
+                                        className="text-xs bg-slate-700 border border-indigo-500 rounded px-2 py-1 text-white focus:outline-none"
                                         defaultValue={m.humanityField}
                                         onChange={e => {
                                           setMappings(prev => prev.map(x =>
@@ -800,7 +800,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <div className="text-xs text-slate-400">I matched 8 of 10 columns automatically. 2 need your review: 'Emp Type' might be 'employment_type' or 'contract_type', and 'Office' could be 'location' or 'department'. Please confirm.</div>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => setUploadStep(1)} className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-sm transition-colors">Back</button>
+                        <button onClick={() => setUploadStep(1)} className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 text-sm transition-colors">Back</button>
                         <button
                           onClick={() => { setUploadStep(3); setUploadDone(false); setUploadProgress(0); }}
                           className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
@@ -818,18 +818,18 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         <span className="text-xs text-slate-600">/</span>
                         <span className="text-xs text-white">Validation Preview</span>
                       </div>
-                      <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4 mb-4">
+                      <div className="bg-slate-800 border border-slate-600/50 rounded-xl p-4 mb-4">
                         <h3 className="text-sm font-semibold text-white mb-3">Mapped Data Preview</h3>
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="text-slate-400 border-b border-slate-700">
+                              <tr className="text-slate-400 border-b border-slate-600">
                                 {['first_name','last_name','email','position','employment_type','location'].map(h => (
                                   <th key={h} className="text-left py-2 pr-4 font-medium">{h}</th>
                                 ))}
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-800">
+                            <tbody className="divide-y divide-slate-700">
                               {[
                                 ['Sarah','Mitchell','s.m@tcp.com','Support Agent','Full Time','London HQ'],
                                 ['James','Cooper','j.c@tcp.com','Team Lead','Full Time','New York'],
@@ -846,7 +846,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         </div>
                         <div className="mt-2 text-xs text-slate-500">Showing 5 of 142 rows</div>
                       </div>
-                      <div className="p-3 rounded-lg bg-slate-900 border border-slate-700/50 mb-4 space-y-1.5">
+                      <div className="p-3 rounded-lg bg-slate-800 border border-slate-600/50 mb-4 space-y-1.5">
                         <div className="flex items-center gap-2 text-xs text-emerald-400"><span>✓</span><span>138 rows ready to upload</span></div>
                         <div className="flex items-center gap-2 text-xs text-amber-400"><span>⚠</span><span>3 rows have missing email — will be skipped</span></div>
                         <div className="flex items-center gap-2 text-xs text-amber-400"><span>⚠</span><span>1 row has invalid employment_type value "PT" — will default to "Part Time"</span></div>
@@ -859,9 +859,9 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                           Upload 138 Employees →
                         </button>
                       ) : (
-                        <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4">
+                        <div className="bg-slate-800 border border-slate-600/50 rounded-xl p-4">
                           <div className="text-xs text-slate-400 mb-2">Uploading employees...</div>
-                          <div className="w-full bg-slate-800 rounded-full h-2 mb-1">
+                          <div className="w-full bg-slate-700 rounded-full h-2 mb-1">
                             <div className="h-2 rounded-full bg-emerald-500 transition-all duration-100" style={{ width: `${uploadProgress}%` }} />
                           </div>
                           <div className="text-xs text-slate-400">{uploadProgress}%</div>
@@ -878,7 +878,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                       <div className="text-xs text-slate-400 mb-4">1 corrected (employment_type normalized)</div>
                       <div className="text-xs text-slate-500 mb-4">This action was logged to the audit trail.</div>
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => setActiveTab('audit')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">View Audit Entry</button>
+                        <button onClick={() => setActiveTab('audit')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">View Audit Entry</button>
                         <button onClick={() => { setUploadStep(0); setUploadDone(false); setUploadProgress(0); }} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">Upload Another File</button>
                       </div>
                     </div>
@@ -952,11 +952,11 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         complete: 'text-emerald-400 bg-emerald-400/10 border-emerald-500/30',
                         needs_review: 'text-amber-400 bg-amber-400/10 border-amber-500/30',
                         pending: 'text-indigo-400 bg-indigo-400/10 border-indigo-500/30',
-                        not_configured: 'text-slate-400 bg-slate-700 border-slate-600',
-                        not_started: 'text-slate-500 bg-slate-800 border-slate-700',
+                        not_configured: 'text-slate-400 bg-slate-600 border-slate-600',
+                        not_started: 'text-slate-500 bg-slate-700 border-slate-600',
                       };
                       return (
-                        <div key={section.key} className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden">
+                        <div key={section.key} className="bg-slate-800 border border-slate-600/50 rounded-xl overflow-hidden">
                           <button
                             className="w-full flex items-center justify-between px-4 py-3 text-left"
                             onClick={() => setConfigSections(prev => ({ ...prev, [section.key]: !prev[section.key] }))}
@@ -970,7 +970,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                             </div>
                           </button>
                           {isOpen && (
-                            <div className="border-t border-slate-800 px-4 pb-4 pt-3 space-y-2">
+                            <div className="border-t border-slate-700 px-4 pb-4 pt-3 space-y-2">
                               {section.key === 'leave' ? (
                                 <div className="text-xs text-slate-400">
                                   Leave rules are pending your approval from Step 4.{' '}
@@ -982,7 +982,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                   </button>
                                 </div>
                               ) : section.items.map(item => (
-                                <div key={item.label} className="flex items-center justify-between py-1 border-b border-slate-800 last:border-0">
+                                <div key={item.label} className="flex items-center justify-between py-1 border-b border-slate-700 last:border-0">
                                   <span className="text-xs text-slate-400">├ {item.label}</span>
                                   <div className="flex items-center gap-2">
                                     {item.value ? (
@@ -995,7 +995,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                                         <span className="text-xs text-slate-600">—</span>
                                         <button
                                           onClick={() => showToast('Opening in Humanity.com...')}
-                                          className="text-xs px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+                                          className="text-xs px-2 py-0.5 rounded bg-slate-600 hover:bg-slate-600 text-slate-300 transition-colors"
                                         >
                                           {section.configStatus === 'not_started' ? 'Connect' : section.configStatus === 'not_configured' ? 'Configure' : 'Set default'}
                                         </button>
@@ -1025,7 +1025,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                     <h2 className="text-sm font-semibold text-white">Audit Log — {activeProject.client}</h2>
                     <button
                       onClick={() => showToast('Audit report downloaded as PDF')}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                      className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors"
                     >
                       Export Audit Report
                     </button>
@@ -1036,17 +1036,17 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                         key={f}
                         onClick={() => setAuditFilter(f)}
                         className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                          auditFilter === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                          auditFilter === f ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white border border-slate-600'
                         }`}
                       >
                         {f === 'de' ? 'DE Actions' : f === 'human' ? 'Human Actions' : f === 'pending_review' ? 'Pending Review' : f.charAt(0).toUpperCase() + f.slice(1)}
                       </button>
                     ))}
                   </div>
-                  <div className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden">
+                  <div className="bg-slate-800 border border-slate-600/50 rounded-xl overflow-hidden">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/50">
+                        <tr className="text-slate-400 border-b border-slate-600 bg-slate-700/50">
                           <th className="text-left py-2.5 px-4 font-medium">Timestamp</th>
                           <th className="text-left py-2.5 px-4 font-medium">Actor</th>
                           <th className="text-left py-2.5 px-4 font-medium">Action</th>
@@ -1054,13 +1054,13 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                           <th className="text-left py-2.5 px-4 font-medium">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800">
+                      <tbody className="divide-y divide-slate-700">
                         {filteredAudit.map(entry => (
-                          <tr key={entry.id} className="hover:bg-slate-800/30 transition-colors">
+                          <tr key={entry.id} className="hover:bg-slate-700/30 transition-colors">
                             <td className="py-2.5 px-4 text-slate-400 whitespace-nowrap">{entry.timestamp}</td>
                             <td className="py-2.5 px-4">
                               <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                entry.actor === 'DE' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-400'
+                                entry.actor === 'DE' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-600 text-slate-400'
                               }`}>
                                 {entry.actor}
                               </span>
@@ -1070,7 +1070,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                             <td className="py-2.5 px-4">
                               <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                                 entry.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' :
-                                entry.status === 'auto' ? 'bg-slate-700 text-slate-400' :
+                                entry.status === 'auto' ? 'bg-slate-600 text-slate-400' :
                                 entry.status === 'pending_review' ? 'bg-amber-500/20 text-amber-400' :
                                 'bg-blue-500/20 text-blue-400'
                               }`}>
@@ -1088,8 +1088,8 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
           </div>
 
           {/* AI Assistant Panel */}
-          <div className="w-80 flex-shrink-0 bg-slate-900 border-l border-slate-700/50 flex flex-col overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
+          <div className="w-80 flex-shrink-0 bg-slate-800 border-l border-slate-600/50 flex flex-col overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-600/50 flex-shrink-0">
               <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">DE</div>
               <div>
                 <div className="text-sm font-semibold text-white">Onboarding Assistant</div>
@@ -1105,7 +1105,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                   {msg.role === 'de' && (
                     <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5">DE</div>
                   )}
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                  <div className={`max-w-[85%] rounded-xl px-3 py-2 ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
                     <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-indigo-200' : 'text-slate-500'}`}>{msg.time}</div>
                   </div>
@@ -1114,7 +1114,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
               {chatLoading && (
                 <div className="flex gap-2 justify-start">
                   <div className="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5">DE</div>
-                  <div className="bg-slate-800 rounded-xl px-3 py-3">
+                  <div className="bg-slate-700 rounded-xl px-3 py-3">
                     <div className="flex gap-1 items-center">
                       {[0, 150, 300].map(delay => (
                         <div key={delay} className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style={{ animationDelay: `${delay}ms` }} />
@@ -1125,10 +1125,10 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
               )}
               <div ref={chatEndRef} />
             </div>
-            <div className="px-3 py-2 border-t border-slate-700/50 flex gap-1 flex-wrap">
-              <button onClick={() => sendQuickAction('next')} className="text-xs px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">📋 What's next?</button>
-              <button onClick={() => sendQuickAction('issues')} className="text-xs px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">⚠ Any issues?</button>
-              <button onClick={() => sendQuickAction('progress')} className="text-xs px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors">📊 Progress</button>
+            <div className="px-3 py-2 border-t border-slate-600/50 flex gap-1 flex-wrap">
+              <button onClick={() => sendQuickAction('next')} className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">📋 What's next?</button>
+              <button onClick={() => sendQuickAction('issues')} className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">⚠ Any issues?</button>
+              <button onClick={() => sendQuickAction('progress')} className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors">📊 Progress</button>
             </div>
             <div className="px-3 pb-3 flex-shrink-0">
               <div className="flex gap-2">
@@ -1137,7 +1137,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(chatInput); } }}
                   placeholder="Ask the DE anything..."
-                  className="flex-1 text-xs bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="flex-1 text-xs bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
                 <button
                   onClick={() => sendChat(chatInput)}
@@ -1155,7 +1155,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
       {/* New Project Modal */}
       {newProjectModal && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-white">New Onboarding Project</h2>
               <button onClick={() => setNewProjectModal(false)} className="text-slate-500 hover:text-white text-xl leading-none transition-colors">×</button>
@@ -1167,7 +1167,7 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                   value={newClient}
                   onChange={e => setNewClient(e.target.value)}
                   placeholder="e.g. Acme Corp"
-                  className="w-full text-sm bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full text-sm bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
               <div className="relative">
@@ -1178,15 +1178,15 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                   onFocus={() => setShowProductSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowProductSuggestions(false), 150)}
                   placeholder="e.g. Humanity.com"
-                  className="w-full text-sm bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full text-sm bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
                 {showProductSuggestions && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden z-10">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-slate-700 border border-slate-600 rounded-xl overflow-hidden z-10">
                     {PRODUCTS.filter(p => !newProduct || p.toLowerCase().includes(newProduct.toLowerCase())).map(p => (
                       <button
                         key={p}
                         onMouseDown={() => { setNewProduct(p); setShowProductSuggestions(false); }}
-                        className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+                        className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-600 transition-colors"
                       >
                         {p}
                       </button>
@@ -1199,14 +1199,14 @@ const CustomerOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => 
                 <select
                   value={newSpecialist}
                   onChange={e => setNewSpecialist(e.target.value)}
-                  className="w-full text-sm bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full text-sm bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-indigo-500 transition-colors"
                 >
                   {SPECIALISTS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <button onClick={() => setNewProjectModal(false)} className="flex-1 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-sm transition-colors">Cancel</button>
+              <button onClick={() => setNewProjectModal(false)} className="flex-1 px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 text-sm transition-colors">Cancel</button>
               <button
                 onClick={handleCreateProject}
                 disabled={!newClient.trim() || !newProduct.trim()}

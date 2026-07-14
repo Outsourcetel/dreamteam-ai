@@ -95,8 +95,8 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   dropbox: '🗄️', twilio: '📱', typeform: '📝', calendly: '📆', okta: '🔐', contentful: '🗂️', template: '🧱',
 };
 
-const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
-const selectCls = 'bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 px-2 py-1.5';
+const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2';
+const selectCls = 'bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5';
 
 // ── Connect wizard ────────────────────────────────────────────────
 
@@ -164,9 +164,9 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
           {!category ? (
             <>
               <h2 className="text-sm font-semibold text-white mb-1">Connect a system — what kind is it?</h2>
@@ -174,13 +174,13 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {CATEGORIES.map(cat => (
                   <button key={cat} onClick={() => setCategory(cat)}
-                    className="text-left rounded-xl border p-3 transition-colors bg-slate-950 border-slate-800 hover:border-indigo-500/50">
+                    className="text-left rounded-xl border p-3 transition-colors bg-slate-900 border-slate-700 hover:border-indigo-500/50">
                     <p className="text-sm font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
                     <p className="text-[11px] text-slate-500 mt-0.5">{CATEGORY_LABELS[cat]}</p>
                   </button>
                 ))}
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                 <p className="text-[11px] font-medium text-slate-400 mb-2">How DreamTeam connects to anything — the 5-rung ladder</p>
                 <div className="space-y-1.5">
                   {CONNECTION_LADDER.map(l => (
@@ -203,7 +203,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
               <div className="grid grid-cols-2 gap-2">
                 {!providerQuery.trim() && (
                 <button onClick={() => { onClose(); onCustom(); }}
-                  className="text-left rounded-xl border p-3 transition-colors bg-slate-950 border-indigo-500/40 hover:border-indigo-400">
+                  className="text-left rounded-xl border p-3 transition-colors bg-slate-900 border-indigo-500/40 hover:border-indigo-400">
                   <p className="text-sm font-semibold text-white">🧱 Custom system — build a template</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
                 </button>
@@ -214,13 +214,13 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                   .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
                   .map(p => (
                     <button key={p} onClick={() => pick(p)}
-                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-950/50 border-slate-800/60'}`}>
+                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-slate-900 border-slate-700 hover:border-indigo-500/50' : 'bg-slate-900/50 border-slate-700/60'}`}>
                       <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
                       <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
                       {!PROVIDERS[p].implemented && <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
                     </button>
                   ))}
-                <div className="text-left rounded-xl border border-dashed border-slate-800 p-3 bg-slate-950/40">
+                <div className="text-left rounded-xl border border-dashed border-slate-700 p-3 bg-slate-900/40">
                   <p className="text-sm font-semibold text-slate-400">🔗 Aggregator (hundreds of systems)</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">One connection covering the long tail of niche tools.</p>
                   <p className="text-[10px] text-amber-400 mt-1">Available on request — built when the first customer needs it (honest, not pretend-integrated).</p>
@@ -237,7 +237,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
               {meta!.oauth ? (
                 <OAuthConnectSection provider={provider!} label={meta!.label} name={name} onClose={onClose} />
               ) : (<>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4">
                 <p className="text-[11px] font-medium text-slate-400 mb-1">How to get credentials</p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">{meta!.help}</p>
               </div>
@@ -264,7 +264,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                 )}
 
                 {provider === 'generic_rest' && (
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 space-y-2">
                     <p className="text-[11px] font-medium text-slate-400">Tell DreamTeam how to search this API</p>
                     <div className="flex gap-2">
                       <div className="flex-1">
@@ -303,7 +303,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                   <label className="block text-xs text-slate-400 mb-1">Data handling — your choice</label>
                   <div className="space-y-1.5">
                     {(['fetch_only', 'ingest'] as ConnectorAccessMode[]).map(m => (
-                      <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-800'}`}>
+                      <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-700'}`}>
                         <input type="radio" checked={accessMode === m} onChange={() => setAccessMode(m)} className="mt-0.5" />
                         <span className="text-[11px] text-slate-300 leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
                       </label>
@@ -319,7 +319,7 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
 
               {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
               <div className="flex gap-3 mt-5">
-                <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs transition-colors disabled:opacity-50">
+                <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs transition-colors disabled:opacity-50">
                   Cancel
                 </button>
                 <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors disabled:opacity-50">
@@ -372,7 +372,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+      <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
         <p className="text-[11px] text-slate-500 leading-relaxed">
           Connect by signing in — no keys to paste. You'll be sent to {label} to approve access, then returned here.
         </p>
@@ -382,17 +382,17 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-1.5">
           <p className="text-[11px] text-amber-300 font-medium">One-time platform setup</p>
           <p className="text-[11px] text-slate-400">Register the {label} developer app once, and add this exact redirect URL in its settings:</p>
-          <code className="block text-[10px] text-slate-300 bg-slate-950 rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
+          <code className="block text-[10px] text-slate-300 bg-slate-900 rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
         </div>
       )}
 
       {(showSetup || configured === false) && (
-        <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+        <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 space-y-2">
           <p className="text-[11px] font-medium text-slate-400">{label} app credentials — platform admin only</p>
           <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Client ID" className={inputCls} />
           <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type="password" placeholder="Client secret" className={inputCls} />
           <button disabled={busy || !clientId.trim()} onClick={() => void saveApp()}
-            className="px-3 py-1.5 rounded-lg text-xs bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50">
+            className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-slate-600 text-white disabled:opacity-50">
             Save app credentials
           </button>
         </div>
@@ -400,7 +400,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
 
       {err && <p className="text-xs text-red-300">{err}</p>}
       <div className="flex gap-3">
-        <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs disabled:opacity-50">Cancel</button>
+        <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Cancel</button>
         <button disabled={busy || configured !== true} onClick={() => void connect()}
           title={configured !== true ? 'A platform admin must add the app credentials first.' : ''}
           className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">
@@ -422,7 +422,7 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
 }) {
   const [map, setMap] = useState<Record<string, string>>({ ...(connector.field_map ?? {}) });
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4">
       <p className="text-[11px] font-medium text-slate-400 mb-1">Field mapping — tell DreamTeam what your fields are called</p>
       <p className="text-[11px] text-slate-600 mb-3">If your system uses different field names, map them here. Leave a field empty to keep the sensible default.</p>
       <div className="space-y-2">
@@ -431,7 +431,7 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
             <span className="text-xs text-slate-300 w-28 flex-shrink-0 font-mono">{f}</span>
             <input value={map[f] ?? ''} onChange={e => setMap(m => ({ ...m, [f]: e.target.value }))}
               placeholder="your field name (optional)"
-              className="bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 px-2 py-1.5 w-52" />
+              className="bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5 w-52" />
             <span className="text-[10px] text-slate-600">{MAPPABLE_FIELD_HELP[f]}</span>
           </div>
         ))}
@@ -507,7 +507,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
   const isBusy = busy !== null;
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 mb-4 space-y-4">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4 space-y-4">
       <div>
         <p className="text-[11px] font-medium text-slate-400 mb-1">What gets ingested — filters</p>
         <p className="text-[11px] text-slate-600 mb-3">
@@ -544,7 +544,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                 const on = filters.allow_types?.includes(t.key) ?? false;
                 return (
                   <button key={t.key} onClick={() => toggleType(t.key)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-600 text-slate-400 hover:border-slate-500'}`}>
                     {t.label}
                   </button>
                 );
@@ -562,12 +562,12 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
         </button>
       </div>
 
-      <div className="border-t border-slate-800 pt-3">
+      <div className="border-t border-slate-700 pt-3">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[11px] font-medium text-slate-400">Review queue{loaded ? ` — ${cands.length} file(s)` : ''}</p>
           <div className="flex gap-2">
             <button disabled={isBusy} onClick={() => void scan()}
-              className="px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+              className="px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
               {busy === 'scan' ? 'Scanning…' : 'Scan for documents'}
             </button>
             {pending.length > 0 && (
@@ -575,7 +575,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'approved')}
                   className="px-2.5 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve all</button>
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'rejected')}
-                  className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-700 hover:border-slate-500 disabled:opacity-50">Exclude all</button>
+                  className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-600 hover:border-slate-500 disabled:opacity-50">Exclude all</button>
               </>
             )}
           </div>
@@ -586,7 +586,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
         ) : cands.length === 0 ? (
           <p className="text-[11px] text-slate-600">No documents scanned yet. Click "Scan for documents" to list what would be ingested — nothing is stored until you sync.</p>
         ) : (
-          <div className="rounded-lg border border-slate-800 max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+          <div className="rounded-lg border border-slate-700 max-h-72 overflow-y-auto divide-y divide-slate-700/60">
             {cands.map(c => {
               const meta = CAND_STATUS_META[c.status] ?? CAND_STATUS_META.pending;
               return (
@@ -605,7 +605,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                       )}
                       {c.status !== 'rejected' && (
                         <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'rejected')}
-                          className="px-2 py-0.5 rounded text-[10px] text-slate-400 border border-slate-700 hover:border-slate-500 disabled:opacity-50">Exclude</button>
+                          className="px-2 py-0.5 rounded text-[10px] text-slate-400 border border-slate-600 hover:border-slate-500 disabled:opacity-50">Exclude</button>
                       )}
                     </div>
                   )}
@@ -770,7 +770,7 @@ export default function LiveConnectorsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Connectors</h1>
@@ -795,10 +795,10 @@ export default function LiveConnectorsPage() {
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
       ) : missingTables ? (
-        <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-5">
+        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-5">
           <p className="text-sm font-medium text-slate-200 mb-1">Connector tables not yet provisioned</p>
           <p className="text-xs text-slate-400">
-            Run <code className="text-slate-300 bg-slate-800 px-1 py-0.5 rounded">supabase/migrations/026_connector_hub_evidence.sql</code> in the Supabase SQL Editor, then reload.
+            Run <code className="text-slate-300 bg-slate-700 px-1 py-0.5 rounded">supabase/migrations/026_connector_hub_evidence.sql</code> in the Supabase SQL Editor, then reload.
           </p>
         </div>
       ) : connectors.length === 0 ? (
@@ -812,7 +812,7 @@ export default function LiveConnectorsPage() {
           />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
             {(Object.keys(PROVIDERS) as ConnectorProvider[]).filter(p => p !== 'template').slice(0, 8).map(p => (
-              <button key={p} onClick={() => setShowConnect(true)} className="text-left bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-4 transition-colors">
+              <button key={p} onClick={() => setShowConnect(true)} className="text-left bg-slate-800 border border-slate-700 hover:border-indigo-500/50 rounded-xl p-4 transition-colors">
                 <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
                 <p className="text-xs text-indigo-400 mt-2">{PROVIDERS[p].implemented ? 'Connect →' : 'Register →'}</p>
@@ -828,13 +828,13 @@ export default function LiveConnectorsPage() {
             const isBusy = busy === c.id;
             const meta = PROVIDERS[c.provider];
             return (
-              <div key={c.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+              <div key={c.id} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
                 {/* Header */}
                 <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-base font-semibold text-white">{PROVIDER_ICON[c.provider]} {c.display_name || meta?.label || c.provider}</h2>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[c.category] ?? c.category}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-500/15 text-teal-300' : 'bg-purple-500/15 text-purple-300'}`}>
                         {c.access_mode === 'fetch_only' ? 'fetch-only · never stored' : 'ingest · working copy'}
@@ -846,17 +846,17 @@ export default function LiveConnectorsPage() {
                     {connectorHealth(c) !== 'healthy' && c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Test connection
                     </button>
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Run health check
                     </button>
-                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
                       Field mapping
                     </button>
                     {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
-                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
                         What gets ingested
                       </button>
                     )}
@@ -868,7 +868,7 @@ export default function LiveConnectorsPage() {
                       </button>
                     )}
                     {c.provider === 'zendesk' && (
-                      <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doTicketSync(c)} className="px-3 py-1.5 rounded-lg text-xs bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50 transition-colors">
+                      <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doTicketSync(c)} className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-slate-600 text-white disabled:opacity-50 transition-colors">
                         Sync tickets
                       </button>
                     )}
@@ -894,9 +894,9 @@ export default function LiveConnectorsPage() {
                 {c.provider === 'zendesk' && objs.length > 0 && (
                   <>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Objects — data mode</p>
-                    <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+                    <div className="rounded-xl border border-slate-700 overflow-hidden mb-4">
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-950/60">
+                        <thead className="bg-slate-900/60">
                           <tr>
                             {['Object', 'Mode', 'Interval', 'Last synced', 'Enabled'].map(h => (
                               <th key={h} className="py-2 px-3 text-left text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
@@ -905,7 +905,7 @@ export default function LiveConnectorsPage() {
                         </thead>
                         <tbody>
                           {objs.map(o => (
-                            <tr key={o.id} className="border-t border-slate-800/60">
+                            <tr key={o.id} className="border-t border-slate-700/60">
                               <td className="py-2 px-3 text-slate-200">{OBJECT_LABELS[o.object_type] ?? o.object_type}</td>
                               <td className="py-2 px-3">
                                 <select value={o.mode}
@@ -929,7 +929,7 @@ export default function LiveConnectorsPage() {
                               <td className="py-2 px-3 text-xs text-slate-400">{o.mode === 'sync' ? fmtSince(o.last_synced_at) : '—'}</td>
                               <td className="py-2 px-3">
                                 <button onClick={() => void setObjField(o, { enabled: !o.enabled })}
-                                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${o.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${o.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>
                                   {o.enabled ? 'Enabled' : 'Disabled'}
                                 </button>
                               </td>
@@ -944,7 +944,7 @@ export default function LiveConnectorsPage() {
                         <button key={a.id} onClick={() => void toggleAction(a)}
                           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${a.enabled
                             ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
-                            : 'border-slate-700 bg-slate-900 text-slate-500'}`}>
+                            : 'border-slate-600 bg-slate-800 text-slate-500'}`}>
                           {ACTION_LABELS[a.action_key] ?? a.action_key} · {a.enabled ? 'on' : 'off'}
                         </button>
                       ))}
@@ -960,8 +960,8 @@ export default function LiveConnectorsPage() {
                       <input value={rtQuery} onChange={e => setRtQuery(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') void doSearch(c); }}
                         placeholder="Search this system…"
-                        className="bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 px-3 py-1.5 w-64" />
-                      <button disabled={isBusy} onClick={() => void doSearch(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-700 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                        className="bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-3 py-1.5 w-64" />
+                      <button disabled={isBusy} onClick={() => void doSearch(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
                         Search live
                       </button>
                       <span className="text-[11px] text-slate-600">Fetched at question time — nothing stored, audit event only.</span>
@@ -971,10 +971,10 @@ export default function LiveConnectorsPage() {
                       <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-slate-500">{rtResult.items.length} result(s){rtResult.latency ? ` in ${rtResult.latency}ms` : ''} — live from {meta.label}, not persisted.</p>
                         {rtResult.items.map((it, i) => (
-                          <div key={i} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                          <div key={i} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-medium text-white">{it.title}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{it.type}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{it.type}</span>
                               <span className="text-[10px] text-slate-600">ref {it.ref}</span>
                               {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-400 hover:text-indigo-300">open in source ↗</a>}
                             </div>

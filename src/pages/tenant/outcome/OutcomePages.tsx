@@ -15,7 +15,7 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 // WorkforcePages.tsx's NotYetAvailable pattern).
 function OutcomeNotYetAvailable({ title, subtitle, setPage }: { title: string; subtitle: string; setPage: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title={title} subtitle={subtitle} />
       <LiveEmptyState
         icon="◈"
@@ -57,7 +57,7 @@ function OutcomeHeader({ title, metric, trend, legacy, subtitle }: {
     <div className="mb-6">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-white">{title}</h1>
-        <span className="text-sm font-medium text-white bg-slate-800 rounded-lg px-2.5 py-1">{metric}</span>
+        <span className="text-sm font-medium text-white bg-slate-700 rounded-lg px-2.5 py-1">{metric}</span>
         <span className={`flex items-center gap-1 text-xs ${t.color}`}>
           <span>{t.icon}</span><span>{t.label}</span>
         </span>
@@ -66,7 +66,7 @@ function OutcomeHeader({ title, metric, trend, legacy, subtitle }: {
       <div className="mt-3 flex items-center gap-1.5 flex-wrap">
         <span className="text-[10px] text-slate-600">Legacy departments:</span>
         {legacy.map(d => (
-          <span key={d} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">{d}</span>
+          <span key={d} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">{d}</span>
         ))}
       </div>
     </div>
@@ -77,7 +77,7 @@ function KpiCards({ items }: { items: { label: string; value: string; sub: strin
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {items.map(k => (
-        <div key={k.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div key={k.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{k.label}</p>
           <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
           <p className="text-xs text-slate-500 mt-0.5">{k.sub}</p>
@@ -93,7 +93,7 @@ function ContributingDEs({ des, note, setPage }: {
   setPage?: (p: Page) => void;
 }) {
   return (
-    <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+    <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
       <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Contributing Digital Employees</h3>
       {des.length === 0 ? (
         <p className="text-xs text-slate-500">{note || 'No DEs contribute to this outcome yet — handled by humans.'}</p>
@@ -103,7 +103,7 @@ function ContributingDEs({ des, note, setPage }: {
             <button
               key={de.name}
               onClick={() => setPage && setPage('workforce_des')}
-              className="flex items-center gap-3 text-left rounded-xl px-4 py-3 border border-slate-800 bg-slate-900 hover:border-slate-600 transition-all"
+              className="flex items-center gap-3 text-left rounded-xl px-4 py-3 border border-slate-700 bg-slate-800 hover:border-slate-600 transition-all"
             >
               <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{de.name[0]}</div>
               <div>
@@ -164,7 +164,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <OutcomeHeader
         title="Revenue & Growth"
         metric={isTcp ? '$2.1M pipeline' : '$4.2M fees in progress'}
@@ -177,7 +177,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Main breakdown */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h3 className="text-sm font-semibold text-white">{isTcp ? 'Pipeline by stage' : 'Fees by service line'}</h3>
             <button onClick={() => setPage('entity_customer_sales')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -191,7 +191,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
                   <span className="text-slate-400">{s.stage} <span className="text-slate-600">· {s.count} {isTcp ? 'opps' : 'engagements'}</span></span>
                   <span className="text-white font-medium">{s.value}</span>
                 </div>
-                <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${s.color}`} style={{ width: `${s.pct}%` }} />
                 </div>
               </div>
@@ -205,7 +205,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
         </div>
 
         {/* Side panel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           {isTcp ? (
             <>
               <h3 className="text-sm font-semibold text-white mb-4">MRR trend ($K)</h3>
@@ -234,7 +234,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
                   { name: 'Crestview Holdings — Advisory', fees: '$120K', status: 'Proposal drafted' },
                   { name: 'Sterling Group — Tax Compliance', fees: '$85K', status: 'Reminder queued' },
                 ].map(r => (
-                  <div key={r.name} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                  <div key={r.name} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs font-medium text-white">{r.name}</span>
                       <span className="text-xs text-slate-300">{r.fees}</span>
@@ -282,7 +282,7 @@ const PWC_ENGAGEMENTS = [
 const releaseBadge = (s: string) => {
   if (s === 'Code freeze') return 'bg-amber-500/15 text-amber-300';
   if (s === 'In development') return 'bg-indigo-500/15 text-indigo-300';
-  return 'bg-slate-700/50 text-slate-300';
+  return 'bg-slate-600/50 text-slate-300';
 };
 
 export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void }) => {
@@ -307,7 +307,7 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <OutcomeHeader
         title={isTcp ? 'Product & Engineering' : 'Practice Delivery'}
         metric={isTcp ? '3 releases planned' : '2 filings due Jul 15'}
@@ -320,19 +320,19 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
 
       <KpiCards items={kpis} />
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Release train' : 'Engagement progress'}</h3>
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-slate-700">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {(isTcp ? ['Version', 'Target date', 'Scope', 'Status'] : ['Engagement', 'Partner', 'Due', 'Progress']).map(h => <th key={h} className={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {isTcp
                 ? TCP_RELEASES.map((r, i) => (
-                    <tr key={r.version} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === TCP_RELEASES.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={r.version} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === TCP_RELEASES.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium text-white`}>{r.version}</td>
                       <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.date}</td>
                       <td className={`${td} text-slate-400 text-xs`}>{r.scope}</td>
@@ -340,13 +340,13 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
                     </tr>
                   ))
                 : PWC_ENGAGEMENTS.map((e, i) => (
-                    <tr key={e.engagement} className={`border-b border-slate-800/60 transition-colors ${e.filing ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-800/30'} ${i === PWC_ENGAGEMENTS.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={e.engagement} className={`border-b border-slate-700/60 transition-colors ${e.filing ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-700/30'} ${i === PWC_ENGAGEMENTS.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium ${e.filing ? 'text-amber-200' : 'text-white'}`}>{e.engagement}{e.filing && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">DUE JUL 15</span>}</td>
                       <td className={`${td} text-slate-300 text-xs`}>{e.partner}</td>
                       <td className={`${td} text-xs whitespace-nowrap ${e.filing ? 'text-amber-300' : 'text-slate-400'}`}>{e.due}</td>
                       <td className={td}>
                         <div className="flex items-center gap-2 min-w-[120px]">
-                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${e.progress >= 80 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${e.progress}%` }} />
                           </div>
                           <span className="text-xs text-slate-300 w-8 text-right">{e.progress}%</span>
@@ -564,7 +564,7 @@ const TCP_AP_BILLS: ApBill[] = [
 ];
 
 const apStatusBadge = (s: ApBill['status']) =>
-  s === 'Scheduled' ? 'bg-slate-700/50 text-slate-300'
+  s === 'Scheduled' ? 'bg-slate-600/50 text-slate-300'
   : s === 'Needs approval' ? 'bg-amber-500/15 text-amber-300'
   : 'bg-rose-500/15 text-rose-300';
 
@@ -609,7 +609,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <OutcomeHeader
         title="Financial Health"
         metric={isTcp ? '$248K AR outstanding' : '$890K WIP unbilled'}
@@ -626,7 +626,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Aging */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 h-fit">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-1">{isTcp ? 'AR aging — $248K' : 'WIP unbilled aging — $890K'}</h3>
           <p className="text-xs text-slate-500 mb-4">{isTcp ? 'Outstanding receivables by bucket' : 'Unbilled work-in-progress by age'}</p>
           <div className="space-y-3">
@@ -637,14 +637,14 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                 <button
                   key={a.bucket}
                   onClick={() => setBucketFilter(active ? 'all' : key)}
-                  className={`w-full text-left rounded-lg px-2 py-1.5 -mx-2 transition-colors ${active ? 'bg-slate-800/80 ring-1 ring-indigo-500/40' : 'hover:bg-slate-800/40'}`}
+                  className={`w-full text-left rounded-lg px-2 py-1.5 -mx-2 transition-colors ${active ? 'bg-slate-700/80 ring-1 ring-indigo-500/40' : 'hover:bg-slate-700/40'}`}
                   title={`Click to ${active ? 'clear the filter' : `drill into ${a.bucket}`}`}
                 >
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className={active ? 'text-indigo-300' : 'text-slate-400'}>{a.bucket}</span>
                     <span className="text-white font-medium">{a.amount} <span className="text-slate-600">›</span></span>
                   </div>
-                  <div className="h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-2.5 bg-slate-700 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full ${a.color}`} style={{ width: `${a.pct}%` }} />
                   </div>
                 </button>
@@ -670,7 +670,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
               <button
                 key={e.id}
                 onClick={() => setSelected(e)}
-                className={`w-full text-left rounded-xl border p-4 transition ${selected?.id === e.id ? 'border-indigo-400 bg-slate-800/70' : 'border-slate-800 bg-slate-900/50 hover:border-slate-600'}`}
+                className={`w-full text-left rounded-xl border p-4 transition ${selected?.id === e.id ? 'border-indigo-400 bg-slate-700/70' : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'}`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded ${exToneBadge(e.tone)}`}>{e.type}</span>
@@ -685,11 +685,11 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
           <div>
             <h3 className="text-sm font-semibold text-white mb-3">Review</h3>
             {!selected ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5 text-sm text-slate-400">
                 Select an exception to review the AI proposal and approve or reject. Decisions are logged as audit evidence.
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+              <div className="rounded-xl border border-slate-600 bg-slate-800/70 p-5">
                 <p className="text-sm font-semibold text-white">{selected.title}</p>
                 {selected.risky && <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">Risky — never auto-executed</span>}
                 <div className="mt-3 text-xs text-slate-400">Detail</div>
@@ -699,8 +699,8 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                 <div className="mt-3 text-xs text-slate-400">Proposed action</div>
                 <p className="text-sm text-indigo-200">{selected.proposed}</p>
                 <div className="mt-4 flex gap-2">
-                  <button onClick={() => decide('approved')} className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-sm font-semibold py-2 transition-colors">Approve</button>
-                  <button onClick={() => decide('rejected')} className="flex-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm font-semibold py-2 transition-colors">Reject</button>
+                  <button onClick={() => decide('approved')} className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-800 text-sm font-semibold py-2 transition-colors">Approve</button>
+                  <button onClick={() => decide('rejected')} className="flex-1 rounded-lg bg-slate-600 hover:bg-slate-600 text-slate-100 text-sm font-semibold py-2 transition-colors">Reject</button>
                 </div>
                 <p className="mt-3 text-[11px] text-slate-500">Decisions are timestamped and immutable in the audit trail.</p>
               </div>
@@ -710,7 +710,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
       </div>
 
       {/* ── AR / WIP drill-through ── */}
-      <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">
@@ -729,10 +729,10 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
             <button onClick={() => setBucketFilter('all')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Show all buckets ×</button>
           )}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-slate-700">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {(isTcp
                   ? ['Invoice #', 'Account', 'Amount', 'Issued', 'Due', 'Days overdue', 'Status', 'Cadence stage']
                   : ['Engagement', 'Partner', 'WIP amount', 'Oldest entry', 'Days unbilled', 'Status']
@@ -742,7 +742,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
             <tbody>
               {isTcp
                 ? TCP_AR_INVOICES.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
-                    <tr key={r.inv} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={r.inv} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.inv}</td>
                       <td className={`${td} font-medium text-white`}>{r.account}</td>
                       <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
@@ -754,7 +754,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                     </tr>
                   ))
                 : PWC_WIP_ROWS.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
-                    <tr key={r.engagement} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={r.engagement} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium text-white`}>{r.engagement}</td>
                       <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.partner}</td>
                       <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
@@ -775,12 +775,12 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       {/* ── Collections — cadence status (TCP) ── */}
       {isTcp && (
-        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Collections — cadence status</h3>
           <p className="text-xs text-slate-500 mb-4">Where each overdue invoice sits in Casey&apos;s dunning cadence</p>
           <div className="space-y-4">
             {TCP_CADENCE_ROWS.map(row => (
-              <div key={row.inv} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <div key={row.inv} className="rounded-xl border border-slate-700 bg-slate-800 p-4">
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-white">{row.account}</span>
@@ -795,11 +795,11 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                     const isCurrent = i === row.completed && row.completed < CADENCE_STEPS.length;
                     return (
                       <React.Fragment key={step}>
-                        {i > 0 && <div className={`h-px w-6 flex-shrink-0 ${done || isCurrent ? 'bg-indigo-500/50' : 'bg-slate-700'}`} />}
+                        {i > 0 && <div className={`h-px w-6 flex-shrink-0 ${done || isCurrent ? 'bg-indigo-500/50' : 'bg-slate-600'}`} />}
                         <div className={`flex items-center gap-1.5 text-[11px] whitespace-nowrap px-2 py-1 rounded-lg border flex-shrink-0 ${
                           done ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'
                           : isCurrent ? (row.paused ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300')
-                          : 'border-slate-800 bg-slate-900 text-slate-600'
+                          : 'border-slate-700 bg-slate-800 text-slate-600'
                         }`}>
                           <span>{done ? '✓' : isCurrent ? (row.paused ? '⏸' : '←') : '○'}</span>
                           <span>{step}</span>
@@ -821,19 +821,19 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       {/* ── Accounts payable (TCP) ── */}
       {isTcp && (
-        <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Accounts payable — $74K due in 30 days</h3>
           <p className="text-xs text-slate-500 mb-4">Vendor bills behind the AP KPI — sums to $74,000 exactly · approver Jai Patel (Finance Manager) for bills over $5K</p>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Vendor', 'Invoice #', 'Description', 'Amount', 'Due', 'Status', 'Approver'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {TCP_AP_BILLS.map((b, i) => (
-                  <tr key={b.inv} className={`border-b border-slate-800/60 transition-colors ${b.duplicate ? 'bg-rose-500/5 hover:bg-rose-500/10' : 'hover:bg-slate-800/30'} ${i === TCP_AP_BILLS.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={b.inv} className={`border-b border-slate-700/60 transition-colors ${b.duplicate ? 'bg-rose-500/5 hover:bg-rose-500/10' : 'hover:bg-slate-700/30'} ${i === TCP_AP_BILLS.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{b.vendor}</td>
                     <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{b.inv}</td>
                     <td className={`${td} text-slate-400 text-xs`}>
@@ -851,7 +851,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
               </tbody>
             </table>
           </div>
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-3 flex items-center justify-between flex-wrap gap-2">
+          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center justify-between flex-wrap gap-2">
             <p className="text-xs text-slate-400">
               <span className="text-slate-300 font-medium">No DE owns AP today</span> — bills are scheduled and approved by humans. A Vendor DE would automate 3-way matching (PO ↔ receipt ↔ invoice) and duplicate detection.
             </p>
@@ -943,7 +943,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
   ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <OutcomeHeader
         title="Risk Posture"
         metric="2 compliance alerts"
@@ -973,7 +973,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
           ))}
 
           {/* Guardrail violation log */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mt-2">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mt-2">
             <h3 className="text-sm font-semibold text-white mb-1">Guardrail violation log</h3>
             <p className="text-xs text-slate-500 mb-4">Every blocked or overridden DE action appears here</p>
             {isTcp ? (
@@ -1002,16 +1002,16 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
         </div>
 
         {/* Compliance calendar */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 h-fit">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-3">Compliance calendar</h3>
           <div className="space-y-2">
             {calendar.map(c => (
-              <div key={c.item} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
+              <div key={c.item} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5">
                 <div className="min-w-0">
                   <p className="text-xs text-slate-200 leading-tight">{c.item}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{c.date}</p>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${c.status === 'At risk' ? 'bg-red-500/15 text-red-300' : 'bg-slate-800 text-slate-400'}`}>{c.status}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${c.status === 'At risk' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-400'}`}>{c.status}</span>
               </div>
             ))}
           </div>

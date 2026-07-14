@@ -48,7 +48,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
-  skipped_not_connected: ['Not connected — skipped', 'bg-slate-700 text-slate-300'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-slate-600 text-slate-300'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked', 'bg-rose-500/20 text-rose-300'],
 };
@@ -78,7 +78,7 @@ function StepList({ steps }: { steps: EvidenceStep[] }) {
   return (
     <div className="space-y-2 mt-2">
       {steps.map((s, i) => {
-        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-800 text-slate-400'];
+        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-700 text-slate-400'];
         return (
           <div key={i} className="flex gap-2">
             <span className="text-sm leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
@@ -116,13 +116,13 @@ function ActivityCard({ row }: { row: DEActivityRow }) {
   }, [decision?.action_execution_id]);
 
   return (
-    <div className={`rounded-xl border p-4 ${isSimulation ? 'border-purple-500/30 bg-purple-500/5' : didAct ? 'border-emerald-600/40 bg-emerald-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
+    <div className={`rounded-xl border p-4 ${isSimulation ? 'border-purple-500/30 bg-purple-500/5' : didAct ? 'border-emerald-600/40 bg-emerald-500/5' : 'border-slate-700 bg-slate-800/60'}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             {isSimulation && <Chip label="SIMULATION — not a real ticket" cls="bg-purple-500/20 text-purple-300 border border-purple-500/40" />}
             {categoryLabel && <Chip label={categoryLabel} cls="bg-indigo-500/15 text-indigo-300 border border-indigo-500/30" />}
-            {sourceLabel && !isSimulation && <Chip label={sourceLabel} cls="bg-slate-800 text-slate-400" />}
+            {sourceLabel && !isSimulation && <Chip label={sourceLabel} cls="bg-slate-700 text-slate-400" />}
             <span className="text-xs font-medium text-white truncate">{run.inquiry.slice(0, 140)}</span>
           </div>
           <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500">
@@ -133,12 +133,12 @@ function ActivityCard({ row }: { row: DEActivityRow }) {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {meta && <Chip label={meta.label} cls={`border ${meta.cls}`} />}
-          {decision?.confidence != null && <Chip label={`${decision.confidence}% confidence`} cls="bg-slate-800 text-slate-300" />}
+          {decision?.confidence != null && <Chip label={`${decision.confidence}% confidence`} cls="bg-slate-700 text-slate-300" />}
         </div>
       </div>
 
       {decision?.reasoning && (
-        <div className="mt-3 pt-3 border-t border-slate-800">
+        <div className="mt-3 pt-3 border-t border-slate-700">
           <p className="text-[11px] font-medium text-slate-400 mb-1">Why</p>
           <p className="text-xs text-slate-200 leading-relaxed">{decision.reasoning}</p>
           {decision.human_task_id && (
@@ -148,7 +148,7 @@ function ActivityCard({ row }: { row: DEActivityRow }) {
       )}
 
       {execution && (
-        <div className="mt-3 pt-3 border-t border-slate-800">
+        <div className="mt-3 pt-3 border-t border-slate-700">
           <p className="text-[11px] font-medium text-emerald-400 mb-1">
             {execution.receipt ? 'Receipt — what actually happened' : 'What this action will do (awaiting approval)'}
           </p>
@@ -222,7 +222,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader title="DE at Work" subtitle="Live proactive-triage queue." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
@@ -233,13 +233,13 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="DE at Work"
         subtitle="Live evidence + reasoning as Digital Employees notice, evaluate, and act on work across any connected system — not just a status dot."
       />
 
-      <div className="mb-5 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      <div className="mb-5 rounded-xl border border-slate-700 bg-slate-800/40 p-4">
         <p className="text-xs text-slate-400 mb-2">
           <span className="text-slate-300 font-medium">Honest limits:</span> "Would auto-send" and "would act" record intent
           only — a decision only becomes "Acted" when a registered action exists for that item's category and the trust/
@@ -252,7 +252,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
             value={simInquiry}
             onChange={(e) => setSimInquiry(e.target.value)}
             placeholder='Simulate an incoming inquiry, e.g. "My API key stopped working after the update"'
-            className="flex-1 min-w-[280px] text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+            className="flex-1 min-w-[280px] text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
           />
           <button
             onClick={runSimulation}
@@ -275,7 +275,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
       {loading ? (
         <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
       ) : rows.length === 0 ? (
-        <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+        <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
           <p className="text-slate-500 text-sm">No evidence runs yet — resolve an inquiry from the Technical Specialist, or simulate one above.</p>
         </div>
       ) : (

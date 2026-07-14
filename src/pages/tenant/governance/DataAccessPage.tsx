@@ -23,7 +23,7 @@ import {
 //      one connector
 // ============================================================
 
-const selectCls = 'text-xs bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:border-indigo-500 disabled:opacity-40';
+const selectCls = 'text-xs bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:border-indigo-500 disabled:opacity-40';
 const PERMS: AccessPermission[] = ['search', 'read', 'ingest', 'write_back'];
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -111,7 +111,7 @@ export default function DataAccessPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Data Access" subtitle="Which digital employee or specialist may touch which connected system." />
         <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
       </div>
@@ -119,7 +119,7 @@ export default function DataAccessPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader
         title="Data Access"
         subtitle="Default-deny: a digital employee or specialist can only touch a connected system you grant here. Enforced on the server, on every call."
@@ -128,7 +128,7 @@ export default function DataAccessPage() {
       {lastChange && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-emerald-300">{lastChange}</div>}
 
       {/* Permission ladder legend */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-2">How permissions work</h3>
         <p className="text-[11px] text-slate-500 mb-3">
           Permissions stack — each level includes everything below it. A system-specific setting beats the category default.
@@ -136,7 +136,7 @@ export default function DataAccessPage() {
         </p>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {(['none', ...PERMS] as const).map((p) => (
-            <div key={p} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+            <div key={p} className="rounded-xl border border-slate-700 bg-slate-900/50 p-3">
               <p className="text-xs font-medium text-white mb-1">{PERMISSION_LABELS[p]}</p>
               <p className="text-[10px] text-slate-500 leading-relaxed">{PERMISSION_EXPLAIN[p]}</p>
             </div>
@@ -145,13 +145,13 @@ export default function DataAccessPage() {
       </div>
 
       {subjects.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-8 text-center mb-6">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-8 text-center mb-6">
           <p className="text-sm text-slate-400">No digital employees or specialists in this workspace yet — hire one and its access rules appear here.</p>
         </div>
       ) : (
         <>
           {/* 1. Category defaults */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
             <h3 className="text-sm font-semibold text-white mb-1">Category defaults</h3>
             <p className="text-[11px] text-slate-500 mb-3">
               "May read any helpdesk system" — applies to every connected system of that kind, current and future.
@@ -173,7 +173,7 @@ export default function DataAccessPage() {
                 </thead>
                 <tbody>
                   {subjects.map((s) => (
-                    <tr key={`${s.kind}:${s.id}`} className="border-t border-slate-800/60">
+                    <tr key={`${s.kind}:${s.id}`} className="border-t border-slate-700/60">
                       <td className="px-3 py-2 whitespace-nowrap">
                         <p className="text-xs font-medium text-white">{s.name}</p>
                         <p className="text-[10px] text-slate-500">{s.detail}</p>
@@ -204,7 +204,7 @@ export default function DataAccessPage() {
           </div>
 
           {/* 2. Per-system overrides */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
             <h3 className="text-sm font-semibold text-white mb-1">Connected systems — per-system overrides</h3>
             <p className="text-[11px] text-slate-500 mb-3">
               A setting here beats the category default for that one system. "Inherit" falls back to the category default
@@ -228,7 +228,7 @@ export default function DataAccessPage() {
                   </thead>
                   <tbody>
                     {subjects.map((s) => (
-                      <tr key={`${s.kind}:${s.id}`} className="border-t border-slate-800/60">
+                      <tr key={`${s.kind}:${s.id}`} className="border-t border-slate-700/60">
                         <td className="px-3 py-2 whitespace-nowrap">
                           <p className="text-xs font-medium text-white">{s.name}</p>
                           <p className="text-[10px] text-slate-500">{s.detail}</p>
@@ -280,7 +280,7 @@ export default function DataAccessPage() {
         ) : (
           <div className="space-y-1.5">
             {denials.map((d) => (
-              <div key={d.id} className="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2">
+              <div key={d.id} className="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">denied</span>
                   <span className="text-xs text-slate-300">{d.detail.connector_label ?? 'connected system'}</span>
@@ -300,7 +300,7 @@ export default function DataAccessPage() {
       </div>
 
       {/* Honest limits */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-2">What this does and doesn't cover (honest)</h3>
         <ul className="text-[11px] text-slate-500 space-y-1.5 list-disc pl-4">
           <li><span className="text-slate-300">Covered:</span> every machine-driven call to a connected system — the evidence pipeline, playbook connector steps, and Scribe write-backs — is checked server-side on every request.</li>

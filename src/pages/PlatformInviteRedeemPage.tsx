@@ -41,7 +41,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
@@ -88,7 +88,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
             >
               {loading ? <><Spinner /> Accepting...</> : 'Accept platform invitation'}
             </button>
-            <div className="border-t border-slate-800 mt-6 pt-5 text-center">
+            <div className="border-t border-slate-700 mt-6 pt-5 text-center">
               <p className="text-xs text-slate-600">
                 Wrong account?{' '}
                 <button

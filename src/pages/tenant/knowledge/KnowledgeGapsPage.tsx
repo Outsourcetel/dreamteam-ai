@@ -236,7 +236,7 @@ const PWC_GAPS: Gap[] = [
 ];
 
 const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
-  detected: { label: 'Detected', cls: 'bg-slate-700/50 text-slate-300' },
+  detected: { label: 'Detected', cls: 'bg-slate-600/50 text-slate-300' },
   investigating: { label: 'Investigating', cls: 'bg-sky-500/20 text-sky-400' },
   draft_ready: { label: 'Draft ready', cls: 'bg-amber-500/20 text-amber-400' },
   approved: { label: 'Approved', cls: 'bg-emerald-500/20 text-emerald-400' },
@@ -303,15 +303,15 @@ const DemoKnowledgeGapsPage = () => {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
       <PageHeader title="Gap Detection" subtitle="The self-healing loop — DE query misses become gap signals, the Resolution Agent mines historical resolutions, a draft article is proposed, and a human approves before DEs retrain." />
 
       {/* Loop diagram strip */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
           {loopNodes.map((n, i) => (
             <React.Fragment key={n.label}>
-              <div className="flex-1 min-w-[100px] rounded-xl border border-slate-800 bg-slate-950 p-3 text-center">
+              <div className="flex-1 min-w-[100px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-center">
                 <p className="text-indigo-400 text-sm">{n.icon}</p>
                 <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
                 <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
@@ -325,23 +325,23 @@ const DemoKnowledgeGapsPage = () => {
 
       {/* Header stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Open gaps</p>
           {/* seeded to match companies.ts kbGaps (TCP 5 / PWC 3) until user actions change it */}
           <p className="text-xl font-bold text-amber-300">{Object.keys(overrides).length === 0 ? summary.kbGaps : openGaps.length}</p>
           <p className="text-xs text-slate-500 mt-0.5">detected · investigating · draft ready</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Resolved this month</p>
           <p className="text-xl font-bold text-emerald-300">{resolvedThisMonth}</p>
           <p className="text-xs text-slate-500 mt-0.5">gaps closed via the loop</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Avg resolution time</p>
           <p className="text-xl font-bold text-white">{avgResolution}</p>
           <p className="text-xs text-slate-500 mt-0.5">signal → published article</p>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Drafts awaiting approval</p>
           <p className="text-xl font-bold text-indigo-300">{draftsAwaiting}</p>
           <p className="text-xs text-slate-500 mt-0.5">auto-drafted by the Knowledge Drafting Agent</p>
@@ -349,9 +349,9 @@ const DemoKnowledgeGapsPage = () => {
       </div>
 
       {/* Gap table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
         <table className="w-full text-sm text-slate-300">
-          <thead className="bg-slate-900 border-b border-slate-800">
+          <thead className="bg-slate-800 border-b border-slate-700">
             <tr>
               <th className={th}>Gap</th>
               <th className={th}>Signal source</th>
@@ -365,7 +365,7 @@ const DemoKnowledgeGapsPage = () => {
             {gaps.map(g => {
               const st = statusOf(g);
               return (
-                <tr key={g.id} onClick={() => setSelectedId(g.id)} className="border-b border-slate-800/60 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                <tr key={g.id} onClick={() => setSelectedId(g.id)} className="border-b border-slate-700/60 hover:bg-slate-700/40 cursor-pointer transition-colors">
                   <td className={td}>
                     <p className="text-white font-medium">{g.title}</p>
                     <p className="text-xs text-slate-500 mt-0.5 max-w-md">{g.description}</p>
@@ -393,7 +393,7 @@ const DemoKnowledgeGapsPage = () => {
         return (
           <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
             <div className="absolute inset-0 bg-black/50" />
-            <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-900 border-l border-slate-800 overflow-y-auto p-6">
+            <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-800 border-l border-slate-700 overflow-y-auto p-6">
               <div className="flex items-start justify-between mb-1">
                 <h2 className="text-lg font-semibold text-white">{selected.title}</h2>
                 <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -407,7 +407,7 @@ const DemoKnowledgeGapsPage = () => {
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">1 · Signal</p>
               <div className="space-y-2 mb-6">
                 {selected.signals.map(s => (
-                  <div key={s.time} className="bg-slate-950 rounded-lg px-3 py-2">
+                  <div key={s.time} className="bg-slate-900 rounded-lg px-3 py-2">
                     <p className="text-xs text-slate-300">{s.text}</p>
                     <p className="text-[10px] text-slate-600 mt-0.5">{s.time}</p>
                   </div>
@@ -421,7 +421,7 @@ const DemoKnowledgeGapsPage = () => {
                   <p className="text-xs text-sky-400 mb-2">Searched {selected.searched.toLocaleString()} historical resolutions — found {selected.findings.length} relevant</p>
                   <div className="space-y-2">
                     {selected.findings.map(f => (
-                      <div key={f.ref} className="bg-slate-950 rounded-lg px-3 py-2 border border-slate-800">
+                      <div key={f.ref} className="bg-slate-900 rounded-lg px-3 py-2 border border-slate-700">
                         <div className="flex justify-between">
                           <span className="text-xs font-medium text-white">{f.title}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 flex-shrink-0 ml-2">{f.ref}</span>
@@ -439,11 +439,11 @@ const DemoKnowledgeGapsPage = () => {
               {selected.draft && (
                 <>
                   <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">3 · Drafted article</p>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 mb-6">
+                  <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 mb-6">
                     <p className="text-sm font-semibold text-white mb-2">{selected.draft.title}</p>
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400">{selected.draft.entity}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{selected.draft.audience}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{selected.draft.audience}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">{selected.draft.type}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">est. confidence {selected.draft.confidence}%</span>
                     </div>
@@ -469,12 +469,12 @@ const DemoKnowledgeGapsPage = () => {
                     </button>
                     <button
                       onClick={() => { setStatus(selected.id, 'investigating'); setToast('Changes requested — returned to the Drafting Agent'); }}
-                      className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500">
+                      className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500">
                       Request changes
                     </button>
                     <button
                       onClick={() => { setStatus(selected.id, 'detected'); setToast('Draft rejected — gap remains open'); }}
-                      className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400">
+                      className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-red-500/50 hover:text-red-400">
                       Reject
                     </button>
                   </div>
@@ -506,7 +506,7 @@ const DemoKnowledgeGapsPage = () => {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}
@@ -542,7 +542,7 @@ function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null)
 }
 
 const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-700/50 text-slate-300' },
+  open: { label: 'Open', cls: 'bg-slate-600/50 text-slate-300' },
   revision_requested: { label: 'Draft pending review', cls: 'bg-amber-500/20 text-amber-400' },
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
@@ -649,7 +649,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
   const selectedPolicy = selected ? policyFor(selected.category) : null;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
       <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -669,11 +669,11 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       ) : (
         <>
           {/* Loop diagram strip — real states only */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
             <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
               {loopNodes.map((n, i) => (
                 <React.Fragment key={n.label}>
-                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-800 bg-slate-950 p-3 text-center">
+                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-center">
                     <p className="text-indigo-400 text-sm">{n.icon}</p>
                     <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
                     <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
@@ -689,9 +689,9 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {/* Gap table */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
             <table className="w-full text-sm text-slate-300">
-              <thead className="bg-slate-900 border-b border-slate-800">
+              <thead className="bg-slate-800 border-b border-slate-700">
                 <tr>
                   <th className={th}>Gap</th>
                   <th className={th}>Category</th>
@@ -709,7 +709,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   const title = rev?.proposed_title ?? rep?.inquiry ?? '(loading…)';
                   const tier = severityTier(c, policyFor(c.category));
                   return (
-                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-800/60 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-700/60 hover:bg-slate-700/40 cursor-pointer transition-colors">
                       <td className={td}>
                         <p className="text-white font-medium max-w-md truncate">{title}</p>
                         <p className="text-xs text-slate-500 mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
@@ -737,7 +737,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
           {selected && (
             <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
               <div className="absolute inset-0 bg-black/50" />
-              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-900 border-l border-slate-800 overflow-y-auto p-6">
+              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-800 border-l border-slate-700 overflow-y-auto p-6">
                 <div className="flex items-start justify-between mb-1">
                   <h2 className="text-lg font-semibold text-white">{selectedRevision?.proposed_title ?? selectedRep?.inquiry ?? 'Gap detail'}</h2>
                   <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -748,7 +748,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 </div>
 
                 {typeof selected.pre_fix_avg_confidence === 'number' && (
-                  <div className="mb-5 bg-slate-950 rounded-lg px-3 py-2">
+                  <div className="mb-5 bg-slate-900 rounded-lg px-3 py-2">
                     <p className="text-xs text-slate-400">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
                   </div>
                 )}
@@ -762,7 +762,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                     {(detail?.members ?? []).map(m => {
                       const info = detail?.inquiries[m.evidence_run_id];
                       return (
-                        <div key={m.id} className="bg-slate-950 rounded-lg px-3 py-2">
+                        <div key={m.id} className="bg-slate-900 rounded-lg px-3 py-2">
                           <p className="text-xs text-slate-300">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
                           <p className="text-[10px] text-slate-600 mt-0.5">
                             {info ? new Date(info.created_at).toLocaleString() : ''}
@@ -781,7 +781,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 {selectedRevision && (
                   <>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Proposed knowledge update</p>
-                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 mb-6">
+                    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 mb-6">
                       <p className="text-sm font-semibold text-white mb-2">{selectedRevision.proposed_title}</p>
                       <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">{selectedRevision.proposed_body_md}</pre>
                     </div>
@@ -802,7 +802,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                       <button
                         disabled={deciding}
                         onClick={() => void decide(selectedRevision.id, 'rejected')}
-                        className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
+                        className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
                         Reject
                       </button>
                     </div>
@@ -828,7 +828,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

@@ -590,9 +590,9 @@ export default function DEChatDock() {
     <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
       {/* Panel */}
       {open && (
-        <div className="w-96 h-[560px] rounded-2xl bg-slate-900 border border-slate-700/50 shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
+        <div className="w-96 h-[560px] rounded-2xl bg-slate-800 border border-slate-600/50 shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-600/50 flex-shrink-0">
             <div className={`w-8 h-8 rounded-full ${de.color} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
               {de.name[0]}
             </div>
@@ -617,16 +617,16 @@ export default function DEChatDock() {
             <div className="relative flex-shrink-0">
               <button
                 onClick={() => setMenuOpen(v => !v)}
-                className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
                 aria-label="Menu"
               >
                 ⋯
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-7 bg-slate-800 border border-slate-700 rounded-lg py-1 w-40 shadow-xl">
+                <div className="absolute right-0 top-7 bg-slate-700 border border-slate-600 rounded-lg py-1 w-40 shadow-xl">
                   <button
                     onClick={clearThread}
-                    className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors"
+                    className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-600/50 transition-colors"
                   >
                     Clear conversation
                   </button>
@@ -635,7 +635,7 @@ export default function DEChatDock() {
             </div>
             <button
               onClick={() => { setOpen(false); setMenuOpen(false); }}
-              className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs flex-shrink-0 transition-colors"
+              className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs flex-shrink-0 transition-colors"
               aria-label="Minimize"
             >
               ×
@@ -689,7 +689,7 @@ export default function DEChatDock() {
                     msg.role === 'user' ? 'bg-indigo-600 text-white'
                     : msg.notice === 'llm_not_configured' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
                     : msg.notice === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-200'
-                    : 'bg-slate-800 text-slate-200'
+                    : 'bg-slate-700 text-slate-200'
                   }`}>
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
                     {msg.sources && msg.sources.length > 0 && (
@@ -744,7 +744,7 @@ export default function DEChatDock() {
                 <div className={`w-6 h-6 rounded-full ${de.color} flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5`}>
                   {de.name[0]}
                 </div>
-                <div className="bg-slate-800 rounded-xl px-3 py-3">
+                <div className="bg-slate-700 rounded-xl px-3 py-3">
                   <div className="flex gap-1 items-center">
                     {[0, 150, 300].map(delay => (
                       <div
@@ -762,12 +762,12 @@ export default function DEChatDock() {
 
           {/* Suggestion chips (empty thread only) */}
           {messages.length === 0 && !typing && (
-            <div className="px-3 py-2 border-t border-slate-700/50 flex gap-1 flex-wrap flex-shrink-0">
+            <div className="px-3 py-2 border-t border-slate-600/50 flex gap-1 flex-wrap flex-shrink-0">
               {(isLive ? LIVE_SUGGESTIONS : SUGGESTIONS[de.id] ?? []).map(s => (
                 <button
                   key={s}
                   onClick={() => send(s)}
-                  className="text-xs px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                  className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors"
                 >
                   {s}
                 </button>
@@ -776,14 +776,14 @@ export default function DEChatDock() {
           )}
 
           {/* Input */}
-          <div className={`px-3 pb-3 flex-shrink-0 ${messages.length > 0 || typing ? 'pt-3 border-t border-slate-700/50' : 'pt-1'}`}>
+          <div className={`px-3 pb-3 flex-shrink-0 ${messages.length > 0 || typing ? 'pt-3 border-t border-slate-600/50' : 'pt-1'}`}>
             <div className="flex gap-2">
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder={`Ask ${de.name} anything...`}
-                className="flex-1 text-xs bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="flex-1 text-xs bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <button
                 onClick={() => send()}
@@ -802,7 +802,7 @@ export default function DEChatDock() {
       {!open && nudge && (
         <button
           onClick={openFromNudge}
-          className="max-w-[260px] text-left bg-slate-900 border border-slate-700/50 rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
+          className="max-w-[260px] text-left bg-slate-800 border border-slate-600/50 rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-5 h-5 rounded-full ${de.color} flex items-center justify-center text-white text-[10px] font-bold`}>{de.name[0]}</span>
@@ -822,7 +822,7 @@ export default function DEChatDock() {
           onMouseLeave={() => setHovered(false)}
         >
           {hovered && (
-            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-800 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
+            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-700 border border-slate-600 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
               Ask {de.name}
             </div>
           )}
@@ -832,7 +832,7 @@ export default function DEChatDock() {
             aria-label={`Ask ${de.name}`}
           >
             {de.name[0]}
-            <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-950" />
+            <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
           </button>
         </div>
       )}

@@ -102,17 +102,17 @@ const DemoKnowledgeQualityPage = () => {
   const handledStale = articles.filter(a => isStale(a) && actions[`stale_${a.id}`]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader title="Quality & Coverage" subtitle="Coverage per DE, knowledge freshness, and confidence calibration against human feedback." />
 
       {/* Coverage matrix */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
-        <div className="px-4 py-3 border-b border-slate-800">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-slate-700">
           <h3 className="text-sm font-semibold text-white">Coverage matrix</h3>
           <p className="text-xs text-slate-500 mt-0.5">Collection coverage per Digital Employee — mirrors each DE's knowledge configuration.</p>
         </div>
         <table className="w-full text-sm text-slate-300">
-          <thead className="bg-slate-900 border-b border-slate-800">
+          <thead className="bg-slate-800 border-b border-slate-700">
             <tr>
               <th className={th}>Collection</th>
               {matrix.des.map(d => <th key={d} className={`${th} text-center`}>{d}</th>)}
@@ -120,12 +120,12 @@ const DemoKnowledgeQualityPage = () => {
           </thead>
           <tbody>
             {matrix.rows.map(r => (
-              <tr key={r.collection} className="border-b border-slate-800/60">
+              <tr key={r.collection} className="border-b border-slate-700/60">
                 <td className={`${td} text-white`}>{r.collection}</td>
                 {r.values.map((val, i) => (
                   <td key={matrix.des[i]} className={`${td} text-center`}>
                     {val === null
-                      ? <span className="text-slate-700">—</span>
+                      ? <span className="text-slate-600">—</span>
                       : <span className={`inline-block min-w-[3rem] text-xs font-medium px-2 py-1 rounded-lg ${heatCls(val)}`}>{val}%</span>}
                   </td>
                 ))}
@@ -137,7 +137,7 @@ const DemoKnowledgeQualityPage = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
         {/* Freshness histogram */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Freshness</h3>
           <p className="text-xs text-slate-500 mb-4">Articles by time since last verification.</p>
           <div className="flex items-end gap-4 h-36">
@@ -152,14 +152,14 @@ const DemoKnowledgeQualityPage = () => {
         </div>
 
         {/* Confidence calibration */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Confidence calibration</h3>
           <p className="text-xs text-slate-500 mb-4">Articles where DE confidence disagreed with human feedback.</p>
           <div className="space-y-3">
             {calibration.map(c => {
               const key = `cal_${c.article}`;
               return (
-                <div key={c.article} className="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                <div key={c.article} className="bg-slate-900 rounded-xl p-3 border border-slate-700">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-xs font-medium text-white">{c.article}</p>
@@ -174,7 +174,7 @@ const DemoKnowledgeQualityPage = () => {
                     {actions[key] ? (
                       <span className="text-[11px] text-emerald-400">{actions[key]}</span>
                     ) : (
-                      <button onClick={() => act(key, 'Recalibration queued')} className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:border-indigo-500/50 hover:text-indigo-400 transition-colors">
+                      <button onClick={() => act(key, 'Recalibration queued')} className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-indigo-500/50 hover:text-indigo-400 transition-colors">
                         Recalibrate
                       </button>
                     )}
@@ -187,8 +187,8 @@ const DemoKnowledgeQualityPage = () => {
       </div>
 
       {/* Stale queue */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-white">Stale queue</h3>
             <p className="text-xs text-slate-500 mt-0.5">Articles unverified for more than 90 days.</p>
@@ -201,7 +201,7 @@ const DemoKnowledgeQualityPage = () => {
           <p className="p-6 text-sm text-slate-500 text-center">Nothing stale — all articles verified within 90 days.</p>
         ) : (
           <table className="w-full text-sm text-slate-300">
-            <thead className="bg-slate-900 border-b border-slate-800">
+            <thead className="bg-slate-800 border-b border-slate-700">
               <tr>
                 <th className={th}>Article</th>
                 <th className={th}>Collection</th>
@@ -215,7 +215,7 @@ const DemoKnowledgeQualityPage = () => {
                 const key = `stale_${a.id}`;
                 const done = actions[key];
                 return (
-                  <tr key={a.id} className={`border-b border-slate-800/60 ${done ? 'opacity-60' : ''}`}>
+                  <tr key={a.id} className={`border-b border-slate-700/60 ${done ? 'opacity-60' : ''}`}>
                     <td className={`${td} text-white font-medium`}>{a.title}</td>
                     <td className={`${td} text-xs text-slate-400`}>{a.collection}</td>
                     <td className={`${td} text-xs text-red-400`}>{a.lastVerified} ({daysSince(a.lastVerified)}d)</td>
@@ -226,7 +226,7 @@ const DemoKnowledgeQualityPage = () => {
                       ) : (
                         <div className="flex gap-2 justify-end">
                           <button onClick={() => act(key, 'Re-verification assigned')} className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">Re-verify</button>
-                          <button onClick={() => act(key, 'Archived')} className="text-xs px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500">Archive</button>
+                          <button onClick={() => act(key, 'Archived')} className="text-xs px-2.5 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500">Archive</button>
                         </div>
                       )}
                     </td>
@@ -369,7 +369,7 @@ function LiveKnowledgeQuality() {
     .slice(0, 8);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
       <PageHeader title="Quality & Coverage" subtitle="Real coverage per Digital Employee, real document freshness, and real confidence calibration against human feedback." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -387,8 +387,8 @@ function LiveKnowledgeQuality() {
       ) : (
         <>
           {/* Coverage matrix */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
-            <div className="px-4 py-3 border-b border-slate-800">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+            <div className="px-4 py-3 border-b border-slate-700">
               <h3 className="text-sm font-semibold text-white">Coverage matrix</h3>
               <p className="text-xs text-slate-500 mt-0.5">Real per-tag visibility — a tag's documents may be tenant-wide or scoped to specific Digital Employees.</p>
             </div>
@@ -398,7 +398,7 @@ function LiveKnowledgeQuality() {
               </p>
             ) : (
               <table className="w-full text-sm text-slate-300">
-                <thead className="bg-slate-900 border-b border-slate-800">
+                <thead className="bg-slate-800 border-b border-slate-700">
                   <tr>
                     <th className={th}>Tag</th>
                     {deDes.map(d => <th key={d.id} className={`${th} text-center`}>{d.name}</th>)}
@@ -406,14 +406,14 @@ function LiveKnowledgeQuality() {
                 </thead>
                 <tbody>
                   {tags.map(tag => (
-                    <tr key={tag} className="border-b border-slate-800/60">
+                    <tr key={tag} className="border-b border-slate-700/60">
                       <td className={`${td} text-white`}>{tag}</td>
                       {deDes.map(d => {
                         const val = coverageFor(tag, d.id);
                         return (
                           <td key={d.id} className={`${td} text-center`}>
                             {val === null
-                              ? <span className="text-slate-700">—</span>
+                              ? <span className="text-slate-600">—</span>
                               : <span className={`inline-block min-w-[3rem] text-xs font-medium px-2 py-1 rounded-lg ${heatClsLive(val)}`}>{val}%</span>}
                           </td>
                         );
@@ -427,7 +427,7 @@ function LiveKnowledgeQuality() {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
             {/* Freshness histogram */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
               <h3 className="text-sm font-semibold text-white mb-1">Freshness</h3>
               <p className="text-xs text-slate-500 mb-4">Documents by time since last verification (or creation, if never verified).</p>
               <div className="flex items-end gap-4 h-36">
@@ -442,7 +442,7 @@ function LiveKnowledgeQuality() {
             </div>
 
             {/* Confidence calibration */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
               <h3 className="text-sm font-semibold text-white mb-1">Confidence calibration</h3>
               <p className="text-xs text-slate-500 mb-4">Real cited documents where DE confidence disagreed with human feedback.</p>
               {calibration.length === 0 ? (
@@ -450,7 +450,7 @@ function LiveKnowledgeQuality() {
               ) : (
                 <div className="space-y-3">
                   {calibration.map(({ doc, stats, delta }) => (
-                    <div key={doc.id} className="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                    <div key={doc.id} className="bg-slate-900 rounded-xl p-3 border border-slate-700">
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="text-xs font-medium text-white">{doc.title}</p>
@@ -473,8 +473,8 @@ function LiveKnowledgeQuality() {
           </div>
 
           {/* Stale queue */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-white">Stale queue</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Documents unverified for more than 90 days.</p>
@@ -487,7 +487,7 @@ function LiveKnowledgeQuality() {
               <p className="p-6 text-sm text-slate-500 text-center">Nothing stale — all documents verified (or created) within 90 days.</p>
             ) : (
               <table className="w-full text-sm text-slate-300">
-                <thead className="bg-slate-900 border-b border-slate-800">
+                <thead className="bg-slate-800 border-b border-slate-700">
                   <tr>
                     <th className={th}>Document</th>
                     <th className={th}>Tags</th>
@@ -500,7 +500,7 @@ function LiveKnowledgeQuality() {
                   {staleQueue.map(d => {
                     const stats = citationStats[d.id];
                     return (
-                      <tr key={d.id} className="border-b border-slate-800/60">
+                      <tr key={d.id} className="border-b border-slate-700/60">
                         <td className={`${td} text-white font-medium`}>{d.title}</td>
                         <td className={`${td} text-xs text-slate-400`}>{(d.tags ?? []).join(', ') || '—'}</td>
                         <td className={`${td} text-xs text-red-400`}>
@@ -515,7 +515,7 @@ function LiveKnowledgeQuality() {
                               className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
                               {busyId === d.id ? '…' : 'Re-verify'}
                             </button>
-                            <button onClick={() => setConfirmDelete(d)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:border-red-500/50 hover:text-red-400">
+                            <button onClick={() => setConfirmDelete(d)} className="text-xs px-2.5 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-red-500/50 hover:text-red-400">
                               Delete
                             </button>
                           </div>
@@ -540,7 +540,7 @@ function LiveKnowledgeQuality() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

@@ -25,7 +25,7 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 function VendorNotYetAvailable({ title, setPage }: { title: string; setPage?: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title={title} subtitle="Vendors & Partners" />
       <LiveEmptyState
         icon="◈"
@@ -85,7 +85,7 @@ export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) 
   if (dataMode === 'live') return <VendorNotYetAvailable title="Vendors & Partners" setPage={setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Vendors &amp; Partners</h1>
         <p className="text-slate-400 text-sm mt-1">One relationship per vendor, end-to-end</p>
@@ -118,14 +118,14 @@ export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) 
             <React.Fragment key={s.page}>
               <button
                 onClick={() => setPage(s.page)}
-                className="flex-shrink-0 w-48 text-left rounded-xl p-3.5 border border-slate-800 bg-slate-900 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                className="flex-shrink-0 w-48 text-left rounded-xl p-3.5 border border-slate-700 bg-slate-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
               >
                 <div className="text-lg mb-1.5">{s.icon}</div>
                 <p className="text-xs font-semibold text-white leading-tight mb-1 group-hover:text-indigo-200">{s.label}</p>
                 <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>
               </button>
               {i < stages.length - 1 && (
-                <div className="flex-shrink-0 self-center text-slate-700 text-lg px-0.5">→</div>
+                <div className="flex-shrink-0 self-center text-slate-600 text-lg px-0.5">→</div>
               )}
             </React.Fragment>
           ))}
@@ -135,7 +135,7 @@ export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) 
       {/* Stat cards */}
       <div className="grid grid-cols-3 gap-3">
         {stats.map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
             <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
@@ -188,7 +188,7 @@ const evalStageBadge = (stage: string) => {
   if (stage === 'Shortlisted') return 'bg-emerald-500/15 text-emerald-300';
   if (stage === 'Scoring') return 'bg-indigo-500/15 text-indigo-300';
   if (stage === 'Demo scheduled') return 'bg-sky-500/15 text-sky-300';
-  return 'bg-slate-700/50 text-slate-300';
+  return 'bg-slate-600/50 text-slate-300';
 };
 
 export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -200,22 +200,22 @@ export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) 
   if (dataMode === 'live') return <VendorNotYetAvailable title="Sourcing — Vendor entity" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Sourcing — Vendor entity" subtitle="Vendor evaluations, RFPs, and selection — currently human-led" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Active evaluations</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Vendor', 'Category', 'Stage', 'Score', 'Owner'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {evals.map((e, i) => (
-                  <tr key={e.vendor} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === evals.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={e.vendor} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === evals.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{e.vendor}</td>
                     <td className={`${td} text-slate-400 text-xs`}>{e.category}</td>
                     <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${evalStageBadge(e.stage)}`}>{e.stage}</span></td>
@@ -228,14 +228,14 @@ export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) 
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">RFP status</h3>
           <div className="space-y-3">
             {rfps.map(r => (
-              <div key={r.title} className={`rounded-xl border p-3 ${r.tone === 'closing' ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-900'}`}>
+              <div key={r.title} className={`rounded-xl border p-3 ${r.tone === 'closing' ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-700 bg-slate-800'}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium text-white">{r.title}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.tone === 'closing' ? 'bg-amber-500/15 text-amber-300' : r.tone === 'draft' ? 'bg-slate-800 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{r.status}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.tone === 'closing' ? 'bg-amber-500/15 text-amber-300' : r.tone === 'draft' ? 'bg-slate-700 text-slate-400' : 'bg-indigo-500/15 text-indigo-300'}`}>{r.status}</span>
                 </div>
                 <p className="text-xs text-slate-500">Due {r.due} · {r.responses}</p>
               </div>
@@ -295,19 +295,19 @@ export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   if (dataMode === 'live') return <VendorNotYetAvailable title="Contracts — Vendor entity" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Contracts — Vendor entity"
         subtitle={isTcp ? '6 active vendor contracts — 3 expiring within 60 days' : '4 active vendor contracts — 1 expiring within 60 days'}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Contract register</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Vendor', 'Type', 'Value / yr', 'Start', 'Expiry', 'Auto-renew', 'Status'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
@@ -315,7 +315,7 @@ export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page)
                 {contracts.map((c, i) => {
                   const warn = c.status === 'Expiring soon';
                   return (
-                    <tr key={c.vendor} className={`border-b border-slate-800/60 transition-colors ${warn ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-800/30'} ${i === contracts.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={c.vendor} className={`border-b border-slate-700/60 transition-colors ${warn ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-700/30'} ${i === contracts.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium ${warn ? 'text-amber-200' : 'text-white'}`}>{c.vendor}</td>
                       <td className={`${td} text-slate-400 text-xs`}>{c.type}</td>
                       <td className={`${td} text-slate-300`}>{c.valuePerYear}</td>
@@ -336,13 +336,13 @@ export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page)
           <p className="text-xs text-slate-500 mb-4">{expiring.length} contract{expiring.length === 1 ? '' : 's'} within 60 days</p>
           <div className="space-y-3">
             {expiring.map(c => (
-              <div key={c.vendor} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+              <div key={c.vendor} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-medium text-white">{c.vendor}</span>
                   <span className="text-xs text-amber-300">{c.expiry}</span>
                 </div>
                 <p className="text-xs text-slate-500 mb-2">{c.type} · {c.valuePerYear}/yr · {c.autoRenew ? 'auto-renews' : 'no auto-renew'}</p>
-                <button className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors">
+                <button className="text-xs px-2.5 py-1 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600 transition-colors">
                   Draft renewal review
                 </button>
               </div>
@@ -390,7 +390,7 @@ const reviewBadge = (s: string) => {
   if (s === 'Completed') return 'bg-emerald-500/15 text-emerald-300';
   if (s === 'Under review') return 'bg-amber-500/15 text-amber-300';
   if (s === 'Prep in progress') return 'bg-indigo-500/15 text-indigo-300';
-  return 'bg-slate-700/50 text-slate-300';
+  return 'bg-slate-600/50 text-slate-300';
 };
 
 export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -402,12 +402,12 @@ export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page
   if (dataMode === 'live') return <VendorNotYetAvailable title="Relationship Management — Vendor entity" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Relationship Management — Vendor entity" subtitle="Vendor performance scorecards and quarterly business reviews" />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {cards.map(c => (
-          <div key={c.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={c.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{c.label}</p>
             <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
             <p className="text-xs text-slate-500 mt-0.5">{c.sub}</p>
@@ -415,18 +415,18 @@ export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page
         ))}
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-3">Quarterly review schedule</h3>
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-slate-700">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {['Vendor', 'Quarter', 'Date', 'Owner', 'Status'].map(h => <th key={h} className={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {reviews.map((r, i) => (
-                <tr key={r.vendor} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === reviews.length - 1 ? 'border-b-0' : ''}`}>
+                <tr key={r.vendor} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === reviews.length - 1 ? 'border-b-0' : ''}`}>
                   <td className={`${td} font-medium text-white`}>{r.vendor}</td>
                   <td className={`${td} text-slate-400 text-xs`}>{r.quarter}</td>
                   <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.date}</td>

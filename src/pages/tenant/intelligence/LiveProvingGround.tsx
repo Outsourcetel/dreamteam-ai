@@ -174,7 +174,7 @@ const LiveProvingGround = () => {
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Proving Ground" subtitle="Golden Q&A evals run against your live Digital Employee." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
@@ -192,7 +192,7 @@ const LiveProvingGround = () => {
   const latestShown = liveRun ?? runs[0] ?? null;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader
         title="Proving Ground"
         subtitle="Your DE's exam: golden questions run against the LIVE answer path. A failing run gates knowledge publishes."
@@ -238,7 +238,7 @@ const LiveProvingGround = () => {
       {loading ? (
         <p className="text-sm text-slate-500 py-8 text-center">Loading suite…</p>
       ) : qas.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center mb-6">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center mb-6">
           <p className="text-sm text-slate-300 font-medium mb-1">Create your DE's exam</p>
           <p className="text-xs text-slate-500 mb-4 max-w-md mx-auto">
             Golden questions are asked to your live DE and graded: the answer must contain the expected fragments and clear the confidence floor.
@@ -254,16 +254,16 @@ const LiveProvingGround = () => {
             </button>
             <button
               onClick={() => setEditor({ ...emptyEditor })}
-              className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors"
+              className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
             >
               Write my own
             </button>
           </div>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
           <table className="w-full text-sm text-slate-300">
-            <thead className="bg-slate-900 border-b border-slate-800">
+            <thead className="bg-slate-800 border-b border-slate-700">
               <tr>
                 <th className={th}>Question</th>
                 <th className={th}>Expected fragments</th>
@@ -275,23 +275,23 @@ const LiveProvingGround = () => {
             </thead>
             <tbody>
               {qas.map((qa) => (
-                <tr key={qa.id} className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                <tr key={qa.id} className="border-b border-slate-700/60 hover:bg-slate-700/40 transition-colors">
                   <td className={`${td} text-white max-w-sm`}>{qa.question}</td>
                   <td className={td}>
                     <div className="flex flex-wrap gap-1">
                       {qa.expected_fragments.map((f) => (
-                        <span key={f} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">"{f}"</span>
+                        <span key={f} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">"{f}"</span>
                       ))}
                     </div>
                   </td>
                   <td className={`${td} text-xs`}>≥ {qa.min_confidence}%</td>
                   <td className={td}>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{qa.category}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{qa.category}</span>
                   </td>
                   <td className={td}>
                     <button
                       onClick={() => void toggleActive(qa)}
-                      className={`text-xs px-2 py-0.5 rounded-full transition-colors ${qa.active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}
+                      className={`text-xs px-2 py-0.5 rounded-full transition-colors ${qa.active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}
                     >
                       {qa.active ? 'Active' : 'Off'}
                     </button>
@@ -322,7 +322,7 @@ const LiveProvingGround = () => {
 
       {/* Latest run detail */}
       {latestShown && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-sm font-semibold text-white">Latest run</h2>
             <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_CHIP[latestShown.status]?.cls ?? ''}`}>
@@ -340,7 +340,7 @@ const LiveProvingGround = () => {
           )}
           <div className="space-y-2">
             {latestShown.results.map((r, i) => (
-              <div key={`${r.qa_id}-${i}`} className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2">
+              <div key={`${r.qa_id}-${i}`} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.passed ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
                     {r.passed ? 'PASS' : 'FAIL'}
@@ -364,15 +364,15 @@ const LiveProvingGround = () => {
       )}
 
       {/* Run history */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-800">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-700">
           <h2 className="text-sm font-semibold text-white">Run history</h2>
         </div>
         {runs.length === 0 ? (
           <p className="text-xs text-slate-500 px-5 py-6">No runs yet — the first "Run evals" lands here.</p>
         ) : (
           <table className="w-full text-sm text-slate-300">
-            <thead className="bg-slate-900 border-b border-slate-800">
+            <thead className="bg-slate-800 border-b border-slate-700">
               <tr>
                 <th className={th}>Started</th>
                 <th className={th}>Trigger</th>
@@ -384,9 +384,9 @@ const LiveProvingGround = () => {
             <tbody>
               {runs.map((r) => (
                 <React.Fragment key={r.id}>
-                  <tr className="border-b border-slate-800/60 hover:bg-slate-800/40 transition-colors">
+                  <tr className="border-b border-slate-700/60 hover:bg-slate-700/40 transition-colors">
                     <td className={`${td} text-xs`}>{fmtTime(r.started_at)}</td>
-                    <td className={td}><span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{r.trigger}</span></td>
+                    <td className={td}><span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{r.trigger}</span></td>
                     <td className={`${td} text-xs`}>{r.status === 'blocked_llm' ? '—' : `${r.passed}/${r.total} passed`}</td>
                     <td className={td}>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_CHIP[r.status]?.cls ?? ''}`}>
@@ -403,8 +403,8 @@ const LiveProvingGround = () => {
                     </td>
                   </tr>
                   {expandedRunId === r.id && (
-                    <tr className="border-b border-slate-800/60">
-                      <td colSpan={5} className="px-5 py-3 bg-slate-950/50">
+                    <tr className="border-b border-slate-700/60">
+                      <td colSpan={5} className="px-5 py-3 bg-slate-900/50">
                         <div className="space-y-1.5">
                           {r.results.map((res, i) => (
                             <div key={`${res.qa_id}-${i}`} className="flex items-start gap-2 text-[11px]">
@@ -436,21 +436,21 @@ const LiveProvingGround = () => {
       {editor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-xl bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+          <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-xl bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit question' : 'Add golden question'}</h2>
             <label className="block text-xs text-slate-500 mb-1">Question (asked to the live DE)</label>
             <input
               value={editor.question}
               onChange={(e) => setEditor({ ...editor, question: e.target.value })}
               placeholder="e.g. What is our refund window?"
-              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <label className="block text-xs text-slate-500 mb-1">Expected fragments (comma-separated — the answer must contain ALL, case-insensitive)</label>
             <input
               value={editor.fragments}
               onChange={(e) => setEditor({ ...editor, fragments: e.target.value })}
               placeholder="30 days, full refund"
-              className="w-full mb-3 text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex gap-3 mb-5">
               <div className="flex-1">
@@ -467,7 +467,7 @@ const LiveProvingGround = () => {
                 <select
                   value={editor.category}
                   onChange={(e) => setEditor({ ...editor, category: e.target.value as GoldenCategory })}
-                  className="text-sm bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  className="text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                 >
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -477,7 +477,7 @@ const LiveProvingGround = () => {
               <button
                 onClick={() => setEditor(null)}
                 disabled={saving}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
               >
                 Cancel
               </button>

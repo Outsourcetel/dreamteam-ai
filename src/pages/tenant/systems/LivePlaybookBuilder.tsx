@@ -40,7 +40,7 @@ const statusChip = (status: string) => {
   const map: Record<string, string> = {
     draft: 'bg-amber-500/15 text-amber-300',
     published: 'bg-emerald-500/15 text-emerald-300',
-    archived: 'bg-slate-700 text-slate-400',
+    archived: 'bg-slate-600 text-slate-400',
     completed: 'bg-emerald-500/15 text-emerald-300',
     waiting_approval: 'bg-amber-500/15 text-amber-300',
     resume_pending: 'bg-indigo-500/15 text-indigo-300',
@@ -49,7 +49,7 @@ const statusChip = (status: string) => {
     failed: 'bg-red-500/15 text-red-300',
   };
   const label = status === 'waiting_approval' ? 'waiting on human' : status === 'resume_pending' ? 'resuming' : status;
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status] ?? 'bg-slate-800 text-slate-400'}`}>{label}</span>;
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status] ?? 'bg-slate-700 text-slate-400'}`}>{label}</span>;
 };
 
 const stepIcon = (s: RunStep) =>
@@ -82,7 +82,7 @@ function RunTimeline({ run }: { run: PlaybookRun }) {
 
 // ── Step param editor per primitive ───────────────────────────────
 
-const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-500';
+const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-500';
 const selectCls = inputCls;
 
 function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
@@ -363,8 +363,8 @@ function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChang
       {refs.length > 0 && (
         <div className="space-y-1">
           {refs.map((r, i) => (
-            <div key={i} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{r.kind}</span>
+            <div key={i} className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{r.kind}</span>
               <span className="text-[11px] text-slate-300 flex-1 truncate">
                 {r.kind === 'doc' ? (docs.find(d => d.id === r.doc_id)?.title ?? r.doc_id) : r.kind === 'url' ? r.url : (r.label ?? r.asset_id)}
               </span>
@@ -380,7 +380,7 @@ function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChang
             {docs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
           </select>
           <UrlAdder onAdd={(url) => addRef({ kind: 'url', url })} />
-          <label className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 cursor-pointer">
+          <label className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 cursor-pointer">
             {uploading ? 'Uploading…' : '+ Upload document'}
             <input type="file" accept=".txt,.md,.markdown,.json,text/*" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
@@ -427,7 +427,7 @@ function UrlAdder({ onAdd }: { onAdd: (url: string) => void }) {
   return (
     <div className="flex gap-1 items-center">
       <input className={inputCls + ' !w-44'} placeholder="https://…" value={url} onChange={e => setUrl(e.target.value)} />
-      <button className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40"
+      <button className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40"
         disabled={!/^https?:\/\//i.test(url)} onClick={() => { onAdd(url.trim()); setUrl(''); }}>Add link</button>
     </div>
   );
@@ -488,13 +488,13 @@ function InstructionEditor({ step, definitionId, onChange }: {
       <textarea className={inputCls + ' min-h-[80px] resize-y'} placeholder="Body — markdown supported (headings, lists, **bold**, links)"
         value={String(p.body_md ?? '')} onChange={e => set('body_md', e.target.value)} />
       <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 cursor-pointer transition-colors">
+        <label className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 cursor-pointer transition-colors">
           {uploading ? 'Uploading…' : '+ Add image or video'}
           <input type="file" accept="image/*,video/*" className="hidden" disabled={uploading}
             onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f); e.target.value = ''; }} />
         </label>
         {media.map((m, i) => (
-          <span key={i} className="text-[11px] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+          <span key={i} className="text-[11px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 flex items-center gap-1.5">
             {m.kind === 'video' ? '🎬' : '🖼️'} {m.caption || m.asset_id?.slice(0, 8) || 'media'}
             <button onClick={() => set('media', media.filter((_, k) => k !== i))} className="text-slate-600 hover:text-rose-400">✕</button>
           </span>
@@ -587,12 +587,12 @@ function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
   };
 
   const branchList = (side: 'then' | 'else', steps: DefinitionStep[]) => (
-    <div className="pl-4 border-l-2 border-slate-700 space-y-1.5 mt-1.5">
+    <div className="pl-4 border-l-2 border-slate-600 space-y-1.5 mt-1.5">
       <p className="text-[10px] uppercase tracking-wider text-slate-500">{side === 'then' ? 'Then' : 'Else'}</p>
       {steps.map((bs, i) => {
         const meta = PRIMITIVE_REGISTRY.find(m => m.key === bs.key);
         return (
-          <div key={i} className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+          <div key={i} className="rounded-lg border border-slate-700 bg-slate-900/60 p-2">
             <div className="flex items-center justify-between gap-2 mb-1">
               <span className="text-xs text-slate-300">{meta?.label ?? bs.key}</span>
               <button onClick={() => branchRemove(side, i)} className="text-xs text-slate-600 hover:text-rose-400">✕</button>
@@ -604,7 +604,7 @@ function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
       <div className="flex flex-wrap gap-1">
         {BRANCH_PRIMITIVES.map(k => (
           <button key={k} onClick={() => branchAdd(side, k)}
-            className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-500 hover:text-slate-200 hover:border-slate-500 transition-colors">
+            className="text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-500 hover:text-slate-200 hover:border-slate-500 transition-colors">
             + {PRIMITIVE_REGISTRY.find(m => m.key === k)?.label ?? k}
           </button>
         ))}
@@ -643,7 +643,7 @@ function TemplateHelp() {
         {'{{ templates }}'} ▾
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-xl">
+        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-slate-600 bg-slate-800 p-3 shadow-xl">
           <p className="text-[11px] font-medium text-slate-300 mb-2">Available template variables</p>
           {TEMPLATE_VARS.map(v => (
             <div key={v.token} className="flex gap-2 text-[11px] mb-1">
@@ -687,7 +687,7 @@ function MediaThumb({ m }: { m: StepMedia }) {
     void getPlaybookMediaUrlByAssetId(m.asset_id).then(setUrl).catch(() => undefined);
   }, [m.asset_id, m.url]);
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 inline-block">
+    <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 inline-block">
       {m.kind === 'video' ? (
         url ? <video src={url} controls className="max-h-40 rounded" /> : <span className="text-[11px] text-slate-500">🎬 {m.caption || 'video'}</span>
       ) : (
@@ -740,8 +740,8 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
 
   // Everything else — a numbered "document" row with an action chip.
   return (
-    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-slate-800/60'}`}>
-      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>{index + 1}</span>}
+    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-slate-700/60'}`}>
+      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>{index + 1}</span>}
       <span className="text-slate-300">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
       {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">{String(p.action_category ?? p.category ?? p.provider ?? '—')}{(p.action_key || p.op) ? ` · ${String(p.action_key ?? p.op)}` : ''}</span>}
       {s.key === 'log_activity' && <span className="text-[10px] text-slate-600 truncate">{String(p.text_template ?? '')}</span>}
@@ -833,7 +833,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <h3 className="text-sm font-semibold text-white">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
         <TemplateHelp />
@@ -853,9 +853,9 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
           const errs = errsFor(i);
           const isGate = s.key === 'human_approval';
           return (
-            <div key={i} className={`rounded-xl border p-3 ${isGate ? 'border-amber-500/30 bg-amber-500/5' : errs.length ? 'border-rose-700/50 bg-rose-500/5' : 'border-slate-800 bg-slate-900'}`}>
+            <div key={i} className={`rounded-xl border p-3 ${isGate ? 'border-amber-500/30 bg-amber-500/5' : errs.length ? 'border-rose-700/50 bg-rose-500/5' : 'border-slate-700 bg-slate-800'}`}>
               <div className="flex items-start gap-3">
-                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>{i + 1}</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-sm font-medium text-white">{meta?.label ?? s.key}</span>
@@ -909,7 +909,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
             <span className="text-[10px] uppercase tracking-wider text-slate-600 w-32 flex-shrink-0">{label}</span>
             {PRIMITIVE_REGISTRY.filter(m => m.group === group).map(m => (
               <button key={m.key} onClick={() => addStep(m.key)} title={m.description}
-                className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors">
+                className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors">
                 + {m.label}
               </button>
             ))}
@@ -923,7 +923,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
 
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <button onClick={saveDraft} disabled={busy !== null}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save draft'}
         </button>
         <button onClick={publish} disabled={busy !== null || clientErrors.length > 0}
@@ -1008,7 +1008,7 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
             <div className="mb-2">{result.errors.map((e, k) => <p key={k} className="text-[11px] text-rose-400">✗ {e.message}</p>)}</div>
           )}
           {result?.steps && (
-            <div className="space-y-1 bg-slate-950/50 rounded-lg p-2">
+            <div className="space-y-1 bg-slate-900/50 rounded-lg p-2">
               {result.steps.map((s, i) => <PreviewStepRow key={i} s={s} />)}
             </div>
           )}
@@ -1024,7 +1024,7 @@ function fireChip(status: PlaybookTriggerFire['status']) {
   const map: Record<string, string> = {
     started: 'bg-emerald-500/15 text-emerald-300',
     pending_start: 'bg-indigo-500/15 text-indigo-300',
-    skipped_dedup: 'bg-slate-700 text-slate-400',
+    skipped_dedup: 'bg-slate-600 text-slate-400',
     error: 'bg-red-500/15 text-red-300',
   };
   const label = status === 'skipped_dedup' ? 'deduped' : status === 'pending_start' ? 'pending' : status;
@@ -1115,20 +1115,20 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   }));
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-5">
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <h3 className="text-sm font-semibold text-white">Triggers</h3>
         <div className="flex gap-2">
           <button onClick={() => setAdding(adding === 'schedule' ? null : 'schedule')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
             ⏰ Add schedule
           </button>
           <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
             ⚡ Add event rule
           </button>
           <button onClick={() => setShowEvents(v => !v)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
             ◆ Manage events
           </button>
         </div>
@@ -1144,7 +1144,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {err && <p className="text-[11px] text-rose-400 mb-2">✗ {err}</p>}
 
       {adding === 'schedule' && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-2">
+        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-2">
           <div className="flex gap-2 flex-wrap items-center">
             <select className={selectCls + ' !w-32'} value={cadence} onChange={e => setCadence(e.target.value as ScheduleCadence)}>
               <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
@@ -1189,7 +1189,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       )}
 
       {adding === 'event' && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-2">
+        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-2">
           <div className="flex gap-2 flex-wrap items-center">
             <select className={selectCls + ' !w-64'} value={eventKey} onChange={e => setEventKey(e.target.value)}>
               <optgroup label="Built-in">
@@ -1240,7 +1240,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 
       {/* Wave 2b — custom (emitted) event management */}
       {showEvents && (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 mb-3 space-y-3">
+        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-3">
           <div>
             <p className="text-xs font-semibold text-white mb-1">Your events</p>
             <p className="text-[11px] text-slate-500 mb-2">
@@ -1261,10 +1261,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           {customEvents.length > 0 && (
             <div className="space-y-1">
               {customEvents.map(d => (
-                <div key={d.id} className="flex items-center justify-between gap-2 bg-slate-900/60 rounded-lg px-3 py-1.5">
+                <div key={d.id} className="flex items-center justify-between gap-2 bg-slate-800/60 rounded-lg px-3 py-1.5">
                   <span className="text-[11px] text-slate-300">{d.label} <span className="text-slate-600 font-mono">· {d.event_key}</span></span>
                   <button onClick={() => void fireEvent(d.event_key)}
-                    className="text-[10px] px-2 py-1 rounded border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                    className="text-[10px] px-2 py-1 rounded border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
                     Fire now
                   </button>
                 </div>
@@ -1273,7 +1273,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           )}
           {note && <p className="text-[11px] text-emerald-400">{note}</p>}
 
-          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+          <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
             <p className="text-[11px] font-semibold text-slate-300 mb-1">Webhook — fire an event from an external system</p>
             <p className="text-[10px] text-slate-500 mb-1.5">POST with a workspace API key (create one under Security &amp; Access):</p>
             <pre className="text-[10px] text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap">{`POST ${SUPABASE_URL}/functions/v1/emit-event
@@ -1291,7 +1291,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       ) : (
         <div className="space-y-1.5 mb-3">
           {schedules.map(s => (
-            <div key={s.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-950/50 flex-wrap">
+            <div key={s.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-900/50 flex-wrap">
               <span className="text-slate-300">⏰ {describeSchedule(s)}</span>
               <span className="text-[10px] text-slate-600">
                 {s.account_selector.mode === 'single' ? 'single account' : `renewals within ${s.account_selector.renewal_within_days ?? 60}d`}
@@ -1299,7 +1299,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
               {s.active && s.next_fire_at && (
                 <span className="text-[10px] text-indigo-300">next fire {new Date(s.next_fire_at).toLocaleString()}</span>
               )}
-              {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">paused</span>}
+              {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">paused</span>}
               <span className="ml-auto flex gap-2">
                 <button onClick={() => guard(() => setScheduleActive(s.id, !s.active))}
                   className="text-[11px] text-slate-500 hover:text-slate-300">{s.active ? 'pause' : 'resume'}</button>
@@ -1309,10 +1309,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
             </div>
           ))}
           {rules.map(r => (
-            <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-950/50 flex-wrap">
+            <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-900/50 flex-wrap">
               <span className="text-slate-300">⚡ {describeEventRule(r)}</span>
               <span className="text-[10px] text-slate-600">cooldown {r.cooldown_hours}h per target</span>
-              {!r.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">paused</span>}
+              {!r.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">paused</span>}
               <span className="ml-auto flex gap-2">
                 <button onClick={() => guard(() => setEventRuleActive(r.id, !r.active))}
                   className="text-[11px] text-slate-500 hover:text-slate-300">{r.active ? 'pause' : 'resume'}</button>
@@ -1330,7 +1330,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">Trigger fires</p>
           <div className="space-y-1">
             {fires.slice(0, 10).map(f => (
-              <div key={f.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded-lg bg-slate-950/40 flex-wrap">
+              <div key={f.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded-lg bg-slate-900/40 flex-wrap">
                 <span className="text-slate-500 whitespace-nowrap">{new Date(f.fired_at).toLocaleString()}</span>
                 <span className="text-slate-400">{f.source === 'schedule' ? '⏰' : '⚡'}</span>
                 {fireChip(f.status)}
@@ -1423,7 +1423,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Playbooks"
         subtitle="Build playbooks from typed step primitives — validated, versioned, executed server-side with guardrails and human gates"
@@ -1446,20 +1446,20 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
         <div>
           <button onClick={() => { setSelectedDefId(null); setOpenRunId(null); }} className="text-xs text-slate-400 hover:text-slate-200 mb-4 transition-colors">← Back to library</button>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-5">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base font-semibold text-white">{selectedDef.name}</h2>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">{selectedDef.key}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-mono">{selectedDef.key}</span>
                 {statusChip(selectedDef.status)}
                 {selectedDef.status === 'published' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">v{selectedDef.version}</span>}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status })}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
-                <button onClick={() => void archive(selectedDef)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-800 text-slate-500 hover:text-rose-300 hover:border-rose-800 transition-colors">Archive</button>
+                <button onClick={() => void archive(selectedDef)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-500 hover:text-rose-300 hover:border-rose-800 transition-colors">Archive</button>
               </div>
             </div>
             {selectedDef.description && <p className="text-sm text-slate-400 mb-3">{selectedDef.description}</p>}
@@ -1497,12 +1497,12 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           />
 
           {/* Run history for this definition */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
             <h3 className="text-sm font-semibold text-white mb-3">Runs</h3>
             {defRuns.length === 0 ? <p className="text-xs text-slate-500">No runs yet.</p> : (
               <div className="space-y-2">
                 {defRuns.map(r => (
-                  <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
                     <button onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)} className="w-full flex items-center gap-3 px-3 py-2 text-left">
                       <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
                       {statusChip(r.status)}
@@ -1519,8 +1519,8 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
       ) : (
         <>
           {/* Definitions library */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+            <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Your playbooks</p>
               <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft' })}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
@@ -1531,7 +1531,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               <p className="px-5 py-6 text-xs text-slate-500">No playbooks yet — build your first from typed step primitives. Guardrails and human gates are enforced by the server on every run.</p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="bg-slate-950/60">
+                <thead className="bg-slate-900/60">
                   <tr>
                     <th className={th}>Playbook</th><th className={th}>Key</th><th className={th}>Status</th>
                     <th className={th}>Version</th><th className={th}>Steps</th><th className={th}>Trigger</th><th className={th}>Runs</th>
@@ -1540,7 +1540,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                 <tbody>
                   {defs.filter(d => d.status !== 'archived').map(d => (
                     <tr key={d.id} onClick={() => setSelectedDefId(d.id)}
-                      className="border-t border-slate-800/60 hover:bg-slate-800/30 cursor-pointer transition-colors">
+                      className="border-t border-slate-700/60 hover:bg-slate-700/30 cursor-pointer transition-colors">
                       <td className={`${td} text-slate-200 font-medium`}>{d.name}</td>
                       <td className={`${td} text-xs font-mono text-slate-500`}>{d.key}</td>
                       <td className={td}>{statusChip(d.status)}</td>
@@ -1566,26 +1566,26 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           </div>
 
           {/* Legacy built-in playbook */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold text-white">Renewal Lifecycle</h3>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">BUILT-IN</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">renewal_v1</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-mono">renewal_v1</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
                   The original server-executed renewal playbook — check account → invoice → guardrail → human gate → send. Every step lands in the immutable audit trail.
                 </p>
               </div>
               <button onClick={() => setPage('entity_customer_renewal')}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
                 Run from Renewal &amp; Expansion →
               </button>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {RENEWAL_STEP_DEFS.map((s, i) => (
-                <span key={s.key} className="text-[11px] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+                <span key={s.key} className="text-[11px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
                   {i + 1}. {s.label}{s.key === 'human_approval' ? ' 🤝' : ''}
                 </span>
               ))}
@@ -1593,12 +1593,12 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           </div>
 
           {/* All-runs history */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
             <h3 className="text-sm font-semibold text-white mb-3">Run history</h3>
             {runs.length === 0 ? <p className="text-xs text-slate-500">No runs yet.</p> : (
               <div className="space-y-2">
                 {runs.map(r => (
-                  <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-950/50">
+                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
                     <button onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)} className="w-full flex items-center gap-3 px-3 py-2 text-left flex-wrap">
                       <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
                       <span className="text-xs font-mono text-slate-300">{r.playbook_key}</span>
@@ -1616,7 +1616,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

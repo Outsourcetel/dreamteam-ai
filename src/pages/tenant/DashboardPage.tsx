@@ -256,7 +256,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-700 text-slate-400';
+  return 'bg-slate-600 text-slate-400';
 }
 
 function taskBadgeLabel(type: TaskType): string {
@@ -361,7 +361,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
     : 'kb_gap';
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
 
         {/* Top bar */}
@@ -373,7 +373,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
+            className="w-8 h-8 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
           >
             ↻
           </button>
@@ -396,8 +396,8 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 <button
                   key={kpi.label}
                   onClick={() => setPage(kpi.navPage)}
-                  className={`bg-slate-900 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-700 transition-all ${
-                    kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-800'
+                  className={`bg-slate-800 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-600 transition-all ${
+                    kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-700'
                   }`}
                 >
                   <div className={`text-base mb-2 ${kpi.alert ? 'text-amber-400' : 'text-slate-400'}`}>{kpi.icon}</div>
@@ -413,7 +413,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 WHO WE SERVE
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+                <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-sm">◎</span>
@@ -426,7 +426,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                       </div>
                       <button
                         onClick={() => setPage('entity_customer')}
-                        className="w-6 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center text-xs transition-colors"
+                        className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
                       >
                         →
                       </button>
@@ -459,7 +459,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                   { label: 'Vendors & Partners', icon: '◈', page: 'entity_vendor' as Page },
                   { label: 'Our People', icon: '◉', page: 'entity_workforce' as Page },
                 ].map(e => (
-                  <div key={e.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3 opacity-70">
+                  <div key={e.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3 opacity-70">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400 text-sm">{e.icon}</span>
@@ -467,7 +467,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                       </div>
                       <button
                         onClick={() => setPage(e.page)}
-                        className="w-6 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center text-xs transition-colors"
+                        className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
                       >
                         →
                       </button>
@@ -480,7 +480,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
 
             {/* Bottom row — Human Tasks + Live Activity */}
             <div className="grid grid-cols-5 gap-4">
-              <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="col-span-3 bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
                     HUMAN TASKS — {pendingTasks} pending
@@ -497,7 +497,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 ) : (
                   <div className="space-y-1">
                     {tasks.slice(0, 6).map(task => (
-                      <div key={task.id} className="grid grid-cols-[100px_1fr_60px_24px] gap-2 items-center px-2 py-2 rounded-lg hover:bg-slate-800/50 transition-colors">
+                      <div key={task.id} className="grid grid-cols-[100px_1fr_60px_24px] gap-2 items-center px-2 py-2 rounded-lg hover:bg-slate-700/50 transition-colors">
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
                           {taskBadgeLabel(task.type)}
                         </span>
@@ -512,7 +512,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                         <span className="text-xs text-slate-500">{liveActivityAge(task.created_at).replace(' ago', '')}</span>
                         <button
                           onClick={() => setPage('ops_human_tasks')}
-                          className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                          className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
                         >
                           →
                         </button>
@@ -522,7 +522,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 )}
               </div>
 
-              <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">LIVE ACTIVITY</span>
                 </div>
@@ -535,7 +535,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                       return (
                         <div
                           key={item.id}
-                          className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(t)} hover:bg-slate-800/40 transition-colors`}
+                          className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(t)} hover:bg-slate-700/40 transition-colors`}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${activityDotColor(t)}`} />
                           <div className="flex-1 min-w-0">
@@ -543,7 +543,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                             <div className="text-[10px] text-slate-600 mt-0.5">{item.actor} · {liveActivityAge(item.created_at)}</div>
                           </div>
                           {item.confidence != null && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 flex-shrink-0">{item.confidence}%</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0">{item.confidence}%</span>
                           )}
                         </div>
                       );
@@ -684,7 +684,7 @@ function DemoDashboardPage({
   const entityList: EntityData[] = [data.entities.customer, data.entities.vendor, data.entities.workforce];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
       {healthConfigSavedToast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg">
           Health thresholds saved ✓
@@ -708,13 +708,13 @@ function DemoDashboardPage({
             <span className="text-xs text-slate-500">Updated: {formatTime(lastUpdated)}</span>
             <button
               onClick={openHealthConfig}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white text-xs transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white text-xs transition-colors"
             >
               <span>⚙</span> Health Config
             </button>
             <button
               onClick={() => window.location.reload()}
-              className="w-8 h-8 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
+              className="w-8 h-8 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
             >
               ↻
             </button>
@@ -733,8 +733,8 @@ function DemoDashboardPage({
             <button
               key={kpi.label}
               onClick={() => setPage(kpi.navPage)}
-              className={`bg-slate-900 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-700 transition-all ${
-                kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-800'
+              className={`bg-slate-800 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-600 transition-all ${
+                kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-700'
               }`}
             >
               <div className={`text-base mb-2 ${kpi.alert ? 'text-amber-400' : 'text-slate-400'}`}>{kpi.icon}</div>
@@ -751,7 +751,7 @@ function DemoDashboardPage({
             <button
               onClick={() => setPage('intelligence_performance')}
               title={roi.formula}
-              className="w-full -mt-3 bg-slate-900 border border-emerald-500/25 hover:border-emerald-500/50 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap text-left transition-all"
+              className="w-full -mt-3 bg-slate-800 border border-emerald-500/25 hover:border-emerald-500/50 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap text-left transition-all"
             >
               <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase flex-shrink-0">Value this month</span>
               <span className="text-sm text-slate-200">
@@ -774,7 +774,7 @@ function DemoDashboardPage({
             {entityList.map((entity) => (
               <div
                 key={entity.label}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3"
+                className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3"
               >
                 {/* Header row */}
                 <div className="flex items-center justify-between">
@@ -789,7 +789,7 @@ function DemoDashboardPage({
                     </div>
                     <button
                       onClick={() => setPage(entity.subPage)}
-                      className="w-6 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex items-center justify-center text-xs transition-colors"
+                      className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
                     >
                       →
                     </button>
@@ -827,11 +827,11 @@ function DemoDashboardPage({
 
                 {/* Legacy departments */}
                 <div>
-                  <div className="h-px bg-slate-800 mb-2" />
+                  <div className="h-px bg-slate-700 mb-2" />
                   <div className="text-[10px] text-slate-600 mb-1.5">Legacy departments</div>
                   <div className="flex flex-wrap gap-1">
                     {entity.legacy.map(dept => (
-                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">
                         {dept}
                       </span>
                     ))}
@@ -852,8 +852,8 @@ function DemoDashboardPage({
               <button
                 key={outcome.label}
                 onClick={() => setPage(outcome.page)}
-                className={`bg-slate-900 border rounded-xl p-4 text-left flex flex-col gap-3 hover:border-slate-700 transition-all ${
-                  outcome.alerts && outcome.alerts > 0 ? 'border-amber-500/30 hover:border-amber-500/50' : 'border-slate-800'
+                className={`bg-slate-800 border rounded-xl p-4 text-left flex flex-col gap-3 hover:border-slate-600 transition-all ${
+                  outcome.alerts && outcome.alerts > 0 ? 'border-amber-500/30 hover:border-amber-500/50' : 'border-slate-700'
                 }`}
               >
                 {/* Header */}
@@ -876,11 +876,11 @@ function DemoDashboardPage({
 
                 {/* Legacy departments */}
                 <div>
-                  <div className="h-px bg-slate-800 mb-2" />
+                  <div className="h-px bg-slate-700 mb-2" />
                   <div className="text-[10px] text-slate-600 mb-1">Legacy departments</div>
                   <div className="flex flex-wrap gap-1">
                     {outcome.legacy.map(dept => (
-                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">
                         {dept}
                       </span>
                     ))}
@@ -895,7 +895,7 @@ function DemoDashboardPage({
         <div className="grid grid-cols-5 gap-4">
 
           {/* Human Tasks (60%) */}
-          <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="col-span-3 bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
                 HUMAN TASKS — {live.humanTasks} pending
@@ -920,7 +920,7 @@ function DemoDashboardPage({
               {pendingChatEscs.map((esc) => (
                 <div
                   key={esc.id}
-                  className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors hover:bg-slate-800/50"
+                  className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors hover:bg-slate-700/50"
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle('review_gate')}`}>
                     {taskBadgeLabel('review_gate')}
@@ -933,7 +933,7 @@ function DemoDashboardPage({
                   <span className="text-xs text-slate-500">{chatEscalationAge(esc.createdAt)}</span>
                   <button
                     onClick={() => setPage('ops_human_tasks')}
-                    className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                    className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
                   >
                     →
                   </button>
@@ -945,7 +945,7 @@ function DemoDashboardPage({
                 <div
                   key={task.id}
                   className={`grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors ${
-                    decided ? 'opacity-60 hover:opacity-100 hover:bg-slate-800/50' : task.urgent ? 'bg-amber-500/8' : 'hover:bg-slate-800/50'
+                    decided ? 'opacity-60 hover:opacity-100 hover:bg-slate-700/50' : task.urgent ? 'bg-amber-500/8' : 'hover:bg-slate-700/50'
                   }`}
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
@@ -967,7 +967,7 @@ function DemoDashboardPage({
                   <span className="text-xs text-slate-500">{task.age}</span>
                   <button
                     onClick={() => setPage('ops_human_tasks')}
-                    className="w-6 h-6 rounded bg-slate-800 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                    className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
                   >
                     →
                   </button>
@@ -978,7 +978,7 @@ function DemoDashboardPage({
           </div>
 
           {/* Live Activity (40%) */}
-          <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">LIVE ACTIVITY</span>
               <button
@@ -992,7 +992,7 @@ function DemoDashboardPage({
               {data.activity.map((item, i) => (
                 <div
                   key={i}
-                  className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(item.type)} hover:bg-slate-800/40 transition-colors`}
+                  className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(item.type)} hover:bg-slate-700/40 transition-colors`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${activityDotColor(item.type)}`} />
                   <div className="flex-1 min-w-0">
@@ -1000,7 +1000,7 @@ function DemoDashboardPage({
                     <div className="text-[10px] text-slate-600 mt-0.5">{item.time}</div>
                   </div>
                   {item.confidence !== undefined && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 flex-shrink-0">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0">
                       {item.confidence}%
                     </span>
                   )}
@@ -1016,15 +1016,15 @@ function DemoDashboardPage({
       {showHealthConfig && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-slate-950/60"
+            className="fixed inset-0 z-40 bg-slate-900/60"
             onClick={() => setShowHealthConfig(false)}
           />
-          <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-slate-900 border-l border-slate-800 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-slate-800 border-l border-slate-700 flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-slate-700">
               <h2 className="text-sm font-semibold text-white">Configure DE Health Thresholds</h2>
               <button
                 onClick={() => setShowHealthConfig(false)}
-                className="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors"
+                className="w-7 h-7 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors"
               >
                 ×
               </button>
@@ -1047,7 +1047,7 @@ function DemoDashboardPage({
                         value={draftConfig.confidence_amber}
                         onChange={e => updateDraft('confidence_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1060,7 +1060,7 @@ function DemoDashboardPage({
                         value={draftConfig.confidence_red}
                         onChange={e => updateDraft('confidence_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1080,7 +1080,7 @@ function DemoDashboardPage({
                         value={draftConfig.escalation_amber}
                         onChange={e => updateDraft('escalation_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1093,7 +1093,7 @@ function DemoDashboardPage({
                         value={draftConfig.escalation_red}
                         onChange={e => updateDraft('escalation_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1113,7 +1113,7 @@ function DemoDashboardPage({
                         value={draftConfig.staleness_amber}
                         onChange={e => updateDraft('staleness_amber', Number(e.target.value))}
                         min={0} max={365}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">days</span>
                     </div>
@@ -1126,7 +1126,7 @@ function DemoDashboardPage({
                         value={draftConfig.staleness_red}
                         onChange={e => updateDraft('staleness_red', Number(e.target.value))}
                         min={0} max={365}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">days</span>
                     </div>
@@ -1146,7 +1146,7 @@ function DemoDashboardPage({
                         value={draftConfig.error_rate_amber}
                         onChange={e => updateDraft('error_rate_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1159,7 +1159,7 @@ function DemoDashboardPage({
                         value={draftConfig.error_rate_red}
                         onChange={e => updateDraft('error_rate_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
                       <span className="text-xs text-slate-500">%</span>
                     </div>
@@ -1168,10 +1168,10 @@ function DemoDashboardPage({
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-800 flex gap-3">
+            <div className="p-5 border-t border-slate-700 flex gap-3">
               <button
                 onClick={resetHealthConfig}
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs transition-colors"
+                className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs transition-colors"
               >
                 Reset to defaults
               </button>

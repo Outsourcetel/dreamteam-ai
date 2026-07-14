@@ -49,7 +49,7 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <h3 className="text-white font-semibold">Change password</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -65,17 +65,17 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             <div>
               <label className="text-xs font-medium text-slate-400 block mb-1.5">Current password</label>
               <input value={current} onChange={(e) => setCurrent(e.target.value)} type="password" placeholder="Your current password" autoComplete="current-password" autoFocus
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400 block mb-1.5">New password</label>
               <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoComplete="new-password"
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-400 block mb-1.5">Confirm password</label>
               <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" placeholder="Retype the password"
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             {error && <p className="text-xs text-rose-400">{error}</p>}
             <button type="submit" disabled={loading}

@@ -17,7 +17,7 @@ import type { CompanyId } from '../../../data/companies';
 // points there instead of a generic "not built" message.
 function ActivityLogNotYetAvailable({ setPage }: { setPage: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Activity Log" subtitle="Org-wide activity stream" />
       <LiveEmptyState
         icon="◈"
@@ -189,10 +189,10 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
     return null;
   };
 
-  const selectCls = 'bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600';
+  const selectCls = 'bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Activity Log"
         subtitle={`Org-wide live activity stream — ${rows.length} events across every Digital Employee, entity, and guardrail`}
@@ -219,7 +219,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
             <button
               key={t}
               onClick={() => setTypeFilter(t)}
-              className={`px-2.5 py-1.5 rounded-full text-[11px] transition-colors ${typeFilter === t ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
+              className={`px-2.5 py-1.5 rounded-full text-[11px] transition-colors ${typeFilter === t ? 'bg-indigo-600 text-white' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'}`}
             >
               {t === 'all' ? 'All types' : TYPE_LABELS[t]}
             </button>
@@ -231,7 +231,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
       {/* Timeline grouped by hour */}
       <div className="space-y-6">
         {hours.length === 0 && (
-          <div className="text-center py-10 border border-dashed border-slate-800 rounded-xl">
+          <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
             <p className="text-slate-500 text-sm">No activity matches the current filters.</p>
           </div>
         )}
@@ -239,23 +239,23 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
           <div key={bucket.hour}>
             <div className="flex items-center gap-3 mb-2">
               <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase whitespace-nowrap">{bucket.hour}</span>
-              <div className="flex-1 h-px bg-slate-800" />
+              <div className="flex-1 h-px bg-slate-700" />
               <span className="text-[10px] text-slate-600">{bucket.items.length} events</span>
             </div>
-            <div className="space-y-1.5 ml-1 pl-4 border-l border-slate-800">
+            <div className="space-y-1.5 ml-1 pl-4 border-l border-slate-700">
               {bucket.items.map(r => {
                 const link = linkFor(r);
                 return (
                   <div
                     key={r.id}
-                    className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border-l-2 ${borderColor(r.type)} ${r.type === 'guardrail_block' ? 'bg-red-500/5' : 'bg-slate-900/60'} hover:bg-slate-800/50 transition-colors`}
+                    className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border-l-2 ${borderColor(r.type)} ${r.type === 'guardrail_block' ? 'bg-red-500/5' : 'bg-slate-800/60'} hover:bg-slate-700/50 transition-colors`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${dotColor(r.type)}`} />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-slate-300 leading-tight">{r.text}</div>
                       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-600">
                         <span className="font-mono">{r.time}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">{TYPE_LABELS[r.type]}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">{TYPE_LABELS[r.type]}</span>
                         <span>{r.de}</span>
                         <span>· {r.entity}</span>
                         {link && (
@@ -266,7 +266,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
                       </div>
                     </div>
                     {r.confidence !== undefined && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 flex-shrink-0">{r.confidence}%</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0">{r.confidence}%</span>
                     )}
                   </div>
                 );

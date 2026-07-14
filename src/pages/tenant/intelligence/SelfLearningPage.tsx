@@ -110,7 +110,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange?: 
   return (
     <button
       onClick={() => !disabled && onChange && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-700'} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-600'} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
@@ -179,7 +179,7 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
     saveConfig({ ...config, signals: config.signals.map(s => s.id === id ? { ...s, ...patch } : s) });
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Self-Learning"
         subtitle="Org-level learning policy — what DEs are allowed to learn, from which signals, and the human validation gate every learned behavior passes through"
@@ -187,17 +187,17 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
         {/* Org policy */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-4">Org Learning Policy</p>
           <div className="space-y-3">
-            <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+            <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
               <div>
                 <p className="text-sm text-slate-200">Global self-learning</p>
                 <p className="text-[11px] text-slate-500">Master switch for learning across all DEs</p>
               </div>
               <Toggle enabled={config.learningEnabled} onChange={v => saveConfig({ ...config, learningEnabled: v })} />
             </div>
-            <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+            <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
               <p className="text-sm text-slate-200">Default learning rate</p>
               <div className="flex gap-3">
                 {(['low', 'medium', 'high'] as const).map(r => (
@@ -208,7 +208,7 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
                 ))}
               </div>
             </div>
-            <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5 border border-slate-800">
+            <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5 border border-slate-700">
               <div>
                 <p className="text-sm text-slate-200 flex items-center gap-1.5">Mandatory human validation <span className="text-slate-500">🔒</span></p>
                 <p className="text-[11px] text-slate-500">Validation gate cannot be disabled — all learned behaviors require human approval</p>
@@ -223,12 +223,12 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
 
         {/* Feedback signals */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Feedback Signals</p>
           <p className="text-[11px] text-slate-500 mb-4">Which signals feed learning, and how heavily each is weighted</p>
           <div className="space-y-3">
             {config.signals.map(s => (
-              <div key={s.id} className="bg-slate-950 rounded-lg px-3 py-2.5">
+              <div key={s.id} className="bg-slate-900 rounded-lg px-3 py-2.5">
                 <div className="flex items-center justify-between mb-1">
                   <div>
                     <p className="text-sm text-slate-200">{s.label}</p>
@@ -252,7 +252,7 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* Pending validations queue */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-6">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Pending Validations — org-wide</p>
@@ -280,11 +280,11 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
                 </div>
                 <p className="text-sm text-slate-100 font-medium mb-2">"{p.behavior}"</p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs mb-3">
-                  <div className="bg-slate-950 rounded-lg p-3">
+                  <div className="bg-slate-900 rounded-lg p-3">
                     <p className="text-slate-500 uppercase tracking-wide text-[10px] mb-1">Context</p>
                     <p className="text-slate-300 leading-relaxed">{p.context}</p>
                   </div>
-                  <div className="bg-slate-950 rounded-lg p-3">
+                  <div className="bg-slate-900 rounded-lg p-3">
                     <p className="text-slate-500 uppercase tracking-wide text-[10px] mb-1">Evidence</p>
                     <p className="text-slate-300 leading-relaxed">{p.evidence}</p>
                   </div>
@@ -307,12 +307,12 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* Per-DE learning status */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Per-DE Learning Status</p>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-950/60">
+          <thead className="bg-slate-900/60">
             <tr>
               <th className={th}>DE</th>
               <th className={th}>Learning rate</th>
@@ -324,7 +324,7 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
           </thead>
           <tbody>
             {deRows.map(r => (
-              <tr key={r.id} className="border-t border-slate-800/60">
+              <tr key={r.id} className="border-t border-slate-700/60">
                 <td className={td}>
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-[10px] font-semibold">{r.name[0]}</span>
@@ -352,13 +352,13 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* Learned-behavior history */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Learned-Behavior History</p>
           <p className="text-[11px] text-slate-500 mt-0.5">Approved behaviors now active in production — every entry carries its human approver</p>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-950/60">
+          <thead className="bg-slate-900/60">
             <tr>
               <th className={th}>Date</th>
               <th className={th}>DE</th>
@@ -368,7 +368,7 @@ function DemoSelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
           </thead>
           <tbody>
             {history.map(h => (
-              <tr key={h.id} className="border-t border-slate-800/60">
+              <tr key={h.id} className="border-t border-slate-700/60">
                 <td className={`${td} text-xs text-slate-500 font-mono whitespace-nowrap`}>{h.date}</td>
                 <td className={`${td} text-xs text-slate-300`}>{h.de}</td>
                 <td className={`${td} text-xs text-slate-300 leading-relaxed`}>{h.behavior}</td>
@@ -406,7 +406,7 @@ const VERDICT_META: Record<LearnedBehaviorCluster['verdict_type'], { label: stri
 };
 
 const LIVE_STATUS_META: Record<LearnedBehaviorCluster['status'], { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-700/50 text-slate-300' },
+  open: { label: 'Open', cls: 'bg-slate-600/50 text-slate-300' },
   proposed: { label: 'Proposed — awaiting review', cls: 'bg-amber-500/20 text-amber-400' },
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
@@ -526,7 +526,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
   const selectedPolicy = selected ? policyFor(selected.category) : null;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
       <PageHeader
         title="Self-Learning"
         subtitle="Automatic detection of recurring human corrections — when a Digital Employee keeps getting the same kind of decision overridden by a person, it's grouped into a pattern here and a real policy change is proposed for review."
@@ -548,11 +548,11 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
         />
       ) : (
         <>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
             <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
               {loopNodes.map((n, i) => (
                 <React.Fragment key={n.label}>
-                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-800 bg-slate-950 p-3 text-center">
+                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-center">
                     <p className="text-indigo-400 text-sm">{n.icon}</p>
                     <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
                     <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
@@ -567,9 +567,9 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
             <table className="w-full text-sm text-slate-300">
-              <thead className="bg-slate-900 border-b border-slate-800">
+              <thead className="bg-slate-800 border-b border-slate-700">
                 <tr>
                   <th className={th}>Pattern</th>
                   <th className={th}>DE</th>
@@ -585,7 +585,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                   const de = deById.get(c.de_id);
                   const tier = severityTier(c, policyFor(c.category));
                   return (
-                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-800/60 hover:bg-slate-800/40 cursor-pointer transition-colors">
+                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-700/60 hover:bg-slate-700/40 cursor-pointer transition-colors">
                       <td className={td}>
                         <p className="text-white font-medium max-w-md truncate">{rep?.inquiry ?? '(loading…)'}</p>
                         <p className="text-xs text-slate-500 mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
@@ -612,7 +612,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
           {selected && (
             <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
               <div className="absolute inset-0 bg-black/50" />
-              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-900 border-l border-slate-800 overflow-y-auto p-6">
+              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-800 border-l border-slate-700 overflow-y-auto p-6">
                 <div className="flex items-start justify-between mb-1">
                   <h2 className="text-lg font-semibold text-white">{selectedRep?.inquiry ?? 'Pattern detail'}</h2>
                   <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -624,7 +624,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                 </div>
 
                 {typeof selected.pre_fix_avg_confidence === 'number' && (
-                  <div className="mb-5 bg-slate-950 rounded-lg px-3 py-2">
+                  <div className="mb-5 bg-slate-900 rounded-lg px-3 py-2">
                     <p className="text-xs text-slate-400">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
                   </div>
                 )}
@@ -637,7 +637,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                     {(detail?.members ?? []).map(m => {
                       const info = detail?.inquiries[m.evidence_run_id];
                       return (
-                        <div key={m.id} className="bg-slate-950 rounded-lg px-3 py-2">
+                        <div key={m.id} className="bg-slate-900 rounded-lg px-3 py-2">
                           <p className="text-xs text-slate-300">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
                           <p className="text-[10px] text-slate-600 mt-0.5">
                             {info ? new Date(info.created_at).toLocaleString() : ''}
@@ -655,7 +655,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                 {selected.proposed_rule && (
                   <>
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Proposed change</p>
-                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 mb-6">
+                    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 mb-6">
                       {selected.proposed_rule.action === 'insert_guardrail_rule' ? (
                         <>
                           <p className="text-sm font-semibold text-white mb-1">New guardrail rule</p>
@@ -682,7 +682,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                           type="text"
                           value={overridePattern || selected.proposed_rule?.suggested_pattern || ''}
                           onChange={e => setOverridePattern(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
+                          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
                         />
                       </div>
                     )}
@@ -699,7 +699,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                           value={overridePattern}
                           onChange={e => setOverridePattern(e.target.value)}
                           placeholder={selected.proposed_rule?.current_pattern || ''}
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
+                          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono"
                         />
                       </div>
                     )}
@@ -713,7 +713,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                       <button
                         disabled={deciding}
                         onClick={() => void decide(selected.id, 'rejected')}
-                        className="text-sm px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
+                        className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
                         Reject
                       </button>
                     </div>
@@ -739,7 +739,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

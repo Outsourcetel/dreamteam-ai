@@ -14,14 +14,14 @@ const ROLE_COLOR: Record<TenantRole, string> = {
   tenant_manager: 'text-blue-400 bg-blue-400/10',
   knowledge_manager: 'text-emerald-400 bg-emerald-400/10',
   approver: 'text-purple-400 bg-purple-400/10',
-  tenant_user: 'text-slate-300 bg-slate-700',
-  read_only: 'text-slate-500 bg-slate-800',
+  tenant_user: 'text-slate-300 bg-slate-600',
+  read_only: 'text-slate-500 bg-slate-700',
 };
 
 const STATUS_COLOR: Record<TeamMember['status'], string> = {
   active: 'text-emerald-400 bg-emerald-400/10',
   pending: 'text-amber-400 bg-amber-400/10',
-  deactivated: 'text-slate-500 bg-slate-800',
+  deactivated: 'text-slate-500 bg-slate-700',
 };
 
 // ── Invite Modal ──────────────────────────────────────────────
@@ -60,8 +60,8 @@ const InviteModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-800">
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-700">
           <div>
             <h2 className="text-base font-bold text-white">Invite Team Member</h2>
             <p className="text-xs text-slate-400 mt-0.5">They'll receive an email to set their password</p>
@@ -72,18 +72,18 @@ const InviteModal = ({
           <div>
             <label className="text-xs text-slate-400 mb-1.5 block">Full Name *</label>
             <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Sarah Mitchell"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1.5 block">Work Email *</label>
             <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="sarah@company.com"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 mb-1.5 block">Role</label>
               <select value={role} onChange={e => setRole(e.target.value as TenantRole)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                 {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                   .filter(([r]) => r !== 'tenant_owner') // can't invite another owner
                   .map(([r, label]) => <option key={r} value={r}>{label}</option>)}
@@ -92,18 +92,18 @@ const InviteModal = ({
             <div>
               <label className="text-xs text-slate-400 mb-1.5 block">Department</label>
               <select value={department} onChange={e => setDepartment(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                className="w-full bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                 {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
           </div>
 
           {/* Permissions preview */}
-          <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-800">
+          <div className="p-3 rounded-xl bg-slate-700/50 border border-slate-700">
             <div className="text-xs text-slate-500 mb-2 font-medium">This role can:</div>
             <div className="flex flex-wrap gap-1.5">
               {ROLE_PERMISSIONS[role].map(p => (
-                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{p}</span>
+                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-slate-300">{p}</span>
               ))}
             </div>
           </div>
@@ -111,7 +111,7 @@ const InviteModal = ({
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl text-sm text-slate-400 bg-slate-800 hover:bg-slate-700 transition-all">
+              className="flex-1 py-2.5 rounded-xl text-sm text-slate-400 bg-slate-700 hover:bg-slate-600 transition-all">
               Cancel
             </button>
             <button type="submit" disabled={loading}
@@ -177,7 +177,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
   const isAdmin = isOwner || user?.role === 'tenant_admin';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -213,7 +213,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           { label: 'Pending Invites', value: pending, icon: '→', sub: 'awaiting activation', color: 'text-amber-400' },
           { label: 'Deactivated', value: deactivated, icon: '⊘', sub: 'access revoked', color: 'text-slate-500' },
         ].map((k, i) => (
-          <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={i} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className={`text-sm ${k.color || 'text-slate-400'}`}>{k.icon}</span>
               <span className="text-xs text-slate-500">{k.label}</span>
@@ -228,8 +228,8 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search name, email, department..."
-          className="flex-1 min-w-48 max-w-xs bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-        <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
+          className="flex-1 min-w-48 max-w-xs bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+        <div className="flex gap-1 bg-slate-700 rounded-lg p-1">
           {(['all', 'active', 'pending', 'deactivated'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all ${statusFilter === s ? 'text-white' : 'text-slate-400 hover:text-white'}`}
@@ -239,7 +239,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           ))}
         </div>
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as any)}
-          className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+          className="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
           <option value="all">All roles</option>
           {(Object.entries(ROLE_LABELS) as [TenantRole, string][]).map(([r, l]) => (
             <option key={r} value={r}>{l}</option>
@@ -249,8 +249,8 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
       </div>
 
       {/* Members table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="hidden lg:grid grid-cols-12 gap-4 px-5 py-3 border-b border-slate-800 text-xs font-medium text-slate-500 uppercase tracking-wide">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="hidden lg:grid grid-cols-12 gap-4 px-5 py-3 border-b border-slate-700 text-xs font-medium text-slate-500 uppercase tracking-wide">
           <div className="col-span-3">Member</div>
           <div className="col-span-2">Role</div>
           <div className="col-span-2">Department</div>
@@ -259,9 +259,9 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           <div className="col-span-1 text-right">Actions</div>
         </div>
 
-        <div className="divide-y divide-slate-800/50">
+        <div className="divide-y divide-slate-700/50">
           {filtered.map(m => (
-            <div key={m.id} className={`px-5 py-4 hover:bg-slate-800/30 transition-all ${m.status === 'deactivated' ? 'opacity-50' : ''}`}>
+            <div key={m.id} className={`px-5 py-4 hover:bg-slate-700/30 transition-all ${m.status === 'deactivated' ? 'opacity-50' : ''}`}>
               <div className="lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center flex flex-col gap-3">
                 {/* Member */}
                 <div className="col-span-3 flex items-center gap-3">
@@ -283,7 +283,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                   {editingId === m.id && isAdmin && m.role !== 'tenant_owner' ? (
                     <select value={m.role} onChange={e => { runAction(() => updateRole(m.id, e.target.value as TenantRole)); setEditingId(null); }}
                       onBlur={() => setEditingId(null)} autoFocus
-                      className="w-full bg-slate-800 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
+                      className="w-full bg-slate-700 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
                       {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                         .filter(([r]) => r !== 'tenant_owner')
                         .map(([r, l]) => <option key={r} value={r}>{l}</option>)}
@@ -300,7 +300,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin ? (
                     <select value={m.department} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value)); }}
-                      className="w-full bg-slate-800 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
+                      className="w-full bg-slate-700 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
                       {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
                     </select>
                   ) : (
@@ -333,7 +333,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                           <button onClick={() => { runAction(() => remove(m.id)); setConfirmRemove(null); }}
                             className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Remove</button>
                           <button onClick={() => setConfirmRemove(null)}
-                            className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-400">Cancel</button>
+                            className="text-xs px-2 py-1 rounded bg-slate-600 text-slate-400">Cancel</button>
                         </div>
                       ) : (
                         <>
@@ -373,16 +373,16 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
       </div>
 
       {/* Role reference */}
-      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <div className="mt-6 bg-slate-800 border border-slate-700 rounded-xl p-5">
         <h2 className="text-sm font-semibold text-white mb-4">Role Permissions Reference</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {(Object.entries(ROLE_LABELS) as [TenantRole, string][]).map(([role, label]) => (
-            <div key={role} className="p-3 rounded-lg bg-slate-800/40">
+            <div key={role} className="p-3 rounded-lg bg-slate-700/40">
               <span className={`text-xs px-2 py-0.5 rounded font-medium mb-2 inline-block ${ROLE_COLOR[role]}`}>{label}</span>
               <div className="space-y-1">
                 {ROLE_PERMISSIONS[role].map(p => (
                   <div key={p} className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <span className="text-slate-700">·</span>{p}
+                    <span className="text-slate-600">·</span>{p}
                   </div>
                 ))}
               </div>
@@ -392,7 +392,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
       </div>
 
       {/* Department Management */}
-      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <div className="mt-6 bg-slate-800 border border-slate-700 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-semibold text-white">Departments</h2>
@@ -410,18 +410,18 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
         </div>
 
         {showAddDept && (
-          <div className="mb-4 p-4 bg-slate-800/60 rounded-xl border border-slate-700 space-y-3">
+          <div className="mb-4 p-4 bg-slate-700/60 rounded-xl border border-slate-600 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Name</label>
                 <input value={newDeptName} onChange={e => setNewDeptName(e.target.value)}
                   placeholder="e.g. Product"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Head of Department</label>
                 <select value={newDeptHead} onChange={e => setNewDeptHead(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+                  className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
                   <option value="">None assigned</option>
                   {members.filter(m => m.status === 'active').map(m => (
                     <option key={m.id} value={m.fullName}>{m.fullName}</option>
@@ -433,7 +433,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
               <label className="text-xs text-slate-400 mb-1 block">Description</label>
               <input value={newDeptDesc} onChange={e => setNewDeptDesc(e.target.value)}
                 placeholder="Short description of this department's function"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="text-xs text-slate-400 mb-1 block">Colour</label>
@@ -456,7 +456,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                 className="px-4 py-1.5 text-sm text-white rounded-lg transition-all"
                 style={{ backgroundColor: accentColor }}
               >Create</button>
-              <button onClick={() => setShowAddDept(false)} className="px-4 py-1.5 text-sm text-slate-400 hover:text-white bg-slate-700 rounded-lg transition-all">Cancel</button>
+              <button onClick={() => setShowAddDept(false)} className="px-4 py-1.5 text-sm text-slate-400 hover:text-white bg-slate-600 rounded-lg transition-all">Cancel</button>
             </div>
           </div>
         )}
@@ -465,7 +465,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           {departments.map(dept => {
             const deptMembers = members.filter(m => m.department === dept.name && m.status === 'active');
             return (
-              <div key={dept.id} className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 hover:border-slate-600 transition-all group">
+              <div key={dept.id} className="bg-slate-700/40 rounded-xl p-4 border border-slate-600/50 hover:border-slate-600 transition-all group">
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
                     style={{ backgroundColor: dept.color + '30', color: dept.color }}>
@@ -478,7 +478,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                   {isAdmin && (
                     <button
                       onClick={() => removeDepartment(dept.id)}
-                      className="text-slate-700 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                      className="text-slate-600 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
                       title="Remove department"
                     >✕</button>
                   )}
@@ -488,13 +488,13 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                   <div className="flex -space-x-1">
                     {deptMembers.slice(0, 4).map(m => (
                       <div key={m.id} title={m.fullName}
-                        className="w-5 h-5 rounded-full border border-slate-900 text-xs flex items-center justify-center font-bold text-white"
+                        className="w-5 h-5 rounded-full border border-slate-800 text-xs flex items-center justify-center font-bold text-white"
                         style={{ backgroundColor: dept.color + '60', color: dept.color }}>
                         {m.avatar[0]}
                       </div>
                     ))}
                     {deptMembers.length > 4 && (
-                      <div className="w-5 h-5 rounded-full bg-slate-700 border border-slate-900 text-xs flex items-center justify-center text-slate-400">+{deptMembers.length - 4}</div>
+                      <div className="w-5 h-5 rounded-full bg-slate-600 border border-slate-800 text-xs flex items-center justify-center text-slate-400">+{deptMembers.length - 4}</div>
                     )}
                   </div>
                   <span className="text-xs text-slate-500">{deptMembers.length} active</span>

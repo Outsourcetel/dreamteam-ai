@@ -178,7 +178,7 @@ const LoginPage = ({
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 flex">
+    <div className="min-h-screen bg-slate-900 flex">
       {leftPanel}
       <div className="flex-1 flex flex-col justify-center p-8 lg:p-16">
         <div className="max-w-sm mx-auto w-full">
@@ -188,7 +188,7 @@ const LoginPage = ({
           </div>
 
           {/* Tab switcher */}
-          <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6">
+          <div className="flex gap-1 bg-slate-700 rounded-xl p-1 mb-6">
             <button onClick={() => setTab('signin')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
               Sign In
@@ -213,7 +213,7 @@ const LoginPage = ({
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
                   <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -224,7 +224,7 @@ const LoginPage = ({
                     </button>
                   </div>
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 {error && <p className="text-xs text-red-400">{error}</p>}
                 <button type="submit" disabled={loading}
@@ -232,7 +232,7 @@ const LoginPage = ({
                   {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
                 </button>
               </form>
-              <div className="border-t border-slate-800 pt-5 text-center">
+              <div className="border-t border-slate-700 pt-5 text-center">
                 <p className="text-xs text-slate-600">
                   Don't have an account?{' '}
                   <button onClick={() => setTab('signup')} className="text-indigo-400 hover:text-indigo-300 underline">
@@ -274,7 +274,7 @@ const LoginPage = ({
                     <div>
                       <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
                       <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@company.com" autoFocus
-                        className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                     </div>
                     {forgotError && <p className="text-xs text-red-400">{forgotError}</p>}
                     <button type="submit" disabled={forgotLoading}
@@ -300,27 +300,27 @@ const LoginPage = ({
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Full Name</label>
                   <input value={suFullName} onChange={e => setSuFullName(e.target.value)} type="text" placeholder="Sarah Mitchell"
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Work Email</label>
                   <input value={suEmail} onChange={e => setSuEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Password</label>
                   <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
-                <div className="border-t border-slate-800 pt-4">
+                <div className="border-t border-slate-700 pt-4">
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Organization Name</label>
                   <input value={suOrgName} onChange={e => setSuOrgName(e.target.value)} type="text" placeholder="Acme Corp"
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-400 block mb-1.5">Industry</label>
                   <select value={suIndustry} onChange={e => setSuIndustry(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
                     {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
                   </select>
                 </div>

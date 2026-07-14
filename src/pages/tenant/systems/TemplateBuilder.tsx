@@ -21,8 +21,8 @@ import {
 // Written for a non-developer: plain language everywhere.
 // ============================================================
 
-const inputCls = 'w-full bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-200 px-3 py-2';
-const smallInput = 'bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 px-2 py-1.5';
+const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2';
+const smallInput = 'bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5';
 
 interface OpDraft {
   bound: boolean;
@@ -151,9 +151,9 @@ export function TemplateBuilderModal({ onClose, onDone }: {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-sm font-semibold text-white">Custom system — step {step} of 5: {stepTitle}</h2>
             <button onClick={onClose} className="text-xs text-slate-500 hover:text-white">✕</button>
@@ -171,7 +171,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 <div className="grid grid-cols-2 gap-2">
                   {CATEGORIES.map(cat => (
                     <button key={cat} onClick={() => { setCategory(cat); setOps({}); setTestOpName(''); }}
-                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-slate-950 border-slate-800 hover:border-indigo-500/40'}`}>
+                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-slate-900 border-slate-700 hover:border-indigo-500/40'}`}>
                       <p className="text-xs font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
                       <p className="text-[10px] text-slate-500 mt-0.5">{CATEGORY_LABELS[cat]}</p>
                     </button>
@@ -189,7 +189,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
           {step === 2 && (
             <div className="space-y-2">
               {AUTH_TYPES.map(t => (
-                <label key={t} className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${authType === t ? 'border-indigo-500/60 bg-indigo-500/5' : 'border-slate-800'}`}>
+                <label key={t} className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${authType === t ? 'border-indigo-500/60 bg-indigo-500/5' : 'border-slate-700'}`}>
                   <input type="radio" checked={authType === t} onChange={() => setAuthType(t)} className="mt-0.5" />
                   <span>
                     <span className="text-xs font-semibold text-slate-200 block">{AUTH_META[t].label}</span>
@@ -242,7 +242,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
             <div className="space-y-3">
               <p className="text-[11px] text-slate-500">These are the only things a {CATEGORY_SHORT[category]} may be asked. Bind the ones this API supports — leave the rest off (DreamTeam will say "not supported" honestly). Use <code className="text-slate-400">{'{query}'}</code> for search words and <code className="text-slate-400">{'{ref}'}</code> for a record id.</p>
               {/* Test credentials — used live, in-flight only */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                 <p className="text-[11px] font-medium text-slate-400 mb-2">Credentials for testing (used for the live test only — never stored from here)</p>
                 <div className="flex gap-2 flex-wrap">
                   {(definition.variables ?? []).map(v => (
@@ -260,7 +260,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 const d = ops[o.op] ?? emptyOp();
                 const set = (patch: Partial<OpDraft>) => setOps(s => ({ ...s, [o.op]: { ...(s[o.op] ?? emptyOp()), ...patch } }));
                 return (
-                  <div key={o.op} className={`rounded-xl border p-3 ${d.bound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-slate-800 bg-slate-950/40'}`}>
+                  <div key={o.op} className={`rounded-xl border p-3 ${d.bound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-slate-700 bg-slate-900/40'}`}>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={d.bound} onChange={e => set({ bound: e.target.checked })} />
                       <span className="text-xs font-semibold text-slate-200">{o.label}</span>
@@ -297,11 +297,11 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                         </button>
                         {testResult?.op === o.op && (
                           <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 overflow-auto max-h-56">
+                            <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 overflow-auto max-h-56">
                               <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Raw response from the API</p>
                               <pre className="text-[10px] text-slate-400 whitespace-pre-wrap break-all">{JSON.stringify(testResult.r.raw_response ?? testResult.r.errors ?? null, null, 1)?.slice(0, 3000)}</pre>
                             </div>
-                            <div className="rounded-lg border border-slate-800 bg-slate-950 p-2 overflow-auto max-h-56">
+                            <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 overflow-auto max-h-56">
                               <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">What DreamTeam extracted</p>
                               {testResult.r.ok ? (
                                 <>
@@ -335,7 +335,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 </select>
                 <p className="text-[11px] text-slate-600 mt-1">When someone connects from this template, DreamTeam runs this operation once to verify their credentials.</p>
               </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                 <p className="text-[11px] text-slate-400">Summary: <span className="text-slate-200">{name || '(unnamed)'}</span> · {CATEGORY_SHORT[category]} · {AUTH_META[authType].label} · {boundOps.length} operation(s) bound{(definition.variables ?? []).length ? ` · variables: ${(definition.variables ?? []).map(v => v.key).join(', ')}` : ''}</p>
               </div>
               <p className="text-[11px] text-slate-600">Publishing makes the template available in your workspace's library so systems can be connected from it. Drafts stay editable and invisible to the connect flow.</p>
@@ -344,7 +344,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
 
           {err && <p className="text-xs text-red-300 mt-3 whitespace-pre-wrap">{err}</p>}
           <div className="flex gap-3 mt-5">
-            {step > 1 && <button disabled={busy} onClick={() => setStep(s => s - 1)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs disabled:opacity-50">← Back</button>}
+            {step > 1 && <button disabled={busy} onClick={() => setStep(s => s - 1)} className="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">← Back</button>}
             <div className="flex-1" />
             {step < 5 && (
               <button disabled={busy || (step === 1 && !name.trim()) || (step === 3 && !baseUrl.trim() && false)}
@@ -353,7 +353,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
             )}
             {step === 5 && (
               <>
-                <button disabled={busy} onClick={() => void save(false)} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs disabled:opacity-50">Save draft</button>
+                <button disabled={busy} onClick={() => void save(false)} className="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Save draft</button>
                 <button disabled={busy} onClick={() => void save(true)} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Saving…' : 'Save & publish'}</button>
               </>
             )}
@@ -397,9 +397,9 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-950/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
           <h2 className="text-sm font-semibold text-white mb-1">Connect {template.name}</h2>
           <p className="text-xs text-slate-500 mb-1">{CATEGORY_SHORT[template.category]} · {AUTH_META[template.definition.auth.type].label}</p>
           {template.scope === 'platform' && (
@@ -427,7 +427,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
               <label className="block text-xs text-slate-400 mb-1">Data handling — your choice</label>
               <div className="space-y-1.5">
                 {(['fetch_only', 'ingest'] as ConnectorAccessMode[]).map(m => (
-                  <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-800'}`}>
+                  <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-700'}`}>
                     <input type="radio" checked={accessMode === m} onChange={() => setAccessMode(m)} className="mt-0.5" />
                     <span className="text-[11px] text-slate-300 leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
                   </label>
@@ -441,7 +441,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
           </div>
           {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
           <div className="flex gap-3 mt-5">
-            <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs disabled:opacity-50">Cancel</button>
+            <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Cancel</button>
             <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
           </div>
         </div>
@@ -458,7 +458,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
   onBuild: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
           <h2 className="text-sm font-semibold text-white">Template library — connect anything with a REST API</h2>
@@ -471,11 +471,11 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {templates.map(t => (
-            <div key={t.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3 flex flex-col">
+            <div key={t.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3 flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs font-semibold text-white">{t.name}</p>
                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-slate-800 text-slate-400' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-slate-700 text-slate-400' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
                 {t.status === 'draft' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}
               </div>
               <p className="text-[10px] text-slate-500 mt-1 flex-1">{t.scope === 'platform' ? 'Community template — verify against your account.' : (t.description || 'Custom template built in this workspace.')} {Object.keys(t.definition.ops ?? {}).length} operation(s).</p>

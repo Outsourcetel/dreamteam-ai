@@ -497,7 +497,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
   return (
     <button
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-700'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-600'}`}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
@@ -542,16 +542,16 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
   return (
     <div className="grid grid-cols-2 gap-6 p-6">
       {/* Left: editable fields */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Identity & Configuration</p>
 
         {/* Status */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-800">
+        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
           <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Status</span>
           <div className="flex gap-2">
             {(['active', 'inactive'] as const).map(s => (
               <button key={s} onClick={() => { setStatus(s); saveAll({ status: s }) }}
-                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${status === s ? (s === 'active' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-red-500/20 border-red-500/40 text-red-400') : 'border-slate-700 text-slate-500 hover:border-slate-600'}`}>
+                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${status === s ? (s === 'active' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-red-500/20 border-red-500/40 text-red-400') : 'border-slate-600 text-slate-500 hover:border-slate-600'}`}>
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
@@ -559,11 +559,11 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
         </div>
 
         {/* Role */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-800">
+        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
           <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Role</span>
           {editing === 'role' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setRole(draft); saveAll({ role: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
             </div>
@@ -573,10 +573,10 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
         </div>
 
         {/* Entity */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-800">
+        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
           <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Entity</span>
           <select value={entity} onChange={e => { const v = e.target.value as DEEntity; setEntity(v); saveAll({ entity: v }) }}
-            className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
             {(['customer', 'vendor', 'workforce', 'specialist'] as DEEntity[]).map(e => (
               <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>
             ))}
@@ -584,11 +584,11 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
         </div>
 
         {/* Language */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-800">
+        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
           <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Language</span>
           {editing === 'language' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setLanguage(draft); saveAll({ language: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
             </div>
@@ -598,11 +598,11 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
         </div>
 
         {/* Timezone */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-800">
+        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
           <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Timezone</span>
           {editing === 'timezone' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setTimezone(draft); saveAll({ timezone: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
             </div>
@@ -612,12 +612,12 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
         </div>
 
         {/* Channels */}
-        <div className="py-2.5 border-b border-slate-800">
+        <div className="py-2.5 border-b border-slate-700">
           <p className="text-xs text-slate-500 mb-2">Channels</p>
           <div className="flex flex-wrap gap-2">
             {allChannels.map(ch => (
               <button key={ch} onClick={() => toggleChannel(ch)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${channels.includes(ch) ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'border-slate-700 text-slate-500 hover:border-slate-600'}`}>
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${channels.includes(ch) ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'border-slate-600 text-slate-500 hover:border-slate-600'}`}>
                 {ch}
               </button>
             ))}
@@ -629,7 +629,7 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
           <p className="text-xs text-slate-500 mb-2">Description</p>
           {editing === 'description' ? (
             <div className="flex flex-col gap-2">
-              <textarea autoFocus rows={4} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" value={draft} onChange={e => setDraft(e.target.value)} />
+              <textarea autoFocus rows={4} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" value={draft} onChange={e => setDraft(e.target.value)} />
               <div className="flex gap-2">
                 <button onClick={() => { setDescription(draft); saveAll({ description: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
                 <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
@@ -643,7 +643,7 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
 
       {/* Right: quick stats */}
       <div className="space-y-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Performance Snapshot</p>
           <div className="space-y-3">
             {[
@@ -653,27 +653,27 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
               { label: 'Avg Response Time', value: de.avgResponseTime, color: 'text-slate-200' },
               { label: 'Error Rate', value: `${de.errorRate}%`, color: de.errorRate > 10 ? 'text-red-400' : de.errorRate > 4 ? 'text-amber-400' : 'text-emerald-400' },
             ].map(m => (
-              <div key={m.label} className="flex justify-between items-center bg-slate-950 rounded-lg px-3 py-2">
+              <div key={m.label} className="flex justify-between items-center bg-slate-900 rounded-lg px-3 py-2">
                 <span className="text-xs text-slate-500">{m.label}</span>
                 <span className={`text-sm font-medium ${m.color}`}>{m.value}</span>
               </div>
             ))}
           </div>
         </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Training & Certification</p>
           <div className="space-y-2">
-            <div className="flex justify-between bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-500">Status</span>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${de.trainingStatus === 'certified' ? 'bg-emerald-500/20 text-emerald-400' : de.trainingStatus === 'in_training' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
                 {de.trainingStatus === 'certified' ? 'Certified' : de.trainingStatus === 'in_training' ? 'In Training' : 'Needs Recertification'}
               </span>
             </div>
-            <div className="flex justify-between bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-500">Last Trained</span>
               <span className="text-sm text-slate-200">{de.lastTrained}</span>
             </div>
-            <div className="flex justify-between bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-500">Next Recertification</span>
               <span className="text-sm text-slate-200">{de.nextRecert}</span>
             </div>
@@ -716,7 +716,7 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
       </div>
 
       {/* Config */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Certification Configuration</p>
         <div className="grid grid-cols-2 gap-4">
           {[
@@ -728,18 +728,18 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
             <div key={f.label}>
               <label className="text-xs text-slate-500 block mb-1">{f.label}</label>
               <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
             </div>
           ))}
         </div>
       </div>
 
       {/* Modules table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Training Modules</p>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium">Module</th>
               <th className="text-left pb-2 font-medium w-32">Progress</th>
               <th className="text-left pb-2 font-medium w-28">Status</th>
@@ -748,18 +748,18 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
           </thead>
           <tbody>
             {modules.map((m, i) => (
-              <tr key={i} className="border-b border-slate-800/50 last:border-0">
+              <tr key={i} className="border-b border-slate-700/50 last:border-0">
                 <td className="py-2.5 text-slate-200">{m.name}</td>
                 <td className="py-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-slate-800 rounded-full h-1.5">
-                      <div className={`h-1.5 rounded-full ${m.progress === 100 ? 'bg-emerald-500' : m.progress > 0 ? 'bg-indigo-500' : 'bg-slate-700'}`} style={{ width: `${m.progress}%` }} />
+                    <div className="flex-1 bg-slate-700 rounded-full h-1.5">
+                      <div className={`h-1.5 rounded-full ${m.progress === 100 ? 'bg-emerald-500' : m.progress > 0 ? 'bg-indigo-500' : 'bg-slate-600'}`} style={{ width: `${m.progress}%` }} />
                     </div>
                     <span className="text-xs text-slate-400 w-8">{m.progress}%</span>
                   </div>
                 </td>
                 <td className="py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' : m.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-700 text-slate-500'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' : m.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-600 text-slate-500'}`}>
                     {m.status === 'complete' ? 'Complete' : m.status === 'in_progress' ? 'In Progress' : 'Not Started'}
                   </span>
                 </td>
@@ -783,14 +783,14 @@ function TabKnowledge({ de }: { de: DEProfile }) {
   return (
     <div className="p-6 space-y-6">
       {/* Collections */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Knowledge Collections</p>
           <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium">Collection</th>
               <th className="text-left pb-2 font-medium w-28">Access Level</th>
               <th className="text-left pb-2 font-medium w-40">Coverage</th>
@@ -799,16 +799,16 @@ function TabKnowledge({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {de.knowledge.collections.map((c, i) => (
-              <tr key={i} className="border-b border-slate-800/50 last:border-0">
+              <tr key={i} className="border-b border-slate-700/50 last:border-0">
                 <td className="py-2.5 text-slate-200">{c.name}</td>
                 <td className="py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.accessLevel === 'read_write' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.accessLevel === 'read_write' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-600 text-slate-400'}`}>
                     {c.accessLevel === 'read_write' ? 'Read/Write' : 'Read'}
                   </span>
                 </td>
                 <td className="py-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                    <div className="flex-1 bg-slate-700 rounded-full h-1.5">
                       <div className={`h-1.5 rounded-full ${c.coverage >= 90 ? 'bg-emerald-500' : c.coverage >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${c.coverage}%` }} />
                     </div>
                     <span className="text-xs text-slate-400 w-8">{c.coverage}%</span>
@@ -824,18 +824,18 @@ function TabKnowledge({ de }: { de: DEProfile }) {
       </div>
 
       {/* Knowledge Types */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Knowledge Type Access</p>
         <div className="space-y-2">
           {types.map((t, i) => (
-            <div key={i} className="flex items-center gap-4 bg-slate-950 rounded-lg px-3 py-2.5">
+            <div key={i} className="flex items-center gap-4 bg-slate-900 rounded-lg px-3 py-2.5">
               <Toggle enabled={t.enabled} onChange={v => setTypes(prev => prev.map((p, j) => j === i ? { ...p, enabled: v } : p))} />
               <span className="text-sm text-slate-200 flex-1">{t.type}</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">Confidence floor</span>
                 <input type="number" min={0} max={100} value={t.confidenceFloor}
                   onChange={e => setTypes(prev => prev.map((p, j) => j === i ? { ...p, confidenceFloor: Number(e.target.value) } : p))}
-                  className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                  className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
                 <span className="text-xs text-slate-500">%</span>
               </div>
             </div>
@@ -844,9 +844,9 @@ function TabKnowledge({ de }: { de: DEProfile }) {
       </div>
 
       {/* Gap Detection */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Gap Detection</p>
-        <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5 mb-3">
+        <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5 mb-3">
           <span className="text-sm text-slate-200">Enable gap detection</span>
           <Toggle enabled={gapDetection} onChange={setGapDetection} />
         </div>
@@ -881,31 +881,31 @@ function TabSOPs({ de }: { de: DEProfile }) {
   }
 
   const statusBadge = (s: SOP['status']) => {
-    const styles = { active: 'bg-emerald-500/20 text-emerald-400', draft: 'bg-amber-500/20 text-amber-400', archived: 'bg-slate-700 text-slate-500' }
+    const styles = { active: 'bg-emerald-500/20 text-emerald-400', draft: 'bg-amber-500/20 text-amber-400', archived: 'bg-slate-600 text-slate-500' }
     return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[s]}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>
   }
 
   return (
     <div className="p-6 space-y-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Standard Operating Procedures</p>
           <button onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add SOP</button>
         </div>
         {showAdd && (
-          <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 mb-4 flex flex-col gap-3">
+          <div className="bg-slate-900 border border-slate-600 rounded-xl p-4 mb-4 flex flex-col gap-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Title</label>
-                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="SOP title..." />
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="SOP title..." />
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Category</label>
-                <input value={newCat} onChange={e => setNewCat(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Category..." />
+                <input value={newCat} onChange={e => setNewCat(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Category..." />
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1">Version</label>
-                <input value={newVer} onChange={e => setNewVer(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="1.0" />
+                <input value={newVer} onChange={e => setNewVer(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="1.0" />
               </div>
             </div>
             <div className="flex gap-2">
@@ -916,7 +916,7 @@ function TabSOPs({ de }: { de: DEProfile }) {
         )}
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium">Title</th>
               <th className="text-left pb-2 font-medium w-28">Category</th>
               <th className="text-left pb-2 font-medium w-20">Version</th>
@@ -927,7 +927,7 @@ function TabSOPs({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {sops.map(s => (
-              <tr key={s.id} className="border-b border-slate-800/50 last:border-0 relative">
+              <tr key={s.id} className="border-b border-slate-700/50 last:border-0 relative">
                 <td className="py-2.5 text-slate-200">{s.title}</td>
                 <td className="py-2.5 text-slate-400 text-xs">{s.category}</td>
                 <td className="py-2.5 text-slate-400 text-xs">{s.version}</td>
@@ -936,10 +936,10 @@ function TabSOPs({ de }: { de: DEProfile }) {
                 <td className="py-2.5 relative">
                   <button onClick={() => setOpenMenu(openMenu === s.id ? null : s.id)} className="text-slate-500 hover:text-slate-300 text-base px-1">•••</button>
                   {openMenu === s.id && (
-                    <div className="absolute right-0 top-8 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-10 min-w-32">
-                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'active' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Activate</button>
-                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'archived' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">Archive</button>
-                      <button onClick={() => setOpenMenu(null)} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700">View</button>
+                    <div className="absolute right-0 top-8 bg-slate-700 border border-slate-600 rounded-lg shadow-xl z-10 min-w-32">
+                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'active' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">Activate</button>
+                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'archived' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">Archive</button>
+                      <button onClick={() => setOpenMenu(null)} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">View</button>
                     </div>
                   )}
                 </td>
@@ -964,7 +964,7 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
       escalation: 'bg-red-500/20 text-red-400',
       cross_function: 'bg-purple-500/20 text-purple-400',
       crisis: 'bg-red-500/20 text-red-400',
-      scheduled: 'bg-slate-700 text-slate-400',
+      scheduled: 'bg-slate-600 text-slate-400',
     }
     const labels: Record<PlaybookAssignment['type'], string> = {
       process: 'Process', response: 'Response', escalation: 'Escalation',
@@ -986,11 +986,11 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Assigned Playbooks</p>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium w-16">Priority</th>
               <th className="text-left pb-2 font-medium">Title</th>
               <th className="text-left pb-2 font-medium w-32">Type</th>
@@ -1000,7 +1000,7 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {playbooks.map((p, i) => (
-              <tr key={p.id} className="border-b border-slate-800/50 last:border-0">
+              <tr key={p.id} className="border-b border-slate-700/50 last:border-0">
                 <td className="py-2.5 text-slate-400 text-xs font-mono">#{p.priority}</td>
                 <td className="py-2.5 text-slate-200">{p.title}</td>
                 <td className="py-2.5">{typeBadge(p.type)}</td>
@@ -1040,14 +1040,14 @@ function TabSystems({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Connected Systems</p>
           <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Connect System</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium">System</th>
               <th className="text-left pb-2 font-medium w-28">Type</th>
               <th className="text-left pb-2 font-medium w-28">Access Level</th>
@@ -1058,7 +1058,7 @@ function TabSystems({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {systems.map(s => (
-              <tr key={s.id} className="border-b border-slate-800/50 last:border-0">
+              <tr key={s.id} className="border-b border-slate-700/50 last:border-0">
                 <td className="py-2.5 text-slate-200 font-medium">{s.name}</td>
                 <td className="py-2.5 text-xs text-slate-400">{s.type}</td>
                 <td className="py-2.5">{accessBadge(s.accessLevel)}</td>
@@ -1100,32 +1100,32 @@ function TabGuardrails({ de }: { de: DEProfile }) {
   return (
     <div className="p-6 space-y-6">
       {/* Industry Template */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Industry Template</p>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-slate-200">{de.guardrails.industryTemplate}</p>
             <p className="text-xs text-slate-500 mt-1">v{de.guardrails.version} · Updated {de.guardrails.lastUpdated}</p>
           </div>
-          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-700 rounded-lg px-3 py-1.5">Change Template</button>
+          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-600 rounded-lg px-3 py-1.5">Change Template</button>
         </div>
       </div>
 
       {/* Customer Overrides */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Customer Overrides</p>
           <button onClick={() => setShowAddOverride(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add Override</button>
         </div>
         {showAddOverride && (
-          <div className="bg-slate-950 border border-slate-700 rounded-lg p-3 mb-3 flex gap-3 items-end flex-wrap">
+          <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 mb-3 flex gap-3 items-end flex-wrap">
             <div className="flex-1 min-w-48">
               <label className="text-xs text-slate-500 block mb-1">Rule</label>
-              <input value={newRule} onChange={e => setNewRule(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Rule description..." />
+              <input value={newRule} onChange={e => setNewRule(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Rule description..." />
             </div>
             <div>
               <label className="text-xs text-slate-500 block mb-1">Type</label>
-              <select value={newType} onChange={e => setNewType(e.target.value as 'allow' | 'restrict')} className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+              <select value={newType} onChange={e => setNewType(e.target.value as 'allow' | 'restrict')} className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
                 <option value="restrict">Restrict</option>
                 <option value="allow">Allow</option>
               </select>
@@ -1139,7 +1139,7 @@ function TabGuardrails({ de }: { de: DEProfile }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-slate-500 border-b border-slate-800">
+              <tr className="text-xs text-slate-500 border-b border-slate-700">
                 <th className="text-left pb-2 font-medium">Rule</th>
                 <th className="text-left pb-2 font-medium w-20">Type</th>
                 <th className="text-left pb-2 font-medium w-24">Added By</th>
@@ -1149,7 +1149,7 @@ function TabGuardrails({ de }: { de: DEProfile }) {
             </thead>
             <tbody>
               {overrides.map(o => (
-                <tr key={o.id} className="border-b border-slate-800/50 last:border-0">
+                <tr key={o.id} className="border-b border-slate-700/50 last:border-0">
                   <td className="py-2.5 text-slate-200">{o.rule}</td>
                   <td className="py-2.5">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${o.type === 'allow' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -1169,21 +1169,21 @@ function TabGuardrails({ de }: { de: DEProfile }) {
       </div>
 
       {/* DE Restrictions */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">DE Restrictions</p>
           <button onClick={() => setShowAddRestriction(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add Restriction</button>
         </div>
         {showAddRestriction && (
           <div className="flex gap-2 mb-3">
-            <input value={newRestriction} onChange={e => setNewRestriction(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Restriction rule..." />
+            <input value={newRestriction} onChange={e => setNewRestriction(e.target.value)} className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Restriction rule..." />
             <button onClick={() => { if (newRestriction) { setRestrictions(prev => [...prev, newRestriction]); setNewRestriction(''); setShowAddRestriction(false) } }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
             <button onClick={() => setShowAddRestriction(false)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
           </div>
         )}
         <div className="space-y-2">
           {restrictions.map((r, i) => (
-            <div key={i} className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+            <div key={i} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-sm text-slate-300">{r}</span>
               <button onClick={() => setRestrictions(prev => prev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-red-400 transition-colors ml-4">×</button>
             </div>
@@ -1192,12 +1192,12 @@ function TabGuardrails({ de }: { de: DEProfile }) {
       </div>
 
       {/* Settings */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Settings</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-slate-500 block mb-1">PII Handling</label>
-            <select value={piiHandling} onChange={e => setPiiHandling(e.target.value as typeof piiHandling)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            <select value={piiHandling} onChange={e => setPiiHandling(e.target.value as typeof piiHandling)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
               <option value="mask">Mask</option>
               <option value="hash">Hash</option>
               <option value="redact">Redact</option>
@@ -1206,7 +1206,7 @@ function TabGuardrails({ de }: { de: DEProfile }) {
           </div>
           <div>
             <label className="text-xs text-slate-500 block mb-1">Content Filter</label>
-            <select value={contentFilter} onChange={e => setContentFilter(e.target.value as typeof contentFilter)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            <select value={contentFilter} onChange={e => setContentFilter(e.target.value as typeof contentFilter)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
               <option value="strict">Strict</option>
               <option value="standard">Standard</option>
               <option value="permissive">Permissive</option>
@@ -1247,38 +1247,38 @@ function TabHumanLoop({ de, companyId }: { de: DEProfile; companyId: string }) {
   return (
     <div className="p-6 space-y-4">
       {touchpoints.map((tp, i) => (
-        <div key={tp.type} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div key={tp.type} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-semibold text-slate-300 bg-slate-800 px-2 py-1 rounded">{typeLabels[tp.type] ?? tp.type.toUpperCase()}</span>
+            <span className="text-xs font-semibold text-slate-300 bg-slate-700 px-2 py-1 rounded">{typeLabels[tp.type] ?? tp.type.toUpperCase()}</span>
             <Toggle enabled={tp.enabled} onChange={v => update(i, { enabled: v })} />
           </div>
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Triggers when:</p>
           <div className="space-y-3">
-            <div className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-400 w-44">Confidence threshold</span>
               <input type="number" min={0} max={100} value={tp.confidenceThreshold}
                 onChange={e => update(i, { confidenceThreshold: Number(e.target.value) })}
-                className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
               <span className="text-xs text-slate-500">% (0 = always require)</span>
             </div>
             {tp.amountThreshold !== undefined && (
-              <div className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
                 <span className="text-xs text-slate-400 w-44">Amount threshold</span>
                 <span className="text-sm text-slate-500">$</span>
                 <input type="number" value={tp.amountThreshold ?? ''}
                   onChange={e => update(i, { amountThreshold: e.target.value ? Number(e.target.value) : undefined })}
-                  className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="leave blank to disable" />
+                  className="w-24 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="leave blank to disable" />
               </div>
             )}
-            <div className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-400 w-44">Escalate to</span>
               <input type="text" value={tp.escalateTo} onChange={e => update(i, { escalateTo: e.target.value })}
-                className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
             </div>
-            <div className="flex items-center gap-3 bg-slate-950 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-400 w-44">Response SLA</span>
               <input type="number" min={1} value={tp.slaDays} onChange={e => update(i, { slaDays: Number(e.target.value) })}
-                className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
               <span className="text-xs text-slate-500">day(s)</span>
             </div>
           </div>
@@ -1319,7 +1319,7 @@ function TabPerformance({ de, companyId }: { de: DEProfile; companyId: string })
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance Metrics</p>
-        <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 gap-0.5">
+        <div className="flex bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
           {(['7d', '30d', '90d'] as const).map(p => (
             <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 text-xs rounded-md transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{p}</button>
           ))}
@@ -1327,30 +1327,30 @@ function TabPerformance({ de, companyId }: { de: DEProfile; companyId: string })
       </div>
       <div className="grid grid-cols-2 gap-4">
         {metrics.map(m => (
-          <div key={m.key} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={m.key} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-xs text-slate-500 mb-1">{m.label}</p>
             <p className={`text-2xl font-bold mb-3 ${m.color}`}>{m.value}</p>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-500 w-24">Amber threshold</span>
                 <input type="text" value={thresholds[m.key]?.amber ?? ''} onChange={e => setThreshold(m.key, 'amber', e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 75%" />
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 75%" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-red-500 w-24">Red threshold</span>
                 <input type="text" value={thresholds[m.key]?.red ?? ''} onChange={e => setThreshold(m.key, 'red', e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 60%" />
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 60%" />
               </div>
             </div>
           </div>
         ))}
       </div>
-      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap">
         <span className="text-xs text-slate-500">vs company average:</span>
         <span className="text-xs text-slate-400">Resolution <span className="text-slate-200">84%</span></span>
-        <span className="text-slate-700">|</span>
+        <span className="text-slate-600">|</span>
         <span className="text-xs text-slate-400">Confidence <span className="text-slate-200">88%</span></span>
-        <span className="text-slate-700">|</span>
+        <span className="text-slate-600">|</span>
         <span className="text-xs text-slate-400">Escalation <span className="text-slate-200">11%</span></span>
       </div>
     </div>
@@ -1382,14 +1382,14 @@ function TabAudit({ de }: { de: DEProfile }) {
   return (
     <div className="p-6 space-y-6">
       {/* Audit Log */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Audit Log</p>
-          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-700 rounded-lg px-3 py-1.5">Export Log</button>
+          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-600 rounded-lg px-3 py-1.5">Export Log</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-800">
+            <tr className="text-xs text-slate-500 border-b border-slate-700">
               <th className="text-left pb-2 font-medium w-36">Timestamp</th>
               <th className="text-left pb-2 font-medium">Action</th>
               <th className="text-left pb-2 font-medium w-40">Outcome</th>
@@ -1398,7 +1398,7 @@ function TabAudit({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {de.auditLog.map(a => (
-              <tr key={a.id} className="border-b border-slate-800/50 last:border-0">
+              <tr key={a.id} className="border-b border-slate-700/50 last:border-0">
                 <td className="py-2.5 text-xs text-slate-500 font-mono">{a.timestamp}</td>
                 <td className="py-2.5 text-slate-200 text-sm">{a.action}</td>
                 <td className="py-2.5 text-xs text-slate-400">{a.outcome}</td>
@@ -1412,9 +1412,9 @@ function TabAudit({ de }: { de: DEProfile }) {
       </div>
 
       {/* Memory & Self-Learning */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory & Self-Learning</p>
-        <div className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+        <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
           <span className="text-sm text-slate-200">Self-learning enabled</span>
           <Toggle enabled={selfLearning} onChange={setSelfLearning} />
         </div>
@@ -1436,20 +1436,20 @@ function TabAudit({ de }: { de: DEProfile }) {
             <div className="flex gap-2 mb-2">
               <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && newTopic) { setTopics(p => [...p, newTopic]); setNewTopic(''); setShowTopicInput(false) } }}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Topic..." autoFocus />
+                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Topic..." autoFocus />
               <button onClick={() => { if (newTopic) { setTopics(p => [...p, newTopic]); setNewTopic(''); setShowTopicInput(false) } }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
             {topics.map((t, i) => (
-              <span key={i} className="flex items-center gap-1 text-xs bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-slate-300">
+              <span key={i} className="flex items-center gap-1 text-xs bg-slate-700 border border-slate-600 rounded-full px-3 py-1 text-slate-300">
                 {t}
                 <button onClick={() => setTopics(p => p.filter((_, j) => j !== i))} className="text-slate-500 hover:text-red-400 ml-1">×</button>
               </span>
             ))}
           </div>
         </div>
-        <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm text-slate-400">
               {hasValidation ? '1 behavior awaiting human validation' : '0 behaviors awaiting validation'}
@@ -1461,7 +1461,7 @@ function TabAudit({ de }: { de: DEProfile }) {
             )}
           </div>
           {showValidation && hasValidation && (
-            <div className="mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3">
+            <div className="mt-3 bg-slate-800 border border-slate-600 rounded-lg p-3">
               <p className="text-xs text-slate-500 mb-1">Proposed behavior</p>
               <p className="text-sm text-slate-200 mb-3">When leave request is submitted by same employee twice in 24 hrs, auto-reject duplicate.</p>
               <div className="flex gap-2">
@@ -1494,16 +1494,16 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${person.color} border border-slate-700`}>
+      <div className="px-6 py-4 border-b border-slate-700 flex items-center gap-4">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${person.color} border border-slate-600`}>
           {person.avatarInitials}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-base font-semibold text-slate-100">{person.name}</h2>
             <span className="text-xs text-slate-400">{person.title}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">Human</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{person.team}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-slate-300">Human</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">{person.team}</span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">{person.email}</p>
         </div>
@@ -1511,12 +1511,12 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
 
       <div className="p-6 grid grid-cols-2 gap-6">
         {/* Partnership */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Partnership — works with</p>
           <div className="space-y-2">
             {partners.map(de => (
               <button key={de.id} onClick={() => onSelectDE(de.id)}
-                className="w-full flex items-center gap-3 bg-slate-950 hover:bg-slate-800/70 rounded-lg px-3 py-2.5 transition-colors text-left">
+                className="w-full flex items-center gap-3 bg-slate-900 hover:bg-slate-700/70 rounded-lg px-3 py-2.5 transition-colors text-left">
                 <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-sm">
                   {de.name[0]}
                 </div>
@@ -1532,7 +1532,7 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
         </div>
 
         {/* Gate duties */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Gate duties</p>
             <button onClick={() => setPage('ops_human_tasks')} className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
@@ -1541,7 +1541,7 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
           </div>
           <div className="space-y-2">
             {person.approves.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 bg-slate-950 rounded-lg px-3 py-2">
+              <div key={i} className="flex items-start gap-2 bg-slate-900 rounded-lg px-3 py-2">
                 <span className="text-indigo-400 text-xs mt-0.5">✋</span>
                 <span className="text-sm text-slate-300 leading-snug">{a}</span>
               </div>
@@ -1550,7 +1550,7 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
         </div>
 
         {/* This week's load */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">This week's load</p>
             <span className="text-sm"><TrendArrow trend={person.loadTrend} /></span>
@@ -1562,7 +1562,7 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
               { label: 'Reviews', value: person.weeklyLoad.reviews },
               { label: 'Avg response', value: `${person.weeklyLoad.avgResponseHrs} hrs` },
             ].map(m => (
-              <div key={m.label} className="bg-slate-950 rounded-lg px-3 py-2">
+              <div key={m.label} className="bg-slate-900 rounded-lg px-3 py-2">
                 <p className="text-xs text-slate-500">{m.label}</p>
                 <p className="text-lg font-semibold text-slate-200">{m.value}</p>
               </div>
@@ -1577,11 +1577,11 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
         </div>
 
         {/* Expertise */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Expertise</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {person.expertiseTags.map(t => (
-              <span key={t} className="text-xs bg-slate-800 border border-slate-700 rounded-full px-3 py-1 text-slate-300">{t}</span>
+              <span key={t} className="text-xs bg-slate-700 border border-slate-600 rounded-full px-3 py-1 text-slate-300">{t}</span>
             ))}
           </div>
           <p className="text-xs text-slate-500">
@@ -1621,12 +1621,12 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
           const colDEs = des.filter(d => d.entity === col.key)
           const colHumans = people.filter(p => p.orgColumn === col.key)
           return (
-            <div key={col.key} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 pb-2 border-b border-slate-800">{col.label}</p>
+            <div key={col.key} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 pb-2 border-b border-slate-700">{col.label}</p>
               <div className="space-y-2">
                 {colDEs.map(de => (
                   <button key={de.id} onClick={() => onSelectDE(de.id)}
-                    className="w-full flex items-center gap-2.5 bg-slate-950 hover:bg-slate-800/70 border border-slate-800 rounded-lg px-3 py-2 transition-colors text-left">
+                    className="w-full flex items-center gap-2.5 bg-slate-900 hover:bg-slate-700/70 border border-slate-700 rounded-lg px-3 py-2 transition-colors text-left">
                     <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xs flex-shrink-0">
                       {de.name[0]}
                     </div>
@@ -1642,20 +1642,20 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
                 ))}
                 {colHumans.map(p => (
                   <button key={p.id} onClick={() => onSelectHuman(p.id)}
-                    className="w-full flex items-center gap-2.5 bg-slate-950 hover:bg-slate-800/70 border border-slate-800 rounded-lg px-3 py-2 transition-colors text-left">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-700 ${p.color}`}>
+                    className="w-full flex items-center gap-2.5 bg-slate-900 hover:bg-slate-700/70 border border-slate-700 rounded-lg px-3 py-2 transition-colors text-left">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-600 ${p.color}`}>
                       {p.avatarInitials}
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="text-sm text-slate-200 truncate block">{p.name}</span>
                       <p className="text-[11px] text-slate-500 truncate">{p.title}</p>
                     </div>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 flex-shrink-0">H</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-600 text-slate-300 flex-shrink-0">H</span>
                   </button>
                 ))}
                 {col.key === 'vendor' && colDEs.length === 0 && (
                   <button onClick={() => setPage('entity_vendor')}
-                    className="w-full border border-dashed border-slate-700 rounded-lg px-3 py-3 text-left hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-colors">
+                    className="w-full border border-dashed border-slate-600 rounded-lg px-3 py-3 text-left hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-colors">
                     <p className="text-xs font-medium text-slate-400">No DE serving Vendors yet</p>
                     <p className="text-[11px] text-indigo-400 mt-1">Automation opportunity →</p>
                   </button>
@@ -1732,15 +1732,15 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+      <div className="flex-shrink-0 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Workforce HQ</h1>
           <p className="text-xs text-slate-500 mt-0.5">Humans and Digital Employees — one team · {des.length} DEs · {people.length} humans</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 gap-0.5">
+          <div className="flex bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
             {(['roster', 'org'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
                 className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -1758,14 +1758,14 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       /* Body: split panel */
       <div className="flex flex-1 overflow-hidden">
         {/* Left: mixed roster */}
-        <div className="w-60 flex-shrink-0 bg-slate-900 border-r border-slate-800 overflow-y-auto">
+        <div className="w-60 flex-shrink-0 bg-slate-800 border-r border-slate-700 overflow-y-auto">
           <div className="p-3 space-y-1">
             <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 pt-1 pb-1">Digital Employees ({des.length})</p>
             {des.map(de => (
               <button
                 key={de.id}
                 onClick={() => selectDE(de.id)}
-                className={`w-full text-left rounded-xl p-3 transition-colors ${selected.kind === 'de' && selected.id === de.id ? 'bg-slate-800 border border-slate-700' : 'hover:bg-slate-800/50'}`}
+                className={`w-full text-left rounded-xl p-3 transition-colors ${selected.kind === 'de' && selected.id === de.id ? 'bg-slate-700 border border-slate-600' : 'hover:bg-slate-700/50'}`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <StatusDot status={de.status} />
@@ -1782,9 +1782,9 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
               <button
                 key={p.id}
                 onClick={() => selectHuman(p.id)}
-                className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 ${selected.kind === 'human' && selected.id === p.id ? 'bg-slate-800 border border-slate-700' : 'hover:bg-slate-800/50'}`}
+                className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 ${selected.kind === 'human' && selected.id === p.id ? 'bg-slate-700 border border-slate-600' : 'hover:bg-slate-700/50'}`}
               >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-700 ${p.color}`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-600 ${p.color}`}>
                   {p.avatarInitials}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1802,7 +1802,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
         ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* DE header */}
-          <div className="flex-shrink-0 px-6 py-4 border-b border-slate-800 flex items-center gap-4">
+          <div className="flex-shrink-0 px-6 py-4 border-b border-slate-700 flex items-center gap-4">
             <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-lg">
               {selectedDE.name[0]}
             </div>
@@ -1810,7 +1810,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-base font-semibold text-slate-100">{selectedDE.name}</h2>
                 <span className="text-xs text-slate-400">{selectedDE.role}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDE.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : selectedDE.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' : selectedDE.status === 'at_risk' ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-slate-500'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDE.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : selectedDE.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' : selectedDE.status === 'at_risk' ? 'bg-red-500/20 text-red-400' : 'bg-slate-600 text-slate-500'}`}>
                   {selectedDE.status.replace('_', ' ')}
                 </span>
                 <EntityBadge entity={selectedDE.entity} />
@@ -1820,7 +1820,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {/* Tab bar */}
-          <div className="flex-shrink-0 flex border-b border-slate-800 overflow-x-auto">
+          <div className="flex-shrink-0 flex border-b border-slate-700 overflow-x-auto">
             {TABS.map((tab, i) => (
               <button
                 key={tab}

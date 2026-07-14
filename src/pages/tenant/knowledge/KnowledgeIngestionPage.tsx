@@ -137,17 +137,17 @@ const DemoKnowledgeIngestionPage = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader title="Ingestion & Sources" subtitle="Connect knowledge sources — every document is auto-tagged Entity × Audience × Type, scored, and human-reviewed before going live." />
 
       {/* Connected sources */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden mb-6">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-white">Connected sources</h3>
           <span className="text-xs text-slate-500">{sources.filter(s => s.status === 'connected').length} of {sources.length} healthy</span>
         </div>
         <table className="w-full text-sm text-slate-300">
-          <thead className="bg-slate-900 border-b border-slate-800">
+          <thead className="bg-slate-800 border-b border-slate-700">
             <tr>
               <th className={th}>Source</th>
               <th className={th}>Kind</th>
@@ -160,7 +160,7 @@ const DemoKnowledgeIngestionPage = () => {
             {sources.map(s => {
               const st = statusStyle[s.status];
               return (
-                <tr key={s.name} className="border-b border-slate-800/60">
+                <tr key={s.name} className="border-b border-slate-700/60">
                   <td className={`${td} text-white font-medium`}>{s.name}</td>
                   <td className={`${td} text-xs text-slate-400`}>{s.kind}</td>
                   <td className={td}>
@@ -179,12 +179,12 @@ const DemoKnowledgeIngestionPage = () => {
       </div>
 
       {/* Pipeline */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-4">Processing pipeline</h3>
         <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
           {pipeline.map((s, i) => (
             <React.Fragment key={s.stage}>
-              <div className={`flex-1 min-w-[110px] rounded-xl border p-3 ${s.stage === 'Live' ? 'border-emerald-500/30 bg-emerald-500/5' : s.stage === 'Review' ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+              <div className={`flex-1 min-w-[110px] rounded-xl border p-3 ${s.stage === 'Live' ? 'border-emerald-500/30 bg-emerald-500/5' : s.stage === 'Review' ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-700 bg-slate-900'}`}>
                 <p className={`text-xs font-semibold ${s.stage === 'Live' ? 'text-emerald-400' : s.stage === 'Review' ? 'text-amber-400' : 'text-slate-300'}`}>{s.stage}</p>
                 <p className="text-xl font-bold text-white mt-1">{s.count}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{s.desc}</p>
@@ -197,12 +197,12 @@ const DemoKnowledgeIngestionPage = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Review queue */}
-        <div className="xl:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+        <div className="xl:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white">Human review queue</h3>
             <span className="text-xs text-slate-500">{pending.length} awaiting review</span>
           </div>
-          <div className="divide-y divide-slate-800/60">
+          <div className="divide-y divide-slate-700/60">
             {seed.map(r => {
               const st = review[r.id];
               const decision = st?.decision;
@@ -220,7 +220,7 @@ const DemoKnowledgeIngestionPage = () => {
                     ) : (
                       <div className="flex gap-2 flex-shrink-0">
                         <button onClick={() => patch(r.id, { decision: 'approved' })} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white">Approve</button>
-                        <button onClick={() => patch(r.id, { decision: 'rejected' })} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-red-500/50 hover:text-red-400">Reject</button>
+                        <button onClick={() => patch(r.id, { decision: 'rejected' })} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-red-500/50 hover:text-red-400">Reject</button>
                       </div>
                     )}
                   </div>
@@ -236,7 +236,7 @@ const DemoKnowledgeIngestionPage = () => {
                           disabled={!!decision}
                           value={f.value}
                           onChange={e => patch(r.id, { [f.key]: e.target.value } as any)}
-                          className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-slate-600 disabled:opacity-60">
+                          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-slate-600 disabled:opacity-60">
                           {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </label>
@@ -252,17 +252,17 @@ const DemoKnowledgeIngestionPage = () => {
         <div className="space-y-4">
           <button
             onClick={handleUpload}
-            className="w-full rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500/50 bg-slate-900/30 p-8 text-center transition-colors group">
-            <div className="w-10 h-10 mx-auto rounded-xl bg-slate-800 group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
+            className="w-full rounded-2xl border-2 border-dashed border-slate-600 hover:border-indigo-500/50 bg-slate-800/30 p-8 text-center transition-colors group">
+            <div className="w-10 h-10 mx-auto rounded-xl bg-slate-700 group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
             <p className="text-sm font-medium text-slate-200">Drop files to ingest</p>
             <p className="text-xs text-slate-500 mt-1">PDF, DOCX, MD, HTML — auto-classified into the pipeline</p>
           </button>
           {uploaded.length > 0 && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Just added</p>
               <div className="space-y-2">
                 {uploaded.map(u => (
-                  <div key={u} className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2">
+                  <div key={u} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
                     <span className="text-xs text-slate-300">{u}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400">Ingesting…</span>
                   </div>
@@ -386,7 +386,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6 relative">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
       <PageHeader title="Ingestion & Sources" subtitle="Real connector syncs pull external content into the knowledge base — chunked and indexed automatically." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -406,12 +406,12 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
       ) : (
         <>
           {/* Pipeline */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
             <h3 className="text-sm font-semibold text-white mb-4">Processing pipeline</h3>
             <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
               {pipeline.map((s, i) => (
                 <React.Fragment key={s.stage}>
-                  <div className="flex-1 min-w-[110px] rounded-xl border border-slate-800 bg-slate-950 p-3">
+                  <div className="flex-1 min-w-[110px] rounded-xl border border-slate-700 bg-slate-900 p-3">
                     <p className="text-xs font-semibold text-slate-300">{s.stage}</p>
                     <p className="text-xl font-bold text-white mt-1">{s.count}{s.total !== undefined ? <span className="text-sm text-slate-500"> / {s.total}</span> : null}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{s.desc}</p>
@@ -427,13 +427,13 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
             {/* Connected sources */}
-            <div className="xl:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+            <div className="xl:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-white">Connected sources</h3>
                 <span className="text-xs text-slate-500">{healthyCount} of {connectors.length} healthy</span>
               </div>
               <table className="w-full text-sm text-slate-300">
-                <thead className="bg-slate-900 border-b border-slate-800">
+                <thead className="bg-slate-800 border-b border-slate-700">
                   <tr>
                     <th className={th}>Source</th>
                     <th className={th}>Status</th>
@@ -450,7 +450,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                     const canSync = meta?.knowledgeSync && c.access_mode !== 'fetch_only';
                     const docsForThisConnector = connectorDocs.filter(d => (d.tags ?? []).includes(`connector:${c.provider}`)).length;
                     return (
-                      <tr key={c.id} className="border-b border-slate-800/60">
+                      <tr key={c.id} className="border-b border-slate-700/60">
                         <td className={`${td} text-white font-medium`}>
                           {c.display_name || meta?.label || c.provider}
                           <p className="text-[11px] text-slate-500 font-normal">{meta?.label ?? c.provider}</p>
@@ -489,24 +489,24 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
               {!addOpen ? (
                 <button
                   onClick={() => setAddOpen(true)}
-                  className="w-full rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500/50 bg-slate-900/30 p-8 text-center transition-colors group">
-                  <div className="w-10 h-10 mx-auto rounded-xl bg-slate-800 group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
+                  className="w-full rounded-2xl border-2 border-dashed border-slate-600 hover:border-indigo-500/50 bg-slate-800/30 p-8 text-center transition-colors group">
+                  <div className="w-10 h-10 mx-auto rounded-xl bg-slate-700 group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
                   <p className="text-sm font-medium text-slate-200">Add a document</p>
                   <p className="text-xs text-slate-500 mt-1">Paste text directly — it's chunked and indexed immediately</p>
                 </button>
               ) : (
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 space-y-2">
+                <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4 space-y-2">
                   <input
                     value={addTitle}
                     onChange={e => setAddTitle(e.target.value)}
                     placeholder="Document title"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
                   <textarea
                     value={addContent}
                     onChange={e => setAddContent(e.target.value)}
                     placeholder="Paste the document content…"
                     rows={6}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" />
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" />
                   <div className="flex gap-2">
                     <button
                       disabled={adding || !addTitle.trim() || !addContent.trim()}
@@ -514,7 +514,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                       className="flex-1 text-xs px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white">
                       {adding ? 'Adding…' : 'Add & index'}
                     </button>
-                    <button onClick={() => { setAddOpen(false); setAddTitle(''); setAddContent(''); }} className="text-xs px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:border-slate-500">
+                    <button onClick={() => { setAddOpen(false); setAddTitle(''); setAddContent(''); }} className="text-xs px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-slate-500">
                       Cancel
                     </button>
                   </div>
@@ -529,7 +529,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-800 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl max-w-md">
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl max-w-md">
           {toast}
         </div>
       )}

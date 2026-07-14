@@ -203,7 +203,7 @@ const SettingsPage = ({
     .filter(t => t !== 'ai_engine' || isDTUser);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
@@ -211,7 +211,7 @@ const SettingsPage = ({
           Manage your workspace, AI engine, and client token budgets
         </p>
       </div>
-      <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6 overflow-x-auto w-fit">
+      <div className="flex gap-1 bg-slate-700 rounded-xl p-1 mb-6 overflow-x-auto w-fit">
         {tabList.map((t) => (
           <button
             key={t}
@@ -239,7 +239,7 @@ const SettingsPage = ({
               </p>
             </div>
           )}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">Workspace Details</h2>
             <div className="space-y-4">
               <div>
@@ -248,7 +248,7 @@ const SettingsPage = ({
                   value={orgName}
                   onChange={e => setOrgName(e.target.value)}
                   placeholder="Your organisation name"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -256,14 +256,14 @@ const SettingsPage = ({
                 <select
                   value={industry}
                   onChange={e => setIndustry(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 >
                   {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
               </div>
               {/* Wave 4 — work-object vocabulary: what YOU call the people
                   you serve and your value metric. Read by every live page. */}
-              <div className="md:col-span-2 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="md:col-span-2 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
                 <p className="text-xs font-semibold text-white mb-0.5">Your vocabulary</p>
                 <p className="text-[11px] text-slate-500 mb-3">Relabels the whole workspace — Patients instead of Customers, Contract value instead of ARR. Seeded from your industry; yours to change.</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -280,7 +280,7 @@ const SettingsPage = ({
                       <label className="text-[11px] font-medium text-slate-400 block mb-1">{label}</label>
                       <input value={vocabDraft[k] ?? ''} placeholder={ph}
                         onChange={e => setVocabDraft(v => ({ ...v, [k]: e.target.value }))}
-                        className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
                     </div>
                   ))}
                 </div>
@@ -291,7 +291,7 @@ const SettingsPage = ({
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
                   type="email"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -301,15 +301,15 @@ const SettingsPage = ({
                     type="color"
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-slate-800 border border-slate-700 p-0.5"
+                    className="w-10 h-10 rounded-lg cursor-pointer bg-slate-700 border border-slate-600 p-0.5"
                   />
                   <input
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
                     placeholder="#6366f1"
-                    className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                    className="flex-1 bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
                   />
-                  <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-slate-700" style={{ backgroundColor: brandColor }} />
+                  <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-slate-600" style={{ backgroundColor: brandColor }} />
                 </div>
                 <p className="text-xs text-slate-600 mt-1.5">Applied to sidebar, buttons, and highlights across the platform.</p>
               </div>
@@ -328,7 +328,7 @@ const SettingsPage = ({
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Danger Zone</h2>
             <p className="text-xs text-slate-500 mb-4">Irreversible actions — proceed with care.</p>
             <button className="px-4 py-2 text-xs font-medium text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-all">
@@ -341,7 +341,7 @@ const SettingsPage = ({
       {/* ── AI Engine (platform admins only — keys are shared platform-wide) ── */}
       {activeTab === 'ai_engine' && isDTUser && (
         <div className="max-w-2xl space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
             <p className="text-xs text-slate-400 mb-5">
               These keys are stored encrypted in your database and shared across all your client tenants.
@@ -361,7 +361,7 @@ const SettingsPage = ({
                 value={anthropicKey}
                 onChange={e => setAnthropicKey(e.target.value)}
                 placeholder={anthropicSet ? 'Enter new key to replace existing…' : 'sk-ant-…'}
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-slate-600 mt-1">
                 Get your key at console.anthropic.com → API Keys. Powers all Digital Employee responses.
@@ -374,14 +374,14 @@ const SettingsPage = ({
                 <label className="text-xs font-medium text-slate-400">OpenAI API Key <span className="text-slate-600 font-normal">(optional)</span></label>
                 {openaiSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — semantic search active</span>
-                  : <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded">Not set — keyword search only</span>}
+                  : <span className="text-xs text-slate-500 bg-slate-600/50 px-2 py-0.5 rounded">Not set — keyword search only</span>}
               </div>
               <input
                 type="password"
                 value={openaiKey}
                 onChange={e => setOpenaiKey(e.target.value)}
                 placeholder={openaiSet ? 'Enter new key to replace existing…' : 'sk-…'}
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-slate-600 mt-1">
                 Enables vector/semantic search in the knowledge base — significantly improves DE answer quality.
@@ -394,14 +394,14 @@ const SettingsPage = ({
                 <label className="text-xs font-medium text-slate-400">Google AI Key <span className="text-slate-600 font-normal">(optional)</span></label>
                 {googleSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini models active</span>
-                  : <span className="text-xs text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
+                  : <span className="text-xs text-slate-500 bg-slate-600/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
               </div>
               <input
                 type="password"
                 value={googleKey}
                 onChange={e => setGoogleKey(e.target.value)}
                 placeholder={googleSet ? 'Enter new key to replace existing…' : 'AIza…'}
-                className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-slate-600 mt-1">
                 Get your key at aistudio.google.com → API Keys. Enables Gemini 1.5 Flash (cheapest overall) and Gemini 2.0 Flash.
@@ -422,7 +422,7 @@ const SettingsPage = ({
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">How billing works</h2>
             <div className="space-y-2 text-xs text-slate-400 mt-3">
               <div className="flex gap-3"><span className="text-slate-600 w-4">1</span><span>You pay Anthropic directly for token usage across all tenants.</span></div>
@@ -437,7 +437,7 @@ const SettingsPage = ({
       {/* ── Usage & Budgets ────────────────────────────────────────── */}
       {activeTab === 'usage' && (
         <div className="max-w-3xl space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Monthly Token Budgets</h2>
             <p className="text-xs text-slate-400 mb-5">
               Set a monthly token limit per client. DEs stop responding when the limit is reached — resets on the 1st of each month.
@@ -454,7 +454,7 @@ const SettingsPage = ({
                   const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
                   const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : accentColor;
                   return (
-                    <div key={t.id} className="bg-slate-800/50 rounded-xl p-4">
+                    <div key={t.id} className="bg-slate-700/50 rounded-xl p-4">
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div>
                           <div className="text-sm text-white font-medium">{t.name}</div>
@@ -465,7 +465,7 @@ const SettingsPage = ({
                             type="number"
                             value={budgetEdits[t.id] ?? ''}
                             onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
-                            className="w-28 bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
+                            className="w-28 bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
                             min={0}
                             step={10000}
                           />
@@ -484,7 +484,7 @@ const SettingsPage = ({
                         <span>{fmt(used)} used</span>
                         <span>{pct}% of {fmt(budget)}</span>
                       </div>
-                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all"
                           style={{ width: `${pct}%`, backgroundColor: barColor }}
@@ -508,7 +508,7 @@ const SettingsPage = ({
       {/* ── Widget & API (live mode only) ─────────────────────────── */}
       {activeTab === 'widget' && (
         <div className="max-w-3xl space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Widget Keys</h2>
             <p className="text-xs text-slate-400 mb-4">
               Publishable keys for embedding the "Ask Alex" widget in your product. Keys can only ask
@@ -521,7 +521,7 @@ const SettingsPage = ({
                   New key generated — copy it now, it will not be shown again
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs text-white font-mono bg-slate-800 rounded-lg px-3 py-2 break-all">{generatedKey}</code>
+                  <code className="flex-1 text-xs text-white font-mono bg-slate-700 rounded-lg px-3 py-2 break-all">{generatedKey}</code>
                   <button
                     onClick={handleCopyKey}
                     className="px-3 py-2 text-xs text-white rounded-lg flex-shrink-0"
@@ -538,7 +538,7 @@ const SettingsPage = ({
                 value={newKeyLabel}
                 onChange={e => setNewKeyLabel(e.target.value)}
                 placeholder="Key label (e.g. Production portal)"
-                className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
               <button
                 onClick={handleGenerateKey}
@@ -555,7 +555,7 @@ const SettingsPage = ({
             ) : (
               <div className="space-y-2">
                 {widgetKeys.map(k => (
-                  <div key={k.id} className="flex items-center justify-between gap-3 bg-slate-800/50 rounded-xl px-4 py-3">
+                  <div key={k.id} className="flex items-center justify-between gap-3 bg-slate-700/50 rounded-xl px-4 py-3">
                     <div className="min-w-0">
                       <div className="text-sm text-white font-medium truncate">
                         {k.label}
@@ -580,17 +580,17 @@ const SettingsPage = ({
             )}
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Embed Snippet</h2>
             <p className="text-xs text-slate-400 mb-3">
               Paste into your product, replacing the placeholders. Full reference:{' '}
               <a href="https://github.com/Outsourcetel/dreamteam-ai/blob/main/docs/WIDGET-EMBED.md" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">docs/WIDGET-EMBED.md</a>
               {' '}· try it on the <a href="/widget-demo.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">demo page</a>.
             </p>
-            <pre className="text-xs text-slate-300 font-mono bg-slate-800 rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
+            <pre className="text-xs text-slate-300 font-mono bg-slate-700 rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">End-User Activity</h2>
             <p className="text-xs text-slate-400 mb-3">Recent end users who asked questions through the widget.</p>
             {endUserSessions.length === 0 ? (
@@ -607,7 +607,7 @@ const SettingsPage = ({
                 </thead>
                 <tbody>
                   {endUserSessions.map(s => (
-                    <tr key={s.id} className="border-t border-slate-800 text-slate-300">
+                    <tr key={s.id} className="border-t border-slate-700 text-slate-300">
                       <td className="py-2 font-mono">{s.account_external_ref || '—'}</td>
                       <td className="py-2">{s.display_name || s.end_user_ref || '—'}</td>
                       <td className="py-2 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
@@ -623,7 +623,7 @@ const SettingsPage = ({
 
       {(activeTab === 'billing' || activeTab === 'security') && (
         <div className="max-w-2xl">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center">
             <div className="text-4xl mb-3">*</div>
             <div className="text-sm font-medium text-white mb-1 capitalize">{activeTab} Settings</div>
             <div className="text-xs text-slate-400">Configuration options for {activeTab} coming soon.</div>

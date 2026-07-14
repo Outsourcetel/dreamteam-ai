@@ -96,7 +96,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const [showImport, setShowImport] = React.useState(false);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
@@ -130,7 +130,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <React.Fragment key={s.page}>
               <button
                 onClick={() => setPage(s.page)}
-                className="flex-shrink-0 w-40 text-left rounded-xl p-3.5 border border-slate-800 bg-slate-900 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                className="flex-shrink-0 w-40 text-left rounded-xl p-3.5 border border-slate-700 bg-slate-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
               >
                 <div className="text-lg mb-1.5">{s.icon}</div>
                 <p className="text-xs font-semibold text-white leading-tight mb-1 group-hover:text-indigo-200">{s.label}</p>
@@ -139,7 +139,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
                   : <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>}
               </button>
               {i < stages.length - 1 && (
-                <div className="flex-shrink-0 self-center text-slate-700 text-lg px-0.5">→</div>
+                <div className="flex-shrink-0 self-center text-slate-600 text-lg px-0.5">→</div>
               )}
             </React.Fragment>
           ))}
@@ -153,7 +153,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
           {dataMode === 'live' ? (
             <button
               onClick={() => setPage('workforce_des')}
-              className="col-span-full flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-800 text-xs text-slate-500 hover:border-slate-600"
+              className="col-span-full flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-700 text-xs text-slate-500 hover:border-slate-600"
             >
               Assign Digital Employees to your customer stages from the Roster →
             </button>
@@ -161,7 +161,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <button
               key={de.name}
               onClick={() => setPage('workforce_des')}
-              className="flex items-center gap-3 text-left rounded-xl p-4 border border-slate-800 bg-slate-900 hover:border-slate-600 transition-all"
+              className="flex items-center gap-3 text-left rounded-xl p-4 border border-slate-700 bg-slate-800 hover:border-slate-600 transition-all"
             >
               <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                 {de.name[0]}
@@ -180,7 +180,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             </button>
           ))}
           {dataMode !== 'live' && activeCompanyId === 'tcp' && (
-            <div className="flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-800 text-xs text-slate-600">
+            <div className="flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-700 text-xs text-slate-600">
               BD & Sales handled by humans — no DE assigned yet
             </div>
           )}
@@ -188,7 +188,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       </div>
 
       {/* Cross-stage activity */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <h2 className="text-sm font-semibold text-white mb-4">Recent cross-stage activity</h2>
         <div className="space-y-2">
           {dataMode === 'live' && (
@@ -198,7 +198,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <div key={i} className={`border-l-2 pl-3 py-1 ${toneBorder(item.tone)}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-2 flex-1 min-w-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 flex-shrink-0 mt-0.5">{item.stage}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0 mt-0.5">{item.stage}</span>
                   <p className="text-xs text-slate-300 leading-relaxed">{item.text}</p>
                 </div>
                 <span className="text-xs text-slate-600 flex-shrink-0">{item.time}</span>

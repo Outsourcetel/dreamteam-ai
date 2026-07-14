@@ -26,7 +26,7 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 function WorkforceNotYetAvailable({ title, setPage }: { title: string; setPage?: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title={title} subtitle="Our People" />
       <LiveEmptyState
         icon="◉"
@@ -91,7 +91,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Our People" setPage={setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Our People</h1>
         <p className="text-slate-400 text-sm mt-1">The humans and their DE partner</p>
@@ -106,14 +106,14 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
             <React.Fragment key={s.page}>
               <button
                 onClick={() => setPage(s.page)}
-                className="flex-shrink-0 w-44 text-left rounded-xl p-3.5 border border-slate-800 bg-slate-900 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                className="flex-shrink-0 w-44 text-left rounded-xl p-3.5 border border-slate-700 bg-slate-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
               >
                 <div className="text-lg mb-1.5">{s.icon}</div>
                 <p className="text-xs font-semibold text-white leading-tight mb-1 group-hover:text-indigo-200">{s.label}</p>
                 <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>
               </button>
               {i < stages.length - 1 && (
-                <div className="flex-shrink-0 self-center text-slate-700 text-lg px-0.5">→</div>
+                <div className="flex-shrink-0 self-center text-slate-600 text-lg px-0.5">→</div>
               )}
             </React.Fragment>
           ))}
@@ -124,7 +124,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
       <div className="mb-8">
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Digital Employees on this entity</h2>
         {isTcp ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">R</div>
               <div className="flex-1 min-w-0">
@@ -138,7 +138,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
                 <p className="text-sm font-bold text-emerald-400">83%</p>
                 <p className="text-[10px] text-slate-500">confidence</p>
               </div>
-              <button onClick={() => setPage('workforce_des')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors flex-shrink-0">
+              <button onClick={() => setPage('workforce_des')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600 transition-colors flex-shrink-0">
                 Manage →
               </button>
             </div>
@@ -148,7 +148,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-800 bg-slate-900/40 px-4 py-4 flex-wrap">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-700 bg-slate-800/40 px-4 py-4 flex-wrap">
             <p className="text-xs text-slate-500">Workforce operations handled by humans — no workforce DE assigned yet.</p>
             <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Assign a DE →</button>
           </div>
@@ -158,7 +158,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
       {/* Headcount stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
             <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
@@ -210,25 +210,25 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Talent — Our People" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Talent — Our People"
         subtitle={`${roles.length} open role${roles.length === 1 ? '' : 's'} — pipeline tracked from sourcing to offer`}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Open roles</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Role', 'Team', 'Opened', 'Sourced', 'Screening', 'Interview', 'Offer'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {roles.map((r, i) => (
-                  <tr key={r.title} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === roles.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={r.title} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === roles.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{r.title}</td>
                     <td className={`${td} text-slate-400 text-xs`}>{r.team}</td>
                     <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>{r.opened}</td>
@@ -244,7 +244,7 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
           <p className="mt-3 text-[11px] text-slate-500">Recruiting is human-led; interview scheduling and candidate comms are candidates for DE automation.</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Candidate funnel</h3>
           <div className="space-y-3">
             {funnel.map(f => (
@@ -253,7 +253,7 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
                   <span className="text-slate-400">{f.stage}</span>
                   <span className="text-white font-medium">{f.count}</span>
                 </div>
-                <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${f.color}`} style={{ width: `${(f.count / maxCount) * 100}%` }} />
                 </div>
               </div>
@@ -297,10 +297,10 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
 
   if (!isTcp) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader title="Onboarding — Our People" subtitle="New-hire onboarding checklists and progress" />
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-xl mb-4">⚙</div>
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-800/40 p-12 text-center">
+          <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl mb-4">⚙</div>
           <p className="text-sm font-medium text-slate-300 mb-1">No onboarding in progress</p>
           <p className="text-xs text-slate-500 max-w-sm">When a candidate accepts an offer, their onboarding checklist appears here automatically.</p>
         </div>
@@ -309,10 +309,10 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Onboarding — Our People" subtitle="1 new hire onboarding this week — Riley runs the checklist, humans own the judgment calls" />
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 max-w-3xl">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 max-w-3xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h3 className="text-sm font-semibold text-white">Jordan K. — Backend Engineer</h3>
@@ -323,17 +323,17 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
             <p className="text-[10px] text-slate-500">{doneCount} of {JORDAN_TASKS.length} tasks</p>
           </div>
         </div>
-        <div className="h-2 bg-slate-800 rounded-full overflow-hidden mb-5">
+        <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-5">
           <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
         </div>
         <div className="space-y-2">
           {JORDAN_TASKS.map(t => (
-            <div key={t.task} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${t.done ? 'border-slate-800 bg-slate-900/40' : 'border-slate-800 bg-slate-900'}`}>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${t.done ? 'bg-emerald-500/20 text-emerald-400' : 'border border-slate-700 text-slate-600'}`}>
+            <div key={t.task} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${t.done ? 'border-slate-700 bg-slate-800/40' : 'border-slate-700 bg-slate-800'}`}>
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${t.done ? 'bg-emerald-500/20 text-emerald-400' : 'border border-slate-600 text-slate-600'}`}>
                 {t.done ? '✓' : ''}
               </span>
               <span className={`flex-1 text-xs ${t.done ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{t.task}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${t.owner === 'Riley' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-800 text-slate-400'}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${t.owner === 'Riley' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>
                 {t.owner === 'Riley' ? 'Riley (DE)' : t.ownerDetail || 'Human'}
               </span>
             </div>
@@ -377,36 +377,36 @@ export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Performance & Development — Our People" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Performance & Development — Our People" subtitle="Review cycles, skills coverage, and development plans" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 h-fit">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-1">{cycle.name}</h3>
           <p className="text-xs text-slate-500 mb-4">Opens {cycle.opens}</p>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-slate-400">Completion</span>
             <span className="text-white font-medium">{cycle.completion}%</span>
           </div>
-          <div className="h-2 bg-slate-800 rounded-full overflow-hidden mb-3">
+          <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
             <div className="h-full rounded-full bg-indigo-500" style={{ width: `${cycle.completion}%` }} />
           </div>
           <p className="text-xs text-slate-400 mb-1">{cycle.selfReviews}</p>
           <p className="text-[11px] text-slate-500">{cycle.note}</p>
         </div>
 
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Skills matrix</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Skill area', 'Strong', 'Developing', 'Gap'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {skills.map((s, i) => (
-                  <tr key={s.skill} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === skills.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={s.skill} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === skills.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{s.skill}</td>
                     <td className={`${td} text-emerald-300 text-xs`}>{s.strong}</td>
                     <td className={`${td} text-indigo-300 text-xs`}>{s.developing}</td>
@@ -457,12 +457,12 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Payroll & Benefits — Our People" setPage={setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Payroll & Benefits — Our People" subtitle="Payroll runs, benefits enrollment, and approval gates" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Next payroll run */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Next payroll run</p>
           <p className="text-2xl font-bold text-white">{data.date}</p>
           <div className="mt-4 space-y-2">
@@ -482,7 +482,7 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
         </div>
 
         {/* Benefits */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Benefits enrollment</h3>
           <div className="space-y-3">
             {data.benefits.map(b => (

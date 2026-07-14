@@ -67,7 +67,7 @@ const stageBadge = (stage: string) => {
   if (stage === 'Qualified') return 'bg-emerald-500/15 text-emerald-300';
   if (stage === 'Contacted') return 'bg-indigo-500/15 text-indigo-300';
   if (stage === 'Nurture') return 'bg-amber-500/15 text-amber-300';
-  return 'bg-slate-700/50 text-slate-300';
+  return 'bg-slate-600/50 text-slate-300';
 };
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -84,13 +84,13 @@ const DemoCustomerBD = () => {
   const isTcp = activeCompanyId === 'tcp';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Business Development — Customer Lifecycle"
         subtitle={isTcp ? '14 active prospects moving toward Sales' : `6 active pursuits across ${activeCompany.name} practice areas`}
       />
 
-      <div className="mb-5 flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+      <div className="mb-5 flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
         <span className="text-slate-500">◎</span>
         <p className="text-xs text-slate-400">
           DE not yet assigned to Business Development — this stage is handled by humans. Activity is still
@@ -100,18 +100,18 @@ const DemoCustomerBD = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Prospect table */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Prospect list' : 'Pursuit list'}</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {['Company', 'Stage', 'Source', 'Owner', 'Last Touch'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {prospects.map((p, i) => (
-                  <tr key={p.company} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={p.company} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{p.company}</td>
                     <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${stageBadge(p.stage)}`}>{p.stage}</span></td>
                     <td className={`${td} text-slate-400 text-xs`}>{p.source}</td>
@@ -125,7 +125,7 @@ const DemoCustomerBD = () => {
         </div>
 
         {/* Funnel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Pipeline funnel</h3>
           <div className="space-y-3">
             {funnel.map(f => (
@@ -134,7 +134,7 @@ const DemoCustomerBD = () => {
                   <span className="text-slate-400">{f.stage}</span>
                   <span className="text-white font-medium">{f.count}</span>
                 </div>
-                <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${f.color}`} style={{ width: `${(f.count / maxCount) * 100}%` }} />
                 </div>
               </div>
@@ -187,7 +187,7 @@ const oppStageBadge = (stage: string) => {
   if (stage.startsWith('Negotiation')) return 'bg-emerald-500/15 text-emerald-300';
   if (stage.startsWith('Proposal')) return 'bg-indigo-500/15 text-indigo-300';
   if (stage === 'Demo') return 'bg-sky-500/15 text-sky-300';
-  return 'bg-slate-700/50 text-slate-300';
+  return 'bg-slate-600/50 text-slate-300';
 };
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -203,7 +203,7 @@ const DemoCustomerSales = () => {
   const totalLabel = isTcp ? '$2.1M' : '$515K';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Sales — Customer Lifecycle"
         subtitle={isTcp ? 'Pipeline management, proposals, demos, and deal closing' : `Proposals in flight across ${activeCompany.name} practice areas`}
@@ -216,7 +216,7 @@ const DemoCustomerSales = () => {
           { label: isTcp ? 'In negotiation' : 'Proposals sent', value: isTcp ? '2' : '2', sub: isTcp ? '$496K combined' : '$420K combined', color: 'text-emerald-300' },
           { label: 'Avg deal size', value: isTcp ? '$175K' : '$172K', sub: 'this quarter', color: 'text-indigo-300' },
         ].map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
             <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
@@ -224,18 +224,18 @@ const DemoCustomerSales = () => {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-3">Open opportunities</h3>
-        <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-slate-700">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-slate-700">
                 {['Opportunity', 'Value', 'Stage', 'Close Date', 'Owner'].map(h => <th key={h} className={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {opps.map((o, i) => (
-                <tr key={o.name} className={`border-b border-slate-800/60 hover:bg-slate-800/30 transition-colors ${i === opps.length - 1 ? 'border-b-0' : ''}`}>
+                <tr key={o.name} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === opps.length - 1 ? 'border-b-0' : ''}`}>
                   <td className={`${td} font-medium text-white`}>{o.name}</td>
                   <td className={`${td} text-slate-300`}>{o.value}</td>
                   <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${oppStageBadge(o.stage)}`}>{o.stage}</span></td>
@@ -305,7 +305,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const atRisk = accounts.filter(a => a.health < 45);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Customer Success — Customer Lifecycle"
         subtitle={isTcp
@@ -315,12 +315,12 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Account health table */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Account health' : 'Engagement health'}</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-800">
+                <tr className="border-b border-slate-700">
                   {[isTcp ? 'Account' : 'Engagement', 'Health', 'ARR', 'CSM', 'Trend'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
@@ -328,11 +328,11 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 {accounts.map((a, i) => {
                   const risk = a.health < 45;
                   return (
-                    <tr key={a.name} className={`border-b border-slate-800/60 transition-colors ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-800/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={a.name} className={`border-b border-slate-700/60 transition-colors ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-700/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
                       <td className={td}>
                         <div className="flex items-center gap-2 min-w-[110px]">
-                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${healthColor(a.health)}`} style={{ width: `${a.health}%` }} />
                           </div>
                           <span className={`text-xs font-medium w-6 text-right ${healthText(a.health)}`}>{a.health}</span>
@@ -350,7 +350,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </div>
 
         {/* At-risk action panel */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">At-risk accounts</h3>
           <p className="text-xs text-slate-500 mb-4">
             {isTcp ? 'Flagged by Casey from health, usage, and escalation signals' : 'Flagged by Morgan from engagement delivery signals'}
@@ -366,7 +366,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 <div className="flex gap-2">
                   <button className="text-xs px-2.5 py-1 rounded-lg bg-red-600/20 text-red-300 hover:bg-red-600/40 transition-colors">Open save play</button>
                   {setPage && (
-                    <button onClick={() => setPage('entity_customer_renewal')} className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700 transition-colors">
+                    <button onClick={() => setPage('entity_customer_renewal')} className="text-xs px-2.5 py-1 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600 transition-colors">
                       View renewal →
                     </button>
                   )}

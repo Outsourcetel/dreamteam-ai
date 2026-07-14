@@ -35,7 +35,7 @@ function trustSentence(level: number | null, autonomyEnabled: boolean | null): s
 }
 
 function healthMeta(status: string, lastOkAt: string | null, lastErrorAt: string | null, failures: number) {
-  if (status === 'disconnected') return { label: 'Not connected', cls: 'bg-slate-700/40 text-slate-400 border-slate-600' };
+  if (status === 'disconnected') return { label: 'Not connected', cls: 'bg-slate-600/40 text-slate-400 border-slate-600' };
   if (failures > 0 || status === 'error') {
     return {
       label: `Failing${failures ? ` (${failures} in a row)` : ''}`,
@@ -43,7 +43,7 @@ function healthMeta(status: string, lastOkAt: string | null, lastErrorAt: string
     };
   }
   if (lastOkAt) return { label: `Healthy — last OK ${fmtDate(lastOkAt)}`, cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
-  return { label: 'Never checked', cls: 'bg-slate-700/40 text-slate-400 border-slate-600' };
+  return { label: 'Never checked', cls: 'bg-slate-600/40 text-slate-400 border-slate-600' };
 }
 
 function SubjectCard({ s }: { s: IdentitySubject }) {
@@ -51,17 +51,17 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
   const kindLabel = s.kind === 'de' ? 'Digital Employee' : 'Specialist';
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/50 mb-4 overflow-hidden">
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 mb-4 overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-900/80 transition"
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-800/80 transition"
       >
         <div>
           <p className="text-sm font-semibold text-white">{s.label}{s.label !== s.name ? <span className="text-slate-500 font-normal"> ({s.name})</span> : null}</p>
           <p className="text-[11px] text-slate-500 mt-0.5">{kindLabel} · {s.role} · {s.status}</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 whitespace-nowrap">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 border border-slate-600 whitespace-nowrap">
             {s.systems.length} connected system{s.systems.length === 1 ? '' : 's'}
           </span>
           <span className="text-slate-500">{open ? '▾' : '▸'}</span>
@@ -69,7 +69,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
       </button>
 
       {open && (
-        <div className="border-t border-slate-800 px-5 py-4">
+        <div className="border-t border-slate-700 px-5 py-4">
           {s.systems.length === 0 ? (
             <p className="text-xs text-slate-500 py-2">No access anywhere — this identity currently holds no grant on any connected system.</p>
           ) : (
@@ -77,7 +77,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
               {s.systems.map((sys) => {
                 const health = healthMeta(sys.connectorStatus, sys.lastOkAt, sys.lastErrorAt, sys.consecutiveFailures);
                 return (
-                  <div key={sys.connectorId} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div key={sys.connectorId} className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
                         <p className="text-xs font-medium text-white">
@@ -94,7 +94,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
                           sys.hasCredential
                             ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
-                            : 'bg-slate-700/40 text-slate-400 border-slate-600'
+                            : 'bg-slate-600/40 text-slate-400 border-slate-600'
                         }`}>
                           {sys.hasCredential ? 'Credential stored' : 'No stored credential'}
                         </span>
@@ -106,7 +106,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                     </p>
 
                     {sys.permission === 'write_back' && sys.possibleActions.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-slate-800/60">
+                      <div className="mt-3 pt-3 border-t border-slate-700/60">
                         <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
                           Could invoke here if a write is triggered:
                         </p>
@@ -118,7 +118,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                               className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
                                 a.destructive
                                   ? 'bg-amber-500/10 text-amber-300 border-amber-500/25'
-                                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                                  : 'bg-slate-700 text-slate-300 border-slate-600'
                               }`}
                             >
                               {a.label}{a.destructive ? ' ⚠' : ''}
@@ -170,7 +170,7 @@ export default function IdentityInventoryPage() {
   const canWrite = subjects.reduce((n, s) => n + s.systems.filter((x) => x.permission === 'write_back').length, 0);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
       <PageHeader
         title="Identity & Credentials"
         subtitle="Every digital employee and specialist, every connected system it can touch, and how — one view for a security review. No secret value is ever shown here, only whether one is stored."
@@ -179,19 +179,19 @@ export default function IdentityInventoryPage() {
 
       {!loading && !error && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
             <p className="text-2xl font-bold text-white">{subjects.length}</p>
             <p className="text-[11px] text-slate-500 mt-1">Identities (DEs + specialists)</p>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
             <p className="text-2xl font-bold text-white">{totalGrants}</p>
             <p className="text-[11px] text-slate-500 mt-1">Active grants across all systems</p>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
             <p className="text-2xl font-bold text-white">{withCredentials}</p>
             <p className="text-[11px] text-slate-500 mt-1">Systems with a stored credential</p>
           </div>
-          <div className={`rounded-xl border p-4 ${failing > 0 ? 'border-rose-500/30 bg-rose-500/5' : 'border-slate-800 bg-slate-900/50'}`}>
+          <div className={`rounded-xl border p-4 ${failing > 0 ? 'border-rose-500/30 bg-rose-500/5' : 'border-slate-700 bg-slate-800/50'}`}>
             <p className={`text-2xl font-bold ${failing > 0 ? 'text-rose-300' : 'text-white'}`}>{failing}</p>
             <p className="text-[11px] text-slate-500 mt-1">Currently failing connections</p>
           </div>
@@ -201,7 +201,7 @@ export default function IdentityInventoryPage() {
       {loading ? (
         <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
       ) : !error && subjects.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-8 text-center mb-6">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-8 text-center mb-6">
           <p className="text-sm text-slate-400">No digital employees or specialists in this workspace yet.</p>
         </div>
       ) : (
@@ -209,7 +209,7 @@ export default function IdentityInventoryPage() {
       )}
 
       {!loading && !error && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mt-2">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mt-2">
           <h3 className="text-sm font-semibold text-white mb-2">What this view covers (honest)</h3>
           <ul className="text-[11px] text-slate-500 space-y-1.5 list-disc pl-4">
             <li><span className="text-slate-300">Covered:</span> every grant in Data Access, cross-referenced with real connector health, earned trust level, and the actions each identity could invoke — {canWrite} grant{canWrite === 1 ? '' : 's'} currently include write-back.</li>

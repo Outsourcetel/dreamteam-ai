@@ -54,12 +54,12 @@ interface KpiStatusRow {
 const HEALTH_STYLE: Record<string, string> = {
   healthy: 'bg-emerald-500/15 text-emerald-300',
   improving: 'bg-sky-500/15 text-sky-300',
-  insufficient_data: 'bg-slate-700/40 text-slate-400',
+  insufficient_data: 'bg-slate-600/40 text-slate-400',
   degraded: 'bg-rose-500/15 text-rose-300',
   low_confidence: 'bg-amber-500/15 text-amber-300',
   high_cost: 'bg-amber-500/15 text-amber-300',
   incident_active: 'bg-rose-500/15 text-rose-300',
-  retired: 'bg-slate-800 text-slate-500',
+  retired: 'bg-slate-700 text-slate-500',
 };
 
 const fmtUsd = (n: number | null | undefined) =>
@@ -69,7 +69,7 @@ const fmtPct = (n: number | null | undefined, digits = 0) =>
 
 function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{label}</p>
       <p className={`text-xl font-bold ${tone ?? 'text-white'}`}>{value}</p>
       {sub && <p className="text-[10px] text-slate-500 mt-1">{sub}</p>}
@@ -124,7 +124,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader title="Outcomes" subtitle="Rolling up real Digital Employee results…" />
         <LiveLoadingSkeleton rows={6} />
       </div>
@@ -157,7 +157,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
   const unhealthy = health.filter(h => ['degraded', 'low_confidence', 'high_cost', 'incident_active'].includes(h.state));
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Outcomes"
         subtitle="What your digital workforce actually delivered — every number is live tenant data, nulls shown honestly until there's evidence"
@@ -185,7 +185,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
       </div>
 
       {/* ── 2. Delivery, by department ── */}
-      <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="mb-6 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
           <h3 className="text-sm font-semibold text-white">Delivery</h3>
           <span className="text-[11px] text-slate-500">{kpisMet + kpisMissed > 0 ? `${kpisMet}/${kpisMet + kpisMissed} KPI targets met` : 'No KPI targets set yet — add them on each employee\'s profile'}</span>
@@ -196,10 +196,10 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
         ) : departments.map(dept => (
           <div key={dept} className="mb-4 last:mb-0">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">{dept}</p>
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <div className="overflow-x-auto rounded-xl border border-slate-700">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 text-left">
+                  <tr className="border-b border-slate-700 text-left">
                     {['Employee', 'Health', 'Decisions', 'Resolution', 'Confidence', 'CSAT', 'KPIs'].map(h => <th key={h} className={th}>{h}</th>)}
                   </tr>
                 </thead>
@@ -212,10 +212,10 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
                     const met = kpis.filter(k => k.met === true).length;
                     const judged = kpis.filter(k => k.met !== null).length;
                     return (
-                      <tr key={de.id} className="border-b border-slate-800/60 last:border-b-0">
+                      <tr key={de.id} className="border-b border-slate-700/60 last:border-b-0">
                         <td className={`${td} text-slate-200 text-xs`}>{de.name}</td>
                         <td className={td}>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${HEALTH_STYLE[h?.state ?? ''] ?? 'bg-slate-800 text-slate-400'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${HEALTH_STYLE[h?.state ?? ''] ?? 'bg-slate-700 text-slate-400'}`}>
                             {(h?.state ?? 'unknown').split('_').join(' ')}
                           </span>
                         </td>
@@ -237,7 +237,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
       </div>
 
       {/* ── 3. Risk posture (30 days) ── */}
-      <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="mb-6 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-3">Risk posture · last 30 days</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           <Tile label="Guardrail interventions" value={String(tenantGuardrailEvents)} sub="gated or blocked by your rules" />
@@ -256,7 +256,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
       </div>
 
       {/* ── 4. Work in your pipeline (drill into Company Data) ── */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
         <h3 className="text-sm font-semibold text-white mb-1">Work in flight</h3>
         <p className="text-[11px] text-slate-500 mb-3">Live counts from your business records — click through for the detail.</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -268,7 +268,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
             { label: 'Renewals due', value: workload?.renewalsDue ?? 0, page: 'entity_customer_renewal' as Page },
           ]).map(t => (
             <button key={t.label} onClick={() => setPage(t.page)}
-              className="bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-xl p-4 text-left transition-colors">
+              className="bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl p-4 text-left transition-colors">
               <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{t.label}</p>
               <p className="text-xl font-bold text-white">{t.value}</p>
               <p className="text-[10px] text-indigo-400 mt-1">Open →</p>
@@ -289,7 +289,7 @@ export default function OutcomesPage({ setPage }: { setPage: (p: Page) => void }
     return <LiveOutcomes tenantId={currentTenant.id} setPage={setPage} />;
   }
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader title="Outcomes" subtitle="The consolidated Outcomes report is a live-workspace surface — demo workspaces keep the per-area preview pages." />
     </div>
   );

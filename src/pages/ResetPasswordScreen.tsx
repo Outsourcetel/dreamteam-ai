@@ -31,7 +31,7 @@ const ResetPasswordScreen = ({ onComplete }: {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-2 mb-8 justify-center">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
@@ -52,12 +52,12 @@ const ResetPasswordScreen = ({ onComplete }: {
               <div>
                 <label className="text-xs font-medium text-slate-400 block mb-1.5">New password</label>
                 <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoFocus
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-400 block mb-1.5">Confirm password</label>
                 <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" placeholder="Retype the password"
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
               </div>
               {error && <p className="text-xs text-red-400">{error}</p>}
               <button type="submit" disabled={loading}

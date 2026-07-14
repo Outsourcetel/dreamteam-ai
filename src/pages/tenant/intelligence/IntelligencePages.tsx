@@ -87,7 +87,7 @@ function LiveUsageStrip() {
     { label: 'LLM calls', value: usage.llm_calls },
   ];
   return (
-    <div className="bg-slate-900 border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
+    <div className="bg-slate-800 border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
       <div className="flex items-center gap-4 flex-wrap">
         <span className="text-[9px] font-bold tracking-widest text-indigo-400 uppercase">Live usage (this month)</span>
         {items.map(m => (
@@ -126,7 +126,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   const totalTasks = des.reduce((s, d) => s + d.tasksThisMonth, 0);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Performance Analytics"
         subtitle={`Org-level Digital Employee analytics — ${des.length} DEs · ${totalTasks.toLocaleString()} tasks this month · ${summary.aiResolution}% AI resolution`}
@@ -139,7 +139,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
       {(() => {
         const roi = computeRoi(activeCompanyId);
         return (
-          <div className="bg-slate-900 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4" title={roi.formula}>
+          <div className="bg-slate-800 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4" title={roi.formula}>
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Monthly value summary</span>
               <span className="text-sm text-slate-200">
@@ -155,21 +155,21 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
       })()}
 
       {/* Company benchmark row — reuses WorkforceDEsPage wording */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap mb-6">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap mb-6">
         <span className="text-xs text-slate-500">Company average:</span>
         <span className="text-xs text-slate-400">Resolution <span className="text-slate-200">{bench.resolution}%</span></span>
-        <span className="text-slate-700">|</span>
+        <span className="text-slate-600">|</span>
         <span className="text-xs text-slate-400">Confidence <span className="text-slate-200">{bench.confidence}%</span></span>
-        <span className="text-slate-700">|</span>
+        <span className="text-slate-600">|</span>
         <span className="text-xs text-slate-400">Escalation <span className="text-slate-200">{bench.escalation}%</span></span>
-        <span className="text-slate-700">|</span>
+        <span className="text-slate-600">|</span>
         <span className="text-xs text-slate-400">AI Resolution (org) <span className="text-slate-200">{summary.aiResolution}%</span></span>
       </div>
 
       {/* Per-DE scorecards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         {des.map(de => (
-          <div key={de.name} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div key={de.name} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
@@ -198,13 +198,13 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
                 { label: 'Escalation', value: `${de.escalationRate}%`, color: metricColor('escalation', de.escalationRate) },
                 { label: 'Error rate', value: `${de.errorRate}%`, color: metricColor('error', de.errorRate) },
               ].map(m => (
-                <div key={m.label} className="bg-slate-950 rounded-lg px-2 py-2 text-center">
+                <div key={m.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
                   <p className={`text-sm font-semibold ${m.color}`}>{m.value}</p>
                   <p className="text-[9px] text-slate-500 uppercase tracking-wide">{m.label}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-950 rounded-lg px-3 py-2">
+            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-900 rounded-lg px-3 py-2">
               <span>{de.tasksThisMonth} tasks this month</span>
               <span className="text-slate-300">{de.costPerTask} / task</span>
             </div>
@@ -214,7 +214,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Cost efficiency */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Cost efficiency</h3>
           <p className="text-xs text-slate-500 mb-4">$ per resolved task vs human baseline</p>
           <div className="space-y-3">
@@ -232,7 +232,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
                       <span className="text-slate-400">{de.humanBaseline} human baseline</span>
                     </span>
                   </div>
-                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(pct, 3)}%` }} />
                   </div>
                   <p className="text-[10px] text-slate-600 mt-0.5">{100 - pct}% cheaper than the human baseline for this work</p>
@@ -243,14 +243,14 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
 
         {/* CSAT proxy */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-white mb-1">CSAT proxy</h3>
           <p className="text-xs text-slate-500 mb-4">Derived from thumbs-up ratio, reopen rate, and escalation outcomes</p>
           <div className="space-y-2">
             {des.map((de, i) => {
               const csat = [4.6, 4.4, 4.1, 4.5, 4.7][i] ?? 4.3;
               return (
-                <div key={de.name} className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+                <div key={de.name} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
                   <span className="text-xs text-slate-300">{de.name}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-amber-400 text-xs">{'★'.repeat(Math.round(csat))}{'☆'.repeat(5 - Math.round(csat))}</span>
@@ -303,14 +303,14 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader title="Performance Analytics" subtitle="Loading real Digital Employee activity…" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Performance Analytics"
         subtitle={`${des.length} DE${des.length === 1 ? '' : 's'} · ${totalDecisions.toLocaleString()} inquiries handled this period`}
@@ -319,7 +319,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       <LiveUsageStrip />
 
       {totalCostUsd > 0 && (
-        <div className="bg-slate-900 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4">
+        <div className="bg-slate-800 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Real AI usage cost</span>
             <span className="text-sm text-slate-200">
@@ -333,7 +333,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       )}
 
       {des.length === 0 ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-sm text-slate-500">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
           No Digital Employees yet — add one under Workforce to start seeing real performance data here.
         </div>
       ) : (
@@ -344,7 +344,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
             const trend = m?.trend ?? [];
             const trendValues = trend.map(t => t.resolution_rate);
             return (
-              <div key={de.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+              <div key={de.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
@@ -380,13 +380,13 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                         { label: 'Error rate', value: `${m.error_rate}%`, color: metricColor('error', m.error_rate) },
                         { label: 'Frustration', value: `${m.avg_frustration_score}%`, color: metricColor('frustration', m.avg_frustration_score) },
                       ].map(x => (
-                        <div key={x.label} className="bg-slate-950 rounded-lg px-2 py-2 text-center">
+                        <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
                           <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
                           <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-950 rounded-lg px-3 py-2">
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-900 rounded-lg px-3 py-2">
                       <span>{m.total_decisions} inquiries this period{m.high_frustration_count > 0 ? ` · ${m.high_frustration_count} auto-escalated for frustration` : ''}</span>
                       {c && c.total_calls > 0 && (
                         <span className="text-slate-300">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
@@ -400,7 +400,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
         <h3 className="text-sm font-semibold text-white mb-1">Customer satisfaction (CSAT)</h3>
         <p className="text-xs text-slate-500 mb-4">Real thumbs-up/down from the support widget and portal chat</p>
         {csat.length === 0 ? (
@@ -410,7 +410,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
             {csat.map(c => {
               const de = des.find(d => d.id === c.de_id);
               return (
-                <div key={c.de_id} className="flex items-center justify-between bg-slate-950 rounded-lg px-3 py-2.5">
+                <div key={c.de_id} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
                   <span className="text-xs text-slate-300">{de?.name ?? 'Unknown DE'}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">{c.total_ratings} rating{c.total_ratings === 1 ? '' : 's'}</span>
@@ -536,7 +536,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
   });
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Business Insights"
         subtitle="Anomaly detection, retraining recommendations, and configuration-drift signals across the DE workforce"
@@ -545,7 +545,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Trend cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {trendCards.map(t => (
-          <div key={t.name} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+          <div key={t.name} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-white">{t.name}</p>
               <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -565,14 +565,14 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
             className={`rounded-xl border p-4 ${
               ins.severity === 'high' ? 'border-red-500/30 bg-red-500/5'
               : ins.severity === 'medium' ? 'border-amber-500/25 bg-amber-500/5'
-              : 'border-slate-800 bg-slate-900'
+              : 'border-slate-700 bg-slate-800'
             }`}
           >
             <div className="flex items-center gap-2 flex-wrap mb-1.5">
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${KIND_META[ins.kind]?.cls}`}>{KIND_META[ins.kind]?.label ?? ins.kind}</span>
               <span className="text-sm font-medium text-white">{ins.title}</span>
               <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${
-                ins.severity === 'high' ? 'bg-red-500/15 text-red-300' : ins.severity === 'medium' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800 text-slate-400'
+                ins.severity === 'high' ? 'bg-red-500/15 text-red-300' : ins.severity === 'medium' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-700 text-slate-400'
               }`}>{ins.severity}</span>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed mb-2">{ins.detail}</p>
@@ -637,7 +637,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader title="Business Insights" subtitle="Loading real signals…" />
       </div>
     );
@@ -646,7 +646,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
   const hasAnySignal = anomalies.length > 0 || guardrails.length > 0 || evalFailures.length > 0;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Business Insights"
         subtitle="Real anomaly, guardrail, and Proving Ground signals from your Digital Employee workforce"
@@ -655,7 +655,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       {trendCards.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           {trendCards.map(t => (
-            <div key={t.name} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+            <div key={t.name} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-white">{t.name}</p>
                 <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -669,7 +669,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       )}
 
       {!hasAnySignal ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-sm text-slate-500">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
           No anomalies, guardrail overrides, or Proving Ground failures in this period — nothing needs attention right now.
         </div>
       ) : (

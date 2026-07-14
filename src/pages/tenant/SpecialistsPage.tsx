@@ -149,12 +149,12 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
       technical: 'Technical', legal: 'Legal', finance_deep: 'Finance', people: 'People',
     };
     return (
-      <div className="flex-1 overflow-auto bg-slate-950 p-6">
+      <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <PageHeader
           title={`${names[domain]} Specialist`}
           subtitle="Specialists are consulted on demand by primary DEs — configurable sources, grounded answers, gated write-backs"
         />
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-10 text-center max-w-2xl">
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center max-w-2xl">
           <p className="text-sm text-slate-300 font-medium mb-1">Configure coming — install pattern proven on Technical</p>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
             The {names[domain]} Specialist reuses the exact framework shipped with the Technical Specialist:
@@ -183,14 +183,14 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
   ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title={`${data.title}`}
         subtitle="Specialist functions work like consultants in the GP/Specialist model — primary DEs consult them on demand instead of every DE carrying deep-domain knowledge"
       />
 
       {/* Model card: dedicated DE vs knowledge-backed */}
-      <div className={`rounded-2xl border p-5 mb-6 ${hasDedicatedDE ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-800 bg-slate-900/50'}`}>
+      <div className={`rounded-2xl border p-5 mb-6 ${hasDedicatedDE ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-700 bg-slate-800/50'}`}>
         {hasDedicatedDE ? (
           <div className="flex items-center gap-4">
             <span className="w-11 h-11 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 font-semibold text-lg">A</span>
@@ -207,7 +207,7 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
           </div>
         ) : (
           <div className="flex items-start gap-4">
-            <span className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 text-lg">{data.icon}</span>
+            <span className="w-11 h-11 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400 text-lg">{data.icon}</span>
             <div>
               <p className="text-sm font-semibold text-white mb-1">No dedicated DE — knowledge-backed</p>
               <p className="text-xs text-slate-400 leading-relaxed">{data.description} Consultations are answered from curated specialist knowledge collections; anything below the confidence floor routes to a human expert.</p>
@@ -223,7 +223,7 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
           { label: 'Avg specialist response', value: data.avgResponse },
           { label: 'Top requesting DE', value: data.topRequester },
         ].map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
             <p className="text-xl font-bold text-white">{s.value}</p>
           </div>
@@ -231,7 +231,7 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
       </div>
 
       {/* Consultation flow diagram */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-6">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-4">Consultation flow</h3>
         <div className="flex items-stretch gap-2 flex-wrap">
           {flowSteps.map((s, i) => (
@@ -248,12 +248,12 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
       </div>
 
       {/* Consultation log */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 overflow-hidden">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
         <div className="px-5 pt-4 pb-2">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Consultation Log</p>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-950/60">
+          <thead className="bg-slate-900/60">
             <tr>
               <th className={th}>Date</th>
               <th className={th}>Requesting DE</th>
@@ -264,7 +264,7 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
           </thead>
           <tbody>
             {data.consultations.map(c => (
-              <tr key={c.id} className="border-t border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+              <tr key={c.id} className="border-t border-slate-700/60 hover:bg-slate-700/30 transition-colors">
                 <td className={`${td} text-xs text-slate-500 font-mono whitespace-nowrap`}>{c.date}</td>
                 <td className={td}>
                   <button onClick={() => setPage('workforce_des')} className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-indigo-300 transition-colors">

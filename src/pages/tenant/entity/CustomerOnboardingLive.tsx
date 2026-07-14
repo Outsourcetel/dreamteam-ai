@@ -29,12 +29,12 @@ import type { SystemCategory } from '../../../lib/categoryContracts';
 // the R1-activation upgrade — not built yet.
 // ============================================================
 
-const inputCls = 'bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 const btnPrimary = 'text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors';
-const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors';
+const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors';
 
 const STATUS_META: Record<OnboardingItemStatus, { label: string; cls: string }> = {
-  pending: { label: 'Pending', cls: 'bg-slate-800 text-slate-400' },
+  pending: { label: 'Pending', cls: 'bg-slate-700 text-slate-400' },
   in_progress: { label: 'In progress', cls: 'bg-indigo-500/15 text-indigo-300' },
   done: { label: 'Done', cls: 'bg-emerald-500/15 text-emerald-300' },
   blocked: { label: 'Blocked', cls: 'bg-red-500/15 text-red-300' },
@@ -45,13 +45,13 @@ const PROJECT_STATUS_CLS: Record<OnboardingProject['status'], string> = {
   active: 'bg-indigo-500/15 text-indigo-300',
   on_hold: 'bg-amber-500/15 text-amber-300',
   completed: 'bg-emerald-500/15 text-emerald-300',
-  cancelled: 'bg-slate-700/50 text-slate-400',
+  cancelled: 'bg-slate-600/50 text-slate-400',
 };
 
 function ProgressBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="text-xs font-medium text-slate-300 w-9 text-right">{pct}%</span>
@@ -136,7 +136,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
   return (
     <div>
       <button onClick={onBack} className="text-xs text-slate-400 hover:text-white mb-3 transition-colors">← All projects</button>
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 mb-4">
+      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-4">
         <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
           <div>
             <h3 className="text-white font-semibold">{proj.name}</h3>
@@ -176,7 +176,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
               return (
                 <span key={p.key} className={`text-[10px] px-2 py-0.5 rounded-full border ${
                   active ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                  : past ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 text-slate-500'
+                  : past ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 text-slate-500'
                 }`}>{past ? '✓ ' : ''}{p.label}</span>
               );
             })}
@@ -192,7 +192,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
           const items = version.items.filter(i => i.phase === p.key);
           if (items.length === 0) return null;
           return (
-            <div key={p.key} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 mb-3">
+            <div key={p.key} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4 mb-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">{p.label}</p>
               <div className="space-y-2">
                 {items.map(item => {
@@ -201,12 +201,12 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                   const locked = st.status === 'signed_off' || !editable;
                   const awaitingSignoff = st.status === 'done' && item.requires_signoff && !!st.signoff_task_id;
                   return (
-                    <div key={item.key} className={`rounded-xl border p-3 ${awaitingSignoff ? 'border-amber-800/50 bg-amber-500/5' : 'border-slate-800 bg-slate-950/50'}`}>
+                    <div key={item.key} className={`rounded-xl border p-3 ${awaitingSignoff ? 'border-amber-800/50 bg-amber-500/5' : 'border-slate-700 bg-slate-900/50'}`}>
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex-1 min-w-[180px]">
                           <p className="text-sm text-white">{item.label}
                             {item.requires_signoff && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 align-middle">sign-off</span>}
-                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 align-middle">{item.owner_type}</span>
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500 align-middle">{item.owner_type}</span>
                             {item.verify && (
                               <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 align-middle" title={`Auto-verified via ${item.verify.category}.${item.verify.op}`}>
                                 connector-verified
@@ -331,7 +331,7 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-md shadow-2xl">
         <h3 className="text-white font-semibold mb-4">New onboarding project</h3>
         <div className="space-y-3 mb-5">
           <div>
@@ -362,7 +362,7 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
             className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
             {saving ? 'Creating…' : 'Create project'}
           </button>
-          <button onClick={onClose} className="flex-1 py-2 text-sm rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-all">Cancel</button>
+          <button onClick={onClose} className="flex-1 py-2 text-sm rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-all">Cancel</button>
         </div>
       </div>
     </div>
@@ -393,7 +393,7 @@ function VerifyEditor({ item, onChange }: {
   const setVerify = (patch: Partial<VerifyConfig>) => onChange({ verify: { ...v, ...patch } });
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-slate-800/60">
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pt-1.5 border-t border-slate-700/60">
       <span className="text-[10px] text-teal-400 font-medium whitespace-nowrap">Auto-verify:</span>
       <select value={v.category} onChange={e => {
         const category = e.target.value as SystemCategory;
@@ -494,7 +494,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <h3 className="text-white font-semibold">Edit template</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
@@ -506,7 +506,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
 
         <div className="space-y-2 mb-4">
           {items.map((it, idx) => (
-            <div key={idx} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 flex items-center gap-2 flex-wrap">
+            <div key={idx} className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 flex items-center gap-2 flex-wrap">
               <div className="flex flex-col gap-0.5">
                 <button onClick={() => move(idx, -1)} disabled={idx === 0} className="text-slate-600 hover:text-white disabled:opacity-30 text-xs leading-none">▲</button>
                 <button onClick={() => move(idx, 1)} disabled={idx === items.length - 1} className="text-slate-600 hover:text-white disabled:opacity-30 text-xs leading-none">▼</button>
@@ -626,7 +626,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
   const hasPublished = versions.length > 0;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-950 p-6">
+    <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
           title="Onboarding — Customer Lifecycle"
@@ -655,7 +655,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
           onBack={() => { setDetail(null); void refresh(); }} onChanged={() => void refresh()} />
       ) : (
         <>
-          <div className="flex gap-1 mb-5 border-b border-slate-800">
+          <div className="flex gap-1 mb-5 border-b border-slate-700">
             {(['projects', 'templates'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -688,7 +688,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                     { label: 'Avg progress (active)', value: activeProjects.length ? `${Math.round(activeProjects.reduce((s, p) => s + p.progress_pct, 0) / activeProjects.length)}%` : '—', color: 'text-indigo-300' },
                     { label: 'Go-lives in 14d', value: String(activeProjects.filter(p => { const d = daysUntil(p.target_golive); return d !== null && d >= 0 && d <= 14; }).length), color: 'text-amber-300' },
                   ].map(s => (
-                    <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                    <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                       <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
                       <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
                     </div>
@@ -699,7 +699,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                     const days = daysUntil(p.target_golive);
                     return (
                       <button key={p.id} onClick={() => setDetail(p)}
-                        className="text-left rounded-2xl border border-slate-800 bg-slate-900/50 p-4 hover:border-slate-600 transition-colors">
+                        className="text-left rounded-2xl border border-slate-700 bg-slate-800/50 p-4 hover:border-slate-600 transition-colors">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <p className="text-sm font-medium text-white truncate">{p.customer_accounts?.name || p.name}</p>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${PROJECT_STATUS_CLS[p.status]}`}>{p.status.replace('_', ' ')}</span>
@@ -739,7 +739,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
             ) : (
               <div className="space-y-2">
                 {templates.map(t => (
-                  <div key={t.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4 flex items-center gap-3 flex-wrap">
+                  <div key={t.id} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-4 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
                       <p className="text-sm font-medium text-white">{t.name}
                         <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded align-middle ${t.status === 'published' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>

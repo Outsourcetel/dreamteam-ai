@@ -131,19 +131,19 @@ export default function ImportCustomersModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800">
+        <div className="flex items-center justify-between p-5 border-b border-slate-700">
           <div>
             <h3 className="text-white font-semibold">Import customer data</h3>
             <p className="text-xs text-slate-500 mt-0.5">Paste CSV or upload a file — first row must be headers</p>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs">×</button>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs">×</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {/* Tabs */}
-          <div className="flex gap-1 bg-slate-800 rounded-xl p-1 w-fit">
+          <div className="flex gap-1 bg-slate-700 rounded-xl p-1 w-fit">
             {(['accounts', 'tickets'] as Tab[]).map(t => (
               <button
                 key={t}
@@ -176,7 +176,7 @@ export default function ImportCustomersModal({
               placeholder={tab === 'accounts'
                 ? 'name,arr,health,csm,status,renewal_date\nNorthfield Co,$210K,81,P. Sharma,active,2026-08-18'
                 : 'subject,body,status,priority\nAPI auth failure,Intermittent 401s after key rotation,open,p1'}
-              className="w-full bg-slate-950 border border-slate-700 text-white text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-900 border border-slate-600 text-white text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -188,14 +188,14 @@ export default function ImportCustomersModal({
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {fields.map(f => (
-                  <div key={f.key} className="flex items-center gap-2 bg-slate-800/60 rounded-lg px-2.5 py-1.5">
+                  <div key={f.key} className="flex items-center gap-2 bg-slate-700/60 rounded-lg px-2.5 py-1.5">
                     <span className="text-xs text-slate-300 flex-1 truncate">
                       {f.label}{f.required && <span className="text-rose-400"> *</span>}
                     </span>
                     <select
                       value={mapping[f.key] ?? -1}
                       onChange={e => setMapping(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
-                      className="bg-slate-950 border border-slate-700 rounded text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]"
+                      className="bg-slate-900 border border-slate-600 rounded text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]"
                     >
                       <option value={-1}>— skip —</option>
                       {parsed.headers.map((h, i) => (
@@ -213,10 +213,10 @@ export default function ImportCustomersModal({
 
           {/* Preview */}
           {parsed && mappedRows.length > 0 && (
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <div className="overflow-x-auto rounded-xl border border-slate-700">
               <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800">
+                  <tr className="border-b border-slate-700">
                     {fields.filter(f => mapping[f.key] !== undefined && mapping[f.key] >= 0).map(f => (
                       <th key={f.key} className="py-2 px-3 text-left text-[10px] uppercase tracking-wide text-slate-500 font-medium">{f.label}</th>
                     ))}
@@ -224,7 +224,7 @@ export default function ImportCustomersModal({
                 </thead>
                 <tbody>
                   {mappedRows.slice(0, 5).map((r, i) => (
-                    <tr key={i} className="border-b border-slate-800/60 last:border-b-0">
+                    <tr key={i} className="border-b border-slate-700/60 last:border-b-0">
                       {fields.filter(f => mapping[f.key] !== undefined && mapping[f.key] >= 0).map(f => (
                         <td key={f.key} className="py-1.5 px-3 text-slate-300 truncate max-w-[160px]">{r[f.key]}</td>
                       ))}
@@ -243,7 +243,7 @@ export default function ImportCustomersModal({
             <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{fatalError}</div>
           )}
           {result && (
-            <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-xs">
+            <div className="rounded-xl border border-slate-600 bg-slate-700/60 px-4 py-3 text-xs">
               <p className="text-emerald-300 font-medium mb-1">{result.imported} row(s) imported.</p>
               {result.errors.length > 0 && (
                 <div className="text-amber-300">
@@ -261,8 +261,8 @@ export default function ImportCustomersModal({
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-slate-800 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-slate-300 border border-slate-700 hover:border-slate-500 transition-colors">
+        <div className="p-5 border-t border-slate-700 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-slate-300 border border-slate-600 hover:border-slate-500 transition-colors">
             {result ? 'Done' : 'Cancel'}
           </button>
           <button
