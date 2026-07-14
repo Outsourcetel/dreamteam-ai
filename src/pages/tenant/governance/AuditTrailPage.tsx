@@ -197,27 +197,30 @@ const activityOperationBadge: Record<string, string> = {
   DELETE: 'bg-red-500/15 text-red-300',
 }
 
-function TeamActivityLogPanel() {
+function TeamActivityLogPanel({ days }: { days: number | null }) {
   const { authedUser } = useAuth()
   const isAdmin = !!(authedUser?.tenantId && ['tenant_owner', 'tenant_admin'].includes(authedUser.role))
 
   const [rows, setRows] = useState<TenantActivityLogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [loaded, setLoaded] = useState(false)
   const [tableFilter, setTableFilter] = useState('all')
   const [detailRow, setDetailRow] = useState<TenantActivityLogRow | null>(null)
 
   const load = async () => {
     setLoading(true)
     setError('')
-    const { data, error: qError } = await supabase
+    let query = supabase
       .from('tenant_activity_log')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(200)
+    if (days != null) {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      query = query.gte('created_at', since)
+    }
+    const { data, error: qError } = await query
     setLoading(false)
-    setLoaded(true)
     if (qError) {
       setError(qError.message)
       return
@@ -226,9 +229,9 @@ function TeamActivityLogPanel() {
   }
 
   useEffect(() => {
-    if (isAdmin && !loaded) void load()
+    if (isAdmin) void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin])
+  }, [isAdmin, days])
 
   if (!isAdmin) return null
 
@@ -373,13 +376,23 @@ function TeamActivityLogPanel() {
   )
 }
 
+const RANGE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+  { label: 'All time', days: null },
+]
+
 function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
   const [events, setEvents] = useState<LiveAuditEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [missingTables, setMissingTables] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [days, setDays] = useState<number | null>(7)
   const [categoryFilter, setCategoryFilter] = useState<'all' | AuditCategory>('all')
   const [actorFilter, setActorFilter] = useState('all')
+  const [actorTypeFilter, setActorTypeFilter] = useState<'all' | 'de' | 'human' | 'system'>('all')
+  const [search, setSearch] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [verification, setVerification] = useState<ChainVerification | null>(null)
 
@@ -387,7 +400,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
     setLoading(true)
     setError(null)
     try {
-      setEvents(await listAuditEvents(200))
+      setEvents(await listAuditEvents(days))
       setMissingTables(false)
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
@@ -401,7 +414,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
     const onChange = () => void refresh()
     window.addEventListener('dt-state-changed', onChange)
     return () => window.removeEventListener('dt-state-changed', onChange)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const verify = async () => {
     setVerifying(true)
@@ -412,12 +425,32 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
   }
 
   const actors = Array.from(new Set(events.map(e => e.actor)))
+  const q = search.trim().toLowerCase()
   const filtered = events.filter(e =>
     (categoryFilter === 'all' || e.category === categoryFilter) &&
-    (actorFilter === 'all' || e.actor === actorFilter)
+    (actorFilter === 'all' || e.actor === actorFilter) &&
+    (actorTypeFilter === 'all' || e.actor_type === actorTypeFilter) &&
+    (q === '' || e.action.toLowerCase().includes(q) || e.actor.toLowerCase().includes(q))
   )
   // Chain position: events arrive newest-first; oldest is #1.
   const positionById = new Map(events.map((e, i) => [e.id, events.length - i]))
+  const rangeLabel = RANGE_OPTIONS.find(r => r.days === days)?.label ?? 'window'
+
+  const exportLiveCsv = () => {
+    const headers = ['Timestamp', 'Actor', 'Actor Type', 'Category', 'Action', 'Chain #', 'Hash']
+    const rows = filtered.map(e => [
+      new Date(e.created_at).toISOString(), e.actor, e.actor_type, e.category,
+      `"${e.action.replace(/"/g, '""')}"`, String(positionById.get(e.id) ?? ''), e.hash,
+    ])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
@@ -427,7 +460,20 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
       />
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 
-      <TeamActivityLogPanel />
+      {/* Date window — tenant-wide, defaults to the last 7 days */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-[11px] uppercase tracking-wide text-slate-500 mr-1">Time window</span>
+        <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800 p-0.5">
+          {RANGE_OPTIONS.map(r => (
+            <button key={r.label} onClick={() => setDays(r.days)}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-400 hover:text-slate-200'}`}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <TeamActivityLogPanel days={days} />
 
       {loading ? (
         <LiveLoadingSkeleton rows={5} />
@@ -436,8 +482,8 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
       ) : events.length === 0 ? (
         <LiveEmptyState
           icon="⛓"
-          title="No audit events yet"
-          body="Every guardrail check, invoice, approval, and playbook step your Digital Employees perform is appended here as a hash-chained, immutable record."
+          title={days == null ? 'No audit events yet' : `No audit events in the last ${rangeLabel}`}
+          body="Every guardrail check, invoice, approval, and playbook step your Digital Employees perform is appended here as a hash-chained, immutable record. Widen the time window to see older activity."
           primaryLabel="Go to Renewal & Expansion"
           onPrimary={() => setPage?.('entity_customer_renewal')}
         />
@@ -445,7 +491,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         <>
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'Events (latest 200)', value: String(events.length), color: 'text-white' },
+              { label: `Events (${rangeLabel})`, value: String(events.length), color: 'text-white' },
               { label: 'Guardrail blocks', value: String(events.filter(e => e.category === 'guardrail_block').length), color: events.some(e => e.category === 'guardrail_block') ? 'text-red-300' : 'text-emerald-300' },
               { label: 'Approvals', value: String(events.filter(e => e.category === 'approval').length), color: 'text-blue-300' },
               {
@@ -462,6 +508,8 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
           </div>
 
           <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search action or actor…"
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-56" />
             <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as 'all' | AuditCategory)}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
               <option value="all">All categories</option>
@@ -469,12 +517,23 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
                 <option key={c} value={c}>{LIVE_CATEGORY_META[c].label}</option>
               ))}
             </select>
+            <select value={actorTypeFilter} onChange={e => setActorTypeFilter(e.target.value as 'all' | 'de' | 'human' | 'system')}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              <option value="all">All actor types</option>
+              <option value="de">Digital Employee</option>
+              <option value="human">Human</option>
+              <option value="system">System</option>
+            </select>
             <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
               <option value="all">All actors</option>
               {actors.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <div className="flex-1" />
+            <button onClick={exportLiveCsv}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors">
+              ↓ Export CSV
+            </button>
             <button onClick={() => void verify()} disabled={verifying}
               className="text-xs px-3 py-1.5 rounded-lg border border-emerald-700/50 text-emerald-300 hover:border-emerald-500 disabled:opacity-50 transition-colors">
               {verifying ? 'Verifying…' : '⛓ Verify chain'}

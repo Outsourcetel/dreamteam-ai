@@ -11,6 +11,7 @@ import {
   type TenantAncestryRow, type TeamMfaStatusRow, type TenantApiKey, type TenantIpAllowlistEntry,
 } from '../../../lib/api'
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
+import { supabase } from '../../../supabase'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Security & Access (gov_security)
@@ -432,6 +433,206 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
   )
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Access & security activity — the tenant-wide, date-windowed
+// timeline of who changed security-relevant configuration and when.
+// Reads tenant_activity_log (migration 066/067 write-audit trigger)
+// filtered to the access/security table set. Migration 152 attached
+// the trigger to the API-key/session-policy/IP-allowlist tables so
+// those events are captured here too (they shipped after the original
+// trigger batch). RLS restricts SELECT to owner/admin, so this is
+// gated to them; a platform admin viewing via Remote Access inherits
+// the tenant context. Point-in-time config lives in the panels above;
+// this is the "what changed over the last N days" view.
+// ─────────────────────────────────────────────────────────────────
+interface SecurityActivityRow {
+  id: number
+  actor_name: string | null
+  actor_role: string | null
+  table_name: string
+  operation: string
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
+  created_at: string
+}
+
+const SECURITY_TABLE_LABELS: Record<string, string> = {
+  profiles: 'Team member / role',
+  tenant_api_keys: 'API key',
+  tenant_session_policies: 'Session policy',
+  tenant_ip_allowlists: 'IP allowlist',
+  tenant_ip_allowlist_entries: 'IP allowlist entry',
+  data_access_grants: 'Data-access grant',
+}
+const SECURITY_TABLES = Object.keys(SECURITY_TABLE_LABELS)
+
+const SEC_RANGE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+  { label: 'All time', days: null },
+]
+
+const secOperationVerb: Record<string, string> = { INSERT: 'Added', UPDATE: 'Changed', DELETE: 'Removed' }
+const secOperationBadge: Record<string, string> = {
+  INSERT: 'bg-emerald-500/15 text-emerald-300',
+  UPDATE: 'bg-blue-500/15 text-blue-300',
+  DELETE: 'bg-red-500/15 text-red-300',
+}
+
+function securityChangedFields(row: SecurityActivityRow): string[] {
+  if (row.operation === 'INSERT') return row.new_data ? Object.keys(row.new_data) : []
+  if (row.operation === 'DELETE') return []
+  if (!row.old_data || !row.new_data) return []
+  const keys = new Set([...Object.keys(row.old_data), ...Object.keys(row.new_data)])
+  const changed: string[] = []
+  keys.forEach(k => {
+    if (JSON.stringify(row.old_data?.[k]) !== JSON.stringify(row.new_data?.[k])) changed.push(k)
+  })
+  return changed
+}
+
+function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
+  const [rows, setRows] = useState<SecurityActivityRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [days, setDays] = useState<number | null>(7)
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [opFilter, setOpFilter] = useState('all')
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!canView) return
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      setError('')
+      let query = supabase
+        .from('tenant_activity_log')
+        .select('id, actor_name, actor_role, table_name, operation, old_data, new_data, created_at')
+        .in('table_name', SECURITY_TABLES)
+        .order('created_at', { ascending: false })
+        .limit(300)
+      if (days != null) {
+        const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+        query = query.gte('created_at', since)
+      }
+      const { data, error: qErr } = await query
+      if (cancelled) return
+      setLoading(false)
+      if (qErr) { setError(qErr.message); return }
+      setRows((data as SecurityActivityRow[]) || [])
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [canView, days])
+
+  if (!canView) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Access &amp; Security Activity</p>
+        <p className="text-xs text-slate-500">Only a workspace owner or admin can view the security activity log.</p>
+      </div>
+    )
+  }
+
+  const q = search.trim().toLowerCase()
+  const visible = rows.filter(r =>
+    (typeFilter === 'all' || r.table_name === typeFilter) &&
+    (opFilter === 'all' || r.operation === opFilter) &&
+    (q === '' || (r.actor_name || '').toLowerCase().includes(q) || (SECURITY_TABLE_LABELS[r.table_name] || '').toLowerCase().includes(q))
+  )
+  const rangeLabel = SEC_RANGE_OPTIONS.find(r => r.days === days)?.label ?? 'window'
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Access &amp; Security Activity</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Every change to roles, MFA, API keys, session policy, IP allowlist, and data-access grants — tenant-wide, most recent first.
+          </p>
+        </div>
+        <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+          {SEC_RANGE_OPTIONS.map(r => (
+            <button key={r.label} onClick={() => setDays(r.days)}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-400 hover:text-slate-200'}`}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2 flex-wrap">
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actor or event…"
+          className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-52" />
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+          <option value="all">All event types</option>
+          {SECURITY_TABLES.map(t => <option key={t} value={t}>{SECURITY_TABLE_LABELS[t]}</option>)}
+        </select>
+        <select value={opFilter} onChange={e => setOpFilter(e.target.value)}
+          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+          <option value="all">All actions</option>
+          <option value="INSERT">Added</option>
+          <option value="UPDATE">Changed</option>
+          <option value="DELETE">Removed</option>
+        </select>
+        <div className="flex-1" />
+        <span className="text-[11px] text-slate-600">{visible.length} event{visible.length === 1 ? '' : 's'} · last {rangeLabel}</span>
+      </div>
+
+      <div className="px-5 py-4">
+        {loading && <p className="text-xs text-slate-500 py-6 text-center">Loading security activity…</p>}
+        {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
+        {!loading && !error && visible.length === 0 && (
+          <p className="text-xs text-slate-500 py-6 text-center">
+            No security or access changes in the last {rangeLabel}. Widen the time window to see older activity.
+          </p>
+        )}
+        {!loading && !error && visible.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Event</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Action</th>
+                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {visible.map(row => {
+                  const fields = securityChangedFields(row)
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-700/20 transition-colors">
+                      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        {row.actor_role && <span className="text-slate-600 ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-300">{SECURITY_TABLE_LABELS[row.table_name] || row.table_name}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-slate-600 text-slate-300'}`}>
+                          {secOperationVerb[row.operation] || row.operation}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-500 max-w-xs truncate">
+                        {fields.length > 0 ? fields.join(', ') : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function SecurityAccessPage() {
   const { handleSetPage, authedUser, currentTenant, isLiveTenant, isDTUser } = useAuth()
 
@@ -585,6 +786,9 @@ export default function SecurityAccessPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ── Access & security activity timeline (tenant-wide, date-windowed) ── */}
+        <SecurityActivityLogPanel canView={!!canManageSecurity} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* ── SSO / SAML — honest deferred state ── */}

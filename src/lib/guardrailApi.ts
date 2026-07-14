@@ -218,14 +218,24 @@ export async function appendAuditEvent(e: {
   }
 }
 
-export async function listAuditEvents(limit = 200): Promise<AuditEvent[]> {
+/**
+ * Tenant-wide audit events, newest-first.
+ * @param days  Time window in days (e.g. 7). Pass null for all-time.
+ * @param limit Row cap (default 500 — a wide window can be busy).
+ */
+export async function listAuditEvents(days: number | null = 7, limit = 500): Promise<AuditEvent[]> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase
+  let q = supabase
     .from('audit_events')
     .select('*')
     .eq('tenant_id', tid)
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (days != null) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    q = q.gte('created_at', since);
+  }
+  const { data, error } = await q;
   if (error) raise('listAuditEvents', error);
   return (data ?? []) as AuditEvent[];
 }
