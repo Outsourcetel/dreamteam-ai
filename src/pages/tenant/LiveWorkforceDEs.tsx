@@ -2488,9 +2488,23 @@ function TeamsPanel() {
   );
 }
 
+// The per-employee detail view groups ~20 panels under these sub-tabs so
+// it reads as a profile, not one endless scroll. Order = how you'd get to
+// know an employee: who they are → what they can do → how much you trust
+// them → how they're growing → the paper trail.
+const DETAIL_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'capabilities', label: 'Capabilities' },
+  { key: 'trust', label: 'Trust & Autonomy' },
+  { key: 'development', label: 'Development' },
+  { key: 'governance', label: 'Governance' },
+] as const;
+type DetailTab = typeof DETAIL_TABS[number]['key'];
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
   // Whether each action type's resolved value came from THIS employee's
   // own override (true) or the workspace-wide default (false) — drives
   // the "personal / workspace default" badge on the dial.
@@ -2570,6 +2584,9 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
   }, [refreshTrust]);
 
   useEffect(() => { if (selectedDe) void refresh(selectedDe.id); }, [selectedDe, refresh]);
+  // Reset to the first sub-tab only when a DIFFERENT employee is opened —
+  // not on same-employee saves (which replace selectedDe via onUpdated).
+  useEffect(() => { setDetailTab('overview'); }, [selectedDe?.id]);
 
   /** Does a dial setting exceed what's been EARNED for its category? */
   const exceedsEarned = useCallback((type: AutonomyActionType, enabled: boolean, maxCents: number | null, minConf: number | null): boolean => {
@@ -2700,41 +2717,78 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
             </div>
           </div>
 
-          {/* Identity & Purpose — feeds every answer (DE-C4) */}
-          <DeIdentityPanel de={selectedDe} onUpdated={setSelectedDe} />
-          <DeProfileFieldsPanel de={selectedDe} onUpdated={setSelectedDe} />
+          {/* Sub-tab nav — groups the ~20 panels so this reads as a
+              profile, not one endless scroll. */}
+          <div className="flex items-center gap-1 border-b border-slate-800 overflow-x-auto">
+            {DETAIL_TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setDetailTab(t.key)}
+                className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                  detailTab === t.key
+                    ? 'border-indigo-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Lifecycle — the governance gate (DE-B4) */}
-          <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
+          {/* Overview — who this employee is */}
+          {detailTab === 'overview' && (
+            <div className="space-y-6">
+              <DeIdentityPanel de={selectedDe} onUpdated={setSelectedDe} />
+              <DeProfileFieldsPanel de={selectedDe} onUpdated={setSelectedDe} />
+              {/* Availability — schedule with team/specialist coverage (DE-C4) */}
+              <DeAvailabilityPanel de={selectedDe} onUpdated={setSelectedDe} />
+              {/* Performance — real per-DE data */}
+              <DePerformancePanel deId={selectedDe.id} />
+            </div>
+          )}
 
-          {/* Availability — schedule with team/specialist coverage (DE-C4) */}
-          <DeAvailabilityPanel de={selectedDe} onUpdated={setSelectedDe} />
+          {/* Capabilities — what this employee can do and reach */}
+          {detailTab === 'capabilities' && (
+            <div className="space-y-6">
+              {/* AI Engine — per-employee model choice (Wave 1.2) */}
+              <DeModelPanel de={selectedDe} onUpdated={setSelectedDe} />
+              {/* DE operating charter */}
+              <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
+              <DeKnowledgeScopePanel deId={selectedDe.id} />
+              {/* The DE-centered hub (2026-07-11 restructure): what this
+                  employee can touch (Control Fabric grants) and who it
+                  consults (primary/secondary specialists, migration 122) */}
+              <DeSystemAccessPanel deId={selectedDe.id} setPage={setPage} />
+              <DeSpecialistsPanel deId={selectedDe.id} />
+              <DeEscalationPanel deId={selectedDe.id} />
+            </div>
+          )}
 
-          {/* AI Engine — per-employee model choice (Wave 1.2) */}
-          <DeModelPanel de={selectedDe} onUpdated={setSelectedDe} />
+          {/* Development — how this employee is growing */}
+          {detailTab === 'development' && (
+            <div className="space-y-6">
+              <DeSkillsPanel de={selectedDe} />
+              <DeKpisPanel de={selectedDe} />
+              <DeEconomicsPanel de={selectedDe} />
+              <DeCertificationsPanel de={selectedDe} />
+              <DeDevelopmentPanel de={selectedDe} />
+            </div>
+          )}
 
-          {/* DE operating charter */}
-          <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
+          {/* Governance — the paper trail, ownership and incidents */}
+          {detailTab === 'governance' && (
+            <div className="space-y-6">
+              {/* Governance — config editing/versioning, ownership/transfer, retirement */}
+              <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
+              <DeIncidentsPanel de={selectedDe} setPage={setPage} />
+            </div>
+          )}
 
-          {/* Performance, knowledge scope, incidents, development — real per-DE data */}
-          <DePerformancePanel deId={selectedDe.id} />
-          <DeKnowledgeScopePanel deId={selectedDe.id} />
-
-          {/* The DE-centered hub (2026-07-11 restructure): what this
-              employee can touch (Control Fabric grants) and who it
-              consults (primary/secondary specialists, migration 122) */}
-          <DeSystemAccessPanel deId={selectedDe.id} setPage={setPage} />
-          <DeSpecialistsPanel deId={selectedDe.id} />
-          <DeEscalationPanel deId={selectedDe.id} />
-          <DeIncidentsPanel de={selectedDe} setPage={setPage} />
-          <DeSkillsPanel de={selectedDe} />
-          <DeKpisPanel de={selectedDe} />
-          <DeEconomicsPanel de={selectedDe} />
-          <DeCertificationsPanel de={selectedDe} />
-          <DeDevelopmentPanel de={selectedDe} />
-
-          {/* Governance — config editing/versioning, ownership/transfer, retirement */}
-          <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
+          {/* Trust & Autonomy — lifecycle gate, per-action dial, earned ladder */}
+          {detailTab === 'trust' && (
+            <div className="space-y-6">
+              {/* Lifecycle — the governance gate (DE-B4) */}
+              <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* Trust dial */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
@@ -2941,6 +2995,8 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               Promotions and demotions are recorded on the immutable audit trail.
             </p>
           </div>
+            </div>
+          )}
         </div>
       )}
     </div>
