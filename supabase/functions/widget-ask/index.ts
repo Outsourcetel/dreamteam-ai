@@ -142,6 +142,37 @@ function parseModelJson(raw: string): DEAnswer {
   return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false, language: null };
 }
 
+// Cheap heuristic: does the query look non-English? (char script + a few
+// common function words). Used only to decide whether to spend a tiny
+// translation call — English queries never pay for it.
+function looksNonEnglish(q: string): boolean {
+  const letters = q.match(/\p{L}/gu) || [];
+  if (letters.length === 0) return false;
+  const nonAscii = letters.filter((c) => c.charCodeAt(0) > 127).length;
+  if (nonAscii / letters.length > 0.2) return true;
+  return /[¿¡]|\b(que|cómo|dónde|cuál|para|hola|gracias|merci|bonjour|comment|où|wie|wo|hallo|danke|você|como|obrigado)\b/i.test(q);
+}
+
+// Translate a query to English for RETRIEVAL only (Haiku — cheapest).
+// The answer model still gets the original question and mirrors its language.
+async function translateForRetrieval(apiKey: string, q: string, model: string): Promise<string> {
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model, max_tokens: 200,
+        system: 'Translate the user message to English for use as a search query. Output ONLY the translation — no quotes, no notes.',
+        messages: [{ role: 'user', content: q }],
+      }),
+    });
+    if (!res.ok) return q;
+    const d = await res.json();
+    const t = String((d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '').trim();
+    return t || q;
+  } catch { return q; }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
@@ -350,6 +381,9 @@ serve(async (req) => {
       }
     }
 
+    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
+    const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
+
     // ── Retrieval (knowledge scopes honoured inside the RPC) ──
     const { data: docs } = await admin.rpc('visible_knowledge_docs', {
       p_tenant_id: tenantId, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
@@ -362,8 +396,21 @@ serve(async (req) => {
 
     let used = 0;
     const contextParts: string[] = [];
+    // Cross-language retrieval: the KB is usually English but the customer may
+    // write in any language. Translate the query to English for the SEARCH
+    // only (cheap Haiku, non-English queries only); the answer still mirrors
+    // the customer's language. English queries pay nothing extra.
+    let retrievalText = question;
+    let retrievalEmbedding = qEmbedding;
+    if (anthropicKey && looksNonEnglish(question)) {
+      const translated = await translateForRetrieval(anthropicKey, question, model);
+      if (translated && translated !== question) {
+        retrievalText = translated;
+        retrievalEmbedding = await embedText(translated);
+      }
+    }
     const { data: chunks, error: matchErr } = await admin.rpc('hybrid_match_knowledge', {
-      p_tenant_id: tenantId, p_query_text: question, p_account_id: null, p_query_embedding: qEmbedding,
+      p_tenant_id: tenantId, p_query_text: retrievalText, p_account_id: null, p_query_embedding: retrievalEmbedding,
       p_match_count: 5, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
     });
     if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
@@ -389,7 +436,7 @@ serve(async (req) => {
     const context = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : 'No documents matched the question.';
 
     // ── LLM (cost governor #2: budget ceiling; #3: prompt-cached persona) ──
-    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
+    // anthropicKey was resolved above (also used for cross-language retrieval).
     if (!anthropicKey) return json({ error: 'llm_not_configured', conversation_id: convId });
     const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (budgetCheck && budgetCheck.allowed === false) return json({ error: 'ai_budget_exceeded', conversation_id: convId });
@@ -400,7 +447,6 @@ serve(async (req) => {
     // The persona + fixed instructions are stable across turns → prompt-cached.
     const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
 
-    const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
