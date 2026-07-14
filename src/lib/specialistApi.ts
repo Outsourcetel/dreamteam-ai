@@ -483,21 +483,40 @@ export interface EvidenceRunDecision {
 export interface DEActivityRow {
   evidence_run: EvidenceRun;
   decision: EvidenceRunDecision | null;
+  /** Who did this work — resolved from evidence_run.de_id / specialist_id
+   *  to a display name so the queue can be filtered/grouped per employee.
+   *  null when neither is set (rare/legacy rows). */
+  subject_kind?: 'de' | 'specialist' | null;
+  subject_name?: string | null;
 }
 
 export async function listDEActivity(limit = 30): Promise<DEActivityRow[]> {
   const tid = await requireTenantId();
-  const [{ data: runs, error: runErr }, { data: decisions, error: decErr }] = await Promise.all([
+  const [{ data: runs, error: runErr }, { data: decisions, error: decErr }, { data: des }, { data: specs }] = await Promise.all([
     supabase.from('evidence_runs').select('*').eq('tenant_id', tid)
       .order('created_at', { ascending: false }).limit(limit),
     supabase.from('evidence_run_decisions').select('*').eq('tenant_id', tid)
       .order('created_at', { ascending: false }).limit(limit),
+    supabase.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tid),
+    supabase.from('specialist_profiles').select('id, name').eq('tenant_id', tid),
   ]);
   if (runErr) raise('listDEActivity (evidence_runs)', runErr);
   if (decErr) raise('listDEActivity (evidence_run_decisions)', decErr);
   const byRun = new Map<string, EvidenceRunDecision>();
   for (const d of (decisions ?? []) as EvidenceRunDecision[]) byRun.set(d.evidence_run_id, d);
-  return ((runs ?? []) as EvidenceRun[]).map((r) => ({ evidence_run: r, decision: byRun.get(r.id) ?? null }));
+  const deName = new Map<string, string>();
+  for (const d of (des ?? []) as Array<{ id: string; name: string; persona_name: string | null }>) {
+    deName.set(d.id, d.persona_name || d.name);
+  }
+  const specName = new Map<string, string>();
+  for (const s of (specs ?? []) as Array<{ id: string; name: string }>) specName.set(s.id, s.name);
+  return ((runs ?? []) as EvidenceRun[]).map((r) => {
+    let subject_kind: 'de' | 'specialist' | null = null;
+    let subject_name: string | null = null;
+    if (r.de_id && deName.has(r.de_id)) { subject_kind = 'de'; subject_name = deName.get(r.de_id)!; }
+    else if (r.specialist_id && specName.has(r.specialist_id)) { subject_kind = 'specialist'; subject_name = specName.get(r.specialist_id)!; }
+    return { evidence_run: r, decision: byRun.get(r.id) ?? null, subject_kind, subject_name };
+  });
 }
 
 export interface SimulateInquiryResult extends ResolveInquiryResult {
