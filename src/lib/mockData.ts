@@ -121,6 +121,10 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
     'platform_health',
     'platform_revenue',
     'platform_security',
+    // Trust & Architecture is an internal transparency/architecture doc
+    // ("how DreamTeam is built · what we haven't done yet"), NOT a tenant
+    // feature — platform operators only, never a customer's nav.
+    'gov_trust',
   ];
   if (dtOnlyPages.includes(page)) return isDtRole;
   if (isDtRole) return true;
@@ -134,7 +138,7 @@ export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | '
   //   Everything else — all tenant roles (read_only's protection is
   //   server-side: RLS write policies exclude it since migration 136).
   const ADMIN_PAGES: Page[] = ['settings', 'users', 'gov_security', 'company_setup'];
-  const MANAGE_PAGES: Page[] = ['gov_compliance', 'gov_trust', 'gov_data_access', 'gov_identity_inventory'];
+  const MANAGE_PAGES: Page[] = ['gov_compliance', 'gov_data_access', 'gov_identity_inventory'];
   if (ADMIN_PAGES.includes(page)) {
     return ['tenant_owner', 'tenant_admin'].includes(role);
   }

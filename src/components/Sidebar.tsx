@@ -336,6 +336,12 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const role = (user?.role ?? 'tenant_user') as Parameters<typeof canAccessPage>[0];
   const layer = user?.layer as Parameters<typeof canAccessPage>[2];
   const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer);
+  // Platform operators (Outsourcetel) — they may explore the demo companies
+  // for sales; real customers must NEVER see other companies in their nav.
+  const isDtUser = layer === 'platform' || ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(role as string);
+  // Show the demo-company switcher only to demo/dev logins or platform
+  // operators — never inside a paying customer's live workspace.
+  const showDemoCompanies = !isLiveTenant || isDtUser;
   const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live', vocab)
     .map(section => ({
       ...section,
@@ -464,12 +470,14 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                   </div>
                   {!viewingDemo && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
                 </button>
-                <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-slate-600 uppercase border-t border-slate-600/50">
-                  Demo companies
-                </div>
+                {showDemoCompanies && (
+                  <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-slate-600 uppercase border-t border-slate-600/50">
+                    Demo companies
+                  </div>
+                )}
               </>
             )}
-            {COMPANIES.map((c) => (
+            {showDemoCompanies && COMPANIES.map((c) => (
               <button
                 key={c.id}
                 onClick={() => { setActiveCompanyId(c.id); if (isLiveTenant) setViewingDemo(true); setShowCompanyPicker(false); }}
