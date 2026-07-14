@@ -1,23 +1,24 @@
 /**
- * widget-ask — PUBLIC end-user widget endpoint (scale track, SCALING-ARCHITECTURE.md).
+ * widget-ask — PUBLIC end-user chat endpoint for the embeddable widget AND
+ * the hosted help-center page. End users are traffic, not seats: no Supabase
+ * auth; a publishable widget key (sha256-matched against widget_keys) is the auth.
  *
- * End users are traffic, not seats: no Supabase auth. TCP embeds widget.js in
- * their product; the widget calls this endpoint with a publishable widget key
- * (sha256-matched against widget_keys) + an end-user context payload.
+ * THIS IS INFRASTRUCTURE. Every judgment — grounding, guardrails, confidence,
+ * escalation, persona, language, send-vs-draft — belongs to the DE + the
+ * Control Fabric. This function contains ZERO canned intelligence: it routes
+ * the customer's message to the governed pipeline and PRESENTS what the DE
+ * decides. Phase-1 additions are all channel/cost behaviour:
+ *   - Cost governor: cache-first (deflects repeat questions at $0 tokens),
+ *     per-DE model (Haiku-able), prompt-cached persona, context cap, a
+ *     per-conversation turn cap, and the existing tenant AI-budget ceiling.
+ *   - Auto-language: the DE detects the customer's language and mirrors it.
+ *   - Per-DE send mode (external_reply_mode): 'auto' delivers a confident,
+ *     guardrail-clean answer; 'draft' stores it for human approval and shows
+ *     the customer a holding message — nothing un-vetted ever reaches them.
+ *   - Unified conversation=ticket lifecycle (ai_handling → needs_human → …).
  *
- * Flow: hash key → resolve tenant (401 on miss) → rate check → upsert
- * end_user_session → resolve account (customer_accounts.external_ref, tolerant
- * if the column doesn't exist yet) → same answer pipeline as de-answer
- * (keyword retrieval → Claude strict-JSON → persist conversation → escalate to
- * human_tasks below confidence 60) with end-user context on the records.
- *
- * Deployed with verify_jwt=false — the widget key IS the auth.
- * If ANTHROPIC_API_KEY is unset returns {error:'llm_not_configured'} (HTTP 200).
- *
- * Rate limiting: per-key sliding-minute check using widget_keys.last_used_at +
- * a lightweight in-memory counter per isolate. TODO(scale): move to a proper
- * shared counter (widget_rate table or Redis-class store) before real volume —
- * in-memory counters reset on cold start and don't share across isolates.
+ * Deployed verify_jwt=false. If ANTHROPIC_API_KEY is unset returns
+ * {error:'llm_not_configured'} (HTTP 200).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -35,14 +36,12 @@ const CORS = {
 };
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const ESCALATION_THRESHOLD = 60;
 const MAX_CONTEXT_CHARS = 6000;
-
+const CACHE_MAX_DISTANCE = 0.05;            // near-verbatim repeats only (mirrors de-answer)
+const MAX_MESSAGES_PER_CONVERSATION = 40;   // ~20 turns — cost + abuse guard
 const RATE_LIMIT_PER_MIN = 100;
 
 // Per-isolate sliding window: keyId -> timestamps (ms) of recent requests.
@@ -60,30 +59,21 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ── Keyword-overlap retrieval (last-resort fallback only — see the
-// hybrid_match_knowledge call below, migration 046) ──
+// ── Keyword-overlap retrieval (last-resort fallback only) ──
 const STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
   'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
   'why', 'when', 'where', 'please', 'need', 'want', 'help', 'about', 'it', 'this', 'that',
 ]);
-
 function tokenize(s: string): string[] {
-  return (s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOPWORDS.has(w));
+  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOPWORDS.has(w));
 }
-
 interface KDoc { id: string; title: string; content: string; tags: string[] }
-
 function rankDocs(question: string, docs: KDoc[]): KDoc[] {
   const qTokens = [...new Set(tokenize(question))];
   if (qTokens.length === 0) return docs.slice(0, 3);
-  const scored = docs.map((d) => {
-    const title = tokenize(d.title);
-    const body = tokenize(d.content);
+  return docs.map((d) => {
+    const title = tokenize(d.title), body = tokenize(d.content);
     const tags = (d.tags || []).flatMap((t) => tokenize(t));
     let score = 0;
     for (const q of qTokens) {
@@ -92,28 +82,17 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
       score += Math.min(3, body.filter((w) => w === q).length);
     }
     return { d, score };
-  });
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((s) => s.d);
+  }).filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map((s) => s.d);
 }
 
-// ── Guardrail check (P3, honest v1: case-insensitive pattern match) ──
+// ── Guardrail check (blocks + escalates; the DE's rules, not the channel's) ──
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
-
 // deno-lint-ignore no-explicit-any
 async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   try {
-    // Scope-aware (Wave 2a): the resolver returns workspace rules plus any
-    // department/employee-scoped rules for this DE. A null DE → workspace only.
-    const { data: rules } = await admin
-      .rpc('guardrail_rules_for_de', {
-        p_tenant_id: tenantId,
-        p_de_id: deId,
-        p_rule_types: ['blocked_phrase', 'blocked_topic'],
-      });
+    const { data: rules } = await admin.rpc('guardrail_rules_for_de', {
+      p_tenant_id: tenantId, p_de_id: deId, p_rule_types: ['blocked_phrase', 'blocked_topic'],
+    });
     if (!Array.isArray(rules)) return null;
     const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
     const text = answer.toLowerCase();
@@ -132,26 +111,22 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
   }
 }
 
-const GUARDRAIL_BLOCK_MESSAGE =
-  "I can't help with that — it's outside my guardrails. I've escalated to a human.";
+const GUARDRAIL_BLOCK_MESSAGE = "I can't help with that — it's outside my guardrails. I've passed it to a human on the team.";
 
 // deno-lint-ignore no-explicit-any
 async function auditEvent(admin: any, tenantId: string, actor: string, actorType: string, action: string, category: string, detail: Record<string, unknown>) {
   const { error } = await admin.rpc('append_audit_event', {
-    p_tenant_id: tenantId, p_actor: actor, p_actor_type: actorType,
-    p_action: action, p_category: category, p_detail: detail,
+    p_tenant_id: tenantId, p_actor: actor, p_actor_type: actorType, p_action: action, p_category: category, p_detail: detail,
   });
   if (error) console.error('append_audit_event:', error.message);
 }
 
-interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
-
+interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; language: string | null }
 function parseModelJson(raw: string): DEAnswer {
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) text = fence[1].trim();
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
+  const start = text.indexOf('{'), end = text.lastIndexOf('}');
   if (start >= 0 && end > start) {
     try {
       const p = JSON.parse(text.slice(start, end + 1));
@@ -160,10 +135,11 @@ function parseModelJson(raw: string): DEAnswer {
         confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
         sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
         needs_escalation: !!p.needs_escalation,
+        language: typeof p.language === 'string' && p.language.trim() ? p.language.trim() : null,
       };
     } catch { /* fall through */ }
   }
-  return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false };
+  return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false, language: null };
 }
 
 serve(async (req) => {
@@ -172,33 +148,21 @@ serve(async (req) => {
 
   try {
     let body: Record<string, unknown>;
-    try {
-      body = await req.json();
-    } catch {
-      return json({ error: 'invalid_json' }, 400);
-    }
+    try { body = await req.json(); } catch { return json({ error: 'invalid_json' }, 400); }
     const widgetKey = body.widget_key;
     if (!widgetKey || typeof widgetKey !== 'string') return json({ error: 'widget_key required' }, 400);
 
-    // ── CSAT submission (real, migration 095) -- the embeddable widget has
-    // no Supabase session, only a widget_key, so this reuses that same
-    // key-validation path rather than requiring the authenticated
-    // submit_csat RPC. Kept in this function (not a new one) since it's
-    // the only endpoint this widget can already reach.
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+    // ── CSAT submission (unchanged; reuses the widget-key auth path) ──
     if (body.action === 'csat') {
-      const csatAdmin = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
       const csatKeyHash = await sha256Hex(widgetKey.trim());
-      const { data: csatKeyRow } = await csatAdmin
-        .from('widget_keys').select('id, tenant_id').eq('key_hash', csatKeyHash).eq('active', true).maybeSingle();
+      const { data: csatKeyRow } = await admin.from('widget_keys').select('id, tenant_id').eq('key_hash', csatKeyHash).eq('active', true).maybeSingle();
       if (!csatKeyRow) return json({ error: 'invalid_widget_key' }, 401);
       const csatConvId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
       const csatScore = body.score === 1 || body.score === -1 ? body.score : null;
       if (!csatConvId || csatScore === null) return json({ error: 'conversation_id and score (1 or -1) required' }, 400);
-      const { error: csatErr } = await csatAdmin
-        .from('de_conversations')
+      const { error: csatErr } = await admin.from('de_conversations')
         .update({ csat_score: csatScore, csat_submitted_at: new Date().toISOString() })
         .eq('id', csatConvId).eq('tenant_id', csatKeyRow.tenant_id);
       if (csatErr) return json({ error: 'csat_submit_failed' }, 500);
@@ -206,163 +170,180 @@ serve(async (req) => {
     }
 
     const question = body.question;
-    if (!question || typeof question !== 'string' || !question.trim()) {
-      return json({ error: 'question required' }, 400);
-    }
+    if (!question || typeof question !== 'string' || !question.trim()) return json({ error: 'question required' }, 400);
     const accountRef = typeof body.account_ref === 'string' ? body.account_ref : null;
     const endUserRef = typeof body.end_user_ref === 'string' ? body.end_user_ref : null;
     const displayName = typeof body.display_name === 'string' ? body.display_name : null;
     const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
-
-    const admin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // This one endpoint serves both the embeddable widget and the hosted page.
+    const channel = body.channel === 'hosted' ? 'hosted' : 'widget';
+    const nowIso = () => new Date().toISOString();
 
     // ── Resolve tenant from publishable key ──
     const keyHash = await sha256Hex(widgetKey.trim());
-    const { data: keyRow } = await admin
-      .from('widget_keys')
-      .select('id, tenant_id')
-      .eq('key_hash', keyHash)
-      .eq('active', true)
-      .maybeSingle();
+    const { data: keyRow } = await admin.from('widget_keys').select('id, tenant_id').eq('key_hash', keyHash).eq('active', true).maybeSingle();
     if (!keyRow) return json({ error: 'invalid_widget_key' }, 401);
     const tenantId: string = keyRow.tenant_id;
 
     if (rateLimited(keyRow.id)) return json({ error: 'rate_limited' }, 429);
 
-    // Usage bookkeeping (best effort; read-then-write is fine at pilot volume —
-    // TODO(scale): replace with an atomic SQL increment RPC before real volume)
     try {
-      const { data: cur } = await admin
-        .from('widget_keys').select('request_count').eq('id', keyRow.id).single();
-      await admin.from('widget_keys')
-        .update({ last_used_at: new Date().toISOString(), request_count: (cur?.request_count ?? 0) + 1 })
-        .eq('id', keyRow.id);
+      const { data: cur } = await admin.from('widget_keys').select('request_count').eq('id', keyRow.id).single();
+      await admin.from('widget_keys').update({ last_used_at: nowIso(), request_count: (cur?.request_count ?? 0) + 1 }).eq('id', keyRow.id);
     } catch { /* non-fatal */ }
 
     // ── Upsert end-user session ──
     try {
-      const { data: existing } = await admin
-        .from('end_user_sessions')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('account_external_ref', accountRef ?? '')
-        .eq('end_user_ref', endUserRef ?? '')
-        .maybeSingle();
+      const { data: existing } = await admin.from('end_user_sessions').select('id')
+        .eq('tenant_id', tenantId).eq('account_external_ref', accountRef ?? '').eq('end_user_ref', endUserRef ?? '').maybeSingle();
       if (existing) {
-        await admin.from('end_user_sessions')
-          .update({ last_seen_at: new Date().toISOString(), display_name: displayName ?? undefined })
-          .eq('id', existing.id);
+        await admin.from('end_user_sessions').update({ last_seen_at: nowIso(), display_name: displayName ?? undefined }).eq('id', existing.id);
       } else {
-        await admin.from('end_user_sessions').insert({
-          tenant_id: tenantId,
-          account_external_ref: accountRef ?? '',
-          end_user_ref: endUserRef ?? '',
-          display_name: displayName,
-        });
+        await admin.from('end_user_sessions').insert({ tenant_id: tenantId, account_external_ref: accountRef ?? '', end_user_ref: endUserRef ?? '', display_name: displayName });
       }
-    } catch (e) {
-      console.error('session upsert failed (non-fatal)', e);
-    }
+    } catch (e) { console.error('session upsert failed (non-fatal)', e); }
 
     // ── Resolve account by external_ref (tolerate missing column) ──
-    let accountId: string | null = null;
     let accountName: string | null = null;
     if (accountRef) {
-      const { data: acct, error: acctErr } = await admin
-        .from('customer_accounts')
-        .select('id, name')
-        .eq('tenant_id', tenantId)
-        .eq('external_ref', accountRef)
-        .maybeSingle();
-      if (acctErr) {
-        // external_ref column may not exist yet — proceed tenant-global
-        console.warn('account resolve skipped:', acctErr.message);
-      } else if (acct) {
-        accountId = acct.id;
-        accountName = acct.name;
-      }
+      const { data: acct, error: acctErr } = await admin.from('customer_accounts').select('id, name').eq('tenant_id', tenantId).eq('external_ref', accountRef).maybeSingle();
+      if (acctErr) console.warn('account resolve skipped:', acctErr.message);
+      else if (acct) accountName = acct.name;
     }
 
-    // ── Trial/suspension gate: a suspended workspace's public widget
-    // stops answering (no paid work) — refuse before conversation/LLM. ──
+    // ── Trial/suspension gate ──
     const gate = await loadTenantGate(admin, tenantId);
     if (gate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
     const tenantName = gate.name;
 
-    // ── Retrieval — KNOWLEDGE SCOPES (migration 030): the widget runs
-    // AS the tenant's answering DE (first DE — the 025/029 fallback
-    // pattern; the public payload can NOT pick a subject). Scoped docs
-    // are only retrievable when that DE is listed in their scopes.
-    // Resolved before the conversation insert below so the new
-    // de_conversations.de_id (migration 095, real per-DE CSAT) can be
-    // set at creation time.
-    // Lifecycle eligibility (DE-B4, migration 126): a paused or
-    // retired employee never answers — the next eligible one does.
-    // Pre-launch stages still answer here by design (reactive Q&A is
-    // this platform's sandbox surface — scoped deviation recorded in
-    // migration 126).
+    // ── Resolve the answering DE (first eligible) + persona ──
     const { data: firstDe } = await admin.from('digital_employees')
-      .select('id').eq('tenant_id', tenantId)
+      .select('id, external_reply_mode').eq('tenant_id', tenantId)
       .not('lifecycle_status', 'in', '(paused,retired,archived)')
       .order('created_at', { ascending: true }).limit(1).maybeSingle();
     const subjectDeId: string | null = firstDe?.id ?? null;
+    // Per-DE send mode — DE config, the channel just reads it.
+    const replyMode: 'draft' | 'auto' = firstDe?.external_reply_mode === 'auto' ? 'auto' : 'draft';
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
 
-    // ── Conversation + user message ──
+    const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null].filter(Boolean).join(' · ');
+
+    // ── Conversation (create with lifecycle fields, or reuse) ──
     let convId: string | null = conversationId;
+    let isNewConv = false;
     if (!convId) {
-      const { data: conv, error: convErr } = await admin
-        .from('de_conversations')
-        .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
-        .select('id').single();
+      isNewConv = true;
+      const { data: conv, error: convErr } = await admin.from('de_conversations').insert({
+        tenant_id: tenantId, channel, de_id: subjectDeId, status: 'ai_handling',
+        subject: question.trim().slice(0, 120),
+        account_external_ref: accountRef, end_user_ref: endUserRef, end_user_name: displayName,
+        last_message_at: nowIso(),
+      }).select('id').single();
       if (convErr) console.error('conversation create failed', convErr.message);
       convId = conv?.id ?? null;
     }
-    const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null]
-      .filter(Boolean).join(' · ');
+
+    // ── Turn cap: very long threads hand off to a human (cost + abuse guard) ──
+    if (convId && !isNewConv) {
+      const { count } = await admin.from('de_messages').select('id', { count: 'exact', head: true }).eq('conversation_id', convId);
+      if ((count ?? 0) >= MAX_MESSAGES_PER_CONVERSATION) {
+        const handoff = "We've covered a lot here — let me bring in a teammate so you get the best help.";
+        await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'user', content: `[${channel}] ${question}` });
+        await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: handoff, confidence: 0, escalated: true, delivery: 'sent' });
+        await admin.from('de_conversations').update({ status: 'needs_human', last_message_at: nowIso() }).eq('id', convId);
+        return json({ conversation_id: convId, answer: handoff, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human' });
+      }
+    }
+
     if (convId) {
       await admin.from('de_messages').insert({
         tenant_id: tenantId, conversation_id: convId, role: 'user',
-        content: endUserTag ? `[widget · ${endUserTag}] ${question}` : `[widget] ${question}`,
+        content: endUserTag ? `[${channel} · ${endUserTag}] ${question}` : `[${channel}] ${question}`,
       });
+      await admin.from('de_conversations').update({ last_message_at: nowIso() }).eq('id', convId).eq('tenant_id', tenantId);
     }
-    const { data: docs } = await admin.rpc('visible_knowledge_docs', {
-      p_tenant_id: tenantId,
-      p_subject_kind: subjectDeId ? 'de' : null,
-      p_subject_id: subjectDeId,
-    });
 
+    // ══════════════════════════════════════════════════════════════
+    // finalize(): guardrail → per-DE send gate → persist → payload.
+    // Shared by the cache-hit path and the freshly-generated path, so
+    // both respect the DE's guardrails and draft/auto-send mode.
+    // ══════════════════════════════════════════════════════════════
+    const truncatedQ = question.length > 60 ? question.slice(0, 60) + '…' : question;
+    const who = endUserTag || 'end user';
+    const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) => {
+      // Guardrail — the DE's rules always win, even on cached answers.
+      const blockedBy = await checkAnswerGuardrails(admin, tenantId, ans, subjectDeId);
+      if (blockedBy) {
+        if (convId) {
+          await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true, delivery: 'blocked', lang });
+          await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: `Guardrail "${blockedBy.rule}" blocked a reply to: ${truncatedQ}`, detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
+        }
+        await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${blockedBy.rule}". Draft (conf ${conf}%): ${ans}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
+        await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${blockedBy.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: blockedBy.id, rule: blockedBy.rule, question: truncatedQ, channel });
+        return json({ conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang });
+      }
+
+      const lowConf = conf < ESCALATION_THRESHOLD;
+      // A human is needed when the DE isn't confident (escalation) OR when
+      // this DE is in draft mode (every external reply is human-approved).
+      if (lowConf || replyMode === 'draft') {
+        const handoffSummary = `Customer${accountName ? ` at ${accountName}` : ''} asked: ${truncatedQ}. ${persona.name}'s draft (conf ${conf}%): ${ans.slice(0, 240)}`;
+        if (convId) {
+          // Store the real draft (NOT delivered to the customer) for the human to approve/edit.
+          await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: true, delivery: 'draft_pending', lang });
+          await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: handoffSummary, detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
+        }
+        await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `${lowConf ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
+        await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${lowConf ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
+        await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
+        // The customer sees a holding message — never the un-approved draft.
+        const holding = lowConf
+          ? "Thanks for your patience — I'm bringing a teammate in to make sure you get this right."
+          : "Thanks! A team member is reviewing your request and will reply here shortly.";
+        return json({ conversation_id: convId, answer: holding, confidence: conf, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'draft_pending', language: lang });
+      }
+
+      // Auto-send: confident, guardrail-clean, DE trusted to reply on its own.
+      if (convId) {
+        await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: false, delivery: 'sent', lang });
+        await admin.from('de_conversations').update({ status: 'ai_handling', detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
+      }
+      await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved', text: `Answered a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' (from cache)' : ''} (${srcs.join(', ') || 'no sources cited'})`, confidence: conf });
+      await auditEvent(admin, tenantId, persona.name, 'de', `Resolved a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' from cache' : ''}`, 'resolved', { confidence: conf, conversation_id: convId, channel, cached });
+      return json({ conversation_id: convId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached });
+    };
+
+    // ── Cost governor #1: semantic answer cache (BEFORE any LLM call) ──
+    const qEmbedding = await embedText(question);
+    if (qEmbedding) {
+      const { data: cacheRows } = await admin.rpc('match_cached_answer', {
+        p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE,
+      });
+      const hit = Array.isArray(cacheRows) ? cacheRows[0] : null;
+      if (hit) {
+        await admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: 'cache_hits', p_delta: 1 });
+        const { data: row } = await admin.from('answer_cache').select('hits').eq('id', hit.id).single();
+        await admin.from('answer_cache').update({ hits: (row?.hits ?? 0) + 1 }).eq('id', hit.id);
+        const srcs: string[] = Array.isArray(hit.sources) ? hit.sources.map(String) : [];
+        return await finalize(hit.answer, hit.confidence, srcs, null, true);
+      }
+    }
+
+    // ── Retrieval (knowledge scopes honoured inside the RPC) ──
+    const { data: docs } = await admin.rpc('visible_knowledge_docs', {
+      p_tenant_id: tenantId, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
+    });
     if (!docs || docs.length === 0) {
       const answer = "I don't have anything to answer from yet — the team is still setting up my knowledge base. Please check back soon.";
-      if (convId) {
-        await admin.from('de_messages').insert({
-          tenant_id: tenantId, conversation_id: convId, role: 'assistant',
-          content: answer, confidence: 0, escalated: false,
-        });
-      }
-      return json({ conversation_id: convId, answer, confidence: 0, sources: [], needs_escalation: false, no_docs: true });
+      if (convId) await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: answer, confidence: 0, escalated: false, delivery: 'sent' });
+      return json({ conversation_id: convId, answer, confidence: 0, sources: [], needs_escalation: false, no_docs: true, status: 'ai_handling' });
     }
 
-    // Hybrid retrieval (migration 046): lexical + semantic fused via RRF —
-    // the SAME shared RPC de-answer and specialist-consult use. Previously
-    // widget-ask ran keyword-only rankDocs() despite its header comment
-    // claiming to mirror de-answer's pipeline; it never actually called
-    // match_doc_chunks or computed an embedding at all. Fixed here as part
-    // of the retrieval consolidation.
-    const qEmbedding = await embedText(question);
     let used = 0;
     const contextParts: string[] = [];
     const { data: chunks, error: matchErr } = await admin.rpc('hybrid_match_knowledge', {
-      p_tenant_id: tenantId,
-      p_query_text: question,
-      p_account_id: null,
-      p_query_embedding: qEmbedding,
-      p_match_count: 5,
-      p_subject_kind: subjectDeId ? 'de' : null,
-      p_subject_id: subjectDeId,
+      p_tenant_id: tenantId, p_query_text: question, p_account_id: null, p_query_embedding: qEmbedding,
+      p_match_count: 5, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
     });
     if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
     if (Array.isArray(chunks) && chunks.length > 0) {
@@ -375,11 +356,8 @@ serve(async (req) => {
         used += bodyText.length + title.length;
       }
     }
-    // Last-resort fallback: only when the RPC itself errored, not when it
-    // legitimately found nothing.
     if (contextParts.length === 0 && matchErr) {
-      const top = rankDocs(question, docs as KDoc[]);
-      for (const d of top) {
+      for (const d of rankDocs(question, docs as KDoc[])) {
         const budget = MAX_CONTEXT_CHARS - used;
         if (budget <= 0) break;
         const bodyText = d.content.slice(0, budget);
@@ -387,42 +365,30 @@ serve(async (req) => {
         used += bodyText.length + d.title.length;
       }
     }
-    const context = contextParts.length > 0
-      ? contextParts.join('\n\n---\n\n')
-      : 'No documents matched the question.';
+    const context = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : 'No documents matched the question.';
 
-    // ── Claude ──
+    // ── LLM (cost governor #2: budget ceiling; #3: prompt-cached persona) ──
     const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!anthropicKey) {
-      return json({ error: 'llm_not_configured', conversation_id: convId });
-    }
-
+    if (!anthropicKey) return json({ error: 'llm_not_configured', conversation_id: convId });
     const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budgetCheck && budgetCheck.allowed === false) {
-      return json({ error: 'ai_budget_exceeded', conversation_id: convId });
-    }
+    if (budgetCheck && budgetCheck.allowed === false) return json({ error: 'ai_budget_exceeded', conversation_id: convId });
 
     const audience = accountName
       ? `You are answering an end user (${displayName || 'an employee'}) at customer account "${accountName}".`
       : `You are answering an end user${displayName ? ` (${displayName})` : ''} of a business customer.`;
-
-    const system = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
-
-Knowledge documents:
-${context}`;
+    // The persona + fixed instructions are stable across turns → prompt-cached.
+    const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
 
     const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
+      headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model,
-        max_tokens: 1024,
-        system,
+        model, max_tokens: 1024,
+        system: [
+          { type: 'text', text: instructionBlock, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: `Knowledge documents:\n${context}` },
+        ],
         messages: [{ role: 'user', content: question }],
       }),
     });
@@ -432,10 +398,6 @@ ${context}`;
       return json({ error: 'llm_error', status: res.status, conversation_id: convId }, 502);
     }
     const data = await res.json();
-    // Claude 5 models can emit a 'thinking' block BEFORE the text block —
-    // content[0].text is then undefined and the answer silently comes back
-    // empty (found live during DE-A2 verification). Take the first block
-    // that is actually text.
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
     if (subjectDeId) {
@@ -445,93 +407,20 @@ ${context}`;
       }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
     }
 
-    // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
-    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
-    if (blockedBy) {
-      const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
-      const who = endUserTag || 'end user';
-      if (convId) {
-        await admin.from('de_messages').insert({
-          tenant_id: tenantId, conversation_id: convId, role: 'assistant',
-          content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true,
+    // Cache write: only confident, guardrail-clean answers (a later repeat is
+    // deflected at $0). Draft-mode is a DELIVERY policy, not answer quality —
+    // so we still cache the answer; the gate in finalize() decides delivery.
+    if (qEmbedding && parsed.confidence >= ESCALATION_THRESHOLD && !parsed.needs_escalation) {
+      const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
+      if (!clean) {
+        await admin.from('answer_cache').insert({
+          tenant_id: tenantId, account_id: null, question,
+          question_embedding: qEmbedding, answer: parsed.answer, confidence: parsed.confidence, sources: parsed.sources,
         });
       }
-      await admin.from('human_tasks').insert({
-        tenant_id: tenantId,
-        type: 'escalation',
-        source: 'de',
-        title: `Guardrail block (widget · ${who}) — ${truncated}`,
-        detail: `Widget answer blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
-        related_table: convId ? 'de_conversations' : null,
-        related_id: convId,
-      });
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
-        text: `Widget answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
-        confidence: parsed.confidence,
-      });
-      await auditEvent(admin, tenantId, persona.name, 'de',
-        `BLOCKED — widget answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
-        'guardrail_block',
-        { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated, channel: 'widget' });
-      return json({
-        conversation_id: convId,
-        blocked: true,
-        rule: blockedBy.rule,
-        answer: GUARDRAIL_BLOCK_MESSAGE,
-        confidence: 0,
-        sources: [],
-        needs_escalation: true,
-      });
     }
 
-    const escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
-
-    if (convId) {
-      await admin.from('de_messages').insert({
-        tenant_id: tenantId, conversation_id: convId, role: 'assistant',
-        content: parsed.answer, confidence: parsed.confidence, escalated: escalate,
-      });
-    }
-
-    if (escalate) {
-      const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
-      const who = endUserTag || 'end user';
-      await admin.from('human_tasks').insert({
-        tenant_id: tenantId,
-        type: 'escalation',
-        source: 'de',
-        title: `Widget escalation (${who}) — ${truncated}`,
-        detail: `End-user question via embedded widget${accountName ? ` from account "${accountName}"` : ''}. ${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
-        related_table: convId ? 'de_conversations' : null,
-        related_id: convId,
-      });
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
-        text: `Widget question from ${who} escalated to human review — "${truncated}"`,
-        confidence: parsed.confidence,
-      });
-      await auditEvent(admin, tenantId, persona.name, 'de',
-        `Widget question from ${who} escalated to human review — "${truncated}"`,
-        'escalated', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
-    } else {
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
-        text: `Answered a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
-        confidence: parsed.confidence,
-      });
-      await auditEvent(admin, tenantId, persona.name, 'de',
-        `Resolved a widget question${endUserTag ? ` from ${endUserTag}` : ''} (${parsed.sources.join(', ') || 'no sources cited'})`,
-        'resolved', { confidence: parsed.confidence, conversation_id: convId, channel: 'widget' });
-    }
-
-    return json({
-      conversation_id: convId,
-      answer: parsed.answer,
-      confidence: parsed.confidence,
-      sources: parsed.sources,
-      needs_escalation: escalate,
-    });
+    return await finalize(parsed.answer, parsed.confidence, parsed.sources, parsed.language, false);
   } catch (err) {
     console.error('widget-ask error:', err);
     return json({ error: String(err) }, 500);
