@@ -2718,16 +2718,18 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           </div>
 
           {/* Sub-tab nav — groups the ~20 panels so this reads as a
-              profile, not one endless scroll. */}
-          <div className="flex items-center gap-1 border-b border-slate-800 overflow-x-auto">
+              profile, not one endless scroll. flex-wrap (not overflow) so
+              it never shows a horizontal scrollbar; on narrow screens the
+              tabs wrap to a second row instead. */}
+          <div className="flex flex-wrap items-center gap-1 border-b border-slate-800">
             {DETAIL_TABS.map(t => (
               <button
                 key={t.key}
                 onClick={() => setDetailTab(t.key)}
-                className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
                   detailTab === t.key
-                    ? 'border-indigo-500 text-white'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-indigo-500 text-white bg-slate-900/40'
+                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/20'
                 }`}
               >
                 {t.label}
