@@ -652,6 +652,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
   const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
   const [guardrails, setGuardrails] = useState<DeGuardrailActivity[]>([]);
   const [evalFailures, setEvalFailures] = useState<RecentEvalFailure[]>([]);
+  const [actions, setActions] = useState<DeActionMetrics[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -662,13 +663,28 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       getDePerformanceMetrics(tenantId),
       getDeGuardrailActivity(tenantId),
       getRecentEvalFailures(tenantId),
-    ]).then(([d, m, g, e]) => {
+      getDeActionMetrics(tenantId),
+    ]).then(([d, m, g, e, a]) => {
       if (cancelled) return;
-      setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e);
+      setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e); setActions(a);
       setLoading(false);
     });
     return () => { cancelled = true; };
   }, [tenantId]);
+
+  const nameFor = (id: string) => des.find(d => d.id === id)?.name ?? 'A Digital Employee';
+
+  // Practical, action-derived insights — each names a concrete next step.
+  // FAILED ACTIONS = an operational alarm (usually a broken connector).
+  const actionFailures = actions
+    .filter(a => a.failed > 0)
+    .map(a => ({ de_id: a.de_id, name: nameFor(a.de_id), failed: a.failed, severity: a.failed >= 3 ? 'high' : 'medium' as const }));
+
+  // Lots routed for approval + low autonomy = a trust-dial opportunity:
+  // if the team keeps approving, raising the dial clears the queue.
+  const approvalBottlenecks = actions
+    .filter(a => a.sent_to_human >= 3 && (a.autonomy_rate == null || a.autonomy_rate < 50))
+    .map(a => ({ de_id: a.de_id, name: nameFor(a.de_id), sent: a.sent_to_human, executed: a.executed, autonomy: a.autonomy_rate }));
 
   // Anomaly: this week's escalation rate vs. the trailing average of
   // prior weeks in the same real trend data get_de_performance_metrics
@@ -700,13 +716,14 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     );
   }
 
-  const hasAnySignal = anomalies.length > 0 || guardrails.length > 0 || evalFailures.length > 0;
+  const hasAnySignal = anomalies.length > 0 || guardrails.length > 0 || evalFailures.length > 0
+    || actionFailures.length > 0 || approvalBottlenecks.length > 0;
 
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
         title="Business Insights"
-        subtitle="Real anomaly, guardrail, and Proving Ground signals from your Digital Employee workforce"
+        subtitle="What needs your attention, and what to do about it — from real workforce activity"
       />
 
       {trendCards.length > 0 && (
@@ -727,10 +744,40 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
 
       {!hasAnySignal ? (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
-          No anomalies, guardrail overrides, or Proving Ground failures in this period — nothing needs attention right now.
+          Nothing needs attention right now — no failed actions, approval backlogs, escalation spikes, guardrail overrides, or Proving Ground failures in this period.
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Failed actions — the most urgent operational signal */}
+          {actionFailures.map(f => (
+            <div key={`fail-${f.de_id}`} className={`rounded-xl border p-4 ${f.severity === 'high' ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ACTION FAILED</span>
+                <span className="text-sm font-medium text-white">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
+                <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.severity}</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                In the last 30 days. This usually means a connected system rejected the request — often expired credentials or a downstream error. Check the connector.
+              </p>
+              <button onClick={() => setPage('systems_connectors')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open Connectors →</button>
+            </div>
+          ))}
+
+          {/* Approval bottleneck — a trust-dial opportunity, not a problem */}
+          {approvalBottlenecks.map(b => (
+            <div key={`bottleneck-${b.de_id}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
+                <span className="text-sm font-medium text-white">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
+                If your team keeps approving these, raise {b.name}'s trust dial to clear the queue — guardrails still cap what it can do.
+              </p>
+              <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open Digital Employees →</button>
+            </div>
+          ))}
+
           {anomalies.map(a => (
             <div key={a.deName} className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
