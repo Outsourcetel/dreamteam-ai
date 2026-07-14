@@ -186,6 +186,47 @@ async function callExecuteAction(
   }
 }
 
+// Consult a specialist mid-run: server-to-server call into
+// specialist-consult (same service-role auth the connector-hub call
+// above uses). The specialist answers ONLY from its configured sources
+// with a confidence + citations, escalating to a human when it isn't
+// sure — this loop is just another CALLER of that grounded path, adding
+// no new answering logic. The reply is compacted into a short,
+// honest tool_result so the model can weigh it (and its confidence)
+// rather than treat it as gospel.
+async function callConsultSpecialist(
+  tenantId: string, specialistKey: string, question: string, playbookRunId: string,
+): Promise<string> {
+  try {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/specialist-consult`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      },
+      body: JSON.stringify({
+        action: 'consult', tenant_id: tenantId, profile_key: specialistKey,
+        question, requested_by: 'de', run_id: playbookRunId,
+      }),
+    });
+    const d = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (d.error === 'llm_not_configured') return "The specialist could not produce a written answer — its reasoning isn't activated yet (ANTHROPIC_API_KEY). Retrieval ran, but there's no answer to rely on.";
+    if (d.error === 'ai_budget_exceeded') return 'The specialist could not answer — this workspace has reached its monthly AI usage limit.';
+    if (d.error === 'profile_not_found') return `No specialist with key "${specialistKey}" exists in this workspace — re-check the available specialist keys before consulting again.`;
+    if (d.error === 'profile_paused') return `The "${specialistKey}" specialist is paused and cannot be consulted right now.`;
+    if (d.error) return `The specialist consult failed: ${String(d.error).slice(0, 160)}`;
+    if (d.blocked) return `The specialist's draft answer was withheld by a safety guardrail ("${String(d.rule ?? '')}") and escalated to a human. Proceed without relying on it.`;
+    const cites = Array.isArray(d.citations) && d.citations.length
+      ? ` Sources: ${(d.citations as unknown[]).slice(0, 5).map(String).join('; ')}.` : '';
+    const esc = d.needs_escalation
+      ? ' NOTE: the specialist flagged LOW confidence and escalated this to a human — treat its answer as provisional, not settled.' : '';
+    return `Specialist answer (confidence ${d.confidence ?? '?'}%): ${String(d.answer ?? '').slice(0, 1500)}${cites}${esc}`;
+  } catch (e) {
+    return `Could not reach the specialist: ${String(e).slice(0, 160)}`;
+  }
+}
+
 async function searchKnowledge(admin: SupabaseClient, tenantId: string, deId: string, query: string): Promise<string> {
   if (!query.trim()) return 'No query provided.';
   const qEmb = await embedText(query);
@@ -235,7 +276,7 @@ async function runLoop(
   admin: SupabaseClient, tenantId: string, runId: string, goal: string,
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
   tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
-  contextDocuments = '', charter = '',
+  contextDocuments = '', charter = '', playbookRunId = '',
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
     // The DE's configured purpose/charter — this is what makes it "trained":
@@ -351,6 +392,17 @@ async function runLoop(
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
         continue;
       }
+      if (tu.name === 'consult_specialist') {
+        const specialistKey = String(tu.input?.specialist_key ?? '').trim();
+        const q = String(tu.input?.question ?? '').trim();
+        if (!specialistKey || !q) {
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: 'Provide both specialist_key and question to consult a specialist.', is_error: true });
+          continue;
+        }
+        const consultResult = await callConsultSpecialist(tenantId, specialistKey, q, playbookRunId);
+        toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: consultResult });
+        continue;
+      }
       if (tu.name === 'ask_human') {
         const question = String(tu.input?.question ?? '').slice(0, 500);
         const { data: task } = await admin.from('human_tasks').insert({
@@ -463,17 +515,43 @@ serve(async (req) => {
     }
 
     const { data: toolRows } = await admin.rpc('get_agentic_tools_for_de', { p_tenant_id: tenantId, p_de_id: deId });
-    const tools: AnthropicTool[] = [...STATIC_TOOLS, ...((toolRows ?? []) as AnthropicTool[])];
+
+    // Specialist consult tool — offered ONLY when this workspace has at
+    // least one active specialist, so the model is never handed a tool
+    // that always errors. The description lists the real specialist keys
+    // (and a snippet of each charter) and constrains specialist_key to
+    // that set via enum, so the DE can pick the right expert to verify
+    // uncertain or high-stakes work mid-run — the "smart step" can now
+    // consult, not only the dedicated consult_specialist playbook step.
+    const { data: specRows } = await admin.from('specialist_profiles')
+      .select('key, name, charter').eq('tenant_id', tenantId).eq('status', 'active')
+      .order('created_at', { ascending: true });
+    const specialists = (specRows ?? []) as Array<{ key: string; name: string; charter: string | null }>;
+    const consultTool: AnthropicTool[] = specialists.length ? [{
+      name: 'consult_specialist',
+      description: 'Consult a specialist for an expert, grounded second opinion or to verify something uncertain or high-stakes before you rely on it. The specialist answers ONLY from its own configured knowledge/sources, returns a confidence score and citations, and escalates to a human when it is not confident. Available specialists (pass the key):\n'
+        + specialists.map((s) => `- "${s.key}" — ${s.name}${s.charter ? `: ${String(s.charter).replace(/\s+/g, ' ').slice(0, 160)}` : ''}`).join('\n'),
+      input_schema: {
+        type: 'object',
+        properties: {
+          specialist_key: { type: 'string', description: 'Which specialist to consult (one of the listed keys).', enum: specialists.map((s) => s.key) },
+          question: { type: 'string', description: 'The specific question to ask the specialist.' },
+        },
+        required: ['specialist_key', 'question'],
+      },
+    }] : [];
+
+    const tools: AnthropicTool[] = [...STATIC_TOOLS, ...consultTool, ...((toolRows ?? []) as AnthropicTool[])];
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
-      `Agentic step started — "${goal.slice(0, 160)}" (${tools.length - STATIC_TOOLS.length} action tool(s) available)`,
-      'playbook_step', { kind: 'agentic_step_started', agentic_step_run_id: runId, playbook_run_id: playbookRunId, step_index: stepIndex, tool_count: tools.length });
+      `Agentic step started — "${goal.slice(0, 160)}" (${(toolRows ?? []).length} action tool(s)${specialists.length ? `, ${specialists.length} specialist(s)` : ''} available)`,
+      'playbook_step', { kind: 'agentic_step_started', agentic_step_run_id: runId, playbook_run_id: playbookRunId, step_index: stepIndex, tool_count: tools.length, specialist_count: specialists.length });
 
     const result = await runLoop(
       admin, tenantId!, runId, goal, deRow.name ?? 'Digital employee',
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
-      tools, policy, deId, apiKey, contextDocuments, charter,
+      tools, policy, deId, apiKey, contextDocuments, charter, playbookRunId,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
