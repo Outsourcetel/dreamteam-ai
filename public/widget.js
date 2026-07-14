@@ -1,213 +1,230 @@
 /**
- * DreamTeam AI — embeddable "Ask Alex" widget (no build step, no dependencies).
+ * DreamTeam AI — embeddable support chat widget (v2, no build step, no deps).
  *
  * Usage:
  *   <script src="https://YOUR-DREAMTEAM-HOST/widget.js"></script>
  *   <script>
  *     DreamTeamWidget.init({
- *       key: 'dtw_...',                                  // publishable widget key
- *       apiUrl: 'https://<ref>.supabase.co/functions/v1/widget-ask',
- *       accountRef: 'acct-4821',                         // your customer's account id
- *       endUserRef: 'user-77',                           // the employee asking
- *       displayName: 'Jane Doe',
- *       accent: '#6366f1',                               // optional brand colour
+ *       key: 'wk_...',                                   // publishable widget key
+ *       apiUrl: 'https://<ref>.supabase.co/functions/v1/widget-ask', // optional
+ *       accountRef: 'acct-4821', endUserRef: 'user-77', displayName: 'Jane Doe',
+ *       brandName: 'Acme', greeting: 'Hi! How can I help?',
  *     });
  *   </script>
+ *
+ * INFRASTRUCTURE ONLY — renders whatever the DE (via widget-ask) decides:
+ * typewriter answers, source chips, a "teammate will follow up" note when a
+ * reply is drafting for a human, thumbs CSAT, free browser voice. No answer
+ * logic here. Style-isolated via Shadow DOM.
  */
 (function () {
   'use strict';
+  if (window.DreamTeamWidget && window.DreamTeamWidget.__mounted) return;
 
-  var state = { cfg: null, open: false, busy: false, conversationId: null, els: {} };
+  var DEFAULT_API = 'https://rfsvmhcqeiyrxivbmpel.supabase.co/functions/v1/widget-ask';
+  var cfg = {};
+  var conversationId = null;
+  var csatDone = false;
+  var listening = false, recog = null;
+  var msgs, input, sendBtn, micBtn;
 
-  function h(tag, style, text) {
-    var el = document.createElement(tag);
-    if (style) el.style.cssText = style;
-    if (text) el.textContent = text;
-    return el;
+  function el(tag, attrs, html) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function scrollDown() { if (msgs) msgs.scrollTop = msgs.scrollHeight; }
+
+  var STYLE = [
+    ':host{all:initial}',
+    '*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}',
+    '.launch{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:var(--acc);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(79,70,229,.4);font-size:24px;z-index:2147483000;display:flex;align-items:center;justify-content:center;transition:transform .15s}',
+    '.launch:hover{transform:scale(1.06)}',
+    '.panel{position:fixed;bottom:88px;right:20px;width:380px;max-width:calc(100vw - 32px);height:min(600px,calc(100vh - 120px));background:#f8fafc;border-radius:16px;box-shadow:0 12px 48px rgba(15,23,42,.28);z-index:2147483000;display:none;flex-direction:column;overflow:hidden}',
+    '.panel.open{display:flex}',
+    '.head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fff;border-bottom:1px solid #e2e8f0}',
+    '.av{width:32px;height:32px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}',
+    '.htitle{font-size:14px;font-weight:600;color:#1e293b;line-height:1.1}',
+    '.hstatus{font-size:11px;color:#059669;display:flex;align-items:center;gap:4px;margin-top:2px}',
+    '.dot{width:6px;height:6px;border-radius:50%;background:#10b981;display:inline-block}',
+    '.close{margin-left:auto;background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1}',
+    '.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}',
+    '.b{max-width:85%;padding:10px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}',
+    '.u{align-self:flex-end;background:var(--acc);color:#fff;border-radius:16px 16px 4px 16px}',
+    '.a{align-self:flex-start;background:#fff;color:#334155;border:1px solid #e2e8f0;border-radius:16px 16px 16px 4px;box-shadow:0 1px 2px rgba(15,23,42,.04)}',
+    '.note{align-self:flex-start;font-size:11px;color:#6366f1;margin-top:-6px;display:flex;align-items:center;gap:5px}',
+    '.srcs{align-self:flex-start;display:flex;flex-wrap:wrap;gap:4px;margin-top:-6px}',
+    '.src{font-size:10px;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}',
+    '.typing{display:inline-flex;gap:4px}.typing span{width:6px;height:6px;border-radius:50%;background:#94a3b8;animation:tb 1s infinite}.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}',
+    '@keyframes tb{0%,80%,100%{opacity:.3}40%{opacity:1}}',
+    '.csat{align-self:flex-start;display:flex;align-items:center;gap:8px;font-size:12px;color:#64748b}',
+    '.csat button{width:28px;height:28px;border-radius:50%;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:13px}',
+    '.foot{border-top:1px solid #e2e8f0;background:#fff;padding:10px 12px;display:flex;gap:8px;align-items:flex-end}',
+    '.mic{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:none;background:#f1f5f9;color:#64748b;cursor:pointer;font-size:16px}',
+    '.mic.on{background:var(--acc);color:#fff;animation:pulse 1s infinite}',
+    '@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}',
+    '.inp{flex:1;resize:none;max-height:96px;border:1px solid #cbd5e1;border-radius:18px;padding:9px 14px;font-size:14px;color:#1e293b;outline:none}',
+    '.inp:focus{border-color:var(--acc)}',
+    '.send{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:none;background:var(--acc);color:#fff;cursor:pointer;font-size:16px}',
+    '.send:disabled{opacity:.4;cursor:default}',
+    '.tag{text-align:center;font-size:10px;color:#94a3b8;padding:4px 0 2px}',
+  ].join('');
+
+  function addUser(text) { msgs.appendChild(el('div', { class: 'b u' }, esc(text))); scrollDown(); }
+  function addTyping() {
+    var t = el('div', { class: 'b a' }, '<span class="typing"><span></span><span></span><span></span></span>');
+    msgs.appendChild(t); scrollDown(); return t;
+  }
+  function typewriter(node, text) {
+    node.textContent = '';
+    var i = 0, step = Math.max(1, Math.round(text.length / 80));
+    var iv = setInterval(function () {
+      i = Math.min(text.length, i + step);
+      node.textContent = text.slice(0, i);
+      scrollDown();
+      if (i >= text.length) clearInterval(iv);
+    }, 18);
   }
 
-  var BASE_FONT = 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
-
-  function addMessage(role, text, meta) {
-    var wrap = h('div', 'display:flex;margin:6px 12px;' + (role === 'user' ? 'justify-content:flex-end;' : 'justify-content:flex-start;'));
-    var accent = state.cfg.accent;
-    var bubble = h('div',
-      'max-width:80%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;' +
-      (role === 'user'
-        ? 'background:' + accent + ';color:#fff;border-bottom-right-radius:4px;'
-        : 'background:#f1f3f6;color:#1a202c;border-bottom-left-radius:4px;'),
-      text);
-    wrap.appendChild(bubble);
-    state.els.messages.appendChild(wrap);
-    if (meta) {
-      var m = h('div', 'margin:2px 14px 4px;font-size:10.5px;color:#8a94a3;text-align:left;', meta);
-      state.els.messages.appendChild(m);
+  function addAssistant(res) {
+    var text = res.error
+      ? (res.error === 'llm_not_configured' ? "I'm not fully set up to answer yet — please check back soon."
+        : res.error === 'ai_budget_exceeded' ? "I'm briefly at capacity — a teammate will help you shortly."
+        : "Something went wrong on my side — let me get a teammate to help.")
+      : res.answer;
+    var bubble = el('div', { class: 'b a' });
+    msgs.appendChild(bubble);
+    typewriter(bubble, text);
+    var needsHuman = res.needs_escalation || res.status === 'needs_human' || res.delivery === 'draft_pending' || res.delivery === 'blocked';
+    if (needsHuman) msgs.appendChild(el('div', { class: 'note' }, '<span class="dot" style="background:#6366f1"></span> A teammate will follow up here'));
+    if (res.sources && res.sources.length) {
+      var s = el('div', { class: 'srcs' });
+      res.sources.slice(0, 4).forEach(function (x) { s.appendChild(el('span', { class: 'src' }, esc(x))); });
+      msgs.appendChild(s);
     }
-    state.els.messages.scrollTop = state.els.messages.scrollHeight;
-    return bubble;
+    if (cfg.voiceMode && res.delivery === 'sent' && 'speechSynthesis' in window) {
+      try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch (e) { /* noop */ }
+    }
+    if (!needsHuman && !res.error && res.conversation_id && !csatDone) setTimeout(showCsat, 800);
+    scrollDown();
   }
 
-  // Real CSAT (migration 095) -- submits via widget-ask's action:'csat'
-  // branch (the widget has no Supabase session, only a widget_key).
-  function submitCsat(score, row) {
-    if (!state.conversationId) return;
-    row.textContent = score === 1 ? 'Thanks for the feedback!' : "Thanks — we'll improve.";
-    fetch(state.cfg.apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ widget_key: state.cfg.key, action: 'csat', conversation_id: state.conversationId, score: score }),
-    }).catch(function () {});
+  function showCsat() {
+    var c = el('div', { class: 'csat' });
+    c.appendChild(el('span', null, 'Was this helpful?'));
+    ['👍', '👎'].forEach(function (emoji, idx) {
+      var b = el('button', null, emoji);
+      b.onclick = function () { rateCsat(idx === 0 ? 1 : -1, c); };
+      c.appendChild(b);
+    });
+    msgs.appendChild(c); scrollDown();
   }
-
-  function addCsatRow() {
-    var row = h('div', 'display:flex;align-items:center;gap:6px;margin:2px 14px 6px;font-size:11px;color:#8a94a3;');
-    var label = h('span', '', 'Helpful?');
-    row.appendChild(label);
-    var up = h('button', 'border:none;background:none;cursor:pointer;font-size:13px;padding:0;', '👍');
-    up.onclick = function () { row.textContent = ''; row.appendChild(label); submitCsat(1, row); };
-    var down = h('button', 'border:none;background:none;cursor:pointer;font-size:13px;padding:0;', '👎');
-    down.onclick = function () { row.textContent = ''; row.appendChild(label); submitCsat(-1, row); };
-    row.appendChild(up);
-    row.appendChild(down);
-    state.els.messages.appendChild(row);
-  }
-
-  function setBusy(b) {
-    state.busy = b;
-    state.els.send.disabled = b;
-    state.els.send.style.opacity = b ? '0.5' : '1';
-    state.els.input.disabled = b;
-  }
-
-  function ask(question) {
-    var cfg = state.cfg;
-    addMessage('user', question);
-    setBusy(true);
-    var thinking = addMessage('assistant', 'Thinking…');
-
+  function rateCsat(score, node) {
+    csatDone = true;
+    node.innerHTML = '<span style="color:#94a3b8">Thanks for the feedback!</span>';
+    if (!conversationId) return;
     fetch(cfg.apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ widget_key: cfg.key, action: 'csat', conversation_id: conversationId, score: score }),
+    }).catch(function () { /* noop */ });
+  }
+
+  function send() {
+    var q = (input.value || '').trim();
+    if (!q) return;
+    input.value = ''; sendBtn.disabled = true; csatDone = false;
+    addUser(q);
+    var typing = addTyping();
+    fetch(cfg.apiUrl, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        widget_key: cfg.key,
-        question: question,
-        account_ref: cfg.accountRef || null,
-        end_user_ref: cfg.endUserRef || null,
-        display_name: cfg.displayName || null,
-        conversation_id: state.conversationId,
+        widget_key: cfg.key, question: q, conversation_id: conversationId || undefined,
+        channel: 'widget', account_ref: cfg.accountRef || undefined,
+        end_user_ref: cfg.endUserRef || undefined, display_name: cfg.displayName || undefined,
       }),
-    })
-      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-      .then(function (res) {
-        var j = res.body || {};
-        if (j.conversation_id) state.conversationId = j.conversation_id;
-        if (j.error === 'llm_not_configured') {
-          thinking.textContent = "The assistant isn't activated yet. Please contact support directly.";
-        } else if (j.error === 'invalid_widget_key') {
-          thinking.textContent = 'This widget is not configured correctly (invalid key).';
-        } else if (j.error === 'rate_limited') {
-          thinking.textContent = "We're getting a lot of questions right now — please try again in a minute.";
-        } else if (j.error) {
-          thinking.textContent = 'Something went wrong. Please try again.';
-        } else {
-          thinking.textContent = j.answer || '…';
-          var metaParts = [];
-          if (typeof j.confidence === 'number' && j.confidence > 0) metaParts.push('Confidence ' + j.confidence + '%');
-          if (j.needs_escalation) metaParts.push('Escalated to the team — a human will follow up');
-          if (metaParts.length) {
-            var m = h('div', 'margin:2px 14px 4px;font-size:10.5px;color:' + (j.needs_escalation ? '#d97706' : '#8a94a3') + ';', metaParts.join(' · '));
-            state.els.messages.appendChild(m);
-          }
-          if (j.answer && !j.needs_escalation) addCsatRow();
-        }
-        state.els.messages.scrollTop = state.els.messages.scrollHeight;
-      })
-      .catch(function () {
-        thinking.textContent = 'Network error — please try again.';
-      })
-      .then(function () { setBusy(false); state.els.input.focus(); });
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      typing.remove();
+      if (res.conversation_id) conversationId = res.conversation_id;
+      addAssistant(res);
+    }).catch(function () {
+      typing.remove();
+      addAssistant({ answer: "I couldn't reach the server — please try again.", needs_escalation: true });
+    }).finally(function () { sendBtn.disabled = false; });
   }
 
-  function submit() {
-    var q = state.els.input.value.trim();
-    if (!q || state.busy) return;
-    state.els.input.value = '';
-    ask(q);
-  }
-
-  function togglePanel() {
-    state.open = !state.open;
-    state.els.panel.style.display = state.open ? 'flex' : 'none';
-    state.els.button.textContent = state.open ? '×' : '?';
-    if (state.open) state.els.input.focus();
+  function toggleMic() {
+    var R = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!R) return;
+    if (listening) { try { recog.stop(); } catch (e) { /* noop */ } return; }
+    cfg.voiceMode = true;
+    recog = new R(); recog.interimResults = false; recog.maxAlternatives = 1;
+    recog.onresult = function (e) { input.value = e.results[0][0].transcript; send(); };
+    recog.onend = function () { listening = false; micBtn.className = 'mic'; };
+    recog.onerror = function () { listening = false; micBtn.className = 'mic'; };
+    try { recog.start(); listening = true; micBtn.className = 'mic on'; } catch (e) { /* noop */ }
   }
 
   function build() {
-    var cfg = state.cfg;
-    var root = h('div', 'position:fixed;bottom:20px;right:20px;z-index:2147483000;' + BASE_FONT);
+    var host = el('div');
+    document.body.appendChild(host);
+    var sh = host.attachShadow({ mode: 'open' });
+    var style = el('style', null, STYLE);
+    sh.appendChild(style);
+    var acc = cfg.accent || '#4f46e5';
 
-    // Floating button
-    var btn = h('button',
-      'width:56px;height:56px;border-radius:50%;border:none;cursor:pointer;background:' + cfg.accent +
-      ';color:#fff;font-size:26px;line-height:1;box-shadow:0 4px 14px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;', '?');
-    btn.setAttribute('aria-label', 'Ask ' + cfg.assistantName);
-    btn.onclick = togglePanel;
+    var launch = el('button', { class: 'launch', 'aria-label': 'Chat with support', style: '--acc:' + acc }, '💬');
+    var panel = el('div', { class: 'panel', style: '--acc:' + acc });
+    var brand = cfg.brandName || 'Support';
 
-    // Panel
-    var panel = h('div',
-      'position:absolute;bottom:70px;right:0;width:340px;max-width:calc(100vw - 40px);height:460px;max-height:calc(100vh - 120px);' +
-      'background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.28);display:none;flex-direction:column;overflow:hidden;');
+    var head = el('div', { class: 'head' });
+    head.appendChild(el('div', { class: 'av' }, esc(brand.charAt(0).toUpperCase())));
+    var box = el('div');
+    box.appendChild(el('div', { class: 'htitle' }, esc(brand)));
+    box.appendChild(el('div', { class: 'hstatus' }, '<span class="dot"></span> Online now'));
+    head.appendChild(box);
+    var x = el('button', { class: 'close', 'aria-label': 'Close' }, '×');
+    x.onclick = function () { panel.classList.remove('open'); };
+    head.appendChild(x);
+    panel.appendChild(head);
 
-    var header = h('div', 'padding:13px 16px;background:' + cfg.accent + ';color:#fff;');
-    header.appendChild(h('div', 'font-size:14px;font-weight:600;', 'Ask ' + cfg.assistantName));
-    header.appendChild(h('div', 'font-size:11px;opacity:0.85;margin-top:1px;', 'AI support assistant'));
-    panel.appendChild(header);
+    msgs = el('div', { class: 'msgs' });
+    msgs.appendChild(el('div', { class: 'b a' }, esc(cfg.greeting || 'Hi! How can I help you today?')));
+    panel.appendChild(msgs);
 
-    var messages = h('div', 'flex:1;overflow-y:auto;padding:8px 0;background:#fafbfc;');
-    panel.appendChild(messages);
+    var foot = el('div', { class: 'foot' });
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      micBtn = el('button', { class: 'mic', 'aria-label': 'Speak' }, '🎤');
+      micBtn.onclick = toggleMic;
+      foot.appendChild(micBtn);
+    }
+    input = el('textarea', { class: 'inp', rows: '1', placeholder: 'Type your message…' });
+    input.onkeydown = function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+    foot.appendChild(input);
+    sendBtn = el('button', { class: 'send', 'aria-label': 'Send' }, '↑');
+    sendBtn.onclick = send;
+    foot.appendChild(sendBtn);
+    var wrap = el('div');
+    wrap.appendChild(foot);
+    wrap.appendChild(el('div', { class: 'tag' }, 'AI-assisted support · answers in your language'));
+    panel.appendChild(wrap);
 
-    var inputRow = h('div', 'display:flex;gap:8px;padding:10px;border-top:1px solid #e6e9ee;background:#fff;');
-    var input = h('input', 'flex:1;border:1px solid #d5dae2;border-radius:10px;padding:9px 12px;font-size:13px;outline:none;color:#1a202c;background:#fff;' + BASE_FONT);
-    input.placeholder = 'Ask a question…';
-    input.onkeydown = function (e) { if (e.key === 'Enter') submit(); };
-    var send = h('button', 'border:none;border-radius:10px;padding:0 14px;cursor:pointer;background:' + cfg.accent + ';color:#fff;font-size:13px;font-weight:600;' + BASE_FONT, 'Send');
-    send.onclick = submit;
-    inputRow.appendChild(input);
-    inputRow.appendChild(send);
-    panel.appendChild(inputRow);
-
-    root.appendChild(panel);
-    root.appendChild(btn);
-    document.body.appendChild(root);
-
-    state.els = { root: root, button: btn, panel: panel, messages: messages, input: input, send: send };
-
-    addMessage('assistant',
-      'Hi' + (cfg.displayName ? ' ' + cfg.displayName : '') + '! I’m ' + cfg.assistantName +
-      ', the AI support assistant. Ask me anything about the product.');
+    launch.onclick = function () { panel.classList.toggle('open'); if (panel.classList.contains('open')) input.focus(); };
+    sh.appendChild(launch);
+    sh.appendChild(panel);
   }
 
   window.DreamTeamWidget = {
-    init: function (cfg) {
-      if (!cfg || !cfg.key || !cfg.apiUrl) {
-        console.error('[DreamTeamWidget] init requires { key, apiUrl }');
-        return;
-      }
-      if (state.cfg) return; // already initialised
-      state.cfg = {
-        key: cfg.key,
-        apiUrl: cfg.apiUrl,
-        accountRef: cfg.accountRef || null,
-        endUserRef: cfg.endUserRef || null,
-        displayName: cfg.displayName || null,
-        accent: cfg.accent || '#6366f1',
-        assistantName: cfg.assistantName || 'Alex',
-      };
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', build);
-      } else {
-        build();
-      }
+    __mounted: false,
+    init: function (options) {
+      if (window.DreamTeamWidget.__mounted) return;
+      cfg = options || {};
+      if (!cfg.key) { console.error('[DreamTeamWidget] init requires a { key }.'); return; }
+      cfg.apiUrl = cfg.apiUrl || DEFAULT_API;
+      window.DreamTeamWidget.__mounted = true;
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build);
+      else build();
     },
   };
 })();

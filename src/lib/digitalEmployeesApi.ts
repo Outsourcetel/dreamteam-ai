@@ -40,10 +40,20 @@ export interface DigitalEmployee {
   location: string;
   cost_center: string;
   attributes: Record<string, string | number>;
+  /** Migration 149 — customer send mode: 'draft' = every external reply is
+   *  human-approved first; 'auto' = confident, guardrail-clean answers send
+   *  on their own. */
+  external_reply_mode: 'draft' | 'auto';
 }
 
 export async function listDigitalEmployees(): Promise<DigitalEmployee[]> {
   return listTenantRows<DigitalEmployee>('digital_employees', 'created_at', true, 'listDigitalEmployees');
+}
+
+/** Flip a DE between draft-for-approval and auto-send for external replies. */
+export async function setExternalReplyMode(deId: string, mode: 'draft' | 'auto'): Promise<void> {
+  const { error } = await supabase.rpc('set_de_external_reply_mode', { p_de_id: deId, p_mode: mode });
+  if (error) raise('setExternalReplyMode', error);
 }
 
 // ── DE custom profile fields (migration 136) ──────────────────────

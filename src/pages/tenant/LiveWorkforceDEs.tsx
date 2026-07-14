@@ -26,7 +26,7 @@ import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
-  listDeProfileFields, addDeProfileField, setDeAttributes,
+  listDeProfileFields, addDeProfileField, setDeAttributes, setExternalReplyMode,
 } from '../../lib/digitalEmployeesApi';
 import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
@@ -1748,6 +1748,59 @@ const MODEL_LABELS: Record<string, string> = {
   'claude-haiku-4-5': 'Claude Haiku 4.5 — fastest, most economical',
   'claude-opus-4-8': 'Claude Opus 4.8 — most capable',
 };
+// Customer send mode — draft-for-approval vs auto-send for external chat
+// replies. Reads/writes the DE's external_reply_mode (the channel obeys it).
+function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [mode, setMode] = useState<'draft' | 'auto'>(de.external_reply_mode === 'auto' ? 'auto' : 'draft');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setMode(de.external_reply_mode === 'auto' ? 'auto' : 'draft'); }, [de.id, de.external_reply_mode]);
+
+  const choose = async (next: 'draft' | 'auto') => {
+    if (next === mode || busy) return;
+    setBusy(true); setError(null);
+    const prev = mode;
+    setMode(next);
+    try {
+      await setExternalReplyMode(de.id, next);
+      onUpdated({ ...de, external_reply_mode: next });
+    } catch (err) {
+      setMode(prev);
+      setError((err as Error)?.message || 'Failed to save.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Customer replies</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">external chat</span>
+      </div>
+      <p className="text-[11px] text-slate-400 mb-4">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {([
+          { key: 'draft' as const, title: 'Draft for approval', desc: 'Every answer waits for a teammate to approve before the customer sees it. Safest — start here.' },
+          { key: 'auto' as const, title: 'Auto-send', desc: 'Confident, guardrail-clean answers send on their own. Low-confidence ones still go to a human.' },
+        ]).map(o => (
+          <button
+            key={o.key}
+            onClick={() => void choose(o.key)}
+            disabled={busy}
+            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-indigo-500/10') : 'border-slate-700 bg-slate-900/40 hover:border-slate-600'}`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-400 bg-emerald-400' : 'border-indigo-400 bg-indigo-400') : 'border-slate-600'}`} />
+              <span className="text-sm font-medium text-white">{o.title}</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5 pl-5">{o.desc}</p>
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-[11px] text-rose-400 mt-2">{error}</p>}
+    </div>
+  );
+}
+
 function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
   const [models, setModels] = useState<Array<{ model_id: string; input_price_per_million: number; output_price_per_million: number }>>([]);
   const [selected, setSelected] = useState(de.model_id || 'claude-sonnet-5');
@@ -2754,6 +2807,8 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
             <div className="space-y-6">
               {/* AI Engine — per-employee model choice (Wave 1.2) */}
               <DeModelPanel de={selectedDe} onUpdated={setSelectedDe} />
+              {/* Customer reply mode — draft vs auto-send for external chat */}
+              <DeReplyModePanel de={selectedDe} onUpdated={setSelectedDe} />
               {/* DE operating charter */}
               <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
               <DeKnowledgeScopePanel deId={selectedDe.id} />
