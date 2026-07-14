@@ -158,7 +158,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5">
-                {thread.filter(m => m.delivery !== 'blocked' || true).map(m => {
+                {thread.map(m => {
                   const isCustomer = m.role === 'user';
                   const isDraft = m.delivery === 'draft_pending';
                   return (
