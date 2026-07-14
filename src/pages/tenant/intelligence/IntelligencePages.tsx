@@ -8,10 +8,11 @@ import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import {
-  getDePerformanceMetrics, getDeCostMetrics, getDeCsatMetrics, getDeActionMetrics,
+  getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics,
+  getDeInquiryMetrics, getDeCostMetricsRanged,
   getDeGuardrailActivity, getRecentEvalFailures,
   type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
-  type DeGuardrailActivity, type RecentEvalFailure,
+  type DeInquiryMetrics, type DeGuardrailActivity, type RecentEvalFailure,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 
@@ -268,6 +269,28 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ── Real Performance page (live tenants) — migrations 093-095 ──
+const RANGE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+  { label: 'All time', days: null },
+];
+function RangeSelector({ value, onChange }: { value: number | null; onChange: (d: number | null) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+      {RANGE_OPTIONS.map(o => (
+        <button
+          key={o.label}
+          onClick={() => onChange(o.days)}
+          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${value === o.days ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
@@ -280,10 +303,12 @@ function StatTile({ label, value, sub, tone }: { label: string; value: string; s
 
 function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
   const [des, setDes] = useState<DigitalEmployee[]>([]);
-  const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
-  const [cost, setCost] = useState<DeCostMetrics[]>([]);
-  const [csat, setCsat] = useState<DeCsatMetrics[]>([]);
-  const [actions, setActions] = useState<DeActionMetrics[]>([]);
+  const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]); // all-time — trend + frustration only
+  const [inquiry, setInquiry] = useState<DeInquiryMetrics[]>([]);     // windowed counts + quality
+  const [cost, setCost] = useState<DeCostMetrics[]>([]);              // windowed cost
+  const [csat, setCsat] = useState<DeCsatMetrics[]>([]);             // all-time satisfaction
+  const [actions, setActions] = useState<DeActionMetrics[]>([]);      // windowed actions
+  const [range, setRange] = useState<number | null>(30);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -292,28 +317,26 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
     Promise.all([
       listDigitalEmployees(),
       getDePerformanceMetrics(tenantId),
-      getDeCostMetrics(tenantId),
+      getDeInquiryMetrics(tenantId, range),
+      getDeCostMetricsRanged(tenantId, range),
       getDeCsatMetrics(tenantId),
-      getDeActionMetrics(tenantId),
-    ]).then(([d, m, c, s, a]) => {
+      getDeActionMetrics(tenantId, range),
+    ]).then(([d, m, iq, c, s, a]) => {
       if (cancelled) return;
-      setDes(d);
-      setMetrics(m);
-      setCost(c);
-      setCsat(s);
-      setActions(a);
+      setDes(d); setMetrics(m); setInquiry(iq); setCost(c); setCsat(s); setActions(a);
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [tenantId, range]);
 
   const metricsByDe = new Map(metrics.map(m => [m.de_id, m]));
+  const inquiryByDe = new Map(inquiry.map(i => [i.de_id, i]));
   const costByDe = new Map(cost.map(c => [c.de_id, c]));
   const csatByDe = new Map(csat.map(c => [c.de_id, c]));
   const actionByDe = new Map(actions.map(a => [a.de_id, a]));
 
-  // Workforce-level outcome roll-ups — the headline is what the team DID.
-  const totalInquiries = metrics.reduce((s, m) => s + m.total_decisions, 0);
+  // Workforce-level outcome roll-ups — every count reflects the range.
+  const totalInquiries = inquiry.reduce((s, i) => s + i.total_decisions, 0);
   const totalExecuted = actions.reduce((s, a) => s + a.executed, 0);
   const totalAuto = actions.reduce((s, a) => s + a.auto_executed, 0);
   const totalSentHuman = actions.reduce((s, a) => s + a.sent_to_human, 0);
@@ -327,17 +350,25 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
   if (loading) {
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
-        <PageHeader title="Performance" subtitle="Loading real Digital Employee activity…" />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <PageHeader title="Performance" subtitle="Loading real Digital Employee activity…" />
+          <RangeSelector value={range} onChange={setRange} />
+        </div>
       </div>
     );
   }
 
+  const rangeLabel = RANGE_OPTIONS.find(o => o.days === range)?.label ?? '30 days';
+
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
-      <PageHeader
-        title="Performance"
-        subtitle={`${des.length} Digital Employee${des.length === 1 ? '' : 's'} · what your workforce actually got done this period`}
-      />
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <PageHeader
+          title="Performance"
+          subtitle={`${des.length} Digital Employee${des.length === 1 ? '' : 's'} · what your workforce got done · ${rangeLabel === 'All time' ? 'all time' : `last ${rangeLabel}`}`}
+        />
+        <RangeSelector value={range} onChange={setRange} />
+      </div>
 
       <LiveUsageStrip />
 
@@ -374,13 +405,15 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           {des.map(de => {
-            const m = metricsByDe.get(de.id);
+            const m = metricsByDe.get(de.id);   // all-time — trend only
+            const iq = inquiryByDe.get(de.id);  // windowed counts + quality
             const a = actionByDe.get(de.id);
             const c = costByDe.get(de.id);
             const s = csatByDe.get(de.id);
             const trend = m?.trend ?? [];
             const trendValues = trend.map(t => t.resolution_rate);
-            const hasActivity = (m && m.total_decisions > 0) || (a && a.total_events > 0);
+            const inquiriesHandled = iq?.total_decisions ?? 0;
+            const hasActivity = inquiriesHandled > 0 || (a && a.total_events > 0);
             const acted = a?.executed ?? 0;
             return (
               <div key={de.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
@@ -406,7 +439,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                         <p className="text-[10px] text-slate-500 uppercase tracking-wide">actions taken</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-semibold text-slate-200 tabular-nums">{m?.total_decisions ?? 0}</p>
+                        <p className="text-lg font-semibold text-slate-200 tabular-nums">{inquiriesHandled}</p>
                         <p className="text-[10px] text-slate-500 uppercase tracking-wide">inquiries handled</p>
                       </div>
                       {trendValues.length > 1 && (
@@ -451,10 +484,10 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                     <div className="border-t border-slate-700 pt-3">
                       <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">Answer quality</p>
                       <div className="grid grid-cols-3 gap-2">
-                        {m && m.total_decisions > 0 ? [
-                          { label: 'Resolution', value: `${m.resolution_rate}%`, color: metricColor('resolution', m.resolution_rate) },
-                          { label: 'Confidence', value: `${m.avg_confidence}%`, color: metricColor('confidence', m.avg_confidence) },
-                          { label: 'CSAT', value: s && s.total_ratings > 0 ? `${s.csat_pct}%` : '—', color: s && s.total_ratings > 0 ? (s.csat_pct >= 70 ? 'text-emerald-400' : s.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400') : 'text-slate-500' },
+                        {iq && iq.total_decisions > 0 ? [
+                          { label: 'Resolution', value: `${iq.resolution_rate}%`, color: metricColor('resolution', iq.resolution_rate) },
+                          { label: 'Confidence', value: `${iq.avg_confidence}%`, color: metricColor('confidence', iq.avg_confidence) },
+                          { label: 'CSAT (all-time)', value: s && s.total_ratings > 0 ? `${s.csat_pct}%` : '—', color: s && s.total_ratings > 0 ? (s.csat_pct >= 70 ? 'text-emerald-400' : s.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400') : 'text-slate-500' },
                         ].map(x => (
                           <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
                             <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
@@ -653,6 +686,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
   const [guardrails, setGuardrails] = useState<DeGuardrailActivity[]>([]);
   const [evalFailures, setEvalFailures] = useState<RecentEvalFailure[]>([]);
   const [actions, setActions] = useState<DeActionMetrics[]>([]);
+  const [range, setRange] = useState<number | null>(30);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -663,14 +697,14 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       getDePerformanceMetrics(tenantId),
       getDeGuardrailActivity(tenantId),
       getRecentEvalFailures(tenantId),
-      getDeActionMetrics(tenantId),
+      getDeActionMetrics(tenantId, range),
     ]).then(([d, m, g, e, a]) => {
       if (cancelled) return;
       setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e); setActions(a);
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [tenantId, range]);
 
   const nameFor = (id: string) => des.find(d => d.id === id)?.name ?? 'A Digital Employee';
 
@@ -711,7 +745,10 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
   if (loading) {
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
-        <PageHeader title="Business Insights" subtitle="Loading real signals…" />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <PageHeader title="Business Insights" subtitle="Loading real signals…" />
+          <RangeSelector value={range} onChange={setRange} />
+        </div>
       </div>
     );
   }
@@ -721,10 +758,13 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
 
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
-      <PageHeader
-        title="Business Insights"
-        subtitle="What needs your attention, and what to do about it — from real workforce activity"
-      />
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <PageHeader
+          title="Business Insights"
+          subtitle="What needs your attention, and what to do about it — from real workforce activity"
+        />
+        <RangeSelector value={range} onChange={setRange} />
+      </div>
 
       {trendCards.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">

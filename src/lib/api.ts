@@ -1103,10 +1103,30 @@ export interface DeActionMetrics {
   autonomy_rate: number | null; // % of executed done without a human
 }
 
-export const getDeActionMetrics = async (tenantId: string): Promise<DeActionMetrics[]> => {
-  const { data, error } = await supabase.rpc('get_de_action_metrics', { p_tenant_id: tenantId });
+// days: number of days to window (null = all time).
+export const getDeActionMetrics = async (tenantId: string, days: number | null = null): Promise<DeActionMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_action_metrics', { p_tenant_id: tenantId, p_days: days });
   if (error) { console.error('getDeActionMetrics:', error.message); return []; }
   return (data ?? []) as DeActionMetrics[];
+};
+
+// Windowed inquiry counts + answer quality (the answering half), used by
+// the Performance/Insights date-range selector. Distinct from the evolved
+// (all-time) get_de_performance_metrics, which still serves the trend.
+export interface DeInquiryMetrics {
+  de_id: string; total_decisions: number; resolution_rate: number; avg_confidence: number; escalation_rate: number;
+}
+export const getDeInquiryMetrics = async (tenantId: string, days: number | null = null): Promise<DeInquiryMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_inquiry_metrics', { p_tenant_id: tenantId, p_days: days });
+  if (error) { console.error('getDeInquiryMetrics:', error.message); return []; }
+  return (data ?? []) as DeInquiryMetrics[];
+};
+
+// Windowed AI cost — same shape as getDeCostMetrics but time-bounded.
+export const getDeCostMetricsRanged = async (tenantId: string, days: number | null = null): Promise<DeCostMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_cost_metrics_ranged', { p_tenant_id: tenantId, p_days: days });
+  if (error) { console.error('getDeCostMetricsRanged:', error.message); return []; }
+  return (data ?? []) as DeCostMetrics[];
 };
 
 export interface DeGuardrailActivity {
