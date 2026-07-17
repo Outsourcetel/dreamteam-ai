@@ -9,6 +9,7 @@ import {
 } from '../../../lib/evalApi';
 import { listKnowledgeDocs } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Live Proving Ground (R3) — golden Q&A suites run against the
@@ -236,7 +237,7 @@ const LiveProvingGround = () => {
 
       {/* Suite editor table / empty state */}
       {loading ? (
-        <p className="text-sm text-slate-500 py-8 text-center">Loading suite…</p>
+        <LiveLoadingSkeleton rows={4} />
       ) : qas.length === 0 ? (
         <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center mb-6">
           <p className="text-sm text-slate-300 font-medium mb-1">Create your DE's exam</p>
@@ -369,7 +370,7 @@ const LiveProvingGround = () => {
           <h2 className="text-sm font-semibold text-white">Run history</h2>
         </div>
         {runs.length === 0 ? (
-          <p className="text-xs text-slate-500 px-5 py-6">No runs yet — the first "Run evals" lands here.</p>
+          <LiveEmptyState icon="◎" title="No runs yet" body={'The first "Run evals" lands here.'} />
         ) : (
           <table className="w-full text-sm text-slate-300">
             <thead className="bg-slate-800 border-b border-slate-700">

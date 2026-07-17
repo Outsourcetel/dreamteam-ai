@@ -5,6 +5,7 @@ import {
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
   type CertRow, type TrainingRow, type CompliancePackRow,
 } from '../../lib/deWorkbenchApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 
 // ═══════════════════════════════════════════════════════════════
 // DE Workbench — makes the Wave 1-3 muscles VISIBLE. Everything here
@@ -102,14 +103,16 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
         ))}
       </div>
       <div className="p-5">
-        {loading ? <Loading /> : loadError ? (
+        {loading ? <LiveLoadingSkeleton rows={4} /> : loadError ? (
           <div className="text-center py-10">
             <p className="text-sm text-rose-300">Couldn't load this employee's workbench.</p>
             <p className="text-xs text-slate-500 mt-1">Check your connection and reopen this tab to retry.</p>
           </div>
         ) : (
           <>
-            {section === 'memory' && (memory.length === 0 ? <Empty>No memories yet. This employee records what it learns as it works and answers.</Empty> : (
+            {section === 'memory' && (memory.length === 0 ? (
+              <LiveEmptyState icon="◎" title="No memories yet" body="This employee records what it learns as it works and answers." />
+            ) : (
               <div className="space-y-2">
                 {memory.map(m => (
                   <div key={m.id} className="bg-slate-900/50 rounded-lg px-4 py-3 flex items-start gap-3">
@@ -127,7 +130,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               <div className="space-y-5">
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Objectives (goals)</p>
-                  {objectives.length === 0 ? <Empty>No objectives set. Objectives are goals the employee pursues over time.</Empty> : (
+                  {objectives.length === 0 ? (
+                    <LiveEmptyState icon="◎" title="No objectives set" body="Objectives are goals the employee pursues over time." />
+                  ) : (
                     <div className="space-y-2">{objectives.map(o => (
                       <div key={o.id} className="bg-slate-900/50 rounded-lg px-4 py-2.5 flex items-center gap-3">
                         <Pill s={o.status} /><span className="text-sm text-slate-200 flex-1">{o.title}</span>
@@ -138,7 +143,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                 </div>
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Work queue (tasks)</p>
-                  {workItems.length === 0 ? <Empty>Nothing queued. Tasks the employee works autonomously appear here.</Empty> : (
+                  {workItems.length === 0 ? (
+                    <LiveEmptyState icon="◎" title="Nothing queued" body="Tasks the employee works autonomously appear here." />
+                  ) : (
                     <div className="space-y-2">{workItems.map(w => (
                       <div key={w.id} className="bg-slate-900/50 rounded-lg px-4 py-2.5">
                         <div className="flex items-center gap-3">
@@ -154,7 +161,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               </div>
             )}
 
-            {section === 'reasoning' && (runs.length === 0 ? <Empty>No decision traces yet. When this employee works a task, every step it takes and why is recorded here.</Empty> : (
+            {section === 'reasoning' && (runs.length === 0 ? (
+              <LiveEmptyState icon="◎" title="No decision traces yet" body="When this employee works a task, every step it takes and why is recorded here." />
+            ) : (
               <div className="space-y-4">
                 {runs.map(run => (
                   <div key={run.ref} className="bg-slate-900/50 rounded-lg p-4">
@@ -176,7 +185,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               </div>
             ))}
 
-            {section === 'exceptions' && (exceptions.length === 0 ? <Empty>No exceptions raised. When the employee hits an edge case, it proposes how to handle it here for review.</Empty> : (
+            {section === 'exceptions' && (exceptions.length === 0 ? (
+              <LiveEmptyState icon="◎" title="No exceptions raised" body="When the employee hits an edge case, it proposes how to handle it here for review." />
+            ) : (
               <div className="space-y-2">{exceptions.map(e => (
                 <div key={e.id} className="bg-slate-900/50 rounded-lg px-4 py-3">
                   <div className="flex items-center gap-2 mb-1"><Pill s={e.status} />{e.learned && <span className="text-[10px] text-emerald-400">learned ✓</span>}<span className="text-[11px] text-slate-600 ml-auto">{fmt(e.created_at)}</span></div>
@@ -189,7 +200,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
             ))}
 
             {section === 'certification' && (certs.length === 0 ? (
-              <Empty>Not certified yet. A DE must pass its role's evaluation before it can go customer-facing — that record shows here.</Empty>
+              <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — that record shows here." />
             ) : (
               <div className="space-y-2">{certs.map(c => (
                 <div key={c.id} className="bg-slate-900/50 rounded-lg px-4 py-3 flex items-center gap-3">
@@ -201,7 +212,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               ))}</div>
             ))}
 
-            {section === 'training' && (training.length === 0 ? <Empty>No training assigned. A role's curriculum (SOPs, tools, policies) is tracked here.</Empty> : (
+            {section === 'training' && (training.length === 0 ? (
+              <LiveEmptyState icon="◎" title="No training assigned" body="A role's curriculum (SOPs, tools, policies) is tracked here." />
+            ) : (
               <div className="space-y-2">{training.map(t => (
                 <div key={t.module_key} className="bg-slate-900/50 rounded-lg px-4 py-2.5 flex items-center gap-3">
                   <Pill s={t.status} />
@@ -212,7 +225,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
             ))}
 
             {section === 'compliance' && (packs.length === 0 ? (
-              <Empty>No compliance packs attached to this workspace. Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE.</Empty>
+              <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE." />
             ) : (
               <div className="space-y-2">{packs.map(p => (
                 <div key={p.pack_key} className="bg-slate-900/50 rounded-lg px-4 py-3 flex items-center gap-3">

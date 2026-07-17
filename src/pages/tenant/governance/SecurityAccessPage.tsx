@@ -12,6 +12,7 @@ import {
 } from '../../../lib/api'
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole } from '../../../lib/useUsers'
 import { supabase } from '../../../supabase'
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Security & Access (gov_security)
@@ -583,12 +584,10 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
       </div>
 
       <div className="px-5 py-4">
-        {loading && <p className="text-xs text-slate-500 py-6 text-center">Loading security activity…</p>}
+        {loading && <LiveLoadingSkeleton rows={3} />}
         {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
         {!loading && !error && visible.length === 0 && (
-          <p className="text-xs text-slate-500 py-6 text-center">
-            No security or access changes in the last {rangeLabel}. Widen the time window to see older activity.
-          </p>
+          <LiveEmptyState icon="◇" title="No changes in this window" body={`No security or access changes in the last ${rangeLabel}. Widen the time window to see older activity.`} />
         )}
         {!loading && !error && visible.length > 0 && (
           <div className="overflow-x-auto">

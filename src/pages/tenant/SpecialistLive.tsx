@@ -16,6 +16,7 @@ import {
 import {
   listActionDefinitions, previewAction, ActionDefinition, ActionPreviewResult,
 } from '../../lib/connectorApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 import {
   submitEvidenceFeedback, listEvidenceFeedback, EvidenceFeedback, EvidenceVerdict,
 } from '../../lib/knowledgeApi';
@@ -586,7 +587,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
     return (
       <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
-        <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
+        <LiveLoadingSkeleton rows={4} />
       </div>
     );
   }
@@ -657,7 +658,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           </div>
         )}
         {sources.length === 0 ? (
-          <p className="text-xs text-slate-500 py-4 text-center">No sources yet — the specialist can only answer from what you connect here.</p>
+          <LiveEmptyState icon="◎" title="No sources yet" body="The specialist can only answer from what you connect here." />
         ) : (
           <div className="space-y-2">
             {sources.map(src => (
@@ -732,7 +733,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           <input ref={fileRef} type="file" className="hidden" onChange={e => void onUpload(e)} />
         </div>
         {media.length === 0 ? (
-          <p className="text-xs text-slate-500 py-3 text-center">No media assets yet.</p>
+          <LiveEmptyState icon="◎" title="No media assets yet" body="Upload a file to add it to this specialist's library." />
         ) : (
           <div className="space-y-2">
             {media.map(m => (
@@ -856,7 +857,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
 
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">History</p>
         {consultations.length === 0 ? (
-          <p className="text-xs text-slate-500 py-2">No consultations yet.</p>
+          <LiveEmptyState icon="◎" title="No consultations yet" body="Questions asked of the Technical Specialist appear here." />
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-900/60">
@@ -892,7 +893,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           <button className="text-indigo-400 hover:text-indigo-300" onClick={() => setPage('ops_human_tasks')}>Human Tasks</button>.
         </p>
         {scribe.length === 0 ? (
-          <p className="text-xs text-slate-500 py-2">No Scribe requests yet — start one from a consultation above.</p>
+          <LiveEmptyState icon="◎" title="No Scribe requests yet" body="Start one from a consultation above." />
         ) : (
           <div className="space-y-2">
             {scribe.map(r => (

@@ -15,6 +15,7 @@ import {
   type DeInquiryMetrics, type DeGuardrailActivity, type RecentEvalFailure,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Shared per-DE metrics (numbers from WorkforceDEsPage) ─────────
 
@@ -405,9 +406,10 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <PageHeader title="Performance" subtitle="Loading real Digital Employee activity…" />
+          <PageHeader title="Performance" subtitle="What your workforce got done" />
           <RangeSelector value={range} onChange={setRange} />
         </div>
+        <LiveLoadingSkeleton rows={4} />
       </div>
     );
   }
@@ -449,13 +451,15 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       )}
 
       {des.length === 0 ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
-          No Digital Employees yet — add one under Workforce to start seeing real performance here.
-        </div>
+        <LiveEmptyState icon="◎" title="No Digital Employees yet" body="Add one under Workforce to start seeing real performance here." />
       ) : !anyActivity ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
-          Your employees are set up, but haven't handled real work yet. Activity appears here as they answer inquiries and take actions — see <button onClick={() => setPage('ops_de_activity')} className="text-indigo-400 hover:text-indigo-300">DE at Work</button> to watch it happen live.
-        </div>
+        <LiveEmptyState
+          icon="◎"
+          title="No activity yet"
+          body="Your employees are set up, but haven't handled real work yet. Activity appears here as they answer inquiries and take actions."
+          primaryLabel="Watch DE at Work"
+          onPrimary={() => setPage('ops_de_activity')}
+        />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           {des.map(de => {
@@ -820,9 +824,10 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <PageHeader title="Business Insights" subtitle="Loading real signals…" />
+          <PageHeader title="Business Insights" subtitle="What needs your attention, and what to do about it" />
           <RangeSelector value={range} onChange={setRange} />
         </div>
+        <LiveLoadingSkeleton rows={4} />
       </div>
     );
   }
@@ -857,9 +862,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       )}
 
       {!hasAnySignal ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-sm text-slate-500">
-          Nothing needs attention right now — no failed actions, approval backlogs, escalation spikes, guardrail overrides, or Proving Ground failures in this period.
-        </div>
+        <LiveEmptyState icon="◎" title="Nothing needs attention right now" body="No failed actions, approval backlogs, escalation spikes, guardrail overrides, or Proving Ground failures in this period." />
       ) : (
         <div className="space-y-3">
           {/* Failed actions — the most urgent operational signal */}

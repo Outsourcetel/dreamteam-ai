@@ -8,6 +8,7 @@ import {
   generateWidgetKey, fetchWidgetKeys, revokeWidgetKey, fetchEndUserSessions,
   WIDGET_ASK_URL, type WidgetKeyRow, type EndUserSessionRow,
 } from '../../lib/widgetApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 
 // THE canonical list (Wave 1.1) — the same one signup and Company
 // Setup use, so a tenant's stored industry always matches a template.
@@ -449,14 +450,19 @@ const SettingsPage = ({
       {activeTab === 'usage' && (
         <div className="max-w-3xl space-y-4">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Monthly Token Budgets</h2>
+            <h2 className="text-sm font-semibold text-white mb-1">Monthly AI Budget</h2>
             <p className="text-xs text-slate-400 mb-5">
-              Set a monthly token limit per client. DEs stop responding when the limit is reached — resets on the 1st of each month.
-              Current month: <span className="text-white font-mono">{new Date().toISOString().slice(0, 7)}</span>
+              {/* RLS scopes this list to what the caller can see: a normal
+                  workspace sees only itself; an operator sees their clients —
+                  so the copy stays singular-first, not "per client". */}
+              {tenants.length > 1
+                ? 'Set a monthly AI usage limit for each workspace. Digital Employees pause when a limit is reached — resets on the 1st of each month.'
+                : 'Set a monthly AI usage limit for your workspace. Your Digital Employees pause when the limit is reached — it resets on the 1st of each month.'}
+              {' '}Current month: <span className="text-white font-mono">{new Date().toISOString().slice(0, 7)}</span>
             </p>
 
             {tenants.length === 0 ? (
-              <div className="text-xs text-slate-600 py-4 text-center">Loading tenants…</div>
+              <LiveLoadingSkeleton rows={2} />
             ) : (
               <div className="space-y-3">
                 {tenants.map(t => {
@@ -562,7 +568,7 @@ const SettingsPage = ({
             </div>
 
             {widgetKeys.length === 0 ? (
-              <div className="text-xs text-slate-600 py-3 text-center">No widget keys yet — generate one to embed the widget.</div>
+              <LiveEmptyState icon="⚿" title="No widget keys yet" body="Generate one to embed the widget." />
             ) : (
               <div className="space-y-2">
                 {widgetKeys.map(k => (
@@ -605,7 +611,7 @@ const SettingsPage = ({
             <h2 className="text-sm font-semibold text-white mb-1">End-User Activity</h2>
             <p className="text-xs text-slate-400 mb-3">Recent end users who asked questions through the widget.</p>
             {endUserSessions.length === 0 ? (
-              <div className="text-xs text-slate-600 py-3 text-center">No end-user activity yet.</div>
+              <LiveEmptyState icon="◎" title="No end-user activity yet" body="Recent end users who ask questions through the widget will show up here." />
             ) : (
               <table className="w-full text-xs">
                 <thead>

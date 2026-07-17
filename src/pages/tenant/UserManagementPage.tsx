@@ -3,6 +3,7 @@ import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
 import { useDepartments } from '../../lib/useDepartments';
 import { sendPasswordReset } from '../../lib/api';
+import { LiveEmptyState } from '../../components/LiveDataStates';
 
 const DEPARTMENTS = ['Leadership', 'Customer Success', 'Finance', 'HR & People', 'Legal & Compliance', 'Revenue', 'IT', 'Operations', 'Product', 'Marketing'];
 
@@ -366,9 +367,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
         </div>
 
         {filtered.length === 0 && (
-          <div className="py-16 text-center">
-            <div className="text-slate-600 text-sm">No members match your filter</div>
-          </div>
+          <LiveEmptyState icon="◎" title="No members match your filter" body="Try a different search or filter." />
         )}
       </div>
 

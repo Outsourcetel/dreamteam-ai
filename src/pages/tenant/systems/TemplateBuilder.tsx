@@ -11,6 +11,7 @@ import {
   saveAdapterTemplate, publishAdapterTemplate, templateDryRun,
   connectFromTemplate, templateSecretFields, TemplateDryRunResult,
 } from '../../../lib/connectorApi';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Template Builder — the Declarative Adapter Framework UI.
@@ -467,7 +468,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
         <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white">+ Build a custom template</button>
       </div>
       {templates.length === 0 ? (
-        <p className="text-xs text-slate-600">No templates yet — the platform library appears once migration 028 is applied.</p>
+        <LiveEmptyState icon="◎" title="No templates yet" body="The platform library appears once migration 028 is applied." />
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {templates.map(t => (

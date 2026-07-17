@@ -8,6 +8,7 @@ import {
   listAccessGrants, listAccessSubjects, listRecentDenials,
   setAccessGrant, revokeAccessGrant, effectiveGrant,
 } from '../../../lib/accessGrantsApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // GOVERNANCE — Data Access (migration 029).
@@ -113,7 +114,7 @@ export default function DataAccessPage() {
     return (
       <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
         <PageHeader title="Data Access" subtitle="Which digital employee or specialist may touch which connected system." />
-        <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
+        <LiveLoadingSkeleton rows={4} />
       </div>
     );
   }
@@ -145,8 +146,8 @@ export default function DataAccessPage() {
       </div>
 
       {subjects.length === 0 ? (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-8 text-center mb-6">
-          <p className="text-sm text-slate-400">No digital employees or specialists in this workspace yet — hire one and its access rules appear here.</p>
+        <div className="mb-6">
+          <LiveEmptyState icon="◎" title="No digital employees or specialists yet" body="Hire one and its access rules appear here." />
         </div>
       ) : (
         <>
@@ -211,7 +212,7 @@ export default function DataAccessPage() {
               (or to no access when none is set).
             </p>
             {connectors.length === 0 ? (
-              <p className="text-xs text-slate-500 py-3 text-center">No systems connected yet — connect one in Systems → Connectors and it appears here.</p>
+              <LiveEmptyState icon="⇄" title="No systems connected yet" body="Connect one in Systems → Connectors and it appears here." />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[700px]">
@@ -276,7 +277,7 @@ export default function DataAccessPage() {
           grant it above — if it doesn't need it, the wall is doing its job.
         </p>
         {denials.length === 0 ? (
-          <p className="text-xs text-slate-500 py-2">No denials recorded — nothing has been refused yet.</p>
+          <LiveEmptyState icon="◇" title="No denials recorded" body="Nothing has been refused yet." />
         ) : (
           <div className="space-y-1.5">
             {denials.map((d) => (

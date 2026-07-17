@@ -12,6 +12,7 @@ import {
 import { CustomerApiError } from '../../../lib/customerApi';
 import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
 import type { Page } from '../../../types';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -335,18 +336,15 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       {/* Table / empty state */}
       {loading ? (
-        <p className="text-sm text-slate-500 py-8 text-center">Loading documents…</p>
+        <LiveLoadingSkeleton rows={4} />
       ) : docs.length === 0 ? (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center">
-          <p className="text-sm text-slate-300 font-medium mb-1">Alex answers from these documents — add your first</p>
-          <p className="text-xs text-slate-500 mb-4">Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support.</p>
-          <button
-            onClick={() => setEditor({ ...emptyEditor })}
-            className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-          >
-            + Add your first document
-          </button>
-        </div>
+        <LiveEmptyState
+          icon="◎"
+          title="Add your first document"
+          body="Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support."
+          primaryLabel="+ Add your first document"
+          onPrimary={() => setEditor({ ...emptyEditor })}
+        />
       ) : (
         <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
           <table className="w-full text-sm text-slate-300">
@@ -421,7 +419,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             Nothing changes in the knowledge base until you approve here.
           </p>
           {revisionsLoading ? (
-            <p className="text-xs text-slate-500">Loading…</p>
+            <LiveLoadingSkeleton rows={2} />
           ) : (
             <div className="space-y-2">
               {revisions.map((r) => {

@@ -4,6 +4,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { useDataMode } from '../../../lib/dataMode';
 import ImportCustomersModal from '../../../components/ImportCustomersModal';
+import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Seed data (reconciled with src/data/companies.ts) ──────────
 
@@ -192,7 +193,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
         <h2 className="text-sm font-semibold text-white mb-4">Recent cross-stage activity</h2>
         <div className="space-y-2">
           {dataMode === 'live' && (
-            <p className="text-xs text-slate-500 py-2">Activity across your customer stages will appear here as your Digital Employees work.</p>
+            <LiveEmptyState icon="◎" title="No activity yet" body="Activity across your customer stages will appear here as your Digital Employees work." />
           )}
           {dataMode !== 'live' && activity.map((item, i) => (
             <div key={i} className={`border-l-2 pl-3 py-1 ${toneBorder(item.tone)}`}>

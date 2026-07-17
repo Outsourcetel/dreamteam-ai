@@ -53,6 +53,7 @@ const LoginPage = ({
   const [suError, setSuError] = useState('');
   const [suLoading, setSuLoading] = useState(false);
   const [suSuccess, setSuSuccess] = useState(false);
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -350,6 +351,21 @@ const LoginPage = ({
               <button onClick={() => { setTab('signin'); setSuSuccess(false); setEmail(suEmail); }}
                 className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
                 Go to Sign In
+              </button>
+              {/* A lost/spam-filtered confirmation email must not strand the
+                  signup — resend is the only self-serve recovery. */}
+              <button
+                onClick={async () => {
+                  if (resendState === 'sending') return;
+                  setResendState('sending');
+                  const { error } = await supabase.auth.resend({ type: 'signup', email: suEmail });
+                  setResendState(error ? 'error' : 'sent');
+                }}
+                className="w-full mt-3 py-2 text-xs text-slate-400 hover:text-white transition-colors">
+                {resendState === 'sent' ? 'Confirmation email re-sent ✓'
+                  : resendState === 'sending' ? 'Sending…'
+                  : resendState === 'error' ? "Couldn't resend — try again in a minute"
+                  : "Didn't get the email? Resend confirmation"}
               </button>
             </div>
           )}

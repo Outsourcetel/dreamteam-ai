@@ -3,6 +3,7 @@ import { PageHeader } from '../../../components/ui';
 import { CATEGORY_SHORT } from '../../../lib/categoryContracts';
 import { fetchIdentityInventory, IdentitySubject } from '../../../lib/identityInventoryApi';
 import { PERMISSION_LABELS, AccessPermission } from '../../../lib/accessGrantsApi';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // GOVERNANCE — Identity & Credentials (migration 044).
@@ -199,10 +200,10 @@ export default function IdentityInventoryPage() {
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
+        <LiveLoadingSkeleton rows={4} />
       ) : !error && subjects.length === 0 ? (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-8 text-center mb-6">
-          <p className="text-sm text-slate-400">No digital employees or specialists in this workspace yet.</p>
+        <div className="mb-6">
+          <LiveEmptyState icon="◎" title="No digital employees or specialists yet" body="Once you hire one, its credentials and grants appear here." />
         </div>
       ) : (
         subjects.map((s) => <SubjectCard key={`${s.kind}:${s.id}`} s={s} />)

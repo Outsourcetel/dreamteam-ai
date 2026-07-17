@@ -7,6 +7,7 @@ import {
 import { getActionExecution, ActionExecutionRow } from '../../../lib/connectorApi';
 import { CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts';
 import type { Page } from '../../../types';
+import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
 // "DE at work" — the live proactive-triage queue (migration 034),
@@ -372,16 +373,11 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
       </div>
 
       {loading ? (
-        <p className="text-sm text-slate-500 py-8 text-center">Loading…</p>
+        <LiveLoadingSkeleton rows={4} />
       ) : rows.length === 0 ? (
-        <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
-          <p className="text-slate-500 text-sm">No activity yet — real automatic triage needs connected systems with new items, or use the simulator above.</p>
-        </div>
+        <LiveEmptyState icon="◎" title="No activity yet" body="Real automatic triage needs connected systems with new items, or use the simulator above." />
       ) : filtered.length === 0 ? (
-        <div className="text-center py-10 border border-dashed border-slate-700 rounded-xl">
-          <p className="text-slate-500 text-sm">No activity matches these filters.</p>
-          <button onClick={clearFilters} className="text-xs text-indigo-400 hover:text-indigo-300 mt-1">Clear filters</button>
-        </div>
+        <LiveEmptyState icon="◎" title="No activity matches these filters" body="Try a different search, or clear the filters to see everything." primaryLabel="Clear filters" onPrimary={clearFilters} />
       ) : (
         <>
           <div className="space-y-1.5">
