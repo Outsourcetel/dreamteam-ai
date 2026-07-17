@@ -511,7 +511,7 @@ const SettingsPage = ({
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Widget Keys</h2>
             <p className="text-xs text-slate-400 mb-4">
-              Publishable keys for embedding the "Ask Alex" widget in your product. Keys can only ask
+              Publishable keys for embedding your support chat widget in your product. Keys can only ask
               questions — they can never read or change data. We store only a hash; the key is shown once.
             </p>
 
