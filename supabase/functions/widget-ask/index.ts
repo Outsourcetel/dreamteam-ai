@@ -87,28 +87,40 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
 
 // ── Guardrail check (blocks + escalates; the DE's rules, not the channel's) ──
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
+
+// Pure matcher — shared by the JSON path, the streaming flush loop, and the
+// final re-check so all three apply IDENTICAL blocking logic.
+function matchBlockingRule(blocking: GuardrailRule[], answer: string): GuardrailRule | null {
+  const text = answer.toLowerCase();
+  for (const r of blocking) {
+    if (!r.pattern) continue;
+    for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
+      let hit = false;
+      try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
+      if (hit) return r;
+    }
+  }
+  return null;
+}
+
 // deno-lint-ignore no-explicit-any
-async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
+async function loadBlockingRules(admin: any, tenantId: string, deId: string | null): Promise<GuardrailRule[]> {
   try {
     const { data: rules } = await admin.rpc('guardrail_rules_for_de', {
       p_tenant_id: tenantId, p_de_id: deId, p_rule_types: ['blocked_phrase', 'blocked_topic'],
     });
-    if (!Array.isArray(rules)) return null;
-    const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
-    const text = answer.toLowerCase();
-    for (const r of blocking as GuardrailRule[]) {
-      if (!r.pattern) continue;
-      for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
-        let hit = false;
-        try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
-        if (hit) return r;
-      }
-    }
-    return null;
+    if (!Array.isArray(rules)) return [];
+    return (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
   } catch (e) {
     console.error('guardrail check failed (fail-open):', e);
-    return null;
+    return [];
   }
+}
+
+// deno-lint-ignore no-explicit-any
+async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
+  const blocking = await loadBlockingRules(admin, tenantId, deId);
+  return matchBlockingRule(blocking, answer);
 }
 
 const GUARDRAIL_BLOCK_MESSAGE = "I can't help with that — it's outside my guardrails. I've passed it to a human on the team.";
@@ -320,7 +332,10 @@ serve(async (req) => {
     // ══════════════════════════════════════════════════════════════
     const truncatedQ = question.length > 60 ? question.slice(0, 60) + '…' : question;
     const who = endUserTag || 'end user';
-    const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) => {
+    // finalizeCore returns the response PAYLOAD (not a Response) so the
+    // streaming path can run the identical pipeline and emit it as an SSE
+    // `final`/`blocked` event; finalize() wraps it for the JSON path.
+    const finalizeCore = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean): Promise<Record<string, unknown>> => {
       // Guardrail — the DE's rules always win, even on cached answers.
       const blockedBy = await checkAnswerGuardrails(admin, tenantId, ans, subjectDeId);
       if (blockedBy) {
@@ -330,7 +345,7 @@ serve(async (req) => {
         }
         await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${blockedBy.rule}". Draft (conf ${conf}%): ${ans}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
         await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${blockedBy.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: blockedBy.id, rule: blockedBy.rule, question: truncatedQ, channel });
-        return json({ conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang });
+        return { conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang };
       }
 
       const lowConf = conf < ESCALATION_THRESHOLD;
@@ -350,7 +365,7 @@ serve(async (req) => {
         const holding = lowConf
           ? "Thanks for your patience — I'm bringing a teammate in to make sure you get this right."
           : "Thanks! A team member is reviewing your request and will reply here shortly.";
-        return json({ conversation_id: convId, answer: holding, confidence: conf, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'draft_pending', language: lang });
+        return { conversation_id: convId, answer: holding, confidence: conf, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'draft_pending', language: lang };
       }
 
       // Auto-send: confident, guardrail-clean, DE trusted to reply on its own.
@@ -362,8 +377,10 @@ serve(async (req) => {
       }
       await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved', text: `Answered a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' (from cache)' : ''} (${srcs.join(', ') || 'no sources cited'})`, confidence: conf });
       await auditEvent(admin, tenantId, persona.name, 'de', `Resolved a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' from cache' : ''}`, 'resolved', { confidence: conf, conversation_id: convId, channel, cached });
-      return json({ conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached });
+      return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached };
     };
+    const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) =>
+      json(await finalizeCore(ans, conf, srcs, lang, cached));
 
     // ── Cost governor #1: semantic answer cache (BEFORE any LLM call) ──
     // Language guard (bug found live 2026-07-17): gte-small embeddings are
@@ -467,6 +484,202 @@ serve(async (req) => {
     const audience = accountName
       ? `You are answering an end user (${displayName || 'an employee'}) at customer account "${accountName}".`
       : `You are answering an end user${displayName ? ` (${displayName})` : ''} of a business customer.`;
+
+    // ══════════════════════════════════════════════════════════════
+    // STREAMING PATH (SSE) — opt-in via body.stream, AUTO-SEND DEs only.
+    // Draft-mode DEs NEVER stream (the customer must only ever see the
+    // holding message, enforced by the replyMode gate in finalizeCore),
+    // and every earlier return (cache hit, turn cap, no_docs, errors)
+    // already answered on the JSON path — which stays byte-for-byte
+    // unchanged for widget.js v2.
+    //
+    // Protocol emitted:
+    //   `event: delta`   {text}                — complete sentences only
+    //   `event: blocked` {…same payload as the JSON blocked result}
+    //   `event: final`   {…same payload as the JSON success result}
+    //   `event: error`   {error}               — client falls back to JSON
+    // Safety: blocking rules fetched ONCE at stream start; before EVERY
+    // flush the FULL accumulated text is re-checked (zero chunk-boundary
+    // risk); a hold-back of max(120, longest blocking pattern) chars plus
+    // a ###META### partial-prefix guard means no complete blocked span —
+    // and no metadata fragment — is ever emitted to the customer.
+    // ══════════════════════════════════════════════════════════════
+    if (body.stream === true && replyMode === 'auto') {
+      const blockingRules = await loadBlockingRules(admin, tenantId, subjectDeId);
+      const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
+      const META = '###META###';
+
+      // Prose-first protocol: plain-text answer, then META marker + JSON tail.
+      const streamInstructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and report low confidence in the metadata. Detect the language of the user's message and write your ENTIRE answer in that same language. Write the answer as plain text — NOT as JSON. Then, on a new final line, output exactly ${META} immediately followed by a JSON object: {"confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
+
+      const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, max_tokens: 1024, stream: true,
+          system: [
+            { type: 'text', text: streamInstructionBlock, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: `Knowledge documents:\n${context}` },
+          ],
+          messages: [{ role: 'user', content: question }],
+        }),
+      });
+      if (!llmRes.ok || !llmRes.body) {
+        const detail = await llmRes.text();
+        console.error('Anthropic error (stream)', llmRes.status, detail);
+        return json({ error: 'llm_error', status: llmRes.status, conversation_id: convId }, 502);
+      }
+      const upstream = llmRes.body.getReader();
+      const encoder = new TextEncoder();
+
+      const sse = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const emit = (event: string, data: unknown) => {
+            try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { /* stream closed */ }
+          };
+
+          (async () => {
+            let acc = '';        // full raw model output so far
+            let flushed = 0;     // chars of acc already emitted as deltas
+            let usageIn = 0, usageOut = 0;
+            let blocked = false;
+
+            // Longest suffix of s that is a (partial) prefix of META.
+            const partialMetaLen = (s: string): number => {
+              const max = Math.min(META.length - 1, s.length);
+              for (let n = max; n > 0; n--) if (s.endsWith(META.slice(0, n))) return n;
+              return 0;
+            };
+
+            // Mirror of the non-streaming blocked path in finalizeCore().
+            const doBlock = async (rule: GuardrailRule) => {
+              const mi = acc.indexOf(META);
+              const partial = (mi >= 0 ? acc.slice(0, mi) : acc).trim();
+              if (convId) {
+                await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true, delivery: 'blocked', lang: null });
+                await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: `Guardrail "${rule.rule}" blocked a reply to: ${truncatedQ}`, detected_language: null, last_message_at: nowIso() }).eq('id', convId);
+              }
+              await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${rule.rule}" mid-stream. Partial draft: ${partial}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
+              await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${rule.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: rule.id, rule: rule.rule, question: truncatedQ, channel });
+              emit('blocked', { conversation_id: convId, blocked: true, rule: rule.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: null });
+            };
+
+            // Flush complete sentences only — never past the hold-back or a
+            // (partial) META marker; guardrail-check the FULL text first.
+            const tryFlush = async (): Promise<boolean> => {
+              const metaIdx = acc.indexOf(META);
+              const visibleEnd = metaIdx >= 0 ? metaIdx : acc.length - partialMetaLen(acc);
+              const limit = Math.min(visibleEnd, acc.length - HOLD_BACK);
+              if (limit <= flushed) return false;
+              const win = acc.slice(flushed, limit);
+              let cut = -1;
+              const re = /[.?!](?=[\s\n])/g;
+              let m: RegExpExecArray | null;
+              while ((m = re.exec(win)) !== null) cut = m.index + 1;
+              if (cut <= 0) return false;
+              const rule = matchBlockingRule(blockingRules, metaIdx >= 0 ? acc.slice(0, metaIdx) : acc);
+              if (rule) { await doBlock(rule); return true; }
+              emit('delta', { text: acc.slice(flushed, flushed + cut) });
+              flushed += cut;
+              return false;
+            };
+
+            try {
+              const decoder = new TextDecoder();
+              let lineBuf = '';
+              readLoop:
+              while (true) {
+                const { done, value } = await upstream.read();
+                if (done) break;
+                lineBuf += decoder.decode(value, { stream: true });
+                const lines = lineBuf.split('\n');
+                lineBuf = lines.pop() ?? '';
+                for (const rawLine of lines) {
+                  const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+                  if (!line.startsWith('data:')) continue;
+                  const payload = line.slice(5).trim();
+                  if (!payload) continue;
+                  // deno-lint-ignore no-explicit-any
+                  let ev: any;
+                  try { ev = JSON.parse(payload); } catch { continue; }
+                  if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+                    acc += String(ev.delta.text ?? '');
+                    if (await tryFlush()) { blocked = true; break readLoop; }
+                  } else if (ev.type === 'message_start') {
+                    usageIn = ev.message?.usage?.input_tokens ?? 0;
+                  } else if (ev.type === 'message_delta') {
+                    if (ev.usage?.output_tokens != null) usageOut = ev.usage.output_tokens;
+                  }
+                }
+              }
+
+              if (blocked) {
+                try { await upstream.cancel(); } catch { /* already done */ }
+                controller.close();
+                return;
+              }
+
+              // ── Clean completion: parse the META tail (tolerate absence) ──
+              const metaIdx = acc.indexOf(META);
+              const answerText = (metaIdx >= 0 ? acc.slice(0, metaIdx) : acc).trim();
+              let conf = 50; let srcs: string[] = []; let needsEsc = false; let lang: string | null = null;
+              if (metaIdx >= 0) {
+                try {
+                  const tail = acc.slice(metaIdx + META.length);
+                  const s = tail.indexOf('{'), e2 = tail.lastIndexOf('}');
+                  if (s >= 0 && e2 > s) {
+                    const meta = JSON.parse(tail.slice(s, e2 + 1));
+                    conf = Math.max(0, Math.min(100, Math.round(Number(meta.confidence)) || 0));
+                    srcs = Array.isArray(meta.sources) ? meta.sources.map(String) : [];
+                    needsEsc = !!meta.needs_escalation;
+                    lang = typeof meta.language === 'string' && meta.language.trim() ? meta.language.trim() : null;
+                  }
+                } catch { /* keep defaults */ }
+              }
+
+              // Metering — same RPC as the JSON path; usage from SSE events.
+              if (subjectDeId) {
+                admin.rpc('record_de_token_usage', {
+                  p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
+                  p_input_tokens: usageIn, p_output_tokens: usageOut,
+                }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
+              }
+
+              // Cache write — same policy + language tag as the JSON path.
+              if (qEmbedding && conf >= ESCALATION_THRESHOLD && !needsEsc) {
+                const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
+                if (!clean) {
+                  await admin.from('answer_cache').insert({
+                    tenant_id: tenantId, account_id: null, question,
+                    question_embedding: qEmbedding, answer: answerText, confidence: conf, sources: srcs,
+                    language: lang ?? 'English',
+                  });
+                }
+              }
+
+              // Full post-answer pipeline (final guardrail re-check catches
+              // anything that arrived after the last flush check, escalation
+              // threshold, persist, activity/audit) — IDENTICAL to JSON path.
+              const payload = await finalizeCore(answerText, conf, srcs, lang, false);
+              emit(payload.blocked ? 'blocked' : 'final', payload);
+              controller.close();
+            } catch (err) {
+              console.error('widget-ask stream error:', err);
+              try { await upstream.cancel(); } catch { /* noop */ }
+              emit('error', { error: 'stream_failed', conversation_id: convId });
+              try { controller.close(); } catch { /* already closed */ }
+            }
+          })();
+        },
+        cancel() { upstream.cancel().catch(() => { /* noop */ }); },
+      });
+
+      return new Response(sse, {
+        status: 200,
+        headers: { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' },
+      });
+    }
+
     // The persona + fixed instructions are stable across turns → prompt-cached.
     const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
 

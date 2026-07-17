@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { askWidget, submitWidgetCsat, pollWidget, type WidgetAskResult } from '../../lib/widgetChatApi';
+import { askWidget, askWidgetStream, submitWidgetCsat, pollWidget, type WidgetAskResult } from '../../lib/widgetChatApi';
 import { speechProvider, resolveSpeechProvider, type SpeechProvider } from '../../lib/speech';
 
 // The shared, premium customer-support chat surface. INFRASTRUCTURE ONLY —
-// it renders whatever the DE (via widget-ask) decides: streamed (typewriter)
-// answers, inline sources, a holding state when a reply is drafting for a
-// human, CSAT, and free browser voice. It contains zero answer logic.
+// it renders whatever the DE (via widget-ask) decides: live token-streamed
+// answers (SSE, guardrail-buffered server-side; typewriter fallback for
+// non-streamed replies), inline sources, a holding state when a reply is
+// drafting for a human, CSAT, and free browser voice. Zero answer logic.
 
 export interface ChatCoreProps {
   widgetKey: string;
@@ -84,6 +85,9 @@ export default function ChatCore({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopListenRef = useRef<(() => void) | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
+  // True once the conversation is in draft/holding mode (a human is reviewing
+  // or replying) — subsequent turns skip streaming and use the JSON path.
+  const holdingRef = useRef(false);
   // Voice: browser by default; upgrades to premium if the relay reports a key.
   const [voice, setVoice] = useState<SpeechProvider>(speechProvider);
   useEffect(() => { resolveSpeechProvider(widgetKey).then(setVoice).catch(() => {}); }, [widgetKey]);
@@ -121,8 +125,12 @@ export default function ChatCore({
     const placeholder: Msg = { id: nextId(), role: 'assistant', full: '', pending: true };
     setMessages(prev => [...prev, userMsg, placeholder]);
     setSending(true);
-    try {
-      const r = await askWidget({ widgetKey, question: q, conversationId, channel, accountRef, endUserRef, displayName });
+
+    // Shared final-result handling — identical semantics for the streamed
+    // `final` event and the JSON response. `streamed` skips the typewriter
+    // (the text already arrived live) but still replaces the bubble with the
+    // canonical answer (the server holds back a tail buffer while streaming).
+    const applyResult = (r: WidgetAskResult, streamed: boolean) => {
       if (r.conversation_id) setConversationId(r.conversation_id);
       // Don't let the live poll re-show the answer we already rendered.
       if (r.message_id) seenIds.current.add(r.message_id);
@@ -133,11 +141,49 @@ export default function ChatCore({
           : "Something went wrong on my side — let me get a teammate to help.")
         : r.answer;
       const needsHuman = !!r.needs_escalation || r.status === 'needs_human' || r.delivery === 'draft_pending' || r.delivery === 'blocked';
+      holdingRef.current = r.delivery === 'draft_pending' || r.status === 'needs_human';
       setMessages(prev => prev.map(m => m.id === placeholder.id
-        ? { ...m, full: answer, pending: false, animate: true, sources: r.sources, delivery: r.delivery, needsHuman }
+        ? { ...m, full: answer, pending: false, animate: !streamed, sources: r.sources, delivery: r.delivery, needsHuman }
         : m));
+      // Voice speaks on final only — never per-delta.
       if (voiceMode && voice.ttsSupported && r.delivery === "sent") voice.speak(answer, r.language);
       if (!needsHuman && !r.error && r.conversation_id) setTimeout(() => setCsat('shown'), 900);
+    };
+
+    try {
+      // Stream when the conversation is NOT in draft/holding mode. The server
+      // returns plain JSON for draft-mode DEs / cache hits (handled inside
+      // askWidgetStream via onFinal); any stream failure falls back to the
+      // JSON path below so nothing regresses.
+      if (!holdingRef.current) {
+        try {
+          let streamed = false;
+          await askWidgetStream(widgetKey, q, conversationId, {
+            onDelta: (t) => {
+              streamed = true;
+              setMessages(prev => prev.map(m => m.id === placeholder.id
+                ? { ...m, full: m.full + t, pending: false, animate: false }
+                : m));
+            },
+            onBlocked: (msg) => {
+              // Guardrail retraction: replace the ENTIRE bubble content.
+              setMessages(prev => prev.map(m => m.id === placeholder.id
+                ? { ...m, full: msg, pending: false, animate: false, delivery: 'blocked', needsHuman: true }
+                : m));
+            },
+            onFinal: (r) => applyResult(r, streamed),
+          }, { channel, accountRef, endUserRef, displayName });
+          return;
+        } catch {
+          // Reset the bubble (partial deltas may have rendered), then fall
+          // back to the battle-tested JSON call.
+          setMessages(prev => prev.map(m => m.id === placeholder.id
+            ? { ...m, full: '', pending: true, animate: false }
+            : m));
+        }
+      }
+      const r = await askWidget({ widgetKey, question: q, conversationId, channel, accountRef, endUserRef, displayName });
+      applyResult(r, false);
     } catch {
       setMessages(prev => prev.map(m => m.id === placeholder.id
         ? { ...m, full: "I couldn't reach the server — please try again.", pending: false, animate: true, needsHuman: true }
