@@ -3,6 +3,7 @@ import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar, MfaEnrollmentPanel } from './components';
 import DEChatDock from './components/DEChatDock';
+import PageErrorBoundary from './components/PageErrorBoundary';
 import LoginPage from './pages/LoginPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
 import HostedChatPage from './pages/chat/HostedChatPage';
@@ -514,7 +515,9 @@ function AppShell() {
               </button>
             </div>
           )}
-          {renderPage()}
+          <PageErrorBoundary key={currentPage}>
+            {renderPage()}
+          </PageErrorBoundary>
         </main>
         {authedUser && !isDTUser && <DEChatDock />}
       </div>
