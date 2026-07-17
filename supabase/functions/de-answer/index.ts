@@ -375,10 +375,23 @@ serve(async (req) => {
       return json({ error: 'ai_budget_exceeded', conversation_id: convId });
     }
 
+    // ── Recall durable memory for this conversation (muscle #4, mig 155) ──
+    let memoryContext = '';
+    if (subjectDeId && convId) {
+      const { data: mems } = await admin.rpc('de_memory_search', {
+        p_tenant_id: tenantId, p_de_id: subjectDeId, p_query_embedding: qEmbedding,
+        p_subject_kind: 'conversation', p_subject_ref: convId, p_match_count: 5,
+      });
+      if (Array.isArray(mems) && mems.length > 0) {
+        memoryContext = '\n\nWhat you remember from earlier in this conversation (context only — still answer facts from the knowledge documents):\n'
+          + mems.map((m: { content: string }) => `- ${m.content}`).join('\n');
+      }
+    }
+
     const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:
-${context}`;
+${context}${memoryContext}`;
 
     const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -475,6 +488,23 @@ ${context}`;
         tenant_id: tenantId, conversation_id: convId, role: 'assistant',
         content: parsed.answer, confidence: parsed.confidence, escalated: escalate,
       });
+    }
+
+    // ── Remember this exchange (muscle #4), conversation-scoped, so the
+    // DE recalls it on the next turn. Awaited (not fire-and-forget): the
+    // edge isolate can be torn down the moment we return, cutting off a
+    // floating promise, so a bare .then() write is silently dropped. Only
+    // good, non-escalated answers are worth remembering. ──
+    if (subjectDeId && convId && !escalate) {
+      try {
+        const memEmb = await embedText(`Q: ${question}\nA: ${parsed.answer}`.slice(0, 2000));
+        await admin.rpc('de_memory_write', {
+          p_tenant_id: tenantId, p_de_id: subjectDeId,
+          p_content: `Customer asked: "${question}" — I answered: ${parsed.answer.slice(0, 500)}`,
+          p_embedding: memEmb, p_subject_kind: 'conversation', p_subject_ref: convId,
+          p_kind: 'episodic', p_salience: Math.min(1, parsed.confidence / 100), p_source: 'de',
+        });
+      } catch (e) { console.error('de_memory_write:', e); }
     }
 
     // ── Escalation + activity ──
