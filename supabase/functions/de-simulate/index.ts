@@ -79,6 +79,9 @@ serve(async (req) => {
     // is answered WITH the proposed knowledge injected (de-answer replay mode),
     // so a regression check can compare golden pass-rate with vs without it.
     const candidateKnowledge = typeof body.candidate_knowledge === 'string' ? body.candidate_knowledge.trim() : '';
+    // candidate=true marks a dry-run (patch replay or its baseline comparison):
+    // certify_de_from_sim (mig 172) refuses candidate runs as cert evidence.
+    const isCandidate = candidateKnowledge.length > 0 || body.candidate === true;
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
@@ -99,7 +102,7 @@ serve(async (req) => {
     const scenarios = await scenarioQuestions(admin, apiKey, tenant_id, de_id, mode, count);
     if (scenarios.length === 0) return json({ error: mode === 'historical' ? 'no_historical_questions' : mode === 'golden' ? 'no_golden_qa' : 'scenario_generation_failed' }, 400);
 
-    const { data: run } = await admin.from('sim_runs').insert({ tenant_id, de_id, mode, status: 'running', total: scenarios.length, threshold_pct: PASS_THRESHOLD }).select('id').single();
+    const { data: run } = await admin.from('sim_runs').insert({ tenant_id, de_id, mode, status: 'running', total: scenarios.length, threshold_pct: PASS_THRESHOLD, candidate: isCandidate }).select('id').single();
     const simRunId = run.id;
     const secret = dispatch;
     const results: Array<Record<string, unknown>> = [];
