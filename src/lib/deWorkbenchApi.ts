@@ -10,6 +10,7 @@ export interface WorkItemRow { id: string; title: string; kind: string; status: 
 export interface TraceRow { id: string; run_ref: string | null; run_kind: string; seq: number; thought: string | null; tool: string | null; inputs: Record<string, unknown> | null; outputs: Record<string, unknown> | null; created_at: string }
 export interface ExceptionRow { id: string; situation: string; proposed_action: string; justification: string; status: string; outcome: string | null; learned: boolean; created_at: string }
 export interface CertRow { id: string; archetype_key: string | null; score_pct: number; threshold_pct: number; status: string; evaluated_at: string | null; created_at: string }
+export interface CertStatus { state: 'certified' | 'stale' | 'failed' | 'uncertified' | 'unknown'; fresh: boolean; latest_passed: { score_pct: number; evaluated_at: string | null; archetype_key: string | null } | null; latest_status: string | null }
 export interface TrainingRow { module_key: string; status: string; completed_at: string | null }
 export interface CompliancePackRow { pack_key: string; attached_at: string; name?: string; domain?: string }
 
@@ -59,6 +60,14 @@ export const getDeCertifications = async (deId: string): Promise<CertRow[]> => {
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(10);
   if (error) throw error;
   return (data ?? []) as CertRow[];
+};
+
+// Whether the DE's passing certification still vouches for its CURRENT config.
+// state: certified (fresh) | stale (config changed since last pass) | failed | uncertified.
+export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> => {
+  const { data, error } = await supabase.rpc('de_certification_status', { p_de_id: deId });
+  if (error) throw error;
+  return (data ?? null) as CertStatus | null;
 };
 
 export const getDeTraining = async (deId: string): Promise<TrainingRow[]> => {

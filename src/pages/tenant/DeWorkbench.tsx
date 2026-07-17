@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
-  getDeCertifications, getDeTraining, getTenantCompliancePacks,
+  getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
-  type CertRow, type TrainingRow, type CompliancePackRow,
+  type CertRow, type CertStatus, type TrainingRow, type CompliancePackRow,
 } from '../../lib/deWorkbenchApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 
@@ -54,6 +54,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [trace, setTrace] = useState<TraceRow[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [certs, setCerts] = useState<CertRow[]>([]);
+  const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
   const [training, setTraining] = useState<TrainingRow[]>([]);
   const [packs, setPacks] = useState<CompliancePackRow[]>([]);
 
@@ -64,13 +65,13 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, o, w, t, e, c, tr, p] = await Promise.all([
+        const [m, o, w, t, e, c, cs, tr, p] = await Promise.all([
           getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
-          getDeExceptions(deId), getDeCertifications(deId), getDeTraining(deId), getTenantCompliancePacks(),
+          getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getDeTraining(deId), getTenantCompliancePacks(),
         ]);
         if (cancelled) return;
         setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
-        setExceptions(e); setCerts(c); setTraining(tr); setPacks(p);
+        setExceptions(e); setCerts(c); setCertStatus(cs); setTraining(tr); setPacks(p);
       } catch {
         // A failed load must NOT masquerade as an honest empty state.
         if (!cancelled) setLoadError(true);
@@ -202,7 +203,17 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
             {section === 'certification' && (certs.length === 0 ? (
               <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — that record shows here." />
             ) : (
-              <div className="space-y-2">{certs.map(c => (
+              <div className="space-y-2">
+                {certStatus?.state === 'stale' && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
+                    <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">⚠ Certification is stale</div>
+                    <p className="text-[12px] text-amber-200/80 mt-1">This employee's configuration changed since it last passed. The certification below no longer vouches for its current setup — re-run its evaluation or simulation and re-certify before promoting it. Its go-live gate will block promotion until then.</p>
+                  </div>
+                )}
+                {certStatus?.state === 'certified' && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-2.5 text-[12px] text-emerald-300">✓ Certified for its current configuration — the passing evaluation below still applies.</div>
+                )}
+                {certs.map(c => (
                 <div key={c.id} className="bg-slate-900/50 rounded-lg px-4 py-3 flex items-center gap-3">
                   <Pill s={c.status} />
                   <span className="text-sm text-slate-200 flex-1">{c.archetype_key ?? 'Role'} certification</span>
