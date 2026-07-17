@@ -8,11 +8,12 @@ import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import {
-  getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics,
+  getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics, getOutcomeMetering,
   getDeInquiryMetrics, getDeCostMetricsRanged,
   getDeGuardrailActivity, getRecentEvalFailures,
   type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
   type DeInquiryMetrics, type DeGuardrailActivity, type RecentEvalFailure,
+  type OutcomeMetering,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -363,6 +364,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
   const [cost, setCost] = useState<DeCostMetrics[]>([]);              // windowed cost
   const [csat, setCsat] = useState<DeCsatMetrics[]>([]);             // all-time satisfaction
   const [actions, setActions] = useState<DeActionMetrics[]>([]);      // windowed actions
+  const [metering, setMetering] = useState<OutcomeMetering | null>(null); // windowed outcome value
   const [range, setRange] = useState<number | null>(30);
   const [loading, setLoading] = useState(true);
 
@@ -376,9 +378,10 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       getDeCostMetricsRanged(tenantId, range),
       getDeCsatMetrics(tenantId),
       getDeActionMetrics(tenantId, range),
-    ]).then(([d, m, iq, c, s, a]) => {
+      getOutcomeMetering(tenantId, range),
+    ]).then(([d, m, iq, c, s, a, om]) => {
       if (cancelled) return;
-      setDes(d); setMetrics(m); setInquiry(iq); setCost(c); setCsat(s); setActions(a);
+      setDes(d); setMetrics(m); setInquiry(iq); setCost(c); setCsat(s); setActions(a); setMetering(om);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -441,6 +444,42 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
           tone={totalSentHuman > 0 ? 'text-amber-300' : 'text-slate-200'} sub="approvals routed to people" />
         <StatTile label="AI cost" value={`$${totalCostUsd.toFixed(2)}`} sub={`${totalCalls.toLocaleString()} model calls`} />
       </div>
+
+      {/* Outcome metering (#15): per-resolution value, escalations free.
+          Shown only once real outcomes exist — no fabricated revenue. */}
+      {metering && (metering.totals.resolutions > 0 || metering.totals.escalations > 0) && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <p className="text-sm font-semibold text-white">Outcome value</p>
+            <p className="text-[11px] text-slate-500">metered at ${(metering.price_per_resolution_cents / 100).toFixed(2)} per resolution · escalations to your team are free</p>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <p className="text-2xl font-semibold text-emerald-400">{metering.totals.resolutions.toLocaleString()}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">resolutions delivered</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-200">{metering.totals.escalations.toLocaleString()}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">handed to your team (free)</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-white">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">metered value this period</p>
+            </div>
+          </div>
+          {metering.by_de.length > 1 && (
+            <div className="mt-3 pt-3 border-t border-slate-700/60 space-y-1">
+              {metering.by_de.slice(0, 6).map((d, i) => (
+                <div key={d.de_id ?? i} className="flex items-center gap-3 text-xs">
+                  <span className="text-slate-300 flex-1 truncate">{d.name}</span>
+                  <span className="text-slate-500">{d.resolutions} resolved · {d.escalations} handed off</span>
+                  <span className="text-slate-200 font-medium w-16 text-right">${(d.amount_cents / 100).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {(totalBlocked > 0 || totalFailed > 0) && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 mb-6 text-xs text-slate-400 flex items-center gap-4 flex-wrap">

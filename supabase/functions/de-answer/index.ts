@@ -294,6 +294,13 @@ serve(async (req) => {
           text: `Answered a chat question instantly from the verified answer cache`,
           confidence: hit.confidence,
         });
+        // Outcome metering (#15): a delivered cached answer is a resolution.
+        if (convId) {
+          await admin.rpc('record_billable_outcome', {
+            p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
+            p_kind: 'resolution', p_source: 'chat',
+          });
+        }
         return json({
           conversation_id: convId, answer: hit.answer, confidence: hit.confidence,
           sources, needs_escalation: false, cached: true,
@@ -525,6 +532,15 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUnt
           p_kind: 'episodic', p_salience: Math.min(1, parsed.confidence / 100), p_source: 'de',
         });
       } catch (e) { console.error('de_memory_write:', e); }
+    }
+
+    // Outcome metering (#15): resolution bills per tenant pricing;
+    // escalation meters FREE. Idempotent per conversation; never in replay.
+    if (!replayMode && convId) {
+      await admin.rpc('record_billable_outcome', {
+        p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
+        p_kind: escalate ? 'escalation' : 'resolution', p_source: 'chat',
+      });
     }
 
     // ── Escalation + activity ── (skipped entirely in replay mode: a dry-run

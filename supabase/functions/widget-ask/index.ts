@@ -346,6 +346,8 @@ serve(async (req) => {
         }
         await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${blockedBy.rule}". Draft (conf ${conf}%): ${ans}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
         await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${blockedBy.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: blockedBy.id, rule: blockedBy.rule, question: truncatedQ, channel });
+        // Outcome metering (#15): a guardrail block hands off to a human — FREE.
+        if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         return { conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang };
       }
 
@@ -362,6 +364,8 @@ serve(async (req) => {
         await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `${lowConf ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
         await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${lowConf ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
         await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
+        // Outcome metering (#15): human takes over — FREE.
+        if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         // The customer sees a holding message — never the un-approved draft.
         const holding = lowConf
           ? "Thanks for your patience — I'm bringing a teammate in to make sure you get this right."
@@ -378,6 +382,9 @@ serve(async (req) => {
       }
       await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved', text: `Answered a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' (from cache)' : ''} (${srcs.join(', ') || 'no sources cited'})`, confidence: conf });
       await auditEvent(admin, tenantId, persona.name, 'de', `Resolved a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' from cache' : ''}`, 'resolved', { confidence: conf, conversation_id: convId, channel, cached });
+      // Outcome metering (#15): an auto-sent, guardrail-clean answer is the
+      // billable RESOLUTION (per-conversation idempotent, escalations free).
+      if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'resolution', p_source: 'widget' });
       return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached };
     };
     const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) =>

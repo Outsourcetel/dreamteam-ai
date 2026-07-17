@@ -1122,6 +1122,21 @@ export const getDeInquiryMetrics = async (tenantId: string, days: number | null 
   return (data ?? []) as DeInquiryMetrics[];
 };
 
+// Outcome-priced metering (mig 175): what the workforce RESOLVED and what
+// that's worth at the tenant's per-resolution price; escalations are free.
+export interface OutcomeMetering {
+  totals: { resolutions: number; escalations: number; billable_amount_cents: number };
+  by_de: Array<{ de_id: string | null; name: string; resolutions: number; escalations: number; amount_cents: number }>;
+  by_day: Array<{ day: string; resolutions: number; escalations: number }>;
+  price_per_resolution_cents: number;
+}
+export const getOutcomeMetering = async (tenantId: string, days: number | null = 30): Promise<OutcomeMetering | null> => {
+  const from = days == null ? new Date(0).toISOString() : new Date(Date.now() - days * 86400000).toISOString();
+  const { data, error } = await supabase.rpc('get_outcome_metering', { p_tenant_id: tenantId, p_from: from, p_to: new Date().toISOString() });
+  if (error) { console.error('getOutcomeMetering:', error.message); return null; }
+  return (data ?? null) as OutcomeMetering | null;
+};
+
 // Windowed AI cost — same shape as getDeCostMetrics but time-bounded.
 export const getDeCostMetricsRanged = async (tenantId: string, days: number | null = null): Promise<DeCostMetrics[]> => {
   const { data, error } = await supabase.rpc('get_de_cost_metrics_ranged', { p_tenant_id: tenantId, p_days: days });
