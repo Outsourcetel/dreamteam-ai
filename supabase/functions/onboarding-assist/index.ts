@@ -64,7 +64,21 @@ serve(async (req) => {
     if (!runCtx) return json({ error: 'run_context_failed' }, 500);
 
     const runStart = new Date().toISOString();
-    const goal = `A customer has described their business and what they want their AI workforce to handle. Propose the setup to onboard them in DreamTeam — create the Digital Employee(s), and (only if clearly needed) a playbook, specialist, or connector. Keep it to the smallest sensible setup that meets the need; name things in the customer's language. Everything you submit is routed to a human for approval — once you've proposed the setup, call mark_goal_complete.\n\nCustomer's description:\n"""\n${description.trim().slice(0, 4000)}\n"""`;
+
+    // Give Ada the real archetype catalog so she proposes ready-to-go roles
+    // (hire_from_archetype) instead of blank employees the human must
+    // configure. When a role matches an archetype, hiring from it is strongly
+    // preferred — it applies persona, capabilities, model and compliance packs
+    // in one gated step.
+    const { data: archetypes } = await admin.from('role_archetypes')
+      .select('key, name, domain, description').eq('status', 'active');
+    const archetypeCatalog = (archetypes ?? []).length > 0
+      ? `\n\nReady-to-go role archetypes you can hire from (use hire_from_archetype with the archetype_key — STRONGLY PREFERRED when a role matches one of these):\n`
+        + (archetypes ?? []).map((a: { key: string; name: string; domain: string; description: string }) => `- ${a.key} — ${a.name} (${a.domain}): ${a.description}`).join('\n')
+        + `\nFor any role with NO matching archetype, fall back to create_digital_employee.`
+      : '';
+
+    const goal = `A customer has described their business and what they want their AI workforce to handle. Propose the setup to onboard them in DreamTeam — create the Digital Employee(s), and (only if clearly needed) a playbook, specialist, or connector. Keep it to the smallest sensible setup that meets the need; name things in the customer's language. Everything you submit is routed to a human for approval — once you've proposed the setup, call mark_goal_complete.${archetypeCatalog}\n\nCustomer's description:\n"""\n${description.trim().slice(0, 4000)}\n"""`;
 
     const runRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/agentic-step-execute`, {
       method: 'POST',

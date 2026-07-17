@@ -2155,6 +2155,33 @@ async function dtQuota(c: Ctx, table: string, cap: number, noun: string): Promis
 }
 
 const dreamteamActions: Record<string, NativeAction> = {
+  // Hire a DE from a pre-built role archetype (mig 162). Delegates to
+  // instantiate_role_archetype, which applies persona/capabilities/model
+  // and auto-attaches the archetype's mandatory compliance packs — all in
+  // one gated step. Same safety envelope as dt_create_digital_employee
+  // (designed/supervised, cert-gated before go-live).
+  dt_hire_from_archetype: {
+    render(_c, p) {
+      if (!p.archetype_key?.trim()) return { ok: false, error: 'param_required', detail: 'archetype_key is required.' };
+      if (!p.de_name?.trim()) return { ok: false, error: 'param_required', detail: 'de_name is required.' };
+      return { ok: true, method: 'INTERNAL', url: 'dreamteam://hire_from_archetype', body: p };
+    },
+    async run(c, p) {
+      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
+      if (!p.archetype_key?.trim() || !p.de_name?.trim()) return { ok: false, error: 'param_required', detail: 'archetype_key and de_name are required.' };
+      const deCap = await dtQuota(c, 'digital_employees', 50, 'Digital Employees');
+      if (deCap) return { ok: false, error: 'quota_exceeded', detail: deCap };
+      const { data, error } = await c.admin.rpc('instantiate_role_archetype', {
+        p_tenant_id: c.tenantId,
+        p_archetype_key: p.archetype_key.trim().slice(0, 60),
+        p_de_name: p.de_name.trim().slice(0, 120),
+        p_persona_name: p.persona_name?.trim()?.slice(0, 60) || null,
+      });
+      if (error) return { ok: false, error: 'hire_failed', detail: error.message };
+      return { ok: true, raw: { de_id: data, archetype: p.archetype_key.trim() },
+        receipt: `Hired "${p.de_name.trim()}" from the "${p.archetype_key.trim()}" archetype at lifecycle "designed", trust "supervised" — persona, capabilities, model and any compliance packs applied. It still needs knowledge and must pass certification before going live.` };
+    },
+  },
   dt_create_digital_employee: {
     render(_c, p) {
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name (the role/label) is required.' };
