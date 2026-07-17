@@ -22,6 +22,7 @@ import {
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../components';
+import DeWorkbenchPanel from './DeWorkbench';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
@@ -2547,6 +2548,7 @@ function TeamsPanel() {
 // them → how they're growing → the paper trail.
 const DETAIL_TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'workbench', label: 'Workbench' },
   { key: 'capabilities', label: 'Capabilities' },
   { key: 'trust', label: 'Trust & Autonomy' },
   { key: 'development', label: 'Development' },
@@ -2800,6 +2802,12 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               {/* Performance — real per-DE data */}
               <DePerformancePanel deId={selectedDe.id} />
             </div>
+          )}
+
+          {/* Workbench — the live muscles: memory, work queue, reasoning,
+              exceptions, certification, training, compliance (migs 155-163) */}
+          {detailTab === 'workbench' && (
+            <DeWorkbenchPanel deId={selectedDe.id} />
           )}
 
           {/* Capabilities — what this employee can do and reach */}
