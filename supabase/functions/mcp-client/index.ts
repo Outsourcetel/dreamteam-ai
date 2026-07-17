@@ -30,6 +30,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -80,6 +81,17 @@ async function rpc(
     ...headers,
   };
   if (sessionId) hdrs['Mcp-Session-Id'] = sessionId;
+  // SSRF guard at the actual fetch chokepoint. `endpoint` comes from
+  // specialist_sources.config, which ANY member of the tenant can write
+  // (RLS policy specialist_sources_tenant_isolation, migration 024) --
+  // unlike connectors.base_url there is no DB-level CHECK behind it, so
+  // this is the only thing standing between a tenant user and a fetch
+  // against loopback / RFC1918 / cloud-metadata addresses. Callers also
+  // pre-check on the way in; this re-checks per request (endpoint is a
+  // parameter and every MCP call funnels through here).
+  if (!isSafeExternalUrl(endpoint)) {
+    return { ok: false, error: 'endpoint blocked by safety policy (must be a public http(s) address)' };
+  }
   let res: Response;
   try {
     res = await fetch(endpoint, {
@@ -174,6 +186,16 @@ serve(async (req) => {
     const cfg = (src.config ?? {}) as Record<string, unknown>;
     const endpoint = String(cfg.endpoint ?? '');
     if (!endpoint) return json({ error: 'no_endpoint_configured' }, 400);
+    // Reject unsafe endpoints up front with an actionable message (rpc()
+    // re-checks at the fetch itself). Without this, a tenant member could
+    // point an MCP source at loopback/RFC1918/link-local metadata and use
+    // this function as an SSRF proxy -- the response is returned to them.
+    if (!isSafeExternalUrl(endpoint)) {
+      return json({
+        error: 'unsafe_endpoint',
+        detail: 'MCP endpoint must be a public http(s) address. Private, loopback, and link-local addresses are blocked.',
+      }, 400);
+    }
 
     const headers: Record<string, string> = {};
     const { data: secretRow } = await admin.from('specialist_source_secrets_decrypted')
