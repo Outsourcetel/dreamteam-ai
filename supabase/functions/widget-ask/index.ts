@@ -366,8 +366,15 @@ serve(async (req) => {
     };
 
     // ── Cost governor #1: semantic answer cache (BEFORE any LLM call) ──
+    // Language guard (bug found live 2026-07-17): gte-small embeddings are
+    // multilingual enough that a Spanish-cached answer matched an ENGLISH
+    // phrasing of the same question. English askers now match only
+    // English/legacy rows (RPC default, migration 164); non-English askers
+    // skip the cache entirely — we can cheaply detect "not English" but not
+    // WHICH language without a model call, and serving Spanish cache to a
+    // French asker is the same bug. They just pay the normal LLM path.
     const qEmbedding = await embedText(question);
-    if (qEmbedding) {
+    if (qEmbedding && !looksNonEnglish(question)) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE,
       });
@@ -483,6 +490,9 @@ serve(async (req) => {
         await admin.from('answer_cache').insert({
           tenant_id: tenantId, account_id: null, question,
           question_embedding: qEmbedding, answer: parsed.answer, confidence: parsed.confidence, sources: parsed.sources,
+          // Tag the ANSWER's language (model-reported) so the language gate
+          // in match_cached_answer can keep languages apart (migration 164).
+          language: parsed.language ?? 'English',
         });
       }
     }

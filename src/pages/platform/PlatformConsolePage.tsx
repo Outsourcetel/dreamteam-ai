@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
+import { COMPANIES } from '../../data/companies';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
   id: t.id,
@@ -47,7 +48,7 @@ const PlatformConsolePage = ({
   dbTenants?: DBTenant[];
   dbTenantsLoaded?: boolean;
 }) => {
-  const { enterRemoteAccess } = useAuth();
+  const { enterRemoteAccess, setActiveCompanyId, setViewingDemo, isLiveTenant } = useAuth();
   // Local mirror of the prop, so a provision/suspend action can refresh the
   // list immediately without waiting on the parent's own resync cycle.
   const [localDbTenants, setLocalDbTenants] = useState<DBTenant[]>(dbTenants || []);
@@ -239,6 +240,45 @@ const PlatformConsolePage = ({
         )}
 
         <PendingApprovalsPanel />
+
+        {/* ── Demo companies — the showcase accounts (TCP Software, PWC).
+            These are frontend demo experiences, NOT real tenants, so the
+            Remote Access machinery doesn't apply; "Open demo" switches this
+            operator session into the demo view (same mechanism as the
+            sidebar company switcher). Platform console is operator-only,
+            so this panel never reaches a customer. ── */}
+        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">Demo companies</p>
+              <p className="text-xs text-slate-500 mt-0.5">Sales showcase accounts with scripted data — open one to walk a prospect through the product.</p>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">Operators only</span>
+          </div>
+          <div className="divide-y divide-slate-700/60">
+            {COMPANIES.map((c) => (
+              <div key={c.id} className="px-5 py-3 flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {c.name.charAt(0)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-200 font-medium truncate">{c.name}</p>
+                  <p className="text-[11px] text-slate-500">{c.industry} · demo data</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveCompanyId(c.id);
+                    if (isLiveTenant) setViewingDemo(true);
+                    setPage('dashboard');
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex-shrink-0"
+                >
+                  Open demo →
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
           <table className="w-full">

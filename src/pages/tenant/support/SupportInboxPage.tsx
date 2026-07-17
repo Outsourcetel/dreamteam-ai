@@ -28,6 +28,17 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+// Relative time for the list — "now / 5m / 3h / 2d", falling back to a date
+// beyond a week. Ops scan recency, not clock times.
+const fmtRel = (iso: string | null) => {
+  if (!iso) return '';
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
 
 export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: Page) => void }) {
   const { authedUser } = useAuth();
@@ -107,8 +118,11 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
           <div className="flex items-center gap-1 p-2 border-b border-white/10 flex-wrap">
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all ${tab === t.key ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)]' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
+                className={`relative text-xs px-2.5 py-1.5 rounded-lg transition-all ${tab === t.key ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)]' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
                 {t.label}{t.key === 'needs_human' && counts.needs_human > 0 ? ` (${counts.needs_human})` : t.key === 'mine' && counts.mine > 0 ? ` (${counts.mine})` : ''}
+                {t.key === 'needs_human' && counts.needs_human > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_2px_rgba(251,191,36,0.6)] animate-pulse" />
+                )}
               </button>
             ))}
           </div>
@@ -124,7 +138,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
                     {active && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-400 to-violet-500" />}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-200 font-medium truncate flex-1">{c.subject || c.end_user_name || 'Conversation'}</span>
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">{fmtTime(c.last_message_at)}</span>
+                      <span className="text-[10px] text-slate-500 flex-shrink-0">{fmtRel(c.last_message_at)}</span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${meta.cls}`}>{meta.label}</span>
