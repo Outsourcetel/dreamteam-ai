@@ -34,6 +34,24 @@ async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+// Cost + abuse guards — the widget key is publishable (embedded on the
+// tenant's site), so a key holder could otherwise drive unbounded
+// Deepgram STT/TTS spend. Mirrors widget-ask's sliding window; voice
+// calls are heavier per request, so the per-minute ceiling is lower.
+// (Per-isolate, like widget-ask: a distributed attacker across cold
+// isolates can exceed the global cap by some multiple — acceptable as a
+// first-line throttle; provider-side spend caps are the backstop.)
+const RATE_LIMIT_PER_MIN = 60;
+const MAX_AUDIO_B64_CHARS = 2_000_000; // ~1.5 MB decoded — short utterances, not file uploads
+const rateWindows = new Map<string, number[]>();
+function rateLimited(keyId: string): boolean {
+  const now = Date.now();
+  const win = (rateWindows.get(keyId) ?? []).filter((t) => now - t < 60_000);
+  win.push(now);
+  rateWindows.set(keyId, win);
+  return win.length > RATE_LIMIT_PER_MIN;
+}
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -75,9 +93,13 @@ serve(async (req) => {
     }
     if (!providerKey) return json({ error: 'voice_not_configured' });
 
+    // Throttle the spend paths (stt/tts) per widget key.
+    if (rateLimited(keyRow.id)) return json({ error: 'rate_limited' }, 429);
+
     if (action === 'stt') {
       const audioB64 = typeof body.audio === 'string' ? body.audio : '';
       if (!audioB64) return json({ error: 'audio required' }, 400);
+      if (audioB64.length > MAX_AUDIO_B64_CHARS) return json({ error: 'audio_too_large' }, 413);
       const mime = typeof body.mime === 'string' ? body.mime : 'audio/webm';
       const res = await fetch('https://api.deepgram.com/v1/listen?smart_format=true&detect_language=true', {
         method: 'POST',
