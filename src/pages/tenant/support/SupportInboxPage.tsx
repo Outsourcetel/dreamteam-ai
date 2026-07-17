@@ -92,18 +92,22 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
   const doApprove = (id: string, edited?: string) => { setEditDraftId(null); void run(() => approveDraft(id, edited)); };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
-      <div className="px-6 pt-6">
+    <div className="relative flex-1 flex flex-col overflow-hidden bg-slate-900">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_20%_-40%,rgba(99,102,241,0.18),transparent_60%)]" />
+      <div className="relative px-6 pt-6 flex items-start justify-between gap-4">
         <PageHeader title="Support inbox" subtitle="Live customer conversations — take over, approve a draft, reply, resolve." />
+        <span className="mt-1 flex-shrink-0 inline-flex items-center gap-2 text-[11px] font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)] animate-pulse" /> Live · Realtime
+        </span>
       </div>
       {error && <div className="mx-6 mb-2 text-xs text-rose-400">{error}</div>}
-      <div className="flex-1 flex overflow-hidden px-6 pb-6 gap-4">
+      <div className="relative flex-1 flex overflow-hidden px-6 pb-6 gap-4">
         {/* Left: conversation list */}
-        <div className="w-[340px] flex-shrink-0 flex flex-col rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden">
-          <div className="flex items-center gap-1 p-2 border-b border-slate-700 flex-wrap">
+        <div className="w-[340px] flex-shrink-0 flex flex-col rounded-2xl border border-white/10 bg-slate-800/30 backdrop-blur-xl overflow-hidden shadow-[0_10px_40px_-20px_rgba(0,0,0,0.8)]">
+          <div className="flex items-center gap-1 p-2 border-b border-white/10 flex-wrap">
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
-                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${tab === t.key ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition-all ${tab === t.key ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)]' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
                 {t.label}{t.key === 'needs_human' && counts.needs_human > 0 ? ` (${counts.needs_human})` : t.key === 'mine' && counts.mine > 0 ? ` (${counts.mine})` : ''}
               </button>
             ))}
@@ -113,9 +117,11 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
               : filtered.length === 0 ? <p className="text-xs text-slate-500 p-6 text-center">Nothing here right now.</p>
               : filtered.map(c => {
                 const meta = STATUS_META[c.status];
+                const active = selId === c.id;
                 return (
                   <button key={c.id} onClick={() => setSelId(c.id)}
-                    className={`w-full text-left px-3 py-2.5 border-b border-slate-800 hover:bg-slate-800/70 transition-colors ${selId === c.id ? 'bg-slate-800' : ''}`}>
+                    className={`relative w-full text-left px-3 py-2.5 border-b border-white/5 transition-all ${active ? 'bg-gradient-to-r from-indigo-500/15 to-transparent' : 'hover:bg-white/[0.03]'}`}>
+                    {active && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-400 to-violet-500" />}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-200 font-medium truncate flex-1">{c.subject || c.end_user_name || 'Conversation'}</span>
                       <span className="text-[10px] text-slate-500 flex-shrink-0">{fmtTime(c.last_message_at)}</span>
@@ -133,7 +139,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
         </div>
 
         {/* Right: thread */}
-        <div className="flex-1 flex flex-col rounded-xl border border-slate-700 bg-slate-800/40 overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col rounded-2xl border border-white/10 bg-slate-800/30 backdrop-blur-xl overflow-hidden min-w-0 shadow-[0_10px_40px_-20px_rgba(0,0,0,0.8)]">
           {!sel ? (
             <div className="flex-1 flex items-center justify-center text-sm text-slate-500">Select a conversation.</div>
           ) : (
@@ -144,7 +150,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${STATUS_META[sel.status].cls}`}>{STATUS_META[sel.status].label}</span>
                   <div className="ml-auto flex items-center gap-2">
                     {sel.status !== 'human_owned' && sel.status !== 'resolved' && (
-                      <button disabled={busy} onClick={() => void run(() => claimConversation(sel.id))} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">Take over</button>
+                      <button disabled={busy} onClick={() => void run(() => claimConversation(sel.id))} className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-50 transition-all">Take over</button>
                     )}
                     {sel.status !== 'resolved'
                       ? <button disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'resolved' }))} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-emerald-500 disabled:opacity-50">Resolve</button>
@@ -164,9 +170,9 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
                   return (
                     <div key={m.id} className={`max-w-[80%] ${isCustomer ? 'self-start' : 'self-end'}`}>
                       <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                        isCustomer ? 'bg-slate-700 text-slate-100 rounded-tl-sm'
+                        isCustomer ? 'bg-white/[0.06] text-slate-100 border border-white/10 rounded-tl-sm'
                         : isDraft ? 'bg-amber-500/10 text-amber-100 border border-amber-500/40 rounded-tr-sm'
-                        : 'bg-indigo-600 text-white rounded-tr-sm'
+                        : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-sm shadow-[0_4px_18px_-6px_rgba(99,102,241,0.7)]'
                       }`}>
                         {/* Strip the internal [channel · …] prefix from the customer message for display */}
                         {isCustomer ? m.content.replace(/^\[[^\]]*\]\s*/, '') : m.content}
@@ -205,7 +211,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
                     disabled={sel.status === 'resolved' || busy} rows={1}
                     className="flex-1 resize-none max-h-32 text-sm bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
                   <button disabled={!reply.trim() || busy || sel.status === 'resolved'} onClick={doSend}
-                    className="flex-shrink-0 text-sm px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Send</button>
+                    className="flex-shrink-0 text-sm px-4 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-40 disabled:shadow-none transition-all">Send</button>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1.5">Your reply goes straight to the customer. This conversation becomes yours.</p>
               </div>

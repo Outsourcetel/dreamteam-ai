@@ -47,21 +47,21 @@ function AssistantBubble({ msg, onDone }: { msg: Msg; onDone?: () => void }) {
   }, [msg.full, msg.animate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="max-w-[85%] self-start">
-      <div className="rounded-2xl rounded-tl-sm bg-white text-slate-800 px-4 py-2.5 text-[15px] leading-relaxed shadow-sm border border-slate-200/70 whitespace-pre-wrap">
+    <div className="max-w-[85%] self-start cc-in">
+      <div className="rounded-2xl rounded-tl-sm bg-white/[0.06] text-slate-100 border border-white/10 backdrop-blur-md px-4 py-2.5 text-[15px] leading-relaxed shadow-[0_2px_20px_-8px_rgba(0,0,0,0.6)] whitespace-pre-wrap">
         {shown || <span className="inline-flex gap-1 py-1">{[0, 1, 2].map(i => (
-          <span key={i} className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+          <span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-300/70 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
         ))}</span>}
       </div>
       {msg.needsHuman && (
-        <div className="mt-1 text-[11px] text-indigo-500 flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> A teammate will follow up here
+        <div className="mt-1.5 text-[11px] text-indigo-300 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" /> A teammate will follow up here
         </div>
       )}
       {msg.sources && msg.sources.length > 0 && shown === msg.full && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {msg.sources.slice(0, 4).map((s, i) => (
-            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">{s}</span>
+            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-200 border border-indigo-400/20">{s}</span>
           ))}
         </div>
       )}
@@ -162,41 +162,58 @@ export default function ChatCore({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-slate-50 ${className ?? ''}`}>
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white">
-        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-sm font-semibold">{brandName.charAt(0).toUpperCase()}</div>
+    <div className={`relative flex flex-col h-full ${className ?? ''}`}>
+      <style>{`
+        @keyframes cc-in { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .cc-in{animation:cc-in .35s cubic-bezier(.2,.7,.3,1) both}
+        @keyframes cc-spin { to{transform:rotate(360deg)} }
+        @media (prefers-reduced-motion: reduce){ .cc-in{animation:none} }
+      `}</style>
+
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/10 bg-white/[0.03]">
+        <div className="relative w-9 h-9 flex-shrink-0">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-400 via-violet-500 to-cyan-400 blur-[6px] opacity-70" />
+          <div className="relative w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-sm font-semibold ring-1 ring-white/20">
+            {brandName.charAt(0).toUpperCase()}
+          </div>
+        </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-800 truncate">{brandName}</p>
-          <p className="text-[11px] text-emerald-600 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online now</p>
+          <p className="text-sm font-semibold text-white truncate">{brandName}</p>
+          <p className="text-[11px] text-emerald-300/90 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)]" /> Online now
+          </p>
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 flex flex-col gap-3.5">
         {messages.map(m => m.role === 'user'
           ? (
-            <div key={m.id} className="max-w-[85%] self-end">
-              <div className="rounded-2xl rounded-tr-sm bg-indigo-600 text-white px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">{m.full}</div>
+            <div key={m.id} className="max-w-[85%] self-end cc-in">
+              <div className="rounded-2xl rounded-tr-sm bg-gradient-to-br from-indigo-500 to-violet-600 text-white px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap shadow-[0_4px_20px_-6px_rgba(99,102,241,0.7)]">{m.full}</div>
             </div>
           )
           : <AssistantBubble key={m.id} msg={m} />)}
 
         {csat === 'shown' && (
-          <div className="self-start flex items-center gap-2 text-[12px] text-slate-500 mt-1">
+          <div className="self-start flex items-center gap-2 text-[12px] text-slate-400 mt-1 cc-in">
             <span>Was this helpful?</span>
-            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full hover:bg-emerald-50 border border-slate-200 text-slate-500 hover:text-emerald-600 transition-colors">👍</button>
-            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full hover:bg-rose-50 border border-slate-200 text-slate-500 hover:text-rose-600 transition-colors">👎</button>
+            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-slate-300 hover:text-emerald-300 transition-colors">👍</button>
+            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-rose-500/20 border border-white/10 text-slate-300 hover:text-rose-300 transition-colors">👎</button>
           </div>
         )}
-        {csat === 'done' && <div className="self-start text-[12px] text-slate-400">Thanks for the feedback!</div>}
+        {csat === 'done' && <div className="self-start text-[12px] text-slate-500">Thanks for the feedback!</div>}
       </div>
 
-      <div className="border-t border-slate-200 bg-white px-3 py-3">
+      {/* Composer */}
+      <div className="border-t border-white/10 bg-white/[0.03] px-3 py-3">
         <div className="flex items-end gap-2">
           {voice.sttSupported && (
             <button
               onClick={toggleMic}
               aria-label={listening ? 'Stop listening' : 'Speak'}
-              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${listening ? 'bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-300 animate-pulse' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${listening ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white scale-110 shadow-[0_0_20px_2px_rgba(99,102,241,0.7)] animate-pulse' : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'}`}
             >
               {listening ? '●' : '🎤'}
             </button>
@@ -207,18 +224,18 @@ export default function ChatCore({
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
             placeholder={listening ? 'Listening…' : 'Type your message…'}
             rows={1}
-            className="flex-1 resize-none max-h-32 rounded-2xl border border-slate-300 px-4 py-2.5 text-[15px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="flex-1 resize-none max-h-32 rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5 text-[15px] text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-400/60 focus:ring-1 focus:ring-indigo-400/40"
           />
           <button
             onClick={() => void send(input)}
             disabled={sending || !input.trim()}
-            className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+            className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center disabled:opacity-40 disabled:shadow-none shadow-[0_4px_20px_-4px_rgba(99,102,241,0.8)] hover:brightness-110 transition-all"
             aria-label="Send"
           >
-            ↑
+            {sending ? <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white" style={{ animation: 'cc-spin .7s linear infinite' }} /> : '↑'}
           </button>
         </div>
-        <p className="text-[10px] text-slate-400 text-center mt-2">AI-assisted support · answers in your language</p>
+        <p className="text-[10px] text-slate-500 text-center mt-2.5">AI-assisted support · answers in your language</p>
       </div>
     </div>
   );
