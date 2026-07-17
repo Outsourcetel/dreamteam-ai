@@ -477,6 +477,17 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                 )}
               </>
             )}
+            {/* Platform operator inside a demo: the way back to the console
+                (mirrors the App-level viewingDemo escape). */}
+            {isDtUser && viewingDemo && (
+              <button
+                onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
+                className="w-full flex items-center gap-2 p-2 text-left hover:bg-slate-700 transition-colors border-b border-slate-600/50"
+              >
+                <span className="w-7 h-7 rounded-md flex items-center justify-center text-xs bg-slate-700 text-slate-300 flex-shrink-0">←</span>
+                <span className="text-xs text-slate-300">Back to Platform Console</span>
+              </button>
+            )}
             {showDemoCompanies && COMPANIES.map((c) => (
               <button
                 key={c.id}

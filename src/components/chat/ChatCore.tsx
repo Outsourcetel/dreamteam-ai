@@ -96,7 +96,10 @@ export default function ChatCore({
     if (!conversationId) return;
     let alive = true;
     const tick = async () => {
-      const r = await pollWidget(widgetKey, conversationId);
+      // A failed poll (network blip) must not surface as an unhandled
+      // rejection every 5s — quietly retry on the next interval.
+      let r: Awaited<ReturnType<typeof pollWidget>>;
+      try { r = await pollWidget(widgetKey, conversationId); } catch { return; }
       if (!alive) return;
       const fresh = r.messages.filter(m => !seenIds.current.has(m.id));
       if (fresh.length) {

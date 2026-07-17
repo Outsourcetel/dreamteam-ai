@@ -50,6 +50,12 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
+  // Keep the thread pinned to the newest message, and re-render every 30s
+  // so the relative timestamps ("5m") stay honest while the tab sits open.
+  const threadEndRef = React.useRef<HTMLDivElement | null>(null);
+  const [, setClockTick] = useState(0);
+  useEffect(() => { const iv = setInterval(() => setClockTick(t => t + 1), 30000); return () => clearInterval(iv); }, []);
+  useEffect(() => { threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [thread.length]);
   const [busy, setBusy] = useState(false);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -99,7 +105,12 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
     finally { setBusy(false); }
   };
 
-  const doSend = () => { const t = reply.trim(); if (!t || !selId) return; setReply(''); void run(() => sendHumanReply(selId, t)); };
+  // Clear the reply box only AFTER the send succeeds — clearing first
+  // loses the agent's typed message on a failed send.
+  const doSend = () => {
+    const t = reply.trim(); if (!t || !selId) return;
+    void run(async () => { await sendHumanReply(selId, t); setReply(''); });
+  };
   const doApprove = (id: string, edited?: string) => { setEditDraftId(null); void run(() => approveDraft(id, edited)); };
 
   return (
@@ -215,6 +226,7 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
                   );
                 })}
                 {pendingDraft && <p className="self-center text-[11px] text-slate-500 mt-1">The customer sees a holding message until you approve or reply.</p>}
+                <div ref={threadEndRef} />
               </div>
 
               <div className="border-t border-slate-700 p-3">

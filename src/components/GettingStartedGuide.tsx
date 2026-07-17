@@ -22,12 +22,21 @@ import { supabase } from '../supabase';
 
 interface StepState { hired: boolean; taught: boolean; tested: boolean; launched: boolean }
 
-async function loadStepState(): Promise<StepState> {
-  // Four cheap head-count reads, all RLS-scoped to the caller's tenant.
-  // Ada ("DreamTeam Onboarding Architect") is auto-provisioned to every
-  // workspace, so she doesn't count as "you hired someone".
+async function loadStepState(tenantId?: string): Promise<StepState> {
+  // Signup auto-provisions Ada AND starter DEs in the same transaction, so
+  // "any DE exists" is a false-positive for a brand-new workspace. A hire
+  // only counts if it happened meaningfully AFTER the workspace was created
+  // (2-minute buffer — provisioning is same-transaction, seconds at most).
+  let hireThreshold: string | null = null;
+  if (tenantId) {
+    const { data: t } = await supabase.from('tenants').select('created_at').eq('id', tenantId).maybeSingle();
+    if (t?.created_at) hireThreshold = new Date(new Date(t.created_at).getTime() + 2 * 60 * 1000).toISOString();
+  }
+  let deQuery = supabase.from('digital_employees').select('id', { count: 'exact', head: true })
+    .neq('name', 'DreamTeam Onboarding Architect');
+  if (hireThreshold) deQuery = deQuery.gt('created_at', hireThreshold);
   const [des, docs, msgs, keys] = await Promise.all([
-    supabase.from('digital_employees').select('id', { count: 'exact', head: true }).neq('name', 'DreamTeam Onboarding Architect'),
+    deQuery,
     supabase.from('knowledge_docs').select('id', { count: 'exact', head: true }),
     supabase.from('de_messages').select('id', { count: 'exact', head: true }),
     supabase.from('widget_keys').select('id', { count: 'exact', head: true }).eq('active', true),
@@ -51,7 +60,7 @@ export default function GettingStartedGuide({
 
   useEffect(() => {
     let cancelled = false;
-    loadStepState().then(s => { if (!cancelled) setState(s); }).catch(() => { if (!cancelled) setState({ hired: false, taught: false, tested: false, launched: false }); });
+    loadStepState(tenantId).then(s => { if (!cancelled) setState(s); }).catch(() => { if (!cancelled) setState({ hired: false, taught: false, tested: false, launched: false }); });
     return () => { cancelled = true; };
   }, [tenantId]);
 
@@ -67,7 +76,12 @@ export default function GettingStartedGuide({
     );
   }
 
-  const steps = state ? [
+  type Step = {
+    done: boolean; title: string; body: string;
+    primary: { label: string; page: Page; beforeNav?: () => void };
+    secondary?: { label: string; page: Page };
+  };
+  const steps: Step[] = state ? [
     {
       done: state.hired, title: 'Hire your first Digital Employee',
       body: 'Tell Ada about your business in a sentence — she proposes the team; you approve. Or pick roles yourself with the wizard.',
@@ -87,7 +101,8 @@ export default function GettingStartedGuide({
     {
       done: state.launched, title: 'Put it on your website',
       body: 'Create a widget key and drop one line of code into your site — or share the hosted chat link.',
-      primary: { label: 'Get your widget key →', page: 'settings' as Page },
+      // One-shot hint so Settings opens on the Widget tab, not General.
+      primary: { label: 'Get your widget key →', page: 'settings' as Page, beforeNav: () => { try { localStorage.setItem('dt_settings_tab', 'widget'); } catch { /* ignore */ } } },
     },
   ] : [];
 
@@ -148,11 +163,11 @@ export default function GettingStartedGuide({
                     <>
                       <p className="text-slate-300 text-[13px] mt-1 leading-relaxed">{s.body}</p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        <button onClick={() => setPage(s.primary.page)}
+                        <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
                           className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500 transition-colors">
                           {s.primary.label}
                         </button>
-                        {'secondary' in s && s.secondary && (
+                        {s.secondary && (
                           <button onClick={() => setPage(s.secondary.page)}
                             className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
                             {s.secondary.label}
@@ -163,7 +178,7 @@ export default function GettingStartedGuide({
                   )}
                 </div>
                 {!s.done && !isCurrent && (
-                  <button onClick={() => setPage(s.primary.page)}
+                  <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
                     className="flex-none text-[11px] text-slate-500 hover:text-indigo-300 transition-colors mt-1">
                     Jump ahead →
                   </button>

@@ -250,6 +250,7 @@ function AppShell() {
     currentPage,
     sidebarCollapsed,
     godModeSession,
+    viewingDemo,
     dbTenants,
     dbTenantsLoaded,
     dbStats,
@@ -345,7 +346,10 @@ function AppShell() {
     // for the whole session (it reflects the platform owner's own account,
     // not what they're currently looking at) and Remote Access would show
     // its banner over... Platform Console, never the tenant's own pages.
-    if (isDTUser && !godModeSession)
+    // viewingDemo lets a platform operator step INTO a demo company
+    // experience (Console → "Open demo"); without this escape the console
+    // wrapper swallows every page and the demo dead-ends on a blank view.
+    if (isDTUser && !godModeSession && !viewingDemo)
       return (
         <div className="flex-1 flex flex-col overflow-hidden">
           <PlatformNavTabs page={currentPage as PlatformPage} setPage={handleSetPage} />

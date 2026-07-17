@@ -268,7 +268,10 @@ const PlatformConsolePage = ({
                 <button
                   onClick={() => {
                     setActiveCompanyId(c.id);
-                    if (isLiveTenant) setViewingDemo(true);
+                    // Unconditional: viewingDemo is ALSO the App-level escape
+                    // that lets a platform operator leave the console wrapper
+                    // and render the demo experience at all.
+                    setViewingDemo(true);
                     setPage('dashboard');
                   }}
                   className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex-shrink-0"

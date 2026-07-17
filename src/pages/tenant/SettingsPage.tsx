@@ -28,7 +28,18 @@ const SettingsPage = ({
   const { refreshTenant, isDTUser } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
   const dataMode = useDataMode();
-  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>(() => {
+    // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
+    // lands on the Widget tab instead of the org-name form). Consumed once.
+    try {
+      const hint = localStorage.getItem('dt_settings_tab');
+      if (hint) {
+        localStorage.removeItem('dt_settings_tab');
+        if (['general', 'ai_engine', 'usage', 'widget', 'billing', 'security'].includes(hint)) return hint as 'widget';
+      }
+    } catch { /* ignore */ }
+    return 'general';
+  });
 
   // General tab
   const [orgName, setOrgName] = useState(tenant?.name || '');

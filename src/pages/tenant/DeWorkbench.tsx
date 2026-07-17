@@ -56,18 +56,26 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [training, setTraining] = useState<TrainingRow[]>([]);
   const [packs, setPacks] = useState<CompliancePackRow[]>([]);
 
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
     (async () => {
-      const [m, o, w, t, e, c, tr, p] = await Promise.all([
-        getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
-        getDeExceptions(deId), getDeCertifications(deId), getDeTraining(deId), getTenantCompliancePacks(),
-      ]);
-      if (cancelled) return;
-      setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
-      setExceptions(e); setCerts(c); setTraining(tr); setPacks(p);
-      setLoading(false);
+      try {
+        const [m, o, w, t, e, c, tr, p] = await Promise.all([
+          getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
+          getDeExceptions(deId), getDeCertifications(deId), getDeTraining(deId), getTenantCompliancePacks(),
+        ]);
+        if (cancelled) return;
+        setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
+        setExceptions(e); setCerts(c); setTraining(tr); setPacks(p);
+      } catch {
+        // A failed load must NOT masquerade as an honest empty state.
+        if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [deId]);
@@ -94,7 +102,12 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
         ))}
       </div>
       <div className="p-5">
-        {loading ? <Loading /> : (
+        {loading ? <Loading /> : loadError ? (
+          <div className="text-center py-10">
+            <p className="text-sm text-rose-300">Couldn't load this employee's workbench.</p>
+            <p className="text-xs text-slate-500 mt-1">Check your connection and reopen this tab to retry.</p>
+          </div>
+        ) : (
           <>
             {section === 'memory' && (memory.length === 0 ? <Empty>No memories yet. This employee records what it learns as it works and answers.</Empty> : (
               <div className="space-y-2">

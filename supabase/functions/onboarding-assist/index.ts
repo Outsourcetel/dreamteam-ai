@@ -100,6 +100,11 @@ serve(async (req) => {
       .from('action_executions')
       .select('id, task_id, request_summary, params, decision, action_definitions(label, description)')
       .eq('tenant_id', tenantId)
+      // Scope to THIS architect's proposals — without the subject filter,
+      // concurrent onboarding runs (or any other gated action in the same
+      // window) cross-contaminate each other's proposal lists.
+      .eq('subject_kind', 'de')
+      .eq('subject_id', architect.id)
       .like('decision', 'human_gated%')
       .gte('created_at', runStart)
       .order('created_at', { ascending: true });

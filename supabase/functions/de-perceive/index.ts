@@ -62,6 +62,11 @@ serve(async (req) => {
     const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
     if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
 
+    // Cost governance: this is an LLM call site — it must sit inside the
+    // same budget net as every other one (was previously ungated).
+    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+
     if (action === 'extract_fields') {
       let fields = Array.isArray(body.fields) ? body.fields : null;
       if (!fields && body.template_id) {

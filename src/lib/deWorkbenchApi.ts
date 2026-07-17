@@ -14,60 +14,68 @@ export interface TrainingRow { module_key: string; status: string; completed_at:
 export interface CompliancePackRow { pack_key: string; attached_at: string; name?: string; domain?: string }
 
 export const getDeMemory = async (deId: string, limit = 40): Promise<MemoryRow[]> => {
-  const { data } = await supabase.from('de_memory')
+  const { data, error } = await supabase.from('de_memory')
     .select('id, content, kind, subject_kind, subject_ref, salience, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
   return (data ?? []) as MemoryRow[];
 };
 
 export const getDeObjectives = async (deId: string): Promise<ObjectiveRow[]> => {
-  const { data } = await supabase.from('de_objectives')
+  const { data, error } = await supabase.from('de_objectives')
     .select('id, title, status, priority, due_at, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(50);
+  if (error) throw error;
   return (data ?? []) as ObjectiveRow[];
 };
 
 export const getDeWorkItems = async (deId: string): Promise<WorkItemRow[]> => {
-  const { data } = await supabase.from('de_work_items')
+  const { data, error } = await supabase.from('de_work_items')
     .select('id, title, kind, status, scheduled_for, attempts, last_error, result, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(50);
+  if (error) throw error;
   return (data ?? []) as WorkItemRow[];
 };
 
 export const getDeTrace = async (deId: string, limit = 60): Promise<TraceRow[]> => {
-  const { data } = await supabase.from('de_decision_trace')
+  const { data, error } = await supabase.from('de_decision_trace')
     .select('id, run_ref, run_kind, seq, thought, tool, inputs, outputs, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
   return (data ?? []) as TraceRow[];
 };
 
 export const getDeExceptions = async (deId: string): Promise<ExceptionRow[]> => {
-  const { data } = await supabase.from('de_exceptions')
+  const { data, error } = await supabase.from('de_exceptions')
     .select('id, situation, proposed_action, justification, status, outcome, learned, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(30);
+  if (error) throw error;
   return (data ?? []) as ExceptionRow[];
 };
 
 export const getDeCertifications = async (deId: string): Promise<CertRow[]> => {
-  const { data } = await supabase.from('role_certifications')
+  const { data, error } = await supabase.from('role_certifications')
     .select('id, archetype_key, score_pct, threshold_pct, status, evaluated_at, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(10);
+  if (error) throw error;
   return (data ?? []) as CertRow[];
 };
 
 export const getDeTraining = async (deId: string): Promise<TrainingRow[]> => {
-  const { data } = await supabase.from('de_training_progress')
+  const { data, error } = await supabase.from('de_training_progress')
     .select('module_key, status, completed_at')
     .eq('de_id', deId).order('module_key', { ascending: true });
+  if (error) throw error;
   return (data ?? []) as TrainingRow[];
 };
 
 // Compliance packs are tenant-scoped (not per-DE), but relevant on the DE
 // workbench because attached packs enforce guardrails on every DE.
 export const getTenantCompliancePacks = async (): Promise<CompliancePackRow[]> => {
-  const { data } = await supabase.from('tenant_compliance_packs')
+  const { data, error } = await supabase.from('tenant_compliance_packs')
     .select('pack_key, attached_at, compliance_packs(name, domain)')
     .order('attached_at', { ascending: false });
+  if (error) throw error;
   return ((data ?? []) as unknown as Array<{ pack_key: string; attached_at: string; compliance_packs?: { name?: string; domain?: string } | { name?: string; domain?: string }[] }>).map((r) => {
     const pack = Array.isArray(r.compliance_packs) ? r.compliance_packs[0] : r.compliance_packs;
     return { pack_key: r.pack_key, attached_at: r.attached_at, name: pack?.name, domain: pack?.domain };
