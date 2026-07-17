@@ -389,7 +389,23 @@ serve(async (req) => {
     }
 
     const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
+    // Latency/economics (P1 option 1, founder-approved): simple questions
+    // route to the archetype's 'simple' model (Haiku via mig-163 routes) —
+    // roughly half the answer time for most support questions — while
+    // anything long/complex keeps the stronger model. Heuristic class:
+    // short single-sentence questions are 'simple'. Falls back to the DE's
+    // own model when no route exists (resolve_de_model_for_task handles
+    // the whole chain server-side).
+    let model = DEFAULT_MODEL;
+    if (subjectDeId) {
+      const simple = question.length < 120 && !question.includes('\n');
+      try {
+        const { data: routed } = await admin.rpc('resolve_de_model_for_task', {
+          p_de_id: subjectDeId, p_task_class: simple ? 'simple' : 'standard',
+        });
+        model = (typeof routed === 'string' && routed) ? routed : await resolveDeModel(admin, tenantId, subjectDeId);
+      } catch { model = await resolveDeModel(admin, tenantId, subjectDeId); }
+    }
 
     // ── Retrieval (knowledge scopes honoured inside the RPC) ──
     const { data: docs } = await admin.rpc('visible_knowledge_docs', {
