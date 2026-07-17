@@ -196,6 +196,19 @@ serve(async (req) => {
         detail: 'MCP endpoint must be a public http(s) address. Private, loopback, and link-local addresses are blocked.',
       }, 400);
     }
+    // Injection firewall (#9, mig 174): tenant MCP allowlist. Opt-in — a
+    // tenant with no allowlist rows keeps open (SSRF-guarded) behavior;
+    // one row flips them to host∈allowlist enforcement.
+    try {
+      const host = new URL(endpoint).hostname;
+      const { data: allowed } = await admin.rpc('mcp_host_allowed', { p_tenant_id: tenantId, p_host: host });
+      if (allowed === false) {
+        return json({
+          error: 'mcp_host_not_allowlisted',
+          detail: `This workspace restricts MCP servers to an allowlist, and "${host}" is not on it. An admin can add it under the MCP server allowlist.`,
+        }, 403);
+      }
+    } catch { /* URL parse failed → isSafeExternalUrl would have rejected */ }
 
     const headers: Record<string, string> = {};
     const { data: secretRow } = await admin.from('specialist_source_secrets_decrypted')

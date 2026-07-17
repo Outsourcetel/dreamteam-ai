@@ -55,6 +55,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -287,8 +288,10 @@ async function runLoop(
     + `When the goal is accomplished (or you've genuinely determined it cannot be), call mark_goal_complete with a short summary — that is the only way to finish.`
     // PB2.0: reference material the playbook gathered for this task
     // (instruction bodies, knowledge-check results, documents/links).
+    // Injection firewall (#9): fetched URLs/docs are untrusted — marked,
+    // breakout-neutralized, with the standing rules outside the block.
     + (contextDocuments
-      ? `\n\n--- Reference material provided for this task (read before acting) ---\n${contextDocuments}\n--- end reference material ---`
+      ? `\n\nReference material provided for this task (read before acting):\n${wrapUntrusted(contextDocuments, 'playbook-reference-material')}${FIREWALL_RULES}`
       : '');
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: goal }];

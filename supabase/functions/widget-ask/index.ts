@@ -28,6 +28,7 @@ import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -519,7 +520,9 @@ serve(async (req) => {
           model, max_tokens: 1024, stream: true,
           system: [
             { type: 'text', text: streamInstructionBlock, cache_control: { type: 'ephemeral' } },
-            { type: 'text', text: `Knowledge documents:\n${context}` },
+            // Injection firewall (#9): doc content is marked untrusted +
+            // breakout-neutralized; the standing rules sit OUTSIDE the block.
+            { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
           ],
           messages: [{ role: 'user', content: question }],
         }),
@@ -690,7 +693,8 @@ serve(async (req) => {
         model, max_tokens: 1024,
         system: [
           { type: 'text', text: instructionBlock, cache_control: { type: 'ephemeral' } },
-          { type: 'text', text: `Knowledge documents:\n${context}` },
+          // Injection firewall (#9): same marking as the streaming path.
+          { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
         ],
         messages: [{ role: 'user', content: question }],
       }),

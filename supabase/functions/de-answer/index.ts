@@ -24,6 +24,7 @@ import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -404,10 +405,13 @@ serve(async (req) => {
       }
     }
 
+    // Injection firewall (#9): document/memory content is tenant- or
+    // web-sourced — marked untrusted, breakout-neutralized, and covered by
+    // the standing FIREWALL_RULES the payload can never edit.
     const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:
-${context}${memoryContext}`;
+${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUntrusted(memoryContext, 'conversation-memory') : ''}${FIREWALL_RULES}`;
 
     const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
