@@ -43,11 +43,16 @@ export function isSafeExternalUrl(url: string): boolean {
   if (mapped) host = mapped[1];
 
   // ── Hostname denylist (non-IP internal names) ──
-  // Cloud metadata + internal-only TLDs that resolve to link-local /
-  // private space. These never name a legitimate public MCP endpoint.
+  // Cloud metadata + internal-only TLDs. NOTE: the generic ".internal"
+  // suffix is deliberately NOT blocked — the self-management provider
+  // uses a "dreamteam.internal" marker (mig 142) that must stay valid,
+  // and the DB mirror (is_safe_external_url) has to accept it too. The
+  // specific metadata hostnames are still blocked by exact name (plus
+  // 169.254.169.254 by IP); a generic "*.internal" GCP-VM host is the
+  // accepted residual, kept in sync with migration 154.
   if (host === 'localhost' || host === 'localhost.localdomain') return false;
   if (host === 'metadata' || host === 'metadata.google.internal') return false;
-  if (/\.(internal|local|localhost|localdomain)$/.test(host)) return false;
+  if (/\.(local|localhost|localdomain)$/.test(host)) return false;
 
   // ── IPv4 private / loopback / link-local ──
   if (/^127\./.test(host)) return false;
