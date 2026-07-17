@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks,
+  getReplaySources, runReplay,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
   type CertRow, type CertStatus, type TrainingRow, type CompliancePackRow,
+  type ReplaySource, type ReplayResult,
 } from '../../lib/deWorkbenchApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 
@@ -19,6 +21,7 @@ const SECTIONS = [
   { key: 'work', label: 'Work' },
   { key: 'reasoning', label: 'Reasoning' },
   { key: 'exceptions', label: 'Exceptions' },
+  { key: 'replay', label: 'Replay Lab' },
   { key: 'certification', label: 'Certification' },
   { key: 'training', label: 'Training' },
   { key: 'compliance', label: 'Compliance' },
@@ -56,6 +59,14 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [certs, setCerts] = useState<CertRow[]>([]);
   const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
   const [training, setTraining] = useState<TrainingRow[]>([]);
+  // Replay Lab
+  const [replaySources, setReplaySources] = useState<ReplaySource[]>([]);
+  const [replaySel, setReplaySel] = useState<ReplaySource | null>(null);
+  const [replayQ, setReplayQ] = useState('');
+  const [replayCk, setReplayCk] = useState('');
+  const [replayRunning, setReplayRunning] = useState(false);
+  const [replayResult, setReplayResult] = useState<ReplayResult | null>(null);
+  const [replayError, setReplayError] = useState<string | null>(null);
   const [packs, setPacks] = useState<CompliancePackRow[]>([]);
 
   const [loadError, setLoadError] = useState(false);
@@ -65,13 +76,15 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, o, w, t, e, c, cs, tr, p] = await Promise.all([
+        const [m, o, w, t, e, c, cs, tr, p, rs] = await Promise.all([
           getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
           getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getDeTraining(deId), getTenantCompliancePacks(),
+          getReplaySources(deId),
         ]);
         if (cancelled) return;
         setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
         setExceptions(e); setCerts(c); setCertStatus(cs); setTraining(tr); setPacks(p);
+        setReplaySources(rs);
       } catch {
         // A failed load must NOT masquerade as an honest empty state.
         if (!cancelled) setLoadError(true);
@@ -199,6 +212,80 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                 </div>
               ))}</div>
             ))}
+
+            {section === 'replay' && (
+              <div className="space-y-4">
+                <div className="bg-slate-900/50 rounded-lg px-4 py-2.5 text-[12px] text-slate-400">
+                  Re-run a past question — as-is, edited, or with "what if it knew this?" knowledge injected.
+                  Replays are dry runs: nothing is saved, cached, remembered, or escalated.
+                </div>
+
+                {replaySources.length > 0 && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Start from a past exchange</p>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {replaySources.map((s, i) => (
+                        <button key={i}
+                          onClick={() => { setReplaySel(s); setReplayQ(s.question); setReplayResult(null); setReplayError(null); }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${replaySel === s ? 'bg-indigo-500/15 text-indigo-200' : 'bg-slate-900/50 text-slate-300 hover:bg-slate-700/40'}`}>
+                          <span className="flex items-center gap-2">
+                            {s.kind === 'failed_judgment' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 flex-shrink-0">failed {s.original_score != null ? Math.round(s.original_score) : ''}</span>
+                            )}
+                            <span className="truncate">{s.question}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Question</p>
+                    <textarea value={replayQ} onChange={e => setReplayQ(e.target.value)} rows={2}
+                      placeholder="Type any question, or pick one above and edit it…"
+                      className="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Counterfactual knowledge <span className="normal-case text-slate-600">(optional — "what if it knew this?")</span></p>
+                    <textarea value={replayCk} onChange={e => setReplayCk(e.target.value)} rows={3}
+                      placeholder="Paste a policy, fact, or article the employee doesn't have yet — the replay answers as if it did."
+                      className="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                  </div>
+                  <button disabled={replayRunning || replayQ.trim().length < 4}
+                    onClick={async () => {
+                      setReplayRunning(true); setReplayResult(null); setReplayError(null);
+                      try { setReplayResult(await runReplay(deId, replayQ.trim(), replayCk)); }
+                      catch (err) { setReplayError(err instanceof Error ? err.message : 'Replay failed — try again.'); }
+                      finally { setReplayRunning(false); }
+                    }}
+                    className="px-4 py-2 bg-indigo-500/20 text-indigo-200 text-sm rounded-lg hover:bg-indigo-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    {replayRunning ? 'Replaying…' : 'Run replay'}
+                  </button>
+                  {replayError && <p className="text-xs text-rose-300">{replayError}</p>}
+                </div>
+
+                {(replayResult || (replaySel && replaySel.original_answer)) && (
+                  <div className={`grid gap-3 ${replaySel?.original_answer && replayResult ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+                    {replaySel?.original_answer && replayResult && (
+                      <div className="bg-slate-900/50 border border-rose-500/20 rounded-lg p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-rose-300/80 mb-2">Original answer{replaySel.original_score != null ? ` · scored ${Math.round(replaySel.original_score)}/100` : ''}</p>
+                        <p className="text-sm text-slate-300 whitespace-pre-wrap">{replaySel.original_answer}</p>
+                        {replaySel.rationale && <p className="text-[11px] text-slate-500 mt-2">Why it failed: {replaySel.rationale}</p>}
+                      </div>
+                    )}
+                    {replayResult && (
+                      <div className="bg-slate-900/50 border border-indigo-500/25 rounded-lg p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-indigo-300/90 mb-2">Replay answer · confidence {Math.round(replayResult.confidence)}%{replayResult.needs_escalation ? ' · would escalate' : ''}</p>
+                        <p className="text-sm text-slate-200 whitespace-pre-wrap">{replayResult.answer}</p>
+                        {replayResult.sources.length > 0 && <p className="text-[11px] text-slate-500 mt-2">Sources: {replayResult.sources.join(', ')}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {section === 'certification' && (certs.length === 0 ? (
               <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — that record shows here." />

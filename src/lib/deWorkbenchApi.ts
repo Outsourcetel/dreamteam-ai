@@ -13,6 +13,9 @@ export interface CertRow { id: string; archetype_key: string | null; score_pct: 
 export interface CertStatus { state: 'certified' | 'stale' | 'failed' | 'uncertified' | 'unknown'; fresh: boolean; latest_passed: { score_pct: number; evaluated_at: string | null; archetype_key: string | null } | null; latest_status: string | null }
 export interface TrainingRow { module_key: string; status: string; completed_at: string | null }
 export interface CompliancePackRow { pack_key: string; attached_at: string; name?: string; domain?: string }
+// Replay Lab (Frontier-20 #6): a past exchange the operator can re-run.
+export interface ReplaySource { kind: 'failed_judgment' | 'question'; question: string; original_answer: string | null; original_score: number | null; rationale: string | null; created_at: string }
+export interface ReplayResult { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
 
 export const getDeMemory = async (deId: string, limit = 40): Promise<MemoryRow[]> => {
   const { data, error } = await supabase.from('de_memory')
@@ -60,6 +63,55 @@ export const getDeCertifications = async (deId: string): Promise<CertRow[]> => {
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(10);
   if (error) throw error;
   return (data ?? []) as CertRow[];
+};
+
+// Replay Lab sources: judge-failed answers first (richest — they carry the
+// wrong answer + why it failed), then recent real customer questions.
+export const getReplaySources = async (deId: string): Promise<ReplaySource[]> => {
+  const [judgRes, msgRes] = await Promise.all([
+    supabase.from('eval_judgments')
+      .select('question, answer, score, rationale, created_at')
+      .eq('de_id', deId).eq('verdict', 'fail')
+      .order('created_at', { ascending: false }).limit(10),
+    supabase.from('de_messages')
+      .select('content, created_at, de_conversations!inner(de_id)')
+      .eq('role', 'user').eq('de_conversations.de_id', deId)
+      .order('created_at', { ascending: false }).limit(15),
+  ]);
+  if (judgRes.error) throw judgRes.error;
+  if (msgRes.error) throw msgRes.error;
+  const out: ReplaySource[] = (judgRes.data ?? []).map((j) => ({
+    kind: 'failed_judgment' as const, question: j.question, original_answer: j.answer,
+    original_score: j.score, rationale: j.rationale, created_at: j.created_at,
+  }));
+  const seen = new Set(out.map(s => s.question.trim().toLowerCase()));
+  for (const m of (msgRes.data ?? []) as Array<{ content: string; created_at: string }>) {
+    const q = (m.content ?? '').trim();
+    if (q.length > 8 && !seen.has(q.toLowerCase())) {
+      seen.add(q.toLowerCase());
+      out.push({ kind: 'question', question: q, original_answer: null, original_score: null, rationale: null, created_at: m.created_at });
+    }
+  }
+  return out.slice(0, 20);
+};
+
+// Dry-run a question against the DE, optionally with counterfactual knowledge
+// injected ("what if it knew this?"). replay:true → de-answer suppresses every
+// side effect: no cache read/write, no metrics, no memory, no escalation.
+export const runReplay = async (deId: string, question: string, candidateKnowledge?: string): Promise<ReplayResult> => {
+  const { data, error } = await supabase.functions.invoke('de-answer', {
+    body: {
+      question, de_id: deId, replay: true,
+      ...(candidateKnowledge?.trim() ? { candidate_knowledge: candidateKnowledge.trim() } : {}),
+    },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(String(data.error));
+  return {
+    answer: data?.answer ?? '', confidence: Number(data?.confidence) || 0,
+    sources: Array.isArray(data?.sources) ? data.sources.map(String) : [],
+    needs_escalation: Boolean(data?.needs_escalation),
+  };
 };
 
 // Whether the DE's passing certification still vouches for its CURRENT config.

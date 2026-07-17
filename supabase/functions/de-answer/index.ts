@@ -164,7 +164,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { question, conversation_id, de_id, tenant_id, candidate_knowledge } = await req.json();
+    const reqBody = await req.json();
+    const { question, conversation_id, de_id, tenant_id, candidate_knowledge } = reqBody;
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
@@ -174,7 +175,9 @@ serve(async (req) => {
     // side effect (cache read/write, metrics, memory, escalation task, activity)
     // so a replay never touches live state or serves a cached answer.
     const candidateKnowledge = typeof candidate_knowledge === 'string' ? candidate_knowledge.trim() : '';
-    const replayMode = candidateKnowledge.length > 0;
+    // replay === true forces replay semantics even with no candidate
+    // knowledge (question-only counterfactuals in the Replay Lab).
+    const replayMode = candidateKnowledge.length > 0 || reqBody.replay === true;
 
     // ── Auth: service/dispatch caller with an explicit tenant (what
     // lets eval-run drive the suite headless — same dual pattern as
