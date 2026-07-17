@@ -164,10 +164,17 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { question, conversation_id, de_id, tenant_id } = await req.json();
+    const { question, conversation_id, de_id, tenant_id, candidate_knowledge } = await req.json();
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
+    // Replay mode (Frontier-20 #5 / #3 candidate-config diff): when a caller
+    // supplies candidate_knowledge, this is a DRY-RUN evaluation of a proposed
+    // knowledge patch — inject it as top-priority context and suppress EVERY
+    // side effect (cache read/write, metrics, memory, escalation task, activity)
+    // so a replay never touches live state or serves a cached answer.
+    const candidateKnowledge = typeof candidate_knowledge === 'string' ? candidate_knowledge.trim() : '';
+    const replayMode = candidateKnowledge.length > 0;
 
     // ── Auth: service/dispatch caller with an explicit tenant (what
     // lets eval-run drive the suite headless — same dual pattern as
@@ -254,11 +261,11 @@ serve(async (req) => {
       admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: metric, p_delta: delta })
         .then(({ error }) => { if (error) console.error('increment_metric_tenant:', error.message); });
 
-    await bump('inquiries');
+    if (!replayMode) await bump('inquiries');
 
     // ── Semantic answer cache (checked BEFORE any LLM call) ──
     const qEmbedding = await embedText(question);
-    if (qEmbedding) {
+    if (qEmbedding && !replayMode) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId,
         p_account_id: null,
@@ -359,6 +366,12 @@ serve(async (req) => {
         used += body.length + d.title.length;
         if (d.visibility === 'scoped') scopedContentUsed = true;
       }
+    }
+    // Replay: the proposed patch leads the context (highest priority) and is
+    // clearly labelled as a candidate so the model treats it as authoritative
+    // reference for this dry run.
+    if (candidateKnowledge) {
+      contextParts.unshift(`[Candidate knowledge under review — proposed fix, not yet published]\n${candidateKnowledge.slice(0, 4000)}`);
     }
     const context = contextParts.length > 0
       ? contextParts.join('\n\n---\n\n')
@@ -470,7 +483,7 @@ ${context}${memoryContext}`;
 
     // ── Semantic cache write (only good, non-escalated answers; never
     // answers built from scoped docs — the cache is tenant-wide) ──
-    if (qEmbedding && !escalate && !scopedContentUsed) {
+    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode) {
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,
@@ -495,7 +508,7 @@ ${context}${memoryContext}`;
     // edge isolate can be torn down the moment we return, cutting off a
     // floating promise, so a bare .then() write is silently dropped. Only
     // good, non-escalated answers are worth remembering. ──
-    if (subjectDeId && convId && !escalate) {
+    if (subjectDeId && convId && !escalate && !replayMode) {
       try {
         const memEmb = await embedText(`Q: ${question}\nA: ${parsed.answer}`.slice(0, 2000));
         await admin.rpc('de_memory_write', {
@@ -507,8 +520,11 @@ ${context}${memoryContext}`;
       } catch (e) { console.error('de_memory_write:', e); }
     }
 
-    // ── Escalation + activity ──
-    if (escalate) {
+    // ── Escalation + activity ── (skipped entirely in replay mode: a dry-run
+    // patch evaluation must not open human tasks or emit activity/audit)
+    if (replayMode) {
+      // no-op: return the answer + escalate flag without any persistence
+    } else if (escalate) {
       await bump('escalations');
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       await admin.from('human_tasks').insert({

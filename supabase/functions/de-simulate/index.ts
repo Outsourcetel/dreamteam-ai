@@ -75,6 +75,10 @@ serve(async (req) => {
     if (!tenant_id || !de_id) return json({ error: 'tenant_id and de_id required' }, 400);
     const mode = ['golden', 'synthetic', 'historical'].includes(body.mode) ? body.mode : 'synthetic';
     const count = Math.min(MAX_COUNT, Math.max(1, Number(body.count) || 3));
+    // Optional candidate patch (Frontier-20 #5): when present, every scenario
+    // is answered WITH the proposed knowledge injected (de-answer replay mode),
+    // so a regression check can compare golden pass-rate with vs without it.
+    const candidateKnowledge = typeof body.candidate_knowledge === 'string' ? body.candidate_knowledge.trim() : '';
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
@@ -106,7 +110,7 @@ serve(async (req) => {
       try {
         const ar = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', 'x-dispatch-secret': secret, Authorization: `Bearer ${Deno.env.get('SUPABASE_ANON_KEY') ?? ''}` },
-          body: JSON.stringify({ question: sc.question, tenant_id, de_id }),
+          body: JSON.stringify({ question: sc.question, tenant_id, de_id, ...(candidateKnowledge ? { candidate_knowledge: candidateKnowledge } : {}) }),
         });
         const aj = await ar.json().catch(() => ({}));
         if (aj.error === 'llm_not_configured') { blockedLlm = true; }
