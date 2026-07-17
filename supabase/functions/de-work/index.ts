@@ -126,7 +126,27 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+  // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
+  // (action registry ∩ connected connectors ∩ data-access grants) execute
+  // through connector-hub's execute_action — decide_action_execution
+  // applies destructive/trust/guardrail gating server-side, so a gated
+  // action becomes a human-approval task, never a direct write. de-work
+  // adds NO new reach; it drives the exact same Control Fabric path.
+  const act = actionMap?.get(name);
+  if (act) {
+    try {
+      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
+        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, params: input }),
+      });
+      const out = await res.json().catch(() => ({ error: 'bad_response' }));
+      return { result: out };
+    } catch (e) {
+      return { result: { error: `action call failed: ${String(e).slice(0, 160)}` } };
+    }
+  }
   switch (name) {
     case 'recall_memory': {
       const emb = await embedText(String(input.query ?? '').slice(0, 2000));
@@ -184,11 +204,18 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     + `Rules: Use your tools — never guess a number (use compute), never invent facts (use search_knowledge and cite), recall what you already know first. `
     + `Stay strictly within your guardrails. If you cannot proceed safely or the task needs a human decision, call escalate_to_human. `
     + `When the task is genuinely done (or you've determined it can't be), call mark_done with a short summary. That is the ONLY way to finish.`;
+  // Per-DE registry actions (grants-aware) join the tool set; execution is
+  // gated server-side, so offering them grants no ungoverned reach.
+  const { data: actionRows } = await admin.rpc('get_agentic_tools_for_de', { p_tenant_id: tenantId, p_de_id: deId });
+  const actionTools = (actionRows ?? []) as Array<{ name: string; description: string; input_schema: unknown; connector_id?: string; action_key?: string }>;
+  const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
+  const tools = [...TOOLS, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
+
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: `<task>\n${goal}\n</task>` }];
 
   let done = false, summary = '', finalStatus = 'done', turn = 0;
   for (turn = 0; turn < MAX_TURNS && !done; turn++) {
-    const resp = await callAnthropic(apiKey, model, system, messages, TOOLS);
+    const resp = await callAnthropic(apiKey, model, system, messages, tools);
     // Meter every call — check_tenant_ai_budget sums de_token_usage, so an
     // unmetered executor could never trip the very budget it checks.
     // AWAITED: a floating promise is silently dropped when the edge isolate
@@ -208,7 +235,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {});
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out.result).slice(0, 4000) });
       if (out.done) { done = true; summary = out.summary ?? summary; if (out.escalated) finalStatus = 'waiting_human'; }
