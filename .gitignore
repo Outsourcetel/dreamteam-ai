@@ -4,3 +4,16 @@ dist/
 .env
 .env.test
 .supabase-token
+
+# Ad-hoc QA / audit scratch (machine-specific Playwright output, stray
+# build bundles) — kept out of the tree so `git add -A` can't sweep them
+# (qa-app.js alone is ~1.8 MB of minified output).
+qa-app.js
+qa-audit.cjs
+qa-forms.cjs
+qa-style.css
+qa-output/
+.audit_sql.sh
+
+# Supabase CLI local temp
+supabase/.temp/

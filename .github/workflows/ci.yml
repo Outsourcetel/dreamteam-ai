@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # `npm run build` is `tsc --noEmit && vite build` — the typecheck is
+      # the real gate and needs no secrets (VITE_* only affect runtime).
+      - run: npm run build
+
+  test:
+    name: Tenant-isolation tests
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      VITE_TEST_SUPABASE_URL: ${{ secrets.VITE_TEST_SUPABASE_URL }}
+      VITE_TEST_SUPABASE_ANON_KEY: ${{ secrets.VITE_TEST_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # These are live integration tests against the isolated dev/schema-
+      # clone Supabase project. Until the two repo secrets are set they
+      # self-skip (green), so CI is useful immediately without them.
+      # To enable: add VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY
+      # under Settings → Secrets and variables → Actions.
+      - name: Run tests (skips if secrets unset)
+        run: |
+          if [ -z "$VITE_TEST_SUPABASE_URL" ] || [ -z "$VITE_TEST_SUPABASE_ANON_KEY" ]; then
+            echo "::notice::Test secrets not configured — skipping integration tests. Add VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY as Actions secrets to enable."
+            exit 0
+          fi
+          npm test

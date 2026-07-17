@@ -1,97 +1,10 @@
-import type { AuthUser, Tenant, Page, UserRole } from '../types';
+import type { Page, UserRole } from '../types';
 
-export const mockTenants: Tenant[] = [
-  {
-    id: 't1',
-    name: 'Acme Corp',
-    slug: 'acme',
-    primaryColor: '#6366f1',
-    plan: 'enterprise',
-    status: 'active',
-    agentsActive: 8,
-    usersCount: 142,
-    monthlyTokens: 2400000,
-    tokenLimit: 5000000,
-    createdAt: '2024-01-15',
-    industry: 'SaaS',
-    contactEmail: 'admin@acme.com',
-  },
-  {
-    id: 't2',
-    name: 'Globex Inc',
-    slug: 'globex',
-    primaryColor: '#10b981',
-    plan: 'growth',
-    status: 'active',
-    agentsActive: 5,
-    usersCount: 67,
-    monthlyTokens: 980000,
-    tokenLimit: 2000000,
-    createdAt: '2024-03-20',
-    industry: 'Manufacturing',
-    contactEmail: 'it@globex.com',
-  },
-  {
-    id: 't3',
-    name: 'Initech Solutions',
-    slug: 'initech',
-    primaryColor: '#f59e0b',
-    plan: 'starter',
-    status: 'trial',
-    agentsActive: 2,
-    usersCount: 18,
-    monthlyTokens: 120000,
-    tokenLimit: 500000,
-    createdAt: '2024-05-01',
-    industry: 'Finance',
-    contactEmail: 'cto@initech.com',
-  },
-  {
-    id: 't4',
-    name: 'Hooli Technologies',
-    slug: 'hooli',
-    primaryColor: '#ef4444',
-    plan: 'enterprise',
-    status: 'active',
-    agentsActive: 12,
-    usersCount: 340,
-    monthlyTokens: 8100000,
-    tokenLimit: 10000000,
-    createdAt: '2023-11-08',
-    industry: 'Technology',
-    contactEmail: 'ops@hooli.com',
-  },
-  {
-    id: 't5',
-    name: 'Pied Piper',
-    slug: 'piedpiper',
-    primaryColor: '#8b5cf6',
-    plan: 'growth',
-    status: 'suspended',
-    agentsActive: 0,
-    usersCount: 22,
-    monthlyTokens: 0,
-    tokenLimit: 2000000,
-    createdAt: '2024-02-14',
-    industry: 'SaaS',
-    contactEmail: 'admin@piedpiper.com',
-  },
-  {
-    id: 't6',
-    name: 'Umbrella Medical',
-    slug: 'umbrella',
-    primaryColor: '#0ea5e9',
-    plan: 'enterprise',
-    status: 'active',
-    agentsActive: 7,
-    usersCount: 89,
-    monthlyTokens: 3200000,
-    tokenLimit: 5000000,
-    createdAt: '2024-04-03',
-    industry: 'Healthcare',
-    contactEmail: 'digital@umbrella.com',
-  },
-];
+// NOTE: this file is named mockData.ts for historical reasons, but the
+// only thing left in it — canAccessPage — is the REAL nav authorization
+// used across the app (Sidebar, AuthContext). The former mockTenants
+// demo array was dead (zero references) and was removed. Worth renaming
+// this file to something like navAccess.ts in a follow-up.
 
 export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | 'tenant' | 'end_user'): boolean => {
   const isDtRole = [
