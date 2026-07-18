@@ -65,7 +65,7 @@ serve(async (req) => {
     // finding: a DE whose answers improved from fail to partial fell out
     // of the loop entirely under the old fail-only filter.)
     let jq = admin.from('eval_judgments')
-      .select('id, de_id, question, answer, rationale, score, reference')
+      .select('id, de_id, question, answer, rationale, score, reference, verdict')
       .eq('tenant_id', tenant_id).in('verdict', ['fail', 'partial']).lt('score', 70)
       .order('created_at', { ascending: false }).limit(10);
     if (body.judgment_id) jq = jq.eq('id', body.judgment_id);
@@ -157,12 +157,20 @@ serve(async (req) => {
     }
 
     const replay = {
-      before: { score: Number(fail.score) || 0, verdict: 'fail' },
+      before: { score: Number(fail.score) || 0, verdict: String(fail.verdict ?? 'fail') },
       after,
       answer_preview: newAnswer.slice(0, 400),
       golden: goldenRecord,
     };
-    const passed = after.verdict === 'pass' && goldenOk;
+    // A patch earns HUMAN review on demonstrated improvement, not only
+    // perfection (live-proof refinement): full pass, OR a better score on
+    // the failing question, OR strict golden-set improvement — and never
+    // when the answer still outright fails or the golden set regressed.
+    // The human approval remains the final gate either way.
+    const goldenStrictlyImproved = completed(withP) && completed(withoutP)
+      && Number(withP.passed ?? 0) > Number(withoutP.passed ?? 0);
+    const passed = goldenOk && after.verdict !== 'fail'
+      && (after.verdict === 'pass' || after.score > (Number(fail.score) || 0) || goldenStrictlyImproved);
     await admin.rpc('record_improvement_replay', { p_improvement_id: impId, p_replay: replay, p_passed: passed });
 
     // ── 4) only a PROVEN patch reaches a human ──

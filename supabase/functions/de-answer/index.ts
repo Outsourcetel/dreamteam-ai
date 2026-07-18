@@ -142,7 +142,36 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
 // ── Robust JSON parse of model output ──
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
 
-function parseModelJson(raw: string): DEAnswer {
+// Salvage the "answer" string field from MALFORMED or TRUNCATED JSON —
+// manual scan with escape handling, tolerating a missing closing quote
+// (the max_tokens-truncation case). Returns clean prose or null.
+function extractAnswerField(text: string): string | null {
+  const m = text.match(/"answer"\s*:\s*"/);
+  if (!m || m.index === undefined) return null;
+  let i = m.index + m[0].length;
+  let out = '';
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '\\') {
+      const n = text[i + 1];
+      if (n === 'n') out += '\n';
+      else if (n === 't') out += '\t';
+      else if (n === '"') out += '"';
+      else if (n === '\\') out += '\\';
+      else if (n === 'u') {
+        const cp = parseInt(text.slice(i + 2, i + 6), 16);
+        if (!Number.isNaN(cp)) out += String.fromCharCode(cp);
+        i += 4;
+      } else out += n ?? '';
+      i += 2;
+    } else if (c === '"') break;   // clean close; truncation just runs out
+    else { out += c; i += 1; }
+  }
+  const trimmed = out.trim();
+  return trimmed.length >= 3 ? trimmed : null;
+}
+
+function parseModelJson(raw: string, depth = 0): DEAnswer {
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) text = fence[1].trim();
@@ -151,13 +180,31 @@ function parseModelJson(raw: string): DEAnswer {
   if (start >= 0 && end > start) {
     try {
       const p = JSON.parse(text.slice(start, end + 1));
+      let answer = typeof p.answer === 'string' ? p.answer : raw.trim();
+      // Nested envelope (model quoted its own JSON): unwrap ONE level.
+      if (depth === 0 && answer.trimStart().startsWith('{') && answer.includes('"answer"')) {
+        answer = parseModelJson(answer, 1).answer;
+      }
       return {
-        answer: typeof p.answer === 'string' ? p.answer : raw.trim(),
+        answer,
         confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
         sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
         needs_escalation: !!p.needs_escalation,
       };
-    } catch { /* fall through */ }
+    } catch { /* fall through to salvage */ }
+  }
+  // Malformed/TRUNCATED JSON (e.g. max_tokens cut the envelope mid-string,
+  // the replay-path bug that leaked raw JSON to the judge): salvage the
+  // answer text + whatever scalar fields survive, never return the wreckage.
+  const salvaged = extractAnswerField(text);
+  if (salvaged) {
+    const conf = text.match(/"confidence"\s*:\s*(\d{1,3})/);
+    return {
+      answer: salvaged,
+      confidence: conf ? Math.max(0, Math.min(100, parseInt(conf[1], 10))) : 50,
+      sources: [],
+      needs_escalation: /"needs_escalation"\s*:\s*true/.test(text),
+    };
   }
   return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false };
 }
@@ -454,7 +501,10 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        // 1024 truncated long JSON envelopes mid-string (the replay-path
+        // parse leak); parseModelJson now salvages truncation too, but not
+        // truncating in the first place is the real fix.
+        max_tokens: 1536,
         system,
         messages: [{ role: 'user', content: question }],
       }),
