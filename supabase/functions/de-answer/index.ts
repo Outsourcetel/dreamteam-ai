@@ -25,6 +25,7 @@ import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { recordSpan } from '../_shared/otel.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -179,6 +180,7 @@ serve(async (req) => {
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
     const replayMode = candidateKnowledge.length > 0 || reqBody.replay === true;
+    const spanStart = new Date().toISOString();   // OTel (#13)
 
     // ── Auth: service/dispatch caller with an explicit tenant (what
     // lets eval-run drive the suite headless — same dual pattern as
@@ -540,6 +542,21 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUnt
       await admin.rpc('record_billable_outcome', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
         p_kind: escalate ? 'escalation' : 'resolution', p_source: 'chat',
+      });
+    }
+
+    // OTel GenAI span (#13, mig 177) — best-effort, never in replay.
+    if (!replayMode) {
+      await recordSpan(admin, {
+        tenant_id: tenantId, name: 'chat de-answer', kind: 'agent', started_at: spanStart,
+        attributes: {
+          'gen_ai.operation.name': 'chat', 'gen_ai.system': 'anthropic',
+          'gen_ai.request.model': model,
+          'gen_ai.usage.input_tokens': data.usage?.input_tokens ?? 0,
+          'gen_ai.usage.output_tokens': data.usage?.output_tokens ?? 0,
+          'dreamteam.de_id': subjectDeId, 'dreamteam.confidence': parsed.confidence,
+          'dreamteam.escalated': escalate, 'dreamteam.conversation_id': convId,
+        },
       });
     }
 

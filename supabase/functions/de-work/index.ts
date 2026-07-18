@@ -26,6 +26,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { recordSpan } from '../_shared/otel.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -254,6 +255,7 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
 
 async function workItem(admin: SupabaseClient, apiKey: string, item: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }): Promise<{ id: string; status: string; summary: string; turns: number }> {
   const tenantId = item.tenant_id, deId = item.de_id;
+  const spanStart = new Date().toISOString();   // OTel (#13)
   const { data: de } = await admin.from('digital_employees').select('name, persona_name').eq('id', deId).maybeSingle();
   const deName = de?.persona_name || de?.name || 'the digital employee';
   // Wave-4 model routing governs the executor (per-DE route > archetype
@@ -316,6 +318,16 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   if (!done) { finalStatus = 'failed'; summary = 'max turns reached without completion'; }
 
   await admin.rpc('complete_de_work_item', { p_id: item.id, p_status: finalStatus, p_result: { summary, turns: turn }, p_error: finalStatus === 'failed' ? summary : null });
+  // OTel GenAI span (#13, mig 177) — one span per autonomous task, best-effort.
+  await recordSpan(admin, {
+    tenant_id: tenantId, name: 'invoke_agent de-work', kind: 'agent', started_at: spanStart,
+    attributes: {
+      'gen_ai.operation.name': 'invoke_agent', 'gen_ai.system': 'anthropic',
+      'gen_ai.request.model': model,
+      'dreamteam.de_id': deId, 'dreamteam.work_item_id': item.id,
+      'dreamteam.status': finalStatus, 'dreamteam.turns': turn,
+    },
+  });
   return { id: item.id, status: finalStatus, summary, turns: turn };
 }
 
