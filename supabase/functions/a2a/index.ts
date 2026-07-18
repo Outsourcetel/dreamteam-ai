@@ -28,7 +28,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key, x-delegation-token',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -74,8 +74,11 @@ serve(async (req) => {
         capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
         defaultInputModes: ['text/plain'],
         defaultOutputModes: ['text/plain'],
-        securitySchemes: { apiKey: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'DreamTeam tenant API key (dt_live_…)' } },
-        security: [{ apiKey: [] }],
+        securitySchemes: {
+          apiKey: { type: 'apiKey', in: 'header', name: 'X-API-Key', description: 'DreamTeam tenant API key (dt_live_…)' },
+          delegationToken: { type: 'apiKey', in: 'header', name: 'X-Delegation-Token', description: 'Short-lived, agent-bound delegation token (dt_dg_…) — preferred: downscoped to this agent only' },
+        },
+        security: [{ apiKey: [] }, { delegationToken: [] }],
         skills: skills.length ? skills : [{ id: 'skill-1', name: 'Answer questions', description: 'Answers questions grounded in the tenant knowledge base, with escalation to humans.', tags: ['support'] }],
         provider: { organization: 'DreamTeam AI' },
       });
@@ -88,12 +91,24 @@ serve(async (req) => {
     try { rpc = await req.json(); } catch { return rpcError(null, -32700, 'Parse error'); }
     if (rpc.jsonrpc !== '2.0' || typeof rpc.method !== 'string') return rpcError(rpc.id, -32600, 'Invalid Request');
 
-    // API-key auth — the key's tenant must own this DE.
-    const rawKey = req.headers.get('x-api-key') ?? '';
-    if (!rawKey) return rpcError(rpc.id, -32001, 'Authentication required: send a tenant API key in X-API-Key', 401);
-    const { data: keyCheck } = await admin.rpc('verify_tenant_api_key', { p_raw_key: rawKey });
-    if (!keyCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid or revoked API key', 401);
-    if (keyCheck.tenant_id !== de.tenant_id) return rpcError(rpc.id, -32001, 'API key does not grant access to this agent', 403);
+    // Auth, two credentials accepted (#14, mig 178):
+    //   1. X-Delegation-Token — a short-lived, downscoped token bound to
+    //      ONE DE (scope 'a2a.message'); the token's DE must BE this agent.
+    //      Preferred: leaking it exposes minutes of one employee, not the
+    //      tenant. Checked first as the more specific credential.
+    //   2. X-API-Key — the tenant API key (mig 090); tenant must own the DE.
+    const delegation = req.headers.get('x-delegation-token') ?? '';
+    if (delegation) {
+      const { data: dtCheck } = await admin.rpc('verify_de_delegation_token', { p_raw: delegation, p_required_scope: 'a2a.message' });
+      if (!dtCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid, expired, revoked, or out-of-scope delegation token', 401);
+      if (dtCheck.de_id !== de.id) return rpcError(rpc.id, -32001, 'Delegation token is bound to a different agent', 403);
+    } else {
+      const rawKey = req.headers.get('x-api-key') ?? '';
+      if (!rawKey) return rpcError(rpc.id, -32001, 'Authentication required: send a tenant API key in X-API-Key, or a DE delegation token in X-Delegation-Token', 401);
+      const { data: keyCheck } = await admin.rpc('verify_tenant_api_key', { p_raw_key: rawKey });
+      if (!keyCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid or revoked API key', 401);
+      if (keyCheck.tenant_id !== de.tenant_id) return rpcError(rpc.id, -32001, 'API key does not grant access to this agent', 403);
+    }
 
     if (rpc.method !== 'message/send') return rpcError(rpc.id, -32601, `Method not found: ${rpc.method} (v1 supports message/send)`);
 
