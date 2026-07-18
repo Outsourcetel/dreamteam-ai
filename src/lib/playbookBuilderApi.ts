@@ -758,6 +758,54 @@ export async function dispatchTriggersOpportunistic(): Promise<{ processed: numb
 }
 
 // ============================================================
+// Playbook 3.0 — Draft with AI (Copilot compiler + Deep Study).
+// Compiles a plain-language SOP into typed steps (validated against the
+// real engine, auto-repaired), studies it against the tenant's knowledge
+// (contradictions, clarifying questions, test scenarios, bindings), and
+// persists a DRAFT definition + a study record. Returns both.
+// ============================================================
+
+export interface PlaybookStudyReport {
+  contradictions?: Array<{ sop_says: string; kb_says: string; source_title?: string }>;
+  questions?: string[];
+  scenarios?: Array<{ question: string; expected_fragments: string[]; category: string }>;
+  bindings?: Array<{ step_index: number; doc_id: string; title?: string }>;
+  risk?: Array<{ step_index: number; grade: 'rail' | 'judgment'; why: string }>;
+}
+export interface DraftResult {
+  playbook_id: string; key: string; name: string;
+  steps: DefinitionStep[]; study: PlaybookStudyReport;
+  validation: { valid: boolean; errors: ValidationError[]; repair_attempts: number };
+}
+
+export async function draftPlaybookFromSop(input: { sopText: string; deId?: string | null }): Promise<DraftResult> {
+  const tid = await getSessionTenantId();
+  const { data, error } = await supabase.functions.invoke('playbook-draft', {
+    body: { sop_text: input.sopText, ...(input.deId ? { de_id: input.deId } : {}), ...(tid ? { tenant_id: tid } : {}) },
+  });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try { const j = await ctx.json(); raise('draftPlaybookFromSop', { message: (j as { error?: string }).error ?? error.message }); } catch { /* fallthrough */ }
+    }
+    raise('draftPlaybookFromSop', { message: error.message ?? String(error) });
+  }
+  if ((data as { error?: string })?.error) raise('draftPlaybookFromSop', { message: (data as { error: string }).error });
+  return data as DraftResult;
+}
+
+/** Fetch the Deep Study report saved for a definition (null if none). */
+export async function getPlaybookStudy(definitionId: string): Promise<{ sop_text: string; report: PlaybookStudyReport } | null> {
+  const { data, error } = await supabase
+    .from('playbook_studies')
+    .select('sop_text, report')
+    .eq('definition_id', definitionId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { sop_text: data.sop_text as string, report: (data.report ?? {}) as PlaybookStudyReport };
+}
+
+// ============================================================
 // Dry-run preview — executes a draft (or arbitrary steps array) with
 // writes/connectors/gates SIMULATED server-side. Nothing persisted:
 // no run row, no audit events, no human tasks, no external calls.

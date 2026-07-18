@@ -16,7 +16,9 @@ import {
   listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
   listTriggerFires, dispatchTriggersOpportunistic, listActionDefinitions,
   listEventDefinitions, upsertEventDefinition, emitEvent,
+  draftPlaybookFromSop, getPlaybookStudy,
 } from '../../../lib/playbookBuilderApi';
+import type { PlaybookStudyReport, DraftResult } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia, StepReference,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
@@ -1349,6 +1351,115 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 
 // ── Page ──────────────────────────────────────────────────────────
 
+// ============================================================
+// PB3 — Draft with AI: paste an SOP → the Copilot compiles it into
+// typed steps (validated + auto-repaired) and does a Deep Study of it
+// against this workspace's knowledge. The draft is persisted; on success
+// we hand the caller the new definition id + the study to review.
+// ============================================================
+function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDrafted: (r: DraftResult) => void }) {
+  const [sop, setSop] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    if (sop.trim().length < 40) { setErr('Write or paste at least a few sentences describing the procedure.'); return; }
+    setBusy(true); setErr(null);
+    try { onDrafted(await draftPlaybookFromSop({ sopText: sop.trim() })); }
+    catch (e) { setErr((e as Error).message || 'Draft failed.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-semibold text-white">✨ Draft a playbook with AI</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">✕</button>
+        </div>
+        <p className="text-[11px] text-slate-400 mb-3">Write the procedure in plain language, or paste an existing SOP. The Copilot compiles it into steps and studies it against your knowledge base — surfacing conflicts, questions to answer, and test scenarios before you go live.</p>
+        <textarea
+          value={sop} onChange={e => setSop(e.target.value)} rows={10}
+          placeholder={'e.g. When a customer asks to cancel:\n1. Verify the account first.\n2. Check our cancellation & billing policy before quoting any fees.\n3. Ask why — if it is a service problem, offer to fix it first.\n4. Explain the process and equipment return.\n5. If they are angry or mention a lawyer, escalate to a manager.\nNever promise refunds without approval.'}
+          className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed" />
+        {err && <p className="text-[11px] text-rose-400 mt-2">{err}</p>}
+        <div className="flex items-center justify-end gap-2 mt-3">
+          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200">Cancel</button>
+          <button onClick={() => void run()} disabled={busy}
+            className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50">
+            {busy ? 'Studying & compiling…' : 'Study & draft'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The Deep Study panel — shown on a definition that was AI-drafted. */
+function StudyPanel({ definitionId }: { definitionId: string }) {
+  const [study, setStudy] = useState<PlaybookStudyReport | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setLoaded(false);
+    void getPlaybookStudy(definitionId).then(r => { if (alive) { setStudy(r?.report ?? null); setLoaded(true); } });
+    return () => { alive = false; };
+  }, [definitionId]);
+  if (!loaded || !study) return null;
+  const contra = study.contradictions ?? [];
+  const questions = study.questions ?? [];
+  const scenarios = study.scenarios ?? [];
+  const bindings = study.bindings ?? [];
+  const risk = study.risk ?? [];
+  if (!contra.length && !questions.length && !scenarios.length && !bindings.length) return null;
+  return (
+    <div className="rounded-2xl border border-indigo-800/40 bg-indigo-500/5 p-4 mb-4">
+      <h3 className="text-xs font-semibold text-indigo-300 mb-2">🔎 Deep Study — what the Copilot found before you go live</h3>
+      <div className="grid md:grid-cols-2 gap-3">
+        {contra.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold text-rose-300 mb-1">⚠ Conflicts with your knowledge ({contra.length})</div>
+            <ul className="space-y-1.5">
+              {contra.map((c, i) => (
+                <li key={i} className="text-[11px] text-slate-300 leading-snug">
+                  <span className="text-slate-400">SOP:</span> {c.sop_says}<br />
+                  <span className="text-slate-400">Knowledge{c.source_title ? ` (${c.source_title})` : ''}:</span> {c.kb_says}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {questions.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold text-amber-300 mb-1">❓ Questions to answer ({questions.length})</div>
+            <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300 leading-snug">
+              {questions.map((q, i) => <li key={i}>{q}</li>)}
+            </ul>
+          </div>
+        )}
+        {scenarios.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold text-emerald-300 mb-1">🧪 Test scenarios it will certify against ({scenarios.length})</div>
+            <ul className="space-y-1 text-[11px] text-slate-300 leading-snug">
+              {scenarios.map((s, i) => <li key={i}>“{s.question}” <span className="text-slate-500">({s.category})</span></li>)}
+            </ul>
+          </div>
+        )}
+        {bindings.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold text-sky-300 mb-1">🔗 Knowledge this playbook depends on ({new Set(bindings.map(b => b.title)).size})</div>
+            <ul className="space-y-0.5 text-[11px] text-slate-300 leading-snug">
+              {[...new Map(bindings.map(b => [b.title, b])).values()].map((b, i) => <li key={i}>{b.title ?? b.doc_id}</li>)}
+            </ul>
+            <p className="text-[10px] text-slate-500 mt-1">If any of these change, this playbook can flag that it may be out of date.</p>
+          </div>
+        )}
+      </div>
+      {risk.length > 0 && (
+        <p className="text-[10px] text-slate-500 mt-2">Steps graded: {risk.filter(r => r.grade === 'rail').length} rail (deterministic) · {risk.filter(r => r.grade === 'judgment').length} judgment (the employee reasons).</p>
+      )}
+    </div>
+  );
+}
+
 export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) => void }) {
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [runs, setRuns] = useState<PlaybookRun[]>([]);
@@ -1360,6 +1471,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
   const [builder, setBuilder] = useState<BuilderState | null>(null);
   const [selectedDefId, setSelectedDefId] = useState<string | null>(null);
+  const [showDraftAi, setShowDraftAi] = useState(false);
   const [runAccountId, setRunAccountId] = useState('');
   const [starting, setStarting] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
@@ -1422,8 +1534,19 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
     setToast(`"${def.name}" archived`);
   };
 
+  const onDrafted = async (r: DraftResult) => {
+    setShowDraftAi(false);
+    await refresh();
+    setSelectedDefId(r.playbook_id);
+    const q = (r.study.questions?.length ?? 0);
+    setToast(r.validation.valid
+      ? `Drafted “${r.name}” — ${r.steps.length} steps${q ? `, ${q} questions to review` : ''}. Review the study, then edit or publish.`
+      : `Drafted “${r.name}” with validation notes — review before publishing.`);
+  };
+
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      {showDraftAi && <DraftWithAiModal onClose={() => setShowDraftAi(false)} onDrafted={(r) => void onDrafted(r)} />}
       <PageHeader
         title="Playbooks"
         subtitle="Build playbooks from typed step primitives — validated, versioned, executed server-side with guardrails and human gates"
@@ -1463,6 +1586,9 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               </div>
             </div>
             {selectedDef.description && <p className="text-sm text-slate-400 mb-3">{selectedDef.description}</p>}
+
+            {/* PB3 Deep Study — shown for AI-drafted playbooks */}
+            <StudyPanel definitionId={selectedDef.id} />
 
             {/* The "document that executes" — an SOP-style read view */}
             <PlaybookDocumentView steps={selectedDef.steps} publishedDefs={defs} />
@@ -1522,10 +1648,16 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
             <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Your playbooks</p>
-              <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft' })}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-                + New playbook
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowDraftAi(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+                  ✨ Draft with AI
+                </button>
+                <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft' })}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 font-medium transition-colors">
+                  + New (advanced)
+                </button>
+              </div>
             </div>
             {defs.filter(d => d.status !== 'archived').length === 0 ? (
               <p className="px-5 py-6 text-xs text-slate-500">No playbooks yet — build your first from typed step primitives. Guardrails and human gates are enforced by the server on every run.</p>
