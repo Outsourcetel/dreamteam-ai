@@ -39,8 +39,17 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-const PROTOCOL_VERSION = '2025-03-26';
+// Jul-2026 MCP spec (#16): offer the latest revision; ADOPT whatever the
+// server negotiates down to in its initialize reply, and send THAT on every
+// subsequent request (per spec, the header must carry the negotiated
+// version — the old code pinned the constant). Older servers keep working.
+const LATEST_PROTOCOL_VERSION = '2026-07-28';
 const TIMEOUT_MS = 12000;
+// Tasks (new in the 2026 spec): a tools/call may return a long-running
+// task instead of an immediate result. Bounded polling, then honest timeout.
+const TASK_POLLS = 5;
+const TASK_POLL_MS = 2000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface RpcResult { ok: boolean; result?: unknown; error?: string; sessionId?: string; status?: number }
 
@@ -70,6 +79,7 @@ async function parseRpcResponse(res: Response): Promise<{ parsed: unknown; snipp
 async function rpc(
   endpoint: string, headers: Record<string, string>,
   method: string, params: unknown, id: number | null, sessionId?: string,
+  protocolVersion: string = LATEST_PROTOCOL_VERSION,
 ): Promise<RpcResult> {
   const body: Record<string, unknown> = { jsonrpc: '2.0', method };
   if (params !== undefined) body.params = params;
@@ -77,7 +87,7 @@ async function rpc(
   const hdrs: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/event-stream',
-    'MCP-Protocol-Version': PROTOCOL_VERSION,
+    'MCP-Protocol-Version': protocolVersion,
     ...headers,
   };
   if (sessionId) hdrs['Mcp-Session-Id'] = sessionId;
@@ -118,29 +128,32 @@ interface McpToolSummary { name: string; description: string }
 interface McpServerInfo { name?: string; version?: string; protocolVersion?: string }
 
 async function mcpSession(endpoint: string, headers: Record<string, string>): Promise<
-  { ok: true; sessionId?: string; serverInfo: McpServerInfo; tools: McpToolSummary[] } |
+  { ok: true; sessionId?: string; serverInfo: McpServerInfo; tools: McpToolSummary[]; protocolVersion: string } |
   { ok: false; error: string; stage: string }
 > {
-  // 1. initialize
+  // 1. initialize — offer the latest spec + declare the tasks capability;
+  // adopt the server's negotiated version for every subsequent request.
   const init = await rpc(endpoint, headers, 'initialize', {
-    protocolVersion: PROTOCOL_VERSION,
-    capabilities: {},
-    clientInfo: { name: 'dreamteam-mcp-client', version: '1.0.0' },
+    protocolVersion: LATEST_PROTOCOL_VERSION,
+    capabilities: { tasks: {} },
+    clientInfo: { name: 'dreamteam-mcp-client', version: '2.0.0' },
   }, 1);
   if (!init.ok) return { ok: false, error: init.error ?? 'initialize_failed', stage: 'initialize' };
   const initRes = (init.result ?? {}) as { serverInfo?: McpServerInfo; protocolVersion?: string };
   const sessionId = init.sessionId;
+  const negotiated = typeof initRes.protocolVersion === 'string' && initRes.protocolVersion
+    ? initRes.protocolVersion : LATEST_PROTOCOL_VERSION;
 
   // 2. notifications/initialized (best-effort)
-  await rpc(endpoint, headers, 'notifications/initialized', undefined, null, sessionId);
+  await rpc(endpoint, headers, 'notifications/initialized', undefined, null, sessionId, negotiated);
 
   // 3. tools/list
-  const list = await rpc(endpoint, headers, 'tools/list', {}, 2, sessionId);
+  const list = await rpc(endpoint, headers, 'tools/list', {}, 2, sessionId, negotiated);
   if (!list.ok) return { ok: false, error: list.error ?? 'tools_list_failed', stage: 'tools/list' };
   const toolsRaw = ((list.result ?? {}) as { tools?: Array<Record<string, unknown>> }).tools ?? [];
   return {
-    ok: true, sessionId,
-    serverInfo: { ...(initRes.serverInfo ?? {}), protocolVersion: initRes.protocolVersion },
+    ok: true, sessionId, protocolVersion: negotiated,
+    serverInfo: { ...(initRes.serverInfo ?? {}), protocolVersion: negotiated },
     tools: toolsRaw.slice(0, 40).map((t) => ({ name: String(t.name ?? ''), description: String(t.description ?? '').slice(0, 200) })),
   };
 }
@@ -265,13 +278,41 @@ serve(async (req) => {
         await audit(`MCP tools/call FAILED — could not establish session (${s.error})`, { ok: false, tool, error: s.error });
         return json({ ok: false, error: s.error, stage: s.stage });
       }
-      const call = await rpc(endpoint, headers, 'tools/call', { name: tool, arguments: args }, 3, s.sessionId);
-      const ms = Date.now() - started;
+      const call = await rpc(endpoint, headers, 'tools/call', { name: tool, arguments: args }, 3, s.sessionId, s.protocolVersion);
+      let ms = Date.now() - started;
       if (!call.ok) {
         await audit(`MCP tools/call FAILED — ${tool}: ${call.error}`, { ok: false, tool, error: call.error, latency_ms: ms });
         return json({ ok: false, error: call.error, latency_ms: ms });
       }
-      const result = (call.result ?? {}) as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
+      // Tasks (Jul-2026 spec, #16): a 2026 server may hand back a long-
+      // running task instead of an immediate result. Poll tasks/get on a
+      // bounded budget; pre-2026 servers never return one (path dormant).
+      let callResult = call.result;
+      const taskInfo = (callResult ?? {}) as { task?: { taskId?: string; status?: string } };
+      if (taskInfo.task?.taskId && !['completed', 'failed', 'cancelled'].includes(String(taskInfo.task.status ?? ''))) {
+        const taskId = taskInfo.task.taskId;
+        let terminal = false;
+        for (let p = 0; p < TASK_POLLS && !terminal; p++) {
+          await sleep(TASK_POLL_MS);
+          const poll = await rpc(endpoint, headers, 'tasks/get', { taskId }, 10 + p, s.sessionId, s.protocolVersion);
+          if (!poll.ok) break;
+          const t = (poll.result ?? {}) as { task?: { status?: string }; result?: unknown };
+          const status = String(t.task?.status ?? '');
+          if (status === 'completed') { callResult = t.result ?? t; terminal = true; }
+          else if (status === 'failed' || status === 'cancelled') {
+            ms = Date.now() - started;
+            await audit(`MCP task ${status} — ${tool}`, { ok: false, tool, task_id: taskId, latency_ms: ms });
+            return json({ ok: false, error: `mcp_task_${status}`, task_id: taskId, latency_ms: ms });
+          }
+        }
+        if (!terminal) {
+          ms = Date.now() - started;
+          await audit(`MCP task still running after poll budget — ${tool}`, { ok: false, tool, task_id: taskId, latency_ms: ms });
+          return json({ ok: false, error: 'mcp_task_timeout', task_id: taskId, detail: `Task still running after ${TASK_POLLS} polls — retry later.`, latency_ms: ms });
+        }
+        ms = Date.now() - started;
+      }
+      const result = (callResult ?? {}) as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
       const textOut = (result.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n');
       await audit(
         `MCP tool called — ${tool} on ${s.serverInfo.name ?? endpoint}: ${result.isError ? 'tool reported an error' : 'ok'} (${ms}ms; fetch-only, result not persisted)`,
