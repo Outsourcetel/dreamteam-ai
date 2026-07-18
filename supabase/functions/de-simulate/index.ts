@@ -31,6 +31,10 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const MAX_COUNT = 5;
+// Dreaming (#12): a HISTORICAL rehearsal replays real past traffic at
+// scale before go-live — higher cap than ad-hoc sims, still hard-bounded
+// (each scenario is one budget-gated de-answer + one judge call).
+const MAX_COUNT_HISTORICAL = 20;
 const PASS_THRESHOLD = 80;
 
 async function scenarioQuestions(admin: SupabaseClient, apiKey: string, tenantId: string, deId: string, mode: string, count: number): Promise<Array<{ question: string; reference: string | null }>> {
@@ -39,16 +43,20 @@ async function scenarioQuestions(admin: SupabaseClient, apiKey: string, tenantId
     return (data ?? []).map((g: { question: string; expected_fragments: string[] }) => ({ question: g.question, reference: Array.isArray(g.expected_fragments) && g.expected_fragments.length ? `Key facts the answer should contain: ${g.expected_fragments.join('; ')}` : null }));
   }
   if (mode === 'historical') {
+    // Dreaming (#12): fetch a WIDE recent slice, dedupe, then evenly-spaced
+    // subsample — the rehearsal covers the variety of real traffic across
+    // the window, not just whatever arrived in the last hour.
     const { data } = await admin.from('de_messages').select('content, conversation_id, de_conversations!inner(de_id, tenant_id)')
       .eq('role', 'user').eq('de_conversations.tenant_id', tenantId).eq('de_conversations.de_id', deId)
-      .order('created_at', { ascending: false }).limit(count * 3);
-    const seen = new Set<string>(); const out: Array<{ question: string; reference: null }> = [];
+      .order('created_at', { ascending: false }).limit(Math.max(count * 3, 60));
+    const seen = new Set<string>(); const pool: string[] = [];
     for (const r of (data ?? []) as Array<{ content: string }>) {
       const q = (r.content ?? '').trim();
-      if (q.length > 8 && !seen.has(q.toLowerCase())) { seen.add(q.toLowerCase()); out.push({ question: q, reference: null }); }
-      if (out.length >= count) break;
+      if (q.length > 8 && !seen.has(q.toLowerCase())) { seen.add(q.toLowerCase()); pool.push(q); }
     }
-    return out;
+    if (pool.length <= count) return pool.map((q) => ({ question: q, reference: null }));
+    const step = pool.length / count;
+    return Array.from({ length: count }, (_, i) => ({ question: pool[Math.floor(i * step)], reference: null }));
   }
   // synthetic — LLM generates realistic customer questions from the DE's role.
   const { data: de } = await admin.from('digital_employees').select('name, description, department, responsibilities').eq('id', deId).maybeSingle();
@@ -74,7 +82,7 @@ serve(async (req) => {
     const { tenant_id, de_id } = body;
     if (!tenant_id || !de_id) return json({ error: 'tenant_id and de_id required' }, 400);
     const mode = ['golden', 'synthetic', 'historical'].includes(body.mode) ? body.mode : 'synthetic';
-    const count = Math.min(MAX_COUNT, Math.max(1, Number(body.count) || 3));
+    const count = Math.min(mode === 'historical' ? MAX_COUNT_HISTORICAL : MAX_COUNT, Math.max(1, Number(body.count) || 3));
     // Optional candidate patch (Frontier-20 #5): when present, every scenario
     // is answered WITH the proposed knowledge injected (de-answer replay mode),
     // so a regression check can compare golden pass-rate with vs without it.
