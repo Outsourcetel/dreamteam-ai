@@ -2377,9 +2377,16 @@ serve(async (req) => {
       });
     }
 
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    // Service-role bearer OR the Vault dispatch secret (server-to-server:
+    // QA harnesses, automated onboarding). Both require an explicit tenant_id
+    // so the call stays tenant-scoped — same dual pattern as de-answer /
+    // de-simulate / ingest-chunks. The dispatch path is read/authored only
+    // through the normal validated actions below; it cannot widen tenant scope.
+    const pbDispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const pbHeaderSecret = req.headers.get('x-dispatch-secret') ?? '';
+    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || (pbDispatchSecret && pbHeaderSecret === pbDispatchSecret)) {
       tenantId = body?.tenant_id ?? null;
-      if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
+      if (!tenantId) return json({ error: 'tenant_id required for service/dispatch calls' }, 400);
     } else {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
