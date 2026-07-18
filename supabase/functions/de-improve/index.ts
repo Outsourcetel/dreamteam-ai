@@ -94,11 +94,12 @@ serve(async (req) => {
     try { patch = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); } catch { /* fallthrough */ }
     if (!patch.title || !patch.content) return json({ error: 'proposal_parse_failed' }, 502);
 
-    const { data: impRow } = await admin.from('de_improvements').insert({
+    const { data: impRow, error: impErr } = await admin.from('de_improvements').insert({
       tenant_id, de_id: deId, judgment_id: fail.id,
       failure_question: fail.question, failure_answer: fail.answer ?? '', failure_rationale: fail.rationale ?? '',
       proposed_title: String(patch.title).slice(0, 200), proposed_content: String(patch.content).slice(0, 8000),
     }).select('id').single();
+    if (impErr || !impRow) return json({ error: `improvement_insert_failed: ${impErr?.message ?? 'no row'}` }, 500);
     const impId = impRow.id;
 
     // ── 3) replay: the failing question WITH the patch, re-judged ──
@@ -130,15 +131,31 @@ serve(async (req) => {
       return await r.json().catch(() => ({}));
     };
     const [withP, withoutP] = [await simCall(true), await simCall(false)];
-    const goldenOk = !withP.error && !withoutP.error
-      ? Number(withP.passed ?? 0) >= Number(withoutP.passed ?? 0)
-      : true;   // no golden set → the direct replay is the whole evidence (recorded honestly below)
+    // Regression check — FAIL CLOSED (consolidation-review finding): the
+    // comparison passes only when BOTH sims genuinely completed. The single
+    // honest skip is "this tenant has no golden set" (both sides agree);
+    // any error, budget refusal, or blocked_llm on either side counts as a
+    // failed replay — never as silent evidence of safety.
+    const completed = (r: { error?: string; status?: string }) => !r.error && (r.status === 'passed' || r.status === 'failed');
+    const noGolden = (r: { error?: string }) => r.error === 'no_golden_qa';
+    let goldenOk: boolean;
+    let goldenRecord: Record<string, unknown>;
+    if (completed(withP) && completed(withoutP)) {
+      goldenOk = Number(withP.passed ?? 0) >= Number(withoutP.passed ?? 0);
+      goldenRecord = { with_patch: withP.passed, without_patch: withoutP.passed, total: withP.total, sim_run_id: withP.sim_run_id, baseline_sim_run_id: withoutP.sim_run_id };
+    } else if (noGolden(withP) && noGolden(withoutP)) {
+      goldenOk = true;   // honestly no golden set — the direct replay is the whole evidence
+      goldenRecord = { skipped: 'no_golden_qa' };
+    } else {
+      goldenOk = false;  // fail closed
+      goldenRecord = { failed_closed: true, with_patch: withP.error ?? withP.status ?? 'unknown', without_patch: withoutP.error ?? withoutP.status ?? 'unknown' };
+    }
 
     const replay = {
       before: { score: Number(fail.score) || 0, verdict: 'fail' },
       after,
       answer_preview: newAnswer.slice(0, 400),
-      golden: !withP.error ? { with_patch: withP.passed, without_patch: withoutP.passed, total: withP.total, sim_run_id: withP.sim_run_id, baseline_sim_run_id: withoutP.sim_run_id } : { skipped: withP.error ?? 'unavailable' },
+      golden: goldenRecord,
     };
     const passed = after.verdict === 'pass' && goldenOk;
     await admin.rpc('record_improvement_replay', { p_improvement_id: impId, p_replay: replay, p_passed: passed });

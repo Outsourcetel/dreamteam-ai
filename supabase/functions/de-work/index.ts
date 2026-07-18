@@ -56,16 +56,21 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
   });
   if (!res.ok) throw new Error(`planner_anthropic_${res.status}`);
   const d = await res.json();
+  // Meter BEFORE any early return, and AWAITED — a lazy supabase-js thenable
+  // never fires unless awaited, and unmetered planner spend can never trip
+  // the very budget gate that checks it (consolidation-review finding).
+  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
   const a = text.indexOf('{'), b = text.lastIndexOf('}');
-  const parsed = a >= 0 ? JSON.parse(text.slice(a, b + 1)) : null;
-  const steps: Array<{ title?: string; kind?: string; detail?: string }> = Array.isArray(parsed?.steps) ? parsed.steps.slice(0, 5) : [];
+  let parsed: { steps?: unknown } | null = null;
+  try { parsed = a >= 0 ? JSON.parse(text.slice(a, b + 1)) : null; }
+  catch { parsed = null; }   // malformed JSON → 0 steps → caller backs off
+  const steps: Array<{ title?: string; kind?: string; detail?: string }> = Array.isArray(parsed?.steps) ? (parsed.steps as Array<{ title?: string; kind?: string; detail?: string }>).slice(0, 5) : [];
   if (steps.length === 0) return 0;
-  admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   let prev: string | null = null;
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
-    const { data: id } = await admin.rpc('enqueue_de_work_item', {
+    const { data: id, error: enqErr } = await admin.rpc('enqueue_de_work_item', {
       p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
       p_title: String(s.title ?? `Step ${i + 1}`).slice(0, 200),
       p_kind: ['act', 'check', 'follow_up'].includes(String(s.kind)) ? s.kind : 'act',
@@ -73,6 +78,9 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
       p_depends_on: prev, p_payload: { detail: String(s.detail ?? '').slice(0, 1000) },
       p_idempotency_key: `obj-${obj.id}-step-${i + 1}`, p_max_attempts: 3,
     });
+    // A failed enqueue must STOP the chain — continuing would silently break
+    // depends_on ordering. Already-enqueued steps stand (idempotent keys).
+    if (enqErr) { console.error('enqueue_de_work_item:', enqErr.message); break; }
     prev = (id as string) ?? prev;
   }
   await admin.rpc('set_de_objective_status', { p_id: obj.id, p_status: 'in_progress' });
@@ -110,12 +118,17 @@ async function reviewObjective(
   });
   if (!res.ok) throw new Error(`review_anthropic_${res.status}`);
   const d = await res.json();
-  admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
+  // AWAITED — lazy thenable; unmetered reviewer spend evades the budget gate.
+  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
   const a = text.indexOf('{'), b = text.lastIndexOf('}');
-  const parsed = a >= 0 ? JSON.parse(text.slice(a, b + 1)) : {};
-  const assessment = ['achieved', 'blocked', 'continue'].includes(parsed.assessment) ? parsed.assessment : 'continue';
-  const note = String(parsed.note ?? '').slice(0, 600);
+  let parsed: { assessment?: string; note?: string; next_steps?: unknown } = {};
+  try { parsed = a >= 0 ? JSON.parse(text.slice(a, b + 1)) : {}; } catch { parsed = {}; }
+  const parseFailed = !['achieved', 'blocked', 'continue'].includes(String(parsed.assessment));
+  const assessment = parseFailed ? 'continue' : String(parsed.assessment);
+  const note = parseFailed
+    ? 'review output was not parseable — treated as continue; will retry on the next wake'
+    : String(parsed.note ?? '').slice(0, 600);
 
   let enqueued = 0;
   if (assessment === 'continue') {
@@ -326,7 +339,11 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     for (const tu of toolUses) {
       const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
-      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out.result).slice(0, 4000) });
+      // Injection firewall (#9): tool RESULTS carry external content
+      // (knowledge chunks, memory, connector responses) — mark them as
+      // untrusted data like every other external text, or a poisoned
+      // result reads as trusted instruction (consolidation-review finding).
+      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: wrapUntrusted(JSON.stringify(out.result).slice(0, 4000), `tool-result ${tu.name}`) });
       if (out.done) { done = true; summary = out.summary ?? summary; if (out.escalated) finalStatus = 'waiting_human'; }
     }
     messages.push({ role: 'user', content: toolResults });
@@ -363,21 +380,40 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
 
-    // ── Planning pass: decompose un-planned open objectives (max 2/tick) ──
+    // ── Planning pass: decompose un-planned open objectives (max 2/tick).
+    // next_wake_at doubles as the planning backoff/fairness clock here: a
+    // failed, empty, or budget-skipped plan defers the objective 30 min so
+    // one stuck/over-budget tenant can't hold the head of the window and
+    // starve everyone else (consolidation-review finding). ──
+    const deferPlan = (id: string) =>
+      admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }).eq('id', id).eq('status', 'open');
     const planned: Array<{ objective_id: string; steps: number }> = [];
     if (body.action === 'run' || body.action === 'plan') {
       const { data: objs } = await admin.from('de_objectives')
-        .select('id, tenant_id, de_id, title, description')
+        .select('id, tenant_id, de_id, title, description, status, next_wake_at')
         .eq('status', 'open')
+        .or(`next_wake_at.is.null,next_wake_at.lte.${new Date().toISOString()}`)
         .order('created_at', { ascending: true }).limit(10);
       for (const o of (objs ?? [])) {
         if (planned.length >= 2) break;
         const { count } = await admin.from('de_work_items').select('id', { count: 'exact', head: true }).eq('objective_id', o.id);
-        if ((count ?? 0) > 0) continue; // already planned (or manually seeded)
+        if ((count ?? 0) > 0) {
+          // Heal an interrupted plan (worker died between enqueue and status
+          // update): items exist but the objective is still 'open' with no
+          // alarm — without this it would be skipped forever, unreviewable.
+          await admin.rpc('set_de_objective_status', { p_id: o.id, p_status: 'in_progress' });
+          await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
+          continue;
+        }
         const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
-        if (budget && budget.allowed === false) continue;
-        try { planned.push({ objective_id: o.id, steps: await planObjective(admin, apiKey, o) }); }
-        catch (e) { console.error('planObjective:', e); }
+        if (budget && budget.allowed === false) { await deferPlan(o.id); continue; }
+        const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
+        if (deBudget && deBudget.allowed === false) { await deferPlan(o.id); continue; }
+        try {
+          const steps = await planObjective(admin, apiKey, o);
+          planned.push({ objective_id: o.id, steps });
+          if (steps === 0) await deferPlan(o.id);   // unparseable/empty plan → back off, don't hot-loop
+        } catch (e) { console.error('planObjective:', e); await deferPlan(o.id); }
       }
       if (body.action === 'plan') return json({ planned });
     }
@@ -387,11 +423,18 @@ serve(async (req) => {
     if (body.action === 'run') {
       const { data: due } = await admin.rpc('wake_due_objectives', { p_limit: 3 });
       for (const o of (due ?? [])) {
+        // 'open' objectives in this list are in planning backoff — the
+        // planner owns them; reviewing an unplanned goal is meaningless.
+        if (o.status !== 'in_progress') continue;
+        const deferWake = () =>
+          admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
         const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
-        if (budget && budget.allowed === false) continue;
+        if (budget && budget.allowed === false) { await deferWake(); continue; }
+        const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
+        if (deBudget && deBudget.allowed === false) { await deferWake(); continue; }
         try {
-          // Atomic: bumps wake_count and advances the alarm BEFORE the LLM
-          // call, so a crashed worker can't re-wake the same goal in a burst.
+          // Real claim (mig 180): the UPDATE re-checks next_wake_at <= now(),
+          // so a concurrent run that lost the race gets an error and skips.
           const { data: wakeN, error: wakeErr } = await admin.rpc('begin_objective_wake', { p_objective_id: o.id });
           if (wakeErr) continue;
           woken.push({ objective_id: o.id, ...(await reviewObjective(admin, apiKey, o, Number(wakeN))) });

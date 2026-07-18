@@ -24,7 +24,13 @@ const CORS = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const BATCH = 200;
 
-const toNano = (iso: string) => String(BigInt(new Date(iso).getTime()) * 1000000n);
+// Guarded: BigInt(NaN) throws, and one malformed timestamp would otherwise
+// poison the oldest-first batch FOREVER (the failing row is refetched every
+// run). An invalid time exports as epoch 0 instead of stalling the pipeline.
+const toNano = (iso: string) => {
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) ? String(BigInt(t) * 1000000n) : '0';
+};
 const attrVal = (v: unknown) =>
   typeof v === 'number' ? (Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v })
   : typeof v === 'boolean' ? { boolValue: v }

@@ -171,11 +171,13 @@ serve(async (req) => {
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
-    // Replay mode (Frontier-20 #5 / #3 candidate-config diff): when a caller
-    // supplies candidate_knowledge, this is a DRY-RUN evaluation of a proposed
-    // knowledge patch — inject it as top-priority context and suppress EVERY
-    // side effect (cache read/write, metrics, memory, escalation task, activity)
-    // so a replay never touches live state or serves a cached answer.
+    // Replay mode (Frontier-20 #5/#6): a DRY-RUN answer. Suppressed: every
+    // BUSINESS side effect — conversation/message rows, cache read+write,
+    // inquiry metric, memory, escalation tasks, activity, outcome metering,
+    // spans. NOT suppressed (deliberately): llm_calls + token-usage
+    // recording — real spend occurred and must stay budget-metered, or
+    // replays would be an unmetered-spend hole. Each replay also writes one
+    // audit event so dry runs are visible in the audit trail, never silent.
     const candidateKnowledge = typeof candidate_knowledge === 'string' ? candidate_knowledge.trim() : '';
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
@@ -249,18 +251,35 @@ serve(async (req) => {
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
 
     // ── Conversation (create if needed) + persist the user message ──
-    let convId: string | null = typeof conversation_id === 'string' ? conversation_id : null;
-    if (!convId) {
-      const { data: conv } = await admin
-        .from('de_conversations')
-        .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
-        .select('id').single();
-      convId = conv?.id ?? null;
-    }
-    if (convId) {
-      await admin.from('de_messages').insert({
-        tenant_id: tenantId, conversation_id: convId, role: 'user', content: question,
-      });
+    // REPLAY: no conversation is ever created, adopted, or written to — a
+    // dry run must not leave rows in the live Support Inbox or inject
+    // counterfactual turns into a real transcript (convId stays null, which
+    // also disarms every convId-guarded write downstream).
+    let convId: string | null = null;
+    if (!replayMode) {
+      if (typeof conversation_id === 'string' && conversation_id) {
+        // Caller-supplied thread: must be a UUID the caller's tenant owns —
+        // otherwise messages/outcomes would attach to a foreign or
+        // nonexistent conversation ref.
+        if (!/^[0-9a-f-]{36}$/i.test(conversation_id)) {
+          return json({ error: 'invalid_conversation_id' }, 400);
+        }
+        const { data: owned } = await admin.from('de_conversations')
+          .select('id').eq('id', conversation_id).eq('tenant_id', tenantId).maybeSingle();
+        if (!owned) return json({ error: 'conversation_not_found' }, 404);
+        convId = conversation_id;
+      } else {
+        const { data: conv } = await admin
+          .from('de_conversations')
+          .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
+          .select('id').single();
+        convId = conv?.id ?? null;
+      }
+      if (convId) {
+        await admin.from('de_messages').insert({
+          tenant_id: tenantId, conversation_id: convId, role: 'user', content: question,
+        });
+      }
     }
 
     const bump = (metric: string, delta = 1) =>
@@ -409,8 +428,11 @@ serve(async (req) => {
         p_subject_kind: 'conversation', p_subject_ref: convId, p_match_count: 5,
       });
       if (Array.isArray(mems) && mems.length > 0) {
+        // The framing line is PLATFORM-authored instruction and must sit
+        // OUTSIDE the untrusted block (FIREWALL_RULES tells the model block
+        // content is never instructions); only the recalled items are data.
         memoryContext = '\n\nWhat you remember from earlier in this conversation (context only — still answer facts from the knowledge documents):\n'
-          + mems.map((m: { content: string }) => `- ${m.content}`).join('\n');
+          + wrapUntrusted(mems.map((m: { content: string }) => `- ${m.content}`).join('\n'), 'conversation-memory');
       }
     }
 
@@ -420,7 +442,7 @@ serve(async (req) => {
     const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
 
 Knowledge documents:
-${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUntrusted(memoryContext, 'conversation-memory') : ''}${FIREWALL_RULES}`;
+${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES}`;
 
     const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -456,33 +478,60 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUnt
     }
 
     // ── Guardrail check on the answer text (P3 — blocks + escalates) ──
+    // The check itself runs in EVERY mode — guardrails always win, and a
+    // replay must honestly report that the answer would have been blocked.
+    // The PERSISTENCE (message, human task, activity, audit, metering) is
+    // real-traffic-only: a dry run must never open a real escalation.
     const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
     if (blockedBy) {
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
-      if (convId) {
-        await admin.from('de_messages').insert({
-          tenant_id: tenantId, conversation_id: convId, role: 'assistant',
-          content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true,
+      if (!replayMode) {
+        if (convId) {
+          await admin.from('de_messages').insert({
+            tenant_id: tenantId, conversation_id: convId, role: 'assistant',
+            content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true,
+          });
+        }
+        await admin.from('human_tasks').insert({
+          tenant_id: tenantId,
+          type: 'escalation',
+          source: 'de',
+          title: `Guardrail block — ${truncated}`,
+          detail: `${persona.name}'s draft answer was blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
+          related_table: convId ? 'de_conversations' : null,
+          related_id: convId,
+        });
+        await admin.from('activity_events').insert({
+          tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
+          text: `Answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
+          confidence: parsed.confidence,
+        });
+        await auditEvent(admin, tenantId, persona.name, 'de',
+          `BLOCKED — chat answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
+          'guardrail_block',
+          { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated });
+        // Outcome metering (#15): a guardrail block hands off to a human —
+        // metered FREE, and it belongs in the benchmark's denominator
+        // (consistent with widget-ask; without this, chat blocks silently
+        // inflated the honest resolution rate).
+        if (convId) {
+          await admin.rpc('record_billable_outcome', {
+            p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
+            p_kind: 'escalation', p_source: 'chat',
+          });
+        }
+        await recordSpan(admin, {
+          tenant_id: tenantId, name: 'chat de-answer', kind: 'agent', started_at: spanStart,
+          attributes: {
+            'gen_ai.operation.name': 'chat', 'gen_ai.system': 'anthropic',
+            'gen_ai.request.model': model,
+            'gen_ai.usage.input_tokens': data.usage?.input_tokens ?? 0,
+            'gen_ai.usage.output_tokens': data.usage?.output_tokens ?? 0,
+            'dreamteam.de_id': subjectDeId, 'dreamteam.guardrail_blocked': true,
+            'dreamteam.conversation_id': convId,
+          },
         });
       }
-      await admin.from('human_tasks').insert({
-        tenant_id: tenantId,
-        type: 'escalation',
-        source: 'de',
-        title: `Guardrail block — ${truncated}`,
-        detail: `${persona.name}'s draft answer was blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
-        related_table: convId ? 'de_conversations' : null,
-        related_id: convId,
-      });
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
-        text: `Answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
-        confidence: parsed.confidence,
-      });
-      await auditEvent(admin, tenantId, persona.name, 'de',
-        `BLOCKED — chat answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
-        'guardrail_block',
-        { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated });
       return json({
         conversation_id: convId,
         blocked: true,
@@ -560,10 +609,12 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext ? '\n' + wrapUnt
       });
     }
 
-    // ── Escalation + activity ── (skipped entirely in replay mode: a dry-run
-    // patch evaluation must not open human tasks or emit activity/audit)
+    // ── Escalation + activity ── (business writes skipped in replay; one
+    // audit line keeps dry runs visible in the trail, never silent)
     if (replayMode) {
-      // no-op: return the answer + escalate flag without any persistence
+      await auditEvent(admin, tenantId, persona.name, 'de',
+        `REPLAY (dry run) — answered "${question.length > 60 ? question.slice(0, 60) + '…' : question}" with zero business side effects${candidateKnowledge ? ' (candidate knowledge injected)' : ''}`,
+        'evidence_step', { kind: 'replay_run', confidence: parsed.confidence, would_escalate: escalate, candidate: candidateKnowledge.length > 0 });
     } else if (escalate) {
       await bump('escalations');
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;

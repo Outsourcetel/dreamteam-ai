@@ -99,15 +99,23 @@ serve(async (req) => {
     //   2. X-API-Key — the tenant API key (mig 090); tenant must own the DE.
     const delegation = req.headers.get('x-delegation-token') ?? '';
     if (delegation) {
-      const { data: dtCheck } = await admin.rpc('verify_de_delegation_token', { p_raw: delegation, p_required_scope: 'a2a.message' });
-      if (!dtCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid, expired, revoked, or out-of-scope delegation token', 401);
-      if (dtCheck.de_id !== de.id) return rpcError(rpc.id, -32001, 'Delegation token is bound to a different agent', 403);
+      // The expected DE participates in the atomic verify (mig 180), so a
+      // token presented against the wrong agent consumes NO use.
+      const { data: dtCheck } = await admin.rpc('verify_de_delegation_token', { p_raw: delegation, p_required_scope: 'a2a.message', p_expected_de: de.id });
+      if (!dtCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid, expired, revoked, out-of-scope, or wrong-agent delegation token', 401);
     } else {
       const rawKey = req.headers.get('x-api-key') ?? '';
       if (!rawKey) return rpcError(rpc.id, -32001, 'Authentication required: send a tenant API key in X-API-Key, or a DE delegation token in X-Delegation-Token', 401);
       const { data: keyCheck } = await admin.rpc('verify_tenant_api_key', { p_raw_key: rawKey });
       if (!keyCheck?.valid) return rpcError(rpc.id, -32001, 'Invalid or revoked API key', 401);
       if (keyCheck.tenant_id !== de.tenant_id) return rpcError(rpc.id, -32001, 'API key does not grant access to this agent', 403);
+      // Scope symmetry with the delegation path: a key with NO scopes is
+      // unrestricted (back-compat with every existing key); a key that
+      // declares scopes must include a2a access to use this surface.
+      const keyScopes: string[] = Array.isArray(keyCheck.scopes) ? keyCheck.scopes.map(String) : [];
+      if (keyScopes.length > 0 && !keyScopes.some((s) => s === 'a2a.message' || s === 'a2a.*' || s === '*')) {
+        return rpcError(rpc.id, -32001, 'This API key\'s scopes do not permit A2A message/send', 403);
+      }
     }
 
     if (rpc.method !== 'message/send') return rpcError(rpc.id, -32601, `Method not found: ${rpc.method} (v1 supports message/send)`);

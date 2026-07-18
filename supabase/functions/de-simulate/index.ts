@@ -102,6 +102,13 @@ serve(async (req) => {
       if (!(prof?.layer === 'platform' || prof?.tenant_id === tenant_id)) return json({ error: 'forbidden' }, 403);
     }
 
+    // The DE must belong to the asserted tenant — the auth block only proves
+    // the CALLER's tenant, and every query below runs on the RLS-bypassing
+    // service client (consolidation-review: cross-tenant DE metadata leak).
+    const { data: simDe } = await admin.from('digital_employees')
+      .select('id').eq('id', de_id).eq('tenant_id', tenant_id).maybeSingle();
+    if (!simDe) return json({ error: 'de_not_in_tenant' }, 403);
+
     const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
     if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
@@ -110,7 +117,11 @@ serve(async (req) => {
     const scenarios = await scenarioQuestions(admin, apiKey, tenant_id, de_id, mode, count);
     if (scenarios.length === 0) return json({ error: mode === 'historical' ? 'no_historical_questions' : mode === 'golden' ? 'no_golden_qa' : 'scenario_generation_failed' }, 400);
 
-    const { data: run } = await admin.from('sim_runs').insert({ tenant_id, de_id, mode, status: 'running', total: scenarios.length, threshold_pct: PASS_THRESHOLD, candidate: isCandidate }).select('id').single();
+    // The run records the config fingerprint it TESTS (mig 181): a cert
+    // minted from this run vouches for this exact config — running under
+    // config A then certifying config B no longer launders staleness.
+    const { data: fp } = await admin.rpc('de_config_fingerprint', { p_de_id: de_id });
+    const { data: run } = await admin.from('sim_runs').insert({ tenant_id, de_id, mode, status: 'running', total: scenarios.length, threshold_pct: PASS_THRESHOLD, candidate: isCandidate, config_fingerprint: fp ?? null }).select('id').single();
     const simRunId = run.id;
     const secret = dispatch;
     const results: Array<Record<string, unknown>> = [];

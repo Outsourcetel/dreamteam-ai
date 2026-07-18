@@ -905,8 +905,8 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
               <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.judged_quality}>judged quality · {benchmark.judged_quality.graded} answer{benchmark.judged_quality.graded === 1 ? '' : 's'} graded by an independent AI judge</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-slate-200">{benchmark.csat.avg_score != null ? benchmark.csat.avg_score : '—'}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.csat}>CSAT · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
+              <p className="text-2xl font-semibold text-slate-200">{benchmark.csat.positive_pct != null ? `${benchmark.csat.positive_pct}%` : '—'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.csat}>CSAT positive · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>

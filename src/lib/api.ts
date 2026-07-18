@@ -1143,7 +1143,7 @@ export interface BenchmarkReport {
   window_days: number;
   outcomes: { resolutions: number; escalations: number; resolution_rate_pct: number | null };
   judged_quality: { graded: number; pass_rate_pct: number | null; avg_score: number | null };
-  csat: { ratings: number; avg_score: number | null };
+  csat: { ratings: number; positive_pct: number | null };
   cost: { ai_spend_cents: number; cost_per_resolution_cents: number | null };
   capability: { status: string; passed?: number; total?: number; avg_score?: number; mode?: string; ran_at?: string };
   definitions: Record<string, string>;
