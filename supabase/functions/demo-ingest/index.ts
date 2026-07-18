@@ -17,6 +17,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
+import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -77,9 +78,16 @@ serve(async (req) => {
         if (!outcome.ok || !outcome.response) throw new Error(outcome.detail ?? `HTTP ${outcome.status}`);
         const resp = outcome.response;
         const ctype = resp.headers.get('content-type') ?? '';
-        if (ctype.includes('application/pdf')) throw new Error('PDF (not handled in demo-ingest)');
-        const text = stripHtml((await resp.text()).slice(0, 2_000_000)).slice(0, MAX_TEXT_CHARS);
-        if (text.length < 200) throw new Error(`too little readable text (${text.length} chars — likely a JS-rendered SPA)`);
+        let text: string;
+        if (ctype.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
+          const buf = new Uint8Array(await resp.arrayBuffer());
+          if (buf.length > MAX_PDF_BYTES) throw new Error(`PDF too large (${Math.round(buf.length / 1024 / 1024)} MB)`);
+          text = (await pdfToText(buf)).slice(0, MAX_TEXT_CHARS);
+          if (!text) throw new Error('no selectable text in the PDF (likely scanned/image-only — needs OCR)');
+        } else {
+          text = stripHtml((await resp.text()).slice(0, 2_000_000)).slice(0, MAX_TEXT_CHARS);
+          if (text.length < 200) throw new Error(`too little readable text (${text.length} chars — likely a JS-rendered SPA)`);
+        }
 
         await admin.from('knowledge_docs').update({
           content: text, is_current: true, tags: [...baseTags, 'ingested'],

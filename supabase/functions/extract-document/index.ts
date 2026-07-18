@@ -12,9 +12,9 @@
 // PDF text extraction uses unpdf (a serverless-friendly pdf.js build).
 // URL fetches pass the shared SSRF guard.
 // ============================================================
-import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
+import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,7 +24,6 @@ const CORS = {
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-const MAX_PDF_BYTES = 15 * 1024 * 1024; // 15 MB
 const MAX_TEXT_CHARS = 500_000;         // cap what we hand back to the ingester
 
 function stripHtml(raw: string): string {
@@ -38,12 +37,6 @@ function stripHtml(raw: string): string {
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-async function pdfToText(bytes: Uint8Array): Promise<string> {
-  const pdf = await getDocumentProxy(bytes);
-  const { text } = await extractText(pdf, { mergePages: true });
-  return (Array.isArray(text) ? text.join('\n\n') : String(text ?? '')).trim();
 }
 
 function decodeBase64(b64: string): Uint8Array {
