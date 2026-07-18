@@ -191,13 +191,15 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { key: { type: 'string' }, params: { type: 'object' } }, required: ['key'] } },
   { name: 'remember', description: 'Save an important fact/outcome to durable memory for future tasks.',
     input_schema: { type: 'object', properties: { content: { type: 'string' }, salience: { type: 'number' } }, required: ['content'] } },
+  { name: 'draft_outreach', description: 'Draft a proactive outbound message (follow-up, chase, notification) to a customer or contact. It is NEVER sent automatically — it goes to a human for approval and a human delivers it. Use when a task calls for contacting someone.',
+    input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'who it is for (name/email/account)' }, channel: { type: 'string', enum: ['email', 'sms', 'chat', 'other'] }, subject: { type: 'string' }, message: { type: 'string' }, reason: { type: 'string', description: 'why this outreach is needed' } }, required: ['recipient', 'message', 'reason'] } },
   { name: 'escalate_to_human', description: 'Hand off to a human when you cannot safely proceed.',
     input_schema: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] } },
   { name: 'mark_done', description: 'The ONLY way to finish. Call with a short summary of what you did/found.',
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -241,6 +243,20 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       const emb = await embedText(String(input.content ?? '').slice(0, 4000));
       await admin.rpc('de_memory_write', { p_tenant_id: tenantId, p_de_id: deId, p_content: String(input.content ?? ''), p_embedding: emb, p_subject_kind: subjectRef ? 'case' : 'general', p_subject_ref: subjectRef, p_kind: 'episodic', p_salience: typeof input.salience === 'number' ? input.salience : 0.6, p_source: 'de' });
       return { result: { saved: true } };
+    }
+    case 'draft_outreach': {
+      // Proactive outbound (#17, mig 179): the draft lands in the approvals
+      // inbox with work-item provenance. NOTHING sends automatically — the
+      // create RPC is the only write path and no delivery code exists.
+      const { data: draftId, error: draftErr } = await admin.rpc('create_outbound_draft', {
+        p_tenant_id: tenantId, p_de_id: deId,
+        p_recipient: String(input.recipient ?? ''), p_channel: String(input.channel ?? 'email'),
+        p_subject: String(input.subject ?? ''), p_body: String(input.message ?? ''),
+        p_reason: String(input.reason ?? ''),
+        p_source_kind: workItemId ? 'work_item' : 'manual', p_source_ref: workItemId ?? null,
+      });
+      if (draftErr) return { result: { error: `draft failed: ${draftErr.message}` } };
+      return { result: { draft_id: draftId, status: 'pending_approval', note: 'Draft created and routed to a human for approval. It will NOT send automatically — continue with the rest of the task.' } };
     }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
@@ -308,7 +324,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out.result).slice(0, 4000) });
       if (out.done) { done = true; summary = out.summary ?? summary; if (out.escalated) finalStatus = 'waiting_human'; }
