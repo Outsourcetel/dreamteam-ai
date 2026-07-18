@@ -1,0 +1,48 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dreamteam-dev",
+      "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "--port",
+        "5173"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "dreamteam-worktree",
+      "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "D:/Dream Team AI/.claude/worktrees/agent-a641eced1bad1ed41",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "dreamteam-agenta9c9",
+      "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "D:/Dream Team AI/.claude/worktrees/agent-a9c970c677c1527c8",
+        "--port",
+        "5183"
+      ],
+      "port": 5183
+    },
+    {
+      "name": "dreamteam-agentae1d",
+      "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "D:/Dream Team AI/.claude/worktrees/agent-ae1dc12b24b96e0ef",
+        "--port",
+        "5198"
+      ],
+      "port": 5198
+    }
+  ]
+}
