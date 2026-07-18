@@ -8,12 +8,12 @@ import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import {
-  getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics, getOutcomeMetering,
+  getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics, getOutcomeMetering, getBenchmarkReport,
   getDeInquiryMetrics, getDeCostMetricsRanged,
   getDeGuardrailActivity, getRecentEvalFailures,
   type DePerformanceMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
   type DeInquiryMetrics, type DeGuardrailActivity, type RecentEvalFailure,
-  type OutcomeMetering,
+  type OutcomeMetering, type BenchmarkReport,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -803,6 +803,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
   const [guardrails, setGuardrails] = useState<DeGuardrailActivity[]>([]);
   const [evalFailures, setEvalFailures] = useState<RecentEvalFailure[]>([]);
   const [actions, setActions] = useState<DeActionMetrics[]>([]);
+  const [benchmark, setBenchmark] = useState<BenchmarkReport | null>(null);
   const [range, setRange] = useState<number | null>(30);
   const [loading, setLoading] = useState(true);
 
@@ -815,9 +816,10 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       getDeGuardrailActivity(tenantId),
       getRecentEvalFailures(tenantId),
       getDeActionMetrics(tenantId, range),
-    ]).then(([d, m, g, e, a]) => {
+      getBenchmarkReport(tenantId, range),
+    ]).then(([d, m, g, e, a, b]) => {
       if (cancelled) return;
-      setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e); setActions(a);
+      setDes(d); setMetrics(m); setGuardrails(g); setEvalFailures(e); setActions(a); setBenchmark(b);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -883,6 +885,42 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
         />
         <RangeSelector value={range} onChange={setRange} />
       </div>
+
+      {/* Honest benchmark (#11, mig 176): every number computed over ALL
+          traffic from raw rows; definitions travel with the payload.
+          Rendered only when there is real measured work. */}
+      {benchmark && (benchmark.outcomes.resolutions + benchmark.outcomes.escalations > 0 || benchmark.judged_quality.graded > 0) && (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <p className="text-sm font-semibold text-white">Benchmark — honest numbers</p>
+            <p className="text-[11px] text-slate-500">all traffic counted, nothing cherry-picked · recountable from raw data</p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <p className="text-2xl font-semibold text-emerald-400">{benchmark.outcomes.resolution_rate_pct != null ? `${benchmark.outcomes.resolution_rate_pct}%` : '—'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.resolution_rate_pct}>resolution rate — every escalation & block counts in the denominator</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-200">{benchmark.judged_quality.pass_rate_pct != null ? `${benchmark.judged_quality.pass_rate_pct}%` : '—'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.judged_quality}>judged quality · {benchmark.judged_quality.graded} answer{benchmark.judged_quality.graded === 1 ? '' : 's'} graded by an independent AI judge</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-slate-200">{benchmark.csat.avg_score != null ? benchmark.csat.avg_score : '—'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.csat}>CSAT · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.cost_per_resolution_cents}>real AI cost per resolution</p>
+            </div>
+          </div>
+          {benchmark.capability.status !== 'no_simulation_yet' && (
+            <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-700/60">
+              Latest certification-grade simulation: {benchmark.capability.passed}/{benchmark.capability.total} passed
+              {benchmark.capability.avg_score != null ? ` · avg score ${Math.round(Number(benchmark.capability.avg_score))}` : ''} · {benchmark.capability.status}
+            </p>
+          )}
+        </div>
+      )}
 
       {trendCards.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">

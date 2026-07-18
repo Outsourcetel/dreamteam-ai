@@ -1137,6 +1137,23 @@ export const getOutcomeMetering = async (tenantId: string, days: number | null =
   return (data ?? null) as OutcomeMetering | null;
 };
 
+// Honest benchmark report (mig 176): all-traffic denominators, judged
+// quality, submitted-only CSAT, real cost — definitions embedded in payload.
+export interface BenchmarkReport {
+  window_days: number;
+  outcomes: { resolutions: number; escalations: number; resolution_rate_pct: number | null };
+  judged_quality: { graded: number; pass_rate_pct: number | null; avg_score: number | null };
+  csat: { ratings: number; avg_score: number | null };
+  cost: { ai_spend_cents: number; cost_per_resolution_cents: number | null };
+  capability: { status: string; passed?: number; total?: number; avg_score?: number; mode?: string; ran_at?: string };
+  definitions: Record<string, string>;
+}
+export const getBenchmarkReport = async (tenantId: string, days: number | null = 30): Promise<BenchmarkReport | null> => {
+  const { data, error } = await supabase.rpc('get_benchmark_report', { p_tenant_id: tenantId, p_days: days ?? 365 });
+  if (error) { console.error('getBenchmarkReport:', error.message); return null; }
+  return (data ?? null) as BenchmarkReport | null;
+};
+
 // Windowed AI cost — same shape as getDeCostMetrics but time-bounded.
 export const getDeCostMetricsRanged = async (tenantId: string, days: number | null = null): Promise<DeCostMetrics[]> => {
   const { data, error } = await supabase.rpc('get_de_cost_metrics_ranged', { p_tenant_id: tenantId, p_days: days });
