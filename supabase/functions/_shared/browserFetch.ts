@@ -56,10 +56,16 @@ async function tryRenderService(url: string, timeoutMs: number): Promise<FetchOu
     const i = hdr.indexOf(':');
     headers[hdr.slice(0, i).trim()] = hdr.slice(i + 1).trim();
   }
-  try {
-    const r = await fetch(target, { signal: AbortSignal.timeout(timeoutMs * 2), headers });
-    if (r.ok) return { ok: true, status: r.status, response: r };
-  } catch { /* fall through to the honest blocked message */ }
+  // Rendering a JS-heavy page is slow (often 20-40s) and free tiers
+  // rate-limit — give it a real budget and one spaced retry.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await fetch(target, { signal: AbortSignal.timeout(Math.max(timeoutMs * 4, 45000)), headers });
+      if (r.ok) return { ok: true, status: r.status, response: r };
+      if (r.status !== 429 || attempt === 2) break;
+    } catch { if (attempt === 2) break; }
+    await sleep(12000);
+  }
   return null;
 }
 

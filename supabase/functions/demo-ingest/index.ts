@@ -79,7 +79,11 @@ serve(async (req) => {
         const resp = outcome.response;
         const ctype = resp.headers.get('content-type') ?? '';
         let text: string;
-        if (ctype.includes('application/pdf') || url.toLowerCase().endsWith('.pdf')) {
+        // Route by the RESPONSE content-type, not the URL suffix: when a
+        // blocked .pdf URL is rescued by the render fallback, the response
+        // is already extracted TEXT (text/plain), not PDF bytes — feeding
+        // it to the PDF parser fails with "Invalid PDF structure".
+        if (ctype.includes('application/pdf') || (url.toLowerCase().endsWith('.pdf') && !ctype.includes('text/'))) {
           const buf = new Uint8Array(await resp.arrayBuffer());
           if (buf.length > MAX_PDF_BYTES) throw new Error(`PDF too large (${Math.round(buf.length / 1024 / 1024)} MB)`);
           text = (await pdfToText(buf)).slice(0, MAX_TEXT_CHARS);
