@@ -469,6 +469,11 @@ function validateSteps(steps: unknown): ValidationError[] {
         if (typeof brief !== 'string' || !brief.trim()) {
           errs.push({ index: i, code: 'bad_params', message: 'Describe what this step should do — what to look up, which system to use, and the rules to follow.' });
         }
+        // PB3 W2: optional blocking gate — 'pause' parks the run when the
+        // DE requests a gated action; the human decision resumes it.
+        if (p.on_gate !== undefined && !['continue', 'pause'].includes(String(p.on_gate))) {
+          errs.push({ index: i, code: 'bad_params', message: 'on_gate must be "continue" (default) or "pause" (wait for human approval before going on).' });
+        }
         break;
       }
       case 'start_onboarding': {
@@ -647,6 +652,11 @@ function renderTemplate(t: string, ctx: RunContext, runId: string, steps?: RunSt
 // agentic_step and consult_specialist receive as reference material.
 function collectRunContextDocs(ctx: RunContext, capChars = 24000): string {
   const parts = [
+    // PB3 W2: the plain-language SOP this playbook was compiled from —
+    // judgment steps read the WHOLE procedure (incl. its rules), not just
+    // their own brief, so the DE reasons with full procedural context.
+    ...(typeof ctx.sop_context === 'string' && ctx.sop_context
+      ? [`## The procedure this playbook follows (source SOP)\n${ctx.sop_context}`] : []),
     ...((ctx.reference_context as string[] | undefined) ?? []),
     ...((ctx.knowledge_context as string[] | undefined) ?? []),
     ...((ctx.instructions_context as string[] | undefined) ?? []),
@@ -1835,6 +1845,13 @@ async function executeDefinitionSteps(
             continue;
           }
 
+          // PB3 W2: blocking gate + resume-note plumbing. When a prior
+          // pass paused on a gated action, the dispatcher stamped the
+          // human decision into ctx — inject it and clear it.
+          const onGate = String(params.on_gate ?? 'continue') === 'pause' ? 'pause' : 'continue';
+          const resumeNote = typeof ctx.agentic_resume_note === 'string' ? ctx.agentic_resume_note : null;
+          if (resumeNote) delete ctx.agentic_resume_note;
+
           let agenticRes: Record<string, unknown> | null = null;
           try {
             const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/agentic-step-execute`, {
@@ -1846,6 +1863,7 @@ async function executeDefinitionSteps(
               body: JSON.stringify({
                 action: 'start', tenant_id: tenantId, de_id: runDeId,
                 playbook_run_id: run.id, step_index: i, goal,
+                on_gate: onGate, resume_note: resumeNote,
                 // PB2.0: instructions + knowledge checks + references the
                 // run accumulated — the DE reads them before acting.
                 context_documents: collectRunContextDocs(ctx) || null,
@@ -1854,6 +1872,21 @@ async function executeDefinitionSteps(
             agenticRes = await r.json().catch(() => null);
           } catch (e) {
             agenticRes = { error: `agentic step call failed: ${String(e).slice(0, 120)}` };
+          }
+
+          // PB3 W2: the loop paused on a gated action — park the run on
+          // the approval task. The dispatcher resumes this SAME step with
+          // the decision once a human rules on it.
+          if (String(agenticRes?.status ?? '') === 'paused_gate') {
+            step.status = 'waiting'; step.at = now();
+            step.detail = 'Paused — the employee requested an action that needs human approval';
+            run.status = 'waiting';
+            run.current_step = i;
+            run.waiting_task_id = (agenticRes?.task_id as string | undefined) ?? null;
+            ctx.last_agentic_step_run_id = (agenticRes?.agentic_step_run_id as string | undefined) ?? null;
+            await stepAudit(i, { agentic_step_run_id: agenticRes?.agentic_step_run_id ?? null, paused_on_task: run.waiting_task_id });
+            await saveRun(admin, run);
+            return { status: 'waiting', task_id: run.waiting_task_id ?? undefined };
           }
 
           const errKey = String(agenticRes?.error ?? '');
@@ -2215,6 +2248,14 @@ async function startDefinitionRunServer(
   // CHILD RUN (sub_playbook): inherits the parent's DE subject so
   // data-access grants are enforced consistently across the boundary —
   // a child never gets MORE access than its parent's assigned DE.
+  // PB3 W2: if this definition was compiled from a plain-language SOP
+  // (playbook-draft), thread the SOP into the run so judgment steps
+  // reason with the full procedure, not just their own brief.
+  let sopContext: string | null = null;
+  const { data: studyRow } = await admin.from('playbook_studies')
+    .select('sop_text').eq('definition_id', def.id).maybeSingle();
+  if (studyRow?.sop_text) sopContext = String(studyRow.sop_text).slice(0, 8000);
+
   const context: RunContext = {
     account_id: accountId,
     ...(opts?.deSubjectId ? { de_subject_id: opts.deSubjectId } : {}),
@@ -2222,6 +2263,7 @@ async function startDefinitionRunServer(
     // {{event.ref}} / {{event.note}} template tokens read these.
     ...(opts?.eventRef ? { event_ref: opts.eventRef } : {}),
     ...(opts?.eventNote ? { event_note: opts.eventNote } : {}),
+    ...(sopContext ? { sop_context: sopContext } : {}),
   };
   const { data: runRow, error: runErr } = await admin
     .from('playbook_runs')
@@ -2370,10 +2412,49 @@ serve(async (req) => {
         waitsResumed.push({ run_id: w.id, status: result.status });
       }
 
+      // 4) PB3 W2: resume agentic steps paused on a gated action. A run
+      //    parked as status='waiting' with a waiting_task_id and NO
+      //    resume_at is an agentic gate (wait steps always set resume_at;
+      //    approvals use 'waiting_approval'). Once a human decides the
+      //    task, re-run the SAME step with the decision injected.
+      let gateQuery = admin.from('playbook_runs')
+        .select('*').eq('status', 'waiting').is('resume_at', null)
+        .not('waiting_task_id', 'is', null).limit(25);
+      if (scopeTenant) gateQuery = gateQuery.eq('tenant_id', scopeTenant);
+      const { data: gatedRuns } = await gateQuery;
+      const gatesResumed: Array<{ run_id: string; status: string }> = [];
+      for (const g of gatedRuns ?? []) {
+        const { data: task } = await admin.from('human_tasks')
+          .select('status, title').eq('id', g.waiting_task_id).maybeSingle();
+        const decision = String(task?.status ?? 'pending');
+        if (decision === 'pending') continue; // still with the human
+        const steps = g.steps as RunStep[];
+        const idx = g.current_step as number;
+        if (steps[idx]) {
+          steps[idx].status = 'pending';
+          steps[idx].detail = `Approval decided (${decision}) — resuming`;
+        }
+        const gctx = (g.context ?? {}) as RunContext;
+        gctx.agentic_resume_note = decision === 'approved' || decision === 'completed'
+          ? 'Earlier in this step you requested an action that required human approval. It was APPROVED (and executed where auto-executable). Verify the outcome and continue toward the goal.'
+          : `Earlier in this step you requested an action that required human approval. It was DECLINED (${decision}). Do not retry that action — adapt your approach or finish honestly, noting what could not be done.`;
+        const defRun: DefRunRow = {
+          id: g.id, tenant_id: g.tenant_id, account_id: g.account_id,
+          status: 'running', current_step: idx, steps,
+          waiting_task_id: null, context: gctx,
+          definition_id: g.definition_id, definition_version: g.definition_version ?? 1,
+          playbook_key: g.playbook_key, parent_run_id: g.parent_run_id ?? null,
+        };
+        await admin.from('playbook_runs').update({ status: 'running', waiting_task_id: null, context: gctx }).eq('id', g.id);
+        const result = await executeDefinitionSteps(admin, defRun, idx);
+        gatesResumed.push({ run_id: g.id, status: result.status });
+      }
+
       return json({
         dispatched: true, caller, scope: scopeTenant ?? 'all',
         evaluation: dispatchRes, processed_fires: processed.length, fires: processed,
         waits_resumed: waitsResumed.length, waits: waitsResumed,
+        gates_resumed: gatesResumed.length, gates: gatesResumed,
       });
     }
 

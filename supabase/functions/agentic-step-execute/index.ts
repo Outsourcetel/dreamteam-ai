@@ -278,6 +278,7 @@ async function runLoop(
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
   tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
   contextDocuments = '', charter = '', playbookRunId = '',
+  onGate: 'continue' | 'pause' = 'continue', stepIndex = -1,
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
     // The DE's configured purpose/charter — this is what makes it "trained":
@@ -426,6 +427,18 @@ async function runLoop(
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Access denied: ${execRes.detail ?? 'no permission'}`, is_error: true });
       } else if (execRes.ok && execRes.gated) {
         await admin.from('agentic_step_runs').update({ last_gated_human_task_id: execRes.task_id ?? null }).eq('id', runId);
+        // PB3 W2: blocking mode — stop here and hand control to the human.
+        // The playbook run parks on this task; when decided, the dispatcher
+        // re-invokes this step with the decision as resume context.
+        if (onGate === 'pause') {
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: 'This action requires human approval. The run is PAUSING until a human decides.' });
+          await persistMessage(admin, runId, turnIndex++, 'tool_result', toolResults);
+          await admin.from('agentic_step_runs').update({ status: 'paused_gate' }).eq('id', runId);
+          await audit(admin, tenantId, deName,
+            `Agentic step paused for approval — gated action routed to a human (blocking gate) — "${goal.slice(0, 120)}"`,
+            'playbook_step', { kind: 'agentic_gate_pause', agentic_step_run_id: runId, playbook_run_id: playbookRunId, step_index: stepIndex, task_id: execRes.task_id ?? null });
+          return { status: 'paused_gate', task_id: execRes.task_id ?? null, agentic_step_run_id: runId };
+        }
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `This action requires human approval and has been routed for review (task created). You will not see the outcome in this run — decide how to proceed assuming it may or may not be approved.` });
       } else if (execRes.ok) {
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: String(execRes.receipt ?? 'Action completed.') });
@@ -475,7 +488,14 @@ serve(async (req) => {
     const deId = String(body.de_id ?? '');
     const playbookRunId = String(body.playbook_run_id ?? '');
     const stepIndex = Number(body.step_index ?? -1);
-    const goal = String(body.goal ?? '').trim();
+    let goal = String(body.goal ?? '').trim();
+    // PB3 W2: blocking gate — 'pause' stops the loop at the FIRST gated
+    // action so the playbook run can park on the approval task; the
+    // dispatcher re-invokes this step with resume_note once decided.
+    const onGate = String(body.on_gate ?? 'continue') === 'pause' ? 'pause' : 'continue';
+    const resumeNote = typeof body.resume_note === 'string' && body.resume_note.trim()
+      ? body.resume_note.trim().slice(0, 1000) : null;
+    if (resumeNote && goal) goal = `${goal}\n\n[RESUME CONTEXT] ${resumeNote}`;
     // PB2.0: reference material the playbook assembled from instruction,
     // check_knowledge and read_reference steps — the DE reads it before
     // acting (optional; empty for legacy callers). Capped defensively.
@@ -555,6 +575,7 @@ serve(async (req) => {
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
       tools, policy, deId, apiKey, contextDocuments, charter, playbookRunId,
+      onGate, stepIndex,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
