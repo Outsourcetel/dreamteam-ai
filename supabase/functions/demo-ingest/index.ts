@@ -16,6 +16,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { browserFetch } from '../_shared/browserFetch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -72,8 +73,9 @@ serve(async (req) => {
       try {
         if (!/^https?:\/\//i.test(url)) throw new Error('no http(s) URL');
         if (!isSafeExternalUrl(url)) throw new Error('blocked by SSRF policy');
-        const resp = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { 'Accept': 'text/html, text/plain', 'User-Agent': 'Mozilla/5.0 (compatible; DreamTeamBot/1.0)' } });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const outcome = await browserFetch(url, 15000, 3);
+        if (!outcome.ok || !outcome.response) throw new Error(outcome.detail ?? `HTTP ${outcome.status}`);
+        const resp = outcome.response;
         const ctype = resp.headers.get('content-type') ?? '';
         if (ctype.includes('application/pdf')) throw new Error('PDF (not handled in demo-ingest)');
         const text = stripHtml((await resp.text()).slice(0, 2_000_000)).slice(0, MAX_TEXT_CHARS);

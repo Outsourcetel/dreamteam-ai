@@ -14,6 +14,7 @@
 // ============================================================
 import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { browserFetch } from '../_shared/browserFetch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -79,10 +80,12 @@ Deno.serve(async (req) => {
       const url = String(body.url ?? '').trim();
       if (!/^https?:\/\//i.test(url)) return json({ error: 'a full http(s) URL is required' }, 400);
       if (!isSafeExternalUrl(url)) return json({ error: 'that URL is blocked by the safety policy (internal/private addresses are not allowed)' }, 400);
-      let resp: Response;
-      try { resp = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { 'Accept': 'text/html, text/plain, application/pdf' } }); }
-      catch (e) { return json({ error: `could not fetch that URL (${String((e as Error)?.message ?? e).slice(0, 120)})` }, 422); }
-      if (!resp.ok) return json({ error: `that URL returned HTTP ${resp.status}` }, 422);
+      // Browser-like headers + retry/backoff on transient bot walls (403/429/503).
+      const outcome = await browserFetch(url, 15000, 3);
+      if (!outcome.ok || !outcome.response) {
+        return json({ error: outcome.detail ?? `that URL returned HTTP ${outcome.status}`, reason: outcome.reason ?? 'server_error' }, 422);
+      }
+      const resp = outcome.response;
       const ctype = resp.headers.get('content-type') ?? '';
       let text: string;
       if (ctype.includes('application/pdf')) {
