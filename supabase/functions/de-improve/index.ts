@@ -59,9 +59,14 @@ serve(async (req) => {
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
     // ── 1) the failure ──
+    // Improvement-worthy = below-standard, not only catastrophic: a
+    // 'partial' scoring under 70 is a documented quality gap the judge
+    // explained — exactly what a knowledge patch fixes. (Live-proof
+    // finding: a DE whose answers improved from fail to partial fell out
+    // of the loop entirely under the old fail-only filter.)
     let jq = admin.from('eval_judgments')
       .select('id, de_id, question, answer, rationale, score, reference')
-      .eq('tenant_id', tenant_id).eq('verdict', 'fail')
+      .eq('tenant_id', tenant_id).in('verdict', ['fail', 'partial']).lt('score', 70)
       .order('created_at', { ascending: false }).limit(10);
     if (body.judgment_id) jq = jq.eq('id', body.judgment_id);
     else if (body.de_id) jq = jq.eq('de_id', body.de_id);
