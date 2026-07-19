@@ -6,6 +6,11 @@ import { useDataMode } from '../../lib/dataMode'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
 import AmendmentWizard from '../../components/AmendmentWizard'
 import PendingAmendmentsWidget from '../../components/PendingAmendmentsWidget'
+import { DEAuthorityPanel } from '../../components/DEAuthorityPanel'
+import { SophieEscalationRules } from '../../components/SophieEscalationRules'
+import { DEKnowledgeScopePanel } from '../../components/DEKnowledgeScopePanel'
+import { DEPreApprovalRulesPanel } from '../../components/DEPreApprovalRulesPanel'
+import { SophieConfigurationSummary } from '../../components/SophieConfigurationSummary'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -1684,7 +1689,7 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
 
 // ── Main Page ─────────────────────────────────────────────────────
 
-const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit']
+const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit', 'Authority', 'Escalation', 'Knowledge Scope', 'Approval', 'Configuration']
 
 type RosterSelection = { kind: 'de' | 'human'; id: string }
 
@@ -1738,6 +1743,11 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       case 7: return <TabHumanLoop de={selectedDE} companyId={activeCompanyId} />
       case 8: return <TabPerformance de={selectedDE} companyId={activeCompanyId} />
       case 9: return <TabAudit de={selectedDE} />
+      case 10: return <DEAuthorityPanel de={selectedDE} />
+      case 11: return <SophieEscalationRules de={selectedDE} />
+      case 12: return <DEKnowledgeScopePanel de={selectedDE} />
+      case 13: return <DEPreApprovalRulesPanel de={selectedDE} />
+      case 14: return <SophieConfigurationSummary de={selectedDE} />
       default: return null
     }
   }
