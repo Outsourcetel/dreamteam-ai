@@ -45,6 +45,7 @@ import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
 import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
+import { EmbedPage } from './pages/EmbedPage';
 import { useDataMode } from './lib/dataMode';
 import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
 import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
@@ -291,6 +292,10 @@ function AppShell() {
   // surface, so it must render before any auth gate. The widget key is the
   // auth (same as the embeddable widget); no app session required.
   if (location.pathname === '/chat') return <HostedChatPage />;
+
+  // Public embed widget (/embed?tenant_id=...&de_id=...&token=...) — iframe
+  // for customer websites. Authenticates via JWT token in query params.
+  if (location.pathname === '/embed') return <EmbedPage />;
 
   // Password recovery (self-requested or admin-triggered) establishes a
   // real signed-in session via the emailed link — this must take

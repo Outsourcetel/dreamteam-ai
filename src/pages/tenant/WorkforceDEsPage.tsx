@@ -13,6 +13,7 @@ import { DEPreApprovalRulesPanel } from '../../components/DEPreApprovalRulesPane
 import { SophieConfigurationSummary } from '../../components/SophieConfigurationSummary'
 import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget'
 import { MetricsDisplay } from '../../components/MetricsDisplay'
+import { DEConfigurationTab } from '../../components/DEConfigurationTab'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -1788,7 +1789,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       case 11: return <SophieEscalationRules de={selectedDE} />
       case 12: return <DEKnowledgeScopePanel de={selectedDE} />
       case 13: return <DEPreApprovalRulesPanel de={selectedDE} />
-      case 14: return <SophieConfigurationSummary de={selectedDE} />
+      case 14: return <DEConfigurationTab de={selectedDE} tenant_id={activeCompanyId} />
       default: return null
     }
   }
