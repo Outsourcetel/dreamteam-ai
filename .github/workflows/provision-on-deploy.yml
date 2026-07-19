@@ -1,0 +1,33 @@
+name: Auto-Provision on Deploy
+
+# Trigger after successful Vercel deployment
+on:
+  workflow_run:
+    workflows: ["Vercel Preview & Production"]
+    types: [completed]
+
+jobs:
+  provision:
+    # Only run if Vercel deploy succeeded
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Auto-provision all tenants
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npm run provision:all
+
+      - name: Log provisioning completion
+        run: echo "✅ Auto-provisioning completed for all tenants"
