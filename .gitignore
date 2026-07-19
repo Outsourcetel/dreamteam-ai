@@ -2,6 +2,7 @@ node_modules/
 dist/
 .vercel-token
 .env
+.env.local
 .env.test
 .supabase-token
 

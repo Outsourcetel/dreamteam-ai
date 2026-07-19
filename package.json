@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:types": "supabase gen types typescript --project-id rfsvmhcqeiyrxivbmpel --schema public > src/types/database.types.ts"
+    "gen:types": "supabase gen types typescript --project-id rfsvmhcqeiyrxivbmpel --schema public > src/types/database.types.ts",
+    "migrate:apply": "node scripts/apply-migration.mjs",
+    "migrate:status": "node scripts/migration-status.mjs",
+    "provision:all": "node scripts/provision.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",
