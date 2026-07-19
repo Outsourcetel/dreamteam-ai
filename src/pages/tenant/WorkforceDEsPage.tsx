@@ -4,6 +4,8 @@ import type { Page } from '../../types'
 import { getPeople, ROSTER_SELECT_KEY, type Person } from '../../data/people'
 import { useDataMode } from '../../lib/dataMode'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
+import AmendmentWizard from '../../components/AmendmentWizard'
+import PendingAmendmentsWidget from '../../components/PendingAmendmentsWidget'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -512,7 +514,7 @@ function confidenceColor(val: number): string {
 
 // ── Tab 1: Profile ─────────────────────────────────────────────────
 
-function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
+function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; companyId: string; onSuggestImprovement?: () => void }) {
   const lsKey = `dt_de_profile_${companyId}_${de.id}`
   const saved: Record<string, unknown> = (() => { try { const s = localStorage.getItem(lsKey); return s ? JSON.parse(s) : {} } catch { return {} } })()
 
@@ -644,7 +646,12 @@ function TabProfile({ de, companyId }: { de: DEProfile; companyId: string }) {
       {/* Right: quick stats */}
       <div className="space-y-4">
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Performance Snapshot</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance Snapshot</p>
+            {onSuggestImprovement && (
+              <button onClick={onSuggestImprovement} className="text-indigo-600 hover:text-indigo-400 text-xs px-2.5 py-1 rounded-lg border border-indigo-500/30 hover:border-indigo-500/50 transition-colors">✨ Suggest improvement</button>
+            )}
+          </div>
           <div className="space-y-3">
             {[
               { label: 'AI Confidence', value: `${de.confidence}%`, color: confidenceColor(de.confidence) },
@@ -1381,6 +1388,9 @@ function TabAudit({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Pending Amendments */}
+      <PendingAmendmentsWidget entity_kind="de" entity_id={de.id} />
+
       {/* Audit Log */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
@@ -1691,6 +1701,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   const [selected, setSelected] = useState<RosterSelection>({ kind: 'de', id: des[0].id })
   const [activeTab, setActiveTab] = useState(0)
   const [view, setView] = useState<'roster' | 'org'>('roster')
+  const [amendmentOpen, setAmendmentOpen] = useState(false)
 
   useEffect(() => {
     const newDes = activeCompanyId === 'tcp' ? TCP_DES : PWC_DES
@@ -1717,7 +1728,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
 
   const renderTab = () => {
     switch (activeTab) {
-      case 0: return <TabProfile de={selectedDE} companyId={activeCompanyId} />
+      case 0: return <TabProfile de={selectedDE} companyId={activeCompanyId} onSuggestImprovement={() => setAmendmentOpen(true)} />
       case 1: return <TabTraining de={selectedDE} setPage={setPage} />
       case 2: return <TabKnowledge de={selectedDE} />
       case 3: return <TabSOPs de={selectedDE} />
@@ -1839,6 +1850,17 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
         )}
       </div>
+      )}
+
+      {/* Amendment wizard modal */}
+      {amendmentOpen && (
+        <AmendmentWizard
+          entity_kind="de"
+          entity_id={selectedDE.id}
+          entity_name={selectedDE.name}
+          onClose={() => setAmendmentOpen(false)}
+          onFinished={() => setAmendmentOpen(false)}
+        />
       )}
     </div>
   )
