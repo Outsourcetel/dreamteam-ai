@@ -725,20 +725,6 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
   )
 }
 
-function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => void }) {
-  const [lastTrained, setLastTrained] = useState(de.lastTrained)
-  const [nextRecert, setNextRecert] = useState(de.nextRecert)
-  const [certInterval, setCertInterval] = useState('180')
-  const [threshold, setThreshold] = useState('85')
-              <span className="text-sm text-slate-200">{de.nextRecert}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Tab 2: Training ────────────────────────────────────────────────
 
 function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => void }) {
