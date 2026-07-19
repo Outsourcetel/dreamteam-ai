@@ -7,15 +7,23 @@ dotenv.config({ path: '.env.local' });
 dotenv.config({ path: '.env' });
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+// Cross-tenant provisioning needs the service-role key — RLS blocks the anon
+// key from listing all tenants or inserting DEs on their behalf.
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('❌ Error: SUPABASE_URL and SUPABASE_ANON_KEY not set');
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('❌ Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY not set');
   console.error('Set them in .env.local or .env');
   process.exit(1);
 }
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('⚠ SUPABASE_SERVICE_ROLE_KEY not set — falling back to anon key; RLS will likely block cross-tenant writes');
+}
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 async function provisionWorkforceAssistants() {
   console.log('\n════════════════════════════════════════════════════════════════');

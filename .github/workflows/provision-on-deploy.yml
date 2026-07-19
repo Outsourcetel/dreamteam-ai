@@ -1,15 +1,18 @@
 name: Auto-Provision on Deploy
 
-# Trigger after successful Vercel deployment
+# Vercel deploys are not GitHub Actions workflows, so we key off the CI
+# workflow instead (same commit, same green signal) and allow manual runs.
 on:
   workflow_run:
-    workflows: ["Vercel Preview & Production"]
+    workflows: ["CI"]
     types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   provision:
-    # Only run if Vercel deploy succeeded
-    if: github.event.workflow_run.conclusion == 'success'
+    # Run on manual dispatch, or only when CI succeeded
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -27,6 +30,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npm run provision:all
 
       - name: Log provisioning completion
