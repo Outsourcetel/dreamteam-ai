@@ -22,6 +22,7 @@ import {
 } from '../../lib/knowledgeApi';
 import type { Page } from '../../types';
 import { ConfirmDeleteModal } from '../../components';
+import AmendmentWizard from '../../components/AmendmentWizard';
 
 // ============================================================
 // Technical Specialist — LIVE (migration 024).
@@ -408,6 +409,8 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
   const [scribeFor, setScribeFor] = useState<SpecConsultation | null>(null);
   const [scribeRef, setScribeRef] = useState('');
   const [scribeAction, setScribeAction] = useState<'add_internal_note' | 'update_status' | 'reply_to_ticket'>('add_internal_note');
+
+  const [amendmentOpen, setAmendmentOpen] = useState(false);
   const [scribeStatus, setScribeStatus] = useState<'open' | 'pending' | 'hold' | 'solved'>('pending');
   const [scribeConnector, setScribeConnector] = useState('');
   const [creatingScribe, setCreatingScribe] = useState(false);
@@ -629,6 +632,12 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             <p className="text-[11px] text-slate-500">The charter is the specialist's role definition — tenant-editable, every save audited.</p>
           </div>
           <Chip label={profile.status} cls={profile.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'} />
+          <button
+            className={btnGhost + ' !py-1.5'}
+            onClick={() => setAmendmentOpen(true)}
+          >
+            ✨ Improve
+          </button>
           <button className={btnGhost + ' !py-1.5'} onClick={() => void toggleStatus()}>
             {profile.status === 'active' ? 'Pause' : 'Activate'}
           </button>
@@ -1047,6 +1056,16 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
             </div>
           </div>
         </div>
+      )}
+
+      {amendmentOpen && profile && (
+        <AmendmentWizard
+          entity_kind="specialist"
+          entity_id={profile.id}
+          entity_name={profile.name}
+          onClose={() => setAmendmentOpen(false)}
+          onFinished={() => setAmendmentOpen(false)}
+        />
       )}
     </div>
   );
