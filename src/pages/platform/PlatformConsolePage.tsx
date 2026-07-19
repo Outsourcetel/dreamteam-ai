@@ -185,7 +185,11 @@ const PlatformConsolePage = ({
     // hierarchy for a search result set.
     const searchTerm = tenantSearch.trim().toLowerCase();
     const searchedRows = searchTerm
-      ? orderedRows.filter(({ tenant: t }) => t.name.toLowerCase().includes(searchTerm) || t.slug.toLowerCase().includes(searchTerm))
+      ? orderedRows.filter(({ tenant: t }) =>
+          t.name.toLowerCase().includes(searchTerm) ||
+          t.slug.toLowerCase().includes(searchTerm) ||
+          t.id.toLowerCase().includes(searchTerm) ||
+          t.contactEmail?.toLowerCase().includes(searchTerm))
       : orderedRows;
     const rowsToRender = searchedRows.slice(0, tenantRowLimit);
     const hasMoreRows = searchedRows.length > rowsToRender.length;
@@ -194,10 +198,9 @@ const PlatformConsolePage = ({
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">Tenant Management</h1>
+            <h1 className="text-2xl font-bold text-white">Tenants & Remote Access</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Manage all client workspaces — view, configure, and support
-              tenants. Indented rows are sub-tenants nested under their parent.
+              Manage all client workspaces — view, configure, support tenants, or start remote access sessions. Indented rows are sub-tenants nested under their parent.
             </p>
             {debrisTenants.length > 0 && (
               <p className="text-xs text-slate-500 mt-1">
@@ -225,8 +228,8 @@ const PlatformConsolePage = ({
           <input
             value={tenantSearch}
             onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
-            placeholder="Search tenants by name or slug…"
-            className="w-72 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+            placeholder="Search by name, ID, slug, or email…"
+            className="w-full max-w-md bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
           />
           <span className="text-xs text-slate-500">
             {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
@@ -241,48 +244,6 @@ const PlatformConsolePage = ({
         )}
 
         <PendingApprovalsPanel />
-
-        {/* ── Demo companies — the showcase accounts (TCP Software, PWC).
-            These are frontend demo experiences, NOT real tenants, so the
-            Remote Access machinery doesn't apply; "Open demo" switches this
-            operator session into the demo view (same mechanism as the
-            sidebar company switcher). Platform console is operator-only,
-            so this panel never reaches a customer. ── */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mb-6">
-          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-white">Demo companies</p>
-              <p className="text-xs text-slate-500 mt-0.5">Sales showcase accounts with scripted data — open one to walk a prospect through the product.</p>
-            </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 border border-violet-500/30">Operators only</span>
-          </div>
-          <div className="divide-y divide-slate-700/60">
-            {COMPANIES.map((c) => (
-              <div key={c.id} className="px-5 py-3 flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {c.name.charAt(0)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-200 font-medium truncate">{c.name}</p>
-                  <p className="text-[11px] text-slate-500">{c.industry} · demo data</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setActiveCompanyId(c.id);
-                    // Unconditional: viewingDemo is ALSO the App-level escape
-                    // that lets a platform operator leave the console wrapper
-                    // and render the demo experience at all.
-                    setViewingDemo(true);
-                    setPage('dashboard');
-                  }}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors flex-shrink-0"
-                >
-                  Open demo →
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
           <table className="w-full">
@@ -657,140 +618,6 @@ const PlatformConsolePage = ({
     );
   }
 
-  if (page === 'platform_remote_access') {
-    return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Remote Access</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Enter any tenant's workspace to see exactly what they see
-          </p>
-        </div>
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
-          <div className="flex items-center gap-3">
-            <span className="text-amber-400 text-lg">!</span>
-            <div>
-              <div className="text-sm font-medium text-amber-300">
-                Remote Access
-              </div>
-              <div className="text-xs text-amber-400/70">
-                Every remote-access session is recorded — who accessed which tenant, and when. Only the
-                platform owner (you) can start one.
-              </div>
-            </div>
-          </div>
-        </div>
-        <input
-          value={remoteAccessSearch}
-          onChange={(e) => { setRemoteAccessSearch(e.target.value); setRemoteAccessLimit(30); }}
-          placeholder="Search tenants by name…"
-          className="w-72 bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 mb-4 focus:outline-none focus:border-amber-500"
-        />
-        {(() => {
-          // Every operable tenant, not just status==='active' — new tenants
-          // are 'trial' for their first 14 days, and filtering them out here
-          // made every newly signed-up tenant invisible to Remote Access
-          // (the founder's exact "console doesn't show new tenants" report).
-          // Suspended tenants and test debris stay hidden.
-          const accessibleTenants = tenants.filter(
-            (t) => t.status !== 'suspended' && !t.name.startsWith('[TEST DEBRIS')
-          );
-          const term = remoteAccessSearch.trim().toLowerCase();
-          const matched = term ? accessibleTenants.filter((t) => t.name.toLowerCase().includes(term)) : accessibleTenants;
-          const shown = matched.slice(0, remoteAccessLimit);
-          return (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {shown.map((t) => (
-              <div
-                key={t.id}
-                className="bg-slate-800 border border-slate-700 rounded-xl p-5"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold"
-                    style={{
-                      backgroundColor: t.primaryColor + '30',
-                      border: '1px solid ' + t.primaryColor + '50',
-                    }}
-                  >
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-white flex items-center gap-2">
-                      {t.name}
-                      {t.status !== 'active' && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide bg-amber-500/15 text-amber-300">
-                          {t.status}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-500">{t.industry}</div>
-                  </div>
-                </div>
-                <div className="space-y-1 text-xs text-slate-400 mb-4">
-                  <div className="flex justify-between">
-                    <span>Agents</span>
-                    <span className="text-white">{t.agentsActive} active</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Users</span>
-                    <span className="text-white">{t.usersCount}</span>
-                  </div>
-                </div>
-                    <button
-                      onClick={() => { setEnterError(''); setGodModeTarget(t); }}
-                      className="w-full py-2 text-sm font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all"
-                    >
-                      Remote Access
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {matched.length > shown.length && (
-                <div className="flex justify-center mt-4">
-                  <button
-                    onClick={() => setRemoteAccessLimit((n) => n + 30)}
-                    className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
-                  >
-                    Show 30 more (of {matched.length} total)
-                  </button>
-                </div>
-              )}
-            </>
-          );
-        })()}
-
-        <RemoteAccessWriteAuditPanel dbTenants={dbTenants} />
-
-        {godModeTarget && (
-          <Modal
-            title={'Remote Access: ' + godModeTarget.name}
-            onClose={() => { if (!entering) setGodModeTarget(null); }}
-          >
-            <div className="space-y-4">
-              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                <p className="text-sm text-amber-300 font-medium mb-1">
-                  Confirm Remote Access
-                </p>
-                <p className="text-xs text-amber-400/70">
-                  You'll be working inside {godModeTarget.name}'s real workspace. This session is recorded.
-                </p>
-              </div>
-              {enterError && <p className="text-xs text-red-400">{enterError}</p>}
-              <button
-                onClick={() => handleEnterRemoteAccess(godModeTarget)}
-                disabled={entering}
-                className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-60 transition-all"
-              >
-                {entering ? 'Starting session…' : 'Enter Tenant Workspace'}
-              </button>
-            </div>
-          </Modal>
-        )}
-      </div>
-    );
-  }
 
   if (page === 'platform_tenant_management') {
     return <TenantListPage />;

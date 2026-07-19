@@ -9,7 +9,6 @@ export type PlatformPage =
   | 'platform_team'
   | 'platform_health'
   | 'platform_revenue'
-  | 'platform_remote_access'
   | 'platform_security';
 
 export type TenantPage =

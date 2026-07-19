@@ -6,7 +6,7 @@
 //   PWC — Morgan (Client Relations), Avery (Tax Research)
 // ============================================================
 
-export type CompanyId = 'tcp' | 'pwc';
+export type CompanyId = never;
 
 export interface CompanyProfile {
   id: CompanyId;
@@ -17,24 +17,7 @@ export interface CompanyProfile {
   activeDEs: number;
 }
 
-export const COMPANIES: CompanyProfile[] = [
-  {
-    id: 'tcp',
-    name: 'TCP Software',
-    industry: 'Technology / SaaS',
-    badge: 'TECH',
-    badgeColor: '#6366f1',
-    activeDEs: 3,
-  },
-  {
-    id: 'pwc',
-    name: 'PWC',
-    industry: 'Financial Services',
-    badge: 'FIN',
-    badgeColor: '#0ea5e9',
-    activeDEs: 2,
-  },
-];
+export const COMPANIES: CompanyProfile[] = [];
 
 export const COMPANIES_LOOKUP: Record<CompanyId, CompanyProfile> =
   Object.fromEntries(COMPANIES.map(c => [c.id, c])) as Record<CompanyId, CompanyProfile>;
@@ -54,29 +37,4 @@ export interface CompanySummary {
   renewalsDue?: number;
 }
 
-export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {
-  tcp: {
-    desActive: 3,
-    desTotal: 3,
-    humanTasks: 5,
-    aiResolution: 87,
-    kbGaps: 5,
-    alerts: 2,
-    salesPipeline: 12,
-    onboardingActive: 2,
-    supportTickets: 47,
-    atRiskAccounts: 3,
-    renewalsDue: 8,
-  },
-  pwc: {
-    desActive: 2,
-    desTotal: 2,
-    humanTasks: 4,
-    aiResolution: 79,
-    kbGaps: 3,
-    alerts: 2,
-    onboardingActive: 1,
-    atRiskAccounts: 1,
-    renewalsDue: 2,
-  },
-};
+export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {};
