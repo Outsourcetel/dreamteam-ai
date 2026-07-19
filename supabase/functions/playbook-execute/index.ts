@@ -673,6 +673,77 @@ function collectRunContextDocs(ctx: RunContext, capChars = 24000): string {
   return out;
 }
 
+// ── PB3 W3: publish → the DE's chat brain ───────────────────────────
+// Every published playbook becomes a PLATFORM_PLAYBOOK knowledge document
+// scoped to its DE, so de-answer can FOLLOW and CITE the procedure in live
+// chat ("per our cancellation procedure, step 3…"). Idempotent by
+// external_ref = playbook:{definition_id}; re-publishing updates + re-embeds.
+// Retirement (archive) is handled by a DB trigger (migration 189) that just
+// flips is_current — no embedding needed to remove.
+function buildProcedureDoc(name: string, sopText: string | null, steps: DefStep[]): string {
+  const lines: string[] = [];
+  lines.push(`This is the company's official procedure named "${name}". When a customer's question relates to it, follow this procedure and you may cite it (e.g. "per our ${name} procedure").`);
+  if (sopText && sopText.trim()) {
+    lines.push('\nThe procedure, in plain language:\n' + sopText.trim().slice(0, 8000));
+  }
+  lines.push('\nThe steps this procedure follows:');
+  steps.forEach((s, i) => {
+    const p = (s.params ?? {}) as Record<string, unknown>;
+    let what = '';
+    if (s.key === 'instruction') what = `${String(p.title ?? '')}${p.body_md ? ' — ' + String(p.body_md) : ''}`;
+    else if (s.key === 'check_knowledge') what = `Look up: ${String(p.query_template ?? '')}`;
+    else if (s.key === 'check_account') what = 'Load the customer account.';
+    else if (s.key === 'checklist') what = `Confirm: ${((p.items as string[]) ?? []).join('; ')}`;
+    else if (s.key === 'consult_specialist') what = `Consult a specialist: ${String(p.question_template ?? '')}`;
+    else if (s.key === 'custom_step' || s.key === 'agentic_step') what = `The employee handles this using judgment and tools: ${String(p.instructions ?? p.goal_template ?? '')}`;
+    else if (s.key === 'complete') return;
+    else what = s.label || s.key;
+    lines.push(`${i + 1}. ${(s.label ? s.label + ': ' : '')}${what}`.slice(0, 600));
+  });
+  return lines.join('\n').slice(0, 20000);
+}
+
+async function syncPlaybookKnowledge(
+  admin: SupabaseClient, tenantId: string, def: { id: string; name: string; de_id?: string | null }, steps: DefStep[],
+): Promise<void> {
+  try {
+    const { data: study } = await admin.from('playbook_studies').select('sop_text').eq('definition_id', def.id).maybeSingle();
+    const content = buildProcedureDoc(def.name, study?.sop_text ?? null, steps);
+    const externalRef = `playbook:${def.id}`;
+    const title = `Procedure — ${def.name}`;
+    const tags = ['PLATFORM_PLAYBOOK', 'procedure', 'playbook-derived'];
+
+    const { data: existing } = await admin.from('knowledge_docs')
+      .select('id').eq('tenant_id', tenantId).eq('external_ref', externalRef).maybeSingle();
+    let docId: string;
+    if (existing) {
+      await admin.from('knowledge_docs').update({ title, content, is_current: true, tags }).eq('id', existing.id);
+      docId = existing.id;
+    } else {
+      const { data: ins, error: insErr } = await admin.from('knowledge_docs').insert({
+        tenant_id: tenantId, title, content, source: 'connector', external_ref: externalRef,
+        visibility: def.de_id ? 'scoped' : 'workspace', is_current: true, tags,
+      }).select('id').single();
+      if (insErr || !ins) return;
+      docId = ins.id;
+    }
+    // Scope to the assigned DE (idempotent).
+    if (def.de_id) {
+      const { data: sc } = await admin.from('knowledge_doc_scopes')
+        .select('id').eq('doc_id', docId).eq('subject_kind', 'de').eq('subject_id', def.de_id).maybeSingle();
+      if (!sc) await admin.from('knowledge_doc_scopes').insert({ tenant_id: tenantId, doc_id: docId, subject_kind: 'de', subject_id: def.de_id });
+    }
+    // Chunk + embed via the proven pipeline (dispatch path).
+    await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/ingest-chunks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+      body: JSON.stringify({ doc_id: docId, tenant_id: tenantId }),
+    }).catch(() => { /* embed-backfill cron will finish it */ });
+  } catch (e) {
+    console.error('syncPlaybookKnowledge:', String(e));
+  }
+}
+
 // ── Audit helpers ───────────────────────────────────────────────────
 
 async function audit(
@@ -2294,7 +2365,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const action = body?.action;
-    if (!['start', 'advance', 'cancel', 'publish', 'validate', 'dispatch'].includes(action)) {
+    if (!['start', 'advance', 'cancel', 'publish', 'validate', 'dispatch', 'sync_knowledge'].includes(action)) {
       return json({ error: 'invalid action' }, 400);
     }
 
@@ -2530,7 +2601,27 @@ serve(async (req) => {
         'config_change',
         { kind: 'playbook_definition', definition_id: defId, key: def.key, version: nextVersion, step_count: (def.steps as unknown[]).length },
         'Playbook DE');
+
+      // PB3 W3: mirror the published procedure into the DE's chat brain.
+      await syncPlaybookKnowledge(admin, tenantId, { id: defId, name: def.name, de_id: def.de_id }, def.steps as DefStep[]);
+
       return json({ published: true, version: nextVersion });
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // sync_knowledge — PB3 W3: (re)mirror a published playbook into the
+    // DE's chat brain without bumping its version. Used to backfill
+    // playbooks that were published before the bridge existed.
+    // ────────────────────────────────────────────────────────────
+    if (action === 'sync_knowledge') {
+      const defId = body?.definition_id;
+      if (!defId) return json({ error: 'definition_id required' }, 400);
+      const { data: def } = await admin.from('playbook_definitions')
+        .select('id, name, de_id, status, steps').eq('id', defId).eq('tenant_id', tenantId).maybeSingle();
+      if (!def) return json({ error: 'definition_not_found' }, 404);
+      if (def.status !== 'published') return json({ error: 'not_published' }, 400);
+      await syncPlaybookKnowledge(admin, tenantId, { id: def.id, name: def.name, de_id: def.de_id }, def.steps as DefStep[]);
+      return json({ synced: true, definition_id: def.id });
     }
 
     // ────────────────────────────────────────────────────────────
