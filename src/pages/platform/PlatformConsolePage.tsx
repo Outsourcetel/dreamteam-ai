@@ -6,7 +6,7 @@ import { supabase } from '../../supabase';
 import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
-  setTenantSelfServe, setTenantStatus, setTenantPlan, requestSubtenant, fetchTenants,
+  setTenantSelfServe, setTenantStatus, setTenantPlan, deleteTenant, requestSubtenant, fetchTenants,
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
   fetchPlatformConnectorHealth,
 } from '../../lib/api';
@@ -503,6 +503,14 @@ const PlatformConsolePage = ({
                   }}
                 />
               </div>
+
+              <DeleteTenantControl
+                tenant={selectedTenant}
+                onDeleted={() => {
+                  setSelectedTenant(null);
+                  refetchTenants();
+                }}
+              />
             </div>
           </Modal>
         )}
@@ -1447,6 +1455,89 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
     >
       {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
     </button>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Danger zone — permanently delete a tenant (delete_tenant, migration
+// 194). Deliberately friction-heavy: the RPC only accepts a SUSPENDED
+// tenant, so this control refuses to arm until the tenant is suspended
+// (suspend first is the natural, reversible off-switch; delete is the
+// irreversible one). Deletion then requires typing the tenant's slug to
+// confirm — the same string the server re-checks. Every other rail
+// (demo-protected, can't-delete-your-own, sub-tenants-first) lives in the
+// RPC and surfaces here as an error string.
+// ─────────────────────────────────────────────────────────────────
+const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted: () => void }) => {
+  const [arming, setArming] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const canDelete = tenant.status === 'suspended';
+  const slugMatches = confirmText.trim() === tenant.slug;
+
+  const run = async () => {
+    setBusy(true);
+    setError('');
+    const res = await deleteTenant(tenant.id, confirmText.trim());
+    setBusy(false);
+    if (res.ok) onDeleted();
+    else setError(res.error || 'Delete failed.');
+  };
+
+  return (
+    <div className="bg-red-500/5 border border-red-500/25 rounded-xl p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-medium text-red-300">Delete this tenant</div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            {canDelete
+              ? 'Permanent and irreversible — removes the workspace, its people, digital employees, playbooks, knowledge, and history.'
+              : 'Suspend this tenant first. Deletion is only allowed on a suspended workspace, so a live tenant is never one click from gone.'}
+          </div>
+        </div>
+        {!arming && (
+          <button
+            onClick={() => { setArming(true); setError(''); setConfirmText(''); }}
+            disabled={!canDelete}
+            className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed text-red-300 bg-red-500/15 hover:bg-red-500/25"
+          >
+            Delete…
+          </button>
+        )}
+      </div>
+      {arming && (
+        <div className="mt-3 space-y-2">
+          <label className="block text-xs text-slate-400">
+            Type the tenant slug <span className="font-mono text-red-300">{tenant.slug}</span> to confirm.
+          </label>
+          <input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder={tenant.slug}
+            autoFocus
+            className="w-full bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-red-500"
+          />
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={run}
+              disabled={busy || !slugMatches}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy ? 'Deleting…' : 'Permanently delete'}
+            </button>
+            <button
+              onClick={() => { setArming(false); setError(''); setConfirmText(''); }}
+              disabled={busy}
+              className="px-3 py-2 text-sm text-slate-400 hover:text-white transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -291,6 +291,20 @@ export const setTenantPlan = async (
   return data as { ok: boolean; error?: string; monthly_token_budget?: number };
 };
 
+// Permanently delete a tenant (migration 194) — platform-admin only.
+// The RPC enforces the hard rails server-side: the tenant must already be
+// suspended, the demo tenant is protected, you cannot delete your own
+// tenant, sub-tenants must be cleared first, and confirmSlug must match the
+// tenant's slug exactly. Everything the tenant owns cascades away.
+export const deleteTenant = async (
+  tenantId: string,
+  confirmSlug: string
+): Promise<{ ok: boolean; error?: string; name?: string }> => {
+  const { data, error } = await supabase.rpc('delete_tenant', { p_tenant_id: tenantId, p_confirm_slug: confirmSlug });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; error?: string; name?: string };
+};
+
 export interface PlatformConnectorHealthRow {
   tenant_id: string;
   tenant_name: string;
