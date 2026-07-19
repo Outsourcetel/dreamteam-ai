@@ -5,8 +5,8 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { useDataMode } from '../../../lib/dataMode';
 import LivePlaybookBuilder from './LivePlaybookBuilder';
-import AmendmentWizard from '../../../components/AmendmentWizard';
-import PendingAmendmentsWidget from '../../../components/PendingAmendmentsWidget';
+import { AmendmentWizard } from '../../../components/AmendmentWizard';
+import { PendingAmendmentsWidget } from '../../../components/PendingAmendmentsWidget';
 
 // ============================================================
 // Playbooks — versioned draft → eval → publish lifecycle.

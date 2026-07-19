@@ -1,0 +1,4 @@
+-- OPS (founder-approved 2026-07-19): delete all old tenants, keeping only
+-- outsourcetel-hq (the real tenant, 5bb802e1) + the 10 industry demo tenants.
+-- Run in the Supabase SQL editor as the platform operator.
+-- The audit_events

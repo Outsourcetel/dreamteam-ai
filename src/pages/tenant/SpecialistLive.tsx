@@ -22,7 +22,7 @@ import {
 } from '../../lib/knowledgeApi';
 import type { Page } from '../../types';
 import { ConfirmDeleteModal } from '../../components';
-import AmendmentWizard from '../../components/AmendmentWizard';
+import { AmendmentWizard } from '../../components/AmendmentWizard';
 
 // ============================================================
 // Technical Specialist — LIVE (migration 024).
