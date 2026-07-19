@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - run: npm install
       # `npm run build` is `tsc --noEmit && vite build` — the typecheck is
       # the real gate and needs no secrets (VITE_* only affect runtime).
       - run: npm run build
@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - run: npm install
       # These are live integration tests against the isolated dev/schema-
       # clone Supabase project. Until the two repo secrets are set they
       # self-skip (green), so CI is useful immediately without them.
