@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../types';
 import { useVocabulary } from '../lib/vocabulary';
 import type { Vocabulary } from '../lib/vocabulary';
-import { canAccessPage } from '../lib/mockData';
+import { canAccessPage } from '../lib/navAccess';
 import { useAuth } from '../context/AuthContext';
 import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';

@@ -9,9 +9,13 @@
  * degrades to recency+salience recall — memory always works, semantics
  * just sharpen it.
  *
- * Auth: service-role (server-to-server via the dispatch secret) or a
- * signed-in tenant member's JWT. Deployed verify_jwt=false; the RPCs
- * enforce tenant membership themselves.
+ * Auth: dispatch secret / service-role bearer (server-to-server), or a
+ * signed-in tenant member's JWT resolved via resolveTenantWithRemoteAccess.
+ * Deployed verify_jwt=false, so this function enforces auth ITSELF before
+ * any service-role RPC — the RPC membership check is skipped under service
+ * role, which previously left this endpoint effectively unauthenticated
+ * (external review 2026-07-20, finding P0-3). The DE must belong to the
+ * resolved tenant for both read and write.
  *
  * Actions (POST JSON):
  *   { action:'write', tenant_id, de_id, content, subject_kind?, subject_ref?,
@@ -22,6 +26,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { secureEqual } from '../_shared/secureCompare.ts';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,7 +45,41 @@ serve(async (req) => {
     const { action, tenant_id, de_id } = body;
     if (!tenant_id || !de_id) return json({ error: 'tenant_id and de_id required' }, 400);
 
-    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey);
+
+    // ── Auth gate (before any service-role RPC) ──
+    const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+    const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const isDispatch = dispatchSecret !== '' && (await secureEqual(headerSecret, dispatchSecret));
+    const isServiceRole = serviceKey !== '' && (await secureEqual(bearer, serviceKey));
+
+    if (!isDispatch && !isServiceRole) {
+      // Browser/user path: validate the JWT and resolve the tenant from the
+      // authenticated profile (with audited remote access for platform ops).
+      const { data: userData, error: userErr } = await admin.auth.getUser(bearer);
+      if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+      const { data: prof } = await admin
+        .from('profiles')
+        .select('tenant_id, layer')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+      const resolved = await resolveTenantWithRemoteAccess(
+        admin, userData.user.id, prof?.tenant_id, prof?.layer, tenant_id,
+      );
+      if (!resolved || resolved !== tenant_id) return json({ error: 'not_authorized_for_tenant' }, 403);
+    }
+
+    // The DE must belong to the asserted tenant for every path — a poisoned
+    // memory write into another tenant's DE is the exact exploit this blocks.
+    const { data: deRow } = await admin
+      .from('digital_employees')
+      .select('id')
+      .eq('id', de_id)
+      .eq('tenant_id', tenant_id)
+      .maybeSingle();
+    if (!deRow) return json({ error: 'de_not_in_tenant' }, 403);
 
     if (action === 'write') {
       const content = typeof body.content === 'string' ? body.content.trim() : '';

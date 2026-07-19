@@ -9,7 +9,7 @@ import {
 } from '../lib/api';
 import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy, checkMyIpAllowed } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
-import { canAccessPage } from '../lib/mockData';
+import { canAccessPage } from '../lib/navAccess';
 import { COMPANIES_LOOKUP } from '../data/companies';
 import type { CompanyProfile, CompanyId } from '../data/companies';
 import { setGodModeTenantIdOverride } from '../lib/customerApi';

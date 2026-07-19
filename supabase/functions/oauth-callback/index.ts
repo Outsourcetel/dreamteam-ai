@@ -8,7 +8,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { OAUTH_PROVIDERS, OAUTH_CALLBACK_PATH } from '../_shared/oauthProviders.ts';
 
-function page(title: string, body: string, ok: boolean): Response {
+// Title/body may contain provider-supplied error text — escape it so a
+// malicious ?error= value can never inject HTML into this public page.
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function page(rawTitle: string, rawBody: string, ok: boolean): Response {
+  const title = esc(rawTitle);
+  const body = esc(rawBody);
   const color = ok ? '#0d7d74' : '#c0453b';
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <style>body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#0d1016;color:#e8ecf1;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}

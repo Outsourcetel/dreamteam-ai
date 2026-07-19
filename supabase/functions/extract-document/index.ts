@@ -12,6 +12,7 @@
 // PDF text extraction uses unpdf (a serverless-friendly pdf.js build).
 // URL fetches pass the shared SSRF guard.
 // ============================================================
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
 import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
@@ -47,10 +48,24 @@ function decodeBase64(b64: string): Uint8Array {
   return out;
 }
 
+// A base64 PDF at MAX_PDF_BYTES is ~4/3 larger on the wire; cap the raw
+// request body BEFORE parsing so oversized uploads never allocate.
+const MAX_BODY_BYTES = Math.ceil(MAX_PDF_BYTES * 1.4) + 64 * 1024;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
-    const body = await req.json().catch(() => ({}));
+    // In-function JWT validation — function-level verify_jwt config is
+    // defense-in-depth, not the only control (external review 2026-07-20).
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+    if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+
+    const rawBody = await req.text();
+    if (rawBody.length > MAX_BODY_BYTES) return json({ error: 'body_too_large' }, 413);
+    let body: Record<string, unknown>;
+    try { body = JSON.parse(rawBody); } catch { body = {}; }
     const kind = String(body.kind ?? '');
 
     if (kind === 'pdf') {

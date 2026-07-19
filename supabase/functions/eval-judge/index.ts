@@ -19,6 +19,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 
@@ -51,7 +52,8 @@ serve(async (req) => {
       const { data: u } = await admin.auth.getUser(jwt);
       if (!u?.user) return json({ error: 'unauthorized' }, 401);
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
-      if (!(prof?.layer === 'platform' || prof?.tenant_id === tenant_id)) return json({ error: 'forbidden' }, 403);
+      const resolvedTenant = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, tenant_id);
+      if (resolvedTenant !== tenant_id) return json({ error: 'forbidden' }, 403);
     }
 
     const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');

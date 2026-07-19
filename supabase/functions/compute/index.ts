@@ -21,6 +21,7 @@
  * Every response: { ok, value, receipt, steps }.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { secureEqual } from '../_shared/secureCompare.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -76,6 +77,18 @@ const round = (n: number, dp = 2) => Math.round((n + Number.EPSILON) * 10 ** dp)
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  // Service/dispatch callers only (de-work is the sole consumer). No data
+  // is at risk here, but an open compute endpoint invites abuse traffic.
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+  const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
+  const authed =
+    (serviceKey !== '' && (await secureEqual(bearer, serviceKey))) ||
+    (dispatchSecret !== '' && (await secureEqual(headerSecret, dispatchSecret)));
+  if (!authed) return json({ error: 'unauthorized' }, 401);
+
   try {
     const b = await req.json().catch(() => ({}));
     const op = b.op;

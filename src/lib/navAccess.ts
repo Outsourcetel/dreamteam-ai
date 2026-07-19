@@ -1,10 +1,8 @@
 import type { Page, UserRole } from '../types';
 
-// NOTE: this file is named mockData.ts for historical reasons, but the
-// only thing left in it — canAccessPage — is the REAL nav authorization
-// used across the app (Sidebar, AuthContext). The former mockTenants
-// demo array was dead (zero references) and was removed. Worth renaming
-// this file to something like navAccess.ts in a follow-up.
+// navAccess — the REAL nav authorization used across the app (Sidebar,
+// AuthContext). Renamed from mockData.ts (2026-07-20 review): the former
+// mockTenants demo array was dead and removed long ago.
 
 export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | 'tenant' | 'end_user'): boolean => {
   const isDtRole = [

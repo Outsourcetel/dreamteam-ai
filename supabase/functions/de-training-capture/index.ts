@@ -1,70 +1,66 @@
+/**
+ * de-training-capture — records human training feedback for a DE.
+ *
+ * Rewritten per the 2026-07-20 external review: the original only checked
+ * that an Authorization header EXISTED (never validated it), used the anon
+ * client, recorded approved_by: "system", and mutated the DE charter
+ * directly — bypassing the amendment/governance system.
+ *
+ * Now: the JWT is validated, the DE must belong to the caller's tenant,
+ * approved_by is the real user id, and charter changes are NOT applied
+ * here — corrections flow through the amendment system (entity-amend),
+ * which is the only governed write path for DE behavior.
+ */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveTenantWithRemoteAccess } from "../_shared/resolveTenant.ts";
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-interface TrainingFeedback {
-  de_id: string;
-  conversation_id?: string;
-  human_decision: string;
-  de_suggestion?: string;
-  feedback_type: "approval" | "correction" | "suggestion";
-  correction_detail?: {
-    from: string;
-    to: string;
-    reasoning?: string;
-  };
-  replay_test?: boolean;
-}
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 serve(async (req: Request) => {
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   try {
-    const payload: TrainingFeedback = await req.json();
-    const {
-      de_id,
-      conversation_id,
-      human_decision,
-      de_suggestion,
-      feedback_type,
-      correction_detail,
-      replay_test,
-    } = payload;
+    const payload = await req.json().catch(() => ({}));
+    const { de_id, conversation_id, human_decision, de_suggestion, feedback_type, correction_detail, replay_test } = payload;
 
     if (!de_id || !human_decision || !feedback_type) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
+      return json({ error: "de_id, human_decision and feedback_type required" }, 400);
+    }
+    if (!["approval", "correction", "suggestion"].includes(feedback_type)) {
+      return json({ error: "invalid feedback_type" }, 400);
     }
 
-    // Get current user from auth context (passed via JWT header)
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Missing authentication" }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify DE exists and get tenant info
-    const { data: de, error: deError } = await supabase
+    // ── Auth: validate the JWT, resolve the caller's tenant ──
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+    if (userErr || !userData?.user) return json({ error: "unauthorized" }, 401);
+    const userId = userData.user.id;
+
+    // The DE decides which tenant this is about; the caller must belong to it.
+    const { data: de } = await admin
       .from("digital_employees")
       .select("id, tenant_id, name, status")
       .eq("id", de_id)
-      .single();
+      .maybeSingle();
+    if (!de) return json({ error: "de_not_found" }, 404);
 
-    if (deError || !de) {
-      throw new Error(`DE not found: ${de_id}`);
-    }
+    const { data: prof } = await admin
+      .from("profiles").select("tenant_id, layer").eq("user_id", userId).maybeSingle();
+    const resolvedTenant = await resolveTenantWithRemoteAccess(admin, userId, prof?.tenant_id, prof?.layer, de.tenant_id);
+    if (resolvedTenant !== de.tenant_id) return json({ error: "forbidden" }, 403);
 
-    // Record training feedback
-    const { data: feedback, error: feedbackError } = await supabase
+    // ── Record feedback (attributed to the real user) ──
+    const { data: feedback, error: feedbackError } = await admin
       .from("de_training_feedback")
       .insert({
         de_id,
@@ -73,113 +69,55 @@ serve(async (req: Request) => {
         de_suggestion,
         feedback_type,
         correction_detail,
-        approved_by: "system", // In real implementation, extract from JWT
+        approved_by: userId,
         replay_tested: replay_test || false,
       })
       .select("feedback_id")
       .single();
+    if (feedbackError) throw new Error(`Failed to save training feedback: ${feedbackError.message}`);
 
-    if (feedbackError) {
-      throw new Error(`Failed to save training feedback: ${feedbackError.message}`);
-    }
+    // Charter changes are deliberately NOT applied here. Corrections that
+    // should change DE behavior go through the amendment system
+    // (entity-amend → human review → apply), never a direct write.
+    const shouldPromote = await checkStagePromotionEligibility(admin, de_id);
 
-    // If this is a correction and replayed successfully, consider applying to charter
-    let applied_to_charter = false;
-    if (feedback_type === "correction" && correction_detail && replay_test) {
-      // Get DE's current charter
-      const { data: deData, error: charterError } = await supabase
-        .from("digital_employees")
-        .select("charter")
-        .eq("id", de_id)
-        .single();
-
-      if (!charterError && deData?.charter) {
-        // Apply correction to charter (simplified version)
-        // In production, this would run through the amendment system
-        const updatedCharter = {
-          ...deData.charter,
-          training_feedback: deData.charter.training_feedback || [],
-          last_training_update: new Date().toISOString(),
-        };
-
-        const { error: updateError } = await supabase
-          .from("digital_employees")
-          .update({ charter: updatedCharter })
-          .eq("id", de_id);
-
-        if (!updateError) {
-          applied_to_charter = true;
-
-          // Update training feedback record
-          await supabase
-            .from("de_training_feedback")
-            .update({ applied_to_charter: true })
-            .eq("feedback_id", feedback.feedback_id);
-        }
-      }
-    }
-
-    // Check if DE should be promoted to next stage
-    const shouldPromote = await checkStagePromotionEligibility(de_id);
-
-    return new Response(
-      JSON.stringify({
-        feedback_id: feedback.feedback_id,
-        de_id,
-        de_name: de.name,
-        feedback_type,
-        applied_to_charter,
-        should_promote_stage: shouldPromote,
-        message: `Training feedback recorded. ${applied_to_charter ? "Charter updated." : ""} ${shouldPromote ? "DE may be ready for next stage." : ""}`,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return json({
+      feedback_id: feedback.feedback_id,
+      de_id,
+      de_name: de.name,
+      feedback_type,
+      applied_to_charter: false,
+      should_promote_stage: shouldPromote,
+      message: `Training feedback recorded.${shouldPromote ? " DE may be ready for next stage." : ""}`,
+    });
   } catch (error) {
-    console.error("Error in de-training-capture:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal server error",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    console.error("de-training-capture error:", error instanceof Error ? error.message : "error");
+    return json({ error: error instanceof Error ? error.message : "Internal server error" }, 500);
   }
 });
 
-async function checkStagePromotionEligibility(deId: string): Promise<boolean> {
-  // Get current stage
-  const { data: stageData, error: stageError } = await supabase
+async function checkStagePromotionEligibility(admin: ReturnType<typeof createClient>, deId: string): Promise<boolean> {
+  const { data: stageData } = await admin
     .from("de_deployment_stages")
     .select("stage, stage_metrics")
     .eq("de_id", deId)
-    .single();
-
-  if (stageError || !stageData) {
-    return false;
-  }
+    .maybeSingle();
+  if (!stageData) return false;
 
   const currentStage = stageData.stage;
   const metrics = stageData.stage_metrics || {};
 
-  // Define promotion criteria per stage
   const promotionCriteria: Record<string, Record<string, number>> = {
     shadow: { csat: 85, escalation_rate: 10, sample_size: 20 },
     "co-pilot": { csat: 90, escalation_rate: 5, sample_size: 50 },
     live: { csat: 92, escalation_rate: 3, sample_size: 100 },
   };
-
-  if (!(currentStage in promotionCriteria)) {
-    return false; // retired stage doesn't promote
-  }
+  if (!(currentStage in promotionCriteria)) return false;
 
   const criteria = promotionCriteria[currentStage];
-
-  // Check if metrics meet promotion criteria
-  const meetsCSAT = (metrics.csat || 0) >= criteria.csat;
-  const meetsEscalation = (metrics.escalation_rate || 100) <= criteria.escalation_rate;
-  const hasSampleSize = (metrics.sample_size || 0) >= criteria.sample_size;
-
-  return meetsCSAT && meetsEscalation && hasSampleSize;
+  return (
+    (metrics.csat || 0) >= criteria.csat &&
+    (metrics.escalation_rate || 100) <= criteria.escalation_rate &&
+    (metrics.sample_size || 0) >= criteria.sample_size
+  );
 }

@@ -292,7 +292,19 @@ serve(async (req) => {
     const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null].filter(Boolean).join(' · ');
 
     // ── Conversation (create with lifecycle fields, or reuse) ──
+    // A supplied conversation_id must belong to THIS widget key's tenant —
+    // otherwise a leaked/guessed UUID lets an attacker append messages into
+    // another tenant's conversation (external review 2026-07-20, P1-6).
     let convId: string | null = conversationId;
+    if (convId) {
+      const { data: owned } = await admin
+        .from('de_conversations')
+        .select('id')
+        .eq('id', convId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (!owned) return json({ error: 'conversation_not_found' }, 404);
+    }
     let isNewConv = false;
     if (!convId) {
       isNewConv = true;

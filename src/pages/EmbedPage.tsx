@@ -27,8 +27,9 @@ export function EmbedPage() {
       }
 
       try {
-        // Verify token is valid (decode JWT, check signature, verify tenant_id matches)
-        // For now, accept token as-is; in production, validate JWT signature
+        // The embed token is an OPAQUE random secret (not a JWT): the server
+        // stores only its SHA-256 hash and verify_embed_token checks the
+        // hash + tenant + DE + expiry. Nothing is decoded client-side.
         const { data, error: err } = await supabase.rpc('verify_embed_token', {
           p_token: token,
           p_tenant_id: tenant_id,

@@ -1,112 +1,114 @@
+/**
+ * workforce-chat — conversational Workforce Assistant (hire / improve /
+ * monitor / retire) for signed-in tenant users.
+ *
+ * Rewritten per the 2026-07-20 external review: the original trusted
+ * body-supplied tenant_id/user_id with an anon client (both insecure and
+ * RLS-broken). Now:
+ *   - identity comes from the caller's JWT (body user_id is ignored)
+ *   - tenant is resolved via profile membership + audited remote access
+ *   - conversations are loaded/written tenant- and user-scoped
+ *   - AI budget is checked BEFORE the model call; token usage is awaited
+ *   - product-knowledge context is injection-wrapped (untrusted content)
+ *   - model comes from the shared per-DE registry, not a hardcoded id
+ */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.20.0";
+import { getAIKey } from "../_shared/aiKeys.ts";
+import { resolveTenantWithRemoteAccess } from "../_shared/resolveTenant.ts";
+import { wrapUntrusted, FIREWALL_RULES } from "../_shared/injectionSafety.ts";
+import { resolveDeModel } from "../_shared/deModel.ts";
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
-});
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-interface WorkforceChatRequest {
-  tenant_id: string;
-  user_id: string;
-  conversation_id?: string;
-  message: string;
-}
+const MAX_MESSAGE_CHARS = 8_000;
+const MAX_HISTORY_MESSAGES = 40;
 
 serve(async (req: Request) => {
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   try {
-    const payload: WorkforceChatRequest = await req.json();
-    const { tenant_id, user_id, conversation_id, message } = payload;
+    const body = await req.json().catch(() => ({}));
+    const { tenant_id, conversation_id } = body;
+    const message = typeof body.message === "string" ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : "";
+    if (!tenant_id || !message) return json({ error: "tenant_id and message required" }, 400);
 
-    if (!tenant_id || !user_id || !message) {
-      return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Get or create conversation
-    let convId = conversation_id;
-    let conversationMessages: any[] = [];
-    let conversationTopic = "hire"; // default
+    // ── Auth: identity comes from the JWT, never the body ──
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+    if (userErr || !userData?.user) return json({ error: "unauthorized" }, 401);
+    const userId = userData.user.id;
 
-    if (!convId) {
-      // Determine topic from first message (simple heuristic)
-      const msgLower = message.toLowerCase();
-      if (msgLower.includes("improve") || msgLower.includes("amend")) {
-        conversationTopic = "improve";
-      } else if (msgLower.includes("monitor") || msgLower.includes("performance")) {
-        conversationTopic = "monitor";
-      } else if (msgLower.includes("retire") || msgLower.includes("remove")) {
-        conversationTopic = "retire";
-      }
+    const { data: prof } = await admin
+      .from("profiles").select("tenant_id, layer").eq("user_id", userId).maybeSingle();
+    const resolvedTenant = await resolveTenantWithRemoteAccess(admin, userId, prof?.tenant_id, prof?.layer, tenant_id);
+    if (resolvedTenant !== tenant_id) return json({ error: "forbidden" }, 403);
 
-      // Create new conversation
-      const { data: newConv, error: convError } = await supabase
-        .from("workforce_conversations")
-        .insert({
-          tenant_id,
-          user_id,
-          de_id: await getWorkforceAssistantId(tenant_id),
-          topic: conversationTopic,
-          messages: [],
-        })
-        .select("conversation_id, messages")
-        .single();
+    // ── AI budget gate before any model spend ──
+    const { data: budget } = await admin.rpc("check_tenant_ai_budget", { p_tenant_id: tenant_id });
+    if (budget && budget.allowed === false) return json({ error: "ai_budget_exceeded" }, 429);
 
-      if (convError || !newConv) {
-        throw new Error(`Failed to create conversation: ${convError?.message}`);
-      }
+    // ── Workforce Assistant DE for this tenant ──
+    const { data: assistant } = await admin
+      .from("digital_employees")
+      .select("id")
+      .eq("tenant_id", tenant_id)
+      .eq("is_workforce_assistant", true)
+      .maybeSingle();
+    if (!assistant) return json({ error: "workforce_assistant_not_provisioned" }, 404);
 
-      convId = newConv.conversation_id;
-      conversationMessages = newConv.messages || [];
-    } else {
-      // Load existing conversation
-      const { data: existingConv, error: loadError } = await supabase
+    // ── Conversation: create, or load one owned by this tenant + user ──
+    let convId: string | null = conversation_id ?? null;
+    let conversationMessages: Array<{ role: string; content: string; timestamp?: string }> = [];
+    let conversationTopic = "hire";
+
+    if (convId) {
+      const { data: existingConv } = await admin
         .from("workforce_conversations")
         .select("messages, topic")
         .eq("conversation_id", convId)
-        .single();
-
-      if (loadError || !existingConv) {
-        throw new Error(`Failed to load conversation: ${loadError?.message}`);
-      }
-
+        .eq("tenant_id", tenant_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!existingConv) return json({ error: "conversation_not_found" }, 404);
       conversationMessages = existingConv.messages || [];
       conversationTopic = existingConv.topic;
+    } else {
+      const msgLower = message.toLowerCase();
+      if (msgLower.includes("improve") || msgLower.includes("amend")) conversationTopic = "improve";
+      else if (msgLower.includes("monitor") || msgLower.includes("performance")) conversationTopic = "monitor";
+      else if (msgLower.includes("retire") || msgLower.includes("remove")) conversationTopic = "retire";
+
+      const { data: newConv, error: convError } = await admin
+        .from("workforce_conversations")
+        .insert({ tenant_id, user_id: userId, de_id: assistant.id, topic: conversationTopic, messages: [] })
+        .select("conversation_id")
+        .single();
+      if (convError || !newConv) throw new Error(`Failed to create conversation: ${convError?.message}`);
+      convId = newConv.conversation_id;
     }
 
-    // Add user message to conversation history
-    conversationMessages.push({
-      role: "user",
-      content: message,
-      timestamp: new Date().toISOString(),
-    });
+    conversationMessages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
-    // Get product knowledge base for system context
-    const { data: knowledge, error: knowledgeError } = await supabase
+    // ── Product knowledge (untrusted content → injection-wrapped) ──
+    const { data: knowledge } = await admin
       .from("de_product_knowledge")
       .select("content, topic, subtopic")
       .limit(10);
+    const knowledgeContext = (knowledge ?? [])
+      .map((k) => wrapUntrusted(`[${k.topic}/${k.subtopic}]: ${k.content}`, "product-knowledge"))
+      .join("\n\n");
 
-    if (knowledgeError) {
-      console.warn("Failed to load product knowledge:", knowledgeError);
-    }
-
-    const knowledgeContext = knowledge
-      ? knowledge.map((k) => `[${k.topic}/${k.subtopic}]: ${k.content}`).join("\n\n")
-      : "";
-
-    // Build system prompt for Workforce Assistant
-    const systemPrompt = `You are the Workforce Assistant for ${tenant_id}, a trusted advisor helping manage and improve their digital workforce.
+    const systemPrompt = `You are the Workforce Assistant, a trusted advisor helping this organization manage and improve their digital workforce.
 
 Your responsibilities:
 1. Help hire new DEs by asking clarifying questions about role, responsibilities, and success metrics
@@ -128,89 +130,56 @@ ${knowledgeContext}
 
 Current conversation topic: ${conversationTopic}
 
-When suggesting a DE hire:
-- Ask about the role, responsibilities, and success metrics
-- Recommend a starting playbook from available templates
-- Suggest appropriate guardrails based on the role and industry
-- Recommend an initial trust dial level (shadow/co-pilot/live)
+Remember: You're helping humans build and manage their digital workforce, not replacing them. Every decision goes through human review.
 
-When suggesting improvements:
-- Provide specific metrics (CSAT, escalation, cost)
-- Recommend amendment changes with rationale
-- Offer to run replay tests to validate the change
-- Get explicit approval before applying
+${FIREWALL_RULES}`;
 
-Remember: You're helping humans build and manage their digital workforce, not replacing them. Every decision goes through human review.`;
+    // ── Model call (shared registry model, timeout, awaited metering) ──
+    const apiKey = await getAIKey(admin, "ANTHROPIC_API_KEY");
+    if (!apiKey) return json({ error: "ai_not_configured" }, 503);
+    const model = await resolveDeModel(admin, tenant_id, assistant.id);
 
-    // Call Claude Opus to generate response
-    const messages = conversationMessages.map((msg) => ({
-      role: msg.role as "user" | "assistant",
-      content: msg.content,
+    const history = conversationMessages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: m.content,
     }));
 
-    const response = await anthropic.messages.create({
-      model: "claude-opus-4-8",
-      max_tokens: 2000,
-      system: systemPrompt,
-      messages,
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 2000, system: systemPrompt, messages: history }),
+      signal: AbortSignal.timeout(60_000),
     });
-
-    const assistantMessage =
-      response.content[0].type === "text" ? response.content[0].text : "";
-
-    // Add assistant response to conversation history
-    conversationMessages.push({
-      role: "assistant",
-      content: assistantMessage,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Update conversation with new messages
-    const { error: updateError } = await supabase
-      .from("workforce_conversations")
-      .update({
-        messages: conversationMessages,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("conversation_id", convId);
-
-    if (updateError) {
-      throw new Error(`Failed to save conversation: ${updateError.message}`);
+    if (!res.ok) {
+      console.error("workforce-chat llm_error status", res.status);
+      return json({ error: "llm_error" }, 502);
     }
+    const data = await res.json();
+    const assistantMessage: string =
+      (data.content ?? []).find((b: { type?: string }) => b.type === "text")?.text ?? "";
 
-    return new Response(
-      JSON.stringify({
-        conversation_id: convId,
-        message: assistantMessage,
-        topic: conversationTopic,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    // Await metering so spend is never undercounted by isolate teardown.
+    const { error: meterErr } = await admin.rpc("record_de_token_usage", {
+      p_tenant_id: tenant_id,
+      p_de_id: assistant.id,
+      p_model_id: model,
+      p_input_tokens: data.usage?.input_tokens ?? 0,
+      p_output_tokens: data.usage?.output_tokens ?? 0,
+    });
+    if (meterErr) console.error("record_de_token_usage:", meterErr.message);
+
+    conversationMessages.push({ role: "assistant", content: assistantMessage, timestamp: new Date().toISOString() });
+
+    const { error: updateError } = await admin
+      .from("workforce_conversations")
+      .update({ messages: conversationMessages, updated_at: new Date().toISOString() })
+      .eq("conversation_id", convId)
+      .eq("tenant_id", tenant_id);
+    if (updateError) throw new Error(`Failed to save conversation: ${updateError.message}`);
+
+    return json({ conversation_id: convId, message: assistantMessage, topic: conversationTopic });
   } catch (error) {
-    console.error("Error in workforce-chat:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal server error",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    console.error("workforce-chat error:", error instanceof Error ? error.message : "error");
+    return json({ error: error instanceof Error ? error.message : "Internal server error" }, 500);
   }
 });
-
-async function getWorkforceAssistantId(tenantId: string): Promise<string> {
-  const { data, error } = await supabase
-    .from("digital_employees")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("is_workforce_assistant", true)
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Workforce Assistant not found for tenant: ${tenantId}`);
-  }
-
-  return data.id;
-}

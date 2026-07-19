@@ -708,18 +708,11 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
           }}
         />
 
-        {/* Customer-Defined Metrics */}
-        {companyId && (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Metrics</p>
-            <MetricsDisplay
-              tenant_id={companyId}
-              de_id={de.id}
-              tags={['support']}
-              columns={1}
-            />
-          </div>
-        )}
+        {/* Customer-defined metrics intentionally NOT rendered here: this is
+            the demo-era page and companyId ('tcp'/'pwc') is not a tenant
+            UUID — MetricsDisplay would query customer_metrics with a bogus
+            id and silently show nothing (external review 2026-07-20, P1-7).
+            The live page (LiveWorkforceDEs) owns real metric display. */}
       </div>
     </div>
   )

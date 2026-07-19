@@ -3,9 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "audit": "npm audit --audit-level=high",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
