@@ -1900,7 +1900,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
           entity_id={selectedDE.id}
           entity_name={selectedDE.name}
           onClose={() => setAmendmentOpen(false)}
-          onFinished={() => setAmendmentOpen(false)}
+          onSuccess={() => setAmendmentOpen(false)}
         />
       )}
     </div>
