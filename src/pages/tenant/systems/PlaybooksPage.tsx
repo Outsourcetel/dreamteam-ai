@@ -5,6 +5,8 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { useDataMode } from '../../../lib/dataMode';
 import LivePlaybookBuilder from './LivePlaybookBuilder';
+import AmendmentWizard from '../../../components/AmendmentWizard';
+import PendingAmendmentsWidget from '../../../components/PendingAmendmentsWidget';
 
 // ============================================================
 // Playbooks — versioned draft → eval → publish lifecycle.
@@ -473,6 +475,7 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
   const [stepDraft, setStepDraft] = useState('');
   const [openDiff, setOpenDiff] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [amendmentOpen, setAmendmentOpen] = useState(false);
 
   // Eval modal state (simulated — design preview)
   const [evalOpen, setEvalOpen] = useState(false);
@@ -716,7 +719,15 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                   {selected.active ? 'Active' : 'Paused'}
                 </span>
               </div>
-              <Toggle enabled={selected.active} onChange={v => toggleActive(selected.id, v)} />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAmendmentOpen(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 font-medium transition-colors"
+                >
+                  ✨ Improve this playbook
+                </button>
+                <Toggle enabled={selected.active} onChange={v => toggleActive(selected.id, v)} />
+              </div>
             </div>
             <p className="text-sm text-slate-400 mb-3">{selected.objective}</p>
             <div className="flex items-center gap-5 text-xs text-slate-500 flex-wrap">
@@ -769,6 +780,9 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
               </p>
             </div>
           )}
+
+          {/* Pending amendments */}
+          {selected && <PendingAmendmentsWidget entity_kind="playbook" entity_id={selected.id} />}
 
           {/* Step list */}
           <div className="space-y-2">
@@ -943,6 +957,16 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
           </div>
         </div>
+      )}
+
+      {amendmentOpen && selected && (
+        <AmendmentWizard
+          entity_kind="playbook"
+          entity_id={selected.id}
+          entity_name={selected.title}
+          onClose={() => setAmendmentOpen(false)}
+          onFinished={() => setAmendmentOpen(false)}
+        />
       )}
 
       {/* Toast */}
