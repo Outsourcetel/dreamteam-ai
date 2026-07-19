@@ -52,9 +52,11 @@ CREATE INDEX IF NOT EXISTS idx_tenant_toggles_tenant ON tenant_feature_toggles(t
 -- Enable RLS
 ALTER TABLE tenant_feature_toggles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Platform admins can view all toggles" ON tenant_feature_toggles;
 CREATE POLICY "Platform admins can view all toggles" ON tenant_feature_toggles FOR SELECT
   USING (is_platform_admin());
 
+DROP POLICY IF EXISTS "Platform admins can update toggles" ON tenant_feature_toggles;
 CREATE POLICY "Platform admins can update toggles" ON tenant_feature_toggles FOR UPDATE
   USING (is_platform_admin());
 
@@ -97,9 +99,11 @@ CREATE INDEX IF NOT EXISTS idx_billing_config_tenant ON tenant_billing_config(te
 
 ALTER TABLE tenant_billing_config ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Platform admins can view all billing" ON tenant_billing_config;
 CREATE POLICY "Platform admins can view all billing" ON tenant_billing_config FOR SELECT
   USING (is_platform_admin());
 
+DROP POLICY IF EXISTS "Platform admins can update billing" ON tenant_billing_config;
 CREATE POLICY "Platform admins can update billing" ON tenant_billing_config FOR UPDATE
   USING (is_platform_admin());
 
@@ -143,6 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_metrics_tenant_month ON tenant_usage_metric
 
 ALTER TABLE tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Platform admins can view all metrics" ON tenant_usage_metrics;
 CREATE POLICY "Platform admins can view all metrics" ON tenant_usage_metrics FOR SELECT
   USING (is_platform_admin());
 
@@ -199,6 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_tracking_status ON tenant_cost_tracking(stat
 
 ALTER TABLE tenant_cost_tracking ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Platform admins can view all costs" ON tenant_cost_tracking;
 CREATE POLICY "Platform admins can view all costs" ON tenant_cost_tracking FOR SELECT
   USING (is_platform_admin());
 
