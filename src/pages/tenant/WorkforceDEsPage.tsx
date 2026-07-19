@@ -13,6 +13,8 @@ import { SophieConfigurationSummary } from '../../components/SophieConfiguration
 import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget'
 import { MetricsDisplay } from '../../components/MetricsDisplay'
 import { DEConfigurationTab } from '../../components/DEConfigurationTab'
+import { SophieConfigurationEditor } from '../../components/SophieConfigurationEditor'
+import { AmendmentMetricsPanel } from '../../components/AmendmentMetricsPanel'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -1730,7 +1732,7 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
 
 // ── Main Page ─────────────────────────────────────────────────────
 
-const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit', 'Authority', 'Escalation', 'Knowledge Scope', 'Approval', 'Configuration']
+const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems', 'Guardrails', 'Human Loop', 'Performance', 'Audit', 'Authority', 'Escalation', 'Knowledge Scope', 'Approval', 'Configuration', 'Sophie Config', 'Metrics']
 
 type RosterSelection = { kind: 'de' | 'human'; id: string }
 
@@ -1789,6 +1791,8 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       case 12: return <DEKnowledgeScopePanel de={selectedDE} />
       case 13: return <DEPreApprovalRulesPanel de={selectedDE} />
       case 14: return <DEConfigurationTab de={selectedDE} tenant_id={activeCompanyId} />
+      case 15: return <SophieConfigurationEditor de={selectedDE} />
+      case 16: return <AmendmentMetricsPanel entityKind="de" entityId={selectedDE.id} />
       default: return null
     }
   }
