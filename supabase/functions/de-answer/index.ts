@@ -696,12 +696,43 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         'resolved', { confidence: parsed.confidence, conversation_id: convId });
     }
 
+    // ── Reply-Mode: Draft approval flow ──
+    // If reply_mode_enabled, submit draft for human review instead of sending directly.
+    // Check configuration for this DE; if set, create draft_responses row and return draft_id.
+    let draftId: string | null = null;
+    if (!replayMode && !escalate && subjectDeId && convId) {
+      try {
+        const { data: config } = await admin.rpc('get_de_config', {
+          p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
+        });
+        const replyModeEnabled = config?.data?.reply_mode_enabled === true ||
+                                 config?.data?.preapproval_strategy === 'all';
+        if (replyModeEnabled) {
+          const { data: draftResp } = await admin.rpc('submit_draft_for_review', {
+            p_de_id: subjectDeId, p_conversation_id: convId,
+            p_user_question: question, p_draft_content: parsed.answer,
+            p_confidence: parsed.confidence / 100, p_sources: parsed.sources.map(s => ({ title: s, url: '' })),
+          });
+          if (draftResp?.draft_id) {
+            draftId = draftResp.draft_id;
+            // Record audit event for draft submission
+            await auditEvent(admin, tenantId, persona.name, 'de',
+              `Draft submitted for human review (${parsed.confidence}% confidence) — "${question.slice(0, 60)}"`,
+              'draft_submitted', { draft_id: draftId, confidence: parsed.confidence, conversation_id: convId });
+          }
+        }
+      } catch (e) {
+        console.error('reply-mode draft submission failed (continue with normal flow):', e);
+      }
+    }
+
     return json({
       conversation_id: convId,
       answer: parsed.answer,
       confidence: parsed.confidence,
       sources: parsed.sources,
       needs_escalation: escalate,
+      draft_id: draftId, // included if reply-mode submitted
       de_id: subjectDeId, de_name: persona.name,
     });
   } catch (err) {
