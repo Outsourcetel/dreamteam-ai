@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { recordTrainingFeedback, getDeploymentStage } from '@/lib/workforceApi';
-import { BookOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import { recordTrainingFeedback, getDeploymentStage } from '../../lib/workforceApi';
+import { BookOpen, CheckCircle, AlertCircle } from './icons';
 
 interface DETrainingPanelProps {
   deId: string;

@@ -965,7 +965,7 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
           entity_id={selected.id}
           entity_name={selected.title}
           onClose={() => setAmendmentOpen(false)}
-          onFinished={() => setAmendmentOpen(false)}
+          onSuccess={() => setAmendmentOpen(false)}
         />
       )}
 

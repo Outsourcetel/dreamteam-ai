@@ -31,7 +31,7 @@ export function TenantConnectorConfig() {
   const loadConnectors = async () => {
     try {
       const connectors = await listConnectors();
-      const configMap: Record<ConnectorProvider, ConnectorConfigItem> = {};
+      const configMap = {} as Record<ConnectorProvider, ConnectorConfigItem>;
 
       // Initialize all providers
       const providers: ConnectorProvider[] = Object.keys(PROVIDERS).filter(p => p !== 'template') as ConnectorProvider[];
@@ -107,7 +107,7 @@ export function TenantConnectorConfig() {
     try {
       const connector = configs[provider].connector;
       if (connector) {
-        await disconnectConnector(connector.id);
+        await disconnectConnector(connector);
         await loadConnectors();
       }
     } catch (e) {

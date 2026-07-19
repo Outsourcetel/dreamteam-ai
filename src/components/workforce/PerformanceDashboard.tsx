@@ -1,6 +1,6 @@
 import React from 'react';
-import { DEPerformanceSummary } from '@/lib/workforceApi';
-import { TrendingUp, DollarSign, MessageSquare, AlertCircle } from 'lucide-react';
+import { DEPerformanceSummary } from '../../lib/workforceApi';
+import { TrendingUp, DollarSign, MessageSquare, AlertCircle } from './icons';
 
 interface PerformanceDashboardProps {
   performance: DEPerformanceSummary;

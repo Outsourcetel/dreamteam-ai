@@ -709,11 +709,11 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
         />
 
         {/* Customer-Defined Metrics */}
-        {activeCompanyId && (
+        {companyId && (
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Metrics</p>
             <MetricsDisplay
-              tenant_id={activeCompanyId}
+              tenant_id={companyId}
               de_id={de.id}
               tags={['support']}
               columns={1}
@@ -1772,12 +1772,15 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       case 7: return <TabHumanLoop de={selectedDE} companyId={activeCompanyId} />
       case 8: return <TabPerformance de={selectedDE} companyId={activeCompanyId} />
       case 9: return <TabAudit de={selectedDE} />
-      case 10: return <DEAuthorityPanel de={selectedDE} />
-      case 11: return <SophieEscalationRules de={selectedDE} />
-      case 12: return <DEKnowledgeScopePanel de={selectedDE} />
-      case 13: return <DEPreApprovalRulesPanel de={selectedDE} />
-      case 14: return <DEConfigurationTab de={selectedDE} tenant_id={activeCompanyId} />
-      case 15: return <SophieConfigurationEditor de={selectedDE} />
+      // Panels 10-15 expect the DB DigitalEmployee shape; this page's demo
+      // DEProfile only overlaps it, so the cast bridges the two until the
+      // demo page is retired in favor of LiveWorkforceDEs.
+      case 10: return <DEAuthorityPanel de={selectedDE as any} />
+      case 11: return <SophieEscalationRules de={selectedDE as any} />
+      case 12: return <DEKnowledgeScopePanel de={selectedDE as any} />
+      case 13: return <DEPreApprovalRulesPanel de={selectedDE as any} />
+      case 14: return <DEConfigurationTab de={selectedDE as any} tenant_id={activeCompanyId} />
+      case 15: return <SophieConfigurationEditor de={selectedDE as any} />
       case 16: return <AmendmentMetricsPanel entityKind="de" entityId={selectedDE.id} />
       default: return null
     }
@@ -1893,8 +1896,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
       )}
 
-      {/* Amendment wizard modal — disabled pending component refinement */}
-      {/* TODO: Re-enable after AmendmentWizard component optimization
+      {/* Amendment wizard modal */}
       {amendmentOpen && (
         <AmendmentWizard
           entity_kind="de"
@@ -1904,7 +1906,6 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
           onSuccess={() => setAmendmentOpen(false)}
         />
       )}
-      */}
     </div>
   )
 }

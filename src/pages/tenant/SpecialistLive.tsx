@@ -1064,7 +1064,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
           entity_id={profile.id}
           entity_name={profile.name}
           onClose={() => setAmendmentOpen(false)}
-          onFinished={() => setAmendmentOpen(false)}
+          onSuccess={() => setAmendmentOpen(false)}
         />
       )}
     </div>

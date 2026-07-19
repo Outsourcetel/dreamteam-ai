@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { WorkforceAction, approveWorkforceAction } from '@/lib/workforceApi';
-import { CheckCircle, XCircle, Loader } from 'lucide-react';
+import { WorkforceAction, approveWorkforceAction } from '../../lib/workforceApi';
+import { CheckCircle, XCircle, Loader } from './icons';
 
 interface DraftApprovalCardProps {
   action: WorkforceAction;

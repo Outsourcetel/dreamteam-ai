@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { PerformanceDashboard } from '@/components/workforce/PerformanceDashboard';
-import { DETrainingPanel } from '@/components/workforce/DETrainingPanel';
-import { SuggestionAlert } from '@/components/workforce/SuggestionAlert';
-import { DraftApprovalCard } from '@/components/workforce/DraftApprovalCard';
-import { WorkforceConversation } from '@/components/workforce/WorkforceConversation';
+import { PerformanceDashboard } from '../../components/workforce/PerformanceDashboard';
+import { DETrainingPanel } from '../../components/workforce/DETrainingPanel';
+import { SuggestionAlert } from '../../components/workforce/SuggestionAlert';
+import { DraftApprovalCard } from '../../components/workforce/DraftApprovalCard';
+import { WorkforceConversation } from '../../components/workforce/WorkforceConversation';
 import {
   sendWorkforceMessage,
   listUserConversations,
@@ -13,13 +13,13 @@ import {
   WorkforceConversation as IWorkforceConversation,
   WorkforceAction,
   DEPerformanceSummary,
-} from '@/lib/workforceApi';
-import { useAuth } from '@/hooks/useAuth';
-import { Loader } from 'lucide-react';
+} from '../../lib/workforceApi';
+import { useAuth } from '../../context/AuthContext';
+import { Loader } from '../../components/workforce/icons';
 
 export function WorkforceChatHubPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
-  const { user } = useAuth();
+  const { authedUser: user } = useAuth();
 
   // Chat state
   const [conversations, setConversations] = useState<IWorkforceConversation[]>([]);

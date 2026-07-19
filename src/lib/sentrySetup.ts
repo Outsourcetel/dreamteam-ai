@@ -6,7 +6,6 @@
  */
 
 import * as Sentry from '@sentry/react'
-import { BrowserTracing } from '@sentry/tracing'
 
 export function initializeSentry() {
   const dsn = import.meta.env.VITE_SENTRY_DSN
@@ -21,11 +20,8 @@ export function initializeSentry() {
     dsn,
     environment,
     integrations: [
-      new BrowserTracing({
-        // Track React Router if available
-        routingInstrumentation: Sentry.reactRouterV6Instrumentation(window.history),
-      }),
-      new Sentry.Replay({
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
         maskAllText: true,
         blockAllMedia: true,
       }),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lightbulb, TrendingDown, AlertCircle } from 'lucide-react';
+import { Lightbulb, TrendingDown, AlertCircle } from './icons';
 
 export function SuggestionAlert() {
   const [suggestion, setSuggestion] = useState<any>(null);

@@ -6,7 +6,10 @@
 //   PWC — Morgan (Client Relations), Avery (Tax Research)
 // ============================================================
 
-export type CompanyId = never;
+// Demo companies (TCP/PWC) were hard-deleted (commit 69605ea). The legacy id
+// union is kept so demo-era pages still typecheck; their seed data stays empty
+// and those pages never render outside demo mode.
+export type CompanyId = 'tcp' | 'pwc';
 
 export interface CompanyProfile {
   id: CompanyId;
@@ -37,4 +40,4 @@ export interface CompanySummary {
   renewalsDue?: number;
 }
 
-export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {};
+export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {} as Record<CompanyId, CompanySummary>;
