@@ -1893,7 +1893,8 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
       )}
 
-      {/* Amendment wizard modal */}
+      {/* Amendment wizard modal — disabled pending component refinement */}
+      {/* TODO: Re-enable after AmendmentWizard component optimization
       {amendmentOpen && (
         <AmendmentWizard
           entity_kind="de"
@@ -1903,6 +1904,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
           onSuccess={() => setAmendmentOpen(false)}
         />
       )}
+      */}
     </div>
   )
 }
