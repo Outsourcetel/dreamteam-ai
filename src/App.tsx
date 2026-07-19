@@ -67,13 +67,14 @@ const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) =
 // without a URL mapping is a compile error, not a silently-dead nav link —
 // an unmapped page used to make URLSync bounce every click straight back.
 const PAGE_TO_URL: Record<Page, string> = {
-  platform_home:          '/platform',
-  platform_tenants:       '/platform/tenants',
-  platform_team:          '/platform/team',
-  platform_security:      '/platform/security',
-  platform_remote_access: '/platform/remote-access',
-  platform_health:        '/platform/health',
-  platform_revenue:       '/platform/revenue',
+  platform_home:                '/platform',
+  platform_tenants:             '/platform/tenants',
+  platform_tenant_management:   '/platform/tenant-management',
+  platform_team:                '/platform/team',
+  platform_security:            '/platform/security',
+  platform_remote_access:       '/platform/remote-access',
+  platform_health:              '/platform/health',
+  platform_revenue:             '/platform/revenue',
   dashboard:              '/dashboard',
   users:                  '/users',
   settings:               '/settings',
@@ -203,6 +204,7 @@ function URLSync() {
 const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_home', label: 'Overview' },
   { page: 'platform_tenants', label: 'Tenants & Approvals' },
+  { page: 'platform_tenant_management', label: 'Tenant Management' },
   { page: 'platform_team', label: 'Team & Permissions' },
   { page: 'platform_health', label: 'System Health' },
   { page: 'platform_revenue', label: 'Revenue' },

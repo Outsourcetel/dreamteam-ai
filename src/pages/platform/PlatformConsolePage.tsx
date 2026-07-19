@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
+import { TenantListPage } from '../../components/TenantManagement';
 import { COMPANIES } from '../../data/companies';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
@@ -789,6 +790,10 @@ const PlatformConsolePage = ({
         )}
       </div>
     );
+  }
+
+  if (page === 'platform_tenant_management') {
+    return <TenantListPage />;
   }
 
   if (page === 'platform_team') {
