@@ -1919,7 +1919,23 @@ async function executeDefinitionSteps(
           // PB3 W2: blocking gate + resume-note plumbing. When a prior
           // pass paused on a gated action, the dispatcher stamped the
           // human decision into ctx — inject it and clear it.
-          const onGate = String(params.on_gate ?? 'continue') === 'pause' ? 'pause' : 'continue';
+          // PB3 W7 (trust-adaptive): the author's explicit on_gate always
+          // wins; otherwise it is DERIVED from the running DE's earned
+          // trust — a supervised/established employee BLOCKS on gated
+          // actions (a human decides before it proceeds), a
+          // trusted/autonomous one continues. Same playbook, different
+          // autonomy, no per-playbook configuration.
+          let onGate: 'continue' | 'pause';
+          if (params.on_gate !== undefined) {
+            onGate = String(params.on_gate) === 'pause' ? 'pause' : 'continue';
+          } else {
+            const { data: trustRow } = await admin.from('digital_employees')
+              .select('trust_level').eq('id', runDeId).maybeSingle();
+            const trust = String(trustRow?.trust_level ?? 'supervised');
+            onGate = (trust === 'trusted' || trust === 'autonomous') ? 'continue' : 'pause';
+          }
+          const autonomyNote = params.on_gate === undefined
+            ? ` [autonomy: ${onGate === 'pause' ? 'approval-gated (earned trust)' : 'hands-free (earned trust)'}]` : '';
           const resumeNote = typeof ctx.agentic_resume_note === 'string' ? ctx.agentic_resume_note : null;
           if (resumeNote) delete ctx.agentic_resume_note;
 
@@ -1980,9 +1996,9 @@ async function executeDefinitionSteps(
           const done = outStatus === 'completed';
           step.status = done ? 'done' : 'failed';
           step.at = now();
-          step.detail = done
+          step.detail = (done
             ? `Agentic step completed — ${String(agenticRes?.summary ?? '').slice(0, 200) || 'goal reached'}`
-            : `Agentic step ended: ${outStatus}`;
+            : `Agentic step ended: ${outStatus}`) + autonomyNote;
           ctx.last_agentic_step_run_id = (agenticRes?.agentic_step_run_id as string | undefined) ?? null;
           await stepAudit(i, { agentic_step_run_id: agenticRes?.agentic_step_run_id ?? null, status: outStatus });
           if (!done) {

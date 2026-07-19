@@ -17,9 +17,9 @@ import {
   listTriggerFires, dispatchTriggersOpportunistic, listActionDefinitions,
   listEventDefinitions, upsertEventDefinition, emitEvent,
   draftPlaybookFromSop, getPlaybookStudy,
-  listPlaybookAmendments, decidePlaybookAmendment,
+  listPlaybookAmendments, decidePlaybookAmendment, getPlaybookEconomics,
 } from '../../../lib/playbookBuilderApi';
-import type { PlaybookStudyReport, DraftResult, PlaybookAmendment } from '../../../lib/playbookBuilderApi';
+import type { PlaybookStudyReport, DraftResult, PlaybookAmendment, PlaybookEconomics } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia, StepReference,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
@@ -1497,11 +1497,13 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
   publishedDefs: PlaybookDefinition[]; onDecided: () => void;
 }) {
   const [amendments, setAmendments] = useState<PlaybookAmendment[]>([]);
+  const [econ, setEcon] = useState<PlaybookEconomics | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const health = useMemo(() => computeStepHealth(runs, steps.length), [runs, steps.length]);
   useEffect(() => {
     let alive = true;
     void listPlaybookAmendments(definitionId).then(a => { if (alive) setAmendments(a); });
+    void getPlaybookEconomics(definitionId).then(e => { if (alive) setEcon(e); });
     return () => { alive = false; };
   }, [definitionId, runs.length]);
 
@@ -1513,6 +1515,17 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
 
   return (
     <div className="space-y-2">
+      {/* PB3 W8 — the procedure's P&L from real runs + the tenant's own baselines */}
+      {econ && econ.runs > 0 && (
+        <div className="flex items-center gap-3 flex-wrap rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 text-[11px]">
+          <span className="text-slate-300">📈 {econ.completed}/{econ.runs} runs completed{econ.completion_pct !== null ? ` (${econ.completion_pct}%)` : ''}</span>
+          <span className="text-slate-400">AI cost ${(econ.ai_cost_cents / 100).toFixed(2)}</span>
+          <span className="text-slate-400">~{econ.human_minutes_saved} min of human work covered</span>
+          {econ.est_value_usd !== null
+            ? <span className="text-emerald-400">≈ ${econ.est_value_usd.toFixed(2)} value (your baseline)</span>
+            : <span className="text-slate-600">set workforce baselines to see $ value</span>}
+        </div>
+      )}
       {amendments.map(am => (
         <div key={am.id} className="rounded-xl border border-amber-700/50 bg-amber-500/5 p-3">
           <div className="flex items-center gap-2 mb-1">

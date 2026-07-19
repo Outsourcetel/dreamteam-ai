@@ -833,6 +833,18 @@ export async function decidePlaybookAmendment(amendmentId: string, approve: bool
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+// ── PB3 W8 — the procedure's P&L (real runs, real cost, tenant baselines) ──
+export interface PlaybookEconomics {
+  runs: number; completed: number; failed: number; completion_pct: number | null;
+  ai_cost_cents: number; human_minutes_saved: number; est_value_usd: number | null;
+  baseline_configured: boolean;
+}
+export async function getPlaybookEconomics(definitionId: string): Promise<PlaybookEconomics | null> {
+  const { data, error } = await supabase.rpc('get_playbook_economics', { p_definition_id: definitionId });
+  if (error || !data || (data as { error?: string }).error) return null;
+  return data as PlaybookEconomics;
+}
+
 /** Fetch the Deep Study report saved for a definition (null if none). */
 export async function getPlaybookStudy(definitionId: string): Promise<{ sop_text: string; report: PlaybookStudyReport } | null> {
   const { data, error } = await supabase
