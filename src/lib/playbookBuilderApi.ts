@@ -794,6 +794,45 @@ export async function draftPlaybookFromSop(input: { sopText: string; deId?: stri
   return data as DraftResult;
 }
 
+// ── PB3 W5 — self-amending procedures: pending redlines + decisions ──
+export interface PlaybookAmendment {
+  id: string; definition_id: string; trigger_reason: string; rationale: string;
+  redline: Array<{ change: string; label?: string; note?: string }>;
+  replay_result: { would_complete?: boolean; status?: string; attempted?: boolean };
+  status: string; created_at: string;
+}
+
+/** Pending AI-proposed amendments for a definition (newest first). */
+export async function listPlaybookAmendments(definitionId: string): Promise<PlaybookAmendment[]> {
+  const { data, error } = await supabase
+    .from('playbook_amendments')
+    .select('id, definition_id, trigger_reason, rationale, redline, replay_result, status, created_at')
+    .eq('definition_id', definitionId).eq('status', 'review_pending')
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data as PlaybookAmendment[];
+}
+
+/** Approve (apply as draft) or reject a pending amendment — via its review card. */
+export async function decidePlaybookAmendment(amendmentId: string, approve: boolean): Promise<{ ok: boolean; error?: string }> {
+  const { data: task } = await supabase
+    .from('human_tasks').select('id')
+    .eq('related_table', 'playbook_amendments').eq('related_id', amendmentId)
+    .maybeSingle();
+  if (!task) {
+    // No card (e.g. it was invalid) — decide directly through the RPCs.
+    const rpc = approve ? 'apply_playbook_amendment' : 'reject_playbook_amendment';
+    const { error } = await supabase.rpc(rpc, { p_id: amendmentId });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
+  const { error } = await supabase
+    .from('human_tasks')
+    .update({ status: approve ? 'approved' : 'rejected', decided_at: new Date().toISOString() })
+    .eq('id', task.id);
+  notify();
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 /** Fetch the Deep Study report saved for a definition (null if none). */
 export async function getPlaybookStudy(definitionId: string): Promise<{ sop_text: string; report: PlaybookStudyReport } | null> {
   const { data, error } = await supabase

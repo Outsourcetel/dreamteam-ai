@@ -17,8 +17,9 @@ import {
   listTriggerFires, dispatchTriggersOpportunistic, listActionDefinitions,
   listEventDefinitions, upsertEventDefinition, emitEvent,
   draftPlaybookFromSop, getPlaybookStudy,
+  listPlaybookAmendments, decidePlaybookAmendment,
 } from '../../../lib/playbookBuilderApi';
-import type { PlaybookStudyReport, DraftResult } from '../../../lib/playbookBuilderApi';
+import type { PlaybookStudyReport, DraftResult, PlaybookAmendment } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia, StepReference,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
@@ -1460,6 +1461,113 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
   );
 }
 
+// ============================================================
+// PB3 W4 — The Living Document. The published playbook rendered as a
+// document that is ALIVE: each step carries a rail/judgment badge and
+// its live health (how often it ran, how clean, its last exception),
+// and any AI-proposed amendment shows up as a redline to approve.
+// ============================================================
+const JUDGMENT_KEYS = new Set(['custom_step', 'agentic_step', 'consult_specialist']);
+const GUIDE_KEYS = new Set(['instruction', 'checklist', 'decision']);
+function stepGrade(key: string): { label: string; cls: string; icon: string } {
+  if (JUDGMENT_KEYS.has(key)) return { label: 'Judgment', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40', icon: '✨' };
+  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-slate-600/20 text-slate-300 border-slate-600/40', icon: '📋' };
+  return { label: 'Rail', cls: 'bg-cyan-500/10 text-cyan-300 border-cyan-700/40', icon: '⚙️' };
+}
+
+interface StepHealth { runs: number; clean: number; failed: number; lastException: string | null }
+function computeStepHealth(runs: PlaybookRun[], stepCount: number): StepHealth[] {
+  const health: StepHealth[] = Array.from({ length: stepCount }, () => ({ runs: 0, clean: 0, failed: 0, lastException: null }));
+  // runs are newest-first from listPlaybookRuns; walk oldest-first so lastException ends on the newest
+  for (const run of [...runs].reverse()) {
+    const steps = (run.steps ?? []) as RunStep[];
+    for (let i = 0; i < Math.min(steps.length, stepCount); i++) {
+      const st = steps[i];
+      if (!st || st.status === 'pending') continue;
+      health[i].runs++;
+      if (st.status === 'failed') { health[i].failed++; health[i].lastException = (st.detail || 'failed').slice(0, 120); }
+      else if (st.status === 'done' || st.status === 'skipped') health[i].clean++;
+    }
+  }
+  return health;
+}
+
+function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }: {
+  definitionId: string; steps: DefinitionStep[]; runs: PlaybookRun[];
+  publishedDefs: PlaybookDefinition[]; onDecided: () => void;
+}) {
+  const [amendments, setAmendments] = useState<PlaybookAmendment[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const health = useMemo(() => computeStepHealth(runs, steps.length), [runs, steps.length]);
+  useEffect(() => {
+    let alive = true;
+    void listPlaybookAmendments(definitionId).then(a => { if (alive) setAmendments(a); });
+    return () => { alive = false; };
+  }, [definitionId, runs.length]);
+
+  const decide = async (id: string, approve: boolean) => {
+    setBusyId(id);
+    try { await decidePlaybookAmendment(id, approve); setAmendments(a => a.filter(x => x.id !== id)); onDecided(); }
+    finally { setBusyId(null); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {amendments.map(am => (
+        <div key={am.id} className="rounded-xl border border-amber-700/50 bg-amber-500/5 p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-semibold text-amber-300">✎ The Practice Engine proposes an improvement</span>
+            {am.replay_result?.would_complete && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-700/40">replay verified</span>}
+          </div>
+          <p className="text-[11px] text-slate-300 mb-1.5">{am.rationale}</p>
+          {am.redline?.length > 0 && (
+            <ul className="text-[11px] space-y-0.5 mb-2">
+              {am.redline.map((r, i) => (
+                <li key={i} className={r.change === 'remove' ? 'text-rose-300' : r.change === 'add' ? 'text-emerald-300' : 'text-sky-300'}>
+                  {r.change === 'add' ? '＋' : r.change === 'remove' ? '－' : '±'} {r.label}{r.note ? ` — ${r.note}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-[10px] text-slate-500 mb-2">Approving lands it as a new draft — you still review &amp; publish it.</p>
+          <div className="flex items-center gap-2">
+            <button disabled={busyId === am.id} onClick={() => void decide(am.id, true)}
+              className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve → draft</button>
+            <button disabled={busyId === am.id} onClick={() => void decide(am.id, false)}
+              className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-rose-300 disabled:opacity-50">Dismiss</button>
+          </div>
+        </div>
+      ))}
+
+      <ol className="space-y-1.5">
+        {steps.map((s, i) => {
+          const g = stepGrade(s.key);
+          const h = health[i];
+          const rate = h && h.runs > 0 ? Math.round((h.clean / h.runs) * 100) : null;
+          const meta = PRIMITIVE_REGISTRY.find(m => m.key === s.key);
+          const title = (s.params?.title as string) || (s.params?.label as string) || meta?.label || s.key;
+          return (
+            <li key={i} className="rounded-lg border border-slate-700/70 bg-slate-800/40 px-3 py-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] text-slate-500 font-mono w-4">{i + 1}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded border ${g.cls}`}>{g.icon} {g.label}</span>
+                <span className="text-xs text-slate-200">{String(title).slice(0, 80)}</span>
+                {h && h.runs > 0 && (
+                  <span className="ml-auto text-[10px] text-slate-500">
+                    ran {h.runs}× · <span className={rate !== null && rate >= 90 ? 'text-emerald-400' : rate !== null && rate >= 60 ? 'text-amber-400' : 'text-rose-400'}>{rate}% clean</span>
+                  </span>
+                )}
+              </div>
+              {h?.lastException && <p className="text-[10px] text-rose-400/80 mt-1 ml-6">last exception: {h.lastException}</p>}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="text-[10px] text-slate-600 pt-1">⚙️ Rail = deterministic &amp; code-run · ✨ Judgment = the employee reasons with tools · 📋 Guide = followed in flow. Health is live from real runs.</p>
+    </div>
+  );
+}
+
 export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) => void }) {
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [runs, setRuns] = useState<PlaybookRun[]>([]);
@@ -1590,8 +1698,15 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             {/* PB3 Deep Study — shown for AI-drafted playbooks */}
             <StudyPanel definitionId={selectedDef.id} />
 
-            {/* The "document that executes" — an SOP-style read view */}
-            <PlaybookDocumentView steps={selectedDef.steps} publishedDefs={defs} />
+            {/* PB3 W4 — the Living Document: rail/judgment badges, live
+                per-step health, and any AI-proposed amendment as a redline */}
+            <LivingDocument
+              definitionId={selectedDef.id}
+              steps={selectedDef.steps}
+              runs={defRuns}
+              publishedDefs={defs}
+              onDecided={() => void refresh()}
+            />
 
             {/* Run controls */}
             {selectedDef.status === 'published' ? (
