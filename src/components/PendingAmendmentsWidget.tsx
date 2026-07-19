@@ -1,95 +1,88 @@
-// ── Pending Amendments Widget ──────────────────────────────────────────
-// Status badge + expandable list. Shown on profile pages where amendments exist.
+import React, { useState, useEffect } from 'react'
+import type { PendingAmendment, EntityKind } from '../lib/amendmentApi'
+import { listPendingAmendments } from '../lib/amendmentApi'
+import { AmendmentReviewCard } from './AmendmentReviewCard'
+import { getAmendmentDetail } from '../lib/amendmentApi'
+import type { AmendmentProposal } from '../lib/amendmentApi'
 
-import { useEffect, useState } from 'react';
-import { listPendingAmendments, type EntityKind, type AmendmentProposal } from '../lib/amendmentApi';
-import AmendmentReviewCard from './AmendmentReviewCard';
-
-export default function PendingAmendmentsWidget({
+export function PendingAmendmentsWidget({
   entity_kind,
   entity_id,
+  onAmendmentsChange,
 }: {
-  entity_kind: EntityKind;
-  entity_id: string;
+  entity_kind: EntityKind
+  entity_id: string
+  onAmendmentsChange?: (count: number) => void
 }) {
-  const [amendments, setAmendments] = useState<AmendmentProposal[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [pending, setPending] = useState<PendingAmendment[]>([])
+  const [expanded, setExpanded] = useState(false)
+  const [details, setDetails] = useState<Map<string, AmendmentProposal>>(new Map())
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setIsLoading(true);
-    listPendingAmendments(entity_kind, entity_id)
-      .then(setAmendments)
-      .finally(() => setIsLoading(false));
-  }, [entity_kind, entity_id, refreshKey]);
+    loadAmendments()
+  }, [entity_kind, entity_id])
 
-  if (isLoading || amendments.length === 0) {
-    return null;
+  const loadAmendments = async () => {
+    setLoading(true)
+    const amendments = await listPendingAmendments(entity_kind, entity_id)
+    setPending(amendments)
+    onAmendmentsChange?.(amendments.length)
+
+    // Load details for display
+    const newDetails = new Map()
+    for (const amendment of amendments) {
+      const detail = await getAmendmentDetail(amendment.amendment_id)
+      if (detail) {
+        newDetails.set(amendment.amendment_id, detail)
+      }
+    }
+    setDetails(newDetails)
+    setLoading(false)
   }
 
-  const pending = amendments.filter((a) => a.status === 'review_pending').length;
-  const draft = amendments.filter((a) => a.status === 'draft').length;
+  if (loading) {
+    return <div className="text-xs text-slate-500">Loading amendments...</div>
+  }
+
+  if (pending.length === 0) {
+    return null
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Collapsed badge */}
-      {!isExpanded && (
-        <button
-          onClick={() => setIsExpanded(true)}
-          className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left text-sm hover:bg-amber-500/15 transition-colors"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-amber-300">
-                {pending + draft} pending amendment{pending + draft !== 1 ? 's' : ''}
-              </p>
-              <p className="text-xs text-amber-200/80 mt-0.5">
-                {pending} awaiting approval{draft > 0 ? `, ${draft} with issues` : ''}
-              </p>
-            </div>
-            <span className="text-amber-400">›</span>
-          </div>
-        </button>
-      )}
+    <div className="space-y-2">
+      {/* Badge */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg hover:border-amber-500/50 transition-colors">
+        <span className="text-xs font-medium text-amber-300">
+          {pending.length} pending amendment{pending.length !== 1 ? 's' : ''}
+        </span>
+        <span className="text-amber-400">{expanded ? '▼' : '▶'}</span>
+      </button>
 
-      {/* Expanded list */}
-      {isExpanded && (
-        <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Pending amendments</h3>
-            <button
-              onClick={() => setIsExpanded(false)}
-              className="text-slate-500 hover:text-white text-xs px-2 py-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {amendments.map((amendment) => (
+      {/* Expanded List */}
+      {expanded && (
+        <div className="space-y-3 mt-3 border-t border-slate-700 pt-3">
+          {pending.map(amendment => {
+            const detail = details.get(amendment.amendment_id)
+            return detail ? (
               <AmendmentReviewCard
                 key={amendment.amendment_id}
-                amendment={amendment}
-                entity_kind={entity_kind}
+                proposal={detail}
                 onApprove={() => {
-                  // Refresh the list after approval
-                  setRefreshKey((k) => k + 1);
+                  setPending(pending.filter(a => a.amendment_id !== amendment.amendment_id))
+                  onAmendmentsChange?.(pending.length - 1)
                 }}
                 onReject={() => {
-                  // Refresh the list after rejection
-                  setRefreshKey((k) => k + 1);
+                  setPending(pending.filter(a => a.amendment_id !== amendment.amendment_id))
+                  onAmendmentsChange?.(pending.length - 1)
                 }}
-                showActions={true}
               />
-            ))}
-          </div>
-
-          {amendments.length === 0 && (
-            <p className="text-xs text-slate-400 text-center py-4">No pending amendments</p>
-          )}
+            ) : null
+          })}
         </div>
       )}
     </div>
-  );
+  )
 }

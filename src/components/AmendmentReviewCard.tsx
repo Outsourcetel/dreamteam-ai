@@ -1,207 +1,172 @@
-// ── Amendment Review Card ──────────────────────────────────────────────
-// Reusable display for amendment proposals across all entity types.
-// Shows: rationale, redline (diff), evidence (if available), approve/reject buttons.
+import React, { useState } from 'react'
+import type { AmendmentProposal } from '../lib/amendmentApi'
+import { approveAmendment, rejectAmendment } from '../lib/amendmentApi'
 
-import { useState } from 'react';
-import { type AmendmentProposal, type EntityKind, approveAmendment, rejectAmendment } from '../lib/amendmentApi';
-
-export default function AmendmentReviewCard({
-  amendment,
-  entity_kind,
-  onApprove,
-  onReject,
-  showActions = true,
-}: {
-  amendment: AmendmentProposal;
-  entity_kind: EntityKind;
-  onApprove?: () => void;
-  onReject?: () => void;
-  showActions?: boolean;
+export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
+  proposal: AmendmentProposal
+  onApprove?: (amendment_id: string) => void
+  onReject?: (amendment_id: string) => void
 }) {
-  const [isApproving, setIsApproving] = useState(false);
-  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleApprove = async () => {
-    if (onApprove) {
-      onApprove();
-      return;
+    setApproving(true)
+    setError(null)
+    const result = await approveAmendment(proposal.amendment_id)
+    if (result.ok) {
+      onApprove?.(proposal.amendment_id)
+    } else {
+      setError(result.error || 'Failed to approve amendment')
     }
-    setIsApproving(true);
-    setApprovalError(null);
-    try {
-      await approveAmendment(amendment.amendment_id);
-    } catch (e) {
-      setApprovalError(e instanceof Error ? e.message : 'Failed to approve');
-    } finally {
-      setIsApproving(false);
-    }
-  };
+    setApproving(false)
+  }
 
   const handleReject = async () => {
-    if (onReject) {
-      onReject();
-      return;
+    setRejecting(true)
+    setError(null)
+    const result = await rejectAmendment(proposal.amendment_id)
+    if (result.ok) {
+      onReject?.(proposal.amendment_id)
+    } else {
+      setError(result.error || 'Failed to reject amendment')
     }
-    setIsApproving(true);
-    setApprovalError(null);
-    try {
-      await rejectAmendment(amendment.amendment_id, 'User dismissed');
-    } catch (e) {
-      setApprovalError(e instanceof Error ? e.message : 'Failed to reject');
-    } finally {
-      setIsApproving(false);
-    }
-  };
+    setRejecting(false)
+  }
 
   const statusColors = {
-    draft: 'border-slate-700 bg-slate-800/60',
-    review_pending: 'border-amber-500/30 bg-amber-500/10',
-    approved: 'border-teal-500/30 bg-teal-500/10',
-    applied: 'border-emerald-500/30 bg-emerald-500/10',
-    rejected: 'border-slate-700 bg-slate-800/60',
-  };
+    proposed: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+    approved: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+    rejected: 'bg-red-500/10 border-red-500/30 text-red-300',
+    applied: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
+  }
 
-  const statusBadgeColor = {
-    draft: 'bg-slate-700 text-slate-200',
-    review_pending: 'bg-amber-600 text-amber-100',
-    approved: 'bg-teal-600 text-teal-100',
-    applied: 'bg-emerald-600 text-emerald-100',
-    rejected: 'bg-slate-700 text-slate-200',
-  };
-
-  const statusLabel = {
-    draft: 'Proposed (validation issues)',
-    review_pending: 'Awaiting approval',
-    approved: 'Approved',
-    applied: 'Applied',
-    rejected: 'Dismissed',
-  };
+  const entityLabels: Record<string, string> = {
+    de: 'Digital Employee',
+    playbook: 'Playbook',
+    specialist: 'Specialist',
+  }
 
   return (
-    <div className={`rounded-xl border p-4 space-y-3 ${statusColors[amendment.status]}`}>
+    <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-white">Amendment proposal</p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {entity_kind === 'de' && 'Configuration change'}
-            {entity_kind === 'playbook' && 'Steps change'}
-            {entity_kind === 'specialist' && 'Charter change'}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Amendment Proposal
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColors[proposal.status]}`}>
+              {proposal.status}
+            </span>
+          </div>
+          <p className="text-sm text-slate-200 font-medium">
+            {entityLabels[proposal.entity_kind]} — {proposal.entity_id}
           </p>
         </div>
-        <span className={`text-xs font-medium px-2.5 py-1 rounded-lg ${statusBadgeColor[amendment.status]}`}>
-          {statusLabel[amendment.status]}
-        </span>
       </div>
 
       {/* Rationale */}
-      <div>
-        <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Why this change</p>
-        <p className="text-xs text-slate-300">{amendment.rationale}</p>
+      <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+        <p className="text-xs text-slate-500 mb-1">Why this change:</p>
+        <p className="text-sm text-slate-300">{proposal.rationale}</p>
       </div>
 
-      {/* Evidence (if available) */}
-      {amendment.evidence && (
-        <div className="rounded-lg bg-slate-900/60 border border-slate-700 p-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Test results</p>
-          <div className="space-y-1">
-            {amendment.evidence.replay_status && (
-              <p className="text-xs text-slate-300">
-                Replay:{' '}
-                <span
-                  className={
-                    amendment.evidence.replay_status === 'passed'
-                      ? 'text-emerald-400 font-medium'
-                      : 'text-amber-400 font-medium'
-                  }
-                >
-                  {amendment.evidence.replay_status}
-                </span>
-              </p>
-            )}
-            {typeof amendment.evidence.replay_score_before === 'number' &&
-              typeof amendment.evidence.replay_score_after === 'number' && (
-                <p className="text-xs text-slate-300">
-                  Score: {Math.round(amendment.evidence.replay_score_before)} →{' '}
-                  <span className="font-medium text-teal-400">
-                    {Math.round(amendment.evidence.replay_score_after)}
-                  </span>
-                </p>
-              )}
-            {typeof amendment.evidence.golden_set_passed === 'boolean' && (
-              <p className="text-xs text-slate-300">
-                Golden exam:{' '}
-                <span className={amendment.evidence.golden_set_passed ? 'text-emerald-400' : 'text-amber-400'}>
-                  {amendment.evidence.golden_set_passed ? '✓ passed' : '✗ some failures'}
-                </span>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Redline */}
-      {amendment.redline.length > 0 && (
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Changes</p>
-          <div className="space-y-2">
-            {amendment.redline.map((line, i) => (
-              <div key={i} className="text-xs font-mono text-slate-300">
-                <p className="text-slate-400">{line.field}</p>
-                {line.old && (
-                  <p className="text-red-400/80 ml-2">
-                    − {line.old}
-                  </p>
-                )}
-                {line.new && (
-                  <p className="text-emerald-400/80 ml-2">
-                    + {line.new}
-                  </p>
-                )}
-                {line.note && (
-                  <p className="text-slate-500 ml-2 italic"># {line.note}</p>
-                )}
+      <div className="space-y-2">
+        <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Changes</p>
+        {proposal.redline.length > 0 ? (
+          proposal.redline.map((change, idx) => (
+            <div key={idx} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-2.5 text-xs space-y-1">
+              <p className="text-slate-400 font-mono">{change.field}</p>
+              <div className="space-y-0.5">
+                <div className="text-red-400">
+                  <span className="opacity-60">- </span>{change.old}
+                </div>
+                <div className="text-emerald-400">
+                  <span className="opacity-60">+ </span>{change.new}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              {change.note && <p className="text-slate-500 italic">{change.note}</p>}
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-slate-500">No field changes (configuration only)</p>
+        )}
+      </div>
 
-      {/* Metadata */}
-      {(amendment.model_id || amendment.input_tokens) && (
-        <div className="text-[10px] text-slate-600 pt-1 border-t border-slate-700/50">
-          {amendment.model_id && <p>{amendment.model_id}</p>}
-          {amendment.input_tokens && amendment.output_tokens && (
-            <p>{amendment.input_tokens + amendment.output_tokens} tokens</p>
+      {/* Evidence */}
+      {proposal.evidence && (proposal.evidence.replay_status || proposal.evidence.golden_set_impact) && (
+        <div className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3 space-y-2">
+          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Testing Evidence</p>
+          {proposal.evidence.replay_status && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-400">Playbook Testing:</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                proposal.evidence.replay_status === 'passed'
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : proposal.evidence.replay_status === 'failed'
+                    ? 'bg-red-500/20 text-red-300'
+                    : 'bg-slate-600 text-slate-300'
+              }`}>
+                {proposal.evidence.replay_status}
+              </span>
+            </div>
+          )}
+          {proposal.evidence.replay_score_before !== undefined && proposal.evidence.replay_score_after !== undefined && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Score:</span>
+              <span className="text-slate-300">
+                {proposal.evidence.replay_score_before.toFixed(2)} → {proposal.evidence.replay_score_after.toFixed(2)}
+              </span>
+            </div>
+          )}
+          {proposal.evidence.golden_set_impact && (
+            <p className="text-xs text-slate-400">Golden set: {proposal.evidence.golden_set_impact}</p>
           )}
         </div>
       )}
 
-      {approvalError && (
-        <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-          {approvalError}
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-2">
+          <p className="text-xs text-red-300">{error}</p>
         </div>
       )}
 
+      {/* Metadata */}
+      <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-700">
+        <span>{new Date(proposal.created_at).toLocaleDateString()}</span>
+        <span>by {proposal.created_by}</span>
+      </div>
+
       {/* Actions */}
-      {showActions && amendment.status !== 'applied' && amendment.status !== 'rejected' && (
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={handleApprove}
-            disabled={isApproving}
-            className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium disabled:opacity-60 transition-colors"
-          >
-            {isApproving ? 'Approving…' : 'Approve'}
-          </button>
-          <button
-            onClick={handleReject}
-            disabled={isApproving}
-            className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 text-xs font-medium disabled:opacity-60 transition-colors"
-          >
-            Dismiss
-          </button>
+      {(proposal.status === 'proposed' || proposal.status === 'approved') && (
+        <div className="flex gap-2 pt-2 border-t border-slate-700">
+          {proposal.status === 'proposed' && (
+            <>
+              <button
+                onClick={handleApprove}
+                disabled={approving || rejecting}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-xs font-medium text-white transition-colors">
+                {approving ? 'Approving...' : 'Approve'}
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={approving || rejecting}
+                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg text-xs font-medium transition-colors">
+                {rejecting ? 'Rejecting...' : 'Dismiss'}
+              </button>
+            </>
+          )}
+          {proposal.status === 'approved' && (
+            <div className="text-xs text-emerald-400 py-2 px-3">
+              ✓ Approved — awaiting application
+            </div>
+          )}
         </div>
       )}
     </div>
-  );
+  )
 }
