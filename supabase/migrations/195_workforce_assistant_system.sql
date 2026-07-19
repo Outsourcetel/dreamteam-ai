@@ -574,3 +574,4 @@ GRANT SELECT ON de_role_assignments TO authenticated;
 -- ════════════════════════════════════════════════════════════════════════════════════════
 -- DONE
 -- ════════════════════════════════════════════════════════════════════════════════════════
+# Vercel Pro deployment - retry with agentic enabled
