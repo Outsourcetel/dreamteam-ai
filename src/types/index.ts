@@ -51,6 +51,7 @@ export type TenantPage =
 
   // ── Workforce (DE management) ─────────────────────
   | 'workforce_des'             // Digital Employees roster (incl. individual profiles)
+  | 'workforce_chat'            // Conversational Workforce Hub (manage DEs via chat)
 
   // ── Knowledge ─────────────────────────────────────
   | 'knowledge_library'         // Knowledge library

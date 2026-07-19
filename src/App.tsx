@@ -40,6 +40,7 @@ import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
+import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
@@ -108,6 +109,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   specialist_people:       '/specialist/people',
   // Workforce (DEs)
   workforce_des:       '/workforce/des',
+  workforce_chat:      '/workforce/chat',
   // Knowledge
   knowledge_library:   '/knowledge/library',
   knowledge_ingestion: '/knowledge/ingestion',
@@ -435,6 +437,8 @@ function AppShell() {
       // ── Workforce ─────────────────────────────────────────────
       case 'workforce_des':
         return <WorkforceDEsPage setPage={handleSetPage} />;
+      case 'workforce_chat':
+        return <WorkforceChatHubPage />;
       // ── Knowledge ─────────────────────────────────────────────
       case 'knowledge_library':
         return <KnowledgeLibraryPage setPage={handleSetPage} />;
