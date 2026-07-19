@@ -23,6 +23,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -60,8 +61,11 @@ async function scenarioQuestions(admin: SupabaseClient, apiKey: string, tenantId
   }
   // synthetic — LLM generates realistic customer questions from the DE's role.
   const { data: de } = await admin.from('digital_employees').select('name, description, department, responsibilities').eq('id', deId).maybeSingle();
-  const system = 'You generate realistic first-person CUSTOMER questions to stress-test a support AI. Return ONLY JSON {"questions":[string,...]}. Mix easy, ambiguous, out-of-scope, and edge cases. No preamble.';
-  const user = `The AI employee: ${de?.name ?? 'Support agent'} (${de?.department ?? 'Support'}). Role: ${de?.description ?? 'answers customer questions'}. Responsibilities: ${(de?.responsibilities ?? []).join(', ')}. Generate ${count} distinct customer questions.`;
+  const system = 'You generate realistic first-person CUSTOMER questions to stress-test a support AI. Return ONLY JSON {"questions":[string,...]}. Mix easy, ambiguous, out-of-scope, and edge cases. No preamble.' + FIREWALL_RULES;
+  const user = `The AI employee profile:\n${wrapUntrusted(
+    `Name: ${de?.name ?? 'Support agent'} (${de?.department ?? 'Support'}). Role: ${de?.description ?? 'answers customer questions'}. Responsibilities: ${(de?.responsibilities ?? []).join(', ')}`,
+    'de-profile',
+  )}\nGenerate ${count} distinct customer questions.`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 800, system, messages: [{ role: 'user', content: user }] }),

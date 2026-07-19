@@ -25,6 +25,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { durableRateLimited, clientIp } from '../_shared/rateLimit.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
@@ -248,7 +249,17 @@ serve(async (req) => {
     if (!keyRow) return json({ error: 'invalid_widget_key' }, 401);
     const tenantId: string = keyRow.tenant_id;
 
+    // In-memory check = free first line; the durable DB counter is the
+    // authoritative limit (survives isolate recycling + deploys) with a
+    // tighter per-IP bucket to stop single-source floods (mig 198).
     if (rateLimited(keyRow.id)) return json({ error: 'rate_limited' }, 429);
+    if (await durableRateLimited(admin, `widget:${keyRow.id}`, RATE_LIMIT_PER_MIN)) {
+      return json({ error: 'rate_limited' }, 429);
+    }
+    const ip = clientIp(req);
+    if (ip && (await durableRateLimited(admin, `widget:${keyRow.id}:${ip}`, 30))) {
+      return json({ error: 'rate_limited' }, 429);
+    }
 
     try {
       const { data: cur } = await admin.from('widget_keys').select('request_count').eq('id', keyRow.id).single();

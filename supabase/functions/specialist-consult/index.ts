@@ -55,6 +55,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { resolveDeModel } from '../_shared/deModel.ts';
 
 const CORS = {
@@ -675,8 +676,8 @@ async function runResolveInquiry(
       headers: { 'x-api-key': resolveApiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
         model, max_tokens: 1024,
-        system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${evidenceText}`,
-        messages: [{ role: 'user', content: inquiry }],
+        system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${wrapUntrusted(evidenceText, 'evidence-citations')}${FIREWALL_RULES}`,
+        messages: [{ role: 'user', content: wrapUntrusted(inquiry, 'customer-inquiry') }],
       }),
     });
     if (res2.ok) {
@@ -1652,12 +1653,12 @@ serve(async (req) => {
 Answer ONLY from the source excerpts below. Every claim must trace to a cited source. If the sources don't support an answer, say so plainly, set confidence low, and set needs_escalation true. Always output JSON: {"answer": string, "confidence": 0-100, "citations": [source titles used], "needs_escalation": boolean}. Never invent facts.
 
 Source excerpts:
-${groundedContext}${runDocuments ? `\n\n--- Reference material supplied by the requesting playbook ---\n${runDocuments}` : ''}`;
+${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- Reference material supplied by the requesting playbook ---\n${wrapUntrusted(runDocuments, 'playbook-documents')}` : ''}${FIREWALL_RULES}`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: question }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(question, 'consult-question') }] }),
     });
     if (!res.ok) {
       const detail = await res.text();

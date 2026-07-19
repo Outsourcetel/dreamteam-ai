@@ -25,6 +25,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 
 const CORS = {
@@ -88,8 +89,8 @@ serve(async (req) => {
     const kbContext = (kb ?? []).map((c: { doc_title: string; content: string }) =>
       `[${c.doc_title}]\n${String(c.content).slice(0, 1500)}`).join('\n---\n') || '(no matching docs)';
 
-    const system = 'You write corrective knowledge-base articles for a customer-support AI. Given a question the AI answered WRONGLY, the judge\'s explanation, and existing docs, write ONE focused article that would make the answer correct. Ground it in the judge\'s explanation of the correct behaviour — do NOT invent facts beyond it. Return ONLY JSON {"title": string, "content": string} (content 3-10 sentences, plain prose).';
-    const user = `<failure>\nQuestion: ${fail.question}\nWrong answer given: ${fail.answer}\nJudge's explanation: ${fail.rationale}\n${fail.reference ? `Reference (known-correct facts): ${fail.reference}\n` : ''}</failure>\n\n<existing_docs>\n${kbContext.slice(0, 6000)}\n</existing_docs>`;
+    const system = 'You write corrective knowledge-base articles for a customer-support AI. Given a question the AI answered WRONGLY, the judge\'s explanation, and existing docs, write ONE focused article that would make the answer correct. Ground it in the judge\'s explanation of the correct behaviour — do NOT invent facts beyond it. Return ONLY JSON {"title": string, "content": string} (content 3-10 sentences, plain prose).' + FIREWALL_RULES;
+    const user = `<failure>\nQuestion: ${wrapUntrusted(String(fail.question), 'eval-question')}\nWrong answer given: ${wrapUntrusted(String(fail.answer ?? ''), 'eval-answer')}\nJudge's explanation: ${wrapUntrusted(String(fail.rationale ?? ''), 'judge-rationale')}\n${fail.reference ? `Reference (known-correct facts): ${wrapUntrusted(String(fail.reference), 'eval-reference')}\n` : ''}</failure>\n\n<existing_docs>\n${wrapUntrusted(kbContext.slice(0, 6000), 'tenant-kb')}\n</existing_docs>`;
     const llm = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, system, messages: [{ role: 'user', content: user }] }),

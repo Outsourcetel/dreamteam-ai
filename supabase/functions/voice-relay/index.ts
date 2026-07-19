@@ -21,6 +21,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { durableRateLimited, clientIp } from '../_shared/rateLimit.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -94,7 +95,16 @@ serve(async (req) => {
     if (!providerKey) return json({ error: 'voice_not_configured' });
 
     // Throttle the spend paths (stt/tts) per widget key.
+    // In-memory = free first line; durable DB counter is authoritative
+    // (mig 198), with a tighter per-IP bucket for single-source floods.
     if (rateLimited(keyRow.id)) return json({ error: 'rate_limited' }, 429);
+    if (await durableRateLimited(admin, `voice:${keyRow.id}`, RATE_LIMIT_PER_MIN)) {
+      return json({ error: 'rate_limited' }, 429);
+    }
+    const ip = clientIp(req);
+    if (ip && (await durableRateLimited(admin, `voice:${keyRow.id}:${ip}`, 20))) {
+      return json({ error: 'rate_limited' }, 429);
+    }
 
     if (action === 'stt') {
       const audioB64 = typeof body.audio === 'string' ? body.audio : '';
