@@ -11,6 +11,8 @@ import { SophieEscalationRules } from '../../components/SophieEscalationRules'
 import { DEKnowledgeScopePanel } from '../../components/DEKnowledgeScopePanel'
 import { DEPreApprovalRulesPanel } from '../../components/DEPreApprovalRulesPanel'
 import { SophieConfigurationSummary } from '../../components/SophieConfigurationSummary'
+import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget'
+import { MetricsDisplay } from '../../components/MetricsDisplay'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -687,6 +689,45 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
             </div>
             <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
               <span className="text-xs text-slate-500">Next Recertification</span>
+              <span className="text-sm text-slate-200">{de.nextRecert}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pending Amendments Widget */}
+        <PendingAmendmentsWidget
+          entity_kind="de"
+          entity_id={de.id}
+          onAmendmentsChange={(count) => {
+            if (count === 0) {
+              // Reload if amendments were cleared
+              window.location.reload()
+            }
+          }}
+        />
+
+        {/* Customer-Defined Metrics */}
+        {activeCompanyId && (
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Metrics</p>
+            <MetricsDisplay
+              tenant_id={activeCompanyId}
+              de_id={de.id}
+              tags={['support']}
+              columns={1}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => void }) {
+  const [lastTrained, setLastTrained] = useState(de.lastTrained)
+  const [nextRecert, setNextRecert] = useState(de.nextRecert)
+  const [certInterval, setCertInterval] = useState('180')
+  const [threshold, setThreshold] = useState('85')
               <span className="text-sm text-slate-200">{de.nextRecert}</span>
             </div>
           </div>
