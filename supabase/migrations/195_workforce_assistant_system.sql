@@ -572,6 +572,5 @@ GRANT SELECT, INSERT ON de_training_feedback TO authenticated;
 GRANT SELECT ON de_role_assignments TO authenticated;
 
 -- ════════════════════════════════════════════════════════════════════════════════════════
--- DONE
+-- DONE — Vercel Pro deployment with agentic capabilities enabled
 -- ════════════════════════════════════════════════════════════════════════════════════════
-# Vercel Pro deployment - retry with agentic enabled
