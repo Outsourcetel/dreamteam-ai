@@ -13,8 +13,9 @@
 -- 1. ENHANCE DIGITAL_EMPLOYEES TABLE
 -- ════════════════════════════════════════════════════════════════════════════════════════
 
+ALTER TABLE digital_employees ADD COLUMN IF NOT EXISTS charter JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE digital_employees ADD COLUMN IF NOT EXISTS is_workforce_assistant BOOLEAN DEFAULT false;
-ALTER TABLE digital_employees ADD COLUMN IF NOT EXISTS is_product_expert BOOLEAN DEFAULT false; -- Trained on DreamTeamAI platform
+ALTER TABLE digital_employees ADD COLUMN IF NOT EXISTS is_product_expert BOOLEAN DEFAULT false;
 
 -- ════════════════════════════════════════════════════════════════════════════════════════
 -- 2. WORKFORCE CONVERSATIONS — Multi-turn conversation context with Workforce Assistant
@@ -49,15 +50,15 @@ ALTER TABLE workforce_conversations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Tenant members can view their conversations" ON workforce_conversations;
 CREATE POLICY "Tenant members can view their conversations" ON workforce_conversations FOR SELECT
-  USING (tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any')));
+  USING (tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager']));
 
 DROP POLICY IF EXISTS "Users can create conversations for their tenant" ON workforce_conversations;
 CREATE POLICY "Users can create conversations for their tenant" ON workforce_conversations FOR INSERT
-  WITH CHECK (auth.uid() = user_id AND tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any')));
+  WITH CHECK (auth.uid() = user_id AND tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager']));
 
 DROP POLICY IF EXISTS "Users can update their conversations" ON workforce_conversations;
 CREATE POLICY "Users can update their conversations" ON workforce_conversations FOR UPDATE
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id AND tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager']));
 
 -- ════════════════════════════════════════════════════════════════════════════════════════
 -- 3. WORKFORCE ACTIONS — Audit trail of hires, amendments, retirements
@@ -70,7 +71,7 @@ CREATE TABLE IF NOT EXISTS workforce_actions (
   action_type TEXT NOT NULL, -- 'de_hire' | 'de_amend' | 'de_retire' | 'de_train'
   entity_id UUID NOT NULL, -- The DE being hired/amended/retired
 
-  conversation_id UUID REFERENCES workforce_conversations(id) ON DELETE SET NULL,
+  conversation_id UUID REFERENCES workforce_conversations(conversation_id) ON DELETE SET NULL,
 
   proposal JSONB NOT NULL, -- { charter, playbooks, guardrails, etc. }
   proposal_rationale TEXT,
@@ -96,11 +97,11 @@ ALTER TABLE workforce_actions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Tenant members can view actions" ON workforce_actions;
 CREATE POLICY "Tenant members can view actions" ON workforce_actions FOR SELECT
-  USING (tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any')));
+  USING (tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager']));
 
 DROP POLICY IF EXISTS "Admins can approve actions" ON workforce_actions;
 CREATE POLICY "Admins can approve actions" ON workforce_actions FOR UPDATE
-  USING (tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'tenant_admin')));
+  USING (tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin']));
 
 -- ════════════════════════════════════════════════════════════════════════════════════════
 -- 4. DE PRODUCT KNOWLEDGE — Knowledge base for Workforce Assistant product expertise
@@ -158,7 +159,7 @@ ALTER TABLE de_deployment_stages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Tenant members can view DE stages" ON de_deployment_stages;
 CREATE POLICY "Tenant members can view DE stages" ON de_deployment_stages FOR SELECT
-  USING (de_id IN (SELECT id FROM digital_employees WHERE tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any'))));
+  USING (de_id IN (SELECT id FROM digital_employees WHERE tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager'])));
 
 -- ════════════════════════════════════════════════════════════════════════════════════════
 -- 6. DE ROLE ASSIGNMENTS — Multi-role support (Phase 2 schema, created now)
@@ -246,7 +247,7 @@ BEGIN
   END IF;
 
   -- Check tenant access
-  IF NOT (v_tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any'))) THEN
+  IF NOT (v_tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager'])) THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -348,7 +349,7 @@ BEGIN
     RAISE EXCEPTION 'DE not found';
   END IF;
 
-  IF NOT (v_tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'any'))) THEN
+  IF NOT (v_tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin', 'tenant_manager'])) THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -408,7 +409,7 @@ DECLARE
   v_default_charter JSONB;
 BEGIN
   -- Verify user is tenant admin
-  IF NOT (p_tenant_id IN (SELECT tenant_id FROM auth_has_tenant_role(auth.uid(), 'tenant_admin'))) THEN
+  IF NOT (p_tenant_id = auth_tenant_id() AND auth_has_tenant_role(array['tenant_owner', 'tenant_admin'])) THEN
     RAISE EXCEPTION 'Unauthorized: must be tenant admin';
   END IF;
 
