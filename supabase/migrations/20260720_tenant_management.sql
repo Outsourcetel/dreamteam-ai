@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS tenant_feature_toggles (
   updated_by UUID REFERENCES auth.users(id)
 );
 
-CREATE INDEX idx_tenant_toggles_tenant ON tenant_feature_toggles(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_toggles_tenant ON tenant_feature_toggles(tenant_id);
 
 -- Enable RLS
 ALTER TABLE tenant_feature_toggles ENABLE ROW LEVEL SECURITY;
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS tenant_billing_config (
   updated_at TIMESTAMP DEFAULT now()
 );
 
-CREATE INDEX idx_billing_config_tenant ON tenant_billing_config(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_billing_config_tenant ON tenant_billing_config(tenant_id);
 
 ALTER TABLE tenant_billing_config ENABLE ROW LEVEL SECURITY;
 
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS tenant_usage_metrics (
   UNIQUE(tenant_id, month_year)
 );
 
-CREATE INDEX idx_usage_metrics_tenant_month ON tenant_usage_metrics(tenant_id, month_year);
+CREATE INDEX IF NOT EXISTS idx_usage_metrics_tenant_month ON tenant_usage_metrics(tenant_id, month_year);
 
 ALTER TABLE tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
 
@@ -194,8 +194,8 @@ CREATE TABLE IF NOT EXISTS tenant_cost_tracking (
   UNIQUE(tenant_id, billing_month)
 );
 
-CREATE INDEX idx_cost_tracking_tenant_month ON tenant_cost_tracking(tenant_id, billing_month);
-CREATE INDEX idx_cost_tracking_status ON tenant_cost_tracking(status);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_tenant_month ON tenant_cost_tracking(tenant_id, billing_month);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_status ON tenant_cost_tracking(status);
 
 ALTER TABLE tenant_cost_tracking ENABLE ROW LEVEL SECURITY;
 
