@@ -371,3 +371,99 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION generate_embed_token TO authenticated;
 GRANT EXECUTE ON FUNCTION get_or_create_embed_token TO authenticated;
 GRANT EXECUTE ON FUNCTION verify_embed_token TO anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════
+-- SUPPORT TEMPLATE SCHEMA: Default configuration for Support DEs
+-- ════════════════════════════════════════════════════════════════
+
+-- Template schema for Support domain (refund_limit, escalation_rules, etc)
+-- This schema is inserted when a Support DE is created for a tenant.
+-- Customers can override by loading their own schema or editing instances.
+
+CREATE TABLE IF NOT EXISTS config_schema_templates (
+  template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_key TEXT NOT NULL UNIQUE,
+  entity_kind TEXT NOT NULL CHECK (entity_kind IN ('de', 'playbook', 'specialist')),
+  domain TEXT NOT NULL,
+  name TEXT NOT NULL,
+  fields JSONB NOT NULL DEFAULT '[]'::jsonb,
+  description TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Insert support template schema
+INSERT INTO config_schema_templates (template_key, entity_kind, domain, name, description, fields) VALUES (
+  'support-de-template',
+  'de',
+  'support',
+  'Support DE Configuration',
+  'Default configuration for Support Digital Employees: refund authority, escalation rules, pre-approval strategy, knowledge sources',
+  '[
+    {
+      "key": "refund_limit",
+      "name": "Refund Authority Limit",
+      "type": "number",
+      "description": "Maximum refund amount the DE can approve. Requests above this escalate to a human.",
+      "required": true,
+      "defaultValue": 500,
+      "validation": {"minValue": 0, "maxValue": 100000},
+      "ui": {"component": "number-input", "placeholder": "500", "help": "e.g., 500 for $500 limit"}
+    },
+    {
+      "key": "escalation_rules",
+      "name": "Escalation Rules",
+      "type": "array",
+      "description": "Rules that trigger escalation. Examples: confidence < 70%, response contains refund, customer is premium tier.",
+      "required": false,
+      "defaultValue": [],
+      "ui": {"component": "modal-editor", "help": "Click to define escalation rule conditions"}
+    },
+    {
+      "key": "preapproval_strategy",
+      "name": "Response Pre-Approval Strategy",
+      "type": "select",
+      "description": "Whether responses require human review before sending.",
+      "required": true,
+      "defaultValue": "rule_based",
+      "ui": {
+        "component": "select",
+        "options": [
+          {"value": "all", "label": "Review all responses (safest)"},
+          {"value": "rule_based", "label": "Rule-based review (if confidence < 80%)"},
+          {"value": "never", "label": "No review (fastest)"}
+        ]
+      }
+    },
+    {
+      "key": "knowledge_sources",
+      "name": "Knowledge Sources",
+      "type": "array",
+      "description": "Systems the DE should consult when answering. Enable/disable per source.",
+      "required": true,
+      "defaultValue": ["salesforce", "zendesk"],
+      "ui": {
+        "component": "modal-editor",
+        "help": "Select which knowledge sources to use: Salesforce (CRM), SharePoint (KB), Google Drive, Zendesk Help Center, etc."
+      }
+    },
+    {
+      "key": "escalation_sla_minutes",
+      "name": "Escalation SLA (minutes)",
+      "type": "number",
+      "description": "How quickly escalations should be handled. Used for SLA tracking.",
+      "required": false,
+      "defaultValue": 60,
+      "validation": {"minValue": 1, "maxValue": 1440},
+      "ui": {"component": "number-input", "placeholder": "60", "help": "e.g., 60 for 1-hour SLA"}
+    },
+    {
+      "key": "reply_mode_enabled",
+      "name": "Enable Reply-Mode (Draft Approval)",
+      "type": "boolean",
+      "description": "If enabled, responses require human approval before sending. Disabled = responses send immediately.",
+      "required": false,
+      "defaultValue": false,
+      "ui": {"component": "toggle", "help": "Responses wait for human review before sending"}
+    }
+  ]'
+) ON CONFLICT (template_key) DO NOTHING;
