@@ -22,6 +22,7 @@ import {
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../components';
+import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import DeWorkbenchPanel from './DeWorkbench';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -221,6 +222,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   const [health, setHealth] = useState<Record<string, DEHealth>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [hiring, setHiring] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [personaName, setPersonaName] = useState('');
@@ -269,12 +271,24 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
       <div className="mb-1 flex items-center justify-between gap-3 flex-wrap">
         <h3 className="text-base font-semibold text-white">Your Digital Employees</h3>
         {!adding && (
-          <button onClick={() => setAdding(true)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-            + Add a Digital Employee
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setHiring(true)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+              ✨ Hire with AI
+            </button>
+            <button onClick={() => setAdding(true)}
+              className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition-colors">
+              + Add manually
+            </button>
+          </div>
         )}
       </div>
+      {hiring && (
+        <HireEmployeeWizard
+          onClose={() => setHiring(false)}
+          onFinished={() => { void refresh(); }}
+        />
+      )}
       <p className="text-xs text-slate-500 mb-4">
         Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
         data access, playbooks, and trust build up the same way for every department.
