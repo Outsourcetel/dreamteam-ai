@@ -24,6 +24,8 @@ import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveD
 import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
+import { listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey } from '../../lib/roleConfigApi';
+import type { KpiMetric } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -1908,28 +1910,43 @@ type KpiStatus = {
   kpi_id: string; name: string; metric_key: string; target: number;
   direction: string; current: number | null; met: boolean | null; sample: number;
 };
-const KPI_METRICS: Array<{ key: string; label: string; defaultDirection: 'higher' | 'lower' }> = [
-  { key: 'resolution_rate', label: 'Resolution rate (%)', defaultDirection: 'higher' },
-  { key: 'avg_confidence', label: 'Average confidence (%)', defaultDirection: 'higher' },
-  { key: 'escalation_rate', label: 'Escalation rate (%)', defaultDirection: 'lower' },
-  { key: 'error_rate', label: 'Error rate (%)', defaultDirection: 'lower' },
-  { key: 'csat_pct', label: 'Positive CSAT (%)', defaultDirection: 'higher' },
-  { key: 'high_frustration_count', label: 'High-frustration cases', defaultDirection: 'lower' },
-  { key: 'total_decisions', label: 'Decisions handled', defaultDirection: 'higher' },
-];
+// The KPI list used to be a constant here, which is exactly why a workspace
+// could not track anything the platform had not thought of. It now comes from
+// kpi_metric_catalog (migration 205) via list_kpi_metrics().
 function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   const [kpis, setKpis] = useState<KpiStatus[] | null>(null);
-  const [metricKey, setMetricKey] = useState(KPI_METRICS[0].key);
+  // The metric list is now this workspace's catalog (built-ins + its own),
+  // not a constant compiled into the page.
+  const [metrics, setMetrics] = useState<KpiMetric[]>([]);
+  const [metricKey, setMetricKey] = useState('');
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [defining, setDefining] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newDir, setNewDir] = useState<'higher' | 'lower'>('higher');
+  const [newUnit, setNewUnit] = useState('');
+  const [reading, setReading] = useState<{ key: string; name: string } | null>(null);
+  const [readingValue, setReadingValue] = useState('');
+
+  const selected = metrics.find(m => m.metric_key === metricKey) ?? null;
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.rpc('get_de_kpi_status', { p_de_id: de.id });
     if (err) { setError(err.message); return; }
     setKpis((data ?? []) as KpiStatus[]);
   }, [de.id]);
+
+  const loadMetrics = useCallback(async () => {
+    try {
+      const list = await listKpiMetrics();
+      setMetrics(list);
+      setMetricKey(prev => (prev && list.some(m => m.metric_key === prev)) ? prev : (list[0]?.metric_key ?? ''));
+    } catch (e) { setError((e as Error).message); }
+  }, []);
+
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadMetrics(); }, [loadMetrics]);
 
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
@@ -1940,13 +1957,37 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   };
 
   const add = () => {
-    const meta = KPI_METRICS.find(m => m.key === metricKey);
-    if (!meta || target.trim() === '') return;
+    if (!selected || target.trim() === '') return;
     void run(() => supabase.rpc('set_de_kpi', {
-      p_de_id: de.id, p_metric_key: metricKey, p_name: meta.label,
-      p_target: Number(target), p_direction: meta.defaultDirection,
+      p_de_id: de.id, p_metric_key: selected.metric_key, p_name: selected.label,
+      p_target: Number(target), p_direction: selected.direction,
     }));
     setTarget('');
+  };
+
+  const defineMetric = async () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    setBusy(true); setError(null);
+    try {
+      const key = slugifyKey(label);
+      await createKpiMetric({ metricKey: key, label, direction: newDir, unit: newUnit.trim() || undefined });
+      await loadMetrics();
+      setMetricKey(key);
+      setDefining(false); setNewLabel(''); setNewUnit('');
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  const saveReading = async () => {
+    if (!reading || readingValue.trim() === '') return;
+    setBusy(true); setError(null);
+    try {
+      await recordKpiReading({ deId: de.id, metricKey: reading.key, value: Number(readingValue) });
+      setReading(null); setReadingValue('');
+      await load();
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
   };
 
   return (
@@ -1956,8 +1997,9 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">measured live</span>
       </div>
       <p className="text-[11px] text-slate-500 mb-3">
-        Targets you set against metrics the platform actually measures. Current values are computed
-        from real activity at view time — never a stored, stale, or invented number.
+        Targets you set against metrics this workspace tracks. Built-in metrics are computed from real
+        activity at view time — never stored, stale, or invented. Metrics you define yourself show a
+        value once you record a reading.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {kpis === null ? (
@@ -1978,6 +2020,15 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
                 {k.current === null ? '—' : k.current} / target {k.direction === 'higher' ? '≥' : '≤'} {k.target}
                 {k.sample > 0 ? ` · ${k.sample} sampled` : ''}
               </span>
+              {/* Manual metrics need somebody to record the number — without
+                  this they would sit at "—" forever and look broken. */}
+              {metrics.find(m => m.metric_key === k.metric_key)?.source === 'manual' && (
+                <button onClick={() => { setReading({ key: k.metric_key, name: k.name }); setReadingValue(''); }}
+                  disabled={busy}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300">
+                  Record value
+                </button>
+              )}
               <button onClick={() => void run(() => supabase.rpc('set_de_kpi', { p_de_id: de.id, p_metric_key: k.metric_key, p_name: k.name, p_target: null, p_direction: k.direction }))}
                 disabled={busy}
                 className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
@@ -1987,18 +2038,71 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           ))}
         </div>
       )}
+
+      {reading && (
+        <div className="mb-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
+          <p className="text-xs text-slate-300">Record a value for <span className="font-medium">{reading.name}</span></p>
+          <div className="flex items-center gap-2">
+            <input type="number" value={readingValue} autoFocus
+              onChange={e => setReadingValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void saveReading(); }}
+              placeholder="Value"
+              className="w-32 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            <button onClick={() => void saveReading()} disabled={busy || readingValue.trim() === ''}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save</button>
+            <button onClick={() => setReading(null)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
-        <select value={metricKey} disabled={busy} onChange={e => setMetricKey(e.target.value)}
+        <select value={metricKey} disabled={busy || metrics.length === 0} onChange={e => setMetricKey(e.target.value)}
           className="flex-1 bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
-          {KPI_METRICS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          {metrics.map(m => (
+            <option key={m.metric_key} value={m.metric_key}>
+              {m.label}{m.unit ? ` (${m.unit})` : ''}{m.source === 'manual' ? ' — you record this' : ''}
+            </option>
+          ))}
         </select>
         <input type="number" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} placeholder="Target"
           className="w-24 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
-        <button onClick={add} disabled={busy || target.trim() === ''}
+        <button onClick={add} disabled={busy || target.trim() === '' || !selected}
           className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40">
           Add KPI
         </button>
       </div>
+
+      {!defining ? (
+        <button onClick={() => setDefining(true)} className="mt-2 text-[11px] text-indigo-400 hover:text-indigo-300">
+          + Track a metric of your own
+        </button>
+      ) : (
+        <div className="mt-3 rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-2">
+          <p className="text-[11px] text-slate-400">
+            Define a measure that matters to your business. The platform can&apos;t compute it, so you record the value yourself.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. First-call resolution"
+              className="flex-1 min-w-[180px] bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Unit (%, hrs)"
+              className="w-28 bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            <select value={newDir} onChange={e => setNewDir(e.target.value as 'higher' | 'lower')}
+              className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              <option value="higher">Higher is better</option>
+              <option value="lower">Lower is better</option>
+            </select>
+          </div>
+          {newLabel.trim() && (
+            <p className="text-[10px] text-slate-600">Saved as <code>{slugifyKey(newLabel)}</code></p>
+          )}
+          <div className="flex gap-2">
+            <button onClick={() => void defineMetric()} disabled={busy || !newLabel.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Create</button>
+            <button onClick={() => { setDefining(false); setNewLabel(''); setNewUnit(''); }}
+              className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
