@@ -204,7 +204,7 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { key: { type: 'string' }, params: { type: 'object' } }, required: ['key'] } },
   { name: 'remember', description: 'Save an important fact/outcome to durable memory for future tasks.',
     input_schema: { type: 'object', properties: { content: { type: 'string' }, salience: { type: 'number' } }, required: ['content'] } },
-  { name: 'draft_outreach', description: 'Draft a proactive outbound message (follow-up, chase, notification) to a customer or contact. It is NEVER sent automatically — it goes to a human for approval and a human delivers it. Use when a task calls for contacting someone.',
+  { name: 'draft_outreach', description: 'Draft a proactive outbound message (follow-up, chase, notification) to a customer or contact. It is NEVER sent without approval — it goes to a human first; once approved, an email is sent for you automatically. Use when a task calls for contacting someone.',
     input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'who it is for (name/email/account)' }, channel: { type: 'string', enum: ['email', 'sms', 'chat', 'other'] }, subject: { type: 'string' }, message: { type: 'string' }, reason: { type: 'string', description: 'why this outreach is needed' } }, required: ['recipient', 'message', 'reason'] } },
   { name: 'escalate_to_human', description: 'Hand off to a human when you cannot safely proceed.',
     input_schema: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] } },
@@ -212,7 +212,7 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -269,7 +269,47 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
         p_source_kind: workItemId ? 'work_item' : 'manual', p_source_ref: workItemId ?? null,
       });
       if (draftErr) return { result: { error: `draft failed: ${draftErr.message}` } };
-      return { result: { draft_id: draftId, status: 'pending_approval', note: 'Draft created and routed to a human for approval. It will NOT send automatically — continue with the rest of the task.' } };
+      return { result: { draft_id: draftId, status: 'pending_approval', note: 'Draft created and routed to a human for approval. Nothing sends until a person approves it; an approved email is then sent for you. Continue with the rest of the task.' } };
+    }
+    case 'pause_and_follow_up': {
+      // EXEC 0.2 — the DE decides to run a motion over time. Parks the case and
+      // schedules its own resumption; the case-timeline cron wakes it.
+      if (!objectiveId) return { result: { error: 'no case to pause — this task is not part of a case' } };
+      const days = Math.max(0, Math.min(365, Number(input.resume_in_days) || 0));
+      const fireAt = new Date(Date.now() + days * 86_400_000).toISOString();
+      const { data, error } = await admin.rpc('schedule_case_continuation', {
+        p_objective_id: objectiveId, p_kind: input.kind === 'wait' ? 'wait' : 'follow_up',
+        p_fire_at: fireAt, p_instruction: String(input.instruction ?? ''),
+        p_awaiting_ref: typeof input.awaiting_reply_ref === 'string' && input.awaiting_reply_ref ? input.awaiting_reply_ref : null,
+        p_payload: {},
+      });
+      if (error) return { result: { error: `pause failed: ${error.message}` } };
+      return { result: { ...(data as object), note: `Case paused; it resumes in ${days} day(s). Call mark_done — the case is parked, not finished.` } };
+    }
+    case 'produce_deliverable': {
+      // EXEC 0.4 — the DE prepares a document for human review.
+      const { data, error } = await admin.rpc('record_deliverable', {
+        p_de_id: deId, p_objective_id: objectiveId ?? null,
+        p_title: String(input.title ?? 'Untitled'), p_kind: String(input.kind ?? 'report'),
+        p_content: String(input.content ?? ''), p_format: 'markdown',
+      });
+      if (error) return { result: { error: `deliverable failed: ${error.message}` } };
+      return { result: data };
+    }
+    case 'write_back_to_record': {
+      // EXEC 0.3 — the DE closes the loop in the system of record. Gated
+      // server-side (destructive-always-gates → guardrail → trust); a status
+      // change becomes a human-approval task, never a silent write.
+      if (!accountRef) return { result: { error: 'no account record for this case' } };
+      const op = String(input.op ?? '');
+      const params: Record<string, unknown> = op === 'log_activity' ? { summary: input.summary, activity_kind: 'note' }
+        : op === 'set_next_step' ? { next_step: input.next_step, next_step_date: input.next_step_date }
+        : op === 'update_status' ? { to_status: input.to_status } : {};
+      const { data, error } = await admin.rpc('propose_account_writeback', {
+        p_de_id: deId, p_objective_id: objectiveId ?? null, p_account_id: accountRef, p_op: op, p_params: params,
+      });
+      if (error) return { result: { error: `write-back failed: ${error.message}` } };
+      return { result: data };
     }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
@@ -297,6 +337,16 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   const goal = item.title + (item.payload?.detail ? `\n\nDetail: ${item.payload.detail}` : '');
   const subjectRef = (item.payload?.subject_ref as string) ?? null;
 
+  // The CASE this work item belongs to (EXEC 0.2/0.3), so the mid-motion tools
+  // can pause the case, write back to its account, or attach a deliverable.
+  const { data: wi } = await admin.from('de_work_items').select('objective_id').eq('id', item.id).maybeSingle();
+  const objectiveId = (wi?.objective_id as string) ?? null;
+  let accountRef: string | null = null;
+  if (objectiveId) {
+    const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref').eq('id', objectiveId).maybeSingle();
+    if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) accountRef = String(obj.entity_ref);
+  }
+
   // Injection hardening: task text is tenant-authored DATA, not operator
   // instruction — it goes in the user turn between explicit markers, never
   // interpolated into the system prompt.
@@ -311,7 +361,45 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   const { data: actionRows } = await admin.rpc('get_agentic_tools_for_de', { p_tenant_id: tenantId, p_de_id: deId });
   const actionTools = (actionRows ?? []) as Array<{ name: string; description: string; input_schema: unknown; connector_id?: string; action_key?: string }>;
   const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
-  const tools = [...TOOLS, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
+  // Mid-motion tools (EXEC 0.2/0.3/0.4): only offered when this work item is
+  // part of a real case (and, for write-backs, an account case) — so the DE
+  // itself decides "now I'll wait / write back / prepare a document", instead
+  // of a human or playbook driving it. All still route the safety gates.
+  const motionTools: typeof TOOLS = [];
+  if (objectiveId) {
+    motionTools.push({
+      name: 'pause_and_follow_up',
+      description: 'Pause THIS case and resume it later — this is how a motion plays out over days/weeks (a renewal chase, a dunning sequence), not one burst. Use "wait" to come back at a set time; use "follow_up" with awaiting_reply_ref to chase a reply that has not arrived by the deadline (if the reply comes first, the chase is cancelled automatically). The case sleeps and you resume automatically. After calling this, call mark_done — the case is parked, not finished.',
+      input_schema: { type: 'object', properties: {
+        kind: { type: 'string', enum: ['wait', 'follow_up'] },
+        resume_in_days: { type: 'number', description: 'how many days until the case wakes' },
+        instruction: { type: 'string', description: 'what to do when it resumes, in one sentence' },
+        awaiting_reply_ref: { type: 'string', description: 'optional — a thread/ref you are awaiting a reply on; resolving it cancels the follow-up' },
+      }, required: ['kind', 'resume_in_days', 'instruction'] },
+    });
+    motionTools.push({
+      name: 'produce_deliverable',
+      description: 'Produce a document for a human to review — an account review, a summary, an analysis, a memo. Use when the task is to PREPARE something rather than send or change it. Non-destructive; it appears on your workbench for review.',
+      input_schema: { type: 'object', properties: {
+        title: { type: 'string' }, kind: { type: 'string', enum: ['report', 'summary', 'memo', 'analysis', 'review'] },
+        content: { type: 'string', description: 'the full document, in markdown' },
+      }, required: ['title', 'content'] },
+    });
+  }
+  if (accountRef) {
+    motionTools.push({
+      name: 'write_back_to_record',
+      description: "Update the customer's record so it reflects what happened — the job is not done until the record shows it. log_activity records what you did; set_next_step records the follow-up; update_status changes the account state (active/at_risk/churned) and ALWAYS needs human approval. If the result says gated/pending approval, report it and move on.",
+      input_schema: { type: 'object', properties: {
+        op: { type: 'string', enum: ['log_activity', 'set_next_step', 'update_status'] },
+        summary: { type: 'string', description: 'for log_activity — what happened' },
+        next_step: { type: 'string', description: 'for set_next_step' },
+        next_step_date: { type: 'string', description: 'for set_next_step — YYYY-MM-DD, optional' },
+        to_status: { type: 'string', enum: ['active', 'at_risk', 'churned'], description: 'for update_status' },
+      }, required: ['op'] },
+    });
+  }
+  const tools = [...TOOLS, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal, 'task') }];
 
@@ -337,7 +425,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
