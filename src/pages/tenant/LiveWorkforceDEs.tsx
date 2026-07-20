@@ -348,6 +348,11 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
                   {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
+                  {/* Wave 4: absorbed specialists live in the one roster now,
+                      flagged rather than kept in a separate desk. */}
+                  {de.is_specialist && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300">specialist</span>
+                  )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>{de.status}</span>
                   {health[de.id] && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>

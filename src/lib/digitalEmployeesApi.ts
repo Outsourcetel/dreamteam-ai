@@ -44,6 +44,10 @@ export interface DigitalEmployee {
    *  human-approved first; 'auto' = confident, guardrail-clean answers send
    *  on their own. */
   external_reply_mode: 'draft' | 'auto';
+  /** Wave 4: an absorbed specialist — a deep-domain advisor other DEs
+   *  consult. Still a digital employee; this flags its specialist facet. */
+  is_specialist?: boolean;
+  specialist_key?: string | null;
 }
 
 /** The roster. Retired and archived employees are hidden by default —
