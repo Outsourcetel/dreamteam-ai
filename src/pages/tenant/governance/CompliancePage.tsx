@@ -14,6 +14,8 @@ import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi'
 import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 import { ConfirmDeleteModal } from '../../../components'
+import GovernanceAIPanel from '../../../components/GovernanceAIPanel'
+import { listPendingProposals, approveProposal, dismissProposal, type GovernanceProposal } from '../../../lib/governanceAiApi'
 
 // ═══════════════════════════════════════════════════════════════
 // LIVE mode — real tenant guardrail_rules: enforced in the real
@@ -53,6 +55,10 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   // Central-cockpit focus: 'all' | 'workspace' | 'de:<id>' | 'dept:<name>'.
   const [focus, setFocus] = useState('all')
   const [des, setDes] = useState<DigitalEmployee[]>([])
+  // AI-assisted governance (Part 2), driven from the central cockpit's focus.
+  const [showGovAI, setShowGovAI] = useState(false)
+  const [proposals, setProposals] = useState<GovernanceProposal[]>([])
+  const [deciding, setDeciding] = useState<string | null>(null)
   const [form, setForm] = useState<{ rule: string; rule_type: GuardrailRuleType; pattern: string; threshold: string; severity: 'blocking' | 'warning'; scope: 'workspace' | 'department' | 'employee'; scope_ref: string }>(
     { rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
 
@@ -125,6 +131,36 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     return true
   })
 
+  // The scope the AI assistant writes into, derived from the focus picker.
+  const govTarget: { scope: GuardrailScope; ref: string | null; label: string } =
+    focus.startsWith('de:') ? { scope: 'employee', ref: focus.slice(3), label: des.find(d => d.id === focus.slice(3))?.name || 'this employee' }
+    : focus.startsWith('dept:') ? { scope: 'department', ref: focus.slice(5), label: `the ${focus.slice(5)} department` }
+    : { scope: 'workspace', ref: null, label: 'the whole workspace' }
+
+  const loadProposals = async () => {
+    try { setProposals(await listPendingProposals(govTarget.scope, govTarget.ref)) }
+    catch { /* additive strip; never blocks the page */ }
+  }
+  useEffect(() => { void loadProposals() }, [focus]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const decide = async (p: GovernanceProposal, approve: boolean) => {
+    setDeciding(p.id); setError(null)
+    try {
+      if (approve) await approveProposal(p); else await dismissProposal(p.id)
+      await Promise.all([refresh(), loadProposals()])
+    } catch (err) { setError((err as Error)?.message || 'Could not apply the decision.') }
+    setDeciding(null)
+  }
+
+  const describeProposal = (p: GovernanceProposal): string => {
+    if (p.action === 'add') {
+      if (p.rule_type === 'require_approval_over_cents') return `Require approval over $${((p.threshold ?? 0) / 100).toLocaleString()}`
+      if (p.rule_type === 'max_discount_pct') return `Cap discounts at ${p.threshold ?? 0}%`
+      return p.pattern ? `Block "${p.pattern}"` : (p.rule_name || 'New guardrail')
+    }
+    return `${p.action[0].toUpperCase()}${p.action.slice(1)} an existing rule`
+  }
+
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
@@ -168,6 +204,10 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <h3 className="text-base font-semibold text-white">Guardrail rules</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Checked on every invoice generation and every DE answer. The same controls appear, pre-scoped, on each employee&apos;s Governance tab — this is the central view of all of them.</p>
               </div>
+              <button onClick={() => setShowGovAI(v => !v)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50 transition-colors">
+                {showGovAI ? 'Close assistant' : '✨ Set up with AI'}
+              </button>
               <button onClick={() => setShowAdd(v => !v)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
                 + Add rule
@@ -190,6 +230,40 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               </select>
               <span className="text-[11px] text-slate-600">{focusedRules.length} rule{focusedRules.length === 1 ? '' : 's'}</span>
             </div>
+
+            {/* AI-assisted governance — talks in plain language, scoped to the
+                current focus. It can only PROPOSE; every proposal is approved
+                below by a person. */}
+            {showGovAI && (
+              <div className="mb-4">
+                <GovernanceAIPanel scope={govTarget.scope} scopeRef={govTarget.ref} entityLabel={govTarget.label}
+                  onProposed={() => void loadProposals()} onClose={() => setShowGovAI(false)} />
+              </div>
+            )}
+            {proposals.length > 0 && (
+              <div className="mb-4 rounded-xl border border-indigo-800/50 bg-indigo-900/15 p-3">
+                <div className="text-[11px] font-medium text-indigo-200 mb-2">
+                  ✨ Proposed by the assistant for {govTarget.label} — needs your approval ({proposals.length})
+                </div>
+                <div className="space-y-1.5">
+                  {proposals.map(p => (
+                    <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-slate-900/50 px-3 py-2">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
+                      <span className="text-slate-200">{describeProposal(p)}</span>
+                      {p.rationale && <span className="text-slate-500 hidden sm:inline">— {p.rationale}</span>}
+                      <div className="ml-auto flex items-center gap-2 shrink-0">
+                        <button onClick={() => void decide(p, true)} disabled={deciding === p.id}
+                          className="text-[11px] px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 text-white disabled:opacity-40">
+                          {deciding === p.id ? '…' : 'Approve'}
+                        </button>
+                        <button onClick={() => void decide(p, false)} disabled={deciding === p.id}
+                          className="text-[11px] text-slate-500 hover:text-slate-300 disabled:opacity-40">Dismiss</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="overflow-x-auto rounded-xl border border-slate-700">
               <table className="w-full text-sm border-collapse">

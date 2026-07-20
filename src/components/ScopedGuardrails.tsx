@@ -13,6 +13,11 @@ import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule,
   type GuardrailRule, type GuardrailRuleType, type GuardrailScope,
 } from '../lib/guardrailApi';
+import {
+  listPendingProposals, approveProposal, dismissProposal,
+  type GovernanceProposal,
+} from '../lib/governanceAiApi';
+import GovernanceAIPanel from './GovernanceAIPanel';
 
 const RULE_TYPES: Array<{ key: GuardrailRuleType; label: string; hint: string; input: 'phrase' | 'money' | 'pct' }> = [
   { key: 'blocked_phrase', label: 'Block a phrase', hint: 'Never say this phrase', input: 'phrase' },
@@ -39,6 +44,10 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
   const [severity, setSeverity] = useState<'blocking' | 'warning'>('blocking');
+  // AI-assisted governance (Part 2): the panel + the assistant's pending proposals.
+  const [showAI, setShowAI] = useState(false);
+  const [proposals, setProposals] = useState<GovernanceProposal[]>([]);
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   const meta = RULE_TYPES.find(t => t.key === ruleType)!;
 
@@ -57,7 +66,30 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
     } catch (e) { setError((e as Error).message); }
   }, [scope, scopeRef]);
 
-  useEffect(() => { void load(); }, [load]);
+  const loadProposals = useCallback(async () => {
+    try { setProposals(await listPendingProposals(scope, scopeRef ?? null)); }
+    catch { /* the proposals strip is additive; never block the rules on it */ }
+  }, [scope, scopeRef]);
+
+  useEffect(() => { void load(); void loadProposals(); }, [load, loadProposals]);
+
+  const decide = async (p: GovernanceProposal, approve: boolean) => {
+    setDeciding(p.id); setError(null);
+    try {
+      if (approve) await approveProposal(p); else await dismissProposal(p.id);
+      await Promise.all([load(), loadProposals()]);
+    } catch (e) { setError((e as Error).message); }
+    setDeciding(null);
+  };
+
+  const describeProposal = (p: GovernanceProposal): string => {
+    if (p.action === 'add') {
+      if (p.rule_type === 'require_approval_over_cents') return `Require approval over $${((p.threshold ?? 0) / 100).toLocaleString()}`;
+      if (p.rule_type === 'max_discount_pct') return `Cap discounts at ${p.threshold ?? 0}%`;
+      return p.pattern ? `Block "${p.pattern}"` : (p.rule_name || 'New guardrail');
+    }
+    return `${p.action[0].toUpperCase()}${p.action.slice(1)} an existing rule`;
+  };
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -100,6 +132,10 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
         <h3 className="text-base font-semibold text-white">Guardrails</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">always enforced</span>
         <span className="text-[11px] text-slate-500">for {entityLabel}</span>
+        <button onClick={() => setShowAI(v => !v)}
+          className="ml-auto text-[11px] px-2 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50">
+          {showAI ? 'Close assistant' : '✨ Set up with AI'}
+        </button>
       </div>
       <p className="text-[11px] text-slate-500 mb-3">
         Hard limits {scope === 'workspace' ? 'across the whole workspace' : `for ${entityLabel}`}. Guardrails always win —
@@ -107,6 +143,38 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
         {scope !== 'workspace' && ' Workspace-wide rules are inherited and shown greyed out; edit those at the workspace level.'}
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+
+      {showAI && (
+        <div className="mb-3">
+          <GovernanceAIPanel scope={scope} scopeRef={scopeRef} entityLabel={entityLabel} onProposed={() => void loadProposals()} onClose={() => setShowAI(false)} />
+        </div>
+      )}
+
+      {/* The assistant's pending suggestions — a person approves each into a live rule. */}
+      {proposals.length > 0 && (
+        <div className="mb-3 rounded-xl border border-indigo-800/50 bg-indigo-900/15 p-3">
+          <div className="text-[11px] font-medium text-indigo-200 mb-2">
+            ✨ Proposed by the assistant — needs your approval ({proposals.length})
+          </div>
+          <div className="space-y-1.5">
+            {proposals.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-slate-900/50 px-3 py-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
+                <span className="text-slate-200">{describeProposal(p)}</span>
+                {p.rationale && <span className="text-slate-500 hidden sm:inline">— {p.rationale}</span>}
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  <button onClick={() => void decide(p, true)} disabled={deciding === p.id}
+                    className="text-[11px] px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 text-white disabled:opacity-40">
+                    {deciding === p.id ? '…' : 'Approve'}
+                  </button>
+                  <button onClick={() => void decide(p, false)} disabled={deciding === p.id}
+                    className="text-[11px] text-slate-500 hover:text-slate-300 disabled:opacity-40">Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {rules === null ? (
         <p className="text-xs text-slate-500">Loading…</p>
