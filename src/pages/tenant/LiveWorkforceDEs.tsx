@@ -24,8 +24,12 @@ import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveD
 import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
-import { listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey } from '../../lib/roleConfigApi';
-import type { KpiMetric } from '../../lib/roleConfigApi';
+import {
+  listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey,
+  listSkillCategories, createTenantSkill, listCertificationTypes,
+  getCustomEscalationRules, saveCustomEscalationRules,
+} from '../../lib/roleConfigApi';
+import type { KpiMetric, SkillCategory, CertificationType, EscalationRule } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -653,9 +657,9 @@ function DeHealthInline({ deId }: { deId: string }) {
 // self-reported; "not yet assessed" is an honest state, not a gap.
 // Auto-assessment caps at level 4 — level 5 is human-awarded.
 type SkillRow = {
-  skill_key: string; proficiency: number | null; sample_size: number;
-  signal_value: number | null; detail: string;
-  skill_catalog: { name: string; category: string; description: string; signal_label: string } | null;
+  skill_key: string; name: string; category: string; description: string | null;
+  signal_label: string | null; sort_order: number; is_custom: boolean;
+  proficiency: number | null; sample_size: number; signal_value: number | null; detail: string;
 };
 const SKILL_CATEGORY_LABEL: Record<string, string> = {
   domain: 'Domain', process: 'Process', communication: 'Communication',
@@ -666,20 +670,58 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
   const [assessing, setAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Categories come from the catalog so a workspace can define its own.
+  const [categories, setCategories] = useState<SkillCategory[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newCat, setNewCat] = useState('domain');
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const { data, error: err } = await supabase
-      .from('de_skills')
-      .select('skill_key, proficiency, sample_size, signal_value, detail, skill_catalog(name, category, description, signal_label)')
-      .eq('de_id', de.id);
+    // list_de_skills (mig 206) returns every skill in scope — built-ins with
+    // their assessment, plus workspace skills whether or not anyone has rated
+    // them. Reading de_skills directly meant a newly-defined skill had no row
+    // yet and so was invisible.
+    const { data, error: err } = await supabase.rpc('list_de_skills', { p_de_id: de.id });
     if (err) { setError(err.message); return; }
-    const rows = (data ?? []) as unknown as SkillRow[];
-    // Stable order by catalog sort — resolve via a fixed key order.
-    const order = ['case_resolution', 'judgment_calibration', 'domain_grounding', 'communication_quality', 'system_integration'];
-    rows.sort((a, b) => order.indexOf(a.skill_key) - order.indexOf(b.skill_key));
-    setSkills(rows);
+    setSkills((data ?? []) as SkillRow[]);
   }, [de.id]);
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const list = await listSkillCategories();
+      setCategories(list);
+      setNewCat(prev => list.some(c => c.key === prev) ? prev : (list[0]?.key ?? 'domain'));
+    } catch { /* labels fall back to SKILL_CATEGORY_LABEL */ }
+  }, []);
+
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadCategories(); }, [loadCategories]);
+
+  const catLabel = (key: string) =>
+    categories.find(c => c.key === key)?.label ?? SKILL_CATEGORY_LABEL[key] ?? key;
+
+  const addSkill = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setSaving(true); setError(null);
+    try {
+      await createTenantSkill({ skillKey: slugifyKey(name), name, category: newCat });
+      setAdding(false); setNewName('');
+      await load();
+    } catch (e) { setError((e as Error).message); }
+    setSaving(false);
+  };
+
+  const rateSkill = async (skillKey: string, level: number | null) => {
+    setSaving(true); setError(null);
+    const { error: err } = await supabase.rpc('set_de_skill_proficiency', {
+      p_de_id: de.id, p_skill_key: skillKey, p_proficiency: level, p_note: null,
+    });
+    if (err) setError(err.message);
+    await load();
+    setSaving(false);
+  };
 
   const assess = async () => {
     setAssessing(true); setError(null);
@@ -711,13 +753,17 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
       ) : (
         <div className="space-y-3">
           {skills.map(s => {
-            const cat = s.skill_catalog?.category ?? '';
+            const cat = s.category ?? '';
             const assessed = s.proficiency != null;
             return (
               <div key={s.skill_key} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-white font-medium">{s.skill_catalog?.name ?? s.skill_key}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{SKILL_CATEGORY_LABEL[cat] ?? cat}</span>
+                  <span className="text-sm text-white font-medium">{s.name ?? s.skill_key}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{catLabel(cat)}</span>
+                  {/* Says plainly where the number came from. */}
+                  {s.is_custom && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">rated by a person</span>
+                  )}
                   {assessed ? (
                     <span className={`ml-auto text-xs font-semibold ${
                       s.proficiency! >= 4 ? 'text-emerald-300' : s.proficiency! >= 3 ? 'text-teal-300' : 'text-amber-300'}`}>
@@ -738,9 +784,61 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                   </div>
                 )}
                 <p className="text-[11px] text-slate-500 mt-1.5">{s.detail}</p>
+                {/* Built-in proficiency stays evidence-only and is never
+                    settable by hand; only workspace skills get this. */}
+                {s.is_custom && (
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-600 mr-1">Rate:</span>
+                    {[1, 2, 3, 4, 5].map(l => (
+                      <button key={l} disabled={saving}
+                        onClick={() => void rateSkill(s.skill_key, l)}
+                        className={`text-[10px] w-6 h-6 rounded border transition-colors ${
+                          s.proficiency === l
+                            ? 'bg-sky-500/20 border-sky-500/50 text-sky-200'
+                            : 'border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'}`}>
+                        {l}
+                      </button>
+                    ))}
+                    {s.proficiency != null && (
+                      <button onClick={() => void rateSkill(s.skill_key, null)} disabled={saving}
+                        className="text-[10px] text-slate-600 hover:text-rose-300 ml-1">Clear</button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {!adding ? (
+        <button onClick={() => setAdding(true)} className="mt-3 text-[11px] text-indigo-400 hover:text-indigo-300">
+          + Add a skill your business cares about
+        </button>
+      ) : (
+        <div className="mt-3 rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-2">
+          <p className="text-[11px] text-slate-400">
+            Add a skill specific to your work. The platform has no way to measure it automatically,
+            so you rate it yourself — it will be labelled &ldquo;rated by a person&rdquo; wherever it appears,
+            to keep it distinct from the evidence-assessed ones above.
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Telecom provisioning"
+              className="flex-1 min-w-[180px] bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            <select value={newCat} onChange={e => setNewCat(e.target.value)}
+              className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              {(categories.length ? categories : Object.keys(SKILL_CATEGORY_LABEL).map(k => ({ key: k, label: SKILL_CATEGORY_LABEL[k], sort_order: 0, is_custom: false })))
+                .map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => void addSkill()} disabled={saving || !newName.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              {saving ? 'Adding…' : 'Add skill'}
+            </button>
+            <button onClick={() => { setAdding(false); setNewName(''); }}
+              className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+          </div>
         </div>
       )}
     </div>
@@ -764,6 +862,12 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [showCertify, setShowCertify] = useState(false);
   const [certType, setCertType] = useState('workspace');
+  const [certTypes, setCertTypes] = useState<CertificationType[]>([
+    // Built-in fallback so the selector is never empty mid-fetch.
+    { key: 'workspace', label: 'Workspace', description: null, sort_order: 10, is_custom: false },
+    { key: 'compliance', label: 'Compliance', description: null, sort_order: 20, is_custom: false },
+    { key: 'capability', label: 'Capability', description: null, sort_order: 30, is_custom: false },
+  ]);
   const [scope, setScope] = useState('');
   const [note, setNote] = useState('');
   const [validDays, setValidDays] = useState('180');
@@ -784,6 +888,10 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
     setReviews((r ?? []) as ReviewRow[]);
   }, [de.id]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // Replace the built-in fallback with this workspace's real list.
+    void listCertificationTypes().then(t => { if (t.length) setCertTypes(t); }).catch(() => { /* keep fallback */ });
+  }, []);
 
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
@@ -824,11 +932,12 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
       {showCertify && (
         <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2">
           <div className="flex gap-2">
+            {/* Types come from certification_types (mig 205) so a workspace
+                can add its own — e.g. an industry accreditation. */}
             <select value={certType} onChange={e => setCertType(e.target.value)} disabled={busy}
+              title={certTypes.find(t => t.key === certType)?.description ?? undefined}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
-              <option value="workspace">Workspace</option>
-              <option value="compliance">Compliance</option>
-              <option value="capability">Capability</option>
+              {certTypes.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
             <input type="text" value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope — e.g. helpdesk replies"
               className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
@@ -860,7 +969,7 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
                   : c.status === 'expired' ? 'bg-rose-500/15 text-rose-300' : 'bg-slate-700 text-slate-500'}`}>
                   {c.status === 'active' ? (left <= 14 ? `expires in ${left}d` : 'active') : c.status}
                 </span>
-                <span className="text-slate-300 capitalize">{c.cert_type}</span>
+                <span className="text-slate-300">{certTypes.find(t => t.key === c.cert_type)?.label ?? c.cert_type}</span>
                 {c.scope && <span className="text-slate-500">· {c.scope}</span>}
                 <span className="text-slate-600">by {c.issued_by_name} · until {new Date(c.expires_at).toLocaleDateString()}</span>
                 {c.status === 'active' && (
@@ -2443,6 +2552,11 @@ function DeEscalationPanel({ deId }: { deId: string }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Named rules in the workspace's own words (mig 205 custom_rules).
+  const [customRules, setCustomRules] = useState<EscalationRule[]>([]);
+  const [ruleName, setRuleName] = useState('');
+  const [ruleWhen, setRuleWhen] = useState('');
+  const [ruleAction, setRuleAction] = useState<'escalate' | 'require_approval'>('escalate');
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.from('de_escalation_rules')
@@ -2457,6 +2571,26 @@ function DeEscalationPanel({ deId }: { deId: string }) {
     setTopics((mine?.always_escalate_topics ?? []).join(', '));
   }, [deId]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void getCustomEscalationRules(deId).then(setCustomRules).catch(() => { /* stays empty */ });
+  }, [deId]);
+
+  const addRule = () => {
+    const name = ruleName.trim(), when = ruleWhen.trim();
+    if (!name || !when) return;
+    void persistRules([...customRules, { name, when, action: ruleAction, enabled: true }]);
+    setRuleName(''); setRuleWhen('');
+  };
+
+  const persistRules = async (next: EscalationRule[]) => {
+    setBusy(true); setError(null);
+    try {
+      await saveCustomEscalationRules(deId, next);
+      setCustomRules(next);
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
 
   const isPersonal = deRow !== null;
   const effectiveThreshold = deRow?.frustration_threshold ?? tenantRow?.frustration_threshold ?? 50;
@@ -2526,6 +2660,58 @@ function DeEscalationPanel({ deId }: { deId: string }) {
         {isPersonal && (
           <span className="text-[10px] text-slate-600">Clear both fields and save to fall back to the workspace default.</span>
         )}
+      </div>
+
+      {/* Named rules in your own words. The two fields above cover the two
+          cases the platform can detect on its own; this covers everything
+          specific to how your business actually works. */}
+      <div className="mt-5 pt-4 border-t border-slate-700">
+        <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Your own rules</p>
+        <p className="text-[10px] text-slate-600 mb-3">
+          Describe a situation in plain language and say what should happen. Applied alongside the
+          settings above — guardrails still outrank everything here.
+        </p>
+
+        {customRules.length > 0 && (
+          <div className="space-y-1.5 mb-3">
+            {customRules.map((r, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
+                <input type="checkbox" checked={r.enabled} disabled={busy}
+                  onChange={() => void persistRules(customRules.map((x, j) => j === i ? { ...x, enabled: !x.enabled } : x))}
+                  className="mt-0.5 accent-indigo-500" />
+                <div className="min-w-0 flex-1">
+                  <span className={r.enabled ? 'text-slate-200' : 'text-slate-500 line-through'}>{r.name}</span>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{r.when}</p>
+                </div>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${
+                  r.action === 'escalate' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300'}`}>
+                  {r.action === 'escalate' ? 'hand to a human' : 'needs approval'}
+                </span>
+                <button onClick={() => void persistRules(customRules.filter((_, j) => j !== i))} disabled={busy}
+                  className="text-[10px] text-slate-600 hover:text-rose-300">Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <input value={ruleName} disabled={busy} onChange={e => setRuleName(e.target.value)}
+            placeholder="Rule name — e.g. Legal threat"
+            className="w-44 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <input value={ruleWhen} disabled={busy} onChange={e => setRuleWhen(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addRule(); }}
+            placeholder="When — e.g. the customer mentions a lawyer or a regulator"
+            className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          <select value={ruleAction} disabled={busy} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
+            className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+            <option value="escalate">Hand to a human</option>
+            <option value="require_approval">Needs approval first</option>
+          </select>
+          <button onClick={addRule} disabled={busy || !ruleName.trim() || !ruleWhen.trim()}
+            className="text-xs px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40">
+            Add rule
+          </button>
+        </div>
       </div>
     </div>
   );
