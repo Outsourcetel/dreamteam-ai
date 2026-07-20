@@ -124,10 +124,19 @@ serve(async (req) => {
       if (error) return json({ error: `de insert: ${error.message}` }, 500);
       entityId = de.id;
     } else {
+      // Specialists are Digital Employees now (migrations 208/211) —
+      // is_specialist=true, charter stored as jsonb {mission}. Born in the
+      // 'designed' draft stage, promoted to live through the same gates as any DE.
       const key = `${slugify(String(cfg.key ?? cfg.name ?? 'specialist'))}_${crypto.randomUUID().slice(0, 5)}`;
-      const { data: sp, error } = await admin.from('specialist_profiles').insert({
-        tenant_id: tenantId, key, name: String(cfg.name ?? 'New Specialist').slice(0, 80),
-        charter: String(cfg.charter ?? '').slice(0, 2000), status: 'paused',
+      const { data: sp, error } = await admin.from('digital_employees').insert({
+        tenant_id: tenantId, catalog_id: 'support_agent',
+        name: String(cfg.name ?? 'New Specialist').slice(0, 80),
+        persona_name: String(cfg.name ?? 'New Specialist').slice(0, 60),
+        category: 'Internal', is_specialist: true, specialist_key: key,
+        description: String(cfg.charter ?? '').slice(0, 300),
+        charter: { mission: String(cfg.charter ?? '').slice(0, 2000) },
+        lifecycle_status: 'designed', status: 'active', trust_level: 'supervised',
+        model_id: String(body.model ?? 'claude-sonnet-5'),
       }).select('id').single();
       if (error) return json({ error: `specialist insert: ${error.message}` }, 500);
       entityId = sp.id;

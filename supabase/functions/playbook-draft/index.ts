@@ -109,7 +109,7 @@ serve(async (req) => {
     // ── Gather the tenant context the study grounds against ──
     const deId = typeof body.de_id === 'string' && body.de_id ? body.de_id : null;
     const [specialists, guardrails, kb] = await Promise.all([
-      admin.from('specialist_profiles').select('key, name').eq('tenant_id', tenantId).limit(12),
+      admin.from('digital_employees').select('key:specialist_key, name').eq('tenant_id', tenantId).eq('is_specialist', true).limit(12),
       admin.from('guardrail_rules').select('rule').eq('tenant_id', tenantId).eq('active', true).limit(25),
       (async () => {
         const emb = await embedText(sopText.slice(0, 1500));

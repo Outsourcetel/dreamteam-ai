@@ -168,7 +168,7 @@ export async function listScopeSubjects(): Promise<ScopeSubject[]> {
   const tid = await requireTenantId();
   const [des, specs] = await Promise.all([
     supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).eq('status', 'active').order('created_at'),
-    supabase.from('specialist_profiles').select('id, name').eq('tenant_id', tid).order('created_at'),
+    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).eq('is_specialist', true).order('created_at'),
   ]);
   if (des.error) raise('listScopeSubjects', des.error);
   const out: ScopeSubject[] = (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.name }));

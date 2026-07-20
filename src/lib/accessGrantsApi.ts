@@ -98,7 +98,7 @@ export async function listAccessSubjects(): Promise<AccessSubject[]> {
   const tid = await requireTenantId();
   const [des, specs] = await Promise.all([
     supabase.from('digital_employees').select('id, name, category, status').eq('tenant_id', tid).order('created_at'),
-    supabase.from('specialist_profiles').select('id, name, key, status').eq('tenant_id', tid).order('created_at'),
+    supabase.from('digital_employees').select('id, name, key:specialist_key, status').eq('tenant_id', tid).eq('is_specialist', true).order('created_at'),
   ]);
   if (des.error) raise('listAccessSubjects.des', des.error);
   if (specs.error) raise('listAccessSubjects.specs', specs.error);

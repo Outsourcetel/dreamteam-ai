@@ -105,8 +105,9 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null }
 async function checkAnswerGuardrails(admin: SupabaseClient, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   try {
-    // Scope-aware (Wave 2a). A consult is a specialist_profiles call, not a
-    // DE, so deId is null here → workspace-scoped rules only, as before.
+    // Scope-aware (Wave 2a). The specialist is a Digital Employee now
+    // (migrations 208/211), so deId is its DE id → the specialist's own
+    // employee-level guardrails apply on top of the workspace-wide ones.
     const { data: rules } = await admin
       .rpc('guardrail_rules_for_de', {
         p_tenant_id: tenantId,
@@ -316,9 +317,12 @@ async function runResolveInquiry(
     consultDepth?: number;
   } = {},
 ): Promise<RunResolveInquiryResult> {
-  const { data: prof2 } = await admin.from('specialist_profiles')
-    .select('id, name').eq('tenant_id', tenantId)
-    .eq('key', String(opts.profileKey ?? 'technical')).maybeSingle();
+  // Specialists are Digital Employees now (migrations 208/211). Resolve the
+  // specialist DE by its specialist_key; its id is the subject id used on the
+  // DE rails (grants, experience, evidence).
+  const { data: prof2 } = await admin.from('digital_employees')
+    .select('id, name, persona_name').eq('tenant_id', tenantId)
+    .eq('is_specialist', true).eq('specialist_key', String(opts.profileKey ?? 'technical')).maybeSingle();
 
   // Default subject: the Technical Specialist (unchanged behavior for
   // the human-invoked path). The proactive path overrides this with
@@ -348,7 +352,7 @@ async function runResolveInquiry(
   const reusedAccountFromThread = !accountRef && !!effectiveAccountRef;
 
   const { data: runRow, error: runErr } = await admin.from('evidence_runs').insert({
-    tenant_id: tenantId, specialist_id: prof2?.id ?? null,
+    tenant_id: tenantId, specialist_de_id: subjectKind === 'specialist' ? subjectId : (prof2?.id ?? null),
     de_id: opts.deId ?? (subjectKind === 'de' ? subjectId : null),
     inquiry, account_ref: effectiveAccountRef, status: 'running',
   }).select('id').single();
@@ -364,7 +368,7 @@ async function runResolveInquiry(
     category?: string; op?: string; provider?: string;
   }
   const steps: EvidenceStep[] = [];
-  const actorName = prof2?.name ?? 'Technical Specialist';
+  const actorName = prof2?.persona_name ?? prof2?.name ?? 'Technical Specialist';
 
   const recordStep = async (s: EvidenceStep) => {
     steps.push(s);
@@ -820,7 +824,7 @@ async function handlePollDeWorkSources(
         const denialNote = `Access denied — ${connLabel} (${t.category}) access was revoked before this poll could check it. No item data was read.`;
         const { data: stubRun } = await admin.from('evidence_runs').insert({
           tenant_id: t.tenant_id,
-          specialist_id: t.subject_kind === 'specialist' ? t.subject_id : null,
+          specialist_de_id: t.subject_kind === 'specialist' ? t.subject_id : null,
           de_id: t.subject_kind === 'de' ? t.subject_id : null,
           inquiry: `(proactive poll on ${connLabel} [${t.category}] — access denied before evidence gathering)`,
           status: 'complete', steps: [], confidence_inputs: {},
@@ -1179,8 +1183,8 @@ serve(async (req) => {
     if (action === 'simulate_inquiry') {
       const inquiry = String(body.inquiry ?? '').trim();
       if (!inquiry) return json({ error: 'inquiry_required' }, 400);
-      const { data: prof2 } = await admin.from('specialist_profiles')
-        .select('id, name').eq('tenant_id', tenantId).eq('key', 'technical').maybeSingle();
+      const { data: prof2 } = await admin.from('digital_employees')
+        .select('id, name, persona_name').eq('tenant_id', tenantId).eq('is_specialist', true).eq('specialist_key', 'technical').maybeSingle();
       try {
         const result = await runResolveInquiry(admin, tenantId!, inquiry, String(body.account_ref ?? '').trim() || null, {
           subjectKind: 'specialist', subjectId: prof2?.id ?? null,
@@ -1216,9 +1220,13 @@ serve(async (req) => {
       const sourceId = String(body.source_id ?? '');
       if (!sourceId) return json({ error: 'source_id required' }, 400);
       const { data: src } = await admin.from('specialist_sources')
-        .select('id, source_type, config, profile_id, specialist_profiles!inner(tenant_id)')
+        .select('id, source_type, config, specialist_de_id')
         .eq('id', sourceId).maybeSingle();
-      const srcTenant = (src as { specialist_profiles?: { tenant_id?: string } } | null)?.specialist_profiles?.tenant_id;
+      // The source belongs to a specialist DE now; resolve tenant via it.
+      const { data: srcDe } = src?.specialist_de_id
+        ? await admin.from('digital_employees').select('tenant_id').eq('id', src.specialist_de_id).maybeSingle()
+        : { data: null };
+      const srcTenant = (srcDe as { tenant_id?: string } | null)?.tenant_id;
       if (!src || srcTenant !== tenantId) return json({ error: 'source_not_found' }, 404);
       if (src.source_type !== 'mcp_server') return json({ error: 'not_an_mcp_source' }, 400);
 
@@ -1276,7 +1284,7 @@ serve(async (req) => {
       if (!connectorId || !actionKey || !externalRef) return json({ error: 'connector_id, action_key, external_ref required' }, 400);
 
       const { data: consultation } = await admin.from('spec_consultations')
-        .select('id, tenant_id, profile_id, question, answer, sources_used')
+        .select('id, tenant_id, specialist_de_id, question, answer, sources_used')
         .eq('id', consultationId).eq('tenant_id', tenantId).maybeSingle();
       if (!consultation) return json({ error: 'consultation_not_found' }, 404);
 
@@ -1285,7 +1293,7 @@ serve(async (req) => {
       // created (the human approval gate comes after — a grant is
       // necessary, never sufficient).
       const { data: writeVerdict } = await admin.rpc('resolve_access', {
-        p_tenant_id: tenantId, p_subject_kind: 'specialist', p_subject_id: consultation.profile_id,
+        p_tenant_id: tenantId, p_subject_kind: 'specialist', p_subject_id: consultation.specialist_de_id,
         p_connector_id: connectorId, p_needed: 'write_back',
       });
       const wv = writeVerdict as { allowed?: boolean; has?: string | null; reason?: string } | null;
@@ -1293,11 +1301,11 @@ serve(async (req) => {
         await audit(admin, tenantId, 'Scribe (Technical Specialist)',
           `Scribe write-back REFUSED by data access rules — specialist has ${wv?.has ? `only "${wv.has}"` : 'no grant'} on connector ${connectorId} and needs "write_back". No request created, nothing written.`,
           'access_control',
-          { kind: 'data_access_denied', subject_kind: 'specialist', subject_id: consultation.profile_id, connector_id: connectorId, op: `scribe.${actionKey}`, needed: 'write_back', has: wv?.has ?? null, reason: wv?.reason ?? 'no_grant' });
+          { kind: 'data_access_denied', subject_kind: 'specialist', subject_id: consultation.specialist_de_id, connector_id: connectorId, op: `scribe.${actionKey}`, needed: 'write_back', has: wv?.has ?? null, reason: wv?.reason ?? 'no_grant' });
         return json({
           error: 'access_denied',
           detail: `This specialist does not have write-back permission on that system — blocked by your data access rules${wv?.has ? ` (it has only "${wv.has}")` : ''}. An admin can grant it under Governance → Data Access.`,
-          denial: { subject_kind: 'specialist', subject_id: consultation.profile_id, connector_id: connectorId, needed: 'write_back', has: wv?.has ?? null },
+          denial: { subject_kind: 'specialist', subject_id: consultation.specialist_de_id, connector_id: connectorId, needed: 'write_back', has: wv?.has ?? null },
         }, 403);
       }
 
@@ -1306,7 +1314,7 @@ serve(async (req) => {
 
       const { data: reqRow, error: reqErr } = await admin.from('scribe_requests')
         .insert({
-          tenant_id: tenantId, profile_id: consultation.profile_id,
+          tenant_id: tenantId, specialist_de_id: consultation.specialist_de_id,
           consultation_id: consultationId, connector_id: connectorId,
           action_key: actionKey, external_ref: externalRef,
           payload: built.payload, payload_source: 'consultation_citation',
@@ -1416,13 +1424,25 @@ serve(async (req) => {
     const runId: string | null = typeof body.run_id === 'string' ? body.run_id : null;
     if (!question) return json({ error: 'question required' }, 400);
 
-    const { data: prof } = await admin.from('specialist_profiles')
-      .select('*').eq('tenant_id', tenantId).eq('key', profileKey).maybeSingle();
-    if (!prof) return json({ error: 'profile_not_found' }, 404);
-    if (prof.status !== 'active') return json({ error: 'profile_paused' }, 400);
+    // Specialists are Digital Employees now (migrations 208/211). Resolve the
+    // specialist DE by specialist_key; `prof` keeps the old shape so the consult
+    // body below reads unchanged, but every id is the DE id (grants, sources,
+    // guardrails, and cost attribution are all on DE rails).
+    const { data: specDe } = await admin.from('digital_employees')
+      .select('id, name, persona_name, status, charter').eq('tenant_id', tenantId)
+      .eq('is_specialist', true).eq('specialist_key', profileKey).maybeSingle();
+    if (!specDe) return json({ error: 'profile_not_found' }, 404);
+    if (specDe.status !== 'active') return json({ error: 'profile_paused' }, 400);
+    const prof = {
+      id: specDe.id as string,
+      name: (specDe.persona_name || specDe.name) as string,
+      status: specDe.status as string,
+      charter: ((specDe.charter as { mission?: string } | null)?.mission)
+        ?? 'Answer only from configured sources; cite everything; escalate when unsure.',
+    };
 
     const { data: sources } = await admin.from('specialist_sources')
-      .select('*').eq('profile_id', prof.id).eq('enabled', true)
+      .select('*').eq('specialist_de_id', prof.id).eq('enabled', true)
       .order('created_at', { ascending: true });
 
     // ── Retrieval per source, per access mode ──
@@ -1567,7 +1587,7 @@ serve(async (req) => {
         // library by title/tag match, honest about extraction state.
         const { data: assets } = await admin.from('media_assets')
           .select('id, title, kind, tags, extracted, knowledge_doc_id')
-          .eq('tenant_id', tenantId).eq('profile_id', prof.id)
+          .eq('tenant_id', tenantId).eq('specialist_de_id', prof.id)
           .order('sort_order', { ascending: true }).limit(50);
         const qTokens = new Set(tokenize(question));
         const matches = (assets ?? []).filter((a) =>
@@ -1603,7 +1623,7 @@ serve(async (req) => {
     const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
     if (!anthropicKey) {
       const { data: row } = await admin.from('spec_consultations').insert({
-        tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+        tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, answer: null, confidence: null,
         sources_used: retrieved, status: 'blocked_llm',
       }).select('id').single();
@@ -1625,7 +1645,7 @@ serve(async (req) => {
     const { data: consultBudgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (consultBudgetCheck && consultBudgetCheck.allowed === false) {
       const { data: row } = await admin.from('spec_consultations').insert({
-        tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+        tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, answer: null, confidence: null,
         sources_used: retrieved, status: 'blocked_budget',
       }).select('id').single();
@@ -1664,7 +1684,7 @@ ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- R
       const detail = await res.text();
       console.error('Anthropic error', res.status, detail);
       const { data: row } = await admin.from('spec_consultations').insert({
-        tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+        tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, sources_used: retrieved, status: 'error',
       }).select('id').single();
       return json({ error: 'llm_error', status: res.status, consultation_id: row?.id ?? null, retrieved_sources: retrieved }, 502);
@@ -1673,19 +1693,19 @@ ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- R
     // Claude 5 models can emit a 'thinking' block before the text block.
     const parsed = parseModelJson((data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '');
     await bump('llm_calls');
-    // No de_id here -- this is a specialist consult (specialist_profiles),
-    // not a digital_employees row; de_token_usage.de_id is nullable and
-    // this row is simply excluded from the per-DE cost breakdown.
+    // The specialist IS a Digital Employee now (migrations 208/211), so its
+    // consult cost is attributed to it like any other DE.
     admin.rpc('record_de_token_usage', {
-      p_tenant_id: tenantId, p_de_id: null, p_model_id: MODEL,
+      p_tenant_id: tenantId, p_de_id: prof.id, p_model_id: MODEL,
       p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
     }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
 
-    // ── Guardrail answer-check (blocking) ──
-    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, null);
+    // ── Guardrail answer-check (blocking) — now DE-scoped: the specialist's
+    // own employee-level guardrails apply on top of the workspace ones. ──
+    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, prof.id);
     if (blockedBy) {
       const { data: row } = await admin.from('spec_consultations').insert({
-        tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+        tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, answer: null, confidence: 0, sources_used: retrieved, status: 'escalated',
       }).select('id').single();
       await admin.from('human_tasks').insert({
@@ -1704,7 +1724,7 @@ ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- R
 
     const escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_FLOOR;
     const { data: row } = await admin.from('spec_consultations').insert({
-      tenant_id: tenantId, profile_id: prof.id, requested_by: requestedBy, run_id: runId,
+      tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
       question, answer: parsed.answer, confidence: parsed.confidence,
       sources_used: retrieved.map((r) => ({ ...r, cited: parsed.citations.some((c) => r.label.includes(c) || (r.doc_titles ?? []).includes(c)) })),
       status: escalate ? 'escalated' : 'answered',

@@ -1585,7 +1585,7 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
 
   const load = useCallback(async () => {
     const [{ data: sps }, { data: rows, error: err }, { data: cons, error: consErr }] = await Promise.all([
-      supabase.from('specialist_profiles').select('id, name, key, status').order('created_at'),
+      supabase.from('digital_employees').select('id, name, key:specialist_key, status').eq('is_specialist', true).order('created_at'),
       supabase.rpc('list_de_specialists', { p_de_id: deId }),
       supabase.rpc('list_consultable_for_de', { p_de_id: deId }),
     ]);

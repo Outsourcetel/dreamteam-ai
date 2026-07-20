@@ -84,9 +84,12 @@ serve(async (req) => {
         .ilike('content', '%outside my guardrails%').order('created_at', { ascending: false }).limit(5);
       evidence = (bad ?? []).map((m) => `- ${String(m.content ?? '').slice(0, 160)}`).join('\n');
     } else {
-      const { data: sp } = await admin.from('specialist_profiles').select('name, charter').eq('id', entityId).eq('tenant_id', tenantId).maybeSingle();
+      // Specialists are Digital Employees now (migrations 208/211); charter is
+      // stored as jsonb {mission}. entity_id is the specialist DE's id.
+      const { data: sp } = await admin.from('digital_employees').select('name, persona_name, charter').eq('id', entityId).eq('tenant_id', tenantId).eq('is_specialist', true).maybeSingle();
       if (!sp) return json({ error: 'specialist_not_found' }, 404);
-      current = { charter: sp.charter }; name = String(sp.name); editable = ['charter'];
+      current = { charter: (sp.charter as { mission?: string } | null)?.mission ?? '' };
+      name = String(sp.persona_name || sp.name); editable = ['charter'];
     }
     const problem = String(body.problem ?? '').slice(0, 1500) || (evidence ? `Recent responses were over-refused or missed:\n${evidence}` : '');
     if (!problem) return json({ error: 'no_signal', detail: 'Provide a problem description, or an entity with failure history to learn from.' }, 400);

@@ -196,13 +196,31 @@ async function invokeSpecialist<T>(body: Record<string, unknown>): Promise<T> {
 
 // Accepts any string key: since Wave 4 absorbed every specialist as a DE,
 // a tenant's specialist key is no longer limited to the original four.
+// A specialist is a Digital Employee now (migrations 208/211). Map a DE row to
+// the SpecialistProfile shape the specialist UI expects: id is the DE id (the
+// key every sub-resource is scoped by via specialist_de_id), key is
+// specialist_key, charter is the jsonb {mission} unwrapped, and DE status
+// 'active'/'disabled' maps to specialist 'active'/'paused'.
+function deRowToProfile(d: Record<string, unknown>): SpecialistProfile {
+  return {
+    id: d.id as string,
+    tenant_id: d.tenant_id as string,
+    key: (d.specialist_key ?? 'specialist') as SpecialistKey,
+    name: ((d.persona_name as string) || (d.name as string)),
+    charter: ((d.charter as { mission?: string } | null)?.mission ?? ''),
+    status: d.status === 'active' ? 'active' : 'paused',
+    created_at: d.created_at as string,
+    updated_at: d.updated_at as string,
+  };
+}
+
 export async function getProfile(key: SpecialistKey | string): Promise<SpecialistProfile | null> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
-    .from('specialist_profiles').select('*')
-    .eq('tenant_id', tid).eq('key', key).maybeSingle();
+    .from('digital_employees').select('id, tenant_id, specialist_key, name, persona_name, charter, status, created_at, updated_at')
+    .eq('tenant_id', tid).eq('is_specialist', true).eq('specialist_key', key).maybeSingle();
   if (error) raise('getProfile', error);
-  return (data as SpecialistProfile) ?? null;
+  return data ? deRowToProfile(data as Record<string, unknown>) : null;
 }
 
 export async function installTechnicalSpecialist(): Promise<{ profile_id: string; already_installed: boolean }> {
@@ -218,10 +236,17 @@ export async function updateProfile(
   id: string,
   updates: Partial<Pick<SpecialistProfile, 'name' | 'charter' | 'status'>>,
 ): Promise<SpecialistProfile> {
+  // Specialist → Digital Employee (migrations 208/211): map the editable
+  // fields onto DE columns (charter is jsonb {mission}; paused → disabled).
+  const dePatch: Record<string, unknown> = {};
+  if (updates.name !== undefined) dePatch.persona_name = updates.name;
+  if (updates.charter !== undefined) dePatch.charter = { mission: updates.charter };
+  if (updates.status !== undefined) dePatch.status = updates.status === 'active' ? 'active' : 'disabled';
   const { data, error } = await supabase
-    .from('specialist_profiles').update(updates).eq('id', id).select().single();
+    .from('digital_employees').update(dePatch).eq('id', id)
+    .select('id, tenant_id, specialist_key, name, persona_name, charter, status, created_at, updated_at').single();
   if (error) raise('updateProfile', error);
-  const prof = data as SpecialistProfile;
+  const prof = deRowToProfile(data as Record<string, unknown>);
   await auditConfig(
     updates.status
       ? `Specialist ${updates.status === 'active' ? 'activated' : 'paused'} — ${prof.name}`
@@ -237,7 +262,7 @@ export async function updateProfile(
 export async function listSources(profileId: string): Promise<SpecialistSource[]> {
   const { data, error } = await supabase
     .from('specialist_sources').select('*')
-    .eq('profile_id', profileId).order('created_at', { ascending: true });
+    .eq('specialist_de_id', profileId).order('created_at', { ascending: true });
   if (error) raise('listSources', error);
   return (data ?? []) as SpecialistSource[];
 }
@@ -257,7 +282,7 @@ export async function addSource(input: {
   const { data, error } = await supabase
     .from('specialist_sources')
     .insert({
-      profile_id: input.profile_id, source_type: input.source_type,
+      specialist_de_id: input.profile_id, source_type: input.source_type,
       access_mode: input.access_mode, label: input.label, config: input.config,
     })
     .select().single();
@@ -500,7 +525,8 @@ export async function listDEActivity(limit = 30): Promise<DEActivityRow[]> {
     supabase.from('evidence_run_decisions').select('*').eq('tenant_id', tid)
       .order('created_at', { ascending: false }).limit(limit),
     supabase.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tid),
-    supabase.from('specialist_profiles').select('id, name').eq('tenant_id', tid),
+    // Specialists are Digital Employees now (migrations 208/211).
+    supabase.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tid).eq('is_specialist', true),
   ]);
   if (runErr) raise('listDEActivity (evidence_runs)', runErr);
   if (decErr) raise('listDEActivity (evidence_run_decisions)', decErr);
@@ -511,12 +537,13 @@ export async function listDEActivity(limit = 30): Promise<DEActivityRow[]> {
     deName.set(d.id, d.persona_name || d.name);
   }
   const specName = new Map<string, string>();
-  for (const s of (specs ?? []) as Array<{ id: string; name: string }>) specName.set(s.id, s.name);
+  for (const s of (specs ?? []) as Array<{ id: string; name: string; persona_name: string | null }>) specName.set(s.id, s.persona_name || s.name);
   return ((runs ?? []) as EvidenceRun[]).map((r) => {
     let subject_kind: 'de' | 'specialist' | null = null;
     let subject_name: string | null = null;
+    const specDeId = (r as { specialist_de_id?: string | null }).specialist_de_id ?? null;
     if (r.de_id && deName.has(r.de_id)) { subject_kind = 'de'; subject_name = deName.get(r.de_id)!; }
-    else if (r.specialist_id && specName.has(r.specialist_id)) { subject_kind = 'specialist'; subject_name = specName.get(r.specialist_id)!; }
+    else if (specDeId && specName.has(specDeId)) { subject_kind = 'specialist'; subject_name = specName.get(specDeId)!; }
     return { evidence_run: r, decision: byRun.get(r.id) ?? null, subject_kind, subject_name };
   });
 }
@@ -556,7 +583,7 @@ export async function listMedia(profileId: string): Promise<MediaAsset[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('media_assets').select('*')
-    .eq('tenant_id', tid).eq('profile_id', profileId)
+    .eq('tenant_id', tid).eq('specialist_de_id', profileId)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false });
   if (error) raise('listMedia', error);
@@ -612,7 +639,7 @@ export async function uploadMedia(
   const { data, error } = await supabase
     .from('media_assets')
     .insert({
-      tenant_id: tid, profile_id: profileId, kind,
+      tenant_id: tid, specialist_de_id: profileId, kind,
       title: file.name, storage_path: path,
       mime: file.type || '', size_bytes: file.size, tags,
       extracted: !!knowledgeDocId, knowledge_doc_id: knowledgeDocId,
@@ -692,7 +719,7 @@ export async function listConsultations(profileId: string, limit = 30): Promise<
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('spec_consultations').select('*')
-    .eq('tenant_id', tid).eq('profile_id', profileId)
+    .eq('tenant_id', tid).eq('specialist_de_id', profileId)
     .order('created_at', { ascending: false }).limit(limit);
   if (error) raise('listConsultations', error);
   return (data ?? []) as SpecConsultation[];
@@ -718,7 +745,7 @@ export async function listScribeRequests(profileId: string, limit = 30): Promise
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('scribe_requests').select('*')
-    .eq('tenant_id', tid).eq('profile_id', profileId)
+    .eq('tenant_id', tid).eq('specialist_de_id', profileId)
     .order('created_at', { ascending: false }).limit(limit);
   if (error) raise('listScribeRequests', error);
   return (data ?? []) as ScribeRequest[];

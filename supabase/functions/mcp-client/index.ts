@@ -189,10 +189,15 @@ serve(async (req) => {
     }
 
     // ── Source row (tenant-checked) + optional bearer secret ──
+    // Specialists are Digital Employees now (migrations 208/211); resolve the
+    // source's tenant via its owning specialist DE.
     const { data: src } = await admin.from('specialist_sources')
-      .select('id, source_type, config, profile_id, specialist_profiles!inner(tenant_id)')
+      .select('id, source_type, config, specialist_de_id')
       .eq('id', sourceId).maybeSingle();
-    const srcTenant = (src as { specialist_profiles?: { tenant_id?: string } } | null)?.specialist_profiles?.tenant_id;
+    const { data: srcDe } = src?.specialist_de_id
+      ? await admin.from('digital_employees').select('tenant_id').eq('id', src.specialist_de_id).maybeSingle()
+      : { data: null };
+    const srcTenant = (srcDe as { tenant_id?: string } | null)?.tenant_id;
     if (!src || srcTenant !== tenantId) return json({ error: 'source_not_found' }, 404);
     if (src.source_type !== 'mcp_server') return json({ error: 'not_an_mcp_source' }, 400);
 

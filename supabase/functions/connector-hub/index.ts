@@ -2279,15 +2279,20 @@ const dreamteamActions: Record<string, NativeAction> = {
     async run(c, p) {
       if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
       if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
-      const spCap = await dtQuota(c, 'specialist_profiles', 30, 'specialist desks');
+      // Specialists are Digital Employees now (migrations 208/211).
+      const spCap = await dtQuota(c, 'digital_employees', 60, 'digital employees');
       if (spCap) return { ok: false, error: 'quota_exceeded', detail: spCap };
-      const { data, error } = await c.admin.from('specialist_profiles').insert({
-        tenant_id: c.tenantId, key: `${dtSlug(p.name)}_${dtSuffix()}`,
-        name: p.name.trim().slice(0, 120), charter: (p.charter ?? p.description ?? '').slice(0, 2000) || null,
+      const { data, error } = await c.admin.from('digital_employees').insert({
+        tenant_id: c.tenantId, catalog_id: 'support_agent',
+        name: p.name.trim().slice(0, 120), persona_name: p.name.trim().slice(0, 60),
+        category: 'Internal', is_specialist: true, specialist_key: `${dtSlug(p.name)}_${dtSuffix()}`,
+        description: (p.charter ?? p.description ?? '').slice(0, 300) || null,
+        charter: { mission: (p.charter ?? p.description ?? '').slice(0, 2000) },
+        lifecycle_status: 'designed', status: 'active', trust_level: 'supervised',
       }).select('id').single();
       if (error) return { ok: false, error: 'create_failed', detail: error.message };
       return { ok: true, raw: { specialist_id: data?.id },
-        receipt: `Created specialist desk "${p.name.trim()}". Assign it to the Digital Employees that need this expertise.` };
+        receipt: `Created specialist "${p.name.trim()}" (a Digital Employee). Assign it to the Digital Employees that need this expertise.` };
     },
   },
   dt_propose_connector: {

@@ -546,10 +546,17 @@ serve(async (req) => {
     // that set via enum, so the DE can pick the right expert to verify
     // uncertain or high-stakes work mid-run — the "smart step" can now
     // consult, not only the dedicated consult_specialist playbook step.
-    const { data: specRows } = await admin.from('specialist_profiles')
-      .select('key, name, charter').eq('tenant_id', tenantId).eq('status', 'active')
+    // Specialists are Digital Employees now (migrations 208/211); charter is
+    // stored as jsonb {mission}.
+    const { data: specRows } = await admin.from('digital_employees')
+      .select('specialist_key, name, persona_name, charter').eq('tenant_id', tenantId)
+      .eq('is_specialist', true).eq('status', 'active')
       .order('created_at', { ascending: true });
-    const specialists = (specRows ?? []) as Array<{ key: string; name: string; charter: string | null }>;
+    const specialists = (specRows ?? []).map((r) => ({
+      key: r.specialist_key as string,
+      name: (r.persona_name || r.name) as string,
+      charter: ((r.charter as { mission?: string } | null)?.mission ?? null) as string | null,
+    })) as Array<{ key: string; name: string; charter: string | null }>;
     const consultTool: AnthropicTool[] = specialists.length ? [{
       name: 'consult_specialist',
       description: 'Consult a specialist for an expert, grounded second opinion or to verify something uncertain or high-stakes before you rely on it. The specialist answers ONLY from its own configured knowledge/sources, returns a confidence score and citations, and escalates to a human when it is not confident. Available specialists (pass the key):\n'
