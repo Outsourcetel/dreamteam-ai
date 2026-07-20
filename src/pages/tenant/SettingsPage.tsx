@@ -13,6 +13,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataSt
 // THE canonical list (Wave 1.1) — the same one signup and Company
 // Setup use, so a tenant's stored industry always matches a template.
 import { INDUSTRY_NAMES as INDUSTRIES } from '../../lib/industries';
+import CommsSettingsCard from '../../components/CommsSettingsCard';
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -339,6 +340,8 @@ const SettingsPage = ({
               {saveStatus === 'error' && <span className="text-xs text-red-400">Save failed — check Supabase connection</span>}
             </div>
           </div>
+
+          <CommsSettingsCard accentColor={accentColor} />
 
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Danger Zone</h2>

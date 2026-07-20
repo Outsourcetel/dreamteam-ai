@@ -585,6 +585,19 @@ export async function decideHumanTask(
       throw err;
     }
   }
+  // Hook (EXEC 0.4, migration 216): approving an outbound EMAIL draft now
+  // actually DELIVERS it via Resend (dormant-honest if not configured).
+  // Non-email channels are still delivered by the human — nothing to do here.
+  if (decision === 'approved' && task.related_table === 'outbound_drafts' && task.related_id) {
+    try {
+      const { deliverOutbound } = await import('./commsApi');
+      await deliverOutbound(task.related_id);
+    } catch (err) {
+      console.error('outbound delivery hook:', err);
+      // Delivery failure must not roll back the approval — the draft records
+      // its own delivery_status (blocked/failed) and the UI can surface it.
+    }
+  }
   // Hook #4 (additive, guarded — migration 025): if this task gates an
   // earned-trust promotion, apply it server-side. The RPC re-verifies
   // evidence is STILL eligible at apply time and blocks self-approval;
