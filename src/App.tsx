@@ -70,7 +70,6 @@ const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) =
 const PAGE_TO_URL: Record<Page, string> = {
   platform_home:                '/platform',
   platform_tenants:             '/platform/tenants',
-  platform_tenant_management:   '/platform/tenant-management',
   platform_team:                '/platform/team',
   platform_security:            '/platform/security',
   platform_health:              '/platform/health',
@@ -205,7 +204,6 @@ function URLSync() {
 const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_home', label: 'Overview' },
   { page: 'platform_tenants', label: 'Tenants & Remote Access' },
-  { page: 'platform_tenant_management', label: 'Tenant Management' },
   { page: 'platform_team', label: 'Team & Permissions' },
   { page: 'platform_health', label: 'System Health' },
   { page: 'platform_revenue', label: 'Revenue' },

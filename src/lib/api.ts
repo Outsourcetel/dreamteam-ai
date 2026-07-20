@@ -1196,3 +1196,23 @@ export const getRecentEvalFailures = async (tenantId: string): Promise<RecentEva
   if (error) { console.error('getRecentEvalFailures:', error.message); return []; }
   return (data ?? []) as RecentEvalFailure[];
 };
+
+// =====================================================
+// PLATFORM TENANT OVERVIEW (migration 200) — admin identity,
+// real DE/user counts, last activity per tenant, keyed by id.
+// =====================================================
+export interface TenantOverviewRow {
+  tenant_id: string;
+  admin_name: string | null;
+  admin_email: string | null;
+  de_count: number;
+  user_count: number;
+  last_activity: string | null;
+}
+
+export const fetchPlatformTenantOverview = async (): Promise<Record<string, TenantOverviewRow>> => {
+  const { data, error } = await supabase.rpc('get_platform_tenant_overview');
+  if (error) { console.error('fetchPlatformTenantOverview:', error.message); return {}; }
+  const rows = (data ?? []) as TenantOverviewRow[];
+  return Object.fromEntries(rows.map((r) => [r.tenant_id, r]));
+};

@@ -3,16 +3,15 @@ import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
-import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow } from '../../lib/api';
+import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow, TenantOverviewRow } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, setTenantStatus, setTenantPlan, deleteTenant, requestSubtenant, fetchTenants,
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
-  fetchPlatformConnectorHealth,
+  fetchPlatformConnectorHealth, fetchPlatformTenantOverview,
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
-import { TenantListPage } from '../../components/TenantManagement';
 import { COMPANIES } from '../../data/companies';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
@@ -67,6 +66,11 @@ const PlatformConsolePage = ({
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [tenantSearch, setTenantSearch] = useState('');
   const [tenantRowLimit, setTenantRowLimit] = useState(50);
+  // Per-tenant admin identity + real counts (migration 200) — keyed by id.
+  const [tenantOverview, setTenantOverview] = useState<Record<string, TenantOverviewRow>>({});
+  useEffect(() => {
+    void fetchPlatformTenantOverview().then(setTenantOverview);
+  }, []);
   const [revenueRowLimit, setRevenueRowLimit] = useState(50);
   const [remoteAccessSearch, setRemoteAccessSearch] = useState('');
   const [remoteAccessLimit, setRemoteAccessLimit] = useState(30);
@@ -185,11 +189,16 @@ const PlatformConsolePage = ({
     // hierarchy for a search result set.
     const searchTerm = tenantSearch.trim().toLowerCase();
     const searchedRows = searchTerm
-      ? orderedRows.filter(({ tenant: t }) =>
-          t.name.toLowerCase().includes(searchTerm) ||
-          t.slug.toLowerCase().includes(searchTerm) ||
-          t.id.toLowerCase().includes(searchTerm) ||
-          t.contactEmail?.toLowerCase().includes(searchTerm))
+      ? orderedRows.filter(({ tenant: t }) => {
+          const ov = tenantOverview[t.id];
+          return (
+            t.name.toLowerCase().includes(searchTerm) ||
+            t.slug.toLowerCase().includes(searchTerm) ||
+            t.id.toLowerCase().includes(searchTerm) ||
+            (ov?.admin_email ?? '').toLowerCase().includes(searchTerm) ||
+            (ov?.admin_name ?? '').toLowerCase().includes(searchTerm)
+          );
+        })
       : orderedRows;
     const rowsToRender = searchedRows.slice(0, tenantRowLimit);
     const hasMoreRows = searchedRows.length > rowsToRender.length;
@@ -251,11 +260,12 @@ const PlatformConsolePage = ({
               <tr className="border-b border-slate-700">
                 {[
                   'Tenant',
+                  'Admin',
                   'Plan',
                   'Status',
-                  'Agents',
+                  'DEs',
                   'Users',
-                  'Tokens Used',
+                  'Last Activity',
                   'Actions',
                 ].map((h) => (
                   <th
@@ -301,6 +311,16 @@ const PlatformConsolePage = ({
                     </div>
                   </td>
                   <td className="px-4 py-3">
+                    {tenantOverview[t.id]?.admin_email ? (
+                      <div>
+                        <div className="text-sm text-white">{tenantOverview[t.id]?.admin_name || '—'}</div>
+                        <div className="text-xs text-slate-500">{tenantOverview[t.id]?.admin_email}</div>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-600">no admin user</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <Badge
                       label={t.plan}
                       color={
@@ -325,23 +345,15 @@ const PlatformConsolePage = ({
                     />
                   </td>
                   <td className="px-4 py-3 text-sm text-white">
-                    {t.agentsActive}
+                    {tenantOverview[t.id]?.de_count ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-sm text-white">
-                    {t.usersCount}
+                    {tenantOverview[t.id]?.user_count ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm text-white">
-                      {(t.monthlyTokens / 1000000).toFixed(1)}M
-                    </div>
-                    <div className="w-16 h-1 bg-slate-700 rounded-full mt-1">
-                      <div
-                        className="h-full rounded-full bg-indigo-500"
-                        style={{
-                          width: (t.monthlyTokens / t.tokenLimit) * 100 + '%',
-                        }}
-                      />
-                    </div>
+                  <td className="px-4 py-3 text-xs text-slate-400">
+                    {tenantOverview[t.id]?.last_activity
+                      ? relativeTime(tenantOverview[t.id]?.last_activity)
+                      : 'no activity yet'}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
@@ -388,29 +400,35 @@ const PlatformConsolePage = ({
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 {[
+                  { label: 'Admin', value: tenantOverview[selectedTenant.id]?.admin_name || '—' },
+                  { label: 'Admin Email', value: tenantOverview[selectedTenant.id]?.admin_email || '—', noCap: true },
                   { label: 'Plan', value: selectedTenant.plan },
                   { label: 'Status', value: selectedTenant.status },
-                  { label: 'Industry', value: selectedTenant.industry },
+                  { label: 'Industry', value: selectedTenant.industry || '—' },
+                  { label: 'Digital Employees', value: String(tenantOverview[selectedTenant.id]?.de_count ?? '—') },
+                  { label: 'Users', value: String(tenantOverview[selectedTenant.id]?.user_count ?? '—') },
                   {
-                    label: 'Active Agents',
-                    value: String(selectedTenant.agentsActive),
+                    label: 'Last Activity',
+                    value: tenantOverview[selectedTenant.id]?.last_activity
+                      ? relativeTime(tenantOverview[selectedTenant.id]?.last_activity)
+                      : 'no activity yet',
                   },
-                  { label: 'Users', value: String(selectedTenant.usersCount) },
-                  {
-                    label: 'Token Usage',
-                    value:
-                      (selectedTenant.monthlyTokens / 1000000).toFixed(1) + 'M',
-                  },
+                  { label: 'Created', value: relativeTime(selectedTenant.createdAt) || '—' },
+                  { label: 'Slug', value: selectedTenant.slug, noCap: true },
                 ].map((item, i) => (
                   <div key={i} className="bg-slate-700 rounded-xl p-3">
                     <div className="text-xs text-slate-400 mb-0.5">
                       {item.label}
                     </div>
-                    <div className="text-sm font-medium text-white capitalize">
+                    <div className={`text-sm font-medium text-white ${(item as { noCap?: boolean }).noCap ? '' : 'capitalize'} break-all`}>
                       {item.value}
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="bg-slate-700 rounded-xl p-3">
+                <div className="text-xs text-slate-400 mb-0.5">Tenant ID</div>
+                <div className="text-xs font-mono text-slate-300 break-all">{selectedTenant.id}</div>
               </div>
 
               <div className="bg-slate-700 rounded-xl p-4 flex items-center justify-between gap-4">
@@ -618,10 +636,6 @@ const PlatformConsolePage = ({
     );
   }
 
-
-  if (page === 'platform_tenant_management') {
-    return <TenantListPage />;
-  }
 
   if (page === 'platform_team') {
     return <PlatformTeamPage />;

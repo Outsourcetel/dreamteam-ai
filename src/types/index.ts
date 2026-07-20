@@ -5,7 +5,6 @@
 export type PlatformPage =
   | 'platform_home'
   | 'platform_tenants'
-  | 'platform_tenant_management'
   | 'platform_team'
   | 'platform_health'
   | 'platform_revenue'
