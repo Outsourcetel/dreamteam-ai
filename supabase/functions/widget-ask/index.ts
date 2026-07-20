@@ -291,10 +291,15 @@ serve(async (req) => {
     const tenantName = gate.name;
 
     // ── Resolve the answering DE (first eligible) + persona ──
-    const { data: firstDe } = await admin.from('digital_employees')
-      .select('id, external_reply_mode').eq('tenant_id', tenantId)
-      .not('lifecycle_status', 'in', '(paused,retired,archived)')
-      .order('created_at', { ascending: true }).limit(1).maybeSingle();
+    // Front DE for the public widget: a DE explicitly set to auto-answer
+    // customers outranks draft-mode internal DEs, and 'designed' (never
+    // published) DEs never front customer chat. Falls back to the oldest
+    // eligible DE — same behavior as before for tenants with one DE.
+    const { data: frontDes } = await admin.from('digital_employees')
+      .select('id, external_reply_mode, lifecycle_status, created_at').eq('tenant_id', tenantId)
+      .not('lifecycle_status', 'in', '(paused,retired,archived,designed)')
+      .order('created_at', { ascending: true }).limit(20);
+    const firstDe = (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null;
     const subjectDeId: string | null = firstDe?.id ?? null;
     // Per-DE send mode — DE config, the channel just reads it.
     const replyMode: 'draft' | 'auto' = firstDe?.external_reply_mode === 'auto' ? 'auto' : 'draft';
