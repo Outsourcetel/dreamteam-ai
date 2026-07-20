@@ -24,6 +24,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveD
 import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
+import SpecialistLive from './SpecialistLive';
 import {
   listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey,
   listSkillCategories, createTenantSkill, listCertificationTypes,
@@ -2905,7 +2906,8 @@ const DETAIL_TABS = [
   { key: 'development', label: 'Development' },
   { key: 'governance', label: 'Governance' },
 ] as const;
-type DetailTab = typeof DETAIL_TABS[number]['key'];
+// 'specialist' is appended at render time only for absorbed specialist DEs.
+type DetailTab = typeof DETAIL_TABS[number]['key'] | 'specialist';
 
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
@@ -3128,7 +3130,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               it never shows a horizontal scrollbar; on narrow screens the
               tabs wrap to a second row instead. */}
           <div className="flex flex-wrap items-center gap-1 border-b border-slate-700">
-            {DETAIL_TABS.map(t => (
+            {[...DETAIL_TABS, ...(selectedDe.is_specialist ? [{ key: 'specialist' as const, label: 'Specialist Tools' }] : [])].map(t => (
               <button
                 key={t.key}
                 onClick={() => setDetailTab(t.key)}
@@ -3159,6 +3161,19 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               exceptions, certification, training, compliance (migs 155-163) */}
           {detailTab === 'workbench' && (
             <DeWorkbenchPanel deId={selectedDe.id} />
+          )}
+
+          {/* Specialist Tools — Wave 4. An absorbed specialist keeps its full
+              capability surface (sources, media, consult console, scribe
+              queue, evidence runs) — now reached HERE, inside the one
+              profile, instead of a separate desk. Reuses SpecialistLive
+              keyed by the DE's specialist_key. */}
+          {detailTab === 'specialist' && selectedDe.is_specialist && (
+            selectedDe.specialist_key
+              ? <SpecialistLive specialistKey={selectedDe.specialist_key} setPage={setPage} />
+              : <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-sm text-slate-400">
+                  This specialist has no linked toolset key.
+                </div>
           )}
 
           {/* Capabilities — what this employee can do and reach */}

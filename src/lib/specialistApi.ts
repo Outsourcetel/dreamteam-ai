@@ -194,7 +194,9 @@ async function invokeSpecialist<T>(body: Record<string, unknown>): Promise<T> {
 
 // ── Profile ───────────────────────────────────────────────────────
 
-export async function getProfile(key: SpecialistKey): Promise<SpecialistProfile | null> {
+// Accepts any string key: since Wave 4 absorbed every specialist as a DE,
+// a tenant's specialist key is no longer limited to the original four.
+export async function getProfile(key: SpecialistKey | string): Promise<SpecialistProfile | null> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('specialist_profiles').select('*')

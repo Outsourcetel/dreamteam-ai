@@ -360,7 +360,9 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
 
 // ── Page ──────────────────────────────────────────────────────────
 
-export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void }) {
+// Wave 4: keyed by specialistKey so it renders inside ANY absorbed
+// specialist DE's profile, not only the standalone technical desk.
+export default function SpecialistLive({ setPage, specialistKey = 'technical' }: { setPage: (p: Page) => void; specialistKey?: string }) {
   const [profile, setProfile] = useState<SpecialistProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
@@ -429,7 +431,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
     setLoading(true);
     setError(null);
     try {
-      const prof = await getProfile('technical');
+      const prof = await getProfile(specialistKey);
       setProfile(prof);
       if (prof) {
         setCharter(prof.charter);
@@ -448,7 +450,7 @@ export default function SpecialistLive({ setPage }: { setPage: (p: Page) => void
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [specialistKey]);
 
   useEffect(() => { void load(); }, [load]);
 

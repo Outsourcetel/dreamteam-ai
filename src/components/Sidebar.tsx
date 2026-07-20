@@ -184,17 +184,11 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
         { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
         { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
-        {
-          id: 'specialist_desk',
-          label: 'Specialist Desk',
-          icon: '◆',
-          children: [
-            { id: 'specialist_technical', label: 'Technical' },
-            { id: 'specialist_legal', label: 'Legal' },
-            { id: 'specialist_finance_deep', label: 'Finance' },
-            { id: 'specialist_people', label: 'People' },
-          ],
-        },
+        // Wave 4: the standalone Specialist Desk is retired. Specialists are
+        // digital employees now — they live in the Roster, and their tools
+        // (sources, media, consult, scribe, evidence) are the "Specialist
+        // Tools" tab on their profile. The /specialist/* routes remain valid
+        // for deep links during the transition.
       ],
     },
     {
