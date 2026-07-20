@@ -6,9 +6,6 @@
 //   PWC — Morgan (Client Relations), Avery (Tax Research)
 // ============================================================
 
-// Demo companies (TCP/PWC) were hard-deleted (commit 69605ea). The legacy id
-// union is kept so demo-era pages still typecheck; their seed data stays empty
-// and those pages never render outside demo mode.
 export type CompanyId = 'tcp' | 'pwc';
 
 export interface CompanyProfile {
@@ -20,7 +17,24 @@ export interface CompanyProfile {
   activeDEs: number;
 }
 
-export const COMPANIES: CompanyProfile[] = [];
+export const COMPANIES: CompanyProfile[] = [
+  {
+    id: 'tcp',
+    name: 'TCP Software',
+    industry: 'Technology / SaaS',
+    badge: 'TECH',
+    badgeColor: '#6366f1',
+    activeDEs: 3,
+  },
+  {
+    id: 'pwc',
+    name: 'PWC',
+    industry: 'Financial Services',
+    badge: 'FIN',
+    badgeColor: '#0ea5e9',
+    activeDEs: 2,
+  },
+];
 
 export const COMPANIES_LOOKUP: Record<CompanyId, CompanyProfile> =
   Object.fromEntries(COMPANIES.map(c => [c.id, c])) as Record<CompanyId, CompanyProfile>;
@@ -40,4 +54,39 @@ export interface CompanySummary {
   renewalsDue?: number;
 }
 
-export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {} as Record<CompanyId, CompanySummary>;
+export const COMPANY_SUMMARY: Record<CompanyId, CompanySummary> = {
+  tcp: {
+    desActive: 3,
+    desTotal: 3,
+    humanTasks: 5,
+    aiResolution: 87,
+    kbGaps: 5,
+    alerts: 2,
+    salesPipeline: 12,
+    onboardingActive: 2,
+    supportTickets: 47,
+    atRiskAccounts: 3,
+    renewalsDue: 8,
+  },
+  pwc: {
+    desActive: 2,
+    desTotal: 2,
+    humanTasks: 4,
+    aiResolution: 79,
+    kbGaps: 3,
+    alerts: 2,
+    onboardingActive: 1,
+    atRiskAccounts: 1,
+    renewalsDue: 2,
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────
+// NOTE (2026-07-20): the 69605ea "hard delete demo companies" commit
+// emptied this file, which crashed EVERY tenant login (Sidebar reads
+// COMPANIES_LOOKUP/COMPANY_SUMMARY unconditionally). The seed data is
+// restored because it is DEMO-MODE-ONLY content (dev demo login +
+// explicit demo preview) — the purge's real goal, removing demo
+// companies from the platform console tenant list, lives in
+// PlatformConsolePage and is unaffected by this file.
+// ─────────────────────────────────────────────────────────────────

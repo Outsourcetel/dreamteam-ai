@@ -61,7 +61,12 @@ interface NavCounts {
 // when nothing is stored. Live tenants never call this — see
 // fetchLiveNavCounts below, which reads real per-tenant data instead.
 export function computeLiveCounts(companyId: CompanyId): NavCounts {
-  const s = COMPANY_SUMMARY[companyId];
+  // COMPANY_SUMMARY has been EMPTY since the demo-company purge (69605ea) —
+  // dereferencing the missing row crashed every tenant login into the error
+  // boundary (2026-07-20 outage). All-zero fallback keeps the sidebar alive.
+  const s = COMPANY_SUMMARY[companyId] ?? {
+    desActive: 0, desTotal: 0, humanTasks: 0, aiResolution: 0, kbGaps: 0, alerts: 0,
+  };
   let humanTasks = s.humanTasks;
   let kbGaps = s.kbGaps;
   try {
