@@ -33,6 +33,40 @@ interface Msg {
 let idc = 0;
 const nextId = () => `m${++idc}`;
 
+// ── Lightweight markdown for assistant bubbles ────────────────────
+// The model answers with markdown (**bold**, `code`, headings, bullets);
+// rendering it as raw text made answers look like symbol soup to end
+// users. This renders the common subset as React nodes — no HTML is ever
+// injected, so it is XSS-safe by construction.
+function renderInline(text: string, keyBase: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  // Split on **bold** and `code` spans, keeping delimiters.
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  parts.forEach((p, i) => {
+    if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
+      out.push(<strong key={`${keyBase}b${i}`} className="font-semibold text-white">{p.slice(2, -2)}</strong>);
+    } else if (p.startsWith('`') && p.endsWith('`') && p.length > 2) {
+      out.push(<code key={`${keyBase}c${i}`} className="px-1 py-0.5 rounded bg-white/10 text-[13px] font-mono">{p.slice(1, -1)}</code>);
+    } else if (p) {
+      out.push(p);
+    }
+  });
+  return out;
+}
+
+function renderLite(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) return <div key={i} className="font-semibold text-white mt-1">{renderInline(h[2], `l${i}`)}</div>;
+    const bullet = line.match(/^\s*[-•]\s+(.*)$/);
+    if (bullet) return <div key={i} className="pl-4 relative"><span className="absolute left-1">•</span>{renderInline(bullet[1], `l${i}`)}</div>;
+    const num = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
+    if (num) return <div key={i} className="pl-5 relative"><span className="absolute left-0 text-slate-400">{num[1]}.</span>{renderInline(num[2], `l${i}`)}</div>;
+    return <React.Fragment key={i}>{renderInline(line, `l${i}`)}{i < lines.length - 1 ? '\n' : null}</React.Fragment>;
+  });
+}
+
 function AssistantBubble({ msg, onDone }: { msg: Msg; onDone?: () => void }) {
   const [shown, setShown] = useState(msg.animate ? '' : msg.full);
   useEffect(() => {
@@ -50,7 +84,7 @@ function AssistantBubble({ msg, onDone }: { msg: Msg; onDone?: () => void }) {
   return (
     <div className="max-w-[85%] self-start cc-in">
       <div className="rounded-2xl rounded-tl-sm bg-white/[0.06] text-slate-100 border border-white/10 backdrop-blur-md px-4 py-2.5 text-[15px] leading-relaxed shadow-[0_2px_20px_-8px_rgba(0,0,0,0.6)] whitespace-pre-wrap">
-        {shown || <span className="inline-flex gap-1 py-1">{[0, 1, 2].map(i => (
+        {shown ? renderLite(shown) : <span className="inline-flex gap-1 py-1">{[0, 1, 2].map(i => (
           <span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-300/70 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
         ))}</span>}
       </div>
