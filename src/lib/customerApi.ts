@@ -573,6 +573,18 @@ export async function decideHumanTask(
       console.error('scribe resolution hook:', err);
     }
   }
+  // Hook (EXEC 0.3, migration 215): if this task gates an account write-back
+  // (log activity / set next step / change status), apply the frozen,
+  // server-composed write on approve; leave the record untouched on reject.
+  if (task.related_table === 'account_writeback_requests') {
+    try {
+      const { resolveAccountWriteback } = await import('./writeBackApi');
+      await resolveAccountWriteback(task.id, decision);
+    } catch (err) {
+      console.error('account write-back resolution hook:', err);
+      throw err;
+    }
+  }
   // Hook #4 (additive, guarded — migration 025): if this task gates an
   // earned-trust promotion, apply it server-side. The RPC re-verifies
   // evidence is STILL eligible at apply time and blocks self-approval;
