@@ -3,10 +3,12 @@ import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks,
   getReplaySources, runReplay,
+  getDeMemoryGrouped, forgetMemory, saveObjective, decideException,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
   type CertRow, type CertStatus, type TrainingRow, type CompliancePackRow,
-  type ReplaySource, type ReplayResult,
+  type ReplaySource, type ReplayResult, type MemoryGroup,
 } from '../../lib/deWorkbenchApi';
+import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 
 // ═══════════════════════════════════════════════════════════════
@@ -70,21 +72,39 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [packs, setPacks] = useState<CompliancePackRow[]>([]);
 
   const [loadError, setLoadError] = useState(false);
+
+  // ── Wave 3: the workbench can now write, not just read. ──
+  const [memoryGroups, setMemoryGroups] = useState<MemoryGroup[]>([]);
+  const [openMemory, setOpenMemory] = useState<string | null>(null);
+  const [forgetting, setForgetting] = useState<string | null>(null);
+  const [objOpen, setObjOpen] = useState(false);
+  const [objEditId, setObjEditId] = useState<string | null>(null);
+  const [objTitle, setObjTitle] = useState('');
+  const [objPriority, setObjPriority] = useState(3);
+  const [objSaving, setObjSaving] = useState(false);
+  const [deciding, setDeciding] = useState<string | null>(null);
+  const [excOutcome, setExcOutcome] = useState<Record<string, string>>({});
+  const [excLearn, setExcLearn] = useState<Record<string, boolean>>({});
+  const [ckLoading, setCkLoading] = useState<null | 'file' | 'url'>(null);
+  const [ckUrl, setCkUrl] = useState('');
+  const [ckNote, setCkNote] = useState<string | null>(null);
+  const [ckError, setCkError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(false);
     (async () => {
       try {
-        const [m, o, w, t, e, c, cs, tr, p, rs] = await Promise.all([
+        const [m, o, w, t, e, c, cs, tr, p, rs, mg] = await Promise.all([
           getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
           getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getDeTraining(deId), getTenantCompliancePacks(),
-          getReplaySources(deId),
+          getReplaySources(deId), getDeMemoryGrouped(deId),
         ]);
         if (cancelled) return;
         setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
         setExceptions(e); setCerts(c); setCertStatus(cs); setTraining(tr); setPacks(p);
-        setReplaySources(rs);
+        setReplaySources(rs); setMemoryGroups(mg);
       } catch {
         // A failed load must NOT masquerade as an honest empty state.
         if (!cancelled) setLoadError(true);
@@ -94,6 +114,78 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     })();
     return () => { cancelled = true; };
   }, [deId]);
+
+  // ── Write handlers (Wave 3) ────────────────────────────────────
+  const reloadMemory = async () => {
+    try { setMemoryGroups(await getDeMemoryGrouped(deId)); } catch { /* keep what is shown */ }
+  };
+
+  const handleForget = async (memoryId: string) => {
+    setForgetting(memoryId); setWriteError(null);
+    try { await forgetMemory(memoryId); await reloadMemory(); }
+    catch (err) { setWriteError((err as Error).message); }
+    setForgetting(null);
+  };
+
+  const handleSaveObjective = async () => {
+    if (!objTitle.trim()) return;
+    setObjSaving(true); setWriteError(null);
+    try {
+      await saveObjective({ deId, title: objTitle.trim(), id: objEditId ?? undefined, priority: objPriority });
+      setObjectives(await getDeObjectives(deId));
+      setObjOpen(false); setObjEditId(null); setObjTitle('');
+    } catch (err) { setWriteError((err as Error).message); }
+    setObjSaving(false);
+  };
+
+  const handleCloseObjective = async (o: ObjectiveRow) => {
+    setWriteError(null);
+    try {
+      await saveObjective({ deId, id: o.id, title: o.title, priority: o.priority, status: 'achieved' });
+      setObjectives(await getDeObjectives(deId));
+    } catch (err) { setWriteError((err as Error).message); }
+  };
+
+  const handleDecide = async (exceptionId: string, decision: 'approved' | 'rejected') => {
+    setDeciding(exceptionId); setWriteError(null);
+    try {
+      await decideException({
+        exceptionId, decision,
+        outcome: excOutcome[exceptionId]?.trim() || undefined,
+        learned: !!excLearn[exceptionId],
+      });
+      setExceptions(await getDeExceptions(deId));
+    } catch (err) { setWriteError((err as Error).message); }
+    setDeciding(null);
+  };
+
+  // Replay counterfactual knowledge can come from a real document or page,
+  // not just hand-typed text — same extractors the Knowledge Library uses.
+  const handleCkFile = async (file: File) => {
+    setCkLoading('file'); setCkError(null); setCkNote(null);
+    try {
+      const isPdf = /\.pdf$/i.test(file.name);
+      const text = isPdf ? (await extractPdf(file)).text : await file.text();
+      if (!text.trim()) throw new Error('That file had no readable text in it.');
+      setReplayCk(text.slice(0, 20000));
+      setCkNote(`Loaded ${file.name} — ${text.length.toLocaleString()} characters${text.length > 20000 ? ' (trimmed to 20,000)' : ''}.`);
+    } catch (err) { setCkError((err as Error).message); }
+    setCkLoading(null);
+  };
+
+  const handleCkUrl = async () => {
+    const url = ckUrl.trim();
+    if (!url) return;
+    setCkLoading('url'); setCkError(null); setCkNote(null);
+    try {
+      const res = await extractUrl(url);
+      if (!res.text?.trim()) throw new Error('Nothing readable came back from that link.');
+      setReplayCk(res.text.slice(0, 20000));
+      setCkNote(`Loaded "${res.title || url}" — ${res.text.length.toLocaleString()} characters${res.text.length > 20000 ? ' (trimmed to 20,000)' : ''}.`);
+      setCkUrl('');
+    } catch (err) { setCkError((err as Error).message); }
+    setCkLoading(null);
+  };
 
   // Group decision-trace rows by run so a "task" reads as one reasoning chain.
   const runs = React.useMemo(() => {
@@ -124,33 +216,101 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
           </div>
         ) : (
           <>
-            {section === 'memory' && (memory.length === 0 ? (
+            {writeError && (
+              <div className="mb-3 rounded-lg border border-rose-800/60 bg-rose-900/25 px-3 py-2 text-xs text-rose-200">{writeError}</div>
+            )}
+            {section === 'memory' && (memoryGroups.length === 0 ? (
               <LiveEmptyState icon="◎" title="No memories yet" body="This employee records what it learns as it works and answers." />
             ) : (
+              // Grouped by what each memory is ABOUT. A flat list of 40 rows
+              // was unreadable — you could not tell what the employee knew
+              // about any one customer without scanning all of it.
               <div className="space-y-2">
-                {memory.map(m => (
-                  <div key={m.id} className="bg-slate-900/50 rounded-lg px-4 py-3 flex items-start gap-3">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0 mt-0.5">{m.kind}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-slate-200">{m.content}</p>
-                      <p className="text-[11px] text-slate-600 mt-1">{m.subject_kind}{m.subject_ref ? ` · ${m.subject_ref.slice(0, 12)}` : ''} · salience {Math.round(m.salience * 100)}% · {fmt(m.created_at)}</p>
+                {memoryGroups.map((g, gi) => {
+                  const key = `${g.subject_kind ?? 'general'}:${g.subject_ref ?? gi}`;
+                  const open = openMemory === key;
+                  return (
+                    <div key={key} className="bg-slate-900/50 rounded-lg overflow-hidden">
+                      <button onClick={() => setOpenMemory(open ? null : key)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors">
+                        <span className="text-slate-600 text-xs">{open ? '▾' : '▸'}</span>
+                        <span className="text-sm text-slate-200 flex-1 truncate">
+                          {g.subject_ref || g.subject_kind || 'General'}
+                          <span className="text-slate-600 text-xs ml-2">{g.subject_kind && g.subject_ref ? g.subject_kind : ''}</span>
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          {g.item_count} remembered · strongest {Math.round((g.top_salience ?? 0) * 100)}%
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="px-4 pb-3 space-y-2 border-t border-slate-800">
+                          {(g.items ?? []).map(it => (
+                            <div key={it.id} className="flex items-start gap-3 pt-2">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0 mt-0.5">{it.kind}</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-slate-200">{it.content}</p>
+                                <p className="text-[11px] text-slate-600 mt-1">
+                                  salience {Math.round(it.salience * 100)}% · {it.source} · {fmt(it.created_at)}
+                                </p>
+                              </div>
+                              {/* A wrong memory keeps steering answers until removed. */}
+                              <button
+                                onClick={() => void handleForget(it.id)}
+                                disabled={forgetting === it.id}
+                                title="Remove this memory"
+                                className="text-[10px] text-slate-600 hover:text-rose-300 flex-shrink-0 disabled:opacity-40">
+                                {forgetting === it.id ? '…' : 'Forget'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ))}
 
             {section === 'work' && (
               <div className="space-y-5">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Objectives (goals)</p>
-                  {objectives.length === 0 ? (
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Objectives (goals)</p>
+                    <button onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}
+                      className="ml-auto text-[11px] text-indigo-400 hover:text-indigo-300">+ Set an objective</button>
+                  </div>
+                  {objOpen && (
+                    <div className="mb-2 rounded-lg border border-slate-600 bg-slate-900/70 p-3 space-y-2">
+                      <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
+                        placeholder="What should this employee be working towards?"
+                        className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-slate-500">Priority</label>
+                        <select value={objPriority} onChange={e => setObjPriority(Number(e.target.value))}
+                          className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                          {[1, 2, 3, 4, 5].map(p => <option key={p} value={p}>P{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}
+                        </select>
+                        <button onClick={() => void handleSaveObjective()} disabled={objSaving || !objTitle.trim()}
+                          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                          {objSaving ? 'Saving…' : objEditId ? 'Save changes' : 'Add objective'}
+                        </button>
+                        <button onClick={() => setObjOpen(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                  {objectives.length === 0 && !objOpen ? (
                     <LiveEmptyState icon="◎" title="No objectives set" body="Objectives are goals the employee pursues over time." />
                   ) : (
                     <div className="space-y-2">{objectives.map(o => (
                       <div key={o.id} className="bg-slate-900/50 rounded-lg px-4 py-2.5 flex items-center gap-3">
                         <Pill s={o.status} /><span className="text-sm text-slate-200 flex-1">{o.title}</span>
                         <span className="text-[11px] text-slate-600">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
+                        <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
+                          className="text-[10px] text-slate-600 hover:text-indigo-300">Edit</button>
+                        {o.status === 'active' && (
+                          <button onClick={() => void handleCloseObjective(o)}
+                            className="text-[10px] text-slate-600 hover:text-emerald-300">Done</button>
+                        )}
                       </div>
                     ))}</div>
                   )}
@@ -209,6 +369,29 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                   {e.proposed_action && <p className="text-xs text-slate-400 mt-1">Proposed: {e.proposed_action}</p>}
                   {e.justification && <p className="text-xs text-slate-500 mt-0.5 italic">"{e.justification}"</p>}
                   {e.outcome && <p className="text-xs text-emerald-400/80 mt-1">Outcome: {e.outcome}</p>}
+                  {/* An exception is the employee asking a question. Until now
+                      there was no way to answer it, so it sat pending forever. */}
+                  {e.status === 'pending' && (
+                    <div className="mt-2 pt-2 border-t border-slate-800 flex items-center gap-2 flex-wrap">
+                      <input value={excOutcome[e.id] ?? ''} onChange={ev => setExcOutcome(s => ({ ...s, [e.id]: ev.target.value }))}
+                        placeholder="What should happen? (optional note)"
+                        className="flex-1 min-w-[180px] bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500" />
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <input type="checkbox" checked={excLearn[e.id] ?? false}
+                          onChange={() => setExcLearn(s => ({ ...s, [e.id]: !s[e.id] }))}
+                          className="accent-indigo-500" />
+                        remember this
+                      </label>
+                      <button onClick={() => void handleDecide(e.id, 'approved')} disabled={deciding === e.id}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 text-white disabled:opacity-40">
+                        Approve
+                      </button>
+                      <button onClick={() => void handleDecide(e.id, 'rejected')} disabled={deciding === e.id}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-rose-600/60 text-slate-200 disabled:opacity-40">
+                        Reject
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}</div>
             ))}
@@ -249,6 +432,26 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Counterfactual knowledge <span className="normal-case text-slate-600">(optional — "what if it knew this?")</span></p>
+                    {/* Paste, upload a PDF, or pull a page — same extractors the
+                        Knowledge Library uses, so the replay can be fed a real
+                        document instead of only hand-typed text. */}
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      <label className={`text-[11px] px-2 py-1 rounded-md border cursor-pointer transition-colors ${
+                        ckLoading ? 'border-slate-700 text-slate-600' : 'border-slate-700 text-slate-400 hover:text-indigo-200 hover:border-indigo-500/50'}`}>
+                        {ckLoading === 'file' ? 'Reading…' : '↑ Upload a document'}
+                        <input type="file" accept=".pdf,.txt,.md,.markdown" className="hidden" disabled={!!ckLoading}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) void handleCkFile(f); e.target.value = ''; }} />
+                      </label>
+                      <input value={ckUrl} onChange={e => setCkUrl(e.target.value)} placeholder="…or paste a link"
+                        onKeyDown={e => { if (e.key === 'Enter') void handleCkUrl(); }}
+                        className="flex-1 min-w-[160px] bg-slate-900/70 border border-slate-700 rounded-md px-2 py-1 text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                      <button onClick={() => void handleCkUrl()} disabled={!!ckLoading || !ckUrl.trim()}
+                        className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:text-indigo-200 hover:border-indigo-500/50 disabled:opacity-40">
+                        {ckLoading === 'url' ? 'Fetching…' : 'Fetch'}
+                      </button>
+                    </div>
+                    {ckNote && <p className="text-[11px] text-slate-500 mb-1.5">{ckNote}</p>}
+                    {ckError && <p className="text-[11px] text-rose-300 mb-1.5">{ckError}</p>}
                     <textarea value={replayCk} onChange={e => setReplayCk(e.target.value)} rows={3}
                       placeholder="Paste a policy, fact, or article the employee doesn't have yet — the replay answers as if it did."
                       className="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />

@@ -114,6 +114,63 @@ export const runReplay = async (deId: string, question: string, candidateKnowled
   };
 };
 
+// ── Wave 3: the workbench could only READ. These are the missing verbs. ──
+
+/** Memory grouped by what it is ABOUT, so the tab is not a flat wall of rows. */
+export interface MemoryGroup {
+  subject_kind: string | null;
+  subject_ref: string | null;
+  item_count: number;
+  top_salience: number;
+  newest_at: string;
+  items: Array<{ id: string; kind: string; content: string; salience: number; source: string; created_at: string }> | null;
+}
+
+export const getDeMemoryGrouped = async (deId: string, limit = 50): Promise<MemoryGroup[]> => {
+  const { data, error } = await supabase.rpc('list_de_memory_grouped', { p_de_id: deId, p_limit: limit });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MemoryGroup[];
+};
+
+/** A wrong memory keeps steering answers until somebody removes it. */
+export const forgetMemory = async (memoryId: string): Promise<void> => {
+  const { error } = await supabase.rpc('forget_de_memory', { p_memory_id: memoryId });
+  if (error) throw new Error(friendlyWorkbenchError(error.message));
+};
+
+export const saveObjective = async (args: {
+  deId: string; title: string; id?: string; description?: string;
+  priority?: number; dueAt?: string | null; status?: string;
+}): Promise<string> => {
+  const { data, error } = await supabase.rpc('upsert_de_objective', {
+    p_de_id: args.deId, p_title: args.title, p_id: args.id ?? null,
+    p_description: args.description ?? null, p_priority: args.priority ?? 3,
+    p_due_at: args.dueAt ?? null, p_status: args.status ?? null,
+  });
+  if (error) throw new Error(friendlyWorkbenchError(error.message));
+  return data as string;
+};
+
+/** Answering "this situation isn't covered — here's what I propose". */
+export const decideException = async (args: {
+  exceptionId: string; decision: 'approved' | 'rejected'; outcome?: string; learned?: boolean;
+}): Promise<void> => {
+  const { error } = await supabase.rpc('decide_de_exception', {
+    p_exception_id: args.exceptionId, p_decision: args.decision,
+    p_outcome: args.outcome ?? null, p_learned: args.learned ?? false,
+  });
+  if (error) throw new Error(friendlyWorkbenchError(error.message));
+};
+
+function friendlyWorkbenchError(raw: string): string {
+  if (raw.includes('insufficient_role')) return 'Only workspace owners and admins can change this.';
+  if (raw.includes('already_decided')) return 'Somebody has already answered this one.';
+  if (raw.includes('objective_not_found')) return 'That objective no longer exists — refresh and try again.';
+  if (raw.includes('priority must be')) return 'Priority has to be between 1 and 5.';
+  if (raw.includes('needs a title')) return 'Give the objective a title.';
+  return raw;
+}
+
 // Whether the DE's passing certification still vouches for its CURRENT config.
 // state: certified (fresh) | stale (config changed since last pass) | failed | uncertified.
 export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> => {
