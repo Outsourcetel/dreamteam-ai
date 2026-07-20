@@ -50,6 +50,8 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  // Central-cockpit focus: 'all' | 'workspace' | 'de:<id>' | 'dept:<name>'.
+  const [focus, setFocus] = useState('all')
   const [des, setDes] = useState<DigitalEmployee[]>([])
   const [form, setForm] = useState<{ rule: string; rule_type: GuardrailRuleType; pattern: string; threshold: string; severity: 'blocking' | 'warning'; scope: 'workspace' | 'department' | 'employee'; scope_ref: string }>(
     { rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
@@ -112,6 +114,17 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
   const active = rules.filter(r => r.active)
 
+  // Governance rebuild: focus the central cockpit on any level. When
+  // focused on a DE or department, workspace-wide rules are included too
+  // (they also apply there), matching what the DE's own tab shows.
+  const focusedRules = rules.filter(r => {
+    if (focus === 'all') return true
+    if (focus === 'workspace') return r.scope === 'workspace'
+    if (focus.startsWith('de:')) return (r.scope === 'employee' && r.scope_ref === focus.slice(3)) || r.scope === 'workspace'
+    if (focus.startsWith('dept:')) return (r.scope === 'department' && r.scope_ref === focus.slice(5)) || r.scope === 'workspace'
+    return true
+  })
+
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
       <PageHeader
@@ -150,15 +163,32 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
               <div>
                 <h3 className="text-base font-semibold text-white">Guardrail rules</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Checked on every invoice generation and every DE answer</p>
+                <p className="text-xs text-slate-500 mt-0.5">Checked on every invoice generation and every DE answer. The same controls appear, pre-scoped, on each employee&apos;s Governance tab — this is the central view of all of them.</p>
               </div>
               <button onClick={() => setShowAdd(v => !v)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
                 + Add rule
               </button>
+            </div>
+
+            {/* Governance rebuild: focus the cockpit on any level. */}
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <span className="text-[11px] text-slate-500">Showing:</span>
+              <select value={focus} onChange={e => setFocus(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500">
+                <option value="all">Everything</option>
+                <option value="workspace">Workspace-wide only</option>
+                {des.length > 0 && <optgroup label="A specific employee">
+                  {des.map(d => <option key={d.id} value={`de:${d.id}`}>{d.name}</option>)}
+                </optgroup>}
+                {departments.length > 0 && <optgroup label="A department">
+                  {departments.map(dep => <option key={dep} value={`dept:${dep}`}>{dep}</option>)}
+                </optgroup>}
+              </select>
+              <span className="text-[11px] text-slate-600">{focusedRules.length} rule{focusedRules.length === 1 ? '' : 's'}</span>
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-slate-700">
@@ -171,7 +201,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rules.map(r => (
+                  {focusedRules.map(r => (
                     <tr key={r.id} className={`border-b border-slate-700/60 last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
                       <td className={`${td} text-slate-200 text-xs`}>{r.rule}</td>
                       <td className={td}>

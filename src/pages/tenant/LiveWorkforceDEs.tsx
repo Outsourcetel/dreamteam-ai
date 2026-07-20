@@ -25,6 +25,7 @@ import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
 import SpecialistLive from './SpecialistLive';
+import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
   listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey,
   listSkillCategories, createTenantSkill, listCertificationTypes,
@@ -3241,6 +3242,12 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           {/* Governance — the paper trail, ownership and incidents */}
           {detailTab === 'governance' && (
             <div className="space-y-6">
+              {/* Governance rebuild: the SAME scoped guardrails control shown
+                  on the central Governance page, pre-scoped to this employee.
+                  A DE's own guardrails (plus inherited workspace ones) are
+                  finally visible and editable here, not only centrally. */}
+              <ScopedGuardrails scope="employee" scopeRef={selectedDe.id}
+                entityLabel={selectedDe.persona_name || selectedDe.name} />
               {/* Governance — config editing/versioning, ownership/transfer, retirement */}
               <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
               <DeIncidentsPanel de={selectedDe} setPage={setPage} />
