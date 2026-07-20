@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
 import { askDE, DEAnswerError } from '../lib/knowledgeApi';
-import { listDigitalEmployees } from '../lib/digitalEmployeesApi';
+import { listDigitalEmployees, type DigitalEmployee } from '../lib/digitalEmployeesApi';
 
 // ============================================================
 // "Ask your DE" global chat dock — context-aware DE routing,
@@ -426,11 +426,25 @@ export default function DEChatDock() {
     let cancelled = false;
     listDigitalEmployees().then((des) => {
       if (cancelled || des.length === 0) return;
-      const first = des[0];
+      // The global dock is the WORKSPACE assistant — the DE that knows the
+      // DreamTeam platform and can help you run it. It is NOT whichever
+      // business DE happens to be oldest: routing every question to (say)
+      // the Finance DE is why this dock used to answer as "Morgan"
+      // regardless of what was asked. Every tenant is provisioned a
+      // Workforce Assistant; fall back to a published DE only if missing.
+      const rows = des as Array<DigitalEmployee & { is_workforce_assistant?: boolean }>;
+      const assistant =
+        rows.find((d) => d.is_workforce_assistant) ??
+        rows.find((d) => !['designed', 'paused', 'retired', 'archived'].includes(String(d.lifecycle_status))) ??
+        rows[0];
       setLiveDe({
-        id: first.id,
-        name: first.persona_name || first.name || GENERIC_LIVE_DE.name,
-        role: first.department ? `${first.department} Digital Employee` : 'Digital Employee',
+        id: assistant.id,
+        name: assistant.is_workforce_assistant
+          ? 'Workspace Assistant'
+          : (assistant.persona_name || assistant.name || GENERIC_LIVE_DE.name),
+        role: assistant.is_workforce_assistant
+          ? 'Knows your workspace & the platform'
+          : (assistant.department ? `${assistant.department} Digital Employee` : 'Digital Employee'),
         color: GENERIC_LIVE_DE.color,
       });
     }).catch(() => { /* honest fallback: keep the generic placeholder */ });

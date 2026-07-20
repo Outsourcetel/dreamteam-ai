@@ -19,13 +19,18 @@ const STATUS_META: Record<SupportConversation['status'], { label: string; cls: s
   human_owned: { label: 'You own it', cls: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
   resolved: { label: 'Resolved', cls: 'bg-slate-700 text-slate-300 border-slate-600' },
 };
-type Tab = 'needs_human' | 'mine' | 'open' | 'resolved';
+type Tab = 'needs_human' | 'mine' | 'open' | 'internal' | 'resolved';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'needs_human', label: 'Needs a human' },
   { key: 'mine', label: 'Mine' },
   { key: 'open', label: 'All open' },
+  // Questions asked through the in-app assistant dock. Previously these
+  // were fetched-out entirely, so a DE could be asked seven questions and
+  // no human had any surface to see or take them over.
+  { key: 'internal', label: 'Internal' },
   { key: 'resolved', label: 'Resolved' },
 ];
+const CUSTOMER_CHANNELS = ['widget', 'hosted', 'portal', 'email'];
 
 const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 // Relative time for the list — "now / 5m / 3h / 2d", falling back to a date
@@ -85,11 +90,15 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
 
   useEffect(() => { if (selId) void loadThread(selId); }, [selId, loadThread]);
 
+  const isCustomer = (c: SupportConversation) => CUSTOMER_CHANNELS.includes(c.channel);
   const filtered = convs.filter(c => {
+    // Escalations are channel-agnostic: if a DE says it needs a human, a
+    // human must see it whether it came from a customer or the app dock.
     if (tab === 'needs_human') return c.status === 'needs_human';
+    if (tab === 'internal') return !isCustomer(c);
     if (tab === 'mine') return c.owner_user_id === myId && c.status !== 'resolved';
-    if (tab === 'resolved') return c.status === 'resolved';
-    return c.status !== 'resolved'; // open
+    if (tab === 'resolved') return c.status === 'resolved' && isCustomer(c);
+    return c.status !== 'resolved' && isCustomer(c); // open = customer tickets
   });
   const sel = convs.find(c => c.id === selId) ?? null;
   const pendingDraft = thread.find(m => m.delivery === 'draft_pending');

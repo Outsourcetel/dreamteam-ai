@@ -37,9 +37,11 @@ const CONV_COLS = 'id, channel, status, priority, subject, detected_language, ha
 export async function listSupportConversations(status?: SupportConversation['status'] | 'all'): Promise<SupportConversation[]> {
   const tid = await requireTenantId();
   let q = supabase.from('de_conversations').select(CONV_COLS).eq('tenant_id', tid)
-    // Only conversations that have actually reached the support surface
-    // (widget/hosted/portal) — internal dock chats aren't customer tickets.
-    .in('channel', ['widget', 'hosted', 'portal', 'email'])
+    // Customer channels PLUS the in-app assistant dock. Dock chats aren't
+    // customer tickets and are tabbed separately in the UI, but excluding
+    // them from the fetch meant an escalated internal question had no
+    // human-review surface anywhere in the product.
+    .in('channel', ['widget', 'hosted', 'portal', 'email', 'dock'])
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(200);
   if (status && status !== 'all') q = q.eq('status', status);
