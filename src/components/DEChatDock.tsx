@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import AISessionPanel from './AISessionPanel';
 import { useAuth } from '../context/AuthContext';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
@@ -398,6 +399,8 @@ export default function DEChatDock() {
   const isLive = dataMode === 'live';
   const threadId = isLive ? 'live' : activeCompanyId;
   const [open, setOpen] = useState(false);
+  // Ask (question -> DE) vs Do (describe a change -> workspace assistant).
+  const [dockMode, setDockMode] = useState<'ask' | 'do'>('ask');
   const [messages, setMessages] = useState<ChatMsg[]>(() => loadThread(threadId));
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
@@ -656,6 +659,28 @@ export default function DEChatDock() {
             </button>
           </div>
 
+          {/* Ask vs Change. The dock used to only ANSWER questions; the
+              assistant tab lets someone change the workspace by describing
+              what they want, with a 120-hour undo on anything it does. */}
+          {isLive && (
+            <div className="flex gap-1 px-3 py-2 border-b border-slate-600/50 flex-shrink-0">
+              {([['ask', 'Ask a question'], ['do', 'Change something']] as const).map(([m, label]) => (
+                <button key={m} onClick={() => setDockMode(m)}
+                  className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg transition-colors ${
+                    dockMode === m ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isLive && dockMode === 'do' ? (
+            <div className="flex-1 min-h-0">
+              <AISessionPanel subjectKind="workspace" subjectLabel="Your workspace" />
+            </div>
+          ) : (
+          <>
+
           {/* Unowned-area banner */}
           {unowned && (
             <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex-shrink-0">
@@ -809,6 +834,9 @@ export default function DEChatDock() {
               </button>
             </div>
           </div>
+
+          </>
+          )}
         </div>
       )}
 

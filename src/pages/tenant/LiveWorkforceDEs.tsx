@@ -23,6 +23,7 @@ import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playboo
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
+import AISessionPanel from '../../components/AISessionPanel';
 import DeWorkbenchPanel from './DeWorkbench';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -223,6 +224,8 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [hiring, setHiring] = useState(false);
+  // Which employee the plain-language editor is open for, if any.
+  const [editingDe, setEditingDe] = useState<{ id: string; label: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [personaName, setPersonaName] = useState('');
@@ -289,6 +292,20 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
           onFinished={() => { void refresh(); }}
         />
       )}
+      {editingDe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setEditingDe(null)}>
+          <div className="w-full max-w-2xl h-[600px] max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <AISessionPanel
+              subjectKind="de"
+              subjectId={editingDe.id}
+              subjectLabel={editingDe.label}
+              onChanged={() => { void refresh(); }}
+              onClose={() => setEditingDe(null)}
+            />
+          </div>
+        </div>
+      )}
       <p className="text-xs text-slate-500 mb-4">
         Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
         data access, playbooks, and trust build up the same way for every department.
@@ -298,26 +315,36 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
 
       <div className="space-y-2 mb-3">
         {des.map(de => (
-          <button key={de.id} onClick={() => onSelect(de)}
-            className="w-full flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-900/60 hover:bg-slate-800 hover:ring-1 hover:ring-indigo-500/40 transition-all text-left">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">
-              {(de.persona_name || de.name).charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
-                {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>{de.status}</span>
-                {health[de.id] && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
-                    {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
-                  </span>
-                )}
+          // Row is a div, not a button: "Edit with AI" is a second action and
+          // a button cannot legally nest inside another button.
+          <div key={de.id}
+            className="w-full flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-900/60 hover:bg-slate-800 hover:ring-1 hover:ring-indigo-500/40 transition-all">
+            <button onClick={() => onSelect(de)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">
+                {(de.persona_name || de.name).charAt(0).toUpperCase()}
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
-            </div>
-            <span className="text-slate-600 flex-shrink-0">→</span>
-          </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
+                  {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>{de.status}</span>
+                  {health[de.id] && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
+                      {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
+              </div>
+            </button>
+            <button onClick={() => setEditingDe({ id: de.id, label: de.persona_name || de.name })}
+              title="Describe what to change, in plain language"
+              className="flex-shrink-0 text-[11px] px-2 py-1 rounded-md bg-slate-800 hover:bg-indigo-600/30 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-200 transition-colors">
+              ✨ Edit with AI
+            </button>
+            <button onClick={() => onSelect(de)} aria-label={`Open ${de.name}`}
+              className="text-slate-600 hover:text-slate-300 flex-shrink-0">→</button>
+          </div>
         ))}
         {des.length === 0 && <p className="text-xs text-slate-500">No Digital Employees yet — add your first one below.</p>}
       </div>

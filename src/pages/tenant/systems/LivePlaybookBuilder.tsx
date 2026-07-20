@@ -30,6 +30,7 @@ import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 import { SUPABASE_URL } from '../../../lib/env';
 import { useVocabulary } from '../../../lib/vocabulary';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../../components/LiveDataStates';
+import AISessionPanel from '../../../components/AISessionPanel';
 
 // ============================================================
 // R6 — LIVE Playbooks: tenant playbook builder.
@@ -1592,6 +1593,8 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
   const [builder, setBuilder] = useState<BuilderState | null>(null);
   const [selectedDefId, setSelectedDefId] = useState<string | null>(null);
+  // Plain-language playbook editor (Wave 1 working sessions).
+  const [aiEditing, setAiEditing] = useState(false);
   const [showDraftAi, setShowDraftAi] = useState(false);
   const [runAccountId, setRunAccountId] = useState('');
   const [starting, setStarting] = useState(false);
@@ -1699,6 +1702,11 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                 {selectedDef.status === 'published' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">v{selectedDef.version}</span>}
               </div>
               <div className="flex gap-2">
+                <button onClick={() => setAiEditing(true)}
+                  title="Describe what is wrong with this playbook, in plain language"
+                  className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600/30 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-200 transition-colors">
+                  ✨ Edit with AI
+                </button>
                 <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status })}
                   className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
@@ -1707,6 +1715,21 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               </div>
             </div>
             {selectedDef.description && <p className="text-sm text-slate-400 mb-3">{selectedDef.description}</p>}
+
+            {aiEditing && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+                onClick={() => setAiEditing(false)}>
+                <div className="w-full max-w-2xl h-[600px] max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                  <AISessionPanel
+                    subjectKind="playbook"
+                    subjectId={selectedDef.id}
+                    subjectLabel={selectedDef.name}
+                    onChanged={() => { void refresh(); }}
+                    onClose={() => setAiEditing(false)}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* PB3 Deep Study — shown for AI-drafted playbooks */}
             <StudyPanel definitionId={selectedDef.id} />

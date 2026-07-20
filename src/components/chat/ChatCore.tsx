@@ -54,7 +54,9 @@ function renderInline(text: string, keyBase: string): React.ReactNode[] {
   return out;
 }
 
-function renderLite(text: string): React.ReactNode {
+// Exported so the AI working-session panel renders assistant text the same
+// way the customer chat does, rather than growing a second markdown dialect.
+export function renderLite(text: string): React.ReactNode {
   const lines = text.split('\n');
   return lines.map((line, i) => {
     const h = line.match(/^(#{1,4})\s+(.*)$/);
