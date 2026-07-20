@@ -1235,7 +1235,7 @@ interface ActionDefRow {
 }
 
 async function resolveActionDefinition(
-  admin: SupabaseClient, tenantId: string, connectorCategory: string, actionKey: string,
+  admin: SupabaseClient, tenantId: string, connectorCategory: string, actionKey: string, connectorProvider?: string,
 ): Promise<{ ok: true; def: ActionDefRow } | { ok: false; error: string; detail?: string }> {
   // Tenant-scope row wins over platform-scope for the same category+key.
   const { data: rows } = await admin.from('action_definitions')
@@ -1244,7 +1244,13 @@ async function resolveActionDefinition(
     .or(`scope.eq.platform,tenant_id.eq.${tenantId}`);
   const list = (rows ?? []) as ActionDefRow[];
   const tenantRow = list.find((r) => r.scope === 'tenant' && r.tenant_id === tenantId);
-  const platformRow = list.find((r) => r.scope === 'platform');
+  // A category can now have MANY providers registered (helpdesk = zendesk +
+  // freshdesk + …), so pick the platform row whose provider matches THIS
+  // connector; fall back to the first platform row for single-provider
+  // categories (back-compat) — never cross-fire one provider's executor at
+  // another provider's connector.
+  const platformRow = (connectorProvider && list.find((r) => r.scope === 'platform' && r.provider === connectorProvider))
+    || list.find((r) => r.scope === 'platform');
   const def = tenantRow ?? platformRow;
   if (!def) {
     return { ok: false, error: 'action_not_registered', detail: `No active action "${actionKey}" is registered for the ${connectorCategory} category.` };
@@ -2322,7 +2328,78 @@ const dreamteamActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions };
+// ── freshdesk write-side (EXEC-1) — the SAME 4 canonical helpdesk ops the
+// Zendesk executor exposes (reply / internal note / status / tags), so the DE
+// works a Freshdesk ticket exactly as it works a Zendesk one; the category
+// layer already routes by connector.provider. Basic auth (api_key:X). Status
+// is numeric in Freshdesk — mapped from the canonical names here. ──
+const FRESH_STATUS: Record<string, number> = { open: 2, pending: 3, resolved: 4, closed: 5 };
+const freshdeskActions: Record<string, NativeAction> = {
+  freshdesk_add_internal_note: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return { ok: true, method: 'POST', url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}/notes`, body: { body: p.note, private: true } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: freshAuth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added a private note to Freshdesk ticket #${p.external_ref} (not visible to the customer).` };
+    },
+  },
+  freshdesk_reply_to_ticket: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket id) is required.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'reply body text is required.' };
+      return { ok: true, method: 'POST', url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}/reply`, body: { body: p.body } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: freshAuth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Posted a public reply on Freshdesk ticket #${p.external_ref} — the customer will see it.` };
+    },
+  },
+  freshdesk_update_status: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket id) is required.' };
+      if (!(p.status in FRESH_STATUS)) return { ok: false, error: 'param_invalid', detail: `status must be one of: ${Object.keys(FRESH_STATUS).join(', ')}.` };
+      return { ok: true, method: 'PUT', url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}`, body: { status: FRESH_STATUS[p.status] } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: freshAuth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Set Freshdesk ticket #${p.external_ref} status to "${p.status}".` };
+    },
+  },
+  freshdesk_add_tags: {
+    render(c, p) {
+      if (!p.external_ref) return { ok: false, error: 'param_required', detail: 'external_ref (ticket id) is required.' };
+      if (!p.tags?.trim()) return { ok: false, error: 'param_required', detail: 'tags (comma-separated) is required.' };
+      // Freshdesk PUT replaces the whole tag array; run() fetches current tags
+      // first and merges so this is ADD, not replace.
+      return { ok: true, method: 'PUT', url: `${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}`, body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const add = (p.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      const cur = await httpJson(`${c.baseUrl}/api/v2/tickets/${encodeURIComponent(p.external_ref)}`, { headers: { Authorization: freshAuth(c) } });
+      const existing = Array.isArray((cur.body as { tags?: string[] } | null)?.tags) ? (cur.body as { tags: string[] }).tags : [];
+      const merged = [...new Set([...existing, ...add])];
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: freshAuth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ tags: merged }) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Tagged Freshdesk ticket #${p.external_ref} with: ${add.join(', ')}.` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
@@ -4824,7 +4901,7 @@ serve(async (req) => {
       if (!actionKey) return json({ error: 'action_key_required' }, 400);
       const category = String(connector.category ?? 'other');
 
-      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
       if (def.provider === 'internal') {
@@ -4873,7 +4950,7 @@ serve(async (req) => {
       if (!actionKey) return json({ error: 'action_key_required' }, 400);
       const category = String(connector.category ?? 'other');
 
-      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey);
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
       if (def.provider === 'internal') {
