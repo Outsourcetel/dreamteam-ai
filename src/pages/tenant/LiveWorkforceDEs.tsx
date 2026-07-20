@@ -1573,19 +1573,28 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
 // A DE consults its PRIMARY specialist first; if that profile is
 // paused, the SECONDARY. Playbook steps using profile_key "auto"
 // resolve through this assignment (migration 122).
+interface ConsultableRow { target_de_id: string; name: string; is_specialist: boolean; rank: number | null; grant_kind: string }
 function DeSpecialistsPanel({ deId }: { deId: string }) {
   const [specialists, setSpecialists] = useState<Array<{ id: string; name: string; key: string; status: string }>>([]);
   const [assigned, setAssigned] = useState<Record<number, string>>({});
+  // Wave 4: the one consult list — assigned specialists AND peer-DE grants.
+  const [consultable, setConsultable] = useState<ConsultableRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: sps }, { data: rows, error: err }] = await Promise.all([
+    const [{ data: sps }, { data: rows, error: err }, { data: cons, error: consErr }] = await Promise.all([
       supabase.from('specialist_profiles').select('id, name, key, status').order('created_at'),
       supabase.rpc('list_de_specialists', { p_de_id: deId }),
+      supabase.rpc('list_consultable_for_de', { p_de_id: deId }),
     ]);
     if (err) { setError(err.message); return; }
+    if (consErr) setError(consErr.message);
     setSpecialists((sps ?? []) as typeof specialists);
+    // supabase.rpc on a json-returning function may hand back the array
+    // directly or a JSON string depending on the client — normalise both.
+    const consList = typeof cons === 'string' ? JSON.parse(cons) : cons;
+    setConsultable((Array.isArray(consList) ? consList : []) as ConsultableRow[]);
     const map: Record<number, string> = {};
     for (const r of (rows ?? []) as Array<{ rank: number; specialist_id: string }>) map[r.rank] = r.specialist_id;
     setAssigned(map);
@@ -1634,6 +1643,29 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
           </div>
         ))}
       </div>
+
+      {/* Wave 4: the ONE consult list — assigned specialists and peer-DE
+          grants together, since a specialist is a DE now. Read-only view
+          of what this employee can actually reach (list_consultable_for_de). */}
+      {consultable.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-slate-700">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Can consult</p>
+          <div className="flex flex-wrap gap-1.5">
+            {consultable.map(c => (
+              <span key={c.target_de_id}
+                className={`text-[11px] px-2 py-1 rounded-lg border ${
+                  c.is_specialist
+                    ? 'bg-violet-500/10 border-violet-500/30 text-violet-200'
+                    : 'bg-slate-700/40 border-slate-600 text-slate-300'}`}>
+                {c.name}
+                <span className="text-slate-500 ml-1">
+                  {c.is_specialist ? `specialist${c.rank ? ` · ${c.rank === 1 ? 'primary' : 'backup'}` : ''}` : 'peer'}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
