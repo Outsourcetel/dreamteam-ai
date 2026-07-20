@@ -53,7 +53,11 @@ BEGIN
     END IF;
     SELECT coalesce(nullif(trim(full_name), ''), 'user') INTO v_actor
     FROM profiles WHERE user_id = auth.uid() AND tenant_id = p_tenant_id LIMIT 1;
-    v_type := 'user';
+    -- MUST be one of the audit_events actor_type CHECK values
+    -- ('de','human','system'). A JWT caller is a human; using 'user' here
+    -- silently broke every user-initiated audit write until it was caught
+    -- by the Wave 1 end-to-end test.
+    v_type := 'human';
     v_detail := v_detail || jsonb_build_object('_user_submitted', true, '_submitted_by', auth.uid());
   END IF;
 
@@ -128,6 +132,7 @@ CREATE TABLE IF NOT EXISTS ops_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_ops_alerts_open ON ops_alerts(kind) WHERE resolved_at IS NULL;
 ALTER TABLE ops_alerts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Platform admins can view ops alerts" ON ops_alerts;
 CREATE POLICY "Platform admins can view ops alerts"
 ON ops_alerts FOR SELECT
 USING (public.is_platform_admin());
