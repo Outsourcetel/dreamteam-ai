@@ -46,8 +46,13 @@ export interface DigitalEmployee {
   external_reply_mode: 'draft' | 'auto';
 }
 
-export async function listDigitalEmployees(): Promise<DigitalEmployee[]> {
-  return listTenantRows<DigitalEmployee>('digital_employees', 'created_at', true, 'listDigitalEmployees');
+/** The roster. Retired and archived employees are hidden by default —
+ *  retiring one used to change its status and leave it sitting in the list
+ *  forever, so the action appeared to do nothing. They are never deleted;
+ *  pass includeRetired to see them (the roster has a toggle). */
+export async function listDigitalEmployees(includeRetired = false): Promise<DigitalEmployee[]> {
+  const all = await listTenantRows<DigitalEmployee>('digital_employees', 'created_at', true, 'listDigitalEmployees');
+  return includeRetired ? all : all.filter(d => !['retired', 'archived'].includes(String(d.lifecycle_status)));
 }
 
 /** Flip a DE between draft-for-approval and auto-send for external replies. */

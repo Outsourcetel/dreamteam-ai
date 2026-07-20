@@ -226,14 +226,15 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       ],
     },
     {
-      title: 'CONNECTORS',
+      // Founder brief: five must-have sections (Digital Employees,
+      // Playbooks, Systems & Actions, Governance, Knowledge) plus at most
+      // two more. CONNECTORS and COMPANY DATA were separate top-level
+      // sections; they merge here because the company-data pages ARE views
+      // over the systems these connectors reach — keeping them apart cost a
+      // whole section for one link. Remaining extras: MY TASKS and SETUP.
+      title: 'SYSTEMS & ACTIONS',
       groups: [
-        { id: 'connectors', label: 'Systems & Actions', icon: '⟷', page: 'systems_connectors' },
-      ],
-    },
-    {
-      title: 'COMPANY DATA',
-      groups: [
+        { id: 'connectors', label: 'Connected systems', icon: '⟷', page: 'systems_connectors' },
         {
           id: 'customer',
           // Wave 4: the served-party noun and lifecycle labels come from

@@ -232,6 +232,9 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   const [hiring, setHiring] = useState(false);
   // Which employee the plain-language editor is open for, if any.
   const [editingDe, setEditingDe] = useState<{ id: string; label: string } | null>(null);
+  // Retired/archived employees are kept but hidden until asked for.
+  const [showRetired, setShowRetired] = useState(false);
+  const [retiredCount, setRetiredCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [personaName, setPersonaName] = useState('');
@@ -240,7 +243,11 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
 
   const refresh = useCallback(async () => {
     try {
-      setDes(await listDigitalEmployees());
+      // Fetch both so the "retired" count is honest without a second trip.
+      const all = await listDigitalEmployees(true);
+      const active = all.filter(d => !['retired', 'archived'].includes(String(d.lifecycle_status)));
+      setRetiredCount(all.length - active.length);
+      setDes(showRetired ? all : active);
       setError(null);
     } catch (err) {
       setError((err as Error)?.message || 'Failed to load the roster.');
@@ -249,7 +256,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
       const h = await listDeHealth();
       setHealth(Object.fromEntries(h.map(x => [x.de_id, x])));
     } catch { /* health is supplementary — a roster still renders without it */ }
-  }, []);
+  }, [showRetired]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -281,6 +288,14 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
         <h3 className="text-base font-semibold text-white">Your Digital Employees</h3>
         {!adding && (
           <div className="flex items-center gap-2">
+            {/* Retiring an employee used to leave it in this list forever,
+                so the action looked like it had done nothing. */}
+            {retiredCount > 0 && (
+              <button onClick={() => setShowRetired(v => !v)}
+                className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-colors">
+                {showRetired ? 'Hide retired' : `Show retired (${retiredCount})`}
+              </button>
+            )}
             <button onClick={() => setHiring(true)}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
               ✨ Hire with AI
