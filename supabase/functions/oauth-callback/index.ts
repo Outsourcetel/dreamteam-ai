@@ -59,6 +59,8 @@ Deno.serve(async (req) => {
     const redirectUri = `${SUPABASE_URL}${OAUTH_CALLBACK_PATH}`;
     const useBasic = (meta.tokenAuth ?? 'basic') === 'basic';
     const bodyParams: Record<string, string> = { grant_type: 'authorization_code', code, redirect_uri: redirectUri };
+    // PKCE: the verifier stored by oauth-start must accompany the exchange.
+    if (typeof st.code_verifier === 'string' && st.code_verifier) bodyParams.code_verifier = st.code_verifier;
     const tokHeaders: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' };
     if (useBasic) tokHeaders.Authorization = 'Basic ' + btoa(`${clientId}:${clientSecret}`);
     else { bodyParams.client_id = String(clientId); bodyParams.client_secret = String(clientSecret); }

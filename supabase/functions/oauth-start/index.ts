@@ -48,8 +48,24 @@ Deno.serve(async (req) => {
 
     const state = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, '');
     const redirectUri = `${SUPABASE_URL}${OAUTH_CALLBACK_PATH}`;
+
+    // PKCE (S256): verifier stored with the single-use state, challenge sent
+    // to the provider. Providers that don't support PKCE ignore the extra
+    // authorize params; ones that do then require the verifier at exchange —
+    // oauth-callback submits it. Opt out per provider with meta.pkce === false.
+    const usePkce = (meta as { pkce?: boolean }).pkce !== false;
+    let codeVerifier: string | null = null;
+    let codeChallenge: string | null = null;
+    if (usePkce) {
+      const raw = crypto.getRandomValues(new Uint8Array(48));
+      codeVerifier = btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier)));
+      codeChallenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
     const { error: stErr } = await admin.from('oauth_connect_states').insert({
       state, tenant_id: tenantId, connector_id: conn.id, provider, redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
     });
     if (stErr) return json({ error: 'state_create_failed', detail: stErr.message }, 500);
 
@@ -59,6 +75,10 @@ Deno.serve(async (req) => {
     u.searchParams.set('redirect_uri', redirectUri);
     if (meta.scopes) u.searchParams.set('scope', meta.scopes);
     u.searchParams.set('state', state);
+    if (codeChallenge) {
+      u.searchParams.set('code_challenge', codeChallenge);
+      u.searchParams.set('code_challenge_method', 'S256');
+    }
     for (const [k, v] of Object.entries(meta.extraAuthorize ?? {})) u.searchParams.set(k, v);
 
     return json({ ok: true, authorize_url: u.toString(), connector_id: conn.id });
