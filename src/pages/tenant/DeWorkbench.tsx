@@ -11,6 +11,7 @@ import {
 import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 import BookOfWorkPanel from '../../components/BookOfWorkPanel';
+import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 
 // ═══════════════════════════════════════════════════════════════
 // DE Workbench — makes the Wave 1-3 muscles VISIBLE. Everything here
@@ -275,6 +276,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
             {section === 'work' && (
               <div className="space-y-5">
                 <BookOfWorkPanel deId={deId} />
+                <CaseTimelinePanel deId={deId} />
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <p className="text-[11px] uppercase tracking-wide text-slate-500">Objectives (goals)</p>
