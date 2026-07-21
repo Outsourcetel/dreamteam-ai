@@ -47,6 +47,26 @@ interface ContentBlock { type: string; text?: string; id?: string; name?: string
 // same idempotent RPC (keys obj-<id>-step-<n>, so a re-plan can't double-
 // enqueue), then marked in_progress. The queue machinery executes the
 // steps on subsequent ticks — planning and doing stay separate passes.
+// Anthropic call with bounded retry on transient throttling (429 / 529 / 5xx).
+// de-work uses raw fetch (no SDK auto-retry), so a brief rate-limit or overload
+// otherwise throws straight through and defers the whole objective +30min.
+async function anthropicWithRetry(apiKey: string, body: Record<string, unknown>, label: string): Promise<{ content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; usage?: { input_tokens?: number; output_tokens?: number } }> {
+  let lastStatus = 0, lastBody = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return await res.json();
+    lastStatus = res.status;
+    lastBody = (await res.text()).slice(0, 300);
+    if (res.status !== 429 && res.status !== 529 && res.status < 500) break; // non-retryable
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 700 * (attempt + 1) * (attempt + 1))); // 0.7s, 2.8s
+  }
+  throw new Error(`${label}_anthropic_${lastStatus}: ${lastBody}`);
+}
+
 // The DE's operator-authored SOP + guardrails as a compact briefing block.
 // Injected into the planner and the worker so an attached playbook + guardrails
 // actually steer the autonomous loop (they were invisible to it before, EXEC-2).
@@ -73,13 +93,11 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
   // the steps were emitted (planner spent tokens, returned 0 parseable steps).
   // Forced tool_choice would guarantee structure but is REJECTED alongside
   // thinking on Claude 5 — so we keep plain JSON and just give it room.
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 4096, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }),
-  });
-  if (!res.ok) throw new Error(`planner_anthropic_${res.status}`);
-  const d = await res.json();
+  // thinking DISABLED: on Claude 5 adaptive thinking is on by default and shares
+  // the output budget, so it intermittently ate the plan JSON before the steps
+  // were emitted (tokens spent, 0 parseable steps → silent defer). A planner
+  // that returns structured JSON doesn't need thinking. Retry transient 429/529.
+  const d = await anthropicWithRetry(apiKey, { model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }, 'planner');
   // Meter BEFORE any early return, and AWAITED — a lazy supabase-js thenable
   // never fires unless awaited, and unmetered planner spend can never trip
   // the very budget gate that checks it (consolidation-review finding).
@@ -135,13 +153,8 @@ async function reviewObjective(
     `- [${i.status}] ${i.title}${i.result?.summary ? `: ${String(i.result.summary).slice(0, 200)}` : ''}`).join('\n') || '(no steps have run yet)';
 
   const system = 'You review progress on a long-running business objective owned by an AI employee. Decide: "achieved" (the goal is met — be strict, only when the completed work actually accomplishes it), "blocked" (cannot progress without human help), or "continue" (more work needed). If continue, propose 1-3 concrete NEXT steps that build on what happened — not a restart. Return ONLY JSON {"assessment":"achieved"|"blocked"|"continue","note":string,"next_steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}.' + FIREWALL_RULES;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 4096, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }),
-  });
-  if (!res.ok) throw new Error(`review_anthropic_${res.status}`);
-  const d = await res.json();
+  // thinking disabled + retry, same rationale as planObjective (structured JSON).
+  const d = await anthropicWithRetry(apiKey, { model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
   // AWAITED — lazy thenable; unmetered reviewer spend evades the budget gate.
   await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
@@ -583,7 +596,11 @@ serve(async (req) => {
           const steps = await planObjective(admin, apiKey, o);
           planned.push({ objective_id: o.id, steps });
           if (steps === 0) await deferPlan(o.id);   // unparseable/empty plan → back off, don't hot-loop
-        } catch (e) { console.error('planObjective:', e); await deferPlan(o.id); }
+        } catch (e) {
+          console.error('planObjective:', e);
+          try { await admin.from('de_decision_trace').insert({ tenant_id: o.tenant_id, de_id: o.de_id, run_kind: 'work_item', run_ref: o.id, seq: 0, tool: 'plan_error', outputs: { error: String(e).slice(0, 400) } }); } catch { /* diag only */ }
+          await deferPlan(o.id);
+        }
       }
       if (body.action === 'plan') return json({ planned });
     }
