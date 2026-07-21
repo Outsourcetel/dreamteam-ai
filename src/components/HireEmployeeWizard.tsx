@@ -10,10 +10,11 @@ import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,
   listRoleArchetypes, hireFromArchetype, getSetupQuestions,
+  proposeTailoredSetup, applyTailoredGuardrails,
 } from '../lib/hireApi';
 import type {
   HireDraft, TeachResult, RehearsalResult, PromotionOutcome,
-  RoleArchetype, ArchetypeHireResult, SetupQuestion,
+  RoleArchetype, ArchetypeHireResult, SetupQuestion, TailoredApplyResult,
 } from '../lib/hireApi';
 
 type Step = 'brief' | 'meet' | 'working' | 'done' | 'tailor' | 'archetype_done';
@@ -48,6 +49,8 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
   const [archResult, setArchResult] = useState<ArchetypeHireResult | null>(null);
   const [setupQuestions, setSetupQuestions] = useState<SetupQuestion[]>([]);
   const [setupAnswers, setSetupAnswers] = useState<Record<string, string>>({});
+  const [applyResult, setApplyResult] = useState<TailoredApplyResult | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
 
   useEffect(() => {
     if (showRoles && archetypes.length === 0) {
@@ -59,6 +62,21 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
 
   const persona = draft?.config.persona_name || 'Your new employee';
   const roleName = draft?.config.name || 'New Digital Employee';
+
+  const tailoredProposal = proposeTailoredSetup(setupQuestions, setupAnswers);
+  const hasProposal =
+    tailoredProposal.discountPct != null || tailoredProposal.approvalCents != null ||
+    tailoredProposal.systems.length > 0 || !!tailoredProposal.partyScope;
+
+  const doApplyTailored = async () => {
+    if (!archResult) return;
+    setApplyBusy(true); setError(null);
+    try {
+      setApplyResult(await applyTailoredGuardrails(archResult.deId, tailoredProposal));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply the adjustments.');
+    } finally { setApplyBusy(false); }
+  };
 
   const doDraft = async () => {
     if (brief.trim().length < 30) { setError('Say a little more — a sentence or two about what this employee should do.'); return; }
@@ -452,8 +470,32 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </div>
               )}
 
+              {hasProposal && (
+                <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
+                  <p className="text-[11px] uppercase tracking-wide text-indigo-300 mb-1">Proposed from your answers — you approve before it applies</p>
+                  {tailoredProposal.partyScope && <p className="text-xs text-slate-300">• Scope: <span className="text-white font-medium">{tailoredProposal.partyScope}</span></p>}
+                  {tailoredProposal.discountPct != null && <p className="text-xs text-slate-300">• Discount allowed without approval: <span className="text-white font-medium">{tailoredProposal.discountPct}%</span></p>}
+                  {tailoredProposal.approvalCents != null && <p className="text-xs text-slate-300">• Human approval required above: <span className="text-white font-medium">${(tailoredProposal.approvalCents / 100).toLocaleString()}</span></p>}
+                  {tailoredProposal.systems.length > 0 && <p className="text-xs text-slate-300">• Systems to connect: <span className="text-white font-medium">{tailoredProposal.systems.join(', ')}</span></p>}
+
+                  {applyResult ? (
+                    <p className="text-xs text-emerald-300 pt-1">
+                      ✓ Applied{(applyResult.discountUpdated || applyResult.approvalUpdated) ? ' — its discount/approval guardrails now match your answers.' : '.'}
+                      {tailoredProposal.systems.length > 0 ? ` Connect ${tailoredProposal.systems.join(', ')} in Settings → Connectors so it can work your real records.` : ''}
+                    </p>
+                  ) : (tailoredProposal.discountPct != null || tailoredProposal.approvalCents != null) ? (
+                    <button onClick={doApplyTailored} disabled={applyBusy}
+                      className="mt-1 text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-700/50 hover:border-indigo-500 disabled:opacity-50 transition-all">
+                      {applyBusy ? 'Applying…' : 'Apply these guardrail thresholds'}
+                    </button>
+                  ) : tailoredProposal.systems.length > 0 ? (
+                    <p className="text-[11px] text-slate-400 pt-1">Connect {tailoredProposal.systems.join(', ')} in Settings → Connectors so it can work your real records.</p>
+                  ) : null}
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-500">
-                Still to come: from these same answers, the employee proposes its connectors, watcher rules and guardrail thresholds for your approval — each through the normal review-and-approve gate.
+                You can refine its rules, watchers, SOP and connections any time from the employee’s profile — the setup stays editable as your business changes.
               </p>
 
               <button onClick={() => { onFinished(); onClose(); }}

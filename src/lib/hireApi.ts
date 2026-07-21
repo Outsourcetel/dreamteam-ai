@@ -11,6 +11,7 @@ import { supabase } from '../supabase';
 import { getSessionTenantId } from './customerApi';
 import { createKnowledgeDoc, ingestDocChunks } from './knowledgeApi';
 import { draftPlaybookFromSop } from './playbookBuilderApi';
+import { listGuardrailRules, updateGuardrailRule } from './guardrailApi';
 
 export interface HireStudy {
   coverage: string;
@@ -174,6 +175,85 @@ export async function getSetupQuestions(archetypeKey: string): Promise<SetupQues
   if (error) return []; // column missing (migration not applied) → skip tailoring
   const q = (data?.setup_questions ?? []) as unknown;
   return Array.isArray(q) ? (q as SetupQuestion[]) : [];
+}
+
+// ── P1.3 — turn the tailoring answers into reviewable, human-approved
+// adjustments. Parsing is deterministic (no LLM dependency); applying reuses
+// the audited guardrail path. Connectors are surfaced for the human to
+// authorize (an employee never connects a system on its own).
+
+const KNOWN_SYSTEMS = [
+  'Salesforce', 'HubSpot', 'Zoho', 'Dynamics', 'Pipedrive', 'Close',
+  'Zuora', 'Stripe', 'NetSuite', 'QuickBooks', 'Chargebee', 'Recurly', 'Xero', 'Sage',
+  'DocuSign', 'Ironclad', 'SAP', 'Oracle',
+];
+
+function parsePercent(s: string): number | null {
+  const m = /(\d+(?:\.\d+)?)\s*%/.exec(s);
+  if (m) return Math.max(0, Math.min(100, parseFloat(m[1])));
+  if (/\bno\b[^.]*discount|discount[^.]*\bnone\b|no discount/i.test(s)) return 0;
+  return null;
+}
+
+function parseMoneyCents(s: string): number | null {
+  const m = /\$?\s*([\d,]+(?:\.\d+)?)\s*([kmKM])?/.exec(s);
+  if (!m) return null;
+  let n = parseFloat(m[1].replace(/,/g, ''));
+  if (!isFinite(n)) return null;
+  const suf = (m[2] || '').toLowerCase();
+  if (suf === 'k') n *= 1_000;
+  else if (suf === 'm') n *= 1_000_000;
+  return Math.round(n * 100);
+}
+
+function detectSystems(s: string): string[] {
+  const low = s.toLowerCase();
+  return KNOWN_SYSTEMS.filter((k) => low.includes(k.toLowerCase()));
+}
+
+export interface TailoredProposal {
+  discountPct: number | null;
+  approvalCents: number | null;
+  systems: string[];
+  partyScope: string | null;
+}
+
+/** Deterministic proposal derived from the tailoring answers. */
+export function proposeTailoredSetup(
+  _questions: SetupQuestion[],
+  answers: Record<string, string>
+): TailoredProposal {
+  const get = (k: string) => (answers[k] ?? '').trim();
+  return {
+    discountPct: parsePercent(get('discount_authority')),
+    approvalCents: parseMoneyCents(get('approval_threshold')),
+    systems: Array.from(new Set(detectSystems(`${get('systems_of_record')} ${get('billing_system')}`))),
+    partyScope: get('party_scope') || null,
+  };
+}
+
+export interface TailoredApplyResult {
+  discountUpdated: boolean;
+  approvalUpdated: boolean;
+}
+
+/** Apply the proposed thresholds to THIS employee's guardrails, through the
+ *  ordinary audited guardrail update (RLS-scoped, versioned). Only touches the
+ *  employee-scoped discount/approval rules its role kit installed. */
+export async function applyTailoredGuardrails(deId: string, p: TailoredProposal): Promise<TailoredApplyResult> {
+  const out: TailoredApplyResult = { discountUpdated: false, approvalUpdated: false };
+  const rules = await listGuardrailRules();
+  const forDe = rules.filter((r) => r.scope === 'employee' && r.scope_ref === deId);
+
+  if (p.discountPct != null) {
+    const g = forDe.find((r) => r.rule_type === 'max_discount_pct');
+    if (g) { await updateGuardrailRule(g, { threshold: p.discountPct }); out.discountUpdated = true; }
+  }
+  if (p.approvalCents != null) {
+    const g = forDe.find((r) => r.rule_type === 'require_approval_over_cents');
+    if (g) { await updateGuardrailRule(g, { threshold: p.approvalCents }); out.approvalUpdated = true; }
+  }
+  return out;
 }
 
 /** The Deep Study's exam becomes the tenant's golden exam for this role, so
