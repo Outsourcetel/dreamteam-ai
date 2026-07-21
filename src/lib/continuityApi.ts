@@ -200,6 +200,63 @@ export async function listContinuityCases(): Promise<ContinuityCase[]> {
   }));
 }
 
+// ── Case timeline (stage history + activities) ───────────────────────
+export interface ContinuityCaseEvent {
+  id: string;
+  objective_id: string;
+  from_stage: string | null;
+  to_stage: string | null;
+  motion: string | null;
+  actor_kind: 'de' | 'human' | 'system';
+  summary: string;
+  created_at: string;
+}
+
+export async function listCaseEvents(objectiveId: string, limit = 100): Promise<ContinuityCaseEvent[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('continuity_case_events')
+    .select('id,objective_id,from_stage,to_stage,motion,actor_kind,summary,created_at')
+    .eq('tenant_id', tid)
+    .eq('objective_id', objectiveId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) raise('listCaseEvents', error);
+  return (data ?? []) as ContinuityCaseEvent[];
+}
+
+// ── Gated write-back (propose → gate → auto-apply or human approval) ──
+export type ContinuityWritebackOp = 'log_activity' | 'set_next_step' | 'advance_stage';
+export interface ContinuityWritebackResult {
+  ok: boolean;
+  gated?: boolean;
+  applied?: boolean;
+  task_id?: string;
+  request_id?: string;
+  reasoning?: string;
+  error?: string;
+}
+
+/**
+ * Propose a case write-back. Non-destructive ops (log_activity, set_next_step)
+ * may auto-apply per the gate; advance_stage is destructive and routes to a
+ * human approval task unless trust/guardrails allow it. Never writes directly.
+ */
+export async function proposeContinuityWriteback(
+  deId: string,
+  objectiveId: string,
+  op: ContinuityWritebackOp,
+  params: Record<string, string> = {},
+): Promise<ContinuityWritebackResult> {
+  const { data, error } = await supabase.rpc('propose_continuity_writeback', {
+    p_de_id: deId, p_objective_id: objectiveId, p_op: op, p_params: params,
+  });
+  if (error) raise('proposeContinuityWriteback', error);
+  const res = (data ?? {}) as ContinuityWritebackResult;
+  if (res.ok === false) throw new CustomerApiError(res.error || 'Could not propose the write-back.', false);
+  return res;
+}
+
 // ── Small presentation helpers ───────────────────────────────────────
 const MOTION_LABELS: Record<ContinuityMotion, string> = {
   renew: 'Renew', extend: 'Extend', early_renew: 'Early renew', reorder: 'Reorder',

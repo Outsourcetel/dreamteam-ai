@@ -596,6 +596,17 @@ export async function decideHumanTask(
       throw err;
     }
   }
+  // Continuity case write-back (EXEC-2c, migration 227): frozen-write apply on
+  // approve for a case's activity / next-step / stage advance.
+  if (task.related_table === 'continuity_writeback_requests') {
+    try {
+      const { resolveContinuityWriteback } = await import('./writeBackApi');
+      await resolveContinuityWriteback(task.id, decision);
+    } catch (err) {
+      console.error('continuity write-back resolution hook:', err);
+      throw err;
+    }
+  }
   // Hook (EXEC 0.4, migration 216): approving an outbound EMAIL draft now
   // actually DELIVERS it via Resend (dormant-honest if not configured).
   // Non-email channels are still delivered by the human — nothing to do here.
