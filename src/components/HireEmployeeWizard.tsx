@@ -118,6 +118,21 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
     } finally { setBusy(false); setPhase(''); }
   };
 
+  // P1.3 — the interview answers become tailored grounding + a draft SOP,
+  // through the SAME teach machinery the from-scratch hire uses.
+  const doTailorSetup = async () => {
+    if (!archResult || !selectedRole) { setStep('archetype_done'); return; }
+    const qa = setupQuestions.map((q) => ({ question: q.question, answer: setupAnswers[q.key] ?? '' }));
+    if (!qa.some((x) => x.answer.trim())) { setStep('archetype_done'); return; }
+    setBusy(true); setError(null);
+    setPhase(`${roleDeName.trim() || selectedRole.name} is drafting its tailored setup from your answers…`);
+    try {
+      setTeach(await teachNewHire(archResult.deId, roleDeName.trim() || selectedRole.name, selectedRole.description, qa));
+    } catch (e) {
+      setTeach({ knowledgeDocId: null, embeddedChunks: 0, playbookName: null, playbookError: e instanceof Error ? e.message : 'draft failed' });
+    } finally { setBusy(false); setPhase(''); setStep('archetype_done'); }
+  };
+
   const answeredCount = answers.filter((a) => a.trim()).length;
 
   return (
@@ -392,12 +407,12 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 ))}
               </div>
 
-              <button onClick={() => setStep('archetype_done')}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
-                Continue
+              <button onClick={doTailorSetup} disabled={busy}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
+                {busy ? phase || 'Drafting…' : 'Draft my tailored setup'}
               </button>
               <p className="text-[11px] text-slate-500 text-center">
-                Next, {roleDeName.trim() || selectedRole.name} drafts its tailored setup from your answers for you to review.
+                Your answers become {roleDeName.trim() || selectedRole.name}’s grounding and a tailored draft SOP — which you review and publish before it goes live.
               </p>
             </>
           )}
@@ -422,16 +437,23 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 <p className="text-xs text-slate-300">• {archResult.systemsInstalled} connected-system binding(s) — where it works</p>
               </div>
 
-              {Object.values(setupAnswers).some((a) => a.trim()) && (
-                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3">
-                  <p className="text-xs text-slate-300">
-                    ✓ You answered {Object.values(setupAnswers).filter((a) => a.trim()).length} of {setupQuestions.length} tailoring questions — the employee will draft its tailored systems, rules and SOP from these for your approval.
-                  </p>
+              {teach && (teach.knowledgeDocId || teach.playbookName || teach.playbookError) && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 space-y-1">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Drafted from your answers</p>
+                  {teach.knowledgeDocId && (
+                    <p className="text-xs text-slate-300">✓ Your answers were saved as this employee’s knowledge{teach.embeddedChunks > 0 ? ' and indexed' : ' (indexing finishes automatically)'}.</p>
+                  )}
+                  {teach.playbookName && (
+                    <p className="text-xs text-slate-300">✓ A tailored draft SOP “{teach.playbookName}” was written — review and publish it in the Playbook Builder.</p>
+                  )}
+                  {teach.playbookError && (
+                    <p className="text-xs text-amber-400/80">The SOP draft didn’t complete ({teach.playbookError}) — your answers are still saved as knowledge.</p>
+                  )}
                 </div>
               )}
 
               <p className="text-[11px] text-slate-500">
-                Next: the employee drafts its tailored systems, rules and SOP from your answers — and you approve each change before it goes live.
+                Still to come: from these same answers, the employee proposes its connectors, watcher rules and guardrail thresholds for your approval — each through the normal review-and-approve gate.
               </p>
 
               <button onClick={() => { onFinished(); onClose(); }}
