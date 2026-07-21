@@ -68,6 +68,11 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
   // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
   const brief = await deBriefing(admin, obj.de_id);
   const system = 'You break a business objective into 2-5 concrete, ordered work steps an AI employee can execute (research, compute, check, follow-up, escalate). Return ONLY JSON: {"steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}. Steps must be self-contained and verifiable.' + brief + FIREWALL_RULES;
+  // max_tokens headroom (8192): on Claude-5 the model's adaptive thinking shares
+  // the output budget, so a tight cap intermittently truncated the JSON before
+  // the steps were emitted (planner spent tokens, returned 0 parseable steps).
+  // Forced tool_choice would guarantee structure but is REJECTED alongside
+  // thinking on Claude 5 — so we keep plain JSON and just give it room.
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -231,7 +236,7 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -330,6 +335,20 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       if (error) return { result: { error: `write-back failed: ${error.message}` } };
       return { result: data };
     }
+    case 'write_back_to_opportunity': {
+      // Pipeline desk (EXEC-2b SDR) — same close-the-loop, same gate, on the
+      // opportunities record. A stage change is destructive → human approval.
+      if (!oppRef) return { result: { error: 'no opportunity record for this case' } };
+      const op = String(input.op ?? '');
+      const params: Record<string, unknown> = op === 'log_activity' ? { summary: input.summary, activity_kind: 'note' }
+        : op === 'set_next_step' ? { next_step: input.next_step, next_step_date: input.next_step_date }
+        : op === 'update_stage' ? { to_stage: input.to_stage } : {};
+      const { data, error } = await admin.rpc('propose_opportunity_writeback', {
+        p_de_id: deId, p_objective_id: objectiveId ?? null, p_opportunity_id: oppRef, p_op: op, p_params: params,
+      });
+      if (error) return { result: { error: `pipeline write-back failed: ${error.message}` } };
+      return { result: data };
+    }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
       return { result: { escalated: true }, escalated: true, done: true, summary: `Escalated: ${input.reason}` };
@@ -361,6 +380,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   const { data: wi } = await admin.from('de_work_items').select('objective_id').eq('id', item.id).maybeSingle();
   const objectiveId = (wi?.objective_id as string) ?? null;
   let accountRef: string | null = null;
+  let oppRef: string | null = null;
   let accountContext = '';
   if (objectiveId) {
     const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref').eq('id', objectiveId).maybeSingle();
@@ -379,6 +399,18 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
         accountContext = `\n\nAccount record on file — ${a.name ?? 'account'}: health score ${a.health_score ?? 'n/a'}, ARR ${arr}, status ${a.status ?? 'n/a'}, renews ${a.renewal_date ?? 'n/a'}, tier ${a.tier ?? 'n/a'}`
           + `${a.attributes?.next_step ? `, current next step: ${a.attributes.next_step}` : ''}.`
           + ` These are the real facts for this account — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
+      }
+    } else if (obj?.entity_kind === 'opportunity' && obj?.entity_ref) {
+      oppRef = String(obj.entity_ref);
+      // The DESK for a pipeline role: hand the DE the opportunity record.
+      const { data: opp } = await admin.from('opportunities')
+        .select('name, company_name, stage, amount_cents, close_date, owner, source')
+        .eq('id', oppRef).maybeSingle();
+      if (opp) {
+        const o = opp as { name?: string; company_name?: string; stage?: string; amount_cents?: number; close_date?: string; owner?: string; source?: string };
+        const amt = o.amount_cents != null ? `$${Math.round(o.amount_cents / 100).toLocaleString('en-US')}` : 'n/a';
+        accountContext = `\n\nOpportunity record on file — ${o.name ?? o.company_name ?? 'opportunity'}: stage ${o.stage ?? 'n/a'}, amount ${amt}, closes ${o.close_date ?? 'n/a'}, owner ${o.owner ?? 'n/a'}, source ${o.source ?? 'n/a'}.`
+          + ` These are the real facts for this opportunity — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
       }
     }
   }
@@ -436,6 +468,19 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
       }, required: ['op'] },
     });
   }
+  if (oppRef) {
+    motionTools.push({
+      name: 'write_back_to_opportunity',
+      description: "Update the opportunity record so the pipeline reflects what happened — the job is not done until the record shows it. log_activity records what you did; set_next_step records the follow-up; update_stage moves the opportunity to another pipeline stage and ALWAYS needs human approval. If the result says gated/pending approval, report it and move on.",
+      input_schema: { type: 'object', properties: {
+        op: { type: 'string', enum: ['log_activity', 'set_next_step', 'update_stage'] },
+        summary: { type: 'string', description: 'for log_activity — what happened' },
+        next_step: { type: 'string', description: 'for set_next_step' },
+        next_step_date: { type: 'string', description: 'for set_next_step — YYYY-MM-DD, optional' },
+        to_stage: { type: 'string', description: 'for update_stage — the target pipeline stage key' },
+      }, required: ['op'] },
+    });
+  }
   const tools = [...TOOLS, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
@@ -462,7 +507,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as

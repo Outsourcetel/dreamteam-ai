@@ -585,6 +585,17 @@ export async function decideHumanTask(
       throw err;
     }
   }
+  // Pipeline write-back (EXEC-2b SDR, migration 220): same frozen-write apply
+  // on approve for an opportunity's activity / next-step / stage change.
+  if (task.related_table === 'opportunity_writeback_requests') {
+    try {
+      const { resolveOpportunityWriteback } = await import('./writeBackApi');
+      await resolveOpportunityWriteback(task.id, decision);
+    } catch (err) {
+      console.error('opportunity write-back resolution hook:', err);
+      throw err;
+    }
+  }
   // Hook (EXEC 0.4, migration 216): approving an outbound EMAIL draft now
   // actually DELIVERS it via Resend (dormant-honest if not configured).
   // Non-email channels are still delivered by the human — nothing to do here.

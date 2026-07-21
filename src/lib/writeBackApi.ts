@@ -15,6 +15,13 @@ export async function resolveAccountWriteback(taskId: string, decision: 'approve
   if (error || res?.ok === false) throw new Error(error?.message || res?.error || 'Could not resolve the write-back.');
 }
 
+/** Hook target for decideHumanTask on related_table='opportunity_writeback_requests' (pipeline desk, mig 220). */
+export async function resolveOpportunityWriteback(taskId: string, decision: 'approved' | 'rejected'): Promise<void> {
+  const { data, error } = await supabase.rpc('resolve_opportunity_writeback', { p_task_id: taskId, p_decision: decision });
+  const res = data as { ok?: boolean; error?: string } | null;
+  if (error || res?.ok === false) throw new Error(error?.message || res?.error || 'Could not resolve the pipeline write-back.');
+}
+
 export interface AccountActivity {
   id: string;
   account_id: string;
