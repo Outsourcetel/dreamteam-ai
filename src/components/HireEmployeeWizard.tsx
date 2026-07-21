@@ -5,14 +5,18 @@
 // playbook, rehearses live in front of you, and then walks the real
 // lifecycle gates as far as they honestly allow. No governance is
 // bypassed — the gates just speak plain language now.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,
+  listRoleArchetypes, hireFromArchetype,
 } from '../lib/hireApi';
-import type { HireDraft, TeachResult, RehearsalResult, PromotionOutcome } from '../lib/hireApi';
+import type {
+  HireDraft, TeachResult, RehearsalResult, PromotionOutcome,
+  RoleArchetype, ArchetypeHireResult,
+} from '../lib/hireApi';
 
-type Step = 'brief' | 'meet' | 'working' | 'done';
+type Step = 'brief' | 'meet' | 'working' | 'done' | 'archetype_done';
 
 const EXAMPLES = [
   'I need someone to answer billing questions — invoices, refunds within our 30-day policy, and payment problems. Anything about contract changes goes to a human.',
@@ -35,6 +39,21 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
   const [rehearsalError, setRehearsalError] = useState<string | null>(null);
   const [promo, setPromo] = useState<PromotionOutcome | null>(null);
   const [showScenarios, setShowScenarios] = useState(false);
+
+  // ── Archetype-hire mode: hire a ready-made role (Renewals, Billing…) ──
+  const [showRoles, setShowRoles] = useState(false);
+  const [archetypes, setArchetypes] = useState<RoleArchetype[]>([]);
+  const [selectedRole, setSelectedRole] = useState<RoleArchetype | null>(null);
+  const [roleDeName, setRoleDeName] = useState('');
+  const [archResult, setArchResult] = useState<ArchetypeHireResult | null>(null);
+
+  useEffect(() => {
+    if (showRoles && archetypes.length === 0) {
+      listRoleArchetypes()
+        .then(setArchetypes)
+        .catch(() => setError('Could not load the role templates.'));
+    }
+  }, [showRoles, archetypes.length]);
 
   const persona = draft?.config.persona_name || 'Your new employee';
   const roleName = draft?.config.name || 'New Digital Employee';
@@ -79,6 +98,19 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
       setPromo({ reachedStage: 'designed', blockedAt: null, todo: [], message: e instanceof Error ? e.message : 'promotion failed' });
     }
     setBusy(false); setPhase(''); setStep('done');
+  };
+
+  const doArchetypeHire = async () => {
+    if (!selectedRole) return;
+    const name = roleDeName.trim() || selectedRole.name;
+    setBusy(true); setError(null); setPhase(`Hiring ${name} from the ${selectedRole.name} template…`);
+    try {
+      const res = await hireFromArchetype(selectedRole.key, name);
+      setArchResult(res);
+      setStep('archetype_done');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not hire from this role template.');
+    } finally { setBusy(false); setPhase(''); }
   };
 
   const answeredCount = answers.filter((a) => a.trim()).length;
@@ -126,6 +158,49 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
                 {busy ? phase || 'Working…' : 'Draft my new employee'}
               </button>
+
+              {/* Or hire a ready-made role (same DE, from a template) */}
+              <div className="pt-3 border-t border-slate-800">
+                <button onClick={() => setShowRoles((v) => !v)} disabled={busy}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                  {showRoles ? '▾ Hide ready-made roles' : '▸ Or hire from a ready-made role (Renewals, Billing, Sales…)'}
+                </button>
+                {showRoles && (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-xs text-slate-500">
+                      These come pre-built with a proven procedure, a book of work, and guardrails.
+                      Pick one and the employee helps tailor it to your business next.
+                    </p>
+                    {archetypes.length === 0 ? (
+                      <p className="text-xs text-slate-500">Loading roles…</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {archetypes.map((a) => (
+                          <button key={a.key} onClick={() => { setSelectedRole(a); setRoleDeName(a.name); }}
+                            className={`text-left rounded-xl border p-3 transition-colors ${selectedRole?.key === a.key ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 bg-slate-800/60 hover:border-slate-600'}`}>
+                            <p className="text-xs font-semibold text-white">{a.name}</p>
+                            <p className="text-[11px] text-slate-500">{a.domain}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedRole && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-slate-400">{selectedRole.description}</p>
+                        <label className="block">
+                          <span className="text-[11px] text-slate-500">Name this employee</span>
+                          <input value={roleDeName} onChange={(e) => setRoleDeName(e.target.value)}
+                            className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none" />
+                        </label>
+                        <button onClick={doArchetypeHire} disabled={busy}
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
+                          {busy ? phase || 'Hiring…' : `Hire ${roleDeName.trim() || selectedRole.name}`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -268,6 +343,37 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                   )}
                 </div>
               )}
+
+              <button onClick={() => { onFinished(); onClose(); }}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+                Done — take me to the team
+              </button>
+            </>
+          )}
+
+          {/* ── Archetype hire result ── */}
+          {step === 'archetype_done' && selectedRole && archResult && (
+            <>
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                <p className="text-sm font-semibold text-white mb-1">
+                  {roleDeName.trim() || selectedRole.name} is hired from the {selectedRole.name} template.
+                </p>
+                <p className="text-xs text-slate-400">
+                  It’s set up like a real employee — at designed/supervised — ready to be tailored to your business and walked through the certification gates.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 space-y-1">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">What came with the role</p>
+                <p className="text-xs text-slate-300">• {archResult.watchersCreated} book-of-work watcher(s) — what lands on its desk</p>
+                <p className="text-xs text-slate-300">• Its standard operating procedure (SOP){archResult.sopPlaybookId ? '' : ' (draft)'}</p>
+                <p className="text-xs text-slate-300">• {archResult.guardrailsCreated} guardrail(s) — its authority limits</p>
+                <p className="text-xs text-slate-300">• {archResult.systemsInstalled} connected-system binding(s) — where it works</p>
+              </div>
+
+              <p className="text-[11px] text-slate-500">
+                Next: tailor its systems, rules and SOP to how your business actually runs — the employee will walk you through it, and you approve each change.
+              </p>
 
               <button onClick={() => { onFinished(); onClose(); }}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
