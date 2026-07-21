@@ -10,16 +10,14 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { getSessionTenantId, CustomerApiError, fmtMoneyK } from './customerApi';
+import { motionLabel, daysUntil } from './continuityFormat';
+import type { ContinuityMotion } from './continuityFormat';
 
-export { fmtMoneyK, CustomerApiError };
+export { fmtMoneyK, CustomerApiError, motionLabel, daysUntil };
+export type { ContinuityMotion };
 
 // ── Vocabulary (kept in sync with the DB CHECK constraints) ──────────
 export type PartySide = 'sell' | 'buy';
-
-export type ContinuityMotion =
-  | 'renew' | 'extend' | 'early_renew' | 'reorder' | 'replenish' | 'replace'
-  | 'upgrade' | 'downgrade' | 'expand' | 'contract' | 'consolidate' | 'split'
-  | 'renegotiate' | 'pause' | 'terminate' | 'allow_expiry' | 'switch_supplier';
 
 export type AgreementType =
   | 'subscription' | 'maintenance' | 'managed_service' | 'retainer' | 'staff_aug'
@@ -257,23 +255,5 @@ export async function proposeContinuityWriteback(
   return res;
 }
 
-// ── Small presentation helpers ───────────────────────────────────────
-const MOTION_LABELS: Record<ContinuityMotion, string> = {
-  renew: 'Renew', extend: 'Extend', early_renew: 'Early renew', reorder: 'Reorder',
-  replenish: 'Replenish', replace: 'Replace', upgrade: 'Upgrade', downgrade: 'Downgrade',
-  expand: 'Expand', contract: 'Contract', consolidate: 'Consolidate', split: 'Split',
-  renegotiate: 'Renegotiate', pause: 'Pause', terminate: 'Terminate',
-  allow_expiry: 'Allow expiry', switch_supplier: 'Switch supplier',
-};
-export function motionLabel(m: ContinuityMotion): string {
-  return MOTION_LABELS[m] ?? m;
-}
-
-/** Days until a date string (null-safe). Negative = overdue. */
-export function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  const today = new Date();
-  return Math.round((d.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()) / 86_400_000);
-}
+// Presentation helpers (motionLabel, daysUntil) live in ./continuityFormat and
+// are re-exported at the top of this module.
