@@ -244,6 +244,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
             { id: 'entity_customer_support', label: 'Support', indicator: { count: live.supportTickets, color: '#22c55e' } },
             { id: 'entity_customer_success', label: `${vocab.party_singular} Success`, indicator: { count: live.atRiskAccounts, color: '#ef4444' } },
             { id: 'entity_customer_renewal', label: `${vocab.renewal_label} & Expansion`, indicator: { count: live.renewalsDue, color: '#f59e0b' } },
+            { id: 'entity_commercial_continuity', label: 'Commercial Continuity', indicator: { dot: true, color: '#6366f1' } },
           ],
         },
         // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for

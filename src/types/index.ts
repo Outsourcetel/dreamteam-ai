@@ -23,6 +23,7 @@ export type TenantPage =
   | 'entity_customer_support'   // Support
   | 'entity_customer_success'   // Customer Success
   | 'entity_customer_renewal'   // Renewal & Expansion
+  | 'entity_commercial_continuity' // Commercial Continuity (renewals, reorders, warranties, vendor)
   // Vendor/Partner entity
   | 'entity_vendor'
   | 'entity_vendor_sourcing'

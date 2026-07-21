@@ -44,6 +44,7 @@ import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
+import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
 import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
 import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
 import { EmbedPage } from './pages/EmbedPage';
@@ -86,6 +87,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   entity_customer_support:    '/customer/support',
   entity_customer_success:    '/customer/success',
   entity_customer_renewal:    '/customer/renewal',
+  entity_commercial_continuity: '/customer/continuity',
   entity_vendor:              '/vendor',
   entity_vendor_sourcing:     '/vendor/sourcing',
   entity_vendor_contracts:    '/vendor/contracts',
@@ -391,6 +393,8 @@ function AppShell() {
         return <CustomerSuccessPage setPage={handleSetPage} />;
       case 'entity_customer_renewal':
         return <CustomerRenewalPage setPage={handleSetPage} />;
+      case 'entity_commercial_continuity':
+        return <CommercialContinuityPage setPage={handleSetPage} />;
       case 'entity_vendor':
         return <VendorOverviewPage setPage={handleSetPage} />;
       case 'entity_vendor_sourcing':
