@@ -154,6 +154,28 @@ export async function hireFromArchetype(
   };
 }
 
+export interface SetupQuestion {
+  key: string;
+  question: string;
+  kind?: 'text' | 'choice';
+  help?: string;
+  options?: string[];
+}
+
+/** The role's AI-led tailoring interview — the few questions that shape how
+ *  THIS tenant's job runs. Defined on the archetype (migration 229). Degrades
+ *  gracefully to [] if the column isn't present yet (pre-migration deploy). */
+export async function getSetupQuestions(archetypeKey: string): Promise<SetupQuestion[]> {
+  const { data, error } = await supabase
+    .from('role_archetypes')
+    .select('setup_questions')
+    .eq('key', archetypeKey)
+    .maybeSingle();
+  if (error) return []; // column missing (migration not applied) → skip tailoring
+  const q = (data?.setup_questions ?? []) as unknown;
+  return Array.isArray(q) ? (q as SetupQuestion[]) : [];
+}
+
 /** The Deep Study's exam becomes the tenant's golden exam for this role, so
  *  the Proving Ground and the certification gate test the RIGHT things.
  *  Best-effort: a failed insert never blocks the hire. */

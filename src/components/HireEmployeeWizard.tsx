@@ -9,14 +9,14 @@ import { useState, useEffect } from 'react';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,
-  listRoleArchetypes, hireFromArchetype,
+  listRoleArchetypes, hireFromArchetype, getSetupQuestions,
 } from '../lib/hireApi';
 import type {
   HireDraft, TeachResult, RehearsalResult, PromotionOutcome,
-  RoleArchetype, ArchetypeHireResult,
+  RoleArchetype, ArchetypeHireResult, SetupQuestion,
 } from '../lib/hireApi';
 
-type Step = 'brief' | 'meet' | 'working' | 'done' | 'archetype_done';
+type Step = 'brief' | 'meet' | 'working' | 'done' | 'tailor' | 'archetype_done';
 
 const EXAMPLES = [
   'I need someone to answer billing questions — invoices, refunds within our 30-day policy, and payment problems. Anything about contract changes goes to a human.',
@@ -46,6 +46,8 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
   const [selectedRole, setSelectedRole] = useState<RoleArchetype | null>(null);
   const [roleDeName, setRoleDeName] = useState('');
   const [archResult, setArchResult] = useState<ArchetypeHireResult | null>(null);
+  const [setupQuestions, setSetupQuestions] = useState<SetupQuestion[]>([]);
+  const [setupAnswers, setSetupAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (showRoles && archetypes.length === 0) {
@@ -107,7 +109,10 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
     try {
       const res = await hireFromArchetype(selectedRole.key, name);
       setArchResult(res);
-      setStep('archetype_done');
+      const qs = await getSetupQuestions(selectedRole.key);
+      setSetupQuestions(qs);
+      setSetupAnswers(Object.fromEntries(qs.map((q) => [q.key, ''])));
+      setStep(qs.length > 0 ? 'tailor' : 'archetype_done');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not hire from this role template.');
     } finally { setBusy(false); setPhase(''); }
@@ -351,6 +356,52 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
             </>
           )}
 
+          {/* ── Archetype tailoring interview (AI-led, role-defined) ── */}
+          {step === 'tailor' && selectedRole && (
+            <>
+              <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4">
+                <p className="text-sm font-semibold text-white mb-1">
+                  {roleDeName.trim() || selectedRole.name} is hired — now let’s tailor it to your business.
+                </p>
+                <p className="text-xs text-slate-400">
+                  A few questions about how your renewals actually run. Your answers become its systems, rules and procedure — which you’ll approve before anything goes live.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {setupQuestions.map((q, i) => (
+                  <div key={q.key}>
+                    <p className="text-xs text-slate-300 mb-1">{i + 1}. {q.question}</p>
+                    {q.help && <p className="text-[11px] text-slate-500 mb-1">{q.help}</p>}
+                    {q.kind === 'choice' && q.options ? (
+                      <div className="flex flex-wrap gap-2">
+                        {q.options.map((opt) => (
+                          <button key={opt} onClick={() => setSetupAnswers((prev) => ({ ...prev, [q.key]: opt }))}
+                            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${setupAnswers[q.key] === opt ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-600'}`}>
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <textarea value={setupAnswers[q.key] ?? ''} rows={2}
+                        onChange={(e) => setSetupAnswers((prev) => ({ ...prev, [q.key]: e.target.value }))}
+                        placeholder="Your answer (optional)"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none resize-none" />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => setStep('archetype_done')}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+                Continue
+              </button>
+              <p className="text-[11px] text-slate-500 text-center">
+                Next, {roleDeName.trim() || selectedRole.name} drafts its tailored setup from your answers for you to review.
+              </p>
+            </>
+          )}
+
           {/* ── Archetype hire result ── */}
           {step === 'archetype_done' && selectedRole && archResult && (
             <>
@@ -371,8 +422,16 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 <p className="text-xs text-slate-300">• {archResult.systemsInstalled} connected-system binding(s) — where it works</p>
               </div>
 
+              {Object.values(setupAnswers).some((a) => a.trim()) && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+                  <p className="text-xs text-slate-300">
+                    ✓ You answered {Object.values(setupAnswers).filter((a) => a.trim()).length} of {setupQuestions.length} tailoring questions — the employee will draft its tailored systems, rules and SOP from these for your approval.
+                  </p>
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-500">
-                Next: tailor its systems, rules and SOP to how your business actually runs — the employee will walk you through it, and you approve each change.
+                Next: the employee drafts its tailored systems, rules and SOP from your answers — and you approve each change before it goes live.
               </p>
 
               <button onClick={() => { onFinished(); onClose(); }}
