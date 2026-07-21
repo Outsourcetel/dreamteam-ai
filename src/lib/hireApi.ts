@@ -69,6 +69,91 @@ export async function draftNewHire(brief: string): Promise<HireDraft> {
   };
 }
 
+// ── Archetype hire — the SAME DE hire path, from a role template ──────
+// Some roles (Renewals, Billing, SDR, CS…) already ship as ROLE ARCHETYPES:
+// a proven persona + Book-of-Work watchers + SOP + guardrails + system
+// bindings. Hiring one is the ordinary DE hire (instantiate_role_archetype),
+// then stamping its kit (install_role_kit) and systems (install_role_systems).
+// This is NOT a new entity type — it produces a standard digital_employees
+// row that walks the same lifecycle gates as any other hire. The AI-led
+// tailoring (P1.2/P1.3) layers on top of this scaffold; nothing replaces it.
+
+export interface RoleArchetype {
+  key: string;
+  name: string;
+  domain: string;
+  description: string;
+}
+
+/** The catalog of hireable role templates (global; readable by any member). */
+export async function listRoleArchetypes(): Promise<RoleArchetype[]> {
+  const { data, error } = await supabase
+    .from('role_archetypes')
+    .select('key, name, domain, description')
+    .eq('status', 'active')
+    .order('name', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as RoleArchetype[];
+}
+
+export interface ArchetypeHireResult {
+  deId: string;
+  watchersCreated: number;
+  guardrailsCreated: number;
+  sopPlaybookId: string | null;
+  systemsInstalled: number;
+}
+
+/** Hire a DE from a role archetype: create it, then stamp its Book of Work,
+ *  SOP, guardrails, and system bindings. Reuses three existing RPCs — no new
+ *  hire engine. The DE lands at designed/supervised, exactly like any hire. */
+export async function hireFromArchetype(
+  archetypeKey: string,
+  deName: string,
+  personaName?: string
+): Promise<ArchetypeHireResult> {
+  const tid = await getSessionTenantId();
+  if (!tid) throw new Error('No tenant found for the current session.');
+
+  // 1. Hire the employee from the archetype (creates the DE).
+  const { data: deId, error: e1 } = await supabase.rpc('instantiate_role_archetype', {
+    p_tenant_id: tid,
+    p_archetype_key: archetypeKey,
+    p_de_name: deName,
+    p_persona_name: personaName ?? null,
+  });
+  if (e1 || !deId) throw new Error(e1?.message || 'Could not hire from this archetype.');
+  const newDeId = deId as string;
+
+  // 2. Stamp its role kit — Book of Work watchers + published SOP + guardrails.
+  const { data: kit, error: e2 } = await supabase.rpc('install_role_kit', {
+    p_de_id: newDeId,
+    p_archetype_key: archetypeKey,
+  });
+  if (e2) throw new Error(e2.message);
+  const k = (kit ?? {}) as { watchers_created?: number; guardrails_created?: number; sop_playbook_id?: string | null };
+
+  // 3. Register its connected systems (additive — a failure never blocks the hire).
+  let systemsInstalled = 0;
+  try {
+    const { data: sys } = await supabase.rpc('install_role_systems', {
+      p_de_id: newDeId,
+      p_archetype_key: archetypeKey,
+    });
+    systemsInstalled = Number(sys) || 0;
+  } catch {
+    /* systems bindings are additive; the DE exists and is configurable regardless */
+  }
+
+  return {
+    deId: newDeId,
+    watchersCreated: Number(k.watchers_created) || 0,
+    guardrailsCreated: Number(k.guardrails_created) || 0,
+    sopPlaybookId: k.sop_playbook_id ?? null,
+    systemsInstalled,
+  };
+}
+
 /** The Deep Study's exam becomes the tenant's golden exam for this role, so
  *  the Proving Ground and the certification gate test the RIGHT things.
  *  Best-effort: a failed insert never blocks the hire. */
