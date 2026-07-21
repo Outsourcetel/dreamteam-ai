@@ -163,6 +163,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
         { id: 'support_command_center', label: 'Support Command Center', icon: '🎧', page: 'support_command_center' },
         { id: 'support_inbox', label: 'Support Inbox', icon: '✉', page: 'support_inbox' },
+        { id: 'browser_operator', label: 'Browser Operator', icon: '🌐', page: 'browser_operator' },
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
         // Wave 3: live tenants get the single consolidated Outcomes page
         // (real economics/delivery/risk rollup). Demo keeps the 4-page

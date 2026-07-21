@@ -70,6 +70,7 @@ export type TenantPage =
   | 'support_command_center'    // Support Command Center — operator one-glance view
   | 'support_triage_rules'      // Support triage-rules editor (config for mig 233)
   | 'support_inbox'             // Support inbox — human side of the conversation=ticket (Phase 2)
+  | 'browser_operator'         // Browser Operator — governed DE browser automation (mig 182/241)
 
   // ── Intelligence ──────────────────────────────────
   | 'intelligence_performance'  // DE analytics
