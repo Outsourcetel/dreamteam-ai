@@ -136,7 +136,14 @@ async function callAnthropic(
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({
-          model, max_tokens: 2048, system, messages,
+          model, max_tokens: 2048,
+          // Prompt caching (5-min ephemeral). The breakpoint on the system block
+          // caches the tools + system prefix (tools precede system in the cache
+          // hierarchy) — that prefix is byte-identical across every iteration of
+          // this tool-use loop, so iterations 2+ read it at 0.1x instead of
+          // re-billing the whole prefix at 1x. Mirrors the de-work executor.
+          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+          messages,
           tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
         }),
       });
@@ -148,10 +155,19 @@ async function callAnthropic(
     }
     if (res.ok) {
       const data = await res.json();
+      const u = data.usage ?? {};
+      // Cache telemetry — surfaces in the edge-function logs so the cache hit
+      // rate is observable (cache_read > 0 on iterations 2+ = the loop is
+      // reusing its tools+system prefix). If cache_read is always 0 the prefix
+      // is under the model's minimum (1024 tok) and caching is a no-op.
+      console.log(JSON.stringify({ evt: 'anthropic_usage', fn: 'agentic-step-execute', model,
+        input_tokens: Number(u.input_tokens ?? 0), output_tokens: Number(u.output_tokens ?? 0),
+        cache_read_input_tokens: Number(u.cache_read_input_tokens ?? 0),
+        cache_creation_input_tokens: Number(u.cache_creation_input_tokens ?? 0) }));
       return {
         content: (data.content ?? []) as ContentBlock[],
         stop_reason: String(data.stop_reason ?? 'end_turn'),
-        usage: { input_tokens: Number(data.usage?.input_tokens ?? 0), output_tokens: Number(data.usage?.output_tokens ?? 0) },
+        usage: { input_tokens: Number(u.input_tokens ?? 0), output_tokens: Number(u.output_tokens ?? 0) },
       };
     }
     lastStatus = res.status;

@@ -220,8 +220,16 @@ async function callAnthropic(apiKey: string, model: string, system: string, mess
     } catch (e) { lastStatus = 0; lastBody = String(e); if (attempt < backoffs.length) { await sleep(backoffs[attempt]); continue; } break; }
     if (res.ok) {
       const d = await res.json();
+      const u = d.usage ?? {};
+      // Cache telemetry — de-work already caches its tools+system prefix; this
+      // makes the hit rate observable in the edge logs (cache_read>0 on loop
+      // iterations 2+ confirms the reuse is landing).
+      console.log(JSON.stringify({ evt: 'anthropic_usage', fn: 'de-work',
+        input_tokens: Number(u.input_tokens ?? 0), output_tokens: Number(u.output_tokens ?? 0),
+        cache_read_input_tokens: Number(u.cache_read_input_tokens ?? 0),
+        cache_creation_input_tokens: Number(u.cache_creation_input_tokens ?? 0) }));
       return { content: (d.content ?? []) as ContentBlock[], stop_reason: String(d.stop_reason ?? 'end_turn'),
-               usage: { input_tokens: Number(d.usage?.input_tokens ?? 0), output_tokens: Number(d.usage?.output_tokens ?? 0) } };
+               usage: { input_tokens: Number(u.input_tokens ?? 0), output_tokens: Number(u.output_tokens ?? 0) } };
     }
     lastStatus = res.status; lastBody = await res.text().catch(() => '');
     if ((res.status === 429 || res.status === 529 || res.status >= 500) && attempt < backoffs.length) { await sleep(backoffs[attempt]); continue; }
