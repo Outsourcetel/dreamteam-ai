@@ -34,6 +34,7 @@ import ActivityPage from './pages/tenant/ops/ActivityPage';
 import DEActivityPage from './pages/tenant/ops/DEActivityPage';
 import SupportInboxPage from './pages/tenant/support/SupportInboxPage';
 import SupportCommandCenterPage from './pages/tenant/support/SupportCommandCenterPage';
+import SupportTriageRulesPage from './pages/tenant/support/SupportTriageRulesPage';
 import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
 import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
@@ -125,6 +126,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   ops_activity:    '/ops/activity',
   ops_de_activity: '/ops/de-activity',
   support_command_center: '/support/command-center',
+  support_triage_rules: '/support/triage-rules',
   support_inbox: '/support/inbox',
   // Intelligence
   intelligence_performance: '/intelligence/performance',
@@ -466,6 +468,8 @@ function AppShell() {
         return <DEActivityPage setPage={handleSetPage} />;
       case 'support_command_center':
         return <SupportCommandCenterPage setPage={handleSetPage} />;
+      case 'support_triage_rules':
+        return <SupportTriageRulesPage setPage={handleSetPage} />;
       case 'support_inbox':
         return <SupportInboxPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────

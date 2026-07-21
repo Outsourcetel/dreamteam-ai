@@ -153,6 +153,57 @@ export async function getSupportOverview(): Promise<SupportOverview> {
   };
 }
 
+// ── Support triage rules — config editor (mig 233) ───────────────────
+export interface TriageRule {
+  id: string;
+  rule_order: number;
+  name: string;
+  match_pattern: string | null;
+  set_category: string;
+  set_priority: 'low' | 'normal' | 'high' | 'urgent';
+  set_severity: string;
+  active: boolean;
+}
+
+/** List this tenant's triage rules (precedence order). */
+export async function listTriageRules(): Promise<TriageRule[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.from('support_triage_rules')
+    .select('id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active')
+    .eq('tenant_id', tid)
+    .order('rule_order', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TriageRule[];
+}
+
+/** Create or update a triage rule (RLS restricts writes to owner/admin/manager). */
+export async function upsertTriageRule(r: Partial<TriageRule> & { name: string; set_category: string }): Promise<void> {
+  const tid = await requireTenantId();
+  const row = {
+    tenant_id: tid,
+    rule_order: r.rule_order ?? 100,
+    name: r.name.trim(),
+    match_pattern: r.match_pattern?.trim() || null,
+    set_category: r.set_category.trim(),
+    set_priority: r.set_priority ?? 'normal',
+    set_severity: (r.set_severity || 'sev3').trim(),
+    active: r.active ?? true,
+  };
+  if (r.id) {
+    const { error } = await supabase.from('support_triage_rules').update(row).eq('id', r.id).eq('tenant_id', tid);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from('support_triage_rules').insert(row);
+    if (error) throw new Error(error.message);
+  }
+}
+
+export async function deleteTriageRule(id: string): Promise<void> {
+  const tid = await requireTenantId();
+  const { error } = await supabase.from('support_triage_rules').delete().eq('id', id).eq('tenant_id', tid);
+  if (error) throw new Error(error.message);
+}
+
 // Live updates — RLS scopes what the subscriber receives to their tenant.
 // onChange fires on any conversation/message insert or update.
 export function subscribeSupport(onChange: () => void): () => void {
