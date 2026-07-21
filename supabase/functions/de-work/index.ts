@@ -52,7 +52,7 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }),
+    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 4096, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }),
   });
   if (!res.ok) throw new Error(`planner_anthropic_${res.status}`);
   const d = await res.json();
@@ -114,7 +114,7 @@ async function reviewObjective(
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 900, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }),
+    body: JSON.stringify({ model: DEFAULT_MODEL, max_tokens: 4096, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }),
   });
   if (!res.ok) throw new Error(`review_anthropic_${res.status}`);
   const d = await res.json();
@@ -175,7 +175,7 @@ async function callAnthropic(apiKey: string, model: string, system: string, mess
         // identical across a task's serial turns — cache them so turns 2-6
         // pay ~10% for that prefix instead of full price.
         body: JSON.stringify({
-          model, max_tokens: 1536,
+          model, max_tokens: 4096,
           system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
           messages, tools,
         }),
