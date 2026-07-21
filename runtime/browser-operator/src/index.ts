@@ -13,12 +13,6 @@ import { runTask, type CredentialHook } from './agent.js';
 const env = (k: string, d = ''): string => process.env[k] ?? d;
 const num = (k: string, d: number): number => Number(process.env[k]) || d;
 
-// Bind this to your DreamTeam secret vault (connector_secrets / Supabase Vault)
-// to enable the 'vault_injected' login policy. Default: no stored credentials.
-const credentials: CredentialHook = {
-  async get(_tenantId: string, _domain: string) { return null; },
-};
-
 async function main() {
   const url = env('SUPABASE_URL'); const key = env('SUPABASE_SERVICE_ROLE_KEY');
   const anthropicKey = env('ANTHROPIC_API_KEY'); const model = env('ANTHROPIC_MODEL', 'claude-sonnet-5');
@@ -29,6 +23,10 @@ async function main() {
   const db = new Db(url, key);
   const steel = new Steel(steelBase, steelKey);
   const anthropic = new Anthropic({ apiKey: anthropicKey });
+
+  // Vault login for the 'vault_injected' policy — the mig-243 get_browser_login
+  // resolves the connector's stored UI login for the domain. Model-blind.
+  const credentials: CredentialHook = { get: (tenantId, domain) => db.browserLogin(tenantId, domain) };
 
   const runtimeId = await db.registerRuntime(runtimeName, steelBase);
   console.log(`[browser-operator] registered runtime ${runtimeId} (${runtimeName}) → Steel ${steelBase}`);

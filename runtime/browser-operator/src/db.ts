@@ -68,4 +68,16 @@ export class Db {
     const { error } = await this.sb.rpc('finish_browser_task', { p_task_id: taskId, p_status: status, p_result: result });
     if (error) throw new Error(`finish: ${error.message}`);
   }
+
+  /** UI-login secret for a domain (Vault-decrypted; mig 243). The model never
+   * sees it — the worker types it. Secret is {"username","password"} JSON or a
+   * bare password. Returns null if no login is configured for the domain. */
+  async browserLogin(tenantId: string, domain: string): Promise<{ username?: string; password: string } | null> {
+    const { data, error } = await this.sb.rpc('get_browser_login', { p_tenant_id: tenantId, p_domain: domain });
+    if (error) return null;
+    const res = data as { ok?: boolean; secret?: string } | null;
+    if (!res?.ok || !res.secret) return null;
+    try { const j = JSON.parse(res.secret); if (j && typeof j.password === 'string') return { username: j.username, password: j.password }; } catch { /* bare */ }
+    return { password: res.secret };
+  }
 }

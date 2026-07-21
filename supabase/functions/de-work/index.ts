@@ -251,6 +251,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { content: { type: 'string' }, salience: { type: 'number' } }, required: ['content'] } },
   { name: 'draft_outreach', description: 'Draft a proactive outbound message (follow-up, chase, notification) to a customer or contact. It is NEVER sent without approval — it goes to a human first; once approved, an email is sent for you automatically. Use when a task calls for contacting someone.',
     input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'who it is for (name/email/account)' }, channel: { type: 'string', enum: ['email', 'sms', 'chat', 'other'] }, subject: { type: 'string' }, message: { type: 'string' }, reason: { type: 'string', description: 'why this outreach is needed' } }, required: ['recipient', 'message', 'reason'] } },
+  { name: 'operate_in_system', description: "Operate a connected app through its WEB UI (e.g. QuickBooks, Xero, Zuora, Salesforce) when there is NO data/API tool for the job — describe the task in plain English and the browser worker does it, logged-in and on that app only. It is NEVER run without human approval, stays on the app's allowed site, never does payments/deletions on its own, and records every step. Prefer read_system / an action tool when one fits; use this only for UI-only work.",
+    input_schema: { type: 'object', properties: { system_key: { type: 'string', description: 'the connected system to operate (must be operable)' }, instruction: { type: 'string', description: 'plain-English task, e.g. "find overdue invoices and send reminders"' }, max_steps: { type: 'number' } }, required: ['system_key', 'instruction'] } },
   { name: 'escalate_to_human', description: 'Hand off to a human when you cannot safely proceed.',
     input_schema: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] } },
   { name: 'mark_done', description: 'The ONLY way to finish. Call with a short summary of what you did/found.',
@@ -382,6 +384,21 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       if (!ref) return { result: { error: 'no record to verify for this case' } };
       const { data, error } = await admin.rpc('verify_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref, p_expectation: (input.expectation ?? {}) as Record<string, unknown>, p_objective_id: objectiveId ?? null });
       return { result: error ? { error: error.message } : data };
+    }
+    case 'operate_in_system': {
+      // Bridge (mig 243): plain-English → a GOVERNED Browser Operator task on the
+      // connected app's domain (allowlisted, human-approved, step-bounded,
+      // credential-safe, audited). The DE only ASKS; a human approves; the Steel
+      // worker runs it. Feature-flag + operability gated in the RPC.
+      const { data, error } = await admin.rpc('create_browser_operation', {
+        p_de_id: deId, p_system_key: String(input.system_key ?? ''),
+        p_instruction: String(input.instruction ?? ''), p_max_steps: Number(input.max_steps ?? 20),
+      });
+      if (error) return { result: { error: error.message } };
+      const r = (data ?? {}) as { ok?: boolean; error?: string; task_id?: string; status?: string; credential_policy?: string };
+      return { result: r.ok
+        ? { queued: true, task_id: r.task_id, status: r.status, note: 'Browser operation created — it is pending human approval; a connected browser worker will run it and its outcome will be recorded. Do NOT retry; move on or mark_done.' }
+        : { error: r.error ?? 'could not create operation' } };
     }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
