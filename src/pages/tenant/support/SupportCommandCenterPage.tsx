@@ -86,10 +86,16 @@ const SupportCommandCenterPage = ({ setPage }: { setPage: (p: Page) => void }) =
             {liveTenantName || 'Your company'} · One-glance view of the support operation — volume, status, severity and what needs a human.
           </p>
         </div>
-        <button onClick={() => setPage('support_inbox')}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors">
-          Open Support Inbox →
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setPage('support_triage_rules')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors">
+            Edit triage rules
+          </button>
+          <button onClick={() => setPage('support_inbox')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors">
+            Open Support Inbox →
+          </button>
+        </div>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
