@@ -1,0 +1,27 @@
+# Self-hosted Browser Operator: Steel (free, open-source Chrome-as-a-service) +
+# the governed worker. `docker compose up` runs both.
+#   1. cp .env.example .env  &&  fill SUPABASE_SERVICE_ROLE_KEY + ANTHROPIC_API_KEY
+#   2. docker compose up --build
+# The worker registers itself with DreamTeam and starts picking up APPROVED
+# browser tasks. Nothing runs until a human approves a task in the UI.
+services:
+  steel:
+    image: ghcr.io/steel-dev/steel-browser-api:latest   # Steel OSS (Apache-2.0). Pin a tag in prod.
+    ports:
+      - "3000:3000"      # Steel API + CDP
+      - "5173:5173"      # Steel live-view (watch a task run)
+    restart: unless-stopped
+
+  worker:
+    build: .
+    depends_on:
+      - steel
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-https://rfsvmhcqeiyrxivbmpel.supabase.co}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+      STEEL_BASE_URL: http://steel:3000
+      STEEL_API_KEY: ${STEEL_API_KEY:-}
+      RUNTIME_NAME: ${RUNTIME_NAME:-browser-operator-1}
+    restart: unless-stopped

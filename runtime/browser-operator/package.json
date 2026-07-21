@@ -1,0 +1,23 @@
+{
+  "name": "dreamteam-browser-operator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Governed browser-automation runtime worker for DreamTeam Digital Employees (Steel self-host). It claims human-approved, allowlisted, step-bounded browser tasks and drives Chrome via Playwright, with a full audit — the enterprise-governed answer to ungoverned agents like Manus.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "playwright-core": "^1.48.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^20.16.0"
+  }
+}
