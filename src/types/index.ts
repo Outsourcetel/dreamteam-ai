@@ -67,6 +67,7 @@ export type TenantPage =
   | 'ops_human_tasks'           // Approval gates, escalations, review
   | 'ops_activity'              // Activity log
   | 'ops_de_activity'           // Live "DE at work" queue — proactive triage (migration 034)
+  | 'support_command_center'    // Support Command Center — operator one-glance view
   | 'support_inbox'             // Support inbox — human side of the conversation=ticket (Phase 2)
 
   // ── Intelligence ──────────────────────────────────

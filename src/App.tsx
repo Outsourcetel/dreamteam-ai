@@ -33,6 +33,7 @@ import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
 import DEActivityPage from './pages/tenant/ops/DEActivityPage';
 import SupportInboxPage from './pages/tenant/support/SupportInboxPage';
+import SupportCommandCenterPage from './pages/tenant/support/SupportCommandCenterPage';
 import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
 import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
@@ -123,6 +124,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   ops_human_tasks: '/ops/tasks',
   ops_activity:    '/ops/activity',
   ops_de_activity: '/ops/de-activity',
+  support_command_center: '/support/command-center',
   support_inbox: '/support/inbox',
   // Intelligence
   intelligence_performance: '/intelligence/performance',
@@ -462,6 +464,8 @@ function AppShell() {
         return <ActivityPage setPage={handleSetPage} />;
       case 'ops_de_activity':
         return <DEActivityPage setPage={handleSetPage} />;
+      case 'support_command_center':
+        return <SupportCommandCenterPage setPage={handleSetPage} />;
       case 'support_inbox':
         return <SupportInboxPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────

@@ -81,6 +81,78 @@ export async function setConversationState(conversationId: string, state: { stat
   if (error) throw new Error(error.message);
 }
 
+// ── Support Command Center — operator-wide aggregates ────────────────
+export interface SupportOverview {
+  total: number;
+  byStatus: Record<string, number>;
+  byChannel: Record<string, number>;
+  byPriority: Record<string, number>;
+  bySeverity: Record<string, number>;   // empty when triage (mig 233) isn't applied
+  byCategory: Record<string, number>;   // empty when triage isn't applied
+  needsHuman: number;
+  openEscalations: number;
+  draftsPending: number;
+  triageEnabled: boolean;
+}
+
+type OverviewRow = { status?: string | null; channel?: string | null; priority?: string | null; category?: string | null; severity?: string | null };
+const SUPPORT_CHANNELS = ['widget', 'hosted', 'portal', 'email', 'dock'];
+
+/** Tenant-wide support aggregates for the Command Center. Resilient: if the
+ *  triage columns (mig 233) aren't applied yet, severity/category come back
+ *  empty and triageEnabled=false rather than erroring. */
+export async function getSupportOverview(): Promise<SupportOverview> {
+  const tid = await requireTenantId();
+  let rows: OverviewRow[] = [];
+  let triageEnabled = true;
+
+  const withTriage = await supabase.from('de_conversations')
+    .select('status, channel, priority, category, severity')
+    .eq('tenant_id', tid).in('channel', SUPPORT_CHANNELS).limit(1000);
+  if (withTriage.error) {
+    triageEnabled = false;
+    const base = await supabase.from('de_conversations')
+      .select('status, channel, priority')
+      .eq('tenant_id', tid).in('channel', SUPPORT_CHANNELS).limit(1000);
+    if (base.error) throw new Error(base.error.message);
+    rows = (base.data ?? []) as OverviewRow[];
+  } else {
+    rows = (withTriage.data ?? []) as OverviewRow[];
+  }
+
+  const countBy = (sel: (r: OverviewRow) => string | null | undefined) =>
+    rows.reduce<Record<string, number>>((m, r) => { const k = sel(r) ?? 'unknown'; m[k] = (m[k] || 0) + 1; return m; }, {});
+
+  const byStatus = countBy((r) => r.status);
+
+  let openEscalations = 0;
+  try {
+    const { count } = await supabase.from('human_tasks').select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tid).eq('type', 'escalation').eq('status', 'pending');
+    openEscalations = count ?? 0;
+  } catch { /* tolerate */ }
+
+  let draftsPending = 0;
+  try {
+    const { count } = await supabase.from('de_messages').select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tid).eq('delivery', 'draft_pending');
+    draftsPending = count ?? 0;
+  } catch { /* tolerate */ }
+
+  return {
+    total: rows.length,
+    byStatus,
+    byChannel: countBy((r) => r.channel),
+    byPriority: countBy((r) => r.priority),
+    bySeverity: triageEnabled ? countBy((r) => r.severity) : {},
+    byCategory: triageEnabled ? countBy((r) => r.category) : {},
+    needsHuman: byStatus['needs_human'] ?? 0,
+    openEscalations,
+    draftsPending,
+    triageEnabled,
+  };
+}
+
 // Live updates — RLS scopes what the subscriber receives to their tenant.
 // onChange fires on any conversation/message insert or update.
 export function subscribeSupport(onChange: () => void): () => void {
