@@ -47,8 +47,27 @@ interface ContentBlock { type: string; text?: string; id?: string; name?: string
 // same idempotent RPC (keys obj-<id>-step-<n>, so a re-plan can't double-
 // enqueue), then marked in_progress. The queue machinery executes the
 // steps on subsequent ticks — planning and doing stay separate passes.
+// The DE's operator-authored SOP + guardrails as a compact briefing block.
+// Injected into the planner and the worker so an attached playbook + guardrails
+// actually steer the autonomous loop (they were invisible to it before, EXEC-2).
+// This is trusted tenant config (like the persona), not untrusted task content.
+async function deBriefing(admin: SupabaseClient, deId: string): Promise<string> {
+  try {
+    const { data } = await admin.rpc('get_de_briefing', { p_de_id: deId });
+    const sop = (data as { sop?: string; guardrails?: string } | null)?.sop?.trim();
+    const guard = (data as { sop?: string; guardrails?: string } | null)?.guardrails?.trim();
+    let out = '';
+    if (sop) out += `\n\nYour standard operating procedure — follow it:\n${sop}`;
+    if (guard) out += `\n\nYour hard guardrails — never violate these:\n${guard}`;
+    return out;
+  } catch { return ''; }
+}
+
 async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
-  const system = 'You break a business objective into 2-5 concrete, ordered work steps an AI employee can execute (research, compute, check, follow-up, escalate). Return ONLY JSON: {"steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}. Steps must be self-contained and verifiable.' + FIREWALL_RULES;
+  // The employee's SOP + guardrails (operator config) shape the plan — without
+  // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
+  const brief = await deBriefing(admin, obj.de_id);
+  const system = 'You break a business objective into 2-5 concrete, ordered work steps an AI employee can execute (research, compute, check, follow-up, escalate). Return ONLY JSON: {"steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}. Steps must be self-contained and verifiable.' + brief + FIREWALL_RULES;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
@@ -342,9 +361,26 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   const { data: wi } = await admin.from('de_work_items').select('objective_id').eq('id', item.id).maybeSingle();
   const objectiveId = (wi?.objective_id as string) ?? null;
   let accountRef: string | null = null;
+  let accountContext = '';
   if (objectiveId) {
     const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref').eq('id', objectiveId).maybeSingle();
-    if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) accountRef = String(obj.entity_ref);
+    if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) {
+      accountRef = String(obj.entity_ref);
+      // The DE's DESK: hand it the account record it's working, so step 1
+      // ("understand the account") is grounded instead of escalating for a
+      // lookup tool it doesn't have. Internal account book; when an external
+      // CRM connector lands, this snapshot comes from there instead.
+      const { data: acct } = await admin.from('customer_accounts')
+        .select('name, health_score, arr_cents, status, renewal_date, tier, attributes')
+        .eq('id', accountRef).maybeSingle();
+      if (acct) {
+        const a = acct as { name?: string; health_score?: number; arr_cents?: number; status?: string; renewal_date?: string; tier?: string; attributes?: { next_step?: string; next_step_date?: string } };
+        const arr = a.arr_cents != null ? `$${Math.round(a.arr_cents / 100).toLocaleString('en-US')}` : 'n/a';
+        accountContext = `\n\nAccount record on file — ${a.name ?? 'account'}: health score ${a.health_score ?? 'n/a'}, ARR ${arr}, status ${a.status ?? 'n/a'}, renews ${a.renewal_date ?? 'n/a'}, tier ${a.tier ?? 'n/a'}`
+          + `${a.attributes?.next_step ? `, current next step: ${a.attributes.next_step}` : ''}.`
+          + ` These are the real facts for this account — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
+      }
+    }
   }
 
   // Injection hardening: task text is tenant-authored DATA, not operator
@@ -355,6 +391,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     + `Rules: Use your tools — never guess a number (use compute), never invent facts (use search_knowledge and cite), recall what you already know first. `
     + `Stay strictly within your guardrails. If you cannot proceed safely or the task needs a human decision, call escalate_to_human. `
     + `When the task is genuinely done (or you've determined it can't be), call mark_done with a short summary. That is the ONLY way to finish.`
+    + await deBriefing(admin, deId)
     + FIREWALL_RULES;
   // Per-DE registry actions (grants-aware) join the tool set; execution is
   // gated server-side, so offering them grants no ungoverned reach.
@@ -401,7 +438,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
   }
   const tools = [...TOOLS, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
-  const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal, 'task') }];
+  const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
 
   let done = false, summary = '', finalStatus = 'done', turn = 0;
   for (turn = 0; turn < MAX_TURNS && !done; turn++) {
