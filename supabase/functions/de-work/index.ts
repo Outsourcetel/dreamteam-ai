@@ -362,6 +362,19 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       if (error) return { result: { error: `pipeline write-back failed: ${error.message}` } };
       return { result: data };
     }
+    case 'read_system': {
+      // Connected Systems desk (mig 221) — grounded read of registered fields.
+      const ref = String(input.entity_ref ?? accountRef ?? oppRef ?? '');
+      if (!ref) return { result: { error: 'no record to read for this case' } };
+      const { data, error } = await admin.rpc('read_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref });
+      return { result: error ? { error: error.message } : data };
+    }
+    case 'verify_in_system': {
+      const ref = String(input.entity_ref ?? accountRef ?? oppRef ?? '');
+      if (!ref) return { result: { error: 'no record to verify for this case' } };
+      const { data, error } = await admin.rpc('verify_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref, p_expectation: (input.expectation ?? {}) as Record<string, unknown>, p_objective_id: objectiveId ?? null });
+      return { result: error ? { error: error.message } : data };
+    }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
       return { result: { escalated: true }, escalated: true, done: true, summary: `Escalated: ${input.reason}` };
@@ -493,6 +506,27 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
         to_stage: { type: 'string', description: 'for update_stage — the target pipeline stage key' },
       }, required: ['op'] },
     });
+  }
+  // Connected Systems desk (mig 221): a config-driven read + verify across the
+  // DE's registered systems. read_system grounds the DE in the real record;
+  // verify_in_system is the "come back and confirm the write landed" primitive.
+  const entityForSystems = accountRef ?? oppRef;
+  if (entityForSystems) {
+    const { data: sysData } = await admin.rpc('get_de_systems', { p_de_id: deId });
+    const systems = (sysData ?? []) as Array<{ system_key: string; can_read?: boolean; can_verify?: boolean }>;
+    if (systems.length > 0) {
+      const keys = systems.map((s) => s.system_key).join(', ');
+      motionTools.push({
+        name: 'read_system',
+        description: `Read the current record from one of your connected systems (${keys}) — grounded facts, only the fields you're allowed to see. Check state before acting or to re-check after.`,
+        input_schema: { type: 'object', properties: { system_key: { type: 'string' }, entity_ref: { type: 'string', description: "the record id — defaults to this case's record" } }, required: ['system_key'] },
+      });
+      motionTools.push({
+        name: 'verify_in_system',
+        description: "After a write, re-read the record and confirm it now matches what you intended. Give the fields you expect and their values; returns whether they match plus any differences. Close the loop — never claim a change landed without verifying it.",
+        input_schema: { type: 'object', properties: { system_key: { type: 'string' }, entity_ref: { type: 'string' }, expectation: { type: 'object', description: 'field:value pairs you expect to now be true' } }, required: ['system_key', 'expectation'] },
+      });
+    }
   }
   const tools = [...TOOLS, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
