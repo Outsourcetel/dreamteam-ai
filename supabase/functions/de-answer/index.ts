@@ -139,6 +139,34 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
   if (error) console.error('append_audit_event:', error.message);
 }
 
+// ── Pre-send Quality Auditor (opt-in Support hardening) ──
+// Before an answer is AUTO-SENT (not already escalating), the certified
+// eval-judge independently verifies it is grounded in the DE's own knowledge
+// and factually correct — the pre-send hallucination / unsupported-claim check
+// the live path otherwise lacks (guardrail-regex + confidence only). This can
+// ONLY make the DE more cautious: a fail / weak-grounding verdict routes the
+// answer to a human, never the reverse. Reuses eval-judge server-to-server via
+// the dispatch secret, so there is no second, divergent judge to keep in sync.
+// deno-lint-ignore no-explicit-any
+async function preSendAudit(admin: any, tenantId: string, deId: string | null, question: string, answer: string): Promise<{ clean: boolean; reason: string }> {
+  const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+  const { data, error } = await admin.functions.invoke('eval-judge', {
+    body: { tenant_id: tenantId, de_id: deId, question, answer },
+    headers: dispatch ? { 'x-dispatch-secret': dispatch } : {},
+  });
+  if (error) throw error;
+  const d = (data ?? {}) as { verdict?: string; dimensions?: Record<string, unknown>; rationale?: string; error?: string };
+  if (d.error) throw new Error(d.error);
+  const verdict = String(d.verdict ?? 'partial');
+  const grounded = Number(d.dimensions?.grounded ?? 0);
+  const correct = Number(d.dimensions?.correct ?? 0);
+  const clean = verdict !== 'fail' && grounded >= 60 && correct >= 60;
+  return {
+    clean,
+    reason: clean ? '' : `${verdict} (grounded ${grounded}, correct ${correct})${d.rationale ? ' — ' + d.rationale : ''}`.slice(0, 300),
+  };
+}
+
 // ── Robust JSON parse of model output ──
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
 
@@ -594,7 +622,39 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       });
     }
 
-    const escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
+    let escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
+
+    // ── Pre-send Quality Auditor (opt-in per DE) ── an answer that WOULD be
+    // auto-sent is independently judged for grounding + correctness first.
+    // Inert unless the DE opts in (pre_send_audit_enabled); fail-closed WHEN
+    // ENABLED (audit unavailable → route to a human rather than auto-send). It
+    // reuses the existing escalation path below by only ever setting escalate.
+    if (!replayMode && !escalate && subjectDeId) {
+      let auditEnabled = false;
+      try {
+        const { data: acfg } = await admin.rpc('get_de_config', {
+          p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
+        });
+        auditEnabled = acfg?.data?.pre_send_audit_enabled === true;
+      } catch { /* config unreadable → treat as not opted in; never disrupt DEs that didn't enable it */ }
+      if (auditEnabled) {
+        try {
+          const verdict = await preSendAudit(admin, tenantId, subjectDeId, question, parsed.answer);
+          if (!verdict.clean) {
+            escalate = true;
+            await auditEvent(admin, tenantId, persona.name, 'de',
+              `Pre-send quality audit routed an answer to a human — ${verdict.reason}`,
+              'evidence_step', { kind: 'pre_send_audit', conversation_id: convId, confidence: parsed.confidence });
+          }
+        } catch (e) {
+          escalate = true; // enabled but the audit itself failed → fail closed
+          console.error('pre-send audit failed closed → escalate:', e);
+          await auditEvent(admin, tenantId, persona.name, 'de',
+            'Pre-send quality audit unavailable — routed the answer to a human',
+            'evidence_step', { kind: 'pre_send_audit_error', conversation_id: convId });
+        }
+      }
+    }
 
     // ── Semantic cache write (only good, non-escalated answers; never
     // answers built from scoped docs — the cache is tenant-wide) ──
