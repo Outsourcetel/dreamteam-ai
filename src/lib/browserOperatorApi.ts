@@ -128,3 +128,96 @@ export async function listDEsLite(): Promise<DeLite[]> {
   if (error) throw new Error(error.message);
   return (data ?? []) as DeLite[];
 }
+
+// ── Operate config (mig 244): which connected apps a DE may drive via web UI ──
+export interface OperateSystem {
+  id: string;
+  system_key: string;
+  label: string;
+  binding_kind: 'internal_table' | 'connector';
+  can_operate: boolean;
+  can_read: boolean;
+  can_write: boolean;
+  active: boolean;
+  operate_domain: string | null;   // the raw override (what the admin typed)
+  resolved_domain: string | null;  // effective domain (override, else connector host)
+  connector_id: string | null;
+  connector_name: string | null;
+  has_login: boolean;              // a Vault UI-login is stored (value never exposed)
+  operate_only: boolean;           // created by this feature (safe to delete)
+}
+export interface OperateConnector { id: string; name: string; base_url: string | null }
+export interface DeOperateConfig {
+  de: { id: string; name: string };
+  featureEnabled: boolean;
+  systems: OperateSystem[];
+  connectors: OperateConnector[];
+}
+
+/** Read a DE's operate bindings + the tenant's connectors (admin). */
+export async function getDeOperateConfig(deId: string): Promise<DeOperateConfig> {
+  const { data, error } = await supabase.rpc('list_de_operate_config', { p_de_id: deId });
+  if (error) throw new Error(error.message);
+  const r = data as {
+    ok?: boolean; error?: string; de?: { id: string; name: string }; feature_enabled?: boolean;
+    systems?: OperateSystem[]; connectors?: OperateConnector[];
+  } | null;
+  if (!r?.ok) throw new Error(r?.error || 'Could not load operate config.');
+  return {
+    de: r.de ?? { id: deId, name: 'DE' },
+    featureEnabled: r.feature_enabled ?? false,
+    systems: r.systems ?? [],
+    connectors: r.connectors ?? [],
+  };
+}
+
+export interface UpsertOperateBindingInput {
+  deId: string;
+  systemId?: string | null;   // null → create a new operate-only binding
+  systemKey?: string;         // required when creating
+  label?: string;
+  canOperate: boolean;
+  operateDomain?: string | null;
+  connectorId?: string | null;
+}
+
+/** Create or update an operate binding (admin). Returns the binding id. */
+export async function upsertOperateBinding(input: UpsertOperateBindingInput): Promise<string> {
+  const { data, error } = await supabase.rpc('upsert_de_operate_binding', {
+    p_de_id: input.deId,
+    p_system_id: input.systemId ?? null,
+    p_system_key: input.systemKey ?? null,
+    p_label: input.label ?? null,
+    p_can_operate: input.canOperate,
+    p_operate_domain: input.operateDomain ?? null,
+    p_connector_id: input.connectorId ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string; system_id?: string } | null;
+  if (!r?.ok) throw new Error(r?.error || 'Could not save the binding.');
+  return r.system_id as string;
+}
+
+/** Store (or replace) the Vault UI-login for a binding. Value never leaves here. */
+export async function setOperateLogin(systemId: string, secret: string): Promise<void> {
+  const { data, error } = await supabase.rpc('set_de_operate_login', { p_system_id: systemId, p_secret: secret });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (!r?.ok) throw new Error(r?.error || 'Could not save the login.');
+}
+
+/** Remove a binding's stored login (falls back to human_login). */
+export async function clearOperateLogin(systemId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('clear_de_operate_login', { p_system_id: systemId });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (!r?.ok) throw new Error(r?.error || 'Could not remove the login.');
+}
+
+/** Delete an operate-only binding (admin). */
+export async function deleteOperateBinding(systemId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('delete_de_operate_binding', { p_system_id: systemId });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (!r?.ok) throw new Error(r?.error || 'Could not delete the binding.');
+}

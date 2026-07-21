@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Page } from '../../../types';
 import {
   getBrowserOperator, getBrowserTask, proposeBrowserTask, decideBrowserTask, listDEsLite,
+  getDeOperateConfig, upsertOperateBinding, setOperateLogin, clearOperateLogin, deleteOperateBinding,
   type BrowserOperatorState, type BrowserTaskRow, type BrowserTaskDetail, type BrowserEngine,
-  type CredentialPolicy, type DeLite,
+  type CredentialPolicy, type DeLite, type DeOperateConfig, type OperateSystem,
 } from '../../../lib/browserOperatorApi';
 
 // ── status vocabulary — one glance tells you where a task is ──
@@ -34,6 +35,7 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   const load = async () => {
@@ -62,6 +64,10 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
         </div>
         <div className="flex items-center gap-3">
           <RuntimePill online={runtimeOnline} count={(state?.runtimes ?? []).filter(r => r.active).length} />
+          <button onClick={() => setShowConfig(true)}
+            className="text-sm font-medium px-4 py-2 rounded-lg border border-slate-600 text-slate-200 hover:border-slate-500 hover:bg-slate-800/60 transition-colors">
+            Configure apps
+          </button>
           <button onClick={() => setShowNew(true)}
             className="text-sm font-medium px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
             + New task
@@ -106,6 +112,7 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       )}
 
       {showNew && <NewTaskModal onClose={() => setShowNew(false)} onDone={() => { setShowNew(false); load(); }} />}
+      {showConfig && <OperateConfigDrawer onClose={() => setShowConfig(false)} />}
       {openTaskId && <TaskDrawer taskId={openTaskId} onClose={() => setOpenTaskId(null)} onChange={load} />}
 
       <div className="mt-10 text-xs text-slate-600">
@@ -340,6 +347,220 @@ function TaskDrawer({ taskId, onClose, onChange }: { taskId: string; onClose: ()
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── operate config: which connected apps a DE may drive via its web UI ──
+function OperateConfigDrawer({ onClose }: { onClose: () => void }) {
+  const [des, setDes] = useState<DeLite[]>([]);
+  const [deId, setDeId] = useState('');
+  const [cfg, setCfg] = useState<DeOperateConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => { listDEsLite().then(d => { setDes(d); if (d[0]) setDeId(d[0].id); }).catch(e => setErr(e instanceof Error ? e.message : 'Failed to load employees.')); }, []);
+
+  const loadCfg = async (id: string) => {
+    if (!id) return;
+    setLoading(true); setErr('');
+    try { setCfg(await getDeOperateConfig(id)); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Failed to load config.'); setCfg(null); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { if (deId) loadCfg(deId); /* eslint-disable-next-line */ }, [deId]);
+
+  const operable = (cfg?.systems ?? []).filter(s => s.can_operate);
+  const others = (cfg?.systems ?? []).filter(s => !s.can_operate);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <div className="w-full max-w-xl h-full bg-slate-900 border-l border-slate-700 overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h3 className="text-lg font-semibold text-white">Apps an employee can operate</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-xl leading-none">×</button>
+        </div>
+        <p className="text-sm text-slate-400 mb-5 max-w-lg">
+          Give a digital employee permission to work inside a connected app's web pages — e.g. QuickBooks, Xero, Salesforce —
+          when there's no direct data connection for the job. It only acts on the app you allow, always asks you first, and never sees a password.
+        </p>
+
+        <Field label="Employee">
+          <select value={deId} onChange={e => setDeId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-200">
+            {des.length === 0 && <option value="">No active employees</option>}
+            {des.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </Field>
+
+        {err && <p className="text-xs text-rose-400 mt-3">{err}</p>}
+        {cfg && !cfg.featureEnabled && (
+          <div className="mt-4"><Banner tone="amber">Browser Operator is <b>off</b> for this workspace, so these apps won't run until it's turned on in Feature settings. You can still configure them now.</Banner></div>
+        )}
+        {loading && <div className="text-sm text-slate-500 py-8 text-center">Loading…</div>}
+
+        {cfg && !loading && (
+          <div className="mt-5 space-y-6">
+            <div>
+              <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide mb-2">Can operate ({operable.length})</div>
+              {operable.length === 0
+                ? <Empty>No apps yet. Add one below to let {cfg.de.name} work in it.</Empty>
+                : <div className="space-y-3">{operable.map(s => <SystemCard key={s.id} deId={deId} s={s} connectors={cfg.connectors} onChange={() => loadCfg(deId)} />)}</div>}
+            </div>
+
+            {others.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Connected, not operable ({others.length})</div>
+                <div className="space-y-3">{others.map(s => <SystemCard key={s.id} deId={deId} s={s} connectors={cfg.connectors} onChange={() => loadCfg(deId)} />)}</div>
+              </div>
+            )}
+
+            {adding
+              ? <AddBindingForm deId={deId} connectors={cfg.connectors} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); loadCfg(deId); }} />
+              : <button onClick={() => setAdding(true)} className="w-full rounded-xl border border-dashed border-slate-700 hover:border-indigo-500/60 text-sm text-slate-300 hover:text-indigo-300 py-3 transition-colors">+ Add an app to operate</button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: OperateSystem; connectors: DeOperateConfig['connectors']; onChange: () => void }) {
+  const [label, setLabel] = useState(s.label);
+  const [domain, setDomain] = useState(s.operate_domain ?? '');
+  const [connectorId, setConnectorId] = useState(s.connector_id ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [showLogin, setShowLogin] = useState(false);
+  const dirty = label !== s.label || (domain || '') !== (s.operate_domain ?? '') || (connectorId || '') !== (s.connector_id ?? '');
+
+  const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(''); try { await fn(); onChange(); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed.'); setBusy(false); } };
+  const save = (canOperate: boolean) => run(async () => { await upsertOperateBinding({ deId, systemId: s.id, label, canOperate, operateDomain: domain || null, connectorId: connectorId || null }); });
+
+  return (
+    <div className="rounded-xl border border-slate-700/70 bg-slate-800/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${s.can_operate ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            <span className="text-sm font-medium text-slate-100">{s.label}</span>
+            <span className="text-[11px] text-slate-500 font-mono">{s.system_key}</span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {s.resolved_domain ? <>Runs on <span className="text-slate-300">{s.resolved_domain}</span></> : <span className="text-amber-400">No site set — add one below</span>}
+            {' · '}{s.has_login ? <span className="text-emerald-400">Stored login ✓</span> : 'You log in each time'}
+          </div>
+        </div>
+        <button disabled={busy} onClick={() => save(!s.can_operate)}
+          className={`shrink-0 text-[11px] px-2.5 py-1 rounded-full border ${s.can_operate ? 'border-slate-600 text-slate-300 hover:border-rose-500 hover:text-rose-300' : 'border-emerald-600/50 text-emerald-300 hover:bg-emerald-500/10'} disabled:opacity-40`}>
+          {s.can_operate ? 'Turn off' : 'Turn on'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Display name"
+          className="rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+        <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="app.example.com"
+          className="rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+      </div>
+      {connectors.length > 0 && (
+        <select value={connectorId} onChange={e => setConnectorId(e.target.value)}
+          className="w-full mt-2 rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300">
+          <option value="">No linked connector (use the site above)</option>
+          {connectors.map(c => <option key={c.id} value={c.id}>{c.name}{c.base_url ? ` — ${c.base_url}` : ''}</option>)}
+        </select>
+      )}
+      {err && <p className="text-[11px] text-rose-400 mt-2">{err}</p>}
+
+      <div className="flex items-center gap-2 mt-3">
+        {dirty && <button disabled={busy} onClick={() => save(s.can_operate)} className="text-[11px] px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save</button>}
+        <button onClick={() => setShowLogin(v => !v)} className="text-[11px] px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500">{s.has_login ? 'Change login' : 'Set login'}</button>
+        {s.has_login && <button disabled={busy} onClick={() => run(() => clearOperateLogin(s.id))} className="text-[11px] px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40">Remove login</button>}
+        {s.operate_only && <button disabled={busy} onClick={() => run(() => deleteOperateBinding(s.id))} className="ml-auto text-[11px] px-3 py-1.5 rounded-lg text-slate-500 hover:text-rose-300">Delete</button>}
+      </div>
+
+      {showLogin && <LoginForm systemId={s.id} onDone={() => { setShowLogin(false); onChange(); }} onCancel={() => setShowLogin(false)} />}
+    </div>
+  );
+}
+
+function LoginForm({ systemId, onDone, onCancel }: { systemId: string; onDone: () => void; onCancel: () => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    if (!password) { setErr('Enter the password.'); return; }
+    setBusy(true); setErr('');
+    // Stored as the mig-243 convention: JSON {username,password} or a bare password.
+    const secret = username ? JSON.stringify({ username, password }) : password;
+    try { await setOperateLogin(systemId, secret); onDone(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); setBusy(false); }
+  };
+  return (
+    <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+      <p className="text-[11px] text-slate-500 mb-2">Stored encrypted in the vault. The employee never sees it — the browser worker types it into the app's login for you.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username (optional)" autoComplete="off"
+          className="rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+        <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Password" autoComplete="new-password"
+          className="rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+      </div>
+      {err && <p className="text-[11px] text-rose-400 mt-2">{err}</p>}
+      <div className="flex gap-2 mt-2">
+        <button disabled={busy} onClick={save} className="text-[11px] px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save login</button>
+        <button onClick={onCancel} className="text-[11px] px-3 py-1.5 text-slate-400 hover:text-slate-200">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function AddBindingForm({ deId, connectors, onCancel, onDone }: { deId: string; connectors: DeOperateConfig['connectors']; onCancel: () => void; onDone: () => void }) {
+  const [systemKey, setSystemKey] = useState('');
+  const [label, setLabel] = useState('');
+  const [domain, setDomain] = useState('');
+  const [connectorId, setConnectorId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const keyOk = /^[a-z0-9_]+$/.test(systemKey);
+  const valid = keyOk && (domain.trim() !== '' || connectorId !== '');
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true); setErr('');
+    try {
+      await upsertOperateBinding({ deId, systemId: null, systemKey, label: label || systemKey, canOperate: true, operateDomain: domain || null, connectorId: connectorId || null });
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not add.'); setBusy(false); }
+  };
+  return (
+    <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/5 p-4">
+      <div className="text-sm font-medium text-slate-100 mb-3">Add an app to operate</div>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <input value={systemKey} onChange={e => setSystemKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="key e.g. quickbooks"
+              className="w-full rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 font-mono" />
+            {systemKey && !keyOk && <p className="text-[10px] text-rose-400 mt-0.5">lowercase letters, numbers, _ only</p>}
+          </div>
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Display name e.g. QuickBooks"
+            className="rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+        </div>
+        <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="Site it runs on e.g. app.qbo.intuit.com"
+          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 placeholder:text-slate-600" />
+        {connectors.length > 0 && (
+          <select value={connectorId} onChange={e => setConnectorId(e.target.value)}
+            className="w-full rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300">
+            <option value="">Or link a connector for the site…</option>
+            {connectors.map(c => <option key={c.id} value={c.id}>{c.name}{c.base_url ? ` — ${c.base_url}` : ''}</option>)}
+          </select>
+        )}
+      </div>
+      {err && <p className="text-[11px] text-rose-400 mt-2">{err}</p>}
+      <div className="flex gap-2 mt-3">
+        <button disabled={!valid || busy} onClick={submit} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">{busy ? 'Adding…' : 'Add app'}</button>
+        <button onClick={onCancel} className="text-xs px-3 py-1.5 text-slate-400 hover:text-slate-200">Cancel</button>
       </div>
     </div>
   );

@@ -83,6 +83,20 @@ async function deBriefing(admin: SupabaseClient, deId: string): Promise<string> 
   } catch { return ''; }
 }
 
+// Operable-systems briefing (mig 243/244): lists the connected apps this DE may
+// drive through their web UI, so it knows valid system_key values for
+// operate_in_system. Without this the operate binding is invisible to the brain.
+async function operableSystemsBriefing(admin: SupabaseClient, deId: string): Promise<string> {
+  try {
+    const { data } = await admin.rpc('get_de_systems', { p_de_id: deId });
+    const ops = ((data ?? []) as Array<{ system_key: string; label?: string; can_operate?: boolean; operate_domain?: string | null }>)
+      .filter((s) => s.can_operate && s.operate_domain);
+    if (ops.length === 0) return '';
+    const lines = ops.map((s) => `  • ${s.system_key} — ${s.label || s.system_key} (on ${s.operate_domain})`).join('\n');
+    return `\n\nConnected apps you may OPERATE through their web UI with operate_in_system (use the exact system_key). Only when there is no data/action tool for the job; it always needs human approval and stays on that app's site:\n${lines}`;
+  } catch { return ''; }
+}
+
 async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
   // The employee's SOP + guardrails (operator config) shape the plan — without
   // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
@@ -475,6 +489,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
     + `Stay strictly within your guardrails. If you cannot proceed safely or the task needs a human decision, call escalate_to_human. `
     + `When the task is genuinely done (or you've determined it can't be), call mark_done with a short summary. That is the ONLY way to finish.`
     + await deBriefing(admin, deId)
+    + await operableSystemsBriefing(admin, deId)
     + FIREWALL_RULES;
   // Per-DE registry actions (grants-aware) join the tool set; execution is
   // gated server-side, so offering them grants no ungoverned reach.
