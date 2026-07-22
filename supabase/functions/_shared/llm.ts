@@ -40,6 +40,7 @@ interface ChainConfig {
   bedrockKey?: string;
   bedrockRegion: string;
   bedrockModelPrefix: string;
+  bedrockModelMap: Record<string, string>;
   openaiKey?: string;
   openaiModel: string;
   googleKey?: string;
@@ -54,11 +55,12 @@ const CHAIN_TTL_MS = 60_000;
 
 async function resolveChain(admin: SupabaseClient): Promise<ChainConfig> {
   if (cachedChain && Date.now() - cachedAt < CHAIN_TTL_MS) return cachedChain;
-  const [anthropicKey, bedrockKey, bedrockRegion, bedrockModelPrefix, openaiKey, openaiModel, googleKey, googleModel, order] = await Promise.all([
+  const [anthropicKey, bedrockKey, bedrockRegion, bedrockModelPrefix, bedrockModelMapRaw, openaiKey, openaiModel, googleKey, googleModel, order] = await Promise.all([
     getAIKey(admin, 'ANTHROPIC_API_KEY'),
     getAIKey(admin, 'BEDROCK_API_KEY'),
     getAIKey(admin, 'BEDROCK_REGION'),
     getAIKey(admin, 'BEDROCK_MODEL_PREFIX'),
+    getAIKey(admin, 'BEDROCK_MODEL_MAP'),
     getAIKey(admin, 'OPENAI_API_KEY'),
     getAIKey(admin, 'OPENAI_MODEL'),
     getAIKey(admin, 'GOOGLE_AI_KEY'),
@@ -78,9 +80,17 @@ async function resolveChain(admin: SupabaseClient): Promise<ChainConfig> {
     const wanted = order.split(',').map((s) => s.trim().toLowerCase()).filter((s): s is Provider => available.includes(s as Provider));
     if (wanted.length > 0) providers = wanted;
   }
+  // Exact-ID overrides beat the prefix rule — Bedrock's catalog mixes
+  // suffixless new-generation IDs with dated "-v1:0" legacy ones, so a
+  // single prefix cannot cover a mixed model estate.
+  let bedrockModelMap: Record<string, string> = {};
+  if (bedrockModelMapRaw) {
+    try { bedrockModelMap = JSON.parse(bedrockModelMapRaw); } catch { bedrockModelMap = {}; }
+  }
   cachedChain = {
     providers,
     anthropicKey, bedrockKey, openaiKey, googleKey,
+    bedrockModelMap,
     bedrockRegion: bedrockRegion || 'us-east-1',
     // Bedrock model ids carry a provider prefix; some accounts must route
     // via inference profiles instead ("us.anthropic." / "global.anthropic.").
@@ -307,7 +317,9 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
         // Bedrock serves the SAME Messages API body/response for Claude —
         // model moves to the URL, anthropic_version moves into the body.
         const { model: _m, ...rest } = body;
-        const bedrockModel = `${cfg.bedrockModelPrefix}${String(body.model ?? '')}`;
+        const requested = String(body.model ?? '');
+        const bedrockModel = cfg.bedrockModelMap[requested] ?? `${cfg.bedrockModelPrefix}${requested}`;
+        console.log(`[llm] ${label}: bedrock invoking ${bedrockModel} in ${cfg.bedrockRegion}`);
         res = await fetch(`https://bedrock-runtime.${cfg.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(bedrockModel)}/invoke`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${cfg.bedrockKey!}`, 'content-type': 'application/json', 'accept': 'application/json' },
