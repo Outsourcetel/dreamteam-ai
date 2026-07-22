@@ -45,7 +45,7 @@ const fmtRel = (iso: string | null) => {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
-export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: Page) => void }) {
+export default function SupportInboxPage({ setPage: _setPage, embedded }: { setPage: (p: Page) => void; embedded?: boolean }) {
   const { authedUser } = useAuth();
   const myId = authedUser?.id ?? null;
   const [convs, setConvs] = useState<SupportConversation[]>([]);
@@ -125,8 +125,9 @@ export default function SupportInboxPage({ setPage: _setPage }: { setPage: (p: P
   return (
     <div className="relative flex-1 flex flex-col overflow-hidden bg-slate-900">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_20%_-40%,rgba(99,102,241,0.18),transparent_60%)]" />
-      <div className="relative px-6 pt-6 flex items-start justify-between gap-4">
-        <PageHeader title="Support inbox" subtitle="Live customer conversations — take over, approve a draft, reply, resolve." />
+      <div className={`relative px-6 flex items-start justify-between gap-4 ${embedded ? 'pt-3' : 'pt-6'}`}>
+        {!embedded && <PageHeader title="Support inbox" subtitle="Live customer conversations — take over, approve a draft, reply, resolve." />}
+        {embedded && <div />}
         <span className="mt-1 flex-shrink-0 inline-flex items-center gap-2 text-[11px] font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)] animate-pulse" /> Live · Realtime
         </span>

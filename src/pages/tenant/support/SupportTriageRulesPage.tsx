@@ -17,7 +17,7 @@ const BLANK: Draft = { rule_order: 100, name: '', match_pattern: '', set_categor
 const PRIORITIES: TriageRule['set_priority'][] = ['low', 'normal', 'high', 'urgent'];
 const SEVERITIES = ['sev1', 'sev2', 'sev3', 'sev4'];
 
-const SupportTriageRulesPage = ({ setPage }: { setPage: (p: Page) => void }) => {
+const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => void; embedded?: boolean }) => {
   const [rules, setRules] = useState<TriageRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,16 +57,18 @@ const SupportTriageRulesPage = ({ setPage }: { setPage: (p: Page) => void }) => 
 
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-2">
-        <div>
+      <div className={`flex items-start justify-between flex-wrap gap-2 ${embedded ? 'mb-4' : 'mb-6'}`}>
+        {!embedded ? <div>
           <h1 className="text-2xl font-bold text-white">Support triage rules</h1>
           <p className="text-slate-400 text-sm mt-1">
             Deterministic classification applied at intake. Rules run in order (lower number wins) — keep safety, security and outage rules at the top so they win over emotional phrasing.
           </p>
-        </div>
+        </div> : <p className="text-slate-400 text-sm mt-1 max-w-2xl">
+          Deterministic classification applied at intake. Rules run in order (lower number wins) — keep safety, security and outage rules at the top so they win over emotional phrasing.
+        </p>}
         <div className="flex gap-2">
-          <button onClick={() => setPage('support_command_center')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors">← Command Center</button>
+          {!embedded && <button onClick={() => setPage('support_command_center')}
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors">← Command Center</button>}
           <button onClick={() => setDraft({ ...BLANK })}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">+ Add rule</button>
         </div>

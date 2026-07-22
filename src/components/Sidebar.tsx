@@ -161,8 +161,8 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           badge: isLiveMode ? undefined : { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
         { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
-        { id: 'support_command_center', label: 'Support Command Center', icon: '🎧', page: 'support_command_center' },
-        { id: 'support_inbox', label: 'Support Inbox', icon: '✉', page: 'support_inbox' },
+        // One destination — Inbox/Overview/Rules are tabs inside the Support hub.
+        { id: 'support', label: 'Support', icon: '🎧', page: 'support_inbox' },
         { id: 'browser_operator', label: 'Browser Operator', icon: '🌐', page: 'browser_operator' },
         { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
         // Wave 3: live tenants get the single consolidated Outcomes page
@@ -366,7 +366,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
 
   const isActive = (p: Page) => page === p
     // Hub tabs are distinct Page keys — keep the single nav entry lit on any of them.
-    || (p === 'knowledge_library' && String(page).startsWith('knowledge_'));
+    || (p === 'knowledge_library' && String(page).startsWith('knowledge_'))
+    || (p === 'support_inbox' && String(page).startsWith('support_'));
   const isChildActive = (children?: SubItem[]) => children?.some(c => c.id === page);
 
   if (collapsed) {

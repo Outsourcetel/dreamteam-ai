@@ -59,7 +59,7 @@ function Breakdown({ title, data, labelOf, clsOf }: {
   );
 }
 
-const SupportCommandCenterPage = ({ setPage }: { setPage: (p: Page) => void }) => {
+const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) => void; embedded?: boolean }) => {
   const { liveTenantName } = useAuth();
   const [ov, setOv] = useState<SupportOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +79,7 @@ const SupportCommandCenterPage = ({ setPage }: { setPage: (p: Page) => void }) =
 
   return (
     <div className="flex-1 overflow-auto bg-slate-900 p-6">
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-2">
+      {!embedded && <div className="mb-6 flex items-start justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-white">Support Command Center</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -96,7 +96,7 @@ const SupportCommandCenterPage = ({ setPage }: { setPage: (p: Page) => void }) =
             Open Support Inbox →
           </button>
         </div>
-      </div>
+      </div>}
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 

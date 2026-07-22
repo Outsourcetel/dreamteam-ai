@@ -29,9 +29,7 @@ import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
 import DEActivityPage from './pages/tenant/ops/DEActivityPage';
-import SupportInboxPage from './pages/tenant/support/SupportInboxPage';
-import SupportCommandCenterPage from './pages/tenant/support/SupportCommandCenterPage';
-import SupportTriageRulesPage from './pages/tenant/support/SupportTriageRulesPage';
+import SupportHubPage from './pages/tenant/support/SupportHubPage';
 import BrowserOperatorPage from './pages/tenant/autonomy/BrowserOperatorPage';
 import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
@@ -475,12 +473,11 @@ function AppShell() {
         return <ActivityPage setPage={handleSetPage} />;
       case 'ops_de_activity':
         return <DEActivityPage setPage={handleSetPage} />;
+      // ── Support (one hub: Inbox first, Overview + Rules as tabs) ──
       case 'support_command_center':
-        return <SupportCommandCenterPage setPage={handleSetPage} />;
       case 'support_triage_rules':
-        return <SupportTriageRulesPage setPage={handleSetPage} />;
       case 'support_inbox':
-        return <SupportInboxPage setPage={handleSetPage} />;
+        return <SupportHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'browser_operator':
         return <BrowserOperatorPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────
