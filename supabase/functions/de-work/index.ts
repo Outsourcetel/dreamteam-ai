@@ -42,6 +42,15 @@ const DEFAULT_MODEL = 'claude-sonnet-5';
 
 interface ContentBlock { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A model-supplied entity_ref only wins when it is an actual id — a company
+ *  name falls back to the case's own reference (see read_system note). */
+function resolveEntityRef(provided: unknown, accountRef: string | null, oppRef: string | null): string {
+  const p = typeof provided === 'string' ? provided.trim() : '';
+  if (UUID_RE.test(p)) return p;
+  return String(accountRef ?? oppRef ?? p ?? '');
+}
+
 // ── Auto-planner (P1): an OPEN objective with no work items yet gets
 // decomposed into a small ordered plan by the brain, enqueued through the
 // same idempotent RPC (keys obj-<id>-step-<n>, so a re-plan can't double-
@@ -381,13 +390,18 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
     }
     case 'read_system': {
       // Connected Systems desk (mig 221) — grounded read of registered fields.
-      const ref = String(input.entity_ref ?? accountRef ?? oppRef ?? '');
+      // Pile-triage root cause (2026-07-23): the model sometimes passes the
+      // account NAME ("Oscorp") as entity_ref, which used to override the
+      // correct UUID the case machinery already carries — six identical
+      // escalations from one predicate. A non-UUID ref now falls back to the
+      // case's own reference instead of clobbering it.
+      const ref = resolveEntityRef(input.entity_ref, accountRef, oppRef);
       if (!ref) return { result: { error: 'no record to read for this case' } };
       const { data, error } = await admin.rpc('read_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref });
       return { result: error ? { error: error.message } : data };
     }
     case 'verify_in_system': {
-      const ref = String(input.entity_ref ?? accountRef ?? oppRef ?? '');
+      const ref = resolveEntityRef(input.entity_ref, accountRef, oppRef);
       if (!ref) return { result: { error: 'no record to verify for this case' } };
       const { data, error } = await admin.rpc('verify_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref, p_expectation: (input.expectation ?? {}) as Record<string, unknown>, p_objective_id: objectiveId ?? null });
       return { result: error ? { error: error.message } : data };
