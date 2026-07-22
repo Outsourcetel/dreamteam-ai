@@ -117,10 +117,13 @@ export async function sendEmailReply(conversationId: string, content: string): P
 export interface PendingEmailDraft { id: string; human_task_id: string | null; body: string; subject: string | null }
 export async function getPendingEmailDraft(conversationId: string): Promise<PendingEmailDraft | null> {
   const tid = await requireTenantId();
+  // Includes approved-but-undelivered drafts (delivery blocked on a missing
+  // key/from-address) so the inbox can retry the send once Settings is fixed.
   const { data, error } = await supabase.from('outbound_drafts')
-    .select('id, human_task_id, body, subject')
+    .select('id, human_task_id, body, subject, status, delivery_status')
     .eq('tenant_id', tid).eq('source_kind', 'conversation').eq('source_ref', conversationId)
-    .eq('status', 'pending_approval')
+    .in('status', ['pending_approval', 'approved'])
+    .or('delivery_status.is.null,delivery_status.neq.sent')
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return (data as PendingEmailDraft | null) ?? null;
@@ -139,22 +142,38 @@ export async function approveEmailDraft(
     const { error } = await supabase.rpc('edit_outbound_draft', { p_draft_id: draft.id, p_body: edited });
     if (error) throw new Error(error.message);
   }
+  // decideHumanTask's own hook (customerApi, mig 216) attempts delivery on
+  // approve and swallows failures — so delivery truth is read from the draft
+  // row afterwards, never inferred from a second send call (which would
+  // report an already-sent draft as blocked).
+  let decided = false;
   if (draft.human_task_id) {
     const { data: task } = await supabase.from('human_tasks').select('*')
       .eq('id', draft.human_task_id).maybeSingle();
     if (task && task.status === 'pending') {
       const { decideHumanTask } = await import('./customerApi');
       await decideHumanTask(task, 'approved');
+      decided = true;
     }
   }
-  const { deliverOutbound } = await import('./commsApi');
-  const res = await deliverOutbound(draft.id);
-  if (res.sent) {
+  if (!decided) {
+    // Task already decided earlier (or task-less draft) — this is a retry of
+    // a blocked/failed delivery; send-outbound no-ops if it actually sent.
+    const { deliverOutbound } = await import('./commsApi');
+    await deliverOutbound(draft.id).catch(() => { /* truth read below */ });
+  }
+  const { data: after } = await supabase.from('outbound_drafts')
+    .select('delivery_status, delivery_error').eq('id', draft.id).maybeSingle();
+  const sent = after?.delivery_status === 'sent';
+  if (sent) {
     // Only now does the thread bubble flip to "sent" — approve_draft_reply
     // requires delivery='draft_pending', so this is a no-op on re-runs.
     await approveDraft(draftMessageId, edited).catch(() => { /* bubble state only */ });
   }
-  return { sent: res.sent, detail: res.detail };
+  const friendly = after?.delivery_status === 'blocked_no_provider'
+    ? 'Approved, but email sending is not connected (key or from-address missing) — the reply is saved and can be re-sent from here once Settings → Communications is set up.'
+    : after?.delivery_error || undefined;
+  return { sent, detail: sent ? undefined : friendly };
 }
 
 /** Display name for the conversation's DE (for the hand-back button). */
