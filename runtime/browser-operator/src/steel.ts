@@ -2,6 +2,8 @@
 // Chrome; we connect Playwright to it over CDP. Docs: https://docs.steel.dev —
 // the REST shape below matches Steel's /v1/sessions. Swap for the official
 // `steel-sdk` if you prefer; kept as fetch to stay dependency-light.
+import { lookup } from 'node:dns/promises';
+
 export interface SteelSession {
   id: string;
   connectUrl: string; // CDP websocket URL for Playwright connectOverCDP
@@ -34,6 +36,12 @@ export class Steel {
       const base = new URL(this.baseUrl);
       cu.hostname = base.hostname;
       if (base.port) cu.port = base.port;
+    }
+    // Chrome's CDP endpoint rejects non-IP/localhost Host headers (its
+    // DNS-rebinding guard) — resolve compose hostnames to an address.
+    if (cu.hostname !== 'localhost' && !/^\d+\.\d+\.\d+\.\d+$/.test(cu.hostname)) {
+      const { address } = await lookup(cu.hostname, { family: 4 });
+      cu.hostname = address;
     }
     return { id: s.id, connectUrl: cu.toString() };
   }
