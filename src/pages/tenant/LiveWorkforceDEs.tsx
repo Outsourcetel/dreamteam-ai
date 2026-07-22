@@ -33,9 +33,9 @@ import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
   listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey,
   listSkillCategories, createTenantSkill, listCertificationTypes,
-  getCustomEscalationRules, saveCustomEscalationRules,
+  getCustomEscalationRules, saveCustomEscalationRules, getEscalationSignals, OPERATORS_BY_TYPE,
 } from '../../lib/roleConfigApi';
-import type { KpiMetric, SkillCategory, CertificationType, EscalationRule } from '../../lib/roleConfigApi';
+import type { KpiMetric, SkillCategory, CertificationType, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import EmployeeFileStrip from '../../components/workforce/EmployeeFileStrip';
 import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState } from '../../design/primitives';
@@ -2630,11 +2630,13 @@ function DeEscalationPanel({ deId }: { deId: string }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Named rules in the workspace's own words (mig 205 custom_rules).
+  // Named rules with generic conditions (mig 262 custom_rules).
   const [customRules, setCustomRules] = useState<EscalationRule[]>([]);
+  const [signals, setSignals] = useState<EscalationSignal[]>([]);
   const [ruleName, setRuleName] = useState('');
-  const [ruleWhen, setRuleWhen] = useState('');
   const [ruleAction, setRuleAction] = useState<'escalate' | 'require_approval'>('escalate');
+  const [ruleMatch, setRuleMatch] = useState<'all' | 'any'>('all');
+  const [conds, setConds] = useState<EscCondition[]>([{ signal: '', op: '', value: '' }]);
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.from('de_escalation_rules')
@@ -2651,13 +2653,36 @@ function DeEscalationPanel({ deId }: { deId: string }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     void getCustomEscalationRules(deId).then(setCustomRules).catch(() => { /* stays empty */ });
+    void getEscalationSignals().then(setSignals).catch(() => { /* stays empty */ });
   }, [deId]);
 
+  const sigOf = (key: string) => signals.find(s => s.key === key);
+  const setCond = (i: number, patch: Partial<EscCondition>) =>
+    setConds(cs => cs.map((c, j) => j === i ? { ...c, ...patch } : c));
+  const readyConds = conds.filter(c => c.signal && c.op && (c.value !== '' || c.op === 'is_true' || c.op === 'is_false'));
+
   const addRule = () => {
-    const name = ruleName.trim(), when = ruleWhen.trim();
-    if (!name || !when) return;
-    void persistRules([...customRules, { name, when, action: ruleAction, enabled: true }]);
-    setRuleName(''); setRuleWhen('');
+    const name = ruleName.trim();
+    if (!name || readyConds.length === 0) return;
+    // Coerce values by the signal's type so the evaluator compares correctly.
+    const conditions: EscCondition[] = readyConds.map(c => {
+      const t = sigOf(c.signal)?.value_type;
+      const value = t === 'number' ? Number(c.value) : t === 'boolean' ? (c.op === 'is_true') : String(c.value);
+      return { signal: c.signal, op: c.op, value };
+    });
+    void persistRules([...customRules, { name, action: ruleAction, enabled: true, match: ruleMatch, conditions }]);
+    setRuleName(''); setRuleMatch('all'); setConds([{ signal: '', op: '', value: '' }]);
+  };
+
+  // Render a rule's conditions (or a legacy keyword row) in plain language.
+  const describeRule = (r: EscalationRule): string => {
+    if (r.conditions?.length) {
+      return r.conditions.map(c => {
+        const s = sigOf(c.signal); const opLabel = OPERATORS_BY_TYPE[s?.value_type ?? 'text']?.find(o => o.op === c.op)?.label ?? c.op;
+        return `${s?.label ?? c.signal} ${opLabel}${c.op === 'is_true' || c.op === 'is_false' ? '' : ` ${c.value}`}`;
+      }).join(r.match === 'any' ? '  OR  ' : '  AND  ');
+    }
+    return r.when ? `message contains "${r.when}"` : '—';
   };
 
   const persistRules = async (next: EscalationRule[]) => {
@@ -2759,7 +2784,7 @@ function DeEscalationPanel({ deId }: { deId: string }) {
                   className="mt-0.5 accent-indigo-500" />
                 <div className="min-w-0 flex-1">
                   <span className={r.enabled ? 'text-dt-body' : 'text-dt-muted line-through'}>{r.name}</span>
-                  <p className="text-[10px] text-dt-muted mt-0.5">{r.when}</p>
+                  <p className="text-[10px] text-dt-muted mt-0.5 font-mono">{describeRule(r)}</p>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${
                   r.action === 'escalate' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300'}`}>
@@ -2772,23 +2797,69 @@ function DeEscalationPanel({ deId }: { deId: string }) {
           </div>
         )}
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Generic condition builder — signals come from the catalog, so a
+            support DE composes message/confidence conditions and a finance DE
+            composes amount conditions with the same tool. */}
+        <div className="rounded-lg border border-dt-border bg-dt-page p-3 space-y-2">
           <input value={ruleName} disabled={busy} onChange={e => setRuleName(e.target.value)}
-            placeholder="Rule name — e.g. Legal threat"
-            className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <input value={ruleWhen} disabled={busy} onChange={e => setRuleWhen(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') addRule(); }}
-            placeholder="When — e.g. the customer mentions a lawyer or a regulator"
-            className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <select value={ruleAction} disabled={busy} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
-            className="bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
-            <option value="escalate">Hand to a human</option>
-            <option value="require_approval">Needs approval first</option>
-          </select>
-          <button onClick={addRule} disabled={busy || !ruleName.trim() || !ruleWhen.trim()}
-            className="text-xs px-3 py-2 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
-            Add rule
-          </button>
+            placeholder="Rule name — e.g. Large payment, Legal threat"
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+
+          <p className="text-[10px] uppercase tracking-wide text-dt-muted">Escalate when {conds.length > 1 ? (
+            <select value={ruleMatch} onChange={e => setRuleMatch(e.target.value as 'all' | 'any')}
+              className="bg-dt-card border border-dt-border text-dt-support text-[10px] rounded px-1 py-0.5 focus:outline-none">
+              <option value="all">all</option><option value="any">any</option>
+            </select>
+          ) : 'these are true'}{conds.length > 1 ? ' of these are true' : ''}</p>
+
+          {conds.map((c, i) => {
+            const sType = sigOf(c.signal)?.value_type;
+            const ops = OPERATORS_BY_TYPE[sType ?? ''] ?? [];
+            const boolOp = c.op === 'is_true' || c.op === 'is_false';
+            return (
+              <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                <select value={c.signal} disabled={busy}
+                  onChange={e => setCond(i, { signal: e.target.value, op: '', value: '' })}
+                  className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+                  <option value="">Pick a signal…</option>
+                  {signals.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                <select value={c.op} disabled={busy || !c.signal}
+                  onChange={e => setCond(i, { op: e.target.value })}
+                  className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-40">
+                  <option value="">condition…</option>
+                  {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
+                </select>
+                {!boolOp && (
+                  <input value={String(c.value)} disabled={busy || !c.op}
+                    onChange={e => setCond(i, { value: e.target.value })}
+                    inputMode={sType === 'number' ? 'numeric' : 'text'}
+                    placeholder={sType === 'number' ? 'value' : 'text…'}
+                    className="w-28 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-40" />
+                )}
+                {sigOf(c.signal)?.help && <span className="text-[10px] text-dt-faint">{sigOf(c.signal)!.help}</span>}
+                {conds.length > 1 && (
+                  <button onClick={() => setConds(cs => cs.filter((_, j) => j !== i))} className="text-[10px] text-dt-faint hover:text-rose-300">×</button>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button onClick={() => setConds(cs => [...cs, { signal: '', op: '', value: '' }])} disabled={busy}
+              className="text-[11px] text-dt-support hover:text-dt-body">+ add a condition</button>
+            <div className="ml-auto flex items-center gap-2">
+              <select value={ruleAction} disabled={busy} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
+                className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+                <option value="escalate">Hand to a human</option>
+                <option value="require_approval">Needs approval first</option>
+              </select>
+              <button onClick={addRule} disabled={busy || !ruleName.trim() || readyConds.length === 0}
+                className="text-xs px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                Add rule
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

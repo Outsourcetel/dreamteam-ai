@@ -36,12 +36,45 @@ export interface CertificationType {
   is_custom: boolean;
 }
 
+// A condition tests one signal from the catalog (mig 262).
+export interface EscCondition { signal: string; op: string; value: string | number | boolean }
 export interface EscalationRule {
   name: string;
-  when: string;
   action: 'escalate' | 'require_approval';
   enabled: boolean;
+  match?: 'all' | 'any';          // AND (default) / OR across conditions
+  conditions?: EscCondition[];    // the generic model
+  when?: string;                  // legacy keyword rows still supported
 }
+
+export interface EscalationSignal {
+  key: string;
+  label: string;
+  value_type: 'number' | 'text' | 'boolean';
+  applies_to: string[];
+  help: string | null;
+}
+
+/** The extensible signal catalog an escalation condition can test. */
+export async function getEscalationSignals(): Promise<EscalationSignal[]> {
+  const { data, error } = await supabase.rpc('get_escalation_signals');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as EscalationSignal[];
+}
+
+// Operators offered per value type — the UI reads this, so a new signal of a
+// known type gets the right operators for free.
+export const OPERATORS_BY_TYPE: Record<string, Array<{ op: string; label: string }>> = {
+  number: [
+    { op: 'gt', label: 'is greater than' }, { op: 'gte', label: 'is at least' },
+    { op: 'lt', label: 'is less than' }, { op: 'lte', label: 'is at most' }, { op: 'eq', label: 'equals' },
+  ],
+  text: [
+    { op: 'contains', label: 'contains' }, { op: 'not_contains', label: 'does not contain' },
+    { op: 'eq', label: 'is exactly' },
+  ],
+  boolean: [{ op: 'is_true', label: 'is yes' }, { op: 'is_false', label: 'is no' }],
+};
 
 function friendly(raw: string): string {
   if (raw.includes('insufficient_role')) return 'Only workspace owners and admins can change this.';
