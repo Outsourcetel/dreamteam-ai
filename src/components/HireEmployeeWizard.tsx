@@ -27,6 +27,7 @@ const EXAMPLES = [
 
 export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: () => void; onFinished: () => void }) {
   const [step, setStep] = useState<Step>('brief');
+  const [commsCopied, setCommsCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -254,6 +255,27 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </div>
               </div>
 
+              {/* docs/17 C5: the pre-hire job description — what you are
+                  actually signing up for, before any rehearsal runs. */}
+              <div className="rounded-xl bg-dt-card border border-dt-border p-3 grid sm:grid-cols-2 gap-x-4 gap-y-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Autonomy at hire</p>
+                  <p className="text-xs text-dt-support mt-0.5">Fully supervised — drafts only; every outbound needs your approval until trust is earned.</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Rollout plan</p>
+                  <p className="text-xs text-dt-support mt-0.5">Draft → supervised → trusted, promoted by evidence (rehearsal scores, live accuracy) — never by a toggle.</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Running cost</p>
+                  <p className="text-xs text-dt-support mt-0.5">Typically a fraction of a cent per answer in AI usage, hard-capped by your monthly AI budget.</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Risk overlay</p>
+                  <p className="text-xs text-dt-support mt-0.5">Workspace guardrails and mandatory compliance packs apply from the first answer — {persona} cannot switch them off.</p>
+                </div>
+              </div>
+
               {draft.study.coverage && (
                 <div className="rounded-xl bg-dt-card border border-dt-border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">What I found in your knowledge</p>
@@ -380,6 +402,26 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                   )}
                 </div>
               )}
+
+              {/* docs/17 C5: Day-1 wins + the "what changes for the team" note. */}
+              <div className="rounded-xl border border-dt-border bg-dt-card p-4">
+                <p className="text-xs text-dt-support font-medium mb-2">Day-1 wins — five minutes that make {persona} real:</p>
+                <ul className="space-y-1 text-xs text-dt-support">
+                  <li>• Ask {persona} three real customer questions in chat and watch it cite your knowledge.</li>
+                  <li>• Connect one system it should read from (Connected systems).</li>
+                  <li>• Skim its guardrails on its Governance tab, so you know exactly where it must stop.</li>
+                  <li>• Review its first drafts in Approvals — your edits are how it learns your voice.</li>
+                </ul>
+                <button
+                  onClick={() => {
+                    const note = `${persona} just joined as a digital employee. What changes: routine questions get first drafts from ${persona}, and a human reviews everything it sends until it earns trust. What doesn't change: you own every decision — ${persona} escalates anything uncertain to you. If it gets something wrong, edit the draft or its knowledge; that's how it learns.`;
+                    void navigator.clipboard?.writeText(note);
+                    setCommsCopied(true); setTimeout(() => setCommsCopied(false), 2000);
+                  }}
+                  className="mt-3 text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-white transition-colors">
+                  {commsCopied ? 'Copied ✓' : 'Copy a "what changes for the team" note'}
+                </button>
+              </div>
 
               <button onClick={() => { onFinished(); onClose(); }}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">

@@ -237,9 +237,12 @@ export const countDeOutputs = async (deId: string, days: number | null): Promise
 // Wave-2: compliance packs become attachable from the product (they could
 // previously only be attached by demo seeding / archetype hire).
 export const listAllCompliancePacks = async (): Promise<{ pack_key: string; name: string; domain: string | null }[]> => {
-  const { data, error } = await supabase.from('compliance_packs').select('pack_key, name, domain').order('name');
+  // The catalog's PK column is `key` (not pack_key) — selecting the wrong
+  // name errored since W2 and left the attach picker silently empty.
+  const { data, error } = await supabase.from('compliance_packs').select('key, name, domain').order('name');
   if (error) throw error;
-  return (data ?? []) as { pack_key: string; name: string; domain: string | null }[];
+  return ((data ?? []) as { key: string; name: string; domain: string | null }[])
+    .map(r => ({ pack_key: r.key, name: r.name, domain: r.domain }));
 };
 export const attachCompliancePack = async (packKey: string): Promise<void> => {
   const { data: prof } = await supabase.auth.getUser();

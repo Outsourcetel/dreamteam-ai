@@ -173,6 +173,33 @@ function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: 
   );
 }
 
+// docs/17 C4 — the five cross-department standing missions the market already
+// buys as static playbooks (conducting.ai's orchestrators), shipped here as
+// one-click directives. A template only FILLS THE ORDER BOX: the mission still
+// compiles to a plan and waits at the founder gate like any other (docs/14).
+const MISSION_TEMPLATES: Array<{ key: string; label: string; directive: string }> = [
+  {
+    key: 'customer_save', label: 'Customer Save',
+    directive: 'Every week, find accounts whose health has turned at-risk, assess why, and prepare a save plan for my review before any outreach.',
+  },
+  {
+    key: 'lead_lifecycle', label: 'Inbound Lead Lifecycle',
+    directive: 'Work every open opportunity with no activity in the last 7 days: assess its stage, draft the next follow-up for my approval, and flag any that look stalled.',
+  },
+  {
+    key: 'voc_loop', label: 'Voice of Customer',
+    directive: 'Each month, review what customers asked and complained about, cluster the themes, and produce a voice-of-customer report with the top issues and suggested fixes.',
+  },
+  {
+    key: 'exec_report', label: 'Monthly Exec Report',
+    directive: 'At the start of each month, produce an executive report of workforce outcomes — resolutions, renewals touched, escalations, and spend — as a deliverable I can share.',
+  },
+  {
+    key: 'incident_comms', label: 'Incident → Customer Comms',
+    directive: 'When an incident affects customers, draft holding communications for each affected account and route every message to me for approval before anything is sent.',
+  },
+];
+
 export default function MissionPanel({ de }: { de: DigitalEmployee }) {
   const [directive, setDirective] = useState('');
   const [missions, setMissions] = useState<MissionRow[] | null>(null);
@@ -221,6 +248,16 @@ export default function MissionPanel({ de }: { de: DigitalEmployee }) {
           <p className="text-xs text-dt-muted mt-1.5">
             {name} reads your order back as a plan — scope, procedure, cost — and nothing starts until you approve it.
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-dt-muted mr-1">Start from a standing template:</span>
+            {MISSION_TEMPLATES.map(t => (
+              <button key={t.key} onClick={() => setDirective(t.directive)}
+                title={t.directive}
+                className="text-xs px-2.5 py-1 rounded-full border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-white transition-colors">
+                {t.label}
+              </button>
+            ))}
+          </div>
           {error && <div className="mt-2"><Banner tone="danger">{error}</Banner></div>}
           <div className="mt-3 divide-y divide-dt-border">
             {missions === null ? (

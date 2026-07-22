@@ -361,6 +361,10 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
           <h1 className="text-2xl font-semibold text-dt-title truncate">{name}</h1>
           <p className="text-sm text-dt-support mt-0.5">{de.name !== name ? `${de.name} · ` : ''}{de.department} · {de.category}</p>
           <p className="text-xs text-dt-muted mt-1 max-w-2xl">{de.description}</p>
+          {/* docs/17 C6 — the dossier line (Reznikov design language, dt tokens). */}
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-dt-faint mt-2">
+            FILE {de.id.slice(0, 8)} · STATUS: {de.status === 'active' ? 'OPERATIONAL' : de.status.toUpperCase()} · TRUST: {(de.trust_level ?? '—').toUpperCase()} · DEPT: {(de.department ?? '—').toUpperCase()}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Chip tone={STATUS_TONE[de.status] ?? 'neutral'} dot pulse={de.status === 'active'}>{de.status}</Chip>

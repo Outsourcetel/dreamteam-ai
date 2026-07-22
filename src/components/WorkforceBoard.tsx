@@ -29,6 +29,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
   const [rows, setRows] = useState<WorkforceBoardRow[] | null>(null);
   const [notReady, setNotReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [missionsUsed, setMissionsUsed] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +39,12 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
         .catch(e => { if (!cancelled) setError((e as Error).message); });
     load();
     const t = setInterval(load, 30_000);
+    // Maturity phase signal (docs/17 C5): missions used = the workspace has
+    // reached orchestration. Derived from real usage, never self-declared.
+    import('../supabase').then(({ supabase }) =>
+      supabase.from('de_missions').select('id', { count: 'exact', head: true })
+        .then(({ count }) => { if (!cancelled) setMissionsUsed((count ?? 0) > 0); }))
+      .catch(() => { /* chip simply doesn't render */ });
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
@@ -51,13 +58,24 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
   }
 
   const totalWaiting = rows.reduce((s, r) => s + r.waiting_on_you, 0);
+  const anyOperating = rows.some(r => r.done_today > 0 || r.next_up.length > 0 || r.now != null || r.listens_live);
+  const phase = missionsUsed
+    ? { n: 3, label: 'Phase 3 · Orchestrated', hint: 'You give standing missions; employees plan and fan out under your gates.' }
+    : anyOperating
+      ? { n: 2, label: 'Phase 2 · Supervised autonomy', hint: 'Employees work on their own schedules under approval gates. Give a standing mission to reach Phase 3.' }
+      : { n: 1, label: 'Phase 1 · Assisted', hint: 'Employees answer when spoken to. Install a role kit or add watchers to reach Phase 2.' };
 
   return (
     <PanelCard
       title="The board — whole workforce"
-      badge={totalWaiting > 0
-        ? <Chip tone="warn">{totalWaiting} item{totalWaiting === 1 ? '' : 's'} wait on you</Chip>
-        : <Chip tone="ok">nothing waits on you</Chip>}
+      badge={
+        <span className="inline-flex items-center gap-1.5">
+          {missionsUsed !== null && <span title={phase.hint}><Chip tone={phase.n === 3 ? 'accent' : 'info'}>{phase.label}</Chip></span>}
+          {totalWaiting > 0
+            ? <Chip tone="warn">{totalWaiting} item{totalWaiting === 1 ? '' : 's'} wait on you</Chip>
+            : <Chip tone="ok">nothing waits on you</Chip>}
+        </span>
+      }
     >
       <p className="text-xs text-dt-support mb-3">
         Every employee — what it's doing now, what happens next and when, and where you're the bottleneck.

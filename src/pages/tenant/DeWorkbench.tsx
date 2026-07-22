@@ -11,6 +11,14 @@ import {
 } from '../../lib/deWorkbenchApi';
 import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
+
+// docs/17 C5: name the regulations each pack is DESIGNED to support (honest
+// wording — posture, never a compliance certification claim).
+const PACK_REGULATIONS: Record<string, string> = {
+  hipaa: 'HIPAA Privacy & Security Rules (45 CFR Parts 160/164) — minimum-necessary disclosure of PHI',
+  tcpa_dnc: 'TCPA (47 U.S.C. §227) and FTC Do-Not-Call rules — consent, registry checks, permitted hours',
+  financial_controls: 'SOX-style segregation of duties and SOC 2 processing-integrity themes — no unauthorized fund movement',
+};
 import BookOfWorkPanel from '../../components/BookOfWorkPanel';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 import DeliverablesPanel from '../../components/DeliverablesPanel';
@@ -619,12 +627,23 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE — attach one above; it applies workspace-wide and cannot be switched off." />
             ) : (
               <div className="space-y-2">{packs.map(p => (
-                <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3 flex items-center gap-3">
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">un-toggleable</span>
-                  <span className="text-sm text-dt-body flex-1">{p.name ?? p.pack_key}{p.domain ? ` · ${p.domain}` : ''}</span>
-                  <span className="text-[11px] text-dt-faint">attached {fmt(p.attached_at)}</span>
+                <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">un-toggleable</span>
+                    <span className="text-sm text-dt-body flex-1">{p.name ?? p.pack_key}{p.domain ? ` · ${p.domain}` : ''}</span>
+                    <span className="text-[11px] text-dt-faint">attached {fmt(p.attached_at)}</span>
+                  </div>
+                  {PACK_REGULATIONS[p.pack_key] && (
+                    <p className="text-[11px] text-dt-faint mt-1.5">Designed to support obligations under: {PACK_REGULATIONS[p.pack_key]}.</p>
+                  )}
                 </div>
-              ))}</div>
+              ))}
+              <p className="text-[11px] text-dt-faint pt-1">
+                Across every pack: consequential actions pass human approval gates and the earned-trust dial — the
+                human-oversight posture frameworks like the EU AI Act (Art. 14) and GDPR Art. 22 expect for automated
+                decisions. This describes how the product is designed, not a certification.
+              </p>
+              </div>
             ))}
           </>
         )}
