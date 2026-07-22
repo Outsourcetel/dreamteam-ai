@@ -77,6 +77,46 @@ export async function getAgenticRunMessages(runId: string): Promise<AgenticMessa
   return (data.messages ?? []) as AgenticMessage[];
 }
 
+// ── Dedicated work-product by role (mig 261) ──
+// A DE's domain resolved generically from the system categories it operates
+// (never a hardcoded department), plus what it has actually produced.
+export interface RoleContext {
+  department: string | null;
+  category: string | null;
+  is_specialist: boolean;
+  domains: string[];              // system categories it's granted (crm, helpdesk, erp_financials…)
+  archetype_key: string | null;
+  archetype_name: string | null;
+  archetype_domain: string | null;
+  archetype_categories: string[];
+}
+export interface WorkProductAction {
+  category: string | null;
+  label: string;
+  n: number;
+  auto_n: number;
+  gated_n: number;
+  last_at: string | null;
+}
+export interface WorkProduct {
+  conversations: { total: number; resolved: number; open: number; by_channel: Record<string, number> };
+  actions: WorkProductAction[];
+}
+
+export async function getDeRoleContext(deId: string): Promise<RoleContext> {
+  const { data, error } = await supabase.rpc('get_de_role_context', { p_de_id: deId });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error ?? 'could not load role');
+  return data as RoleContext;
+}
+
+export async function getDeWorkProduct(deId: string): Promise<WorkProduct> {
+  const { data, error } = await supabase.rpc('get_de_work_product', { p_de_id: deId });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error ?? 'could not load work product');
+  return data as WorkProduct;
+}
+
 // ── Whole-workforce economics (mig 193 get_workforce_economics) ──
 export interface WorkforceEconomics {
   digital_employees: number;

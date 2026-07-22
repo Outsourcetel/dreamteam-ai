@@ -15,8 +15,11 @@ import {
 import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
 import {
   getDeExecutionLog, getDeExperience, getDeAgenticRuns, getAgenticRunMessages,
+  getDeRoleContext, getDeWorkProduct,
   type DeRun, type DeExperience, type AgenticRun, type AgenticMessage,
+  type RoleContext, type WorkProduct,
 } from '../../lib/employeeRecordApi';
+import { CATEGORY_LABELS, CATEGORY_SHORT, type SystemCategory } from '../../lib/categoryContracts';
 import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 import MissionPanel from '../../components/MissionPanel';
@@ -56,10 +59,11 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // One employee, ONE page (founder structural fix 2026-07-22): the old
 // in-roster profile panel merged into this file — its sections render via
 // DeProfileSections so nothing exists in two places anymore.
-type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
+type FileTab = 'today' | 'work' | 'operating' | 'record' | 'performance' | 'workbench'
   | 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Today' },
+  { key: 'work', label: 'Work' },
   { key: 'operating', label: 'How I operate' },
   { key: 'record', label: 'Record' },
   { key: 'performance', label: 'Performance' },
@@ -307,6 +311,128 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
           <p className="text-xs text-dt-support mt-1">guardrail blocks all-time · error rate {pct(perf?.error_rate)} · {perf?.high_frustration_count ?? 0} high-frustration conversations.</p>
         </PanelCard>
       </div>
+    </div>
+  );
+}
+
+// ── Work — dedicated work-product BY ROLE (founder: never a mix-up) ─
+// Resolves the employee's domain from the system categories it operates
+// (generic — not a hardcoded department) and shows what it has actually
+// produced, framed in that domain's language. A finance DE shows payment
+// reminders and reconciliations; a support DE shows cases. Same component,
+// zero per-vertical code — driven by the category-contract layer.
+const domainLabel = (c: string): string => CATEGORY_LABELS[c as SystemCategory] ?? c.replace(/_/g, ' ');
+const domainShort = (c: string): string => CATEGORY_SHORT[c as SystemCategory] ?? c.replace(/_/g, ' ');
+const CONVERSATIONAL = ['helpdesk', 'crm', 'product_system'];
+
+function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  const [role, setRole] = useState<RoleContext | null>(null);
+  const [wp, setWp] = useState<WorkProduct | null>(null);
+  const name = de.persona_name ?? de.name;
+
+  useEffect(() => {
+    let cancelled = false;
+    getDeRoleContext(de.id).then(r => !cancelled && setRole(r)).catch(() => !cancelled && setRole(null));
+    getDeWorkProduct(de.id).then(w => !cancelled && setWp(w)).catch(() => !cancelled && setWp(null));
+    return () => { cancelled = true; };
+  }, [de.id]);
+
+  // The employee's operating domains: certified archetype categories first,
+  // else the categories it's granted. Falls back to department text.
+  const domains: string[] = (role?.archetype_categories?.length ? role.archetype_categories
+    : role?.domains ?? []).filter(Boolean);
+  const roleName = role?.archetype_name ?? role?.archetype_domain ?? role?.department ?? de.department ?? 'Generalist';
+  const isConversational = domains.some(d => CONVERSATIONAL.includes(d)) || (wp?.conversations.total ?? 0) > 0;
+
+  // Group the action work-product by domain category.
+  const byCategory = new Map<string, WorkProduct['actions']>();
+  (wp?.actions ?? []).forEach(a => {
+    const k = a.category ?? 'other';
+    if (!byCategory.has(k)) byCategory.set(k, []);
+    byCategory.get(k)!.push(a);
+  });
+  const catKeys = [...byCategory.keys()].filter(k => k !== 'platform_admin').sort();
+  const adminActions = byCategory.get('platform_admin') ?? [];
+
+  return (
+    <div className="space-y-5">
+      {/* Role header — who this employee is and what it operates */}
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
+        <p className="text-[11px] uppercase tracking-wide text-dt-muted">Role</p>
+        <p className="text-lg font-semibold text-dt-title mt-0.5">{roleName}</p>
+        {domains.length > 0 ? (
+          <p className="text-xs text-dt-support mt-1">
+            Operates: {domains.map(d => domainShort(d)).join(' · ')}
+          </p>
+        ) : (
+          <p className="text-xs text-dt-muted mt-1">No connected systems granted yet — this employee's domain is set by what you give it access to.</p>
+        )}
+      </div>
+
+      {role === null && wp === null
+        ? <p className="text-sm text-dt-muted py-8 text-center">Loading this employee's work…</p>
+        : (
+        <>
+          {/* Conversational work-product (support / CRM / product) */}
+          {isConversational && wp && (
+            <PanelCard title="Cases & conversations">
+              <p className="text-xs text-dt-muted mb-3 -mt-1">The customer conversations {name} has handled.</p>
+              {wp.conversations.total === 0
+                ? <p className="text-sm text-dt-muted py-4 text-center">No conversations handled yet.</p>
+                : (
+                  <div className="flex flex-wrap gap-4">
+                    <StatTile label="Handled" value={String(wp.conversations.total)} />
+                    <StatTile label="Resolved" value={String(wp.conversations.resolved)} />
+                    <StatTile label="Open" value={String(wp.conversations.open)} />
+                    <button onClick={() => setPage('support_inbox')} className="self-center text-xs text-dt-accent-text hover:underline ml-auto">Open in the inbox →</button>
+                  </div>
+                )}
+            </PanelCard>
+          )}
+
+          {/* Domain action work-product — grouped by category, labeled generically */}
+          {catKeys.length === 0 && adminActions.length === 0 && !isConversational ? (
+            <div className="rounded-xl border border-dashed border-dt-border px-4 py-6 text-center">
+              <p className="text-sm text-dt-support">{name} hasn't produced domain work-product yet.</p>
+              <p className="text-xs text-dt-muted mt-1">As it acts on its connected systems, everything it does appears here — grouped and labeled by the kind of work.</p>
+            </div>
+          ) : (
+            <>
+              {catKeys.map(cat => (
+                <PanelCard key={cat} title={domainLabel(cat)}>
+                  <div className="space-y-1.5">
+                    {byCategory.get(cat)!.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 text-sm">
+                        <span className="flex-1 text-dt-body">{a.label}</span>
+                        <span className="text-xs text-dt-muted whitespace-nowrap">
+                          {a.auto_n > 0 && <span className="text-dt-support">{a.auto_n} auto</span>}
+                          {a.auto_n > 0 && a.gated_n > 0 && ' · '}
+                          {a.gated_n > 0 && <span>{a.gated_n} approved</span>}
+                        </span>
+                        <span className="w-10 text-right text-sm font-semibold text-dt-title tabular-nums">{a.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                </PanelCard>
+              ))}
+              {/* Platform actions (running DreamTeam itself) shown last + labeled honestly */}
+              {adminActions.length > 0 && (
+                <PanelCard title="Workforce administration">
+                  <p className="text-xs text-dt-muted mb-3 -mt-1">Actions {name} took to set up or run the workforce itself — all human-approved.</p>
+                  <div className="space-y-1.5">
+                    {adminActions.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 text-sm">
+                        <span className="flex-1 text-dt-body">{a.label}</span>
+                        <span className="w-10 text-right text-sm font-semibold text-dt-title tabular-nums">{a.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                </PanelCard>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -614,6 +740,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
         active={tab} onSelect={(k: FileTab) => setTab(k)} />
 
       {tab === 'today' && <TodayTab de={de} setPage={setPage} />}
+      {tab === 'work' && <WorkTab de={de} setPage={setPage} />}
       {tab === 'operating' && <OperatingModelPanel de={de} />}
       {tab === 'record' && <RecordTab de={de} />}
       {tab === 'performance' && (currentTenant?.id
