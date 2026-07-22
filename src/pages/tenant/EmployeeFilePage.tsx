@@ -313,6 +313,8 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
   const { currentTenant } = useAuth();
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [health, setHealth] = useState<DEHealth | null>(null);
+  // mig 258 records gate — why this employee's autonomy is clamped, if it is.
+  const [gate, setGate] = useState<{ gated: boolean; reasons: string[] } | null>(null);
   const [tab, setTab] = useState<FileTab>('today');
   const onDeUpdated = (updated: DigitalEmployee) =>
     setDes(prev => (prev ?? []).map(d => (d.id === updated.id ? updated : d)));
@@ -327,6 +329,11 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
     if (!deId) return;
     let cancelled = false;
     listDeHealth().then(h => { if (!cancelled) setHealth(h.find(x => x.de_id === deId) ?? null); }).catch(() => undefined);
+    import('../../supabase').then(({ supabase }) =>
+      supabase.rpc('get_de_gate_status', { p_de_id: deId }).then(({ data }) => {
+        if (!cancelled && data?.ok) setGate({ gated: !!data.gated, reasons: (data.reasons ?? []) as string[] });
+      })
+    ).catch(() => undefined);
     return () => { cancelled = true; };
   }, [deId]);
 
@@ -370,8 +377,28 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
           <Chip tone={STATUS_TONE[de.status] ?? 'neutral'} dot pulse={de.status === 'active'}>{de.status}</Chip>
           <Chip tone={TRUST_TONE[de.trust_level] ?? 'neutral'}>{de.trust_level}</Chip>
           {healthMeta && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${healthMeta.color}`}>{healthMeta.label}</span>}
+          {gate?.gated && <Chip tone="warn">records gate</Chip>}
         </div>
       </div>
+
+      {/* mig 258 — the records gate, explained where the record lives. */}
+      {gate?.gated && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p className="text-xs font-medium text-amber-300">
+            Autonomy is gated by {name}'s employment record — every answer and action is routed to a human until it's resolved.
+          </p>
+          <ul className="mt-1 text-xs text-amber-200/90 space-y-0.5">
+            {gate.reasons.map(r => (
+              <li key={r}>
+                · {r === 'stale_certification' ? 'Certification is stale — the configuration changed after the last exam. Re-run the certification exam to refresh it.'
+                  : r === 'failed_certification' ? 'The last certification exam was failed. A passing exam restores autonomy.'
+                  : r === 'expired_certification' ? 'A governance certification has expired. Re-issue or re-certify to restore autonomy.'
+                  : r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <TabBar
         tabs={de.is_specialist ? [...FILE_TABS, { key: 'specialist' as FileTab, label: 'Specialist Tools' }] : FILE_TABS}
