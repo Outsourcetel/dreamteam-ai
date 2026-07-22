@@ -457,7 +457,7 @@ const DemoCustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) =>
             {/* Confidence dial */}
             <div className="flex flex-col items-center mb-6">
               <div className="relative w-48 h-24 mb-3">
-                <div className="absolute inset-0 rounded-t-full border-4 border-dt-border-strong" style={{ borderBottomColor: 'transparent', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }} />
+                <div className="absolute inset-0 rounded-t-full border-4 border-dt-border-strong border-b-transparent" />
                 <div className="absolute inset-0 rounded-t-full border-4 border-amber-500" style={{
                   borderBottomColor: 'transparent', borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
                   clipPath: `polygon(0 100%, 50% 100%, 50% 0, 0 0)`,

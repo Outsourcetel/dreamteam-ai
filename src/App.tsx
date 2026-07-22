@@ -41,7 +41,7 @@ import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
-import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
+import CustomersHubPage from './pages/tenant/entity/CustomersHubPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
@@ -396,22 +396,17 @@ function AppShell() {
       case 'users':
         return <UserManagementPage {...commonProps} />;
       // ── Entity pages ──────────────────────────────────────────
+      // ── Customers (ONE hub over the journey — founder restructure
+      // 2026-07-22; old URLs deep-link to tabs; Support points to its hub) ──
       case 'entity_customer':
-        return <CustomerOverviewPage setPage={handleSetPage} />;
       case 'entity_customer_bd':
-        return <CustomerBDPage setPage={handleSetPage} />;
       case 'entity_customer_sales':
-        return <CustomerSalesPage setPage={handleSetPage} />;
       case 'entity_customer_onboarding':
-        return <CustomerOnboardingRoute setPage={handleSetPage} />;
       case 'entity_customer_support':
-        return <CustomerSupportPage setPage={handleSetPage} />;
       case 'entity_customer_success':
-        return <CustomerSuccessPage setPage={handleSetPage} />;
       case 'entity_customer_renewal':
-        return <CustomerRenewalPage setPage={handleSetPage} />;
       case 'entity_commercial_continuity':
-        return <CommercialContinuityPage setPage={handleSetPage} />;
+        return <CustomersHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'entity_vendor':
         return <VendorOverviewPage setPage={handleSetPage} />;
       case 'entity_vendor_sourcing':
@@ -434,8 +429,12 @@ function AppShell() {
       // Wave 3: live tenants get the single consolidated Outcomes page;
       // the 4 legacy keys keep working (deep links) — in live mode they
       // render the same consolidated page, in demo the original previews.
+      // Outcomes reborn as the workforce VALUE statement inside the
+      // Workforce hub (founder rework 2026-07-22); demo keeps the old page.
       case 'outcomes':
-        return <OutcomesPage setPage={handleSetPage} />;
+        return dataMode === 'live'
+          ? <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />
+          : <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_revenue':
         return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeRevenuePage setPage={handleSetPage} />;
       case 'outcome_delivery':

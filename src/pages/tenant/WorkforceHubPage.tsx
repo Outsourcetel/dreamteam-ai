@@ -6,6 +6,7 @@ import DEActivityPage from './ops/DEActivityPage';
 import { PerformancePage } from './intelligence/IntelligencePages';
 import ProvingGroundPage from './intelligence/ProvingGroundPage';
 import SelfLearningPage from './intelligence/SelfLearningPage';
+import OutcomeStatement from '../../components/OutcomeStatement';
 
 // Workforce hub — the employee lifecycle as ONE destination (north-star IA):
 // who they are (Roster), what they're doing right now (At Work), how they're
@@ -15,6 +16,7 @@ import SelfLearningPage from './intelligence/SelfLearningPage';
 const TABS: { key: Page; label: string }[] = [
   { key: 'workforce_des', label: 'Roster' },
   { key: 'ops_de_activity', label: 'At Work' },
+  { key: 'outcomes', label: 'Value' },
   { key: 'intelligence_performance', label: 'Performance' },
   { key: 'intelligence_evals', label: 'Proving Ground' },
   { key: 'intelligence_learning', label: 'Self-Learning' },
@@ -34,6 +36,7 @@ const WorkforceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
     <InHubContext.Provider value={true}>
       {tab === 'workforce_des' && <WorkforceDEsPage setPage={setPage} />}
       {tab === 'ops_de_activity' && <DEActivityPage setPage={setPage} />}
+      {tab === 'outcomes' && <OutcomeStatement setPage={setPage} />}
       {tab === 'intelligence_performance' && <PerformancePage setPage={setPage} />}
       {tab === 'intelligence_evals' && <ProvingGroundPage setPage={setPage} />}
       {tab === 'intelligence_learning' && <SelfLearningPage setPage={setPage} />}

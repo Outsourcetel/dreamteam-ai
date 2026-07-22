@@ -317,7 +317,7 @@ export default function ChatCore({
             className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center disabled:opacity-40 disabled:shadow-none shadow-[0_4px_20px_-4px_rgba(99,102,241,0.8)] hover:brightness-110 transition-all"
             aria-label="Send"
           >
-            {sending ? <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white" style={{ animation: 'cc-spin .7s linear infinite' }} /> : '↑'}
+            {sending ? <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> : '↑'}
           </button>
         </div>
         <p className="text-[10px] text-dt-muted text-center mt-2.5">AI-assisted support · answers in your language</p>

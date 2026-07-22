@@ -173,20 +173,21 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // (real economics/delivery/risk rollup). Demo keeps the 4-page
         // preview group. The alerts badge was demo-seeded (s.alerts) —
         // demo-only now, never shown to live tenants.
-        isLiveMode
-          ? { id: 'outcomes', label: 'Outcomes', icon: '↑', page: 'outcomes' as Page }
-          : {
+        // Founder rework 2026-07-22: live Outcomes became the Workforce
+        // hub's "Value" statement — no standalone nav item for live tenants
+        // (spread-empty, the same pattern the vendor group uses).
+        ...(isLiveMode ? [] : [{
               id: 'outcomes',
               label: 'Outcomes',
               icon: '↑',
               badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
               children: [
-                { id: 'outcome_revenue', label: 'Revenue & Growth' },
-                { id: 'outcome_delivery', label: 'Delivery' },
-                { id: 'outcome_financial', label: 'Financial Health' },
-                { id: 'outcome_risk', label: 'Risk Posture' },
+                { id: 'outcome_revenue' as Page, label: 'Revenue & Growth' },
+                { id: 'outcome_delivery' as Page, label: 'Delivery' },
+                { id: 'outcome_financial' as Page, label: 'Financial Health' },
+                { id: 'outcome_risk' as Page, label: 'Risk Posture' },
               ],
-            },
+            }]),
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
         // (sources, media, consult, scribe, evidence) are the "Specialist
@@ -236,18 +237,13 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           // Wave 4: the served-party noun and lifecycle labels come from
           // the tenant's vocabulary (industry-seeded, editable). Demo
           // tenants resolve to the SaaS defaults, so nothing changes there.
+          // Founder restructure 2026-07-22: ONE Customers destination (the
+          // hub carries the journey as tabs) — the 7-child mini-CRM tree
+          // read as a product-story problem. At-risk count stays the badge.
           label: vocab.section_label,
           icon: '◎',
           page: 'entity_customer',
-          children: [
-            { id: 'entity_customer_bd', label: 'Business Development', indicator: { dot: true, color: '#6366f1' } },
-            { id: 'entity_customer_sales', label: 'Sales', indicator: { count: live.salesPipeline, color: '#6366f1' } },
-            { id: 'entity_customer_onboarding', label: 'Onboarding', indicator: { count: live.onboardingActive, color: '#f59e0b' } },
-            { id: 'entity_customer_support', label: 'Support', indicator: { count: live.supportTickets, color: '#22c55e' } },
-            { id: 'entity_customer_success', label: `${vocab.party_singular} Success`, indicator: { count: live.atRiskAccounts, color: '#ef4444' } },
-            { id: 'entity_customer_renewal', label: `${vocab.renewal_label} & Expansion`, indicator: { count: live.renewalsDue, color: '#f59e0b' } },
-            { id: 'entity_commercial_continuity', label: 'Commercial Continuity', indicator: { dot: true, color: '#6366f1' } },
-          ],
+          badge: live.atRiskAccounts > 0 ? { text: `${live.atRiskAccounts} at risk`, color: '#ef4444' } : undefined,
         },
         // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
         // live tenants (descoped 2026-07-09) — hiding dead nav sections
