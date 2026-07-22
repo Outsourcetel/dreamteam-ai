@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
-import { getDeWorkItems, getDeObjectives, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
+import { getDeWorkItems, getDeObjectives, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
@@ -192,6 +192,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   const [csat, setCsat] = useState<DeCsatMetrics | null>(null);
   const [actions, setActions] = useState<DeActionMetrics | null>(null);
   const [resolutions, setResolutions] = useState<{ resolutions: number; escalations: number } | null>(null);
+  const [outputs, setOutputs] = useState<{ items_done: number; deliverables: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +204,8 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       getDeCsatMetrics(tenantId),
       getDeActionMetrics(tenantId, range),
       getOutcomeMetering(tenantId, range),
-    ]).then(([m, iq, c, s, a, om]) => {
+      countDeOutputs(de.id, range).catch(() => ({ items_done: 0, deliverables: 0 })),
+    ]).then(([m, iq, c, s, a, om, outs]) => {
       if (cancelled) return;
       setPerf(m.find(x => x.de_id === de.id) ?? null);
       setInquiry(iq.find(x => x.de_id === de.id) ?? null);
@@ -212,6 +214,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       setActions(a.find(x => x.de_id === de.id) ?? null);
       const mine = om?.by_de.find(x => x.de_id === de.id);
       setResolutions(mine ? { resolutions: mine.resolutions, escalations: mine.escalations } : null);
+      setOutputs(outs);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -219,7 +222,8 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
 
   if (loading) return <p className="text-sm text-dt-muted py-8 text-center">Loading performance…</p>;
 
-  const nothing = !perf && !inquiry && !cost && !csat && !actions && !resolutions;
+  const nothing = !perf && !inquiry && !cost && !csat && !actions && !resolutions
+    && !(outputs && (outputs.items_done > 0 || outputs.deliverables > 0));
   if (nothing) {
     return (
       <EmptyState icon="📊" headline="No performance history in this window yet">
@@ -249,6 +253,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
         <StatTile label="Resolution" value={pct(inquiry?.resolution_rate)} tone="ok" />
         <StatTile label="Confidence" value={pct(inquiry?.avg_confidence)} tone="info" />
         <StatTile label="Escalation" value={pct(inquiry?.escalation_rate)} tone={inquiry && inquiry.escalation_rate > 20 ? 'warn' : 'neutral'} />
+        <StatTile label="Work items completed" value={String(outputs?.items_done ?? 0)} sub={outputs?.deliverables ? `${outputs.deliverables} document(s) produced` : undefined} tone="accent" />
         <StatTile label="Actions executed" value={String(actions?.executed ?? 0)} sub={actions ? `${actions.sent_to_human} sent to a human` : undefined} tone="ok" />
         <StatTile label="AI cost" value={cost ? `$${cost.total_cost_usd.toFixed(2)}` : '$0.00'} sub={cost ? `${cost.total_calls} calls` : undefined} tone="neutral" />
       </div>

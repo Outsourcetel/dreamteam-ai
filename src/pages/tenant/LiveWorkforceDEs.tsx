@@ -19,6 +19,7 @@ import { appendAuditEvent } from '../../lib/guardrailApi';
 import {
   listDefinitions, listDEPlaybookAssignments, assignPlaybookToDE,
   reprioritizeAssignment, setAssignmentActive, removeAssignment,
+  setDefinitionDeBinding,
 } from '../../lib/playbookBuilderApi';
 import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
@@ -752,7 +753,7 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Skills</h3>
+        <h3 className="text-base font-semibold text-white">Skills</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">evidence-assessed</span>
         <button onClick={() => void assess()} disabled={assessing}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-50">
@@ -933,7 +934,7 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3>
+        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">expiring attestations</span>
         <button onClick={() => setShowCertify(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
@@ -1957,6 +1958,24 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   const [mode, setMode] = useState<'draft' | 'auto'>(de.external_reply_mode === 'auto' ? 'auto' : 'draft');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Wave-2 disclosure (truth audit docs/15): the PUBLIC WIDGET is fronted by
+  // ONE employee tenant-wide (oldest auto-send, else oldest eligible) — the
+  // same selection widget-ask makes. Without this line, per-employee toggles
+  // silently reassign or no-op the widget with no visible cause.
+  const [front, setFront] = useState<{ id: string; name: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.from('digital_employees')
+      .select('id, name, persona_name, external_reply_mode, lifecycle_status, created_at')
+      .not('lifecycle_status', 'in', '(paused,retired,archived,designed)')
+      .order('created_at', { ascending: true }).limit(20)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const f = (data ?? []).find((d) => d.external_reply_mode === 'auto') ?? (data ?? [])[0] ?? null;
+        setFront(f ? { id: f.id, name: f.persona_name ?? f.name } : null);
+      });
+    return () => { cancelled = true; };
+  }, [de.id, de.external_reply_mode]);
   useEffect(() => { setMode(de.external_reply_mode === 'auto' ? 'auto' : 'draft'); }, [de.id, de.external_reply_mode]);
 
   const choose = async (next: 'draft' | 'auto') => {
@@ -1979,7 +1998,14 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
         <h3 className="text-base font-semibold text-white">Customer replies</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">external chat</span>
       </div>
-      <p className="text-[11px] text-dt-support mb-4">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
+      <p className="text-[11px] text-dt-support mb-2">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
+      {front && (
+        <p className={`text-[11px] mb-4 px-3 py-2 rounded-lg ${front.id === de.id ? 'bg-emerald-500/10 text-emerald-300' : 'bg-dt-inset text-dt-muted'}`}>
+          {front.id === de.id
+            ? '★ This employee currently fronts your public chat widget — every widget visitor talks to them.'
+            : `Your public chat widget is currently fronted by ${front.name} (one employee fronts it for the whole workspace — the oldest set to auto-send). This setting governs this employee's own replies in the dock, and the widget only if they become the front.`}
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {([
           { key: 'draft' as const, title: 'Draft for approval', desc: 'Every answer waits for a teammate to approve before the customer sees it. Safest — start here.' },
@@ -2152,7 +2178,7 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Goals & KPIs</h3>
+        <h3 className="text-base font-semibold text-white">Goals & KPIs</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">measured live</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
@@ -3298,6 +3324,77 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
   );
 }
 
+/** Attached procedures — the ONE playbook model (Wave 2, docs/15). Lists the
+ *  playbook_definitions bound to this DE (the same set get_de_briefing injects
+ *  into the autonomous loop since mig 250), with attach/detach and builder
+ *  links. Replaces the inert Operating Charter (its assignment table FK'd the
+ *  empty legacy `playbooks` table and had no runtime consumer). */
+function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
+  const [defs, setDefs] = useState<PlaybookDefinition[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pick, setPick] = useState('');
+
+  const load = useCallback(async () => {
+    try { setDefs(await listDefinitions()); } catch (e) { setError((e as Error).message); setDefs([]); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const act = async (fn: () => Promise<void>) => {
+    setBusy(true); setError(null);
+    try { await fn(); await load(); } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  const mine = (defs ?? []).filter(d => d.de_id === deId);
+  const unbound = (defs ?? []).filter(d => d.de_id !== deId && d.status !== 'archived');
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Attached procedures</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">steers autonomous work</span>
+      </div>
+      <p className="text-[11px] text-dt-muted mb-4">
+        Published procedures attached here are injected into this employee's working brief — up to four, newest first.
+        Drafts show below but only published ones steer work.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-3">{error}</p>}
+      {defs === null ? (
+        <p className="text-xs text-dt-muted">Loading procedures…</p>
+      ) : (
+        <>
+          {mine.length === 0 ? (
+            <p className="text-sm text-dt-muted mb-3">No procedure attached yet — this employee works from knowledge and judgment alone.</p>
+          ) : (
+            <div className="divide-y divide-dt-border mb-3">
+              {mine.map(d => (
+                <div key={d.id} className="flex items-center gap-3 py-2.5">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${d.status === 'published' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{d.status}</span>
+                  <span className="text-sm text-dt-body flex-1 truncate">{d.name}</span>
+                  <span className="text-[11px] text-dt-muted">v{d.version} · {Array.isArray(d.steps) ? d.steps.length : 0} steps</span>
+                  <button onClick={() => setPage('systems_playbooks')} className="text-xs text-indigo-400 hover:text-indigo-300">Open in builder</button>
+                  <button disabled={busy} onClick={() => void act(() => setDefinitionDeBinding(d.id, null))}
+                    className="text-xs text-dt-muted hover:text-rose-300 disabled:opacity-40">Detach</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <select value={pick} onChange={e => setPick(e.target.value)}
+              className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body">
+              <option value="">Attach an existing procedure…</option>
+              {unbound.map(d => <option key={d.id} value={d.id}>{d.name} ({d.status}){d.de_id ? ' — attached elsewhere' : ''}</option>)}
+            </select>
+            <button disabled={busy || !pick} onClick={() => void act(async () => { await setDefinitionDeBinding(pick, deId); setPick(''); })}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">Attach</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** The merged profile sections consumed by EmployeeFilePage — the single
  *  employee page. Keys mirror its tab keys. */
 export type DeProfileSectionKey = 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
@@ -3320,7 +3417,7 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
       <div className="space-y-6">
         <DeModelPanel de={de} onUpdated={onUpdated} />
         <DeReplyModePanel de={de} onUpdated={onUpdated} />
-        <OperatingCharterPanel deId={de.id} setPage={setPage} />
+        <AttachedProceduresPanel deId={de.id} setPage={setPage} />
         <DeKnowledgeScopePanel deId={de.id} />
         <DeSystemAccessPanel deId={de.id} setPage={setPage} />
         <DeSpecialistsPanel deId={de.id} />

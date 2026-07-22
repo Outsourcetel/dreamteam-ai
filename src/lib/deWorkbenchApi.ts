@@ -214,6 +214,33 @@ export const runCertificationEval = async (deId: string): Promise<{ status: stri
   return { status: res?.status ?? 'unknown', certification: res?.certification ?? null };
 };
 
+// Wave-2: role-aware output counts — work done and documents produced, so a
+// DE whose job isn't answering inquiries stops reading as all-zeros.
+export const countDeOutputs = async (deId: string, days: number | null): Promise<{ items_done: number; deliverables: number }> => {
+  const since = days ? new Date(Date.now() - days * 86400000).toISOString() : null;
+  let itemsQ = supabase.from('de_work_items').select('id', { count: 'exact', head: true }).eq('de_id', deId).eq('status', 'done');
+  if (since) itemsQ = itemsQ.gte('updated_at', since);
+  let delivQ = supabase.from('de_deliverables').select('id', { count: 'exact', head: true }).eq('de_id', deId);
+  if (since) delivQ = delivQ.gte('created_at', since);
+  const [items, deliv] = await Promise.all([itemsQ, delivQ]);
+  return { items_done: items.count ?? 0, deliverables: deliv.count ?? 0 };
+};
+
+// Wave-2: compliance packs become attachable from the product (they could
+// previously only be attached by demo seeding / archetype hire).
+export const listAllCompliancePacks = async (): Promise<{ pack_key: string; name: string; domain: string | null }[]> => {
+  const { data, error } = await supabase.from('compliance_packs').select('pack_key, name, domain').order('name');
+  if (error) throw error;
+  return (data ?? []) as { pack_key: string; name: string; domain: string | null }[];
+};
+export const attachCompliancePack = async (packKey: string): Promise<void> => {
+  const { data: prof } = await supabase.auth.getUser();
+  const { data: p } = await supabase.from('profiles').select('tenant_id').eq('user_id', prof.user?.id ?? '').maybeSingle();
+  if (!p?.tenant_id) throw new Error('No workspace.');
+  const { error } = await supabase.rpc('attach_compliance_pack', { p_tenant_id: p.tenant_id, p_pack_key: packKey });
+  if (error) throw error;
+};
+
 export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> => {
   const { data, error } = await supabase.rpc('de_certification_status', { p_de_id: deId });
   if (error) throw error;

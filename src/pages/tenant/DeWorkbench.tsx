@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks, runCertificationEval,
+  listAllCompliancePacks, attachCompliancePack,
   getReplaySources, runReplay,
   getDeMemoryGrouped, forgetMemory, saveObjective, decideException,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
@@ -34,6 +35,30 @@ const SECTIONS = [
 type Section = typeof SECTIONS[number]['key'];
 
 const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+// Wave-2 (truth audit docs/15): the Reasoning tab promised "every step and
+// why" but rendered raw tool slugs + truncated JSON. Humanize both.
+const TOOL_LABELS: Record<string, string> = {
+  recall_memory: 'Checked its memory', remember: 'Noted for later',
+  hybrid_match_knowledge: 'Searched the knowledge base', check_knowledge: 'Searched the knowledge base',
+  account_context: 'Read the account record', read_reference: 'Read a reference doc',
+  consult_specialist: 'Consulted a specialist', escalate_to_human: 'Escalated to a human',
+  pause_and_follow_up: 'Parked the case to follow up', produce_deliverable: 'Produced a document',
+  write_back_crm: 'Wrote back to the CRM', operate_in_system: 'Requested a browser operation',
+  mark_done: 'Finished the task', plan: 'Planned the approach', review_objective: 'Reviewed progress on the goal',
+};
+const humanTool = (tool: string) => TOOL_LABELS[tool] ?? tool.replace(/_/g, ' ');
+const humanOutcome = (outputs: Record<string, unknown>): string => {
+  for (const k of ['summary', 'answer', 'note', 'result', 'assessment', 'error']) {
+    const v = outputs?.[k];
+    if (typeof v === 'string' && v.trim()) return v.slice(0, 160);
+  }
+  if (typeof outputs?.count === 'number') return `found ${outputs.count}`;
+  if (outputs?.done === true) return 'done';
+  if (outputs?.escalated === true) return 'escalated';
+  const keys = Object.keys(outputs ?? {});
+  return keys.length ? `recorded ${keys.slice(0, 3).join(', ')}` : '';
+};
 const card = 'bg-dt-card border border-dt-border rounded-xl';
 const Empty = ({ children }: { children: React.ReactNode }) => (
   <div className="text-center text-dt-muted text-sm py-10">{children}</div>
@@ -64,6 +89,21 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [certs, setCerts] = useState<CertRow[]>([]);
   const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
   const [certRun, setCertRun] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+  const [allPacks, setAllPacks] = useState<{ pack_key: string; name: string; domain: string | null }[]>([]);
+  const [packPick, setPackPick] = useState('');
+  const [packBusy, setPackBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+
+  useEffect(() => { void listAllCompliancePacks().then(setAllPacks).catch(() => setAllPacks([])); }, []);
+  const attachPack = async () => {
+    setPackBusy(true); setPackError(null);
+    try {
+      await attachCompliancePack(packPick);
+      setPackPick('');
+      setPacks(await getTenantCompliancePacks());
+    } catch (e) { setPackError((e as Error).message); }
+    setPackBusy(false);
+  };
 
   const runCertExam = async () => {
     setCertRun({ busy: true, note: null });
@@ -367,9 +407,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                         <li key={r.id} className="flex items-start gap-2 text-xs">
                           <span className="text-dt-faint font-mono flex-shrink-0">{r.seq}.</span>
                           <div className="min-w-0">
-                            {r.tool && <span className="text-indigo-300 font-medium">{r.tool}</span>}
+                            {r.tool && <span className="text-indigo-300 font-medium">{humanTool(r.tool)}</span>}
                             {r.thought && <span className="text-dt-support">{r.tool ? ' — ' : ''}{r.thought}</span>}
-                            {r.outputs ? <span className="text-dt-faint"> → {JSON.stringify(r.outputs).slice(0, 100)}</span> : null}
+                            {r.outputs ? <span className="text-dt-faint"> → {humanOutcome(r.outputs)}</span> : null}
                           </div>
                         </li>
                       ))}
@@ -559,8 +599,24 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               ))}</div>
             ))}
 
+            {section === 'compliance' && (
+              <div className="flex items-center gap-2 mb-3">
+                <select value={packPick} onChange={e => setPackPick(e.target.value)}
+                  className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body">
+                  <option value="">Attach a compliance pack to this workspace…</option>
+                  {allPacks.filter(p => !packs.some(a => a.pack_key === p.pack_key)).map(p => (
+                    <option key={p.pack_key} value={p.pack_key}>{p.name}{p.domain ? ` · ${p.domain}` : ''}</option>
+                  ))}
+                </select>
+                <button disabled={packBusy || !packPick} onClick={() => void attachPack()}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                  {packBusy ? 'Attaching…' : 'Attach'}
+                </button>
+              </div>
+            )}
+            {section === 'compliance' && packError && <p className="text-xs text-rose-300 mb-3">{packError}</p>}
             {section === 'compliance' && (packs.length === 0 ? (
-              <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE." />
+              <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE — attach one above; it applies workspace-wide and cannot be switched off." />
             ) : (
               <div className="space-y-2">{packs.map(p => (
                 <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3 flex items-center gap-3">

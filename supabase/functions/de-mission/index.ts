@@ -47,6 +47,18 @@ const SCOPE_SOURCES = {
       end_date: ['lt', 'lte', 'gt', 'gte'],
     } as Record<string, string[]>,
   },
+  // Wave-2 widening (truth audit docs/15): sales/BD employees can scope
+  // missions over the pipeline — "chase every open opp closing this month".
+  opportunities: {
+    label: (r: Record<string, unknown>) => String(r.name ?? r.title ?? r.id),
+    entity_kind: 'opportunity',
+    fields: {
+      stage: ['eq', 'neq', 'in'],
+      status: ['eq', 'neq', 'in'],
+      close_date: ['lt', 'lte', 'gt', 'gte'],
+      amount_cents: ['lt', 'lte', 'gt', 'gte'],
+    } as Record<string, string[]>,
+  },
 } as const;
 
 interface ScopeFilter { field: string; op: string; value: unknown }

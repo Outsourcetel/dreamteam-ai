@@ -375,6 +375,10 @@ export interface PlaybookDefinition {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Direct DE binding — THE playbook model (Wave 2, docs/15; mig 250 injects
+   *  all published bound SOPs into the DE's working brief). */
+  de_id: string | null;
+  intended_de_name: string | null;
 }
 
 import { raise, requireTenantId, listTenantRows } from './liveShared';
@@ -384,6 +388,25 @@ const notify = () => { try { window.dispatchEvent(new Event('dt-state-changed'))
 
 export async function listDefinitions(): Promise<PlaybookDefinition[]> {
   return listTenantRows<PlaybookDefinition>('playbook_definitions', 'created_at', false, 'listDefinitions');
+}
+
+// Wave-2 (truth audit docs/15): direct attachment IS the playbook model —
+// the legacy assignment table FK'd the empty `playbooks` table and had no
+// runtime consumer. Binding a definition to a DE is what get_de_briefing
+// (mig 250) injects into the autonomous loop.
+export async function setDefinitionDeBinding(definitionId: string, deId: string | null): Promise<void> {
+  const { data, error } = await supabase
+    .from('playbook_definitions').update({ de_id: deId }).eq('id', definitionId).select('name, key').single();
+  if (error) raise('setDefinitionDeBinding', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: deId
+      ? `Procedure attached to employee — "${(data as { name: string }).name}"`
+      : `Procedure detached from employee — "${(data as { name: string }).name}"`,
+    detail: { kind: 'playbook_binding', definition_id: definitionId, de_id: deId },
+  });
+  notify();
 }
 
 export async function createDefinition(input: {
