@@ -33,6 +33,7 @@ import {
 } from '../../lib/roleConfigApi';
 import type { KpiMetric, SkillCategory, CertificationType, EscalationRule } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
+import EmployeeFileStrip from '../../components/workforce/EmployeeFileStrip';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
@@ -3157,6 +3158,10 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               </div>
             </div>
           </div>
+
+          {/* Employee File strip — the at-a-glance "this employee has a real
+              job": SOP, systems, objectives, trust (north-star legibility). */}
+          <EmployeeFileStrip de={selectedDe} />
 
           {/* Sub-tab nav — groups the ~20 panels so this reads as a
               profile, not one endless scroll. flex-wrap (not overflow) so
