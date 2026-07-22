@@ -14,8 +14,8 @@ import {
 } from '../../lib/api';
 import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
 import {
-  getDeSkills, getDeExecutionLog, getDeExperience, SKILL_LABELS,
-  type DeSkill, type DeRun, type DeExperience,
+  getDeExecutionLog, getDeExperience, getDeAgenticRuns, getAgenticRunMessages,
+  type DeRun, type DeExperience, type AgenticRun, type AgenticMessage,
 } from '../../lib/employeeRecordApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
@@ -324,48 +324,94 @@ const relTime = (iso: string) => {
 };
 const isFallbackModel = (m: string | null) => !!m && /bedrock|anthropic\.|openai|gpt|gemini|google/i.test(m);
 
-function SkillMatrix({ skills }: { skills: DeSkill[] }) {
-  const known = Object.keys(SKILL_LABELS);
-  const byKey = new Map(skills.map(s => [s.skill_key, s]));
-  const rows = [...known, ...skills.map(s => s.skill_key).filter(k => !known.includes(k))];
+// Humanize an agentic transcript turn (raw Anthropic content blocks) into
+// readable lines — mirrors the Workbench Reasoning humanizer. Never dumps raw
+// JSON, thinking signatures, or tool_use ids at the reader.
+type TurnLine = { kind: 'thought' | 'action' | 'result' | 'say' | 'error'; text: string };
+function humanizeTurn(role: string, content: unknown): TurnLine[] {
+  let blocks: unknown = content;
+  if (typeof content === 'string') {
+    const s = content.trim();
+    if (s.startsWith('[') || s.startsWith('{')) { try { blocks = JSON.parse(s); } catch { return [{ kind: 'say', text: s }]; } }
+    else return [{ kind: role === 'user' ? 'say' : 'say', text: s }];
+  }
+  if (!Array.isArray(blocks)) return [];
+  const out: TurnLine[] = [];
+  for (const b of blocks as Array<Record<string, unknown>>) {
+    const t = b?.type;
+    if (t === 'text' && typeof b.text === 'string' && b.text.trim()) out.push({ kind: 'say', text: b.text.trim() });
+    else if (t === 'thinking' && typeof b.thinking === 'string' && b.thinking.trim()) out.push({ kind: 'thought', text: b.thinking.trim() });
+    else if (t === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'action', text: `Called ${String(b.name).replace(/^platform_admin__/, '').replace(/_/g, ' ')}` });
+    else if (t === 'tool_result') {
+      const isErr = b.is_error === true;
+      const c = typeof b.content === 'string' ? b.content : Array.isArray(b.content) ? (b.content as Array<{ text?: string }>).map(x => x?.text ?? '').join(' ') : '';
+      out.push({ kind: isErr ? 'error' : 'result', text: (isErr ? '' : 'Result: ') + String(c).slice(0, 300) });
+    }
+  }
+  return out;
+}
+const TURN_STYLE: Record<TurnLine['kind'], string> = {
+  thought: 'text-dt-muted italic', action: 'text-dt-accent-text', result: 'text-dt-support',
+  say: 'text-dt-body', error: 'text-rose-400',
+};
+const TURN_TAG: Record<TurnLine['kind'], string> = {
+  thought: 'thought', action: 'did', result: 'saw', say: 'said', error: '⚠',
+};
+
+// One autonomous run, expandable to its turn-by-turn reasoning transcript.
+function AgenticRunRow({ run }: { run: AgenticRun }) {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState<AgenticMessage[] | null>(null);
+  const toggle = () => {
+    const next = !open; setOpen(next);
+    if (next && msgs === null) getAgenticRunMessages(run.id).then(setMsgs).catch(() => setMsgs([]));
+  };
+  const statusTone: Tone = run.status === 'completed' ? 'ok' : run.status === 'failed' ? 'danger'
+    : run.status.startsWith('blocked') ? 'warn' : 'info';
   return (
-    <div className="space-y-2.5">
-      {rows.map(key => {
-        const s = byKey.get(key);
-        const meta = SKILL_LABELS[key] ?? { label: key.replace(/_/g, ' '), blurb: '' };
-        const prof = s?.proficiency ?? 0;
-        return (
-          <div key={key} className="flex items-center gap-3">
-            <div className="w-44 shrink-0">
-              <p className="text-xs font-medium text-dt-title capitalize">{meta.label}</p>
-              {meta.blurb && <p className="text-[10px] text-dt-muted leading-tight">{meta.blurb}</p>}
-            </div>
-            <div className="flex-1 flex gap-1">
-              {[1, 2, 3, 4, 5].map(n => (
-                <div key={n} className={`h-2 flex-1 rounded-full ${n <= prof ? 'bg-dt-accent' : 'bg-dt-border'}`} />
-              ))}
-            </div>
-            <div className="w-24 shrink-0 text-right">
-              {s ? <span className="text-[10px] text-dt-muted">{s.sample_size} sample{s.sample_size === 1 ? '' : 's'}</span>
-                 : <span className="text-[10px] text-dt-faint">not yet assessed</span>}
-            </div>
+    <div className="rounded-xl border border-dt-border bg-dt-card">
+      <button onClick={toggle} className="w-full text-left px-3.5 py-2.5 flex items-start gap-2">
+        <span className={`mt-0.5 text-dt-muted transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-dt-body">{run.goal ?? 'Autonomous task'}</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <Chip tone={statusTone}>{run.status.replace(/_/g, ' ')}</Chip>
+            {run.iteration_count > 0 && <span className="text-[10px] text-dt-muted">{run.iteration_count} step{run.iteration_count === 1 ? '' : 's'}</span>}
+            {run.cost_used_cents > 0 && <span className="text-[10px] text-dt-muted">${(run.cost_used_cents / 100).toFixed(2)}</span>}
+            <span className="text-[10px] text-dt-faint ml-auto">{relTime(run.created_at)}</span>
           </div>
-        );
-      })}
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-dt-border px-3.5 py-2.5">
+          {msgs === null ? <p className="text-xs text-dt-muted py-2">Loading transcript…</p>
+            : msgs.length === 0 ? <p className="text-xs text-dt-muted py-2">No transcript recorded for this run.</p>
+            : (
+              <div className="space-y-1.5">
+                {msgs.flatMap(m => humanizeTurn(m.role, m.content).map((line, li) => (
+                  <div key={`${m.id}-${li}`} className="flex gap-2 text-xs">
+                    <span className="w-12 shrink-0 text-[10px] text-dt-faint uppercase tracking-wide pt-0.5">{TURN_TAG[line.kind]}</span>
+                    <span className={`flex-1 whitespace-pre-wrap break-words ${TURN_STYLE[line.kind]}`}>{line.text}</span>
+                  </div>
+                )))}
+              </div>
+            )}
+        </div>
+      )}
     </div>
   );
 }
 
 function RecordTab({ de }: { de: DigitalEmployee }) {
-  const [skills, setSkills] = useState<DeSkill[] | null>(null);
   const [runs, setRuns] = useState<DeRun[] | null>(null);
   const [exp, setExp] = useState<DeExperience[] | null>(null);
+  const [agentic, setAgentic] = useState<AgenticRun[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getDeSkills(de.id).then(s => !cancelled && setSkills(s)).catch(() => !cancelled && setSkills([]));
     getDeExecutionLog(de.id, 25).then(r => !cancelled && setRuns(r)).catch(() => !cancelled && setRuns([]));
     getDeExperience(de.id, 40).then(e => !cancelled && setExp(e)).catch(() => !cancelled && setExp([]));
+    getDeAgenticRuns(de.id, 15).then(a => !cancelled && setAgentic(a)).catch(() => !cancelled && setAgentic([]));
     return () => { cancelled = true; };
   }, [de.id]);
 
@@ -373,12 +419,18 @@ function RecordTab({ de }: { de: DigitalEmployee }) {
 
   return (
     <div className="space-y-5">
-      {/* Skills — evidence-earned competencies */}
-      <PanelCard title="Skills — earned from evidence, not assigned">
-        <p className="text-xs text-dt-muted mb-3 -mt-1">{name}'s proficiency is re-assessed automatically from real work — each bar is backed by a sample count, not a claim.</p>
-        {skills === null ? <p className="text-sm text-dt-muted py-6 text-center">Assessing…</p>
-          : <SkillMatrix skills={skills} />}
-      </PanelCard>
+      {/* Skills, KPIs and development live on the Development tab (the canonical
+          list_de_skills surface) — the Record tab is the evidence of work done. */}
+
+      {/* Autonomous runs — watch it reason through a multi-step task */}
+      {agentic !== null && agentic.length > 0 && (
+        <PanelCard title="Autonomous runs — how it reasoned through a task">
+          <p className="text-xs text-dt-muted mb-3 -mt-1">When {name} works a multi-step goal on its own, every turn of its reasoning and tool use is recorded. Expand any run to read the transcript.</p>
+          <div className="space-y-2">
+            {agentic.map(r => <AgenticRunRow key={r.id} run={r} />)}
+          </div>
+        </PanelCard>
+      )}
 
       {/* Execution log — how each run was actually served */}
       <PanelCard title="Execution log — every answer, and how it was served">

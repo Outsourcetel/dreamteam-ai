@@ -1,18 +1,10 @@
-// The living employment record (Tier-1 surfacing) — reads the rich, populated
-// datasets the Employee File was sitting on but never showing: evidence-earned
-// skills, the lived-experience ledger, and per-run execution telemetry (which
-// shows the actual model that served each answer — the failover, per reply).
-// All three go through mig-259 SECURITY DEFINER, tenant-gated RPCs.
+// The living employment record — reads the rich, populated datasets the
+// Employee File was sitting on but never showing: the lived-experience ledger,
+// per-run execution telemetry (which model served each answer — the failover,
+// per reply), and the autonomous-run reasoning transcript. Via mig-259/260
+// SECURITY DEFINER, tenant-gated RPCs. (Skills/KPIs are NOT here — they were
+// already surfaced by DeSkillsPanel/DeKpisPanel via list_de_skills.)
 import { supabase } from '../supabase';
-
-export interface DeSkill {
-  skill_key: string;
-  proficiency: number;        // 0–5, evidence-assessed
-  sample_size: number;        // how much evidence backs it
-  signal_value: number | null;
-  detail: string | null;
-  assessed_at: string | null;
-}
 
 export interface DeExperience {
   id: string;
@@ -38,22 +30,6 @@ export interface DeRun {
   turns: number | null;
 }
 
-// Human labels for the evidence-assessed competencies (mig skill cron).
-export const SKILL_LABELS: Record<string, { label: string; blurb: string }> = {
-  case_resolution: { label: 'Case resolution', blurb: 'Closing work correctly without a human' },
-  judgment_calibration: { label: 'Judgment calibration', blurb: 'Knowing when to act vs. escalate' },
-  domain_grounding: { label: 'Domain grounding', blurb: 'Answering from real knowledge, not guesses' },
-  communication_quality: { label: 'Communication', blurb: 'Clear, on-brand customer replies' },
-  system_integration: { label: 'System integration', blurb: 'Operating connected tools reliably' },
-};
-
-export async function getDeSkills(deId: string): Promise<DeSkill[]> {
-  const { data, error } = await supabase.rpc('get_de_skills', { p_de_id: deId });
-  if (error) throw new Error(error.message);
-  if (!data?.ok) throw new Error(data?.error ?? 'could not load skills');
-  return (data.skills ?? []) as DeSkill[];
-}
-
 export async function getDeExperience(deId: string, limit = 40): Promise<DeExperience[]> {
   const { data, error } = await supabase.rpc('get_de_experience', { p_de_id: deId, p_limit: limit });
   if (error) throw new Error(error.message);
@@ -66,6 +42,39 @@ export async function getDeExecutionLog(deId: string, limit = 25): Promise<DeRun
   if (error) throw new Error(error.message);
   if (!data?.ok) throw new Error(data?.error ?? 'could not load execution log');
   return (data.runs ?? []) as DeRun[];
+}
+
+// ── Autonomous-run reasoning transcript (Tier-2, mig 260) ──
+export interface AgenticRun {
+  id: string;
+  goal: string | null;
+  status: string;
+  iteration_count: number;
+  cost_used_cents: number;
+  tokens_used: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+export interface AgenticMessage {
+  id: string;
+  turn_index: number;
+  role: string;
+  content: unknown;
+  created_at: string;
+}
+
+export async function getDeAgenticRuns(deId: string, limit = 15): Promise<AgenticRun[]> {
+  const { data, error } = await supabase.rpc('get_de_agentic_runs', { p_de_id: deId, p_limit: limit });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error ?? 'could not load runs');
+  return (data.runs ?? []) as AgenticRun[];
+}
+
+export async function getAgenticRunMessages(runId: string): Promise<AgenticMessage[]> {
+  const { data, error } = await supabase.rpc('get_agentic_run_messages', { p_run_id: runId });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error ?? 'could not load transcript');
+  return (data.messages ?? []) as AgenticMessage[];
 }
 
 // ── Whole-workforce economics (mig 193 get_workforce_economics) ──
