@@ -3,30 +3,31 @@
    The only allowed ingredients. Everything visual resolves to these variables.
    docs/design-system.md is the law; this file is its executable form.
 
-   Dual-theme by construction (founder profile 2026-07-22: dark now, light
-   later): components consume the semantic var, never a raw color. A future
-   light theme overrides :root.light only — zero component changes.
+   Palette: MIDNIGHT NAVY (founder-locked 2026-07-22) — indigo-tinted dark,
+   harmonized with the accent. The tailwind `slate` scale is remapped to the
+   same ramp so legacy classes match. Per-tenant branding overrides these
+   variables at runtime (accent + surface family); light theme = :root.light.
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Surfaces (exactly four) ─────────────────────────────────────────── */
-  --dt-page:    #0f172a;   /* slate-900 — the app canvas                    */
-  --dt-panel:   #1e293b66; /* slate-800/40 — grouped region on the page     */
-  --dt-card:    #1e293b66; /* card on page; on a panel use --dt-inset       */
-  --dt-inset:   #0f172a99; /* wells inside cards (code, previews, forms)    */
+  --dt-page:    #0c1123;   /* navy-900 — the app canvas                     */
+  --dt-panel:   #171e3966; /* navy-800/40 — grouped region on the page      */
+  --dt-card:    #171e3966; /* card on page; on a panel use --dt-inset       */
+  --dt-inset:   #0c112399; /* wells inside cards (code, previews, forms)    */
 
   /* ── Borders (exactly two + focus) ───────────────────────────────────── */
-  --dt-border:        #33415599; /* slate-700/60 — default hairline         */
-  --dt-border-strong: #475569;   /* slate-600 — hover / emphasis            */
+  --dt-border:        #2d355499; /* navy-700/60 — default hairline          */
+  --dt-border-strong: #414b6e;   /* navy-600 — hover / emphasis             */
 
   /* ── Text (five levels; contrast floors are law) ─────────────────────── */
   --dt-text-title:   #ffffff;  /* page + section titles                     */
-  --dt-text-body:    #e2e8f0;  /* slate-200 — primary reading text          */
-  --dt-text-support: #94a3b8;  /* slate-400 — descriptions, subtitles       */
-  --dt-text-muted:   #64748b;  /* slate-500 — meta, timestamps (FLOOR for   */
-  /*                              readable text; slate-600 is decoration-only) */
-  --dt-text-faint:   #475569;  /* slate-600 — decorative only, never copy   */
+  --dt-text-body:    #e4e9f6;  /* navy-100 — primary reading text           */
+  --dt-text-support: #a6b4d8;  /* navy-300 — descriptions, subtitles        */
+  --dt-text-muted:   #7b8ab3;  /* navy-400 — meta, timestamps (FLOOR for    */
+  /*                              readable text; below this = decoration)   */
+  --dt-text-faint:   #5b678d;  /* navy-500 — decorative only, never copy    */
 
-  /* ── Accent (indigo — founder-locked) ────────────────────────────────── */
+  /* ── Accent (indigo — founder-locked; tenant-brandable at runtime) ───── */
   --dt-accent:        #6366f1; /* indigo-500 — active tab border, links     */
   --dt-accent-strong: #4f46e5; /* indigo-600 — primary button              */
   --dt-accent-hover:  #6366f1; /* indigo-500 — primary button hover        */
@@ -38,7 +39,7 @@
   --dt-warn:      #fbbf24; --dt-warn-soft:   #f59e0b1a; --dt-warn-border:   #f59e0b4d;
   --dt-danger:    #fb7185; --dt-danger-soft: #f43f5e1a; --dt-danger-border: #f43f5e4d;
   --dt-info:      #38bdf8; --dt-info-soft:   #0ea5e91a; --dt-info-border:   #0ea5e94d;
-  --dt-neutral:   #94a3b8; --dt-neutral-soft:#3341551a; --dt-neutral-border:#4755694d;
+  --dt-neutral:   #a6b4d8; --dt-neutral-soft:#2d35541a; --dt-neutral-border:#414b6e4d;
 }
 
 /* Light theme lands here later — semantic names stay identical. */

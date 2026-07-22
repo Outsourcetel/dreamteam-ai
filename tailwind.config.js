@@ -21,6 +21,16 @@ export default {
       // New/touched UI composes from these; raw slate-* classes are legacy and
       // burn down via scripts/design-drift.mjs. docs/design-system.md is law.
       colors: {
+        // ── Midnight Navy (founder-locked 2026-07-22) — the platform's dark.
+        // The slate scale itself is remapped to an indigo-tinted navy ramp so
+        // EVERY legacy slate-* class shifts hue in one move (lightness kept
+        // close to real slate, so existing contrast relationships hold).
+        // Per-tenant branding overrides arrive via CSS vars on top of this.
+        slate: {
+          50: '#f2f5fb', 100: '#e4e9f6', 200: '#cbd5ec', 300: '#a6b4d8',
+          400: '#7b8ab3', 500: '#5b678d', 600: '#414b6e', 700: '#2d3554',
+          800: '#171e39', 900: '#0c1123', 950: '#070a17',
+        },
         dt: {
           page: 'var(--dt-page)',
           panel: 'var(--dt-panel)',

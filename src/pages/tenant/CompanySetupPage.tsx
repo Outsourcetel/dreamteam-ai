@@ -9,6 +9,7 @@ import { listGuardrailRules, addGuardrailRule, appendAuditEvent } from '../../li
 import { updateTenant } from '../../lib/api';
 import { setPipelineStages } from '../../lib/pipelineApi';
 import { listEntityFields, addEntityField } from '../../lib/customerApi';
+import BrandingCard from '../../components/BrandingCard';
 
 // ============================================================
 // Company Setup — the REAL wizard (Wave 1.1).
@@ -327,6 +328,9 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
           </button>
         </div>
       )}
+
+      {/* Workspace appearance — per-tenant branding (mig 247). */}
+      <BrandingCard />
     </div>
   );
 }

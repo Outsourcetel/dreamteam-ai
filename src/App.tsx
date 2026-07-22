@@ -17,6 +17,15 @@ import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeHubPage from './pages/tenant/knowledge/KnowledgeHubPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import GovernanceHubPage from './pages/tenant/governance/GovernanceHubPage';
+import { useEffect as useBrandingEffect } from 'react';
+import { loadAndApplyBranding } from './design/branding';
+
+// Applies the workspace's saved brand (accent + surface family) once per
+// authed session — cosmetic, never blocking (mig 247).
+function BrandingLoader() {
+  useBrandingEffect(() => { void loadAndApplyBranding(); }, []);
+  return null;
+}
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
@@ -539,6 +548,7 @@ function AppShell() {
             {renderPage()}
           </PageErrorBoundary>
         </main>
+        {authedUser && <BrandingLoader />}
         {authedUser && !isDTUser && <DEChatDock />}
       </div>
     </>
