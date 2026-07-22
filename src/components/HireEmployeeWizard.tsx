@@ -186,8 +186,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               <div className="flex flex-wrap gap-2">
                 {EXAMPLES.map((ex, i) => (
                   <button key={i} onClick={() => setBrief(ex)}
-                    className="text-[11px] px-2.5 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support hover:text-dt-body hover:border-dt-border-strong text-left max-w-full truncate"
-                    style={{ maxWidth: '100%' }}>
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support hover:text-dt-body hover:border-dt-border-strong text-left max-w-full truncate">
                     {ex.slice(0, 64)}…
                   </button>
                 ))}

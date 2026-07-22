@@ -202,7 +202,7 @@ async function reviewObjective(
     await admin.rpc('conclude_objective_wake', { p_objective_id: obj.id, p_assessment: assessment, p_note: note });
     if (assessment === 'blocked') {
       await admin.from('human_tasks').insert({
-        tenant_id: obj.tenant_id, type: 'escalation', source: 'de',
+        tenant_id: obj.tenant_id, de_id: obj.de_id, type: 'escalation', source: 'de',
         title: `Goal blocked — ${obj.title.slice(0, 120)}`,
         detail: `The employee cannot progress this objective without help.\n\n${note}\n\nProgress so far:\n${progress.slice(0, 1500)}`,
         related_table: 'de_objectives', related_id: obj.id,
@@ -415,7 +415,7 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
         : { error: r.error ?? 'could not create operation' } };
     }
     case 'escalate_to_human': {
-      await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
+      await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: deId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
       return { result: { escalated: true }, escalated: true, done: true, summary: `Escalated: ${input.reason}` };
     }
     case 'mark_done':

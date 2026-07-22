@@ -13,6 +13,8 @@ import {
 import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
 import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
+import MissionPanel from '../../components/MissionPanel';
+import OperatingModelPanel from '../../components/OperatingModelPanel';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, type Tone,
 } from '../../design/primitives';
@@ -44,9 +46,10 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
   acted: { label: 'Acted', tone: 'ok' },
 };
 
-type FileTab = 'today' | 'performance' | 'workbench';
+type FileTab = 'today' | 'operating' | 'performance' | 'workbench';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Today' },
+  { key: 'operating', label: 'How I operate' },
   { key: 'performance', label: 'Performance' },
   { key: 'workbench', label: 'Workbench' },
 ];
@@ -81,6 +84,8 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
   return (
     <div className="space-y-5">
       {error && <Banner tone="danger">{error}</Banner>}
+
+      <MissionPanel de={de} />
 
       <PanelCard title="Working right now" badge={inMotion.length > 0 ? <Chip tone="info" dot pulse>{inMotion.length} in motion</Chip> : undefined}>
         {inMotion.length === 0 ? (
@@ -321,6 +326,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
       <TabBar tabs={FILE_TABS} active={tab} onSelect={(k: FileTab) => setTab(k)} />
 
       {tab === 'today' && <TodayTab de={de} setPage={setPage} />}
+      {tab === 'operating' && <OperatingModelPanel de={de} />}
       {tab === 'performance' && (currentTenant?.id
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
