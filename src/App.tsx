@@ -16,12 +16,7 @@ import MyAccountBadge from './pages/platform/MyAccountBadge';
 import DashboardPage from './pages/tenant/DashboardPage';
 import KnowledgeHubPage from './pages/tenant/knowledge/KnowledgeHubPage';
 import SettingsPage from './pages/tenant/SettingsPage';
-import CompliancePage from './pages/tenant/governance/CompliancePage';
-import AuditTrailPage from './pages/tenant/governance/AuditTrailPage';
-import SecurityAccessPage from './pages/tenant/governance/SecurityAccessPage';
-import TrustArchitecturePage from './pages/tenant/governance/TrustArchitecturePage';
-import DataAccessPage from './pages/tenant/governance/DataAccessPage';
-import IdentityInventoryPage from './pages/tenant/governance/IdentityInventoryPage';
+import GovernanceHubPage from './pages/tenant/governance/GovernanceHubPage';
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
@@ -484,18 +479,14 @@ function AppShell() {
       case 'intelligence_insights':
         return <InsightsPage setPage={handleSetPage} />;
       // ── Governance ────────────────────────────────────────────
+      // ── Governance (one hub, six tabs — old URLs deep-link to tabs) ──
       case 'gov_compliance':
-        return <CompliancePage setPage={handleSetPage} />;
       case 'gov_audit':
-        return <AuditTrailPage setPage={handleSetPage} />;
       case 'gov_security':
-        return <SecurityAccessPage />;
       case 'gov_trust':
-        return <TrustArchitecturePage />;
       case 'gov_data_access':
-        return <DataAccessPage />;
       case 'gov_identity_inventory':
-        return <IdentityInventoryPage />;
+        return <GovernanceHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'company_setup':
         return <CompanySetupPage setPage={handleSetPage} />;
       case 'onboarding_architect':

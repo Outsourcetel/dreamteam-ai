@@ -145,6 +145,10 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           label: 'Command Centre',
           icon: '⬡',
           page: 'dashboard',
+          // Insights is the Command Centre's analysis drill-down (north-star IA).
+          children: [
+            { id: 'intelligence_insights', label: 'Insights' },
+          ],
         },
       ],
     },
@@ -183,7 +187,6 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
                 { id: 'outcome_risk', label: 'Risk Posture' },
               ],
             },
-        { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
         // (sources, media, consult, scribe, evidence) are the "Specialist
@@ -280,12 +283,9 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
     {
       title: 'GOVERNANCE',
       groups: [
-        { id: 'compliance', label: 'Compliance & Guardrails', icon: '⚑', page: 'gov_compliance' },
-        { id: 'audit', label: 'Audit Trail', icon: '▤', page: 'gov_audit' },
-        { id: 'security', label: 'Security & Access', icon: '⛨', page: 'gov_security' },
-        { id: 'data_access', label: 'Data Access', icon: '⊘', page: 'gov_data_access' },
-        { id: 'identity_inventory', label: 'Identity & Credentials', icon: '🔑', page: 'gov_identity_inventory' },
-        { id: 'trust', label: 'Trust & Architecture', icon: '▣', page: 'gov_trust' },
+        // One destination — Compliance/Audit/Security/Data/Identity/Trust are
+        // tabs inside the Governance hub (north-star IA).
+        { id: 'governance', label: 'Governance', icon: '⛨', page: 'gov_compliance' },
       ],
     },
     {
@@ -366,7 +366,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
     // Hub tabs are distinct Page keys — keep the single nav entry lit on any of them.
     || (p === 'knowledge_library' && String(page).startsWith('knowledge_'))
     || (p === 'support_inbox' && String(page).startsWith('support_'))
-    || (p === 'workforce_des' && ['ops_de_activity', 'intelligence_performance', 'intelligence_evals', 'intelligence_learning'].includes(String(page)));
+    || (p === 'workforce_des' && ['ops_de_activity', 'intelligence_performance', 'intelligence_evals', 'intelligence_learning'].includes(String(page)))
+    || (p === 'gov_compliance' && String(page).startsWith('gov_'));
   const isChildActive = (children?: SubItem[]) => children?.some(c => c.id === page);
 
   if (collapsed) {
