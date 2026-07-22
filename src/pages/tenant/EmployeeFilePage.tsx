@@ -7,6 +7,7 @@ import { getDeWorkItems, getDeObjectives, type WorkItemRow, type ObjectiveRow } 
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
+  getOutcomeMetering,
   type DePerformanceMetrics, type DeInquiryMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
 } from '../../lib/api';
 import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
@@ -175,6 +176,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   const [cost, setCost] = useState<DeCostMetrics | null>(null);
   const [csat, setCsat] = useState<DeCsatMetrics | null>(null);
   const [actions, setActions] = useState<DeActionMetrics | null>(null);
+  const [resolutions, setResolutions] = useState<{ resolutions: number; escalations: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,13 +187,16 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       getDeCostMetricsRanged(tenantId, range),
       getDeCsatMetrics(tenantId),
       getDeActionMetrics(tenantId, range),
-    ]).then(([m, iq, c, s, a]) => {
+      getOutcomeMetering(tenantId, range),
+    ]).then(([m, iq, c, s, a, om]) => {
       if (cancelled) return;
       setPerf(m.find(x => x.de_id === de.id) ?? null);
       setInquiry(iq.find(x => x.de_id === de.id) ?? null);
       setCost(c.find(x => x.de_id === de.id) ?? null);
       setCsat(s.find(x => x.de_id === de.id) ?? null);
       setActions(a.find(x => x.de_id === de.id) ?? null);
+      const mine = om?.by_de.find(x => x.de_id === de.id);
+      setResolutions(mine ? { resolutions: mine.resolutions, escalations: mine.escalations } : null);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -199,7 +204,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
 
   if (loading) return <p className="text-sm text-dt-muted py-8 text-center">Loading performance…</p>;
 
-  const nothing = !perf && !inquiry && !cost && !csat && !actions;
+  const nothing = !perf && !inquiry && !cost && !csat && !actions && !resolutions;
   if (nothing) {
     return (
       <EmptyState icon="📊" headline="No performance history in this window yet">
@@ -222,7 +227,9 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatTile label="Resolutions delivered" value={String(resolutions?.resolutions ?? 0)}
+          sub={resolutions ? `${resolutions.escalations} handed to your team` : undefined} tone="ok" />
         <StatTile label="Inquiries handled" value={String(inquiry?.total_decisions ?? 0)} tone="accent" />
         <StatTile label="Resolution" value={pct(inquiry?.resolution_rate)} tone="ok" />
         <StatTile label="Confidence" value={pct(inquiry?.avg_confidence)} tone="info" />
