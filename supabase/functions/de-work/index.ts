@@ -267,8 +267,8 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'who it is for (name/email/account)' }, channel: { type: 'string', enum: ['email', 'sms', 'chat', 'other'] }, subject: { type: 'string' }, message: { type: 'string' }, reason: { type: 'string', description: 'why this outreach is needed' } }, required: ['recipient', 'message', 'reason'] } },
   { name: 'operate_in_system', description: "Operate a connected app through its WEB UI (e.g. QuickBooks, Xero, Zuora, Salesforce) when there is NO data/API tool for the job — describe the task in plain English and the browser worker does it, logged-in and on that app only. It is NEVER run without human approval, stays on the app's allowed site, never does payments/deletions on its own, and records every step. Prefer read_system / an action tool when one fits; use this only for UI-only work.",
     input_schema: { type: 'object', properties: { system_key: { type: 'string', description: 'the connected system to operate (must be operable)' }, instruction: { type: 'string', description: 'plain-English task, e.g. "find overdue invoices and send reminders"' }, max_steps: { type: 'number' } }, required: ['system_key', 'instruction'] } },
-  { name: 'escalate_to_human', description: 'Hand off to a human when you cannot safely proceed.',
-    input_schema: { type: 'object', properties: { reason: { type: 'string' } }, required: ['reason'] } },
+  { name: 'escalate_to_human', description: 'Hand off to a human when you cannot safely proceed. If you have a recommendation for HOW to handle it, include proposed_action + justification — the human can approve your proposal in one click and you may be allowed to remember it for next time.',
+    input_schema: { type: 'object', properties: { reason: { type: 'string' }, proposed_action: { type: 'string', description: 'what you WOULD do if allowed — a concrete, safe next step' }, justification: { type: 'string', description: 'why that is the right call' } }, required: ['reason'] } },
   { name: 'mark_done', description: 'The ONLY way to finish. Call with a short summary of what you did/found.',
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
@@ -416,6 +416,21 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
     }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: deId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
+      // Ledger close-out (docs/16): the Exceptions desk finally has a
+      // PRODUCER — when the DE escalates WITH a proposal, it lands as a
+      // de_exceptions row the founder can approve/reject (and optionally
+      // let the employee remember) on the Workbench Exceptions tab.
+      if (typeof input.proposed_action === 'string' && input.proposed_action.trim()) {
+        try {
+          await admin.from('de_exceptions').insert({
+            tenant_id: tenantId, de_id: deId,
+            work_item_id: workItemId ?? null, objective_id: objectiveId ?? null,
+            situation: String(input.reason ?? '').slice(0, 1000),
+            proposed_action: String(input.proposed_action).slice(0, 1000),
+            justification: String(input.justification ?? 'No justification given.').slice(0, 1000),
+          });
+        } catch (e) { console.error('de_exceptions insert:', e); }
+      }
       return { result: { escalated: true }, escalated: true, done: true, summary: `Escalated: ${input.reason}` };
     }
     case 'mark_done':
