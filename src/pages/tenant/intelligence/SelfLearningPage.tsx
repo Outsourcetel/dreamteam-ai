@@ -419,6 +419,96 @@ function severityTier(c: LearnedBehaviorCluster, policy: LearningPolicy | null):
   return { label: 'Low', cls: 'text-dt-support' };
 }
 
+// ── docs/19 G4: the learning digest — the self-evolution organs get a voice.
+// One founder-legible read of what the workforce learned (mig 256), composed
+// from evidence the machinery was already writing: gaps, amendments +
+// amendment_metrics fitness, certifications, eval trends, ramp times.
+interface LearningDigest {
+  period: { days: number; since: string };
+  volume: { work_done: number; conversations: number; escalations: number };
+  knowledge: { docs_added: number; docs_by_source: Record<string, number>; gaps_detected: number; gaps_resolved: number };
+  quality: { evals: number; avg_score: number; prev_evals: number; prev_avg_score: number; delta: number | null; drift: boolean };
+  amendments: { proposed: number; adopted: number; fitness_avg_delta: number | null; fitness_samples: number };
+  certifications: { runs: number; passed: number };
+  ramp: Array<{ who: string; hired_at: string; trust_level: string | null; days_to_first_cert: number | null }>;
+}
+
+function LearningDigestPanel() {
+  const [digest, setDigest] = useState<LearningDigest | null>(null);
+  const [days, setDays] = useState(7);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc('get_workforce_learning_digest', { p_days: days }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data?.ok) { setHidden(true); return; }
+      setDigest(data as LearningDigest);
+    });
+    return () => { cancelled = true; };
+  }, [days]);
+
+  if (hidden || digest === null) return null;
+  const { volume, knowledge, quality, amendments, certifications, ramp } = digest;
+  const selfAuthored = Object.entries(knowledge.docs_by_source)
+    .filter(([s]) => s !== 'manual' && s !== 'upload').reduce((n, [, v]) => n + v, 0);
+  const trend = quality.delta == null ? 'holding steady (building signal)'
+    : quality.delta > 1 ? `up ${quality.delta} points` : quality.delta < -1 ? `down ${Math.abs(quality.delta)} points` : 'steady';
+  const chip = 'text-xs px-2.5 py-1 rounded-full border border-dt-border bg-dt-inset text-dt-support';
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <h2 className="text-sm font-semibold text-dt-title">What your workforce learned — last {digest.period.days} days</h2>
+        <div className="flex gap-1">
+          {[7, 30].map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${days === d ? 'border-indigo-500 text-white' : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-sm text-dt-body">
+        Completed <span className="font-medium">{volume.work_done}</span> pieces of work across{' '}
+        <span className="font-medium">{volume.conversations}</span> conversation{volume.conversations === 1 ? '' : 's'}, added{' '}
+        <span className="font-medium">{knowledge.docs_added}</span> knowledge document{knowledge.docs_added === 1 ? '' : 's'}
+        {selfAuthored > 0 && <> ({selfAuthored} self-authored from its own detected gaps)</>}, and answer quality is{' '}
+        <span className="font-medium">{trend}</span>
+        {quality.evals > 0 && <> across {quality.evals} judged answers (avg {quality.avg_score})</>}.
+      </p>
+
+      {quality.drift && (
+        <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
+          Drift watch: judged answer quality dropped {Math.abs(quality.delta ?? 0)} points vs the prior period
+          (avg {quality.prev_avg_score} → {quality.avg_score}). Review recent knowledge and amendment changes before promoting anyone's trust.
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        <span className={chip}>🕳 {knowledge.gaps_detected} gap{knowledge.gaps_detected === 1 ? '' : 's'} detected · {knowledge.gaps_resolved} resolved</span>
+        <span className={chip}>✍ {amendments.adopted} amendment{amendments.adopted === 1 ? '' : 's'} adopted{amendments.fitness_samples > 0 && amendments.fitness_avg_delta != null ? ` · fitness ${amendments.fitness_avg_delta > 0 ? '+' : ''}${amendments.fitness_avg_delta}` : ''}</span>
+        <span className={chip}>🎓 {certifications.passed}/{certifications.runs} certification{certifications.runs === 1 ? '' : 's'} passed</span>
+        <span className={chip}>✋ {volume.escalations} escalation{volume.escalations === 1 ? '' : 's'} to a human</span>
+      </div>
+
+      {ramp.some(r => r.days_to_first_cert != null) && (
+        <div className="mt-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Ramp — hire to first passed certification</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-1">
+            {ramp.filter(r => r.days_to_first_cert != null).slice(0, 8).map(r => (
+              <span key={r.who} className="text-xs text-dt-support">
+                <span className="text-dt-body font-medium">{r.who}</span> · {r.days_to_first_cert}d{r.trust_level ? ` · now ${r.trust_level}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
   const [clusters, setClusters] = useState<LearnedBehaviorCluster[]>([]);
   const [policies, setPolicies] = useState<LearningPolicy[]>([]);
@@ -531,6 +621,8 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
         title="Self-Learning"
         subtitle="Automatic detection of recurring human corrections — when a Digital Employee keeps getting the same kind of decision overridden by a person, it's grouped into a pattern here and a real policy change is proposed for review."
       />
+
+      <LearningDigestPanel />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 
