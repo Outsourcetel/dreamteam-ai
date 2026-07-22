@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
-import { PanelCard, Button, Banner, Chip } from '../design/primitives';
-import { applyBranding, saveBranding, type TenantBranding } from '../design/branding';
+import { PanelCard, Button, Banner, Chip } from './primitives';
+import { applyBranding, saveBranding, type TenantBranding } from './branding';
 
 // Workspace appearance — per-tenant branding (mig 247, Design System v1).
 // Guardrailed: one accent color + a curated surface family. Live-previews
