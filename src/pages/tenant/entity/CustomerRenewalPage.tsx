@@ -69,8 +69,8 @@ const CADENCE_STAGE: Record<string, { label: string; cls: string }> = {
 };
 
 function cadenceStage(row: RenewalRow): { label: string; cls: string } {
-  if (row.status === 'Paid ✓' || row.status === 'Invoice approved — sending') return { label: '—', cls: 'text-slate-600' };
-  return CADENCE_STAGE[row.account] ?? { label: '—', cls: 'text-slate-600' };
+  if (row.status === 'Paid ✓' || row.status === 'Invoice approved — sending') return { label: '—', cls: 'text-dt-faint' };
+  return CADENCE_STAGE[row.account] ?? { label: '—', cls: 'text-dt-faint' };
 }
 
 function healthIndicator(score: number) {
@@ -159,21 +159,21 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
     if (status === 'Overdue — 8 days') return 'text-rose-400 border-rose-800/50 hover:border-rose-600';
     if (status === 'Pending generation') return 'text-indigo-300 border-indigo-800/50 hover:border-indigo-500';
     if (status === 'Awaiting approval — $15,600') return 'text-amber-300 border-amber-800/50 hover:border-amber-500';
-    return 'text-slate-300 border-slate-600 hover:border-slate-500';
+    return 'text-dt-support border-dt-border-strong hover:border-dt-border-strong';
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       {/* Title row */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
         <div>
           <h3 className="text-base font-semibold text-white">Renewals Pipeline</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Upcoming renewals detected via Zuora webhooks · Managed by Casey</p>
+          <p className="text-xs text-dt-muted mt-0.5">Upcoming renewals detected via Zuora webhooks · Managed by Casey</p>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+        <div className="flex items-center gap-1.5 text-xs text-dt-support">
           <span>Powered by</span>
-          <span className="px-2 py-0.5 bg-slate-700 border border-slate-600 rounded-lg text-slate-300">💳 Zuora</span>
-          <span className="px-2 py-0.5 bg-slate-700 border border-slate-600 rounded-lg text-slate-300">📊 Gainsight</span>
+          <span className="px-2 py-0.5 bg-dt-panel border border-dt-border-strong rounded-lg text-dt-support">💳 Zuora</span>
+          <span className="px-2 py-0.5 bg-dt-panel border border-dt-border-strong rounded-lg text-dt-support">📊 Gainsight</span>
         </div>
       </div>
 
@@ -184,21 +184,21 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
           { label: 'Invoices pending payment', value: '3', sub: '$248K', color: 'text-amber-300' },
           { label: 'Renewed this month', value: '12', sub: '$890K', color: 'text-emerald-300' },
         ].map(s => (
-          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+          <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
+            <p className="text-xs text-dt-muted mt-0.5">{s.sub}</p>
           </div>
         ))}
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-700">
+      <div className="overflow-x-auto rounded-xl border border-dt-border">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b border-slate-700 text-left">
+            <tr className="border-b border-dt-border text-left">
               {['Account', 'ARR', 'Health', 'Renewal Date', 'Invoice Status', 'Cadence', 'Action'].map(h => (
-                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
               ))}
             </tr>
           </thead>
@@ -206,18 +206,18 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
             {rows.map((row, i) => {
               const btn = actionLabel(row.status);
               return (
-                <tr key={row.account} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === rows.length - 1 ? 'border-b-0' : ''}`}>
+                <tr key={row.account} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === rows.length - 1 ? 'border-b-0' : ''}`}>
                   <td className="py-3 px-4 font-medium text-white">{row.account}</td>
-                  <td className="py-3 px-4 text-slate-300">{row.arr}</td>
-                  <td className="py-3 px-4 text-slate-300 whitespace-nowrap">{healthIndicator(row.health)} {row.health}</td>
-                  <td className="py-3 px-4 text-slate-300">{row.renewalDate}</td>
+                  <td className="py-3 px-4 text-dt-support">{row.arr}</td>
+                  <td className="py-3 px-4 text-dt-support whitespace-nowrap">{healthIndicator(row.health)} {row.health}</td>
+                  <td className="py-3 px-4 text-dt-support">{row.renewalDate}</td>
                   <td className="py-3 px-4">
                     <span className={`text-xs ${
                       row.status === 'Paid ✓' || row.status === 'Invoice approved — sending' ? 'text-emerald-400' :
                       row.status === 'Overdue — 8 days' ? 'text-rose-400' :
                       row.status === 'Awaiting approval — $15,600' ? 'text-amber-300' :
                       row.status === 'Invoice sent' ? 'text-indigo-300' :
-                      'text-slate-400'
+                      'text-dt-support'
                     }`}>{row.status}</span>
                   </td>
                   <td className="py-3 px-4 whitespace-nowrap">
@@ -231,7 +231,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
                       >
                         {btn}
                       </button>
-                    ) : <span className="text-slate-600 text-xs">—</span>}
+                    ) : <span className="text-dt-faint text-xs">—</span>}
                   </td>
                 </tr>
               );
@@ -242,7 +242,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
 
       {/* Footer note */}
       <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-dt-muted">
           This pipeline is powered by the Customer Renewal Workflow playbook. Upcoming renewals are detected automatically via Zuora webhooks.
         </p>
         {setPage && (
@@ -258,9 +258,9 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
       {/* Generate Invoice Modal */}
       {invoiceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-white font-semibold mb-2">Generate Zuora Invoice</h3>
-            <p className="text-sm text-slate-300 mb-5">
+            <p className="text-sm text-dt-support mb-5">
               Generate Zuora invoice for <span className="text-white font-medium">{invoiceModal.account}</span> — <span className="text-indigo-300 font-medium">{invoiceModal.arr}</span>?
             </p>
             <div className="flex gap-3">
@@ -272,7 +272,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
               </button>
               <button
                 onClick={() => setInvoiceModal(null)}
-                className="flex-1 py-2 text-sm rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-all"
+                className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all"
               >
                 Cancel
               </button>
@@ -298,29 +298,29 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
 // ── Expansion opportunities (TCP) ──────────────────────────────
 function ExpansionOpportunities() {
   return (
-    <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="mt-6 rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-4">
         <h3 className="text-base font-semibold text-white">Expansion Opportunities</h3>
-        <p className="text-xs text-slate-500 mt-0.5">Upsell signals surfaced by Casey from usage and account data</p>
+        <p className="text-xs text-dt-muted mt-0.5">Upsell signals surfaced by Casey from usage and account data</p>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-slate-700">
+      <div className="overflow-x-auto rounded-xl border border-dt-border">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b border-slate-700 text-left">
+            <tr className="border-b border-dt-border text-left">
               {['Account', 'Opportunity', 'Value', 'Signal', 'Owner'].map(h => (
-                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {EXPANSION_OPPS.map((o, i) => (
-              <tr key={o.account + o.opportunity} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === EXPANSION_OPPS.length - 1 ? 'border-b-0' : ''}`}>
+              <tr key={o.account + o.opportunity} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === EXPANSION_OPPS.length - 1 ? 'border-b-0' : ''}`}>
                 <td className="py-3 px-4 font-medium text-white">{o.account}</td>
-                <td className="py-3 px-4 text-slate-300">{o.opportunity}</td>
+                <td className="py-3 px-4 text-dt-support">{o.opportunity}</td>
                 <td className="py-3 px-4 text-emerald-300">{o.value}</td>
-                <td className="py-3 px-4 text-slate-400 text-xs">{o.signal}</td>
+                <td className="py-3 px-4 text-dt-support text-xs">{o.signal}</td>
                 <td className="py-3 px-4">
-                  <span className={`text-xs px-2 py-0.5 rounded ${o.owner === 'Casey' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>{o.owner}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded ${o.owner === 'Casey' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>{o.owner}</span>
                 </td>
               </tr>
             ))}
@@ -334,34 +334,34 @@ function ExpansionOpportunities() {
 // ── PWC variant ────────────────────────────────────────────────
 function PwcRenewals() {
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-4">
         <h3 className="text-base font-semibold text-white">Engagement Renewals</h3>
-        <p className="text-xs text-slate-500 mt-0.5">Upcoming engagement renewals · Managed by Morgan</p>
+        <p className="text-xs text-dt-muted mt-0.5">Upcoming engagement renewals · Managed by Morgan</p>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-slate-700">
+      <div className="overflow-x-auto rounded-xl border border-dt-border">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b border-slate-700 text-left">
+            <tr className="border-b border-dt-border text-left">
               {['Engagement', 'Annual Fees', 'Partner', 'Renewal Date', 'Status'].map(h => (
-                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {PWC_RENEWALS.map((r, i) => (
-              <tr key={r.engagement} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === PWC_RENEWALS.length - 1 ? 'border-b-0' : ''}`}>
+              <tr key={r.engagement} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === PWC_RENEWALS.length - 1 ? 'border-b-0' : ''}`}>
                 <td className="py-3 px-4 font-medium text-white">{r.engagement}</td>
-                <td className="py-3 px-4 text-slate-300">{r.fees}</td>
-                <td className="py-3 px-4 text-slate-300">{r.partner}</td>
-                <td className="py-3 px-4 text-slate-300">{r.renewalDate}</td>
+                <td className="py-3 px-4 text-dt-support">{r.fees}</td>
+                <td className="py-3 px-4 text-dt-support">{r.partner}</td>
+                <td className="py-3 px-4 text-dt-support">{r.renewalDate}</td>
                 <td className="py-3 px-4 text-xs text-indigo-300">{r.status}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="mt-4 text-[11px] text-slate-500">Morgan drafts renewal proposals and reminder cadences; partners approve before anything is sent.</p>
+      <p className="mt-4 text-[11px] text-dt-muted">Morgan drafts renewal proposals and reminder cadences; partners approve before anything is sent.</p>
     </div>
   );
 }
@@ -376,7 +376,7 @@ const invoiceStatusLabel: Record<InvoiceStatus, string> = {
 };
 
 const invoiceStatusClass: Record<InvoiceStatus, string> = {
-  pending_generation: 'text-slate-400',
+  pending_generation: 'text-dt-support',
   awaiting_approval: 'text-amber-300',
   sent: 'text-indigo-300',
   paid: 'text-emerald-400',
@@ -385,10 +385,10 @@ const invoiceStatusClass: Record<InvoiceStatus, string> = {
 
 // ── Playbook run step timeline (live) ─────────────────────────
 const stepChip: Record<RunStep['status'], { label: string; cls: string }> = {
-  pending: { label: 'pending', cls: 'bg-slate-700 text-slate-500' },
+  pending: { label: 'pending', cls: 'bg-dt-panel text-dt-muted' },
   done: { label: 'done', cls: 'bg-emerald-500/15 text-emerald-300' },
   waiting: { label: 'waiting on human', cls: 'bg-amber-500/15 text-amber-300' },
-  skipped: { label: 'skipped', cls: 'bg-slate-700 text-slate-400' },
+  skipped: { label: 'skipped', cls: 'bg-dt-panel text-dt-support' },
   failed: { label: 'failed', cls: 'bg-red-500/15 text-red-300' },
   cancelled: { label: 'cancelled', cls: 'bg-red-500/15 text-red-300' },
 };
@@ -396,11 +396,11 @@ const stepChip: Record<RunStep['status'], { label: string; cls: string }> = {
 function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) => void }) {
   const acct = (run.steps[0]?.detail || '').split(' · ')[0] || 'Account';
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-white">{acct}</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-mono">{run.playbook_key}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{run.playbook_key}</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300" title="Executed by the playbook-execute edge function — the run survives closed tabs">server-run</span>
         </div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
@@ -417,14 +417,14 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
               s.status === 'done' ? 'bg-emerald-500/20 text-emerald-300'
               : s.status === 'waiting' ? 'bg-amber-500/20 text-amber-300'
               : s.status === 'cancelled' || s.status === 'failed' ? 'bg-red-500/20 text-red-300'
-              : 'bg-slate-700 text-slate-500'
+              : 'bg-dt-panel text-dt-muted'
             }`}>{s.status === 'done' ? '✓' : i + 1}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={s.status === 'pending' ? 'text-slate-500' : 'text-slate-200'}>{s.label}</span>
+                <span className={s.status === 'pending' ? 'text-dt-muted' : 'text-dt-body'}>{s.label}</span>
                 <span className={`text-[9px] px-1.5 py-px rounded ${stepChip[s.status].cls}`}>{stepChip[s.status].label}</span>
               </div>
-              {s.detail && <p className="text-[10px] text-slate-500 mt-0.5">{s.detail}</p>}
+              {s.detail && <p className="text-[10px] text-dt-muted mt-0.5">{s.detail}</p>}
             </div>
           </li>
         ))}
@@ -541,10 +541,10 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   const paidCents = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount_cents, 0);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">{vocab.renewal_label} &amp; Expansion — {vocab.party_singular} Lifecycle</h1>
-        <p className="text-slate-400 text-sm mt-1">{liveTenantName || 'Your company'} · Live {vocab.renewal_label.toLowerCase()} pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
+        <p className="text-dt-support text-sm mt-1">{liveTenantName || 'Your company'} · Live {vocab.renewal_label.toLowerCase()} pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -562,7 +562,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           onPrimary={() => setPage('entity_customer_success')}
         />
       ) : (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
           {/* Stat cards */}
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
@@ -570,10 +570,10 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
               { label: 'Awaiting approval', value: String(awaitingApproval.length), sub: awaitingApproval.length > 0 ? fmtMoneyK(awaitingApproval.reduce((s, i) => s + i.amount_cents, 0)) : '—', color: awaitingApproval.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
               { label: 'Collected', value: fmtMoneyK(paidCents), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: 'text-emerald-300' },
             ].map(s => (
-              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+              <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
+                <p className="text-xs text-dt-muted mt-0.5">{s.sub}</p>
               </div>
             ))}
           </div>
@@ -581,36 +581,36 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           {/* Invoices table */}
           <h3 className="text-sm font-semibold text-white mb-3">Renewal invoices</h3>
           {invoices.length === 0 ? (
-            <p className="text-xs text-slate-500 mb-5">No invoices yet — generate one from the accounts below.</p>
+            <p className="text-xs text-dt-muted mb-5">No invoices yet — generate one from the accounts below.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-700 mb-6">
+            <div className="overflow-x-auto rounded-xl border border-dt-border mb-6">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-700 text-left">
+                  <tr className="border-b border-dt-border text-left">
                     {[vocab.party_singular, 'Amount', 'Status', 'Due date', 'Action'].map(h => (
-                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {invoices.map((inv, i) => (
-                    <tr key={inv.id} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === invoices.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={inv.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === invoices.length - 1 ? 'border-b-0' : ''}`}>
                       <td className="py-3 px-4 font-medium text-white">{inv.customer_accounts?.name || '—'}</td>
-                      <td className="py-3 px-4 text-slate-300">{fmtMoneyK(inv.amount_cents)}</td>
+                      <td className="py-3 px-4 text-dt-support">{fmtMoneyK(inv.amount_cents)}</td>
                       <td className="py-3 px-4">
                         <span className={`text-xs ${invoiceStatusClass[inv.status]}`}>{invoiceStatusLabel[inv.status]}</span>
                       </td>
-                      <td className="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">{inv.due_date || '—'}</td>
+                      <td className="py-3 px-4 text-dt-support text-xs whitespace-nowrap">{inv.due_date || '—'}</td>
                       <td className="py-3 px-4">
                         {inv.status === 'awaiting_approval' ? (
                           <button onClick={() => setPage('ops_human_tasks')} className="text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 transition-all">
                             View approval →
                           </button>
                         ) : inv.status === 'sent' || inv.status === 'overdue' ? (
-                          <button onClick={() => void markPaid(inv)} className="text-xs px-3 py-1.5 rounded-lg border text-slate-300 border-slate-600 hover:border-emerald-500 hover:text-emerald-300 transition-all">
+                          <button onClick={() => void markPaid(inv)} className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-emerald-500 hover:text-emerald-300 transition-all">
                             Mark paid
                           </button>
-                        ) : <span className="text-slate-600 text-xs">—</span>}
+                        ) : <span className="text-dt-faint text-xs">—</span>}
                       </td>
                     </tr>
                   ))}
@@ -621,27 +621,27 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
 
           {/* Generate section */}
           <h3 className="text-sm font-semibold text-white mb-1">Generate renewal invoices</h3>
-          <p className="text-xs text-slate-500 mb-3">
+          <p className="text-xs text-dt-muted mb-3">
             Accounts without an open invoice. Amounts above {fmtMoneyK(thresholdCents)} require human approval before sending. "Run playbook" executes the full renewal_v1 flow — check → invoice → guardrail → human gate → send — with every step audited.
           </p>
           {generatable.length === 0 ? (
-            <p className="text-xs text-slate-500">Every active account already has an open invoice.</p>
+            <p className="text-xs text-dt-muted">Every active account already has an open invoice.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-700">
+            <div className="overflow-x-auto rounded-xl border border-dt-border">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-700 text-left">
+                  <tr className="border-b border-dt-border text-left">
                     {[vocab.party_singular, vocab.value_metric, `${vocab.renewal_label} date`, 'Action'].map(h => (
-                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                      <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {generatable.map((a, i) => (
-                    <tr key={a.id} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === generatable.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={a.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === generatable.length - 1 ? 'border-b-0' : ''}`}>
                       <td className="py-3 px-4 font-medium text-white">{a.name}</td>
-                      <td className="py-3 px-4 text-slate-300">{fmtMoneyK(a.arr_cents)}</td>
-                      <td className="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
+                      <td className="py-3 px-4 text-dt-support">{fmtMoneyK(a.arr_cents)}</td>
+                      <td className="py-3 px-4 text-dt-support text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 transition-all">
@@ -664,7 +664,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           {runs.length > 0 && (
             <div className="mt-6">
               <h3 className="text-sm font-semibold text-white mb-1">Renewal playbook runs</h3>
-              <p className="text-xs text-slate-500 mb-3">
+              <p className="text-xs text-dt-muted mb-3">
                 Live step timeline — runs pause at the human gate when an invoice exceeds the guardrail threshold, and resume when the approval is decided.
               </p>
               <div className="grid gap-3 md:grid-cols-2">
@@ -678,9 +678,9 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
       {/* Generate invoice modal */}
       {genModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-white font-semibold mb-2">Generate renewal invoice</h3>
-            <p className="text-sm text-slate-300 mb-2">
+            <p className="text-sm text-dt-support mb-2">
               Generate renewal invoice for <span className="text-white font-medium">{genModal.name}</span> —{' '}
               <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
             </p>
@@ -692,7 +692,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                 className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
                 {generating ? 'Generating…' : 'Confirm'}
               </button>
-              <button onClick={() => setGenModal(null)} className="flex-1 py-2 text-sm rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-all">
+              <button onClick={() => setGenModal(null)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">
                 Cancel
               </button>
             </div>
@@ -720,10 +720,10 @@ const DemoCustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) =>
   const isTcp = activeCompanyId === 'tcp';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer Lifecycle</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           {isTcp
             ? 'Casey manages the full renewal lifecycle — invoices via Zuora, cadences via Gainsight, and expansion signals'
             : `Morgan manages engagement renewals for ${activeCompany.name} — proposals, reminders, and partner approvals`}

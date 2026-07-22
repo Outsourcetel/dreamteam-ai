@@ -11,7 +11,7 @@ import PlatformInvitesPanel from './PlatformInvitesPanel';
 
 const ROLE_OPTIONS: PlatformInviteRole[] = ['platform_support', 'platform_billing', 'platform_super_admin'];
 
-const inputCls = 'bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
 
 // ─────────────────────────────────────────────────────────────────
 // The real team roster (active accounts, not just pending invites),
@@ -72,10 +72,10 @@ const PlatformTeamPage = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Team & Permissions</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           Who has access to this platform, and exactly what each person can do.
         </p>
       </div>
@@ -85,15 +85,15 @@ const PlatformTeamPage = () => {
 
       <PlatformInvitesPanel />
 
-      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-700">
+      <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-dt-border">
           <h2 className="text-sm font-semibold text-white">Platform team</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Everyone with platform-level access today — not just pending invites.</p>
+          <p className="text-xs text-dt-muted mt-0.5">Everyone with platform-level access today — not just pending invites.</p>
         </div>
         {loading ? (
-          <p className="text-xs text-slate-500 text-center py-6">Loading team…</p>
+          <p className="text-xs text-dt-muted text-center py-6">Loading team…</p>
         ) : members.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">No platform team members found.</p>
+          <p className="text-xs text-dt-muted text-center py-6">No platform team members found.</p>
         ) : (
           <div className="divide-y divide-slate-700/50">
             {members.map((m) => {
@@ -105,8 +105,8 @@ const PlatformTeamPage = () => {
                     {(m.full_name || m.email || '?')[0].toUpperCase()}
                   </div>
                   <div className="min-w-[160px] flex-1">
-                    <p className="text-sm text-white truncate">{m.full_name || m.email}{isSelf && <span className="text-[10px] text-slate-500 ml-1.5">(you)</span>}</p>
-                    <p className="text-[11px] text-slate-500 truncate">{m.email}</p>
+                    <p className="text-sm text-white truncate">{m.full_name || m.email}{isSelf && <span className="text-[10px] text-dt-muted ml-1.5">(you)</span>}</p>
+                    <p className="text-[11px] text-dt-muted truncate">{m.email}</p>
                   </div>
 
                   {editingRoleId === m.user_id ? (
@@ -122,24 +122,24 @@ const PlatformTeamPage = () => {
                     <button
                       onClick={() => !isSelf && setEditingRoleId(m.user_id)}
                       disabled={isSelf}
-                      className={`text-[11px] px-2 py-1 rounded-lg bg-slate-700 text-slate-300 ${isSelf ? 'cursor-default opacity-60' : 'hover:ring-1 hover:ring-slate-600 cursor-pointer'}`}
+                      className={`text-[11px] px-2 py-1 rounded-lg bg-dt-panel text-dt-support ${isSelf ? 'cursor-default opacity-60' : 'hover:ring-1 hover:ring-slate-600 cursor-pointer'}`}
                       title={isSelf ? 'You cannot change your own role' : 'Click to change role'}
                     >
                       {PLATFORM_INVITE_ROLE_LABELS[m.role]}
                     </button>
                   )}
 
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-600 text-slate-400'}`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-600 text-dt-support'}`}>
                     {m.is_active ? 'active' : 'inactive'}
                   </span>
 
-                  <span className="text-[11px] text-slate-600 whitespace-nowrap">
+                  <span className="text-[11px] text-dt-faint whitespace-nowrap">
                     {m.last_sign_in_at ? `last seen ${new Date(m.last_sign_in_at).toLocaleDateString()}` : 'never signed in'}
                   </span>
 
                   <button
                     onClick={() => setPermissionsFor(m)}
-                    className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
+                    className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
                   >
                     Manage permissions
                   </button>
@@ -148,7 +148,7 @@ const PlatformTeamPage = () => {
                     <button
                       onClick={() => void handleResetPassword(m)}
                       disabled={busy}
-                      className="text-[11px] px-2 py-1 rounded-lg text-slate-400 hover:bg-slate-700 transition-colors"
+                      className="text-[11px] px-2 py-1 rounded-lg text-dt-support hover:bg-dt-panel transition-colors"
                       title="Email this person a password reset link"
                     >
                       Reset password
@@ -225,17 +225,17 @@ function PermissionsModal({ member, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <h3 className="text-white font-semibold">Permissions — {member.full_name || member.email}</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
         </div>
-        <p className="text-[11px] text-slate-500 mb-4">
+        <p className="text-[11px] text-dt-muted mb-4">
           {PLATFORM_INVITE_ROLE_LABELS[member.role]} by default. Click a permission to override it for this person specifically — grant something their role wouldn't normally include, or deny something it would.
         </p>
         {err && <p className="text-[11px] text-rose-400 mb-3">✗ {err}</p>}
         {loading ? (
-          <p className="text-xs text-slate-500 text-center py-6">Loading…</p>
+          <p className="text-xs text-dt-muted text-center py-6">Loading…</p>
         ) : (
           <div className="space-y-1.5">
             {PLATFORM_CAPABILITIES.map((cap) => {
@@ -249,15 +249,15 @@ function PermissionsModal({ member, onClose, onChanged }: {
                   onClick={() => void cycle(cap, state)}
                   disabled={busy}
                   className={`w-full flex items-center justify-between gap-3 rounded-xl border p-2.5 text-left transition-colors ${
-                    effective ? 'border-emerald-800/50 bg-emerald-500/5' : 'border-slate-700 bg-slate-900/50'
-                  } ${busy ? 'opacity-50' : 'hover:border-slate-600'}`}
+                    effective ? 'border-emerald-800/50 bg-emerald-500/5' : 'border-dt-border bg-dt-inset'
+                  } ${busy ? 'opacity-50' : 'hover:border-dt-border-strong'}`}
                 >
-                  <span className="text-xs text-slate-200">{PLATFORM_CAPABILITY_LABELS[cap]}</span>
+                  <span className="text-xs text-dt-body">{PLATFORM_CAPABILITY_LABELS[cap]}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-500'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
                       {effective ? 'allowed' : 'not allowed'}
                     </span>
-                    <span className="text-[10px] text-slate-600 w-24 text-right">
+                    <span className="text-[10px] text-dt-faint w-24 text-right">
                       {state === 'default' ? '(role default)' : state === 'grant' ? '(explicit grant)' : '(explicit deny)'}
                     </span>
                   </span>
@@ -266,7 +266,7 @@ function PermissionsModal({ member, onClose, onChanged }: {
             })}
           </div>
         )}
-        <p className="text-[10px] text-slate-600 mt-4">Click a row to cycle: role default → explicit grant → explicit deny → back to role default.</p>
+        <p className="text-[10px] text-dt-faint mt-4">Click a row to cycle: role default → explicit grant → explicit deny → back to role default.</p>
       </div>
     </div>
   );

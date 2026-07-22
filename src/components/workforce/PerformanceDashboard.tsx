@@ -39,8 +39,8 @@ export function PerformanceDashboard({ performance }: PerformanceDashboardProps)
   ];
 
   return (
-    <div className="bg-slate-800 rounded-lg p-4">
-      <h3 className="font-bold text-slate-100 mb-3">Performance: {performance.de_name}</h3>
+    <div className="bg-dt-card rounded-lg p-4">
+      <h3 className="font-bold text-dt-title mb-3">Performance: {performance.de_name}</h3>
       <div className="space-y-2">
         {metrics.map((metric) => {
           const Icon = metric.icon;
@@ -49,7 +49,7 @@ export function PerformanceDashboard({ performance }: PerformanceDashboardProps)
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Icon className={`w-4 h-4 ${metric.color}`} />
-                  <span className="text-xs text-slate-300">{metric.label}</span>
+                  <span className="text-xs text-dt-support">{metric.label}</span>
                 </div>
                 <span className={`font-bold text-sm ${metric.color}`}>{metric.value}</span>
               </div>
@@ -59,19 +59,19 @@ export function PerformanceDashboard({ performance }: PerformanceDashboardProps)
       </div>
 
       {/* ROI Summary */}
-      <div className="mt-4 pt-4 border-t border-slate-700">
-        <div className="text-xs text-slate-400 space-y-1">
+      <div className="mt-4 pt-4 border-t border-dt-border">
+        <div className="text-xs text-dt-support space-y-1">
           <div className="flex justify-between">
             <span>Hours Saved:</span>
-            <span className="text-slate-200 font-medium">{performance.roi_hours_saved}h</span>
+            <span className="text-dt-body font-medium">{performance.roi_hours_saved}h</span>
           </div>
           <div className="flex justify-between">
             <span>FTE Cost:</span>
-            <span className="text-slate-200 font-medium">${Math.round(performance.fte_equivalent_cost)}/day</span>
+            <span className="text-dt-body font-medium">${Math.round(performance.fte_equivalent_cost)}/day</span>
           </div>
           <div className="flex justify-between">
             <span>Stage:</span>
-            <span className="text-slate-200 font-medium capitalize">{performance.current_stage}</span>
+            <span className="text-dt-body font-medium capitalize">{performance.current_stage}</span>
           </div>
         </div>
       </div>

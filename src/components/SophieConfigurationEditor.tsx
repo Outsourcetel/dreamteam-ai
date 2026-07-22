@@ -66,11 +66,11 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
   };
 
   if (loading) {
-    return <div className="animate-pulse h-96 bg-slate-800 rounded-lg" />;
+    return <div className="animate-pulse h-96 bg-dt-card rounded-lg" />;
   }
 
   if (!config) {
-    return <div className="text-slate-400">Unable to load configuration</div>;
+    return <div className="text-dt-support">Unable to load configuration</div>;
   }
 
   return (
@@ -90,19 +90,19 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
       <div className="space-y-5">
         {/* Refund Limit */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-dt-support mb-2">
             Refund Authority Limit
           </label>
-          <p className="text-xs text-slate-500 mb-2">
+          <p className="text-xs text-dt-muted mb-2">
             Maximum refund amount this DE can approve. Requests above this escalate to a human.
           </p>
           <div className="flex items-center gap-2">
-            <span className="text-slate-400">$</span>
+            <span className="text-dt-support">$</span>
             <input
               type="number"
               value={config.refund_limit ?? 500}
               onChange={(e) => handleChange('refund_limit', parseInt(e.target.value))}
-              className="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500"
+              className="flex-1 px-3 py-2 bg-dt-panel border border-dt-border-strong rounded text-white placeholder-slate-500"
               min="0"
               max="100000"
               step="50"
@@ -112,16 +112,16 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
 
         {/* Pre-approval Strategy */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-dt-support mb-2">
             Response Pre-Approval Strategy
           </label>
-          <p className="text-xs text-slate-500 mb-2">
+          <p className="text-xs text-dt-muted mb-2">
             Whether responses require human review before sending.
           </p>
           <select
             value={config.preapproval_strategy ?? 'rule_based'}
             onChange={(e) => handleChange('preapproval_strategy', e.target.value)}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+            className="w-full px-3 py-2 bg-dt-panel border border-dt-border-strong rounded text-white"
           >
             <option value="all">Review all responses (safest)</option>
             <option value="rule_based">Rule-based review (if confidence &lt; 80%)</option>
@@ -131,10 +131,10 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
 
         {/* Knowledge Sources */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-dt-support mb-2">
             Knowledge Sources
           </label>
-          <p className="text-xs text-slate-500 mb-2">
+          <p className="text-xs text-dt-muted mb-2">
             Which systems this DE should consult when answering.
           </p>
           <div className="space-y-2">
@@ -153,7 +153,7 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
                   }}
                   className="rounded"
                 />
-                <span className="text-sm text-slate-300 capitalize">{source.replace('_', ' ')}</span>
+                <span className="text-sm text-dt-support capitalize">{source.replace('_', ' ')}</span>
               </label>
             ))}
           </div>
@@ -161,17 +161,17 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
 
         {/* Escalation SLA */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-dt-support mb-2">
             Escalation SLA (minutes)
           </label>
-          <p className="text-xs text-slate-500 mb-2">
+          <p className="text-xs text-dt-muted mb-2">
             How quickly escalations should be handled.
           </p>
           <input
             type="number"
             value={config.escalation_sla_minutes ?? 60}
             onChange={(e) => handleChange('escalation_sla_minutes', parseInt(e.target.value))}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+            className="w-full px-3 py-2 bg-dt-panel border border-dt-border-strong rounded text-white"
             min="1"
             max="1440"
             step="15"
@@ -188,8 +188,8 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
               className="rounded"
             />
             <div>
-              <span className="text-sm font-medium text-slate-300">Enable Reply-Mode (Draft Approval)</span>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <span className="text-sm font-medium text-dt-support">Enable Reply-Mode (Draft Approval)</span>
+              <p className="text-xs text-dt-muted mt-0.5">
                 If enabled, responses require human approval before sending
               </p>
             </div>
@@ -198,7 +198,7 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-2 pt-4 border-t border-slate-700">
+      <div className="flex gap-2 pt-4 border-t border-dt-border">
         <button
           onClick={handleSave}
           disabled={!changed || saving}
@@ -209,7 +209,7 @@ export function SophieConfigurationEditor({ de }: { de: DigitalEmployee }) {
         <button
           onClick={handleReset}
           disabled={saving}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed rounded text-slate-300 text-sm font-medium transition"
+          className="px-4 py-2 bg-dt-panel hover:bg-dt-panel disabled:opacity-50 disabled:cursor-not-allowed rounded text-dt-support text-sm font-medium transition"
         >
           Reset
         </button>

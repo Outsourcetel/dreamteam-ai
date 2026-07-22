@@ -234,7 +234,7 @@ function statusDot(status: ConnStatus) {
 }
 
 function statusLabel(status: ConnStatus) {
-  const cls = status === 'connected' ? 'text-emerald-400' : status === 'error' ? 'text-red-400' : 'text-slate-500';
+  const cls = status === 'connected' ? 'text-emerald-400' : status === 'error' ? 'text-red-400' : 'text-dt-muted';
   const label = status === 'connected' ? 'Connected' : status === 'error' ? 'Error' : 'Disconnected';
   return <span className={`text-xs ${cls}`}>{label}</span>;
 }
@@ -269,7 +269,7 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
   const errorCount = connectors.filter(c => c.status === 'error').length;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between">
         <PageHeader
           title="Connectors"
@@ -286,7 +286,7 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
           <button
             key={conn.id}
             onClick={() => setSelectedId(conn.id)}
-            className={`text-left bg-slate-800 border rounded-xl p-4 transition-all hover:border-slate-600 ${conn.status === 'error' ? 'border-red-500/40' : 'border-slate-700'}`}
+            className={`text-left bg-dt-card border rounded-xl p-4 transition-all hover:border-dt-border-strong ${conn.status === 'error' ? 'border-red-500/40' : 'border-dt-border'}`}
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -295,16 +295,16 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
               </div>
               {statusLabel(conn.status)}
             </div>
-            <div className="text-[10px] text-slate-500 mb-3">{conn.category}</div>
+            <div className="text-[10px] text-dt-muted mb-3">{conn.category}</div>
 
             <div className="flex items-center gap-2 mb-3">
               <div className="flex -space-x-1.5">
                 {conn.boundDEs.map(de => <DEAvatar key={de.name} name={de.name} />)}
               </div>
-              <span className="text-xs text-slate-400">{conn.boundDEs.map(d => d.name).join(', ')}</span>
+              <span className="text-xs text-dt-support">{conn.boundDEs.map(d => d.name).join(', ')}</span>
             </div>
 
-            <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-700 pt-2.5">
+            <div className="flex items-center justify-between text-[10px] text-dt-muted border-t border-dt-border pt-2.5">
               <span>{conn.actions.length} actions · {conn.webhooks.length} webhooks</span>
               <span>Last sync {conn.lastSync}</span>
             </div>
@@ -316,15 +316,15 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
       {/* Detail slide-over */}
       {selected && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/60" onClick={() => setSelectedId(null)} />
-          <div className="fixed right-0 top-0 bottom-0 z-50 w-[480px] bg-slate-800 border-l border-slate-700 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b border-slate-700">
+          <div className="fixed inset-0 z-40 bg-dt-inset" onClick={() => setSelectedId(null)} />
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-[480px] bg-dt-card border-l border-dt-border flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-dt-border">
               <div className="flex items-center gap-2">
                 {statusDot(selected.status)}
                 <h2 className="text-sm font-semibold text-white">{selected.name}</h2>
-                <span className="text-xs text-slate-500">{selected.category}</span>
+                <span className="text-xs text-dt-muted">{selected.category}</span>
               </div>
-              <button onClick={() => setSelectedId(null)} className="w-7 h-7 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs">×</button>
+              <button onClick={() => setSelectedId(null)} className="w-7 h-7 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-xs">×</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -336,17 +336,17 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
 
               {/* Bound-DE access table */}
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Bound Digital Employees</p>
-                <div className="rounded-xl border border-slate-700 overflow-hidden">
+                <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Bound Digital Employees</p>
+                <div className="rounded-xl border border-dt-border overflow-hidden">
                   <table className="w-full text-sm">
-                    <thead className="bg-slate-900/60">
+                    <thead className="bg-dt-inset">
                       <tr><th className={th}>DE</th><th className={th}>Access</th></tr>
                     </thead>
                     <tbody>
                       {selected.boundDEs.map(de => (
-                        <tr key={de.name} className="border-t border-slate-700/60">
+                        <tr key={de.name} className="border-t border-dt-border">
                           <td className={td}>
-                            <button onClick={() => setPage('workforce_des')} className="flex items-center gap-2 text-slate-200 hover:text-indigo-300 transition-colors">
+                            <button onClick={() => setPage('workforce_des')} className="flex items-center gap-2 text-dt-body hover:text-indigo-300 transition-colors">
                               <DEAvatar name={de.name} /> {de.name}
                             </button>
                           </td>
@@ -360,20 +360,20 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
 
               {/* Actions */}
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Available Actions</p>
+                <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Available Actions</p>
                 <div className="space-y-2">
                   {selected.actions.map(a => (
-                    <div key={a.id} className="bg-slate-900 border border-slate-700 rounded-xl p-3">
+                    <div key={a.id} className="bg-dt-page border border-dt-border rounded-xl p-3">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className="text-sm font-medium text-white">{a.label}</span>
                         {a.requiresApproval
                           ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Requires Approval</span>
-                          : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-600/50 text-slate-400">Auto-approved</span>}
+                          : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-600/50 text-dt-support">Auto-approved</span>}
                       </div>
-                      <p className="text-xs text-slate-400">{a.description}</p>
+                      <p className="text-xs text-dt-support">{a.description}</p>
                       <div className="flex flex-wrap gap-1 mt-2">
                         {a.params.map(p => (
-                          <span key={p} className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-500 rounded font-mono">{p}</span>
+                          <span key={p} className="text-[10px] px-1.5 py-0.5 bg-dt-panel text-dt-muted rounded font-mono">{p}</span>
                         ))}
                       </div>
                     </div>
@@ -383,12 +383,12 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
 
               {/* Webhooks */}
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Webhooks</p>
+                <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Webhooks</p>
                 <div className="space-y-2">
                   {selected.webhooks.map(w => (
-                    <div key={w.event} className="flex items-start gap-3 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
-                      <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-indigo-300 rounded font-mono flex-shrink-0">{w.event}</span>
-                      <span className="text-xs text-slate-400">{w.description}</span>
+                    <div key={w.event} className="flex items-start gap-3 bg-dt-page border border-dt-border rounded-lg px-3 py-2">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-dt-panel text-indigo-300 rounded font-mono flex-shrink-0">{w.event}</span>
+                      <span className="text-xs text-dt-support">{w.description}</span>
                     </div>
                   ))}
                 </div>
@@ -396,18 +396,18 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
 
               {/* Data scope */}
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Data Scope</p>
+                <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Data Scope</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selected.dataScope.map(s => (
-                    <span key={s} className="text-xs px-2 py-1 rounded-lg bg-slate-700 text-slate-300">{s}</span>
+                    <span key={s} className="text-xs px-2 py-1 rounded-lg bg-dt-panel text-dt-support">{s}</span>
                   ))}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-2">Data outside this scope is never readable by bound DEs. Scope changes are versioned in the audit trail.</p>
+                <p className="text-[11px] text-dt-muted mt-2">Data outside this scope is never readable by bound DEs. Scope changes are versioned in the audit trail.</p>
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-700 flex gap-3">
-              <button className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs transition-colors">Re-sync now</button>
+            <div className="p-5 border-t border-dt-border flex gap-3">
+              <button className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors">Re-sync now</button>
               <button className="flex-1 px-3 py-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-500/30 text-xs transition-colors">Disconnect</button>
             </div>
           </div>
@@ -417,23 +417,23 @@ export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void
       {/* Add-connector catalog modal */}
       {showCatalog && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => setShowCatalog(false)} />
+          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setShowCatalog(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-8 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-2xl bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
-              <div className="flex items-center justify-between p-5 border-b border-slate-700">
+            <div className="pointer-events-auto w-full max-w-2xl bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+              <div className="flex items-center justify-between p-5 border-b border-dt-border">
                 <div>
                   <h2 className="text-sm font-semibold text-white">Connector catalog</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Connecting a system makes its data and actions available to DEs you bind to it.</p>
+                  <p className="text-xs text-dt-muted mt-0.5">Connecting a system makes its data and actions available to DEs you bind to it.</p>
                 </div>
-                <button onClick={() => setShowCatalog(false)} className="w-7 h-7 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs">×</button>
+                <button onClick={() => setShowCatalog(false)} className="w-7 h-7 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-xs">×</button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 grid grid-cols-3 gap-3">
                 {CATALOG.map(c => (
-                  <div key={c.name} className="bg-slate-900 border border-slate-700 rounded-xl p-3 flex flex-col gap-1.5">
+                  <div key={c.name} className="bg-dt-page border border-dt-border rounded-xl p-3 flex flex-col gap-1.5">
                     <span className="text-sm font-medium text-white">{c.name}</span>
-                    <span className="text-[10px] text-slate-500">{c.category}</span>
-                    <p className="text-xs text-slate-400 flex-1">{c.description}</p>
-                    <button className="mt-1 text-xs px-2 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors">Connect</button>
+                    <span className="text-[10px] text-dt-muted">{c.category}</span>
+                    <p className="text-xs text-dt-support flex-1">{c.description}</p>
+                    <button className="mt-1 text-xs px-2 py-1.5 rounded-lg bg-dt-panel text-dt-support hover:bg-indigo-600 hover:text-white transition-colors">Connect</button>
                   </div>
                 ))}
               </div>

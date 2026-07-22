@@ -28,14 +28,14 @@ export default class PageErrorBoundary extends React.Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6 flex items-center justify-center">
-        <div className="max-w-md w-full bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center">
+      <div className="p-6 flex items-center justify-center">
+        <div className="max-w-md w-full bg-dt-card border border-dt-border rounded-2xl p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-rose-500/15 text-rose-300 flex items-center justify-center text-xl mx-auto mb-4">!</div>
           <h2 className="text-lg font-semibold text-white mb-2">This page hit an error</h2>
-          <p className="text-sm text-slate-400 mb-1">
+          <p className="text-sm text-dt-support mb-1">
             The rest of the app is still working — use the sidebar to go somewhere else, or try again.
           </p>
-          <p className="text-[11px] text-slate-600 font-mono break-words mb-5">
+          <p className="text-[11px] text-dt-faint font-mono break-words mb-5">
             {this.state.error.message || 'Unknown error'}
           </p>
           <button

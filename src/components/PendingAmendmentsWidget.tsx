@@ -42,7 +42,7 @@ export function PendingAmendmentsWidget({
   }
 
   if (loading) {
-    return <div className="text-xs text-slate-500">Loading amendments...</div>
+    return <div className="text-xs text-dt-muted">Loading amendments...</div>
   }
 
   if (pending.length === 0) {
@@ -63,7 +63,7 @@ export function PendingAmendmentsWidget({
 
       {/* Expanded List */}
       {expanded && (
-        <div className="space-y-3 mt-3 border-t border-slate-700 pt-3">
+        <div className="space-y-3 mt-3 border-t border-dt-border pt-3">
           {pending.map(amendment => {
             const detail = details.get(amendment.amendment_id)
             return detail ? (

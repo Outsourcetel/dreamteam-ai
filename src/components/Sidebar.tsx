@@ -372,10 +372,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
 
   if (collapsed) {
     return (
-      <div className="w-14 bg-slate-900 border-r border-slate-700/50 flex flex-col items-center py-4 gap-3 flex-shrink-0">
+      <div className="w-14 bg-dt-page border-r border-dt-border flex flex-col items-center py-4 gap-3 flex-shrink-0">
         <button
           onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded-lg bg-slate-700 text-slate-400 hover:text-white text-xs flex items-center justify-center"
+          className="w-8 h-8 rounded-lg bg-dt-panel text-dt-support hover:text-white text-xs flex items-center justify-center"
         >
           →
         </button>
@@ -386,7 +386,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         >
           {activeCompany.badge}
         </div>
-        <div className="w-px h-4 bg-slate-700" />
+        <div className="w-px h-4 bg-dt-panel" />
         {([
           { icon: '⬡', page: 'dashboard' as Page, label: 'Command Centre' },
           { icon: '⚡', page: 'workforce_des' as Page, label: 'Digital Employees' },
@@ -404,7 +404,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${
               page === item.page
                 ? 'bg-indigo-500/20 text-indigo-300'
-                : 'bg-slate-800 text-slate-500 hover:text-white hover:bg-slate-700'
+                : 'bg-dt-card text-dt-muted hover:text-white hover:bg-dt-panel'
             }`}
           >
             {item.icon}
@@ -414,11 +414,11 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         <a
           href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
           title="Contact support"
-          className="w-8 h-8 rounded-lg bg-slate-800 text-slate-500 hover:text-white text-xs flex items-center justify-center"
+          className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-white text-xs flex items-center justify-center"
         >
           ✉
         </a>
-        <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-slate-800 text-slate-500 hover:text-white text-xs flex items-center justify-center">
+        <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-white text-xs flex items-center justify-center">
           ⇥
         </button>
       </div>
@@ -426,13 +426,13 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   }
 
   return (
-    <div className="w-60 bg-slate-900 border-r border-slate-700/50 flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-60 bg-dt-page border-r border-dt-border flex flex-col flex-shrink-0 overflow-hidden">
 
       {/* Company selector */}
-      <div className="p-3 border-b border-slate-700/50">
+      <div className="p-3 border-b border-dt-border">
         <button
           onClick={() => setShowCompanyPicker(!showCompanyPicker)}
-          className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-slate-800 transition-colors group"
+          className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-dt-panel transition-colors group"
         >
           {isLiveTenant && !viewingDemo ? (
             <>
@@ -440,7 +440,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                 {(liveTenantName || 'C')[0].toUpperCase()}
               </div>
               <div className="flex-1 text-left min-w-0">
-                <div className="text-xs font-semibold text-slate-100 truncate">{liveTenantName || 'Your company'}</div>
+                <div className="text-xs font-semibold text-dt-title truncate">{liveTenantName || 'Your company'}</div>
                 <div className="text-[10px] text-emerald-400 truncate">Live workspace</div>
               </div>
             </>
@@ -450,33 +450,33 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                 {activeCompany.badge}
               </div>
               <div className="flex-1 text-left min-w-0">
-                <div className="text-xs font-semibold text-slate-100 truncate">{activeCompany.name}</div>
-                <div className="text-[10px] text-slate-500 truncate">{isLiveTenant ? 'Demo company' : activeCompany.industry}</div>
+                <div className="text-xs font-semibold text-dt-title truncate">{activeCompany.name}</div>
+                <div className="text-[10px] text-dt-muted truncate">{isLiveTenant ? 'Demo company' : activeCompany.industry}</div>
               </div>
             </>
           )}
-          <span className="text-slate-600 text-xs group-hover:text-slate-400">⌄</span>
+          <span className="text-dt-faint text-xs group-hover:text-dt-support">⌄</span>
         </button>
 
         {showCompanyPicker && (
-          <div className="mt-1 bg-slate-800 rounded-lg border border-slate-600/50 overflow-hidden">
+          <div className="mt-1 bg-dt-card rounded-lg border border-dt-border-strong overflow-hidden">
             {isLiveTenant && (
               <>
                 <button
                   onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
-                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-700 transition-colors ${!viewingDemo ? 'bg-slate-700/50' : ''}`}
+                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${!viewingDemo ? 'bg-dt-panel' : ''}`}
                 >
                   <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
                     {(liveTenantName || 'C')[0].toUpperCase()}
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-slate-200">{liveTenantName || 'Your company'}</div>
+                    <div className="text-xs font-medium text-dt-body">{liveTenantName || 'Your company'}</div>
                     <div className="text-[10px] text-emerald-400">Live workspace</div>
                   </div>
                   {!viewingDemo && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
                 </button>
                 {showDemoCompanies && (
-                  <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-slate-600 uppercase border-t border-slate-600/50">
+                  <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-dt-faint uppercase border-t border-dt-border-strong">
                     Demo companies
                   </div>
                 )}
@@ -487,34 +487,34 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             {isDtUser && viewingDemo && (
               <button
                 onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
-                className="w-full flex items-center gap-2 p-2 text-left hover:bg-slate-700 transition-colors border-b border-slate-600/50"
+                className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors border-b border-dt-border-strong"
               >
-                <span className="w-7 h-7 rounded-md flex items-center justify-center text-xs bg-slate-700 text-slate-300 flex-shrink-0">←</span>
-                <span className="text-xs text-slate-300">Back to Platform Console</span>
+                <span className="w-7 h-7 rounded-md flex items-center justify-center text-xs bg-dt-panel text-dt-support flex-shrink-0">←</span>
+                <span className="text-xs text-dt-support">Back to Platform Console</span>
               </button>
             )}
             {showDemoCompanies && COMPANIES.map((c) => (
               <button
                 key={c.id}
                 onClick={() => { setActiveCompanyId(c.id); if (isLiveTenant) setViewingDemo(true); setShowCompanyPicker(false); }}
-                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-slate-700 transition-colors ${c.id === activeCompanyId && (!isLiveTenant || viewingDemo) ? 'bg-slate-700/50' : ''}`}
+                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${c.id === activeCompanyId && (!isLiveTenant || viewingDemo) ? 'bg-dt-panel' : ''}`}
               >
                 <div className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c.badgeColor }}>
                   {c.badge}
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-slate-200">{c.name}</div>
-                  <div className="text-[10px] text-slate-500">{c.activeDEs} DEs active</div>
+                  <div className="text-xs font-medium text-dt-body">{c.name}</div>
+                  <div className="text-[10px] text-dt-muted">{c.activeDEs} DEs active</div>
                 </div>
                 {c.id === activeCompanyId && (!isLiveTenant || viewingDemo) && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
               </button>
             ))}
             <button
               onClick={() => { setPage('company_setup'); setShowCompanyPicker(false); }}
-              className="w-full flex items-center gap-2 p-2 text-left hover:bg-slate-700 border-t border-slate-600/50"
+              className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel border-t border-dt-border-strong"
             >
-              <div className="w-6 h-6 rounded bg-slate-600 flex items-center justify-center text-xs text-slate-400">+</div>
-              <span className="text-xs text-slate-400">Add company</span>
+              <div className="w-6 h-6 rounded bg-slate-600 flex items-center justify-center text-xs text-dt-support">+</div>
+              <span className="text-xs text-dt-support">Add company</span>
             </button>
           </div>
         )}
@@ -525,7 +525,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         {nav.map(section => (
           <div key={section.title} className="mb-1">
             {section.title && (
-              <div className="px-2 pt-3 pb-1 text-[9px] font-bold tracking-widest text-slate-600 uppercase">
+              <div className="px-2 pt-3 pb-1 text-[9px] font-bold tracking-widest text-dt-faint uppercase">
                 {section.title}
               </div>
             )}
@@ -549,7 +549,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                     className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors mb-0.5 ${
                       groupActive || childActive
                         ? 'bg-indigo-500/10 text-indigo-300'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        : 'text-dt-support hover:text-dt-body hover:bg-dt-panel'
                     }`}
                   >
                     <span className="text-[13px] flex-shrink-0 w-4 text-center">{group.icon}</span>
@@ -560,12 +560,12 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                       </span>
                     )}
                     {hasChildren && (
-                      <span className={`text-[10px] text-slate-600 transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
+                      <span className={`text-[10px] text-dt-faint transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
                     )}
                   </button>
 
                   {hasChildren && isOpen && (
-                    <div className="ml-3 pl-3 border-l border-slate-700 mb-1">
+                    <div className="ml-3 pl-3 border-l border-dt-border mb-1">
                       {group.children!.map(child => (
                         <button
                           key={child.id}
@@ -573,7 +573,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors mb-0.5 ${
                             isActive(child.id)
                               ? 'bg-indigo-500/10 text-indigo-300'
-                              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+                              : 'text-dt-muted hover:text-dt-support hover:bg-dt-card'
                           }`}
                         >
                           {child.indicator?.dot && (
@@ -581,7 +581,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                           )}
                           <span className="text-xs flex-1 truncate">{child.label}</span>
                           {child.indicator?.count !== undefined && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-700" style={{ color: child.indicator.color }}>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-dt-panel" style={{ color: child.indicator.color }}>
                               {child.indicator.count}
                             </span>
                           )}
@@ -597,10 +597,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-slate-700/50">
+      <div className="p-3 border-t border-dt-border">
         <a
           href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
-          className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors text-xs"
+          className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-md text-dt-muted hover:text-dt-support hover:bg-dt-card transition-colors text-xs"
         >
           <span className="w-4 text-center flex-shrink-0">✉</span>
           <span className="truncate">Contact support</span>
@@ -609,16 +609,16 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             unlabeled ⇥ icon (founder couldn't find it) and no way to
             change a password at all. */}
         {accountMenuOpen && (
-          <div className="mb-2 bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div className="mb-2 bg-dt-card border border-dt-border rounded-lg overflow-hidden">
             <button
               onClick={() => { setShowChangePassword(true); setAccountMenuOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-dt-support hover:bg-dt-panel transition-colors"
             >
               <span className="w-4 text-center flex-shrink-0">🔑</span> Change password…
             </button>
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-700 hover:text-red-300 transition-colors border-t border-slate-700/60"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-dt-support hover:bg-dt-panel hover:text-red-300 transition-colors border-t border-dt-border"
             >
               <span className="w-4 text-center flex-shrink-0">⇥</span> Sign out
             </button>
@@ -627,19 +627,19 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         <div className="flex items-center gap-2">
           <button
             onClick={() => setAccountMenuOpen(v => !v)}
-            className="flex items-center gap-2 flex-1 min-w-0 text-left rounded-md px-1 py-0.5 hover:bg-slate-800/60 transition-colors"
+            className="flex items-center gap-2 flex-1 min-w-0 text-left rounded-md px-1 py-0.5 hover:bg-dt-card transition-colors"
             title="Account menu"
           >
             <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
               {user?.name?.[0] ?? 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-slate-200 truncate">{user?.name}</div>
-              <div className="text-[10px] text-slate-500 truncate">{user?.role?.replace(/_/g, ' ')}</div>
+              <div className="text-xs font-medium text-dt-body truncate">{user?.name}</div>
+              <div className="text-[10px] text-dt-muted truncate">{user?.role?.replace(/_/g, ' ')}</div>
             </div>
-            <span className={`text-slate-600 text-[10px] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`}>⌃</span>
+            <span className={`text-dt-faint text-[10px] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`}>⌃</span>
           </button>
-          <button onClick={() => setCollapsed(true)} className="w-6 h-6 rounded text-slate-600 hover:text-slate-300 text-xs flex items-center justify-center flex-shrink-0">
+          <button onClick={() => setCollapsed(true)} className="w-6 h-6 rounded text-dt-faint hover:text-dt-support text-xs flex items-center justify-center flex-shrink-0">
             ←
           </button>
         </div>
@@ -649,9 +649,9 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             Exit Remote Access
           </button>
         )}
-        <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-slate-600">
-          <a href="/terms" className="hover:text-slate-400 transition-colors">Terms</a>
-          <a href="/privacy" className="hover:text-slate-400 transition-colors">Privacy</a>
+        <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-dt-faint">
+          <a href="/terms" className="hover:text-dt-support transition-colors">Terms</a>
+          <a href="/privacy" className="hover:text-dt-support transition-colors">Privacy</a>
         </div>
       </div>
     </div>

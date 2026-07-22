@@ -149,14 +149,14 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
       technical: 'Technical', legal: 'Legal', finance_deep: 'Finance', people: 'People',
     };
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader
           title={`${names[domain]} Specialist`}
           subtitle="Specialists are consulted on demand by primary DEs — configurable sources, grounded answers, gated write-backs"
         />
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center max-w-2xl">
-          <p className="text-sm text-slate-300 font-medium mb-1">Configure coming — install pattern proven on Technical</p>
-          <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-10 text-center max-w-2xl">
+          <p className="text-sm text-dt-support font-medium mb-1">Configure coming — install pattern proven on Technical</p>
+          <p className="text-xs text-dt-muted mb-4 leading-relaxed">
             The {names[domain]} Specialist reuses the exact framework shipped with the Technical Specialist:
             profile charter, per-source access modes (ingest / fetch-only / reference), media library with quality flags,
             grounded consultations, and the always-gated Scribe. It's configuration, not new machinery.
@@ -183,34 +183,34 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
   ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title={`${data.title}`}
         subtitle="Specialist functions work like consultants in the GP/Specialist model — primary DEs consult them on demand instead of every DE carrying deep-domain knowledge"
       />
 
       {/* Model card: dedicated DE vs knowledge-backed */}
-      <div className={`rounded-2xl border p-5 mb-6 ${hasDedicatedDE ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-700 bg-slate-800/50'}`}>
+      <div className={`rounded-2xl border p-5 mb-6 ${hasDedicatedDE ? 'border-purple-500/30 bg-purple-500/5' : 'border-dt-border bg-dt-card'}`}>
         {hasDedicatedDE ? (
           <div className="flex items-center gap-4">
             <span className="w-11 h-11 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 font-semibold text-lg">A</span>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-sm font-semibold text-white">Avery</p>
-                <span className="text-xs text-slate-400">Tax Research DE</span>
+                <span className="text-xs text-dt-support">Tax Research DE</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 font-medium">Specialist</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">active</span>
               </div>
-              <p className="text-xs text-slate-400 mt-1">This domain has a dedicated specialist DE. Avery answers consultations directly, with mandatory partner review before client delivery.</p>
+              <p className="text-xs text-dt-support mt-1">This domain has a dedicated specialist DE. Avery answers consultations directly, with mandatory partner review before client delivery.</p>
             </div>
             <button onClick={() => setPage('workforce_des')} className="text-xs text-purple-400 hover:text-purple-300 transition-colors flex-shrink-0">Open profile →</button>
           </div>
         ) : (
           <div className="flex items-start gap-4">
-            <span className="w-11 h-11 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400 text-lg">{data.icon}</span>
+            <span className="w-11 h-11 rounded-xl bg-dt-panel border border-dt-border-strong flex items-center justify-center text-dt-support text-lg">{data.icon}</span>
             <div>
               <p className="text-sm font-semibold text-white mb-1">No dedicated DE — knowledge-backed</p>
-              <p className="text-xs text-slate-400 leading-relaxed">{data.description} Consultations are answered from curated specialist knowledge collections; anything below the confidence floor routes to a human expert.</p>
+              <p className="text-xs text-dt-support leading-relaxed">{data.description} Consultations are answered from curated specialist knowledge collections; anything below the confidence floor routes to a human expert.</p>
             </div>
           </div>
         )}
@@ -223,37 +223,37 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
           { label: 'Avg specialist response', value: data.avgResponse },
           { label: 'Top requesting DE', value: data.topRequester },
         ].map(s => (
-          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+          <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
             <p className="text-xl font-bold text-white">{s.value}</p>
           </div>
         ))}
       </div>
 
       {/* Consultation flow diagram */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-4">Consultation flow</h3>
         <div className="flex items-stretch gap-2 flex-wrap">
           {flowSteps.map((s, i) => (
             <React.Fragment key={s.label}>
               <div className={`flex-1 min-w-40 rounded-xl border px-3 py-3 ${s.color}`}>
                 <p className="text-xs font-semibold">{s.label}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">{s.sub}</p>
+                <p className="text-[10px] text-dt-support mt-0.5">{s.sub}</p>
               </div>
-              {i < flowSteps.length - 1 && <span className="self-center text-slate-600">→</span>}
+              {i < flowSteps.length - 1 && <span className="self-center text-dt-faint">→</span>}
             </React.Fragment>
           ))}
         </div>
-        <p className="text-[11px] text-slate-500 mt-3">The customer never sees the handoff — the specialist answer is merged into the primary DE's response with full source citation in the audit trail.</p>
+        <p className="text-[11px] text-dt-muted mt-3">The customer never sees the handoff — the specialist answer is merged into the primary DE's response with full source citation in the audit trail.</p>
       </div>
 
       {/* Consultation log */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+      <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
         <div className="px-5 pt-4 pb-2">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Consultation Log</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Consultation Log</p>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-900/60">
+          <thead className="bg-dt-inset">
             <tr>
               <th className={th}>Date</th>
               <th className={th}>Requesting DE</th>
@@ -264,17 +264,17 @@ export default function SpecialistsPage({ domain, setPage }: { domain: Specialis
           </thead>
           <tbody>
             {data.consultations.map(c => (
-              <tr key={c.id} className="border-t border-slate-700/60 hover:bg-slate-700/30 transition-colors">
-                <td className={`${td} text-xs text-slate-500 font-mono whitespace-nowrap`}>{c.date}</td>
+              <tr key={c.id} className="border-t border-dt-border hover:bg-dt-panel transition-colors">
+                <td className={`${td} text-xs text-dt-muted font-mono whitespace-nowrap`}>{c.date}</td>
                 <td className={td}>
-                  <button onClick={() => setPage('workforce_des')} className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-indigo-300 transition-colors">
+                  <button onClick={() => setPage('workforce_des')} className="flex items-center gap-1.5 text-xs text-dt-support hover:text-indigo-300 transition-colors">
                     <span className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-[9px] font-semibold">{c.requestingDE[0]}</span>
                     {c.requestingDE}
                   </button>
                 </td>
-                <td className={`${td} text-xs text-slate-300 leading-relaxed`}>{c.question}</td>
-                <td className={`${td} text-xs text-slate-400 leading-relaxed`}>{c.resolution}</td>
-                <td className={`${td} text-xs text-slate-500 whitespace-nowrap`}>{c.duration}</td>
+                <td className={`${td} text-xs text-dt-support leading-relaxed`}>{c.question}</td>
+                <td className={`${td} text-xs text-dt-support leading-relaxed`}>{c.resolution}</td>
+                <td className={`${td} text-xs text-dt-muted whitespace-nowrap`}>{c.duration}</td>
               </tr>
             ))}
           </tbody>

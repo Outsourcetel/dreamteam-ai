@@ -6,7 +6,7 @@ import React from 'react';
 // with no actual document behind it anywhere. This is a first pass for a
 // lawyer to review before it's treated as real/binding.
 const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
-  <div className="min-h-screen bg-slate-900 text-slate-300 overflow-y-auto">
+  <div className="min-h-screen bg-dt-page text-dt-support overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
         <button onClick={onBack} className="text-sm text-indigo-400 hover:text-indigo-300 mb-6">← Back</button>
@@ -22,7 +22,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
       </div>
 
       <h1 className="text-2xl font-bold text-white mb-2">Terms of Service</h1>
-      <p className="text-sm text-slate-500 mb-8">Last updated: [date] · Effective: [date]</p>
+      <p className="text-sm text-dt-muted mb-8">Last updated: [date] · Effective: [date]</p>
 
       <div className="space-y-8 text-sm leading-relaxed">
         <section>
@@ -58,7 +58,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         <section>
           <h2 className="text-lg font-semibold text-white mb-2">4. Acceptable use</h2>
           <p>You agree not to use the Service to:</p>
-          <ul className="list-disc list-inside mt-2 space-y-1 text-slate-400">
+          <ul className="list-disc list-inside mt-2 space-y-1 text-dt-support">
             <li>Violate any law or the rights of any third party</li>
             <li>Upload or process data you don't have the right to use</li>
             <li>Attempt to breach, disable, or circumvent the Service's security or access controls</li>

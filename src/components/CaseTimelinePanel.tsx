@@ -32,25 +32,25 @@ export default function CaseTimelinePanel({ deId }: { deId: string }) {
 
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Waiting on — cases paused mid-motion</p>
+      <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Waiting on — cases paused mid-motion</p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {items === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
         <div className="space-y-2">
           {items.map((c) => (
-            <div key={c.id} className="bg-slate-900/50 rounded-lg px-4 py-2.5">
+            <div key={c.id} className="bg-dt-inset rounded-lg px-4 py-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
                   {c.awaiting_ref ? 'awaiting reply' : c.kind === 'wait' ? 'waiting' : 'follow-up'}
                 </span>
-                <span className="text-sm text-slate-200 flex-1">{c.objective_title}</span>
-                <span className="text-[11px] text-slate-500">{whenLabel(c.fire_at)}</span>
+                <span className="text-sm text-dt-body flex-1">{c.objective_title}</span>
+                <span className="text-[11px] text-dt-muted">{whenLabel(c.fire_at)}</span>
                 <button onClick={() => void cancel(c.id)} disabled={busy}
-                  className="text-[10px] text-slate-600 hover:text-rose-300 shrink-0">cancel</button>
+                  className="text-[10px] text-dt-faint hover:text-rose-300 shrink-0">cancel</button>
               </div>
-              {c.instruction && <p className="text-xs text-slate-400 mt-1">Then: {c.instruction}</p>}
-              <p className="text-[10px] text-slate-600 mt-0.5">Resumes {new Date(c.fire_at).toLocaleString()}</p>
+              {c.instruction && <p className="text-xs text-dt-support mt-1">Then: {c.instruction}</p>}
+              <p className="text-[10px] text-dt-faint mt-0.5">Resumes {new Date(c.fire_at).toLocaleString()}</p>
             </div>
           ))}
         </div>

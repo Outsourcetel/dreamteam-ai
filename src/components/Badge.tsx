@@ -13,7 +13,7 @@ const Badge = ({
     yellow: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
     blue: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
     purple: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
-    slate: 'bg-slate-500/20 text-slate-300 border border-slate-500/30',
+    slate: 'bg-slate-500/20 text-dt-support border border-slate-500/30',
     indigo: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
     amber: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   };

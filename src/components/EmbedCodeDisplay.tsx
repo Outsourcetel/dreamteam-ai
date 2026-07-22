@@ -43,7 +43,7 @@ export function EmbedCodeDisplay({ tenant_id, de_id, de_name }: EmbedCodeDisplay
     <div className="space-y-4">
       <div>
         <h3 className="text-sm font-semibold text-white mb-2">Embed {de_name} Widget</h3>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-dt-support mb-4">
           Get the HTML code to embed {de_name} chat widget into your website.
         </p>
       </div>
@@ -58,19 +58,19 @@ export function EmbedCodeDisplay({ tenant_id, de_id, de_name }: EmbedCodeDisplay
         </button>
       ) : (
         <div className="space-y-3">
-          <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 font-mono text-xs text-slate-300 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap break-words">
+          <div className="bg-dt-page border border-dt-border rounded-lg p-4 font-mono text-xs text-dt-support overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap break-words">
             {embedCode}
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleCopyCode}
-              className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors"
+              className="flex-1 px-4 py-2 bg-dt-panel hover:bg-dt-panel text-dt-body rounded-lg text-sm font-medium transition-colors"
             >
               {copied ? '✓ Copied!' : '📋 Copy to Clipboard'}
             </button>
             <button
               onClick={() => setEmbedCode(null)}
-              className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors"
+              className="flex-1 px-4 py-2 bg-dt-panel hover:bg-dt-panel text-dt-body rounded-lg text-sm font-medium transition-colors"
             >
               Clear
             </button>

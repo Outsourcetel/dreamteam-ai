@@ -299,7 +299,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             </div>
             <button
               onClick={() => { navigator.clipboard?.writeText(justCreated.rawKey); }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors"
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors"
             >
               Copy to clipboard
             </button>
@@ -683,7 +683,7 @@ export default function SecurityAccessPage() {
           subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
         />
         <button onClick={() => handleSetPage('gov_trust')}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           Trust &amp; Architecture →
         </button>
       </div>

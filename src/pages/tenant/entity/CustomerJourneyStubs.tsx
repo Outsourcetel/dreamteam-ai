@@ -67,7 +67,7 @@ const stageBadge = (stage: string) => {
   if (stage === 'Qualified') return 'bg-emerald-500/15 text-emerald-300';
   if (stage === 'Contacted') return 'bg-indigo-500/15 text-indigo-300';
   if (stage === 'Nurture') return 'bg-amber-500/15 text-amber-300';
-  return 'bg-slate-600/50 text-slate-300';
+  return 'bg-slate-600/50 text-dt-support';
 };
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -84,15 +84,15 @@ const DemoCustomerBD = () => {
   const isTcp = activeCompanyId === 'tcp';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Business Development — Customer Lifecycle"
         subtitle={isTcp ? '14 active prospects moving toward Sales' : `6 active pursuits across ${activeCompany.name} practice areas`}
       />
 
-      <div className="mb-5 flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
-        <span className="text-slate-500">◎</span>
-        <p className="text-xs text-slate-400">
+      <div className="mb-5 flex items-center gap-2 rounded-xl border border-dt-border bg-dt-card px-4 py-3">
+        <span className="text-dt-muted">◎</span>
+        <p className="text-xs text-dt-support">
           DE not yet assigned to Business Development — this stage is handled by humans. Activity is still
           tracked here so a DE can take over qualification later.
         </p>
@@ -100,23 +100,23 @@ const DemoCustomerBD = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Prospect table */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Prospect list' : 'Pursuit list'}</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          <div className="overflow-x-auto rounded-xl border border-dt-border">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   {['Company', 'Stage', 'Source', 'Owner', 'Last Touch'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {prospects.map((p, i) => (
-                  <tr key={p.company} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={p.company} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{p.company}</td>
                     <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${stageBadge(p.stage)}`}>{p.stage}</span></td>
-                    <td className={`${td} text-slate-400 text-xs`}>{p.source}</td>
-                    <td className={`${td} text-slate-300 text-xs`}>{p.owner} <span className="text-slate-600">({p.ownerIsDE ? 'DE' : 'human'})</span></td>
-                    <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>{p.lastTouch}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{p.source}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{p.owner} <span className="text-dt-faint">({p.ownerIsDE ? 'DE' : 'human'})</span></td>
+                    <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{p.lastTouch}</td>
                   </tr>
                 ))}
               </tbody>
@@ -125,22 +125,22 @@ const DemoCustomerBD = () => {
         </div>
 
         {/* Funnel */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Pipeline funnel</h3>
           <div className="space-y-3">
             {funnel.map(f => (
               <div key={f.stage}>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-slate-400">{f.stage}</span>
+                  <span className="text-dt-support">{f.stage}</span>
                   <span className="text-white font-medium">{f.count}</span>
                 </div>
-                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-3 bg-dt-panel rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${f.color}`} style={{ width: `${(f.count / maxCount) * 100}%` }} />
                 </div>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500 mt-4">
+          <p className="text-[11px] text-dt-muted mt-4">
             {isTcp
               ? 'Conversion prospect → qualified: 36% this quarter.'
               : 'Pursuits are sourced primarily through partner referrals and industry events.'}
@@ -187,7 +187,7 @@ const oppStageBadge = (stage: string) => {
   if (stage.startsWith('Negotiation')) return 'bg-emerald-500/15 text-emerald-300';
   if (stage.startsWith('Proposal')) return 'bg-indigo-500/15 text-indigo-300';
   if (stage === 'Demo') return 'bg-sky-500/15 text-sky-300';
-  return 'bg-slate-600/50 text-slate-300';
+  return 'bg-slate-600/50 text-dt-support';
 };
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
@@ -203,7 +203,7 @@ const DemoCustomerSales = () => {
   const totalLabel = isTcp ? '$2.1M' : '$515K';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Sales — Customer Lifecycle"
         subtitle={isTcp ? 'Pipeline management, proposals, demos, and deal closing' : `Proposals in flight across ${activeCompany.name} practice areas`}
@@ -216,37 +216,37 @@ const DemoCustomerSales = () => {
           { label: isTcp ? 'In negotiation' : 'Proposals sent', value: isTcp ? '2' : '2', sub: isTcp ? '$496K combined' : '$420K combined', color: 'text-emerald-300' },
           { label: 'Avg deal size', value: isTcp ? '$175K' : '$172K', sub: 'this quarter', color: 'text-indigo-300' },
         ].map(s => (
-          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+          <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
+            <p className="text-xs text-dt-muted mt-0.5">{s.sub}</p>
           </div>
         ))}
       </div>
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
         <h3 className="text-sm font-semibold text-white mb-3">Open opportunities</h3>
-        <div className="overflow-x-auto rounded-xl border border-slate-700">
+        <div className="overflow-x-auto rounded-xl border border-dt-border">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {['Opportunity', 'Value', 'Stage', 'Close Date', 'Owner'].map(h => <th key={h} className={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {opps.map((o, i) => (
-                <tr key={o.name} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === opps.length - 1 ? 'border-b-0' : ''}`}>
+                <tr key={o.name} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === opps.length - 1 ? 'border-b-0' : ''}`}>
                   <td className={`${td} font-medium text-white`}>{o.name}</td>
-                  <td className={`${td} text-slate-300`}>{o.value}</td>
+                  <td className={`${td} text-dt-support`}>{o.value}</td>
                   <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${oppStageBadge(o.stage)}`}>{o.stage}</span></td>
-                  <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{o.closeDate}</td>
-                  <td className={`${td} text-slate-300 text-xs`}>{o.owner}</td>
+                  <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{o.closeDate}</td>
+                  <td className={`${td} text-dt-support text-xs`}>{o.owner}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-slate-500">
+        <p className="mt-3 text-[11px] text-dt-muted">
           Sales is currently human-led. Won deals hand off automatically to Onboarding — no re-entry, no dropped context.
         </p>
       </div>
@@ -305,7 +305,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const atRisk = accounts.filter(a => a.health < 45);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Customer Success — Customer Lifecycle"
         subtitle={isTcp
@@ -315,12 +315,12 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Account health table */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Account health' : 'Engagement health'}</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          <div className="overflow-x-auto rounded-xl border border-dt-border">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   {[isTcp ? 'Account' : 'Engagement', 'Health', 'ARR', 'CSM', 'Trend'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
@@ -328,19 +328,19 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 {accounts.map((a, i) => {
                   const risk = a.health < 45;
                   return (
-                    <tr key={a.name} className={`border-b border-slate-700/60 transition-colors ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-700/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={a.name} className={`border-b border-dt-border transition-colors ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-dt-panel'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
                       <td className={td}>
                         <div className="flex items-center gap-2 min-w-[110px]">
-                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-dt-panel rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${healthColor(a.health)}`} style={{ width: `${a.health}%` }} />
                           </div>
                           <span className={`text-xs font-medium w-6 text-right ${healthText(a.health)}`}>{a.health}</span>
                         </div>
                       </td>
-                      <td className={`${td} text-slate-300 text-xs`}>{a.arr}</td>
-                      <td className={`${td} text-slate-400 text-xs`}>{a.csm}</td>
-                      <td className={`${td} text-xs ${a.trend === 'up' ? 'text-emerald-400' : a.trend === 'down' ? 'text-red-400' : 'text-slate-500'}`}>{trendIcon(a.trend)}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{a.arr}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{a.csm}</td>
+                      <td className={`${td} text-xs ${a.trend === 'up' ? 'text-emerald-400' : a.trend === 'down' ? 'text-red-400' : 'text-dt-muted'}`}>{trendIcon(a.trend)}</td>
                     </tr>
                   );
                 })}
@@ -350,9 +350,9 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </div>
 
         {/* At-risk action panel */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-1">At-risk accounts</h3>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             {isTcp ? 'Flagged by Casey from health, usage, and escalation signals' : 'Flagged by Morgan from engagement delivery signals'}
           </p>
           <div className="space-y-3">
@@ -362,11 +362,11 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   <span className="text-sm font-medium text-red-200">{a.name}</span>
                   <span className="text-xs font-bold text-red-300">health {a.health}</span>
                 </div>
-                {a.note && <p className="text-xs text-slate-400 mb-2">{a.note}</p>}
+                {a.note && <p className="text-xs text-dt-support mb-2">{a.note}</p>}
                 <div className="flex gap-2">
                   <button className="text-xs px-2.5 py-1 rounded-lg bg-red-600/20 text-red-300 hover:bg-red-600/40 transition-colors">Open save play</button>
                   {setPage && (
-                    <button onClick={() => setPage('entity_customer_renewal')} className="text-xs px-2.5 py-1 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600 transition-colors">
+                    <button onClick={() => setPage('entity_customer_renewal')} className="text-xs px-2.5 py-1 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel border border-dt-border-strong transition-colors">
                       View renewal →
                     </button>
                   )}
@@ -374,7 +374,7 @@ const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </div>
             ))}
             {atRisk.length === 0 && (
-              <p className="text-xs text-slate-500">No at-risk accounts right now.</p>
+              <p className="text-xs text-dt-muted">No at-risk accounts right now.</p>
             )}
           </div>
         </div>

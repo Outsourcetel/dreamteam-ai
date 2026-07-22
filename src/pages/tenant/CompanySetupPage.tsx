@@ -135,11 +135,11 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
 
   if (done) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Company Setup" subtitle="Done — everything below is real and editable" />
         <div className="max-w-2xl rounded-2xl border border-emerald-800/50 bg-emerald-500/5 p-6">
           <h3 className="text-base font-semibold text-white mb-2">✓ Setup complete</h3>
-          <p className="text-sm text-slate-300 mb-4">
+          <p className="text-sm text-dt-support mb-4">
             {done.des.length > 0
               ? <>Hired <span className="text-white">{done.des.join(', ')}</span> — each starts at the Designed lifecycle stage and earns its way to live work through the same gates as any employee.</>
               : 'No new employees were needed — your roster already covers the recommendations.'}
@@ -149,7 +149,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
           </p>
           <div className="flex gap-3">
             <button onClick={() => setPage('workforce_des')} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm">Meet your employees →</button>
-            <button onClick={() => setPage('gov_compliance')} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Review guardrails</button>
+            <button onClick={() => setPage('gov_compliance')} className="px-4 py-2 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body text-sm">Review guardrails</button>
           </div>
         </div>
       </div>
@@ -157,7 +157,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Company Setup"
         subtitle="Pick your industry, choose your first Digital Employees, and start with guardrails that actually enforce"
@@ -178,15 +178,15 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs transition-colors ${
                 i === step ? 'bg-indigo-600 text-white'
                 : i < step ? 'bg-emerald-500/15 text-emerald-400'
-                : 'bg-slate-800 border border-slate-700 text-slate-500'
+                : 'bg-dt-card border border-dt-border text-dt-muted'
               }`}
             >
-              <span className="w-4 h-4 rounded-full bg-slate-900/40 flex items-center justify-center text-[9px] font-bold">
+              <span className="w-4 h-4 rounded-full bg-dt-inset flex items-center justify-center text-[9px] font-bold">
                 {i < step ? '✓' : i + 1}
               </span>
               {s}
             </button>
-            {i < STEPS.length - 1 && <span className="text-slate-600 text-xs">—</span>}
+            {i < STEPS.length - 1 && <span className="text-dt-faint text-xs">—</span>}
           </React.Fragment>
         ))}
       </div>
@@ -197,7 +197,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {step === 0 && (
         <div>
           <h3 className="text-sm font-semibold text-white mb-3">Choose your industry</h3>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             Sets the recommended first hires and the starter guardrail set. Saved to your workspace —
             everything it creates stays editable.
           </p>
@@ -206,14 +206,14 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
               <button
                 key={ind.name}
                 onClick={() => setIndustryName(ind.name)}
-                className={`text-left rounded-xl border p-4 transition-all ${industryName === ind.name ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}
+                className={`text-left rounded-xl border p-4 transition-all ${industryName === ind.name ? 'border-indigo-500 bg-indigo-500/10' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}
               >
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center text-slate-300">{ind.icon}</span>
+                  <span className="w-8 h-8 rounded-lg bg-dt-panel flex items-center justify-center text-dt-support">{ind.icon}</span>
                   <span className="text-sm font-semibold text-white">{ind.name}</span>
                   {industryName === ind.name && <span className="ml-auto text-indigo-400 text-xs">✓ selected</span>}
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed">{ind.blurb}</p>
+                <p className="text-xs text-dt-support leading-relaxed">{ind.blurb}</p>
               </button>
             ))}
           </div>
@@ -224,7 +224,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {step === 1 && (
         <div>
           <h3 className="text-sm font-semibold text-white mb-3">First hires — {template.name}</h3>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             Each becomes a real Digital Employee at the Designed stage. It earns live work through the
             lifecycle gates — knowledge, testing, your certification — like any hire. Untick any you don't want.
           </p>
@@ -236,16 +236,16 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
                 <button key={h.name} disabled={exists}
                   onClick={() => toggle(pickedHires, h.name, setPickedHires)}
                   className={`w-full flex items-center gap-4 text-left rounded-xl border p-4 transition-all ${
-                    exists ? 'border-slate-700 bg-slate-800/40 opacity-60'
-                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}
+                    exists ? 'border-dt-border bg-dt-card opacity-60'
+                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}
                 >
-                  <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-600'}`}>
+                  <span className={`w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-dt-panel text-dt-faint'}`}>
                     {exists || picked ? '✓' : ''}
                   </span>
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-white">{h.name} <span className="text-xs text-slate-500 font-normal">· {h.department}</span></p>
-                    <p className="text-xs text-slate-400">{h.description}</p>
-                    <p className="text-[11px] text-slate-600 mt-0.5">{exists ? 'Already on your roster' : h.why}</p>
+                    <p className="text-sm font-semibold text-white">{h.name} <span className="text-xs text-dt-muted font-normal">· {h.department}</span></p>
+                    <p className="text-xs text-dt-support">{h.description}</p>
+                    <p className="text-[11px] text-dt-faint mt-0.5">{exists ? 'Already on your roster' : h.why}</p>
                   </div>
                 </button>
               );
@@ -258,7 +258,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {step === 2 && (
         <div>
           <h3 className="text-sm font-semibold text-white mb-3">Starter guardrails — {template.name}</h3>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             Every rule here carries a real matching pattern and enforces from the moment it exists —
             these are not policy statements. All editable later under Compliance &amp; Guardrails.
           </p>
@@ -270,20 +270,20 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
                 <button key={g.rule} disabled={exists}
                   onClick={() => toggle(pickedRules, g.rule, setPickedRules)}
                   className={`w-full flex items-start gap-3 text-left rounded-xl border px-4 py-3 transition-all ${
-                    exists ? 'border-slate-700 bg-slate-800/40 opacity-60'
-                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-slate-700 bg-slate-800 hover:border-slate-600'}`}
+                    exists ? 'border-dt-border bg-dt-card opacity-60'
+                    : picked ? 'border-indigo-500/60 bg-indigo-500/10' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}
                 >
-                  <span className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-600'}`}>
+                  <span className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 ${exists ? 'bg-emerald-600 text-white' : picked ? 'bg-indigo-600 text-white' : 'bg-dt-panel text-dt-faint'}`}>
                     {exists || picked ? '✓' : ''}
                   </span>
                   <div className="flex-1">
-                    <p className="text-sm text-slate-200">{g.rule}</p>
-                    <p className="text-[11px] text-slate-600 mt-0.5 font-mono break-all">
+                    <p className="text-sm text-dt-body">{g.rule}</p>
+                    <p className="text-[11px] text-dt-faint mt-0.5 font-mono break-all">
                       {g.rule_type === 'require_approval_over_cents'
                         ? `threshold: $${((g.threshold ?? 0) / 100).toLocaleString()}`
                         : `matches: ${g.pattern}`}
                     </p>
-                    {exists && <p className="text-[11px] text-slate-600">Already exists in your guardrails</p>}
+                    {exists && <p className="text-[11px] text-dt-faint">Already exists in your guardrails</p>}
                   </div>
                 </button>
               );
@@ -296,10 +296,10 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {step === 3 && (
         <div className="max-w-2xl">
           <h3 className="text-sm font-semibold text-white mb-3">Review</h3>
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 space-y-3 mb-4 text-sm text-slate-300">
-            <p><span className="text-slate-500">Industry:</span> {industryName || '—'}{industryName !== (currentTenant?.industry ?? '') ? <span className="text-[11px] text-slate-500"> (will be saved)</span> : ''}</p>
-            <p><span className="text-slate-500">New employees:</span> {template.hires.filter(h => pickedHires.has(h.name) && !existingDeNames.has(h.name.toLowerCase())).map(h => h.name).join(', ') || 'none'}</p>
-            <p><span className="text-slate-500">New guardrails:</span> {template.guardrails.filter(g => pickedRules.has(g.rule) && !existingRules.has(g.rule.toLowerCase())).length} rule(s)</p>
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5 space-y-3 mb-4 text-sm text-dt-support">
+            <p><span className="text-dt-muted">Industry:</span> {industryName || '—'}{industryName !== (currentTenant?.industry ?? '') ? <span className="text-[11px] text-dt-muted"> (will be saved)</span> : ''}</p>
+            <p><span className="text-dt-muted">New employees:</span> {template.hires.filter(h => pickedHires.has(h.name) && !existingDeNames.has(h.name.toLowerCase())).map(h => h.name).join(', ') || 'none'}</p>
+            <p><span className="text-dt-muted">New guardrails:</span> {template.guardrails.filter(g => pickedRules.has(g.rule) && !existingRules.has(g.rule.toLowerCase())).length} rule(s)</p>
           </div>
           <button
             onClick={() => void finish()}
@@ -315,7 +315,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {step < 3 && (
         <div className="flex items-center gap-3 mt-8">
           {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="px-4 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-sm transition-colors">
+            <button onClick={() => setStep(step - 1)} className="px-4 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-sm transition-colors">
               ← Back
             </button>
           )}

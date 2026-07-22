@@ -21,17 +21,17 @@ const TABS: { page: Page; label: string }[] = [
 ];
 
 const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => void }) => (
-  <div className="text-slate-200">
+  <div className="text-dt-body">
     <div className="px-6 pt-8">
       <h1 className="text-2xl font-semibold text-white">Governance</h1>
-      <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+      <p className="text-sm text-dt-support mt-1 max-w-2xl">
         The control room — the rules your workforce can never cross, the record of everything it did, and who can reach what.
       </p>
-      <div className="flex gap-1 mt-5 border-b border-slate-700/60 overflow-x-auto scrollbar-none">
+      <div className="flex gap-1 mt-5 border-b border-dt-border overflow-x-auto scrollbar-none">
         {TABS.map(t => (
           <button key={t.page} onClick={() => setPage(t.page)}
             className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.page ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+              tab === t.page ? 'border-indigo-500 text-white' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {t.label}
           </button>
         ))}

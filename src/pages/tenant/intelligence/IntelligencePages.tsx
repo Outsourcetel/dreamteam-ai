@@ -94,16 +94,16 @@ function LiveUsageStrip() {
     { label: 'LLM calls', value: usage.llm_calls },
   ];
   return (
-    <div className="bg-slate-800 border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
+    <div className="bg-dt-card border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
       <div className="flex items-center gap-4 flex-wrap">
         <span className="text-[9px] font-bold tracking-widest text-indigo-400 uppercase">Live usage (this month)</span>
         {items.map(m => (
-          <span key={m.label} className="text-xs text-slate-400">
-            {m.label} <span className="text-slate-200 font-semibold">{m.value.toLocaleString()}</span>
+          <span key={m.label} className="text-xs text-dt-support">
+            {m.label} <span className="text-dt-body font-semibold">{m.value.toLocaleString()}</span>
           </span>
         ))}
       </div>
-      <p className="text-[11px] text-slate-500 mt-1">
+      <p className="text-[11px] text-dt-muted mt-1">
         Real counters from your Digital Employee — recorded per inquiry by the answering service.
       </p>
     </div>
@@ -133,7 +133,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   const totalTasks = des.reduce((s, d) => s + d.tasksThisMonth, 0);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Performance Analytics"
         subtitle={`Org-level Digital Employee analytics — ${des.length} DEs · ${totalTasks.toLocaleString()} tasks this month · ${summary.aiResolution}% AI resolution`}
@@ -146,15 +146,15 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
       {(() => {
         const roi = computeRoi(activeCompanyId);
         return (
-          <div className="bg-slate-800 border border-emerald-500/25 rounded-xl px-4 py-3 mb-4" title={roi.formula}>
+          <div className="bg-dt-card border border-emerald-500/25 rounded-xl px-4 py-3 mb-4" title={roi.formula}>
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase">Monthly value summary</span>
-              <span className="text-sm text-slate-200">
+              <span className="text-sm text-dt-body">
                 {roi.tasks.toLocaleString()} tasks · ~{roiK(roi.humanCost)} equivalent human cost · {roiK(roi.deCost)} DE cost —{' '}
                 <span className="text-emerald-300 font-semibold">{roi.savingsPct}% savings (~{roiK(roi.savings)})</span>
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-dt-muted mt-1">
               Estimate vs human baseline: sum over each DE of tasks × cost-per-task, against the same tasks at the per-DE human baseline shown below. No precision beyond what this page already asserts.
             </p>
           </div>
@@ -162,15 +162,15 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
       })()}
 
       {/* Company benchmark row — reuses WorkforceDEsPage wording */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap mb-6">
-        <span className="text-xs text-slate-500">Company average:</span>
-        <span className="text-xs text-slate-400">Resolution <span className="text-slate-200">{bench.resolution}%</span></span>
-        <span className="text-slate-600">|</span>
-        <span className="text-xs text-slate-400">Confidence <span className="text-slate-200">{bench.confidence}%</span></span>
-        <span className="text-slate-600">|</span>
-        <span className="text-xs text-slate-400">Escalation <span className="text-slate-200">{bench.escalation}%</span></span>
-        <span className="text-slate-600">|</span>
-        <span className="text-xs text-slate-400">AI Resolution (org) <span className="text-slate-200">{summary.aiResolution}%</span></span>
+      <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap mb-6">
+        <span className="text-xs text-dt-muted">Company average:</span>
+        <span className="text-xs text-dt-support">Resolution <span className="text-dt-body">{bench.resolution}%</span></span>
+        <span className="text-dt-faint">|</span>
+        <span className="text-xs text-dt-support">Confidence <span className="text-dt-body">{bench.confidence}%</span></span>
+        <span className="text-dt-faint">|</span>
+        <span className="text-xs text-dt-support">Escalation <span className="text-dt-body">{bench.escalation}%</span></span>
+        <span className="text-dt-faint">|</span>
+        <span className="text-xs text-dt-support">AI Resolution (org) <span className="text-dt-body">{summary.aiResolution}%</span></span>
       </div>
 
       {/* Workforce outcome roll-up — mirrors the live page's headline */}
@@ -195,74 +195,74 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
         {des.map(de => {
           const autonomy = de.actionsTaken > 0 ? Math.round(100 * de.autoActions / de.actionsTaken) : 0;
           return (
-            <div key={de.name} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <div key={de.name} className="bg-dt-card border border-dt-border rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
                   <div>
                     <p className="text-sm font-semibold text-white">{de.name}</p>
-                    <p className="text-[11px] text-slate-500">{de.role}</p>
+                    <p className="text-[11px] text-dt-muted">{de.role}</p>
                   </div>
                 </div>
-                <button onClick={() => setPage('workforce_des')} className="text-xs text-slate-500 hover:text-indigo-300 transition-colors">Profile →</button>
+                <button onClick={() => setPage('workforce_des')} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Profile →</button>
               </div>
 
               <div className="flex items-end justify-between mb-3">
                 <div>
                   <p className="text-3xl font-bold text-emerald-400 tabular-nums">{de.actionsTaken}</p>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">actions taken</p>
+                  <p className="text-[10px] text-dt-muted uppercase tracking-wide">actions taken</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-slate-200 tabular-nums">{de.tasksThisMonth}</p>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wide">inquiries handled</p>
+                  <p className="text-lg font-semibold text-dt-body tabular-nums">{de.tasksThisMonth}</p>
+                  <p className="text-[10px] text-dt-muted uppercase tracking-wide">inquiries handled</p>
                 </div>
                 <div className="text-right">
                   <Sparkline data={de.trend} />
-                  <p className="text-[10px] text-slate-600 mt-0.5">6-mo trend</p>
+                  <p className="text-[10px] text-dt-faint mt-0.5">6-mo trend</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-4 gap-2 mb-2">
                 {[
                   { label: 'On its own', value: de.autoActions, color: 'text-emerald-400' },
-                  { label: 'After approval', value: de.actionsTaken - de.autoActions, color: 'text-slate-200' },
+                  { label: 'After approval', value: de.actionsTaken - de.autoActions, color: 'text-dt-body' },
                   { label: 'Sent to human', value: de.sentToHuman, color: 'text-amber-300' },
-                  { label: 'Blocked', value: de.blockedActions, color: de.blockedActions > 0 ? 'text-rose-300' : 'text-slate-400' },
+                  { label: 'Blocked', value: de.blockedActions, color: de.blockedActions > 0 ? 'text-rose-300' : 'text-dt-support' },
                 ].map(x => (
-                  <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                  <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                     <p className={`text-sm font-semibold tabular-nums ${x.color}`}>{x.value}</p>
-                    <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                    <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                   </div>
                 ))}
               </div>
               <div className="mb-3">
-                <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                <div className="flex items-center justify-between text-[10px] text-dt-muted mb-1">
                   <span>Autonomy — done without a human</span>
-                  <span className="text-slate-300 font-medium">{autonomy}%</span>
+                  <span className="text-dt-support font-medium">{autonomy}%</span>
                 </div>
-                <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-dt-page overflow-hidden">
                   <div className="h-full rounded-full bg-emerald-500" style={{ width: `${autonomy}%` }} />
                 </div>
               </div>
 
-              <div className="border-t border-slate-700 pt-3">
-                <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">Answer quality</p>
+              <div className="border-t border-dt-border pt-3">
+                <p className="text-[10px] text-dt-muted uppercase tracking-wide mb-2">Answer quality</p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: 'Resolution', value: `${de.resolutionRate}%`, color: metricColor('resolution', de.resolutionRate) },
                     { label: 'Confidence', value: `${de.confidence}%`, color: metricColor('confidence', de.confidence) },
                     { label: 'Escalation', value: `${de.escalationRate}%`, color: metricColor('escalation', de.escalationRate) },
                   ].map(x => (
-                    <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                    <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                       <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
-                      <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                      <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-900 rounded-lg px-3 py-2">
+              <div className="mt-2 flex items-center justify-between text-[11px] text-dt-muted bg-dt-page rounded-lg px-3 py-2">
                 <span>{de.tasksThisMonth} tasks this month</span>
-                <span className="text-slate-300">{de.costPerTask} / task</span>
+                <span className="text-dt-support">{de.costPerTask} / task</span>
               </div>
             </div>
           );
@@ -271,9 +271,9 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Cost efficiency */}
-        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+        <div className="bg-dt-card border border-dt-border rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Cost efficiency</h3>
-          <p className="text-xs text-slate-500 mb-4">$ per resolved task vs human baseline</p>
+          <p className="text-xs text-dt-muted mb-4">$ per resolved task vs human baseline</p>
           <div className="space-y-3">
             {des.map(de => {
               const deCost = parseFloat(de.costPerTask.replace('$', ''));
@@ -282,17 +282,17 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
               return (
                 <div key={de.name}>
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-slate-300">{de.name}</span>
-                    <span className="text-slate-400">
+                    <span className="text-dt-support">{de.name}</span>
+                    <span className="text-dt-support">
                       <span className="text-emerald-400 font-medium">{de.costPerTask}</span>
-                      <span className="text-slate-600"> vs </span>
-                      <span className="text-slate-400">{de.humanBaseline} human baseline</span>
+                      <span className="text-dt-faint"> vs </span>
+                      <span className="text-dt-support">{de.humanBaseline} human baseline</span>
                     </span>
                   </div>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-2 bg-dt-panel rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(pct, 3)}%` }} />
                   </div>
-                  <p className="text-[10px] text-slate-600 mt-0.5">{100 - pct}% cheaper than the human baseline for this work</p>
+                  <p className="text-[10px] text-dt-faint mt-0.5">{100 - pct}% cheaper than the human baseline for this work</p>
                 </div>
               );
             })}
@@ -300,15 +300,15 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
 
         {/* CSAT proxy */}
-        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+        <div className="bg-dt-card border border-dt-border rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-white mb-1">CSAT proxy</h3>
-          <p className="text-xs text-slate-500 mb-4">Derived from thumbs-up ratio, reopen rate, and escalation outcomes</p>
+          <p className="text-xs text-dt-muted mb-4">Derived from thumbs-up ratio, reopen rate, and escalation outcomes</p>
           <div className="space-y-2">
             {des.map((de, i) => {
               const csat = [4.6, 4.4, 4.1, 4.5, 4.7][i] ?? 4.3;
               return (
-                <div key={de.name} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
-                  <span className="text-xs text-slate-300">{de.name}</span>
+                <div key={de.name} className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5">
+                  <span className="text-xs text-dt-support">{de.name}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-amber-400 text-xs">{'★'.repeat(Math.round(csat))}{'☆'.repeat(5 - Math.round(csat))}</span>
                     <span className="text-sm font-medium text-white">{csat.toFixed(1)}</span>
@@ -317,7 +317,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
               );
             })}
           </div>
-          <p className="text-[11px] text-slate-600 mt-3">Proxy only — connect a survey source in Connectors for direct CSAT.</p>
+          <p className="text-[11px] text-dt-faint mt-3">Proxy only — connect a survey source in Connectors for direct CSAT.</p>
         </div>
       </div>
     </div>
@@ -333,12 +333,12 @@ const RANGE_OPTIONS: { label: string; days: number | null }[] = [
 ];
 function RangeSelector({ value, onChange }: { value: number | null; onChange: (d: number | null) => void }) {
   return (
-    <div className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+    <div className="flex items-center gap-0.5 bg-dt-card border border-dt-border rounded-lg p-0.5">
       {RANGE_OPTIONS.map(o => (
         <button
           key={o.label}
           onClick={() => onChange(o.days)}
-          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${value === o.days ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${value === o.days ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}
         >
           {o.label}
         </button>
@@ -349,10 +349,10 @@ function RangeSelector({ value, onChange }: { value: number | null; onChange: (d
 
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
+    <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-3">
       <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-white'}`}>{value}</div>
-      <div className="text-[11px] text-slate-400 mt-0.5">{label}</div>
-      {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+      <div className="text-[11px] text-dt-support mt-0.5">{label}</div>
+      {sub && <div className="text-[10px] text-dt-muted mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -407,7 +407,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <PageHeader title="Performance" subtitle="What your workforce got done" />
           <RangeSelector value={range} onChange={setRange} />
@@ -420,7 +420,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
   const rangeLabel = RANGE_OPTIONS.find(o => o.days === range)?.label ?? '30 days';
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <PageHeader
           title="Performance"
@@ -438,42 +438,42 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
         <StatTile label="Actions taken" value={totalExecuted.toLocaleString()} tone="text-emerald-400"
           sub={`${totalAuto} on their own · ${Math.max(0, totalExecuted - totalAuto)} after approval`} />
         <StatTile label="Autonomy" value={workforceAutonomy != null ? `${workforceAutonomy}%` : '—'}
-          tone={workforceAutonomy != null && workforceAutonomy >= 60 ? 'text-emerald-400' : 'text-slate-200'}
+          tone={workforceAutonomy != null && workforceAutonomy >= 60 ? 'text-emerald-400' : 'text-dt-body'}
           sub="of actions, done without a human" />
         <StatTile label="Sent to your team" value={totalSentHuman.toLocaleString()}
-          tone={totalSentHuman > 0 ? 'text-amber-300' : 'text-slate-200'} sub="approvals routed to people" />
+          tone={totalSentHuman > 0 ? 'text-amber-300' : 'text-dt-body'} sub="approvals routed to people" />
         <StatTile label="AI cost" value={`$${totalCostUsd.toFixed(2)}`} sub={`${totalCalls.toLocaleString()} model calls`} />
       </div>
 
       {/* Outcome metering (#15): per-resolution value, escalations free.
           Shown only once real outcomes exist — no fabricated revenue. */}
       {metering && (metering.totals.resolutions > 0 || metering.totals.escalations > 0) && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
             <p className="text-sm font-semibold text-white">Outcome value</p>
-            <p className="text-[11px] text-slate-500">metered at ${(metering.price_per_resolution_cents / 100).toFixed(2)} per resolution · escalations to your team are free</p>
+            <p className="text-[11px] text-dt-muted">metered at ${(metering.price_per_resolution_cents / 100).toFixed(2)} per resolution · escalations to your team are free</p>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <p className="text-2xl font-semibold text-emerald-400">{metering.totals.resolutions.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">resolutions delivered</p>
+              <p className="text-[11px] text-dt-muted mt-0.5">resolutions delivered</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-slate-200">{metering.totals.escalations.toLocaleString()}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">handed to your team (free)</p>
+              <p className="text-2xl font-semibold text-dt-body">{metering.totals.escalations.toLocaleString()}</p>
+              <p className="text-[11px] text-dt-muted mt-0.5">handed to your team (free)</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-white">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">metered value this period</p>
+              <p className="text-[11px] text-dt-muted mt-0.5">metered value this period</p>
             </div>
           </div>
           {metering.by_de.length > 1 && (
-            <div className="mt-3 pt-3 border-t border-slate-700/60 space-y-1">
+            <div className="mt-3 pt-3 border-t border-dt-border space-y-1">
               {metering.by_de.slice(0, 6).map((d, i) => (
                 <div key={d.de_id ?? i} className="flex items-center gap-3 text-xs">
-                  <span className="text-slate-300 flex-1 truncate">{d.name}</span>
-                  <span className="text-slate-500">{d.resolutions} resolved · {d.escalations} handed off</span>
-                  <span className="text-slate-200 font-medium w-16 text-right">${(d.amount_cents / 100).toFixed(2)}</span>
+                  <span className="text-dt-support flex-1 truncate">{d.name}</span>
+                  <span className="text-dt-muted">{d.resolutions} resolved · {d.escalations} handed off</span>
+                  <span className="text-dt-body font-medium w-16 text-right">${(d.amount_cents / 100).toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -482,8 +482,8 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       )}
 
       {(totalBlocked > 0 || totalFailed > 0) && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 mb-6 text-xs text-slate-400 flex items-center gap-4 flex-wrap">
-          <span className="text-slate-500">Safety net this period:</span>
+        <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-2.5 mb-6 text-xs text-dt-support flex items-center gap-4 flex-wrap">
+          <span className="text-dt-muted">Safety net this period:</span>
           {totalBlocked > 0 && <span><span className="text-rose-300 font-medium">{totalBlocked}</span> action{totalBlocked === 1 ? '' : 's'} blocked by a guardrail or access rule</span>}
           {totalFailed > 0 && <span><span className="text-red-400 font-medium">{totalFailed}</span> failed and recorded honestly</span>}
         </div>
@@ -513,36 +513,36 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
             const hasActivity = inquiriesHandled > 0 || (a && a.total_events > 0);
             const acted = a?.executed ?? 0;
             return (
-              <div key={de.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+              <div key={de.id} className="bg-dt-card border border-dt-border rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
                     <div>
                       <p className="text-sm font-semibold text-white">{de.name}</p>
-                      <p className="text-[11px] text-slate-500">{de.description || de.category}</p>
+                      <p className="text-[11px] text-dt-muted">{de.description || de.category}</p>
                     </div>
                   </div>
-                  <button onClick={() => setPage('workforce_des')} className="text-xs text-slate-500 hover:text-indigo-300 transition-colors">Profile →</button>
+                  <button onClick={() => setPage('workforce_des')} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Profile →</button>
                 </div>
 
                 {!hasActivity ? (
-                  <p className="text-xs text-slate-600 py-4 text-center">No activity recorded yet.</p>
+                  <p className="text-xs text-dt-faint py-4 text-center">No activity recorded yet.</p>
                 ) : (
                   <>
                     {/* What it DID — the headline */}
                     <div className="flex items-end justify-between mb-3">
                       <div>
                         <p className="text-3xl font-bold text-emerald-400 tabular-nums">{acted}</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">actions taken</p>
+                        <p className="text-[10px] text-dt-muted uppercase tracking-wide">actions taken</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-semibold text-slate-200 tabular-nums">{inquiriesHandled}</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wide">inquiries handled</p>
+                        <p className="text-lg font-semibold text-dt-body tabular-nums">{inquiriesHandled}</p>
+                        <p className="text-[10px] text-dt-muted uppercase tracking-wide">inquiries handled</p>
                       </div>
                       {trendValues.length > 1 && (
                         <div className="text-right">
                           <Sparkline data={trendValues} />
-                          <p className="text-[10px] text-slate-600 mt-0.5">{trend.length}-wk trend</p>
+                          <p className="text-[10px] text-dt-faint mt-0.5">{trend.length}-wk trend</p>
                         </div>
                       )}
                     </div>
@@ -553,23 +553,23 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                         <div className="grid grid-cols-4 gap-2 mb-2">
                           {[
                             { label: 'On its own', value: a.auto_executed, color: 'text-emerald-400' },
-                            { label: 'After approval', value: a.approved_after_gate, color: 'text-slate-200' },
-                            { label: 'Sent to human', value: a.sent_to_human, color: a.sent_to_human > 0 ? 'text-amber-300' : 'text-slate-400' },
-                            { label: 'Blocked', value: a.blocked + a.failed, color: (a.blocked + a.failed) > 0 ? 'text-rose-300' : 'text-slate-400' },
+                            { label: 'After approval', value: a.approved_after_gate, color: 'text-dt-body' },
+                            { label: 'Sent to human', value: a.sent_to_human, color: a.sent_to_human > 0 ? 'text-amber-300' : 'text-dt-support' },
+                            { label: 'Blocked', value: a.blocked + a.failed, color: (a.blocked + a.failed) > 0 ? 'text-rose-300' : 'text-dt-support' },
                           ].map(x => (
-                            <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                            <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                               <p className={`text-sm font-semibold tabular-nums ${x.color}`}>{x.value}</p>
-                              <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                              <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                             </div>
                           ))}
                         </div>
                         {a.autonomy_rate != null && (
                           <div className="mb-3">
-                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                            <div className="flex items-center justify-between text-[10px] text-dt-muted mb-1">
                               <span>Autonomy — done without a human</span>
-                              <span className="text-slate-300 font-medium">{a.autonomy_rate}%</span>
+                              <span className="text-dt-support font-medium">{a.autonomy_rate}%</span>
                             </div>
-                            <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                            <div className="h-1.5 rounded-full bg-dt-page overflow-hidden">
                               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${a.autonomy_rate}%` }} />
                             </div>
                           </div>
@@ -578,28 +578,28 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                     )}
 
                     {/* Quality — the second dimension, not the headline */}
-                    <div className="border-t border-slate-700 pt-3">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">Answer quality</p>
+                    <div className="border-t border-dt-border pt-3">
+                      <p className="text-[10px] text-dt-muted uppercase tracking-wide mb-2">Answer quality</p>
                       <div className="grid grid-cols-3 gap-2">
                         {iq && iq.total_decisions > 0 ? [
                           { label: 'Resolution', value: `${iq.resolution_rate}%`, color: metricColor('resolution', iq.resolution_rate) },
                           { label: 'Confidence', value: `${iq.avg_confidence}%`, color: metricColor('confidence', iq.avg_confidence) },
-                          { label: 'CSAT (all-time)', value: s && s.total_ratings > 0 ? `${s.csat_pct}%` : '—', color: s && s.total_ratings > 0 ? (s.csat_pct >= 70 ? 'text-emerald-400' : s.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400') : 'text-slate-500' },
+                          { label: 'CSAT (all-time)', value: s && s.total_ratings > 0 ? `${s.csat_pct}%` : '—', color: s && s.total_ratings > 0 ? (s.csat_pct >= 70 ? 'text-emerald-400' : s.csat_pct >= 40 ? 'text-amber-400' : 'text-red-400') : 'text-dt-muted' },
                         ].map(x => (
-                          <div key={x.label} className="bg-slate-900 rounded-lg px-2 py-2 text-center">
+                          <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                             <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
-                            <p className="text-[9px] text-slate-500 uppercase tracking-wide">{x.label}</p>
+                            <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                           </div>
                         )) : (
-                          <p className="col-span-3 text-[11px] text-slate-600 text-center py-1">This employee acts but hasn't answered inquiries yet.</p>
+                          <p className="col-span-3 text-[11px] text-dt-faint text-center py-1">This employee acts but hasn't answered inquiries yet.</p>
                         )}
                       </div>
                     </div>
 
-                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-900 rounded-lg px-3 py-2">
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-dt-muted bg-dt-page rounded-lg px-3 py-2">
                       <span>{m?.high_frustration_count ? `${m.high_frustration_count} auto-escalated for frustration` : `${a?.total_events ?? 0} action event(s) logged`}</span>
                       {c && c.total_calls > 0 && (
-                        <span className="text-slate-300">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
+                        <span className="text-dt-support">${(c.total_cost_usd / c.total_calls).toFixed(4)} / call</span>
                       )}
                     </div>
                   </>
@@ -743,7 +743,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
   });
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Business Insights"
         subtitle="Anomaly detection, retraining recommendations, and configuration-drift signals across the DE workforce"
@@ -752,7 +752,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Trend cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {trendCards.map(t => (
-          <div key={t.name} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
+          <div key={t.name} className="bg-dt-card border border-dt-border rounded-xl p-4 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-white">{t.name}</p>
               <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -772,17 +772,17 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
             className={`rounded-xl border p-4 ${
               ins.severity === 'high' ? 'border-red-500/30 bg-red-500/5'
               : ins.severity === 'medium' ? 'border-amber-500/25 bg-amber-500/5'
-              : 'border-slate-700 bg-slate-800'
+              : 'border-dt-border bg-dt-card'
             }`}
           >
             <div className="flex items-center gap-2 flex-wrap mb-1.5">
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${KIND_META[ins.kind]?.cls}`}>{KIND_META[ins.kind]?.label ?? ins.kind}</span>
               <span className="text-sm font-medium text-white">{ins.title}</span>
               <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${
-                ins.severity === 'high' ? 'bg-red-500/15 text-red-300' : ins.severity === 'medium' ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-700 text-slate-400'
+                ins.severity === 'high' ? 'bg-red-500/15 text-red-300' : ins.severity === 'medium' ? 'bg-amber-500/15 text-amber-300' : 'bg-dt-panel text-dt-support'
               }`}>{ins.severity}</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed mb-2">{ins.detail}</p>
+            <p className="text-xs text-dt-support leading-relaxed mb-2">{ins.detail}</p>
             <button onClick={() => setPage(ins.page)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               {ins.pageLabel} →
             </button>
@@ -863,7 +863,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <PageHeader title="Business Insights" subtitle="What needs your attention, and what to do about it" />
           <RangeSelector value={range} onChange={setRange} />
@@ -877,7 +877,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     || actionFailures.length > 0 || approvalBottlenecks.length > 0;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <PageHeader
           title="Business Insights"
@@ -890,31 +890,31 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           traffic from raw rows; definitions travel with the payload.
           Rendered only when there is real measured work. */}
       {benchmark && (benchmark.outcomes.resolutions + benchmark.outcomes.escalations > 0 || benchmark.judged_quality.graded > 0) && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
             <p className="text-sm font-semibold text-white">Benchmark — honest numbers</p>
-            <p className="text-[11px] text-slate-500">all traffic counted, nothing cherry-picked · recountable from raw data</p>
+            <p className="text-[11px] text-dt-muted">all traffic counted, nothing cherry-picked · recountable from raw data</p>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <p className="text-2xl font-semibold text-emerald-400">{benchmark.outcomes.resolution_rate_pct != null ? `${benchmark.outcomes.resolution_rate_pct}%` : '—'}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.resolution_rate_pct}>resolution rate — every escalation & block counts in the denominator</p>
+              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.resolution_rate_pct}>resolution rate — every escalation & block counts in the denominator</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-slate-200">{benchmark.judged_quality.pass_rate_pct != null ? `${benchmark.judged_quality.pass_rate_pct}%` : '—'}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.judged_quality}>judged quality · {benchmark.judged_quality.graded} answer{benchmark.judged_quality.graded === 1 ? '' : 's'} graded by an independent AI judge</p>
+              <p className="text-2xl font-semibold text-dt-body">{benchmark.judged_quality.pass_rate_pct != null ? `${benchmark.judged_quality.pass_rate_pct}%` : '—'}</p>
+              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.judged_quality}>judged quality · {benchmark.judged_quality.graded} answer{benchmark.judged_quality.graded === 1 ? '' : 's'} graded by an independent AI judge</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-slate-200">{benchmark.csat.positive_pct != null ? `${benchmark.csat.positive_pct}%` : '—'}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.csat}>CSAT positive · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
+              <p className="text-2xl font-semibold text-dt-body">{benchmark.csat.positive_pct != null ? `${benchmark.csat.positive_pct}%` : '—'}</p>
+              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.csat}>CSAT positive · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5" title={benchmark.definitions.cost_per_resolution_cents}>real AI cost per resolution</p>
+              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.cost_per_resolution_cents}>real AI cost per resolution</p>
             </div>
           </div>
           {benchmark.capability.status !== 'no_simulation_yet' && (
-            <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-700/60">
+            <p className="text-[11px] text-dt-muted mt-3 pt-3 border-t border-dt-border">
               Latest certification-grade simulation: {benchmark.capability.passed}/{benchmark.capability.total} passed
               {benchmark.capability.avg_score != null ? ` · avg score ${Math.round(Number(benchmark.capability.avg_score))}` : ''} · {benchmark.capability.status}
             </p>
@@ -925,7 +925,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       {trendCards.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           {trendCards.map(t => (
-            <div key={t.name} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex items-center justify-between">
+            <div key={t.name} className="bg-dt-card border border-dt-border rounded-xl p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-white">{t.name}</p>
                 <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -950,7 +950,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 <span className="text-sm font-medium text-white">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
                 <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.severity}</span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-dt-support leading-relaxed">
                 In the last 30 days. This usually means a connected system rejected the request — often expired credentials or a downstream error. Check the connector.
               </p>
               <button onClick={() => setPage('systems_connectors')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open Connectors →</button>
@@ -964,7 +964,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
                 <span className="text-sm font-medium text-white">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-dt-support leading-relaxed">
                 {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
                 If your team keeps approving these, raise {b.name}'s trust dial to clear the queue — guardrails still cap what it can do.
               </p>
@@ -978,7 +978,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
                 <span className="text-sm font-medium text-white">{a.deName} escalation rate spiked</span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">{a.detail}</p>
+              <p className="text-xs text-dt-support leading-relaxed">{a.detail}</p>
             </div>
           ))}
 
@@ -990,7 +990,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                   {g.de_name ? `${g.de_name}: ${g.gated_count + g.blocked_count} guardrail event(s)` : 'Guardrail activity recorded'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-dt-support leading-relaxed">
                 {g.de_name
                   ? `${g.gated_count} gated, ${g.blocked_count} blocked in the last 30 days.`
                   : `${g.tenant_total_events} guardrail event(s) recorded tenant-wide, but none could be matched to a currently-named Digital Employee (likely renamed since).`}
@@ -1007,7 +1007,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
                 <span className="text-sm font-medium text-white">{e.failed} of {e.total} scenarios failed</span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-dt-support leading-relaxed">
                 {e.trigger} eval run on {new Date(e.started_at).toLocaleDateString()} — {e.passed} passed, {e.failed} failed.
                 Tenant-wide (Proving Ground runs aren't yet attributed to one Digital Employee).
               </p>

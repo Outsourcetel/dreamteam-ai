@@ -84,17 +84,17 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
     <div className="space-y-6">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">Authority Configuration</h4>
-        <p className="text-xs text-slate-400">Define what {de.name} can autonomously approve or must escalate.</p>
+        <p className="text-xs text-dt-support">Define what {de.name} can autonomously approve or must escalate.</p>
       </div>
 
       {/* Refund Authority */}
-      <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 space-y-3">
+      <div className="bg-dt-card border border-dt-border rounded-lg p-4 space-y-3">
         <div>
-          <label className="text-xs font-medium text-slate-400 block mb-2">
+          <label className="text-xs font-medium text-dt-support block mb-2">
             Maximum refund without approval
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">$</span>
+            <span className="text-xs text-dt-support">$</span>
             <input
               type="number"
               min="0"
@@ -102,23 +102,23 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
               placeholder="1000"
               value={config.refund_limit || ''}
               onChange={e => setConfig({ ...config, refund_limit: e.target.value ? Number(e.target.value) : undefined })}
-              className="flex-1 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+              className="flex-1 bg-dt-page border border-dt-border-strong rounded px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500"
             />
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-dt-muted mt-2">
             Refunds above this amount will be escalated to a manager for approval.
           </p>
         </div>
       </div>
 
       {/* Commitment Rules */}
-      <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 space-y-3">
+      <div className="bg-dt-card border border-dt-border rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <label className="text-xs font-medium text-slate-400 block">
+            <label className="text-xs font-medium text-dt-support block">
               Commitment Rules (Delivery Dates)
             </label>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-dt-muted mt-1">
               Define when {de.name} can promise delivery dates.
             </p>
           </div>
@@ -127,23 +127,23 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
         {config.commitment_rules && config.commitment_rules.length > 0 ? (
           <div className="space-y-2">
             {config.commitment_rules.map(rule => (
-              <div key={rule.id} className="bg-slate-900/50 border border-slate-600 rounded p-2 flex items-start justify-between">
+              <div key={rule.id} className="bg-dt-inset border border-dt-border-strong rounded p-2 flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-mono text-slate-300">{rule.condition}</p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs font-mono text-dt-support">{rule.condition}</p>
+                  <p className="text-xs text-dt-support mt-1">
                     → {rule.action === 'can_commit' ? '✓ Can promise delivery date' : '→ Escalate to Product Manager'}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2 flex-shrink-0">
                   <button
                     onClick={() => setEditingRule(rule)}
-                    className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                    className="px-2 py-1 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDeleteCommitmentRule(rule.id)}
-                    className="px-2 py-1 text-xs bg-slate-700 hover:bg-red-900/40 text-red-300 rounded transition-colors"
+                    className="px-2 py-1 text-xs bg-dt-panel hover:bg-red-900/40 text-red-300 rounded transition-colors"
                   >
                     Remove
                   </button>
@@ -152,12 +152,12 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-500">No commitment rules defined. {de.name} will never promise delivery dates.</p>
+          <p className="text-xs text-dt-muted">No commitment rules defined. {de.name} will never promise delivery dates.</p>
         )}
 
         <button
           onClick={handleAddCommitmentRule}
-          className="w-full px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors text-center"
+          className="w-full px-3 py-2 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors text-center"
         >
           + Add Commitment Rule
         </button>
@@ -166,32 +166,32 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
       {/* Commitment Rule Editor Modal */}
       {editingRule && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => setEditingRule(null)} />
+          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setEditingRule(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-4 space-y-3">
+            <div className="pointer-events-auto w-full max-w-md bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl p-4 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-white">
                   {config.commitment_rules?.find(r => r.id === editingRule.id) ? 'Edit Rule' : 'Add Commitment Rule'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">When should {de.name} be allowed to commit?</p>
+                <p className="text-xs text-dt-muted mt-1">When should {de.name} be allowed to commit?</p>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Condition</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Condition</label>
                 <input
                   placeholder="e.g., issue_type='bug_fix' AND severity='critical'"
                   value={editingRule.condition}
                   onChange={e => setEditingRule({ ...editingRule, condition: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Action</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Action</label>
                 <select
                   value={editingRule.action}
                   onChange={e => setEditingRule({ ...editingRule, action: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 >
                   <option value="can_commit">✓ Can promise delivery date</option>
                   <option value="escalate_to_pm">→ Escalate to Product Manager</option>
@@ -213,7 +213,7 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
                 </button>
                 <button
                   onClick={() => setEditingRule(null)}
-                  className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+                  className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded text-xs transition-colors"
                 >
                   Cancel
                 </button>
@@ -224,7 +224,7 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {/* Save Button */}
-      <div className="flex items-center gap-2 pt-3 border-t border-slate-700">
+      <div className="flex items-center gap-2 pt-3 border-t border-dt-border">
         <button
           onClick={handleSave}
           disabled={saving}

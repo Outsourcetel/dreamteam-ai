@@ -21,24 +21,24 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 type Tab = 'command' | 'portfolio' | 'cases';
 
 const RISK_CLS: Record<string, string> = {
-  critical: 'text-rose-400', high: 'text-amber-300', medium: 'text-slate-300', low: 'text-emerald-400',
+  critical: 'text-rose-400', high: 'text-amber-300', medium: 'text-dt-support', low: 'text-emerald-400',
 };
 
 function dateChip(dateStr: string | null): { label: string; cls: string } {
   const d = daysUntil(dateStr);
-  if (dateStr === null || d === null) return { label: '—', cls: 'text-slate-600' };
+  if (dateStr === null || d === null) return { label: '—', cls: 'text-dt-faint' };
   if (d < 0) return { label: `${Math.abs(d)}d overdue`, cls: 'text-rose-400' };
   if (d <= 14) return { label: `in ${d}d`, cls: 'text-amber-300' };
   if (d <= 60) return { label: `in ${d}d`, cls: 'text-indigo-300' };
-  return { label: `in ${d}d`, cls: 'text-slate-400' };
+  return { label: `in ${d}d`, cls: 'text-dt-support' };
 }
 
 function StatCard({ label, value, sub, color = 'text-white' }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{label}</p>
+    <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+      <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
       <p className={`text-xl font-bold ${color}`}>{value}</p>
-      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
+      {sub && <p className="text-xs text-dt-muted mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -87,20 +87,20 @@ function CaseDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xl bg-slate-900 border-l border-slate-700 h-full overflow-auto p-6" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-xl bg-dt-page border-l border-dt-border h-full overflow-auto p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4 gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 uppercase tracking-wide">{motionLabel(kase.motion)}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300">{kase.party_side === 'buy' ? 'Vendor' : 'Customer'}</span>
-              {kase.risk_level && <span className={`text-[10px] px-2 py-0.5 rounded bg-slate-800 ${RISK_CLS[kase.risk_level]}`}>{kase.risk_level} risk</span>}
+              <span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{kase.party_side === 'buy' ? 'Vendor' : 'Customer'}</span>
+              {kase.risk_level && <span className={`text-[10px] px-2 py-0.5 rounded bg-dt-card ${RISK_CLS[kase.risk_level]}`}>{kase.risk_level} risk</span>}
             </div>
             <h2 className="text-lg font-semibold text-white">{kase.title || kase.counterparty_name || 'Continuity case'}</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-dt-muted mt-0.5">
               {kase.counterparty_name || '—'}{kase.agreement_type ? ` · ${kase.agreement_type.replace(/_/g, ' ')}` : ''}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-sm">✕</button>
+          <button onClick={onClose} className="text-dt-support hover:text-white text-sm">✕</button>
         </div>
 
         {/* Overview */}
@@ -111,9 +111,9 @@ function CaseDrawer({
         </div>
 
         {/* Gated actions */}
-        <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 mb-5">
+        <div className="rounded-xl border border-dt-border bg-dt-card p-4 mb-5">
           <h3 className="text-sm font-semibold text-white mb-1">Work the case</h3>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-[11px] text-dt-muted mb-3">
             Every action runs through the approval gate — money and stage changes route to Human Tasks; safe logs may auto-apply. Nothing is written directly.
           </p>
           {!canAct && <p className="text-xs text-amber-300 mb-3">No employee is assigned to this case, so actions are disabled.</p>}
@@ -121,7 +121,7 @@ function CaseDrawer({
             {/* Advance stage */}
             <div className="flex gap-2">
               <select value={toStage} onChange={e => setToStage(e.target.value)} disabled={!canAct || busy}
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 disabled:opacity-50">
+                className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body disabled:opacity-50">
                 <option value="">Advance to stage…</option>
                 {stages.map(s => <option key={s.stage_key} value={s.stage_key}>{s.label}</option>)}
               </select>
@@ -133,18 +133,18 @@ function CaseDrawer({
             {/* Log activity */}
             <div className="flex gap-2">
               <input value={activity} onChange={e => setActivity(e.target.value)} disabled={!canAct || busy} placeholder="Log an activity…"
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 disabled:opacity-50" />
+                className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body disabled:opacity-50" />
               <button onClick={() => activity.trim() && act('log_activity', { summary: activity.trim() })} disabled={!canAct || busy || !activity.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg border text-slate-300 border-slate-600 hover:border-slate-400 disabled:opacity-40 transition-all">
+                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-slate-400 disabled:opacity-40 transition-all">
                 Log
               </button>
             </div>
             {/* Set next step */}
             <div className="flex gap-2">
               <input value={nextStep} onChange={e => setNextStep(e.target.value)} disabled={!canAct || busy} placeholder="Set the next step…"
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 disabled:opacity-50" />
+                className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body disabled:opacity-50" />
               <button onClick={() => nextStep.trim() && act('set_next_step', { next_step: nextStep.trim() })} disabled={!canAct || busy || !nextStep.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg border text-slate-300 border-slate-600 hover:border-slate-400 disabled:opacity-40 transition-all">
+                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-slate-400 disabled:opacity-40 transition-all">
                 Set
               </button>
             </div>
@@ -154,17 +154,17 @@ function CaseDrawer({
         {/* Timeline */}
         <h3 className="text-sm font-semibold text-white mb-2">Case timeline</h3>
         {loadingEvents ? (
-          <p className="text-xs text-slate-500">Loading…</p>
+          <p className="text-xs text-dt-muted">Loading…</p>
         ) : events.length === 0 ? (
-          <p className="text-xs text-slate-500">No activity yet.</p>
+          <p className="text-xs text-dt-muted">No activity yet.</p>
         ) : (
           <ol className="space-y-2">
             {events.map(e => (
               <li key={e.id} className="flex items-start gap-2 text-xs">
                 <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.to_stage ? 'bg-amber-400' : 'bg-slate-500'}`} />
                 <div className="min-w-0">
-                  <p className="text-slate-200">{e.summary}</p>
-                  <p className="text-[10px] text-slate-500">{e.actor_kind} · {new Date(e.created_at).toLocaleString()}</p>
+                  <p className="text-dt-body">{e.summary}</p>
+                  <p className="text-[10px] text-dt-muted">{e.actor_kind} · {new Date(e.created_at).toLocaleString()}</p>
                 </div>
               </li>
             ))}
@@ -235,19 +235,19 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
   }, [agreements, sortKey]);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Commercial Continuity</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           {liveTenantName || 'Your company'} · One employee working every motion — renewals, reorders, warranties and vendor contracts — off each agreement's own dates. Money and stage changes are always human-gated.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 border-b border-slate-700">
+      <div className="flex gap-1 mb-5 border-b border-dt-border">
         {([['command', 'Command Center'], ['portfolio', 'Portfolio'], ['cases', 'Case Workspace']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-500 text-white' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {label}
           </button>
         ))}
@@ -278,14 +278,14 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                 <StatCard label="Notice deadlines ≤60d" value={String(metrics.noticeSoon.length)} sub="act before the window closes" color={metrics.noticeSoon.length ? 'text-amber-300' : 'text-emerald-300'} />
                 <StatCard label="At-risk value" value={fmtMoneyK(metrics.atRiskValue)} sub={`${metrics.atRisk.length} case(s)`} color={metrics.atRisk.length ? 'text-rose-400' : 'text-emerald-300'} />
               </div>
-              <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+              <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
                 <h3 className="text-sm font-semibold text-white mb-3">Cases by motion</h3>
                 {Object.keys(metrics.byMotion).length === 0 ? (
-                  <p className="text-xs text-slate-500">No open cases yet — they open automatically as agreement dates approach.</p>
+                  <p className="text-xs text-dt-muted">No open cases yet — they open automatically as agreement dates approach.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(metrics.byMotion).sort((a, b) => b[1] - a[1]).map(([m, n]) => (
-                      <span key={m} className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300">
+                      <span key={m} className="text-xs px-3 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support">
                         {motionLabel(m as ContinuityCase['motion'])} <span className="text-white font-semibold ml-1">{n}</span>
                       </span>
                     ))}
@@ -297,13 +297,13 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
 
           {/* ── Portfolio ── */}
           {tab === 'portfolio' && (
-            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+            <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h3 className="text-base font-semibold text-white">Agreement portfolio</h3>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+                <div className="flex items-center gap-2 text-xs text-dt-support">
                   <span>Sort by</span>
                   <select value={sortKey} onChange={e => setSortKey(e.target.value as typeof sortKey)}
-                    className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-slate-200">
+                    className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body">
                     <option value="renewal_date">Renewal date</option>
                     <option value="notice_deadline">Notice deadline</option>
                     <option value="baseline_value_cents">Value</option>
@@ -311,14 +311,14 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                 </div>
               </div>
               {agreements.length === 0 ? (
-                <p className="text-xs text-slate-500">No agreements yet.</p>
+                <p className="text-xs text-dt-muted">No agreements yet.</p>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-700">
+                <div className="overflow-x-auto rounded-xl border border-dt-border">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-700 text-left">
+                      <tr className="border-b border-dt-border text-left">
                         {['Counterparty', 'Side', 'Type', 'Status', 'Value', 'Renewal', 'Notice deadline'].map(h => (
-                          <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                          <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -326,12 +326,12 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                       {sortedAgreements.map((a, i) => {
                         const rc = dateChip(a.renewal_date), nc = dateChip(a.notice_deadline);
                         return (
-                          <tr key={a.id} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === sortedAgreements.length - 1 ? 'border-b-0' : ''}`}>
+                          <tr key={a.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === sortedAgreements.length - 1 ? 'border-b-0' : ''}`}>
                             <td className="py-3 px-4 font-medium text-white">{a.counterparty_name}</td>
-                            <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300">{a.party_side === 'buy' ? 'Vendor' : 'Customer'}</span></td>
-                            <td className="py-3 px-4 text-slate-300">{a.agreement_type.replace(/_/g, ' ')}</td>
-                            <td className="py-3 px-4 text-slate-400 text-xs">{a.status}</td>
-                            <td className="py-3 px-4 text-slate-300">{a.baseline_value_cents != null ? fmtMoneyK(a.baseline_value_cents) : '—'}</td>
+                            <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{a.party_side === 'buy' ? 'Vendor' : 'Customer'}</span></td>
+                            <td className="py-3 px-4 text-dt-support">{a.agreement_type.replace(/_/g, ' ')}</td>
+                            <td className="py-3 px-4 text-dt-support text-xs">{a.status}</td>
+                            <td className="py-3 px-4 text-dt-support">{a.baseline_value_cents != null ? fmtMoneyK(a.baseline_value_cents) : '—'}</td>
                             <td className="py-3 px-4 whitespace-nowrap"><span className={`text-xs ${rc.cls}`}>{a.renewal_date || '—'}{a.renewal_date ? ` · ${rc.label}` : ''}</span></td>
                             <td className="py-3 px-4 whitespace-nowrap"><span className={`text-xs ${nc.cls}`}>{a.notice_deadline || '—'}{a.notice_deadline ? ` · ${nc.label}` : ''}</span></td>
                           </tr>
@@ -346,30 +346,30 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
 
           {/* ── Case Workspace ── */}
           {tab === 'cases' && (
-            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+            <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
               <h3 className="text-base font-semibold text-white mb-1">Continuity cases</h3>
-              <p className="text-xs text-slate-500 mb-4">Open a case to work it — advance the stage, log activity, or set the next step. Every action runs through the approval gate.</p>
+              <p className="text-xs text-dt-muted mb-4">Open a case to work it — advance the stage, log activity, or set the next step. Every action runs through the approval gate.</p>
               {cases.length === 0 ? (
-                <p className="text-xs text-slate-500">No open cases yet — they open automatically as agreement dates approach.</p>
+                <p className="text-xs text-dt-muted">No open cases yet — they open automatically as agreement dates approach.</p>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-700">
+                <div className="overflow-x-auto rounded-xl border border-dt-border">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-700 text-left">
+                      <tr className="border-b border-dt-border text-left">
                         {['Case', 'Motion', 'Counterparty', 'Stage', 'Baseline', 'Risk', ''].map(h => (
-                          <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                          <th key={h} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {cases.map((c, i) => (
-                        <tr key={c.objective_id} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors cursor-pointer ${i === cases.length - 1 ? 'border-b-0' : ''}`} onClick={() => setSelected(c)}>
+                        <tr key={c.objective_id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors cursor-pointer ${i === cases.length - 1 ? 'border-b-0' : ''}`} onClick={() => setSelected(c)}>
                           <td className="py-3 px-4 font-medium text-white max-w-xs truncate">{c.title || '—'}</td>
                           <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{motionLabel(c.motion)}</span></td>
-                          <td className="py-3 px-4 text-slate-300">{c.counterparty_name || '—'}</td>
-                          <td className="py-3 px-4 text-slate-400 text-xs">{c.stage_key ? c.stage_key.replace(/_/g, ' ') : '—'}</td>
-                          <td className="py-3 px-4 text-slate-300">{c.baseline_cents != null ? fmtMoneyK(c.baseline_cents) : '—'}</td>
-                          <td className="py-3 px-4 text-xs">{c.risk_level ? <span className={RISK_CLS[c.risk_level]}>{c.risk_level}</span> : <span className="text-slate-600">—</span>}</td>
+                          <td className="py-3 px-4 text-dt-support">{c.counterparty_name || '—'}</td>
+                          <td className="py-3 px-4 text-dt-support text-xs">{c.stage_key ? c.stage_key.replace(/_/g, ' ') : '—'}</td>
+                          <td className="py-3 px-4 text-dt-support">{c.baseline_cents != null ? fmtMoneyK(c.baseline_cents) : '—'}</td>
+                          <td className="py-3 px-4 text-xs">{c.risk_level ? <span className={RISK_CLS[c.risk_level]}>{c.risk_level}</span> : <span className="text-dt-faint">—</span>}</td>
                           <td className="py-3 px-4 text-right"><span className="text-xs text-indigo-400">Open →</span></td>
                         </tr>
                       ))}
@@ -388,7 +388,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-slate-800/95 border-slate-600 text-slate-200 max-w-sm">
+        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-dt-card/95 border-dt-border-strong text-dt-body max-w-sm">
           {toast}
         </div>
       )}

@@ -64,7 +64,7 @@ export function renderLite(text: string): React.ReactNode {
     const bullet = line.match(/^\s*[-•]\s+(.*)$/);
     if (bullet) return <div key={i} className="pl-4 relative"><span className="absolute left-1">•</span>{renderInline(bullet[1], `l${i}`)}</div>;
     const num = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
-    if (num) return <div key={i} className="pl-5 relative"><span className="absolute left-0 text-slate-400">{num[1]}.</span>{renderInline(num[2], `l${i}`)}</div>;
+    if (num) return <div key={i} className="pl-5 relative"><span className="absolute left-0 text-dt-support">{num[1]}.</span>{renderInline(num[2], `l${i}`)}</div>;
     return <React.Fragment key={i}>{renderInline(line, `l${i}`)}{i < lines.length - 1 ? '\n' : null}</React.Fragment>;
   });
 }
@@ -85,7 +85,7 @@ function AssistantBubble({ msg, onDone }: { msg: Msg; onDone?: () => void }) {
 
   return (
     <div className="max-w-[85%] self-start cc-in">
-      <div className="rounded-2xl rounded-tl-sm bg-white/[0.06] text-slate-100 border border-white/10 backdrop-blur-md px-4 py-2.5 text-[15px] leading-relaxed shadow-[0_2px_20px_-8px_rgba(0,0,0,0.6)] whitespace-pre-wrap">
+      <div className="rounded-2xl rounded-tl-sm bg-white/[0.06] text-dt-title border border-white/10 backdrop-blur-md px-4 py-2.5 text-[15px] leading-relaxed shadow-[0_2px_20px_-8px_rgba(0,0,0,0.6)] whitespace-pre-wrap">
         {shown ? renderLite(shown) : <span className="inline-flex gap-1 py-1">{[0, 1, 2].map(i => (
           <span key={i} className="w-1.5 h-1.5 rounded-full bg-indigo-300/70 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
         ))}</span>}
@@ -282,13 +282,13 @@ export default function ChatCore({
           : <AssistantBubble key={m.id} msg={m} />)}
 
         {csat === 'shown' && (
-          <div className="self-start flex items-center gap-2 text-[12px] text-slate-400 mt-1 cc-in">
+          <div className="self-start flex items-center gap-2 text-[12px] text-dt-support mt-1 cc-in">
             <span>Was this helpful?</span>
-            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-slate-300 hover:text-emerald-300 transition-colors">👍</button>
-            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-rose-500/20 border border-white/10 text-slate-300 hover:text-rose-300 transition-colors">👎</button>
+            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-dt-support hover:text-emerald-300 transition-colors">👍</button>
+            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-rose-500/20 border border-white/10 text-dt-support hover:text-rose-300 transition-colors">👎</button>
           </div>
         )}
-        {csat === 'done' && <div className="self-start text-[12px] text-slate-500">Thanks for the feedback!</div>}
+        {csat === 'done' && <div className="self-start text-[12px] text-dt-muted">Thanks for the feedback!</div>}
       </div>
 
       {/* Composer */}
@@ -298,7 +298,7 @@ export default function ChatCore({
             <button
               onClick={toggleMic}
               aria-label={listening ? 'Stop listening' : 'Speak'}
-              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${listening ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white scale-110 shadow-[0_0_20px_2px_rgba(99,102,241,0.7)] animate-pulse' : 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'}`}
+              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${listening ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white scale-110 shadow-[0_0_20px_2px_rgba(99,102,241,0.7)] animate-pulse' : 'bg-white/5 border border-white/10 text-dt-support hover:bg-white/10'}`}
             >
               {listening ? '●' : '🎤'}
             </button>
@@ -309,7 +309,7 @@ export default function ChatCore({
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
             placeholder={listening ? 'Listening…' : 'Type your message…'}
             rows={1}
-            className="flex-1 resize-none max-h-32 rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5 text-[15px] text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-400/60 focus:ring-1 focus:ring-indigo-400/40"
+            className="flex-1 resize-none max-h-32 rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5 text-[15px] text-dt-title placeholder-slate-500 focus:outline-none focus:border-indigo-400/60 focus:ring-1 focus:ring-indigo-400/40"
           />
           <button
             onClick={() => void send(input)}
@@ -320,7 +320,7 @@ export default function ChatCore({
             {sending ? <span className="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white" style={{ animation: 'cc-spin .7s linear infinite' }} /> : '↑'}
           </button>
         </div>
-        <p className="text-[10px] text-slate-500 text-center mt-2.5">AI-assisted support · answers in your language</p>
+        <p className="text-[10px] text-dt-muted text-center mt-2.5">AI-assisted support · answers in your language</p>
       </div>
     </div>
   );

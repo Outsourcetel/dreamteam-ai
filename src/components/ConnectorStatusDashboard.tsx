@@ -20,7 +20,7 @@ function statusColor(status: ConnectorStatus['status']): string {
     connected: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
     degraded: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
     down: 'bg-red-500/15 text-red-300 border-red-500/30',
-    never_connected: 'bg-slate-600/40 text-slate-400 border-slate-600/40',
+    never_connected: 'bg-slate-600/40 text-dt-support border-dt-border-strong',
   };
   return colors[status];
 }
@@ -80,7 +80,7 @@ export function ConnectorStatusDashboard() {
     return (
       <div className="space-y-3">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="bg-slate-800 border border-slate-700 rounded-lg p-4 animate-pulse h-20" />
+          <div key={i} className="bg-dt-card border border-dt-border rounded-lg p-4 animate-pulse h-20" />
         ))}
       </div>
     );
@@ -95,19 +95,19 @@ export function ConnectorStatusDashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xs text-slate-400 mb-4">
+      <div className="text-xs text-dt-support mb-4">
         Data integration status — shows when connectors last synced successfully and any active errors.
       </div>
 
       {connectors.length === 0 ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 text-center">
-          <p className="text-sm text-slate-400">No connectors configured yet.</p>
-          <p className="text-xs text-slate-500 mt-2">Connect your systems under Connectors to start syncing data.</p>
+        <div className="bg-dt-card border border-dt-border rounded-lg p-8 text-center">
+          <p className="text-sm text-dt-support">No connectors configured yet.</p>
+          <p className="text-xs text-dt-muted mt-2">Connect your systems under Connectors to start syncing data.</p>
         </div>
       ) : (
         Array.from(grouped.entries()).map(([category, cats]) => (
           <div key={category}>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 ml-1">{category}</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2 ml-1">{category}</p>
             <div className="space-y-2">
               {cats.map(c => (
                 <div key={c.connector_id} className={`border rounded-lg p-4 transition-colors ${statusColor(c.status)}`}>
@@ -141,7 +141,7 @@ export function ConnectorStatusDashboard() {
                     <button
                       onClick={() => handleSync(c.connector_id)}
                       disabled={syncing === c.connector_id}
-                      className="px-3 py-1 text-xs bg-slate-700/40 hover:bg-slate-600/60 rounded border border-slate-600/40 transition-colors disabled:opacity-50 whitespace-nowrap"
+                      className="px-3 py-1 text-xs bg-dt-panel hover:bg-dt-panel/60 rounded border border-dt-border-strong transition-colors disabled:opacity-50 whitespace-nowrap"
                     >
                       {syncing === c.connector_id ? 'Syncing...' : 'Sync now'}
                     </button>
@@ -153,7 +153,7 @@ export function ConnectorStatusDashboard() {
         ))
       )}
 
-      <div className="text-[11px] text-slate-500 border-t border-slate-700 pt-3 mt-4">
+      <div className="text-[11px] text-dt-muted border-t border-dt-border pt-3 mt-4">
         <p>🔄 Syncs run automatically every 5 minutes. Use "Sync now" to force an immediate sync.</p>
       </div>
     </div>

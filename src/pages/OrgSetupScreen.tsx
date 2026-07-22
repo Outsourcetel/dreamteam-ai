@@ -67,7 +67,7 @@ export default function OrgSetupScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-dt-page flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
@@ -78,28 +78,28 @@ export default function OrgSetupScreen() {
         </div>
 
         <h2 className="text-2xl font-bold text-white mb-1 text-center">One last step</h2>
-        <p className="text-slate-400 text-sm mb-6 text-center leading-relaxed">
+        <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
           Your email is confirmed. Let's set up your organization so you can start using your workspace.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1.5">Organization Name</label>
+            <label className="text-xs font-medium text-dt-support block mb-1.5">Organization Name</label>
             <input
               value={orgName}
               onChange={e => setOrgName(e.target.value)}
               type="text"
               placeholder="Acme Corp"
               autoFocus
-              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1.5">Industry</label>
+            <label className="text-xs font-medium text-dt-support block mb-1.5">Industry</label>
             <select
               value={industry}
               onChange={e => setIndustry(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
             >
               {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
             </select>
@@ -114,8 +114,8 @@ export default function OrgSetupScreen() {
           </button>
         </form>
 
-        <div className="border-t border-slate-700 mt-6 pt-5 text-center">
-          <p className="text-xs text-slate-600">
+        <div className="border-t border-dt-border mt-6 pt-5 text-center">
+          <p className="text-xs text-dt-faint">
             Signed in as {authedUser?.email}.{' '}
             <button
               onClick={() => { void (async () => { await handleLogout(); })(); }}

@@ -15,7 +15,7 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 // WorkforcePages.tsx's NotYetAvailable pattern).
 function OutcomeNotYetAvailable({ title, subtitle, setPage }: { title: string; subtitle: string; setPage: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title={title} subtitle={subtitle} />
       <LiveEmptyState
         icon="◈"
@@ -44,7 +44,7 @@ type Trend = 'up' | 'stable' | 'warn' | 'alert';
 
 const trendMeta: Record<Trend, { icon: string; label: string; color: string }> = {
   up: { icon: '↑', label: 'Trending up', color: 'text-emerald-400' },
-  stable: { icon: '→', label: 'Stable', color: 'text-slate-400' },
+  stable: { icon: '→', label: 'Stable', color: 'text-dt-support' },
   warn: { icon: '↓', label: 'Needs attention', color: 'text-amber-400' },
   alert: { icon: '⚠', label: 'Alert', color: 'text-red-400' },
 };
@@ -57,16 +57,16 @@ function OutcomeHeader({ title, metric, trend, legacy, subtitle }: {
     <div className="mb-6">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-white">{title}</h1>
-        <span className="text-sm font-medium text-white bg-slate-700 rounded-lg px-2.5 py-1">{metric}</span>
+        <span className="text-sm font-medium text-white bg-dt-panel rounded-lg px-2.5 py-1">{metric}</span>
         <span className={`flex items-center gap-1 text-xs ${t.color}`}>
           <span>{t.icon}</span><span>{t.label}</span>
         </span>
       </div>
-      <p className="text-slate-400 text-sm mt-1">{subtitle}</p>
+      <p className="text-dt-support text-sm mt-1">{subtitle}</p>
       <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-slate-600">Legacy departments:</span>
+        <span className="text-[10px] text-dt-faint">Legacy departments:</span>
         {legacy.map(d => (
-          <span key={d} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">{d}</span>
+          <span key={d} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">{d}</span>
         ))}
       </div>
     </div>
@@ -77,10 +77,10 @@ function KpiCards({ items }: { items: { label: string; value: string; sub: strin
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {items.map(k => (
-        <div key={k.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{k.label}</p>
+        <div key={k.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{k.label}</p>
           <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
-          <p className="text-xs text-slate-500 mt-0.5">{k.sub}</p>
+          <p className="text-xs text-dt-muted mt-0.5">{k.sub}</p>
         </div>
       ))}
     </div>
@@ -93,28 +93,28 @@ function ContributingDEs({ des, note, setPage }: {
   setPage?: (p: Page) => void;
 }) {
   return (
-    <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
-      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Contributing Digital Employees</h3>
+    <div className="mt-6 rounded-2xl border border-dt-border bg-dt-card p-5">
+      <h3 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-3">Contributing Digital Employees</h3>
       {des.length === 0 ? (
-        <p className="text-xs text-slate-500">{note || 'No DEs contribute to this outcome yet — handled by humans.'}</p>
+        <p className="text-xs text-dt-muted">{note || 'No DEs contribute to this outcome yet — handled by humans.'}</p>
       ) : (
         <div className="flex flex-wrap gap-3">
           {des.map(de => (
             <button
               key={de.name}
               onClick={() => setPage && setPage('workforce_des')}
-              className="flex items-center gap-3 text-left rounded-xl px-4 py-3 border border-slate-700 bg-slate-800 hover:border-slate-600 transition-all"
+              className="flex items-center gap-3 text-left rounded-xl px-4 py-3 border border-dt-border bg-dt-card hover:border-dt-border-strong transition-all"
             >
               <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{de.name[0]}</div>
               <div>
-                <p className="text-sm font-semibold text-white">{de.name} <span className="text-slate-500 font-normal text-xs">· {de.role}</span></p>
-                <p className="text-xs text-slate-400">{de.contribution}</p>
+                <p className="text-sm font-semibold text-white">{de.name} <span className="text-dt-muted font-normal text-xs">· {de.role}</span></p>
+                <p className="text-xs text-dt-support">{de.contribution}</p>
               </div>
             </button>
           ))}
         </div>
       )}
-      {des.length > 0 && note && <p className="mt-3 text-[11px] text-slate-500">{note}</p>}
+      {des.length > 0 && note && <p className="mt-3 text-[11px] text-dt-muted">{note}</p>}
     </div>
   );
 }
@@ -164,7 +164,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <OutcomeHeader
         title="Revenue & Growth"
         metric={isTcp ? '$2.1M pipeline' : '$4.2M fees in progress'}
@@ -177,7 +177,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Main breakdown */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-dt-border bg-dt-card p-5">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h3 className="text-sm font-semibold text-white">{isTcp ? 'Pipeline by stage' : 'Fees by service line'}</h3>
             <button onClick={() => setPage('entity_customer_sales')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -188,16 +188,16 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
             {(isTcp ? TCP_PIPELINE_STAGES : PWC_SERVICE_LINES.map(l => ({ stage: l.line, value: l.value, count: l.engagements, pct: l.pct, color: l.color }))).map(s => (
               <div key={s.stage}>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-slate-400">{s.stage} <span className="text-slate-600">· {s.count} {isTcp ? 'opps' : 'engagements'}</span></span>
+                  <span className="text-dt-support">{s.stage} <span className="text-dt-faint">· {s.count} {isTcp ? 'opps' : 'engagements'}</span></span>
                   <span className="text-white font-medium">{s.value}</span>
                 </div>
-                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-3 bg-dt-panel rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${s.color}`} style={{ width: `${s.pct}%` }} />
                 </div>
               </div>
             ))}
           </div>
-          <p className="mt-4 text-[11px] text-slate-500">
+          <p className="mt-4 text-[11px] text-dt-muted">
             {isTcp
               ? 'Stage totals sum to the $2.1M open pipeline tracked on the Sales page.'
               : 'Service-line totals sum to $4.2M fees in progress across the practice.'}
@@ -205,7 +205,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
         </div>
 
         {/* Side panel */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
           {isTcp ? (
             <>
               <h3 className="text-sm font-semibold text-white mb-4">MRR trend ($K)</h3>
@@ -213,14 +213,14 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
                 {TCP_MRR.map(m => (
                   <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
                     <div className="w-full bg-indigo-500/70 rounded-t" style={{ height: `${(m.value / maxMrr) * 100}%` }} />
-                    <span className="text-[10px] text-slate-500">{m.month}</span>
+                    <span className="text-[10px] text-dt-muted">{m.month}</span>
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-slate-500 mb-4">$148K → $172K over 6 months.</p>
+              <p className="text-[11px] text-dt-muted mb-4">$148K → $172K over 6 months.</p>
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
                 <p className="text-xs text-amber-300 font-medium mb-1">Renewal watch</p>
-                <p className="text-xs text-slate-400 mb-2">$248K in renewal invoices pending payment — 1 overdue (Apex Systems).</p>
+                <p className="text-xs text-dt-support mb-2">$248K in renewal invoices pending payment — 1 overdue (Apex Systems).</p>
                 <button onClick={() => setPage('entity_customer_renewal')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                   Go to Renewal &amp; Expansion →
                 </button>
@@ -234,10 +234,10 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
                   { name: 'Crestview Holdings — Advisory', fees: '$120K', status: 'Proposal drafted' },
                   { name: 'Sterling Group — Tax Compliance', fees: '$85K', status: 'Reminder queued' },
                 ].map(r => (
-                  <div key={r.name} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
+                  <div key={r.name} className="rounded-xl border border-dt-border bg-dt-card p-3">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs font-medium text-white">{r.name}</span>
-                      <span className="text-xs text-slate-300">{r.fees}</span>
+                      <span className="text-xs text-dt-support">{r.fees}</span>
                     </div>
                     <p className="text-[11px] text-indigo-300">{r.status}</p>
                   </div>
@@ -282,7 +282,7 @@ const PWC_ENGAGEMENTS = [
 const releaseBadge = (s: string) => {
   if (s === 'Code freeze') return 'bg-amber-500/15 text-amber-300';
   if (s === 'In development') return 'bg-indigo-500/15 text-indigo-300';
-  return 'bg-slate-600/50 text-slate-300';
+  return 'bg-slate-600/50 text-dt-support';
 };
 
 export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void }) => {
@@ -307,7 +307,7 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <OutcomeHeader
         title={isTcp ? 'Product & Engineering' : 'Practice Delivery'}
         metric={isTcp ? '3 releases planned' : '2 filings due Jul 15'}
@@ -320,36 +320,36 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
 
       <KpiCards items={kpis} />
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
         <h3 className="text-sm font-semibold text-white mb-3">{isTcp ? 'Release train' : 'Engagement progress'}</h3>
-        <div className="overflow-x-auto rounded-xl border border-slate-700">
+        <div className="overflow-x-auto rounded-xl border border-dt-border">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {(isTcp ? ['Version', 'Target date', 'Scope', 'Status'] : ['Engagement', 'Partner', 'Due', 'Progress']).map(h => <th key={h} className={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {isTcp
                 ? TCP_RELEASES.map((r, i) => (
-                    <tr key={r.version} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === TCP_RELEASES.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={r.version} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === TCP_RELEASES.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium text-white`}>{r.version}</td>
-                      <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.date}</td>
-                      <td className={`${td} text-slate-400 text-xs`}>{r.scope}</td>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.date}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{r.scope}</td>
                       <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${releaseBadge(r.status)}`}>{r.status}</span></td>
                     </tr>
                   ))
                 : PWC_ENGAGEMENTS.map((e, i) => (
-                    <tr key={e.engagement} className={`border-b border-slate-700/60 transition-colors ${e.filing ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-slate-700/30'} ${i === PWC_ENGAGEMENTS.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={e.engagement} className={`border-b border-dt-border transition-colors ${e.filing ? 'bg-amber-500/5 hover:bg-amber-500/10' : 'hover:bg-dt-panel'} ${i === PWC_ENGAGEMENTS.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium ${e.filing ? 'text-amber-200' : 'text-white'}`}>{e.engagement}{e.filing && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">DUE JUL 15</span>}</td>
-                      <td className={`${td} text-slate-300 text-xs`}>{e.partner}</td>
-                      <td className={`${td} text-xs whitespace-nowrap ${e.filing ? 'text-amber-300' : 'text-slate-400'}`}>{e.due}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{e.partner}</td>
+                      <td className={`${td} text-xs whitespace-nowrap ${e.filing ? 'text-amber-300' : 'text-dt-support'}`}>{e.due}</td>
                       <td className={td}>
                         <div className="flex items-center gap-2 min-w-[120px]">
-                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-dt-panel rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${e.progress >= 80 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${e.progress}%` }} />
                           </div>
-                          <span className="text-xs text-slate-300 w-8 text-right">{e.progress}%</span>
+                          <span className="text-xs text-dt-support w-8 text-right">{e.progress}%</span>
                         </div>
                       </td>
                     </tr>
@@ -359,7 +359,7 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
         </div>
         {isTcp && (
           <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-3 flex items-center justify-between flex-wrap gap-2">
-            <p className="text-xs text-slate-300"><span className="text-red-300 font-medium">Open P1:</span> API auth failure affecting Apex Systems — escalated by Alex to L2 Engineering.</p>
+            <p className="text-xs text-dt-support"><span className="text-red-300 font-medium">Open P1:</span> API auth failure affecting Apex Systems — escalated by Alex to L2 Engineering.</p>
             <button onClick={() => setPage('entity_customer_support')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">View in Support →</button>
           </div>
         )}
@@ -564,7 +564,7 @@ const TCP_AP_BILLS: ApBill[] = [
 ];
 
 const apStatusBadge = (s: ApBill['status']) =>
-  s === 'Scheduled' ? 'bg-slate-600/50 text-slate-300'
+  s === 'Scheduled' ? 'bg-slate-600/50 text-dt-support'
   : s === 'Needs approval' ? 'bg-amber-500/15 text-amber-300'
   : 'bg-rose-500/15 text-rose-300';
 
@@ -609,7 +609,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
       ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <OutcomeHeader
         title="Financial Health"
         metric={isTcp ? '$248K AR outstanding' : '$890K WIP unbilled'}
@@ -626,9 +626,9 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Aging */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-1">{isTcp ? 'AR aging — $248K' : 'WIP unbilled aging — $890K'}</h3>
-          <p className="text-xs text-slate-500 mb-4">{isTcp ? 'Outstanding receivables by bucket' : 'Unbilled work-in-progress by age'}</p>
+          <p className="text-xs text-dt-muted mb-4">{isTcp ? 'Outstanding receivables by bucket' : 'Unbilled work-in-progress by age'}</p>
           <div className="space-y-3">
             {aging.map((a, i) => {
               const key = TCP_BUCKET_KEYS[i].key;
@@ -637,21 +637,21 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                 <button
                   key={a.bucket}
                   onClick={() => setBucketFilter(active ? 'all' : key)}
-                  className={`w-full text-left rounded-lg px-2 py-1.5 -mx-2 transition-colors ${active ? 'bg-slate-700/80 ring-1 ring-indigo-500/40' : 'hover:bg-slate-700/40'}`}
+                  className={`w-full text-left rounded-lg px-2 py-1.5 -mx-2 transition-colors ${active ? 'bg-dt-panel/80 ring-1 ring-indigo-500/40' : 'hover:bg-dt-panel'}`}
                   title={`Click to ${active ? 'clear the filter' : `drill into ${a.bucket}`}`}
                 >
                   <div className="flex items-center justify-between text-xs mb-1">
-                    <span className={active ? 'text-indigo-300' : 'text-slate-400'}>{a.bucket}</span>
-                    <span className="text-white font-medium">{a.amount} <span className="text-slate-600">›</span></span>
+                    <span className={active ? 'text-indigo-300' : 'text-dt-support'}>{a.bucket}</span>
+                    <span className="text-white font-medium">{a.amount} <span className="text-dt-faint">›</span></span>
                   </div>
-                  <div className="h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-2.5 bg-dt-panel rounded-full overflow-hidden">
                     <div className={`h-full rounded-full ${a.color}`} style={{ width: `${a.pct}%` }} />
                   </div>
                 </button>
               );
             })}
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">Click a bucket to drill into {isTcp ? 'its invoices' : 'engagement WIP'} below.</p>
+          <p className="mt-3 text-[11px] text-dt-muted">Click a bucket to drill into {isTcp ? 'its invoices' : 'engagement WIP'} below.</p>
           {isTcp && (
             <button onClick={() => setPage('entity_customer_renewal')} className="mt-4 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
               Renewal invoices live in Customer Lifecycle →
@@ -670,14 +670,14 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
               <button
                 key={e.id}
                 onClick={() => setSelected(e)}
-                className={`w-full text-left rounded-xl border p-4 transition ${selected?.id === e.id ? 'border-indigo-400 bg-slate-700/70' : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'}`}
+                className={`w-full text-left rounded-xl border p-4 transition ${selected?.id === e.id ? 'border-indigo-400 bg-dt-panel/70' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded ${exToneBadge(e.tone)}`}>{e.type}</span>
-                  <span className="text-xs text-slate-500">conf {e.confidence}%{e.risky ? ' · risky' : ''}</span>
+                  <span className="text-xs text-dt-muted">conf {e.confidence}%{e.risky ? ' · risky' : ''}</span>
                 </div>
-                <p className="mt-2 text-sm font-medium text-slate-100">{e.title}</p>
-                <p className="text-xs text-slate-400 mt-1">{e.amount}</p>
+                <p className="mt-2 text-sm font-medium text-dt-title">{e.title}</p>
+                <p className="text-xs text-dt-support mt-1">{e.amount}</p>
               </button>
             ))}
           </div>
@@ -685,24 +685,24 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
           <div>
             <h3 className="text-sm font-semibold text-white mb-3">Review</h3>
             {!selected ? (
-              <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-dt-border bg-dt-card p-5 text-sm text-dt-support">
                 Select an exception to review the AI proposal and approve or reject. Decisions are logged as audit evidence.
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-600 bg-slate-800/70 p-5">
+              <div className="rounded-xl border border-dt-border-strong bg-dt-card p-5">
                 <p className="text-sm font-semibold text-white">{selected.title}</p>
                 {selected.risky && <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">Risky — never auto-executed</span>}
-                <div className="mt-3 text-xs text-slate-400">Detail</div>
-                <p className="text-sm text-slate-200">{selected.detail}</p>
-                <div className="mt-3 text-xs text-slate-400">AI reasoning ({selected.confidence}% confidence)</div>
-                <p className="text-sm text-slate-300">{selected.reasoning}</p>
-                <div className="mt-3 text-xs text-slate-400">Proposed action</div>
+                <div className="mt-3 text-xs text-dt-support">Detail</div>
+                <p className="text-sm text-dt-body">{selected.detail}</p>
+                <div className="mt-3 text-xs text-dt-support">AI reasoning ({selected.confidence}% confidence)</div>
+                <p className="text-sm text-dt-support">{selected.reasoning}</p>
+                <div className="mt-3 text-xs text-dt-support">Proposed action</div>
                 <p className="text-sm text-indigo-200">{selected.proposed}</p>
                 <div className="mt-4 flex gap-2">
                   <button onClick={() => decide('approved')} className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-800 text-sm font-semibold py-2 transition-colors">Approve</button>
-                  <button onClick={() => decide('rejected')} className="flex-1 rounded-lg bg-slate-600 hover:bg-slate-600 text-slate-100 text-sm font-semibold py-2 transition-colors">Reject</button>
+                  <button onClick={() => decide('rejected')} className="flex-1 rounded-lg bg-slate-600 hover:bg-dt-panel text-dt-title text-sm font-semibold py-2 transition-colors">Reject</button>
                 </div>
-                <p className="mt-3 text-[11px] text-slate-500">Decisions are timestamped and immutable in the audit trail.</p>
+                <p className="mt-3 text-[11px] text-dt-muted">Decisions are timestamped and immutable in the audit trail.</p>
               </div>
             )}
           </div>
@@ -710,7 +710,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
       </div>
 
       {/* ── AR / WIP drill-through ── */}
-      <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+      <div className="mt-5 rounded-2xl border border-dt-border bg-dt-card p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">
@@ -721,7 +721,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                 </span>
               )}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-dt-muted mt-0.5">
               {isTcp ? 'Every open receivable behind the aging buckets — rows sum to each bucket exactly' : 'Unbilled WIP by engagement — rows sum to each aging bucket exactly'}
             </p>
           </div>
@@ -729,10 +729,10 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
             <button onClick={() => setBucketFilter('all')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Show all buckets ×</button>
           )}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-700">
+        <div className="overflow-x-auto rounded-xl border border-dt-border">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {(isTcp
                   ? ['Invoice #', 'Account', 'Amount', 'Issued', 'Due', 'Days overdue', 'Status', 'Cadence stage']
                   : ['Engagement', 'Partner', 'WIP amount', 'Oldest entry', 'Days unbilled', 'Status']
@@ -742,31 +742,31 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
             <tbody>
               {isTcp
                 ? TCP_AR_INVOICES.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
-                    <tr key={r.inv} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
-                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.inv}</td>
+                    <tr key={r.inv} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.inv}</td>
                       <td className={`${td} font-medium text-white`}>{r.account}</td>
-                      <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
-                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.issued}</td>
-                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.due}</td>
-                      <td className={`${td} text-xs ${r.daysOverdue > 30 ? 'text-rose-300' : r.daysOverdue > 0 ? 'text-amber-300' : 'text-slate-500'}`}>{r.daysOverdue > 0 ? r.daysOverdue : '—'}</td>
+                      <td className={`${td} text-dt-body whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.issued}</td>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.due}</td>
+                      <td className={`${td} text-xs ${r.daysOverdue > 30 ? 'text-rose-300' : r.daysOverdue > 0 ? 'text-amber-300' : 'text-dt-muted'}`}>{r.daysOverdue > 0 ? r.daysOverdue : '—'}</td>
                       <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${r.status === 'Overdue' ? 'bg-rose-500/15 text-rose-300' : 'bg-indigo-500/15 text-indigo-300'}`}>{r.status}</span></td>
-                      <td className={`${td} text-xs text-slate-400`}>{r.cadence}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{r.cadence}</td>
                     </tr>
                   ))
                 : PWC_WIP_ROWS.filter(r => bucketFilter === 'all' || r.bucket === bucketFilter).map((r, i, arr) => (
-                    <tr key={r.engagement} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
+                    <tr key={r.engagement} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === arr.length - 1 ? 'border-b-0' : ''}`}>
                       <td className={`${td} font-medium text-white`}>{r.engagement}</td>
-                      <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{r.partner}</td>
-                      <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
-                      <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{r.oldestEntry}</td>
-                      <td className={`${td} text-xs ${r.daysUnbilled > 60 ? 'text-rose-300' : r.daysUnbilled > 30 ? 'text-amber-300' : 'text-slate-500'}`}>{r.daysUnbilled}</td>
-                      <td className={`${td} text-xs text-slate-400`}>{r.status}</td>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.partner}</td>
+                      <td className={`${td} text-dt-body whitespace-nowrap`}>{fmtUsd(r.amount)}</td>
+                      <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{r.oldestEntry}</td>
+                      <td className={`${td} text-xs ${r.daysUnbilled > 60 ? 'text-rose-300' : r.daysUnbilled > 30 ? 'text-amber-300' : 'text-dt-muted'}`}>{r.daysUnbilled}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{r.status}</td>
                     </tr>
                   ))}
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-slate-500">
+        <p className="mt-3 text-[11px] text-dt-muted">
           {isTcp
             ? 'Apex Systems dunning is paused per the approved exception treatment (open P1). Renewal invoices live in Customer Lifecycle.'
             : 'The Harbor Financial $120K row is the same WIP flagged in the exceptions queue (ahead of billing schedule).'}
@@ -775,16 +775,16 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       {/* ── Collections — cadence status (TCP) ── */}
       {isTcp && (
-        <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="mt-5 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Collections — cadence status</h3>
-          <p className="text-xs text-slate-500 mb-4">Where each overdue invoice sits in Casey&apos;s dunning cadence</p>
+          <p className="text-xs text-dt-muted mb-4">Where each overdue invoice sits in Casey&apos;s dunning cadence</p>
           <div className="space-y-4">
             {TCP_CADENCE_ROWS.map(row => (
-              <div key={row.inv} className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <div key={row.inv} className="rounded-xl border border-dt-border bg-dt-card p-4">
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-white">{row.account}</span>
-                    <span className="text-xs text-slate-500">{row.inv} · {row.amount}</span>
+                    <span className="text-xs text-dt-muted">{row.inv} · {row.amount}</span>
                     {row.paused && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">DUNNING PAUSED</span>}
                   </div>
                   <button onClick={() => setPage('entity_customer_renewal')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Account renewal →</button>
@@ -799,7 +799,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                         <div className={`flex items-center gap-1.5 text-[11px] whitespace-nowrap px-2 py-1 rounded-lg border flex-shrink-0 ${
                           done ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300'
                           : isCurrent ? (row.paused ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300')
-                          : 'border-slate-700 bg-slate-800 text-slate-600'
+                          : 'border-dt-border bg-dt-card text-dt-faint'
                         }`}>
                           <span>{done ? '✓' : isCurrent ? (row.paused ? '⏸' : '←') : '○'}</span>
                           <span>{step}</span>
@@ -808,12 +808,12 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
                     );
                   })}
                 </div>
-                <p className="mt-2 text-[11px] text-slate-500">{row.currentLabel}</p>
+                <p className="mt-2 text-[11px] text-dt-muted">{row.currentLabel}</p>
               </div>
             ))}
           </div>
           <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-            <p className="text-[11px] text-slate-500">Cadence steps come from the Renewal Lifecycle Playbook (Day-0 invoice → Day-7 reminder → Day-14 final notice → human escalation).</p>
+            <p className="text-[11px] text-dt-muted">Cadence steps come from the Renewal Lifecycle Playbook (Day-0 invoice → Day-7 reminder → Day-14 final notice → human escalation).</p>
             <button onClick={() => setPage('systems_playbooks')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">View Playbook →</button>
           </div>
         </div>
@@ -821,39 +821,39 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
 
       {/* ── Accounts payable (TCP) ── */}
       {isTcp && (
-        <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="mt-5 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Accounts payable — $74K due in 30 days</h3>
-          <p className="text-xs text-slate-500 mb-4">Vendor bills behind the AP KPI — sums to $74,000 exactly · approver Jai Patel (Finance Manager) for bills over $5K</p>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          <p className="text-xs text-dt-muted mb-4">Vendor bills behind the AP KPI — sums to $74,000 exactly · approver Jai Patel (Finance Manager) for bills over $5K</p>
+          <div className="overflow-x-auto rounded-xl border border-dt-border">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   {['Vendor', 'Invoice #', 'Description', 'Amount', 'Due', 'Status', 'Approver'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {TCP_AP_BILLS.map((b, i) => (
-                  <tr key={b.inv} className={`border-b border-slate-700/60 transition-colors ${b.duplicate ? 'bg-rose-500/5 hover:bg-rose-500/10' : 'hover:bg-slate-700/30'} ${i === TCP_AP_BILLS.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={b.inv} className={`border-b border-dt-border transition-colors ${b.duplicate ? 'bg-rose-500/5 hover:bg-rose-500/10' : 'hover:bg-dt-panel'} ${i === TCP_AP_BILLS.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{b.vendor}</td>
-                    <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{b.inv}</td>
-                    <td className={`${td} text-slate-400 text-xs`}>
+                    <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{b.inv}</td>
+                    <td className={`${td} text-dt-support text-xs`}>
                       {b.desc}
                       {b.duplicate && (
                         <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 whitespace-nowrap">Possible duplicate — see exceptions queue</span>
                       )}
                     </td>
-                    <td className={`${td} text-slate-200 whitespace-nowrap`}>{fmtUsd(b.amount)}</td>
-                    <td className={`${td} text-slate-400 text-xs whitespace-nowrap`}>{b.due}</td>
+                    <td className={`${td} text-dt-body whitespace-nowrap`}>{fmtUsd(b.amount)}</td>
+                    <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{b.due}</td>
                     <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full ${apStatusBadge(b.status)}`}>{b.status}</span></td>
-                    <td className={`${td} text-slate-300 text-xs whitespace-nowrap`}>{b.approver}</td>
+                    <td className={`${td} text-dt-support text-xs whitespace-nowrap`}>{b.approver}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800 p-3 flex items-center justify-between flex-wrap gap-2">
-            <p className="text-xs text-slate-400">
-              <span className="text-slate-300 font-medium">No DE owns AP today</span> — bills are scheduled and approved by humans. A Vendor DE would automate 3-way matching (PO ↔ receipt ↔ invoice) and duplicate detection.
+          <div className="mt-4 rounded-xl border border-dt-border bg-dt-card p-3 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs text-dt-support">
+              <span className="text-dt-support font-medium">No DE owns AP today</span> — bills are scheduled and approved by humans. A Vendor DE would automate 3-way matching (PO ↔ receipt ↔ invoice) and duplicate detection.
             </p>
             <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0">Explore →</button>
           </div>
@@ -943,7 +943,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
   ];
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <OutcomeHeader
         title="Risk Posture"
         metric="2 compliance alerts"
@@ -964,24 +964,24 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
                 <span className={`text-sm font-medium ${a.severity === 'high' ? 'text-red-200' : 'text-amber-200'}`}>{a.title}</span>
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${a.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{a.severity}</span>
-                  <span className="text-xs text-slate-500">{a.age}</span>
+                  <span className="text-xs text-dt-muted">{a.age}</span>
                 </div>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed mb-2">{a.detail}</p>
-              <p className="text-[11px] text-slate-500">Owner: {a.owner}</p>
+              <p className="text-xs text-dt-support leading-relaxed mb-2">{a.detail}</p>
+              <p className="text-[11px] text-dt-muted">Owner: {a.owner}</p>
             </div>
           ))}
 
           {/* Guardrail violation log */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mt-2">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mt-2">
             <h3 className="text-sm font-semibold text-white mb-1">Guardrail violation log</h3>
-            <p className="text-xs text-slate-500 mb-4">Every blocked or overridden DE action appears here</p>
+            <p className="text-xs text-dt-muted mb-4">Every blocked or overridden DE action appears here</p>
             {isTcp ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 flex items-start gap-3">
                 <span className="text-amber-400 text-lg">⚑</span>
                 <div>
                   <p className="text-sm text-amber-300 font-medium">1 block this month</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-dt-support mt-0.5">
                     BLOCKED: Alex attempted SLA commitment outside standard tier — guardrail DE-R2 (2026-07-03 09:45). The guardrail worked as designed; no customer impact.
                   </p>
                   <button onClick={() => setPage('gov_audit')} className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -994,7 +994,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
                 <span className="text-emerald-400 text-lg">✓</span>
                 <div>
                   <p className="text-sm text-emerald-300 font-medium">0 violations this month</p>
-                  <p className="text-xs text-slate-400 mt-0.5">All DE actions stayed within configured guardrails and approval gates.</p>
+                  <p className="text-xs text-dt-support mt-0.5">All DE actions stayed within configured guardrails and approval gates.</p>
                 </div>
               </div>
             )}
@@ -1002,16 +1002,16 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
         </div>
 
         {/* Compliance calendar */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-3">Compliance calendar</h3>
           <div className="space-y-2">
             {calendar.map(c => (
-              <div key={c.item} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5">
+              <div key={c.item} className="flex items-center justify-between gap-2 rounded-lg border border-dt-border bg-dt-card px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="text-xs text-slate-200 leading-tight">{c.item}</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">{c.date}</p>
+                  <p className="text-xs text-dt-body leading-tight">{c.item}</p>
+                  <p className="text-[10px] text-dt-muted mt-0.5">{c.date}</p>
                 </div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${c.status === 'At risk' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-400'}`}>{c.status}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${c.status === 'At risk' ? 'bg-red-500/15 text-red-300' : 'bg-dt-panel text-dt-support'}`}>{c.status}</span>
               </div>
             ))}
           </div>

@@ -607,20 +607,20 @@ export default function DEChatDock() {
     <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
       {/* Panel */}
       {open && (
-        <div className="w-96 h-[560px] rounded-2xl bg-slate-800 border border-slate-600/50 shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
+        <div className="w-96 h-[560px] rounded-2xl bg-dt-card border border-dt-border-strong shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-600/50 flex-shrink-0">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-dt-border-strong flex-shrink-0">
             <div className={`w-8 h-8 rounded-full ${de.color} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
               {de.name[0]}
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-white truncate">{de.name}</div>
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
+              <div className="flex items-center gap-1.5 text-xs text-dt-support truncate">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                 {de.role}
               </div>
               {isLive && (
-                <div className="text-[10px] text-slate-500 truncate">Answers grounded in your knowledge documents</div>
+                <div className="text-[10px] text-dt-muted truncate">Answers grounded in your knowledge documents</div>
               )}
             </div>
             {!isLive && (
@@ -634,16 +634,16 @@ export default function DEChatDock() {
             <div className="relative flex-shrink-0">
               <button
                 onClick={() => setMenuOpen(v => !v)}
-                className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs transition-colors"
                 aria-label="Menu"
               >
                 ⋯
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-7 bg-slate-700 border border-slate-600 rounded-lg py-1 w-40 shadow-xl">
+                <div className="absolute right-0 top-7 bg-dt-panel border border-dt-border-strong rounded-lg py-1 w-40 shadow-xl">
                   <button
                     onClick={clearThread}
-                    className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-600/50 transition-colors"
+                    className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-white hover:bg-dt-panel/50 transition-colors"
                   >
                     Clear conversation
                   </button>
@@ -652,7 +652,7 @@ export default function DEChatDock() {
             </div>
             <button
               onClick={() => { setOpen(false); setMenuOpen(false); }}
-              className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs flex-shrink-0 transition-colors"
+              className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs flex-shrink-0 transition-colors"
               aria-label="Minimize"
             >
               ×
@@ -663,11 +663,11 @@ export default function DEChatDock() {
               assistant tab lets someone change the workspace by describing
               what they want, with a 120-hour undo on anything it does. */}
           {isLive && (
-            <div className="flex gap-1 px-3 py-2 border-b border-slate-600/50 flex-shrink-0">
+            <div className="flex gap-1 px-3 py-2 border-b border-dt-border-strong flex-shrink-0">
               {([['ask', 'Ask a question'], ['do', 'Change something']] as const).map(([m, label]) => (
                 <button key={m} onClick={() => setDockMode(m)}
                   className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg transition-colors ${
-                    dockMode === m ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                    dockMode === m ? 'bg-dt-panel text-white' : 'text-dt-support hover:text-dt-body'}`}>
                   {label}
                 </button>
               ))}
@@ -704,8 +704,8 @@ export default function DEChatDock() {
                 <div className={`w-12 h-12 rounded-full ${de.color} mx-auto flex items-center justify-center text-white text-lg font-bold mb-3`}>
                   {de.name[0]}
                 </div>
-                <p className="text-sm text-slate-300 font-medium">Ask {de.name} anything</p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-sm text-dt-support font-medium">Ask {de.name} anything</p>
+                <p className="text-xs text-dt-muted mt-1">
                   {isLive ? `${de.role} · answers grounded in your knowledge documents` : `${de.role} · answers from live workspace data`}
                 </p>
               </div>
@@ -713,7 +713,7 @@ export default function DEChatDock() {
             {messages.map(msg => {
               if (msg.role === 'system') {
                 return (
-                  <div key={msg.id} className="text-center text-[11px] text-slate-500 py-1">{msg.text}</div>
+                  <div key={msg.id} className="text-center text-[11px] text-dt-muted py-1">{msg.text}</div>
                 );
               }
               const msgDe = deById(msg.deId);
@@ -728,11 +728,11 @@ export default function DEChatDock() {
                     msg.role === 'user' ? 'bg-indigo-600 text-white'
                     : msg.notice === 'llm_not_configured' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
                     : msg.notice === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-200'
-                    : 'bg-slate-700 text-slate-200'
+                    : 'bg-dt-panel text-dt-body'
                   }`}>
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
                     {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-1.5 text-[10px] text-slate-400">From: {msg.sources.join(', ')}</div>
+                      <div className="mt-1.5 text-[10px] text-dt-support">From: {msg.sources.join(', ')}</div>
                     )}
                     {msg.cached && (
                       <div className="mt-1 text-[10px] text-teal-400/80" title="Served from the verified answer cache — no model call needed">⚡ instant</div>
@@ -766,7 +766,7 @@ export default function DEChatDock() {
                         ))}
                       </div>
                     )}
-                    <div className={`flex items-center gap-2 mt-1 text-[10px] ${msg.role === 'user' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                    <div className={`flex items-center gap-2 mt-1 text-[10px] ${msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'}`}>
                       <span>{msg.time}</span>
                       {msg.role === 'de' && msg.confidence !== undefined && (
                         <span className={`px-1 py-px rounded ${msg.confidence >= 75 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
@@ -783,7 +783,7 @@ export default function DEChatDock() {
                 <div className={`w-6 h-6 rounded-full ${de.color} flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5`}>
                   {de.name[0]}
                 </div>
-                <div className="bg-slate-700 rounded-xl px-3 py-3">
+                <div className="bg-dt-panel rounded-xl px-3 py-3">
                   <div className="flex gap-1 items-center">
                     {[0, 150, 300].map(delay => (
                       <div
@@ -801,12 +801,12 @@ export default function DEChatDock() {
 
           {/* Suggestion chips (empty thread only) */}
           {messages.length === 0 && !typing && (
-            <div className="px-3 py-2 border-t border-slate-600/50 flex gap-1 flex-wrap flex-shrink-0">
+            <div className="px-3 py-2 border-t border-dt-border-strong flex gap-1 flex-wrap flex-shrink-0">
               {(isLive ? LIVE_SUGGESTIONS : SUGGESTIONS[de.id] ?? []).map(s => (
                 <button
                   key={s}
                   onClick={() => send(s)}
-                  className="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-colors"
+                  className="text-xs px-2 py-1 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-support border border-dt-border-strong transition-colors"
                 >
                   {s}
                 </button>
@@ -815,14 +815,14 @@ export default function DEChatDock() {
           )}
 
           {/* Input */}
-          <div className={`px-3 pb-3 flex-shrink-0 ${messages.length > 0 || typing ? 'pt-3 border-t border-slate-600/50' : 'pt-1'}`}>
+          <div className={`px-3 pb-3 flex-shrink-0 ${messages.length > 0 || typing ? 'pt-3 border-t border-dt-border-strong' : 'pt-1'}`}>
             <div className="flex gap-2">
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder={`Ask ${de.name} anything...`}
-                className="flex-1 text-xs bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="flex-1 text-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <button
                 onClick={() => send()}
@@ -844,13 +844,13 @@ export default function DEChatDock() {
       {!open && nudge && (
         <button
           onClick={openFromNudge}
-          className="max-w-[260px] text-left bg-slate-800 border border-slate-600/50 rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
+          className="max-w-[260px] text-left bg-dt-card border border-dt-border-strong rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-5 h-5 rounded-full ${de.color} flex items-center justify-center text-white text-[10px] font-bold`}>{de.name[0]}</span>
             <span className="text-xs font-medium text-white">{de.name}</span>
           </div>
-          <p className="text-[11px] text-slate-400 leading-snug">
+          <p className="text-[11px] text-dt-support leading-snug">
             {activeCompanyId === 'tcp' ? 5 : 4} human tasks are waiting — want a summary?
           </p>
         </button>
@@ -864,7 +864,7 @@ export default function DEChatDock() {
           onMouseLeave={() => setHovered(false)}
         >
           {hovered && (
-            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-700 border border-slate-600 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
+            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-dt-panel border border-dt-border-strong text-dt-body text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
               Ask {de.name}
             </div>
           )}

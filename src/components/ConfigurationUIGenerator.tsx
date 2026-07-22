@@ -76,18 +76,18 @@ export function ConfigurationUIGenerator({
   }
 
   if (loading) {
-    return <div className="text-xs text-slate-500 py-4">Loading configuration...</div>
+    return <div className="text-xs text-dt-muted py-4">Loading configuration...</div>
   }
 
   return (
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">{schema.name}</h4>
-        <p className="text-xs text-slate-400">Configure {entity_name} behavior</p>
+        <p className="text-xs text-dt-support">Configure {entity_name} behavior</p>
       </div>
 
       {/* Form Fields */}
-      <div className="space-y-3 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4">
+      <div className="space-y-3 bg-dt-card border border-dt-border rounded-lg p-4">
         {schema.fields.map(field => (
           <ConfigField
             key={field.key}
@@ -110,7 +110,7 @@ export function ConfigurationUIGenerator({
       )}
 
       {/* Save Button */}
-      <div className="flex items-center gap-2 pt-2 border-t border-slate-700">
+      <div className="flex items-center gap-2 pt-2 border-t border-dt-border">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -151,14 +151,14 @@ function ConfigField({
   )
 
   return (
-    <div className="space-y-1.5 py-2.5 border-b border-slate-700/50 last:border-0">
-      <label className="text-xs font-medium text-slate-400">
+    <div className="space-y-1.5 py-2.5 border-b border-dt-border last:border-0">
+      <label className="text-xs font-medium text-dt-support">
         {field.name}
         {field.required && <span className="text-red-400 ml-1">*</span>}
       </label>
 
       {field.description && (
-        <p className="text-xs text-slate-500">{field.description}</p>
+        <p className="text-xs text-dt-muted">{field.description}</p>
       )}
 
       {component === "text" && (
@@ -167,7 +167,7 @@ function ConfigField({
           value={(value as string) || ""}
           onChange={e => onChangeValue(e.target.value)}
           placeholder={field.ui?.placeholder}
-          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500"
         />
       )}
 
@@ -177,7 +177,7 @@ function ConfigField({
           onChange={e => onChangeValue(e.target.value)}
           placeholder={field.ui?.placeholder}
           rows={3}
-          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 resize-none"
+          className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500 resize-none"
         />
       )}
 
@@ -187,7 +187,7 @@ function ConfigField({
           value={typeof value === "number" ? value : ""}
           onChange={e => onChangeValue(e.target.value ? Number(e.target.value) : null)}
           placeholder={field.ui?.placeholder}
-          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+          className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500"
         />
       )}
 
@@ -197,7 +197,7 @@ function ConfigField({
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
             value
               ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-400"
-              : "bg-slate-700 border border-slate-600 text-slate-400"
+              : "bg-dt-panel border border-dt-border-strong text-dt-support"
           }`}>
           {value ? "Enabled" : "Disabled"}
         </button>
@@ -210,7 +210,7 @@ function ConfigField({
             const opt = field.ui?.options?.find(o => String(o.value) === e.target.value)
             onChangeValue(opt?.value)
           }}
-          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+          className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
           <option value="">Select an option...</option>
           {field.ui?.options?.map(opt => (
             <option key={String(opt.value)} value={String(opt.value)}>
@@ -223,12 +223,12 @@ function ConfigField({
       {component === "modal-editor" && (
         <button
           onClick={onEdit}
-          className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
+          className="px-3 py-1.5 text-xs bg-dt-panel hover:bg-dt-panel rounded-lg transition-colors">
           {isEditing ? "Editing..." : "Edit Rules"}
         </button>
       )}
 
-      {field.ui?.help && <p className="text-xs text-slate-500 italic">{field.ui.help}</p>}
+      {field.ui?.help && <p className="text-xs text-dt-muted italic">{field.ui.help}</p>}
 
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>

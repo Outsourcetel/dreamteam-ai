@@ -33,10 +33,10 @@ import { AmendmentWizard } from '../../components/AmendmentWizard';
 // ============================================================
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-const inputCls = 'w-full text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500';
-const selectCls = 'text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500';
+const inputCls = 'w-full text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500';
+const selectCls = 'text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500';
 const btnPrimary = 'text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors';
-const btnGhost = 'text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors';
+const btnGhost = 'text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong disabled:opacity-40 transition-colors';
 
 const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   knowledge: 'Knowledge (tag-scoped docs)',
@@ -54,12 +54,12 @@ const STATUS_CHIP: Record<string, string> = {
   pending_approval: 'bg-amber-500/20 text-amber-400',
   approved: 'bg-indigo-500/20 text-indigo-400',
   executed: 'bg-emerald-500/20 text-emerald-400',
-  rejected: 'bg-slate-600 text-slate-400',
+  rejected: 'bg-slate-600 text-dt-support',
   failed: 'bg-red-500/20 text-red-400',
 };
 
 const Chip = ({ label, cls }: { label: string; cls?: string }) => (
-  <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls ?? 'bg-slate-700 text-slate-400'}`}>{label}</span>
+  <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls ?? 'bg-dt-panel text-dt-support'}`}>{label}</span>
 );
 
 // ── Add-source form ───────────────────────────────────────────────
@@ -118,7 +118,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
     || s.source_type === 'media';
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-4 space-y-3">
       <div className="flex gap-2 flex-wrap">
         <select className={selectCls} value={s.source_type}
           onChange={e => {
@@ -134,7 +134,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
         </select>
         <input className={inputCls + ' !w-56'} placeholder="Label" value={s.label} onChange={e => setS({ ...s, label: e.target.value })} />
       </div>
-      <p className="text-[11px] text-slate-500">
+      <p className="text-[11px] text-dt-muted">
         The access mode is the customer's storage choice — ingest stores content in DreamTeam, fetch-only reads live and never persists, reference only registers and cites.
       </p>
       {s.source_type === 'knowledge' && (
@@ -155,7 +155,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
             <input className={inputCls} placeholder="Auth header name (optional, e.g. Authorization)" value={s.auth_header} onChange={e => setS({ ...s, auth_header: e.target.value })} />
             <input className={inputCls} type="password" placeholder="Auth header value (stored server-side only)" value={s.secret} onChange={e => setS({ ...s, secret: e.target.value })} />
           </div>
-          <p className="text-[11px] text-slate-500">Real MCP client: after adding, run Handshake to connect and list the server's tools. Failures are shown honestly.</p>
+          <p className="text-[11px] text-dt-muted">Real MCP client: after adding, run Handshake to connect and list the server's tools. Failures are shown honestly.</p>
         </div>
       )}
       {s.source_type === 'link' && (
@@ -165,7 +165,7 @@ function AddSourceForm({ profileId, connectors, onDone, onError }: {
         </div>
       )}
       {s.source_type === 'media' && (
-        <p className="text-[11px] text-slate-500">Points the specialist at this profile's media library (upload assets below).</p>
+        <p className="text-[11px] text-dt-muted">Points the specialist at this profile's media library (upload assets below).</p>
       )}
       <button className={btnPrimary} disabled={saving || !canSave} onClick={() => void submit()}>
         {saving ? 'Adding…' : '+ Add source'}
@@ -189,7 +189,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
-  skipped_not_connected: ['Not connected — skipped', 'bg-slate-600 text-slate-300'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-slate-600 text-dt-support'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked by your data access rules', 'bg-rose-500/20 text-rose-300'],
 };
@@ -236,12 +236,12 @@ function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId:
   if (past.length > 0 && !picked) {
     const latest = past[0];
     return (
-      <div className="mt-3 pt-3 border-t border-slate-700">
-        <p className="text-[11px] font-medium text-slate-400 mb-1">Reviewer verdict</p>
+      <div className="mt-3 pt-3 border-t border-dt-border">
+        <p className="text-[11px] font-medium text-dt-support mb-1">Reviewer verdict</p>
         <div className="flex items-center gap-2 flex-wrap">
           <Chip label={latest.verdict.replace('_', ' ')}
             cls={latest.verdict === 'accurate' ? 'bg-emerald-500/20 text-emerald-400' : latest.verdict === 'needs_improvement' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'} />
-          {latest.notes && <span className="text-[11px] text-slate-500">"{latest.notes}"</span>}
+          {latest.notes && <span className="text-[11px] text-dt-muted">"{latest.notes}"</span>}
         </div>
         {latest.verdict !== 'accurate' && (
           <p className="text-[10px] text-teal-400 mt-1">A knowledge revision request was drafted for human review — see Knowledge → Library → Revisions.</p>
@@ -251,12 +251,12 @@ function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId:
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-slate-700">
-      <p className="text-[11px] font-medium text-slate-400 mb-1.5">Was this evidence accurate?</p>
+    <div className="mt-3 pt-3 border-t border-dt-border">
+      <p className="text-[11px] font-medium text-dt-support mb-1.5">Was this evidence accurate?</p>
       <div className="flex gap-1.5 flex-wrap mb-2">
         {VERDICT_OPTIONS.map((v) => (
           <button key={v.key}
-            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${picked === v.key ? v.cls : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${picked === v.key ? v.cls : 'bg-dt-panel text-dt-support hover:bg-dt-panel'}`}
             onClick={() => setPicked(v.key)}>
             {v.label}
           </button>
@@ -293,29 +293,29 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
   evidenceRunId?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
       <div className="space-y-2.5">
         {steps.map((s, i) => {
-          const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-700 text-slate-400'];
+          const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-dt-panel text-dt-support'];
           return (
             <div key={i} className="flex gap-2.5">
               <span className="text-base leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-medium text-white">{STEP_LABEL[s.kind] ?? s.kind}</span>
-                  <span className="text-[11px] text-slate-500">{s.system}</span>
+                  <span className="text-[11px] text-dt-muted">{s.system}</span>
                   <Chip label={ol} cls={oc} />
-                  {s.latency_ms > 0 && <span className="text-[10px] text-slate-600">{s.latency_ms}ms</span>}
+                  {s.latency_ms > 0 && <span className="text-[10px] text-dt-faint">{s.latency_ms}ms</span>}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">{s.summary}</p>
+                <p className="text-[11px] text-dt-support mt-0.5">{s.summary}</p>
                 {(s.citations ?? []).length > 0 && (
                   <div className="mt-1 space-y-1">
                     {s.citations.map((c, j) => (
-                      <div key={j} className="text-[11px] text-slate-500 pl-2 border-l border-slate-700">
-                        <span className="text-slate-300">{c.title}</span>
-                        <span className="text-slate-600"> · {c.system} · ref {c.ref}</span>
+                      <div key={j} className="text-[11px] text-dt-muted pl-2 border-l border-dt-border">
+                        <span className="text-dt-support">{c.title}</span>
+                        <span className="text-dt-faint"> · {c.system} · ref {c.ref}</span>
                         {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300 ml-1">↗</a>}
-                        {c.snippet && <span className="block text-slate-500 truncate">{c.snippet}</span>}
+                        {c.snippet && <span className="block text-dt-muted truncate">{c.snippet}</span>}
                       </div>
                     ))}
                   </div>
@@ -327,24 +327,24 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
       </div>
 
       {confidence && (
-        <div className="mt-3 pt-3 border-t border-slate-700 flex gap-2 flex-wrap">
+        <div className="mt-3 pt-3 border-t border-dt-border flex gap-2 flex-wrap">
           <Chip label={`${confidence.knowledge_hits ?? 0} knowledge hits`} cls="bg-indigo-500/15 text-indigo-300" />
           <Chip label={`${confidence.history_corroborations ?? 0} past-case corroborations`} cls="bg-teal-500/15 text-teal-300" />
           {(confidence.prior_experience_hits ?? 0) > 0 && (
             <Chip label={`${confidence.prior_experience_hits} prior experience citation(s) — handled before`} cls="bg-purple-500/15 text-purple-300" />
           )}
           <Chip label={confidence.account_context_found ? 'account context found' : 'no account context'}
-            cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600 text-slate-300'} />
+            cls={confidence.account_context_found ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600 text-dt-support'} />
           {(confidence.systems_skipped_not_connected ?? 0) > 0 && (
             <Chip label={`${confidence.systems_skipped_not_connected} system(s) not connected`} cls="bg-amber-500/15 text-amber-300" />
           )}
         </div>
       )}
 
-      <div className="mt-3 pt-3 border-t border-slate-700">
-        <p className="text-[11px] font-medium text-slate-400 mb-1">What Alex would answer from</p>
+      <div className="mt-3 pt-3 border-t border-dt-border">
+        <p className="text-[11px] font-medium text-dt-support mb-1">What Alex would answer from</p>
         {answerStatus === 'answered' && answer ? (
-          <p className="text-xs text-slate-200 whitespace-pre-wrap">{answer}</p>
+          <p className="text-xs text-dt-body whitespace-pre-wrap">{answer}</p>
         ) : (
           <p className="text-[11px] text-amber-300">
             Awaiting LLM activation — the evidence above is gathered and cited today; the written answer unlocks when the brain (ANTHROPIC_API_KEY) is switched on.
@@ -578,11 +578,11 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
-          <p className="text-xs text-slate-400">Apply <code className="mx-1 text-slate-300">supabase/migrations/024_specialists.sql</code> in the Supabase SQL Editor, then reload.</p>
+          <p className="text-xs text-dt-support">Apply <code className="mx-1 text-dt-support">supabase/migrations/024_specialists.sql</code> in the Supabase SQL Editor, then reload.</p>
         </div>
       </div>
     );
@@ -590,7 +590,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         <LiveLoadingSkeleton rows={4} />
       </div>
@@ -599,12 +599,12 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
 
   if (!profile) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Technical Specialist" subtitle="Consulted when tasks exceed a DE's technical depth." />
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-10 text-center max-w-2xl">
-          <p className="text-sm text-slate-300 font-medium mb-1">Install the Technical Specialist</p>
-          <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-10 text-center max-w-2xl">
+          <p className="text-sm text-dt-support font-medium mb-1">Install the Technical Specialist</p>
+          <p className="text-xs text-dt-muted mb-4 leading-relaxed">
             Seeds a tenant-editable charter (answers only from configured sources, cites everything, escalates below the confidence floor).
             You then connect its sources — knowledge, connected systems, MCP servers, links, and media — each with the access mode your
             company allows: ingest, fetch-only, or reference.
@@ -618,7 +618,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Technical Specialist — Live"
         subtitle="Configurable sources with per-customer access modes · grounded consultations · Scribe write-backs always human-gated"
@@ -626,12 +626,12 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
 
       {/* Profile / charter */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <div className="flex items-center gap-3 mb-3">
           <span className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 text-lg">⚙</span>
           <div className="flex-1">
             <p className="text-sm font-semibold text-white">{profile.name}</p>
-            <p className="text-[11px] text-slate-500">The charter is the specialist's role definition — tenant-editable, every save audited.</p>
+            <p className="text-[11px] text-dt-muted">The charter is the specialist's role definition — tenant-editable, every save audited.</p>
           </div>
           <Chip label={profile.status} cls={profile.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'} />
           <button
@@ -653,11 +653,11 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       </div>
 
       {/* Sources */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">Sources</h3>
-            <p className="text-[11px] text-slate-500">Each source carries the customer's access-mode choice — ingest, fetch-only, or reference.</p>
+            <p className="text-[11px] text-dt-muted">Each source carries the customer's access-mode choice — ingest, fetch-only, or reference.</p>
           </div>
           <button className={btnGhost + ' !py-1.5'} onClick={() => setShowAdd(v => !v)}>{showAdd ? 'Close' : '+ Add source'}</button>
         </div>
@@ -673,7 +673,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
         ) : (
           <div className="space-y-2">
             {sources.map(src => (
-              <div key={src.id} className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
+              <div key={src.id} className="flex items-center gap-3 rounded-xl border border-dt-border bg-dt-inset px-3 py-2.5">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-white">{src.label}</span>
@@ -681,7 +681,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                     <Chip label={src.access_mode.replace('_', '-')} cls={
                       src.access_mode === 'ingest' ? 'bg-indigo-500/20 text-indigo-300'
                         : src.access_mode === 'fetch_only' ? 'bg-teal-500/20 text-teal-300'
-                        : 'bg-slate-600 text-slate-300'} />
+                        : 'bg-slate-600 text-dt-support'} />
                     {src.source_type === 'mcp_server' && (
                       src.config.mcp?.last_handshake
                         ? <Chip label={src.config.mcp.last_handshake.ok
@@ -694,7 +694,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                         : <Chip label="untested" cls="bg-amber-500/20 text-amber-400" />
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 truncate">
+                  <p className="text-[11px] text-dt-muted truncate">
                     {src.source_type === 'knowledge' && (src.config.tags?.length ? `tags: ${src.config.tags.join(', ')}` : 'all knowledge docs')}
                     {src.source_type === 'connector' && `connector ${connectors.find(c => c.id === src.config.connector_id)?.display_name ?? src.config.connector_id ?? '—'}`}
                     {src.source_type === 'mcp_server' && `${src.config.endpoint ?? ''}${src.config.mcp?.last_handshake?.ok ? ` · tools: ${(src.config.mcp.tools ?? []).slice(0, 5).map(t => t.name).join(', ')}${(src.config.mcp.tool_count ?? 0) > 5 ? '…' : ''}` : ' · run Handshake to list this server\'s tools'}`}
@@ -717,7 +717,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                     {testingId === src.id ? 'Handshaking…' : 'Handshake'}
                   </button>
                 )}
-                <button className="text-xs text-slate-400 hover:text-white"
+                <button className="text-xs text-dt-support hover:text-white"
                   onClick={() => void updateSource(src, { enabled: !src.enabled }).then(() => listSources(profile.id).then(setSources)).catch(err => setError(String(err)))}>
                   {src.enabled ? 'Disable' : 'Enable'}
                 </button>
@@ -732,11 +732,11 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       </div>
 
       {/* Media library */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-semibold text-white">Media library</h3>
-            <p className="text-[11px] text-slate-500">.txt/.md are extracted to knowledge instantly; pdf/docx/video/image are stored + indexed by title/tags — content extraction on activation.</p>
+            <p className="text-[11px] text-dt-muted">.txt/.md are extracted to knowledge instantly; pdf/docx/video/image are stored + indexed by title/tags — content extraction on activation.</p>
           </div>
           <button className={btnGhost + ' !py-1.5'} disabled={uploading} onClick={() => fileRef.current?.click()}>
             {uploading ? 'Uploading…' : 'Upload file'}
@@ -748,7 +748,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
         ) : (
           <div className="space-y-2">
             {media.map(m => (
-              <div key={m.id} className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
+              <div key={m.id} className="flex items-center gap-3 rounded-xl border border-dt-border bg-dt-inset px-3 py-2.5">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-white truncate">{m.title}</span>
@@ -759,9 +759,9 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                       <Chip key={i} label={`⚑ ${f.flag}`} cls="bg-red-500/15 text-red-300" />
                     ))}
                   </div>
-                  <p className="text-[11px] text-slate-500">{Math.round(m.size_bytes / 1024)} KB · {m.tags.length ? m.tags.join(', ') : 'no tags'}</p>
+                  <p className="text-[11px] text-dt-muted">{Math.round(m.size_bytes / 1024)} KB · {m.tags.length ? m.tags.join(', ') : 'no tags'}</p>
                 </div>
-                <button className="text-xs text-slate-400 hover:text-white" onClick={() => {
+                <button className="text-xs text-dt-support hover:text-white" onClick={() => {
                   const t = window.prompt('Tags (comma-separated):', m.tags.join(', '));
                   if (t !== null) void updateMedia(m.id, { tags: t.split(',').map(x => x.trim()).filter(Boolean) }).then(() => listMedia(profile.id).then(setMedia));
                 }}>Tags</button>
@@ -777,7 +777,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {/* Resolve an inquiry — the evidence pipeline */}
       <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-1">Resolve an inquiry — evidence first</h3>
-        <p className="text-[11px] text-slate-500 mb-3">
+        <p className="text-[11px] text-dt-muted mb-3">
           Before answering a customer, the specialist gathers evidence in order: account configuration from your product system,
           your knowledge, past cases in your support desk / CRM, then its own prior experience with this account. Systems that
           aren't connected are skipped honestly — never faked.
@@ -785,7 +785,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
         {threadId && (
           <div className="flex items-center gap-2 mb-3 text-[11px] text-teal-300">
             <span>🧵 Conversation thread active — {threadTurns.length} turn{threadTurns.length === 1 ? '' : 's'} so far. A follow-up "Run" reuses facts already established this thread.</span>
-            <button className="text-slate-400 hover:text-white underline underline-offset-2" onClick={startNewThread}>Start a new conversation</button>
+            <button className="text-dt-support hover:text-white underline underline-offset-2" onClick={startNewThread}>Start a new conversation</button>
           </div>
         )}
         <div className="flex gap-2 mb-3 flex-wrap">
@@ -807,15 +807,15 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
 
         {pastRuns.length > 0 && (
           <>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mt-4 mb-2">Past evidence runs</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mt-4 mb-2">Past evidence runs</p>
             <div className="space-y-1.5">
               {pastRuns.map(r => (
-                <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
+                <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset">
                   <button className="w-full flex items-center gap-2 px-3 py-2 text-left" onClick={() => setExpandedRun(expandedRun === r.id ? null : r.id)}>
-                    <span className="text-xs text-slate-300 flex-1 truncate">{r.inquiry}</span>
+                    <span className="text-xs text-dt-support flex-1 truncate">{r.inquiry}</span>
                     {r.account_ref && <Chip label={r.account_ref} />}
                     <Chip label={`${(r.steps ?? []).filter(s => s.outcome === 'ok').length}/${(r.steps ?? []).length} steps ok`} cls="bg-teal-500/15 text-teal-300" />
-                    <span className="text-[10px] text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</span>
+                    <span className="text-[10px] text-dt-muted whitespace-nowrap">{fmtDate(r.created_at)}</span>
                   </button>
                   {expandedRun === r.id && (
                     <div className="px-3 pb-3">
@@ -830,9 +830,9 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       </div>
 
       {/* Consultation console */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-1">Consultation console</h3>
-        <p className="text-[11px] text-slate-500 mb-3">Retrieval across configured sources runs now; the answer path unlocks when the specialist brain (ANTHROPIC_API_KEY) is activated.</p>
+        <p className="text-[11px] text-dt-muted mb-3">Retrieval across configured sources runs now; the answer path unlocks when the specialist brain (ANTHROPIC_API_KEY) is activated.</p>
         <div className="flex gap-2 mb-3">
           <input className={inputCls} placeholder="Ask the Technical Specialist…" value={question}
             onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void ask(); }} />
@@ -841,47 +841,47 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
           </button>
         </div>
         {lastResult && (
-          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 mb-4">
+          <div className="rounded-xl border border-dt-border bg-dt-inset p-4 mb-4">
             {lastResult.error === 'llm_not_configured' ? (
               <p className="text-xs text-amber-300 mb-2">Specialist brain not activated — retrieval ran and is recorded below. Configure ANTHROPIC_API_KEY to unlock answers.</p>
             ) : lastResult.blocked ? (
               <p className="text-xs text-red-300 mb-2">Answer blocked by guardrail "{lastResult.rule}" — escalated to a human.</p>
             ) : lastResult.answer ? (
               <>
-                <p className="text-sm text-slate-200 whitespace-pre-wrap mb-2">{lastResult.answer}</p>
-                <p className="text-[11px] text-slate-500 mb-2">Confidence {lastResult.confidence}% · cited: {(lastResult.citations ?? []).join(', ') || '—'}</p>
+                <p className="text-sm text-dt-body whitespace-pre-wrap mb-2">{lastResult.answer}</p>
+                <p className="text-[11px] text-dt-muted mb-2">Confidence {lastResult.confidence}% · cited: {(lastResult.citations ?? []).join(', ') || '—'}</p>
               </>
             ) : null}
-            <p className="text-[11px] font-medium text-slate-400 mb-1">Retrieved sources</p>
+            <p className="text-[11px] font-medium text-dt-support mb-1">Retrieved sources</p>
             <div className="space-y-1">
               {(lastResult.retrieved_sources ?? []).map((r, i) => (
                 <div key={i} className="flex items-center gap-2 text-[11px]">
-                  <Chip label={r.kind} cls={r.kind === 'content' ? 'bg-emerald-500/20 text-emerald-400' : r.kind === 'reference' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-700 text-slate-500'} />
-                  <span className="text-slate-300">{r.label}</span>
-                  <span className="text-slate-500">{r.detail}</span>
+                  <Chip label={r.kind} cls={r.kind === 'content' ? 'bg-emerald-500/20 text-emerald-400' : r.kind === 'reference' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-dt-panel text-dt-muted'} />
+                  <span className="text-dt-support">{r.label}</span>
+                  <span className="text-dt-muted">{r.detail}</span>
                 </div>
               ))}
-              {(lastResult.retrieved_sources ?? []).length === 0 && <p className="text-[11px] text-slate-600">No enabled sources.</p>}
+              {(lastResult.retrieved_sources ?? []).length === 0 && <p className="text-[11px] text-dt-faint">No enabled sources.</p>}
             </div>
           </div>
         )}
 
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">History</p>
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">History</p>
         {consultations.length === 0 ? (
           <LiveEmptyState icon="◎" title="No consultations yet" body="Questions asked of the Technical Specialist appear here." />
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-900/60">
+            <thead className="bg-dt-inset">
               <tr><th className={th}>When</th><th className={th}>By</th><th className={th}>Question</th><th className={th}>Status</th><th className={th}>Conf.</th><th className={th}></th></tr>
             </thead>
             <tbody>
               {consultations.map(c => (
-                <tr key={c.id} className="border-t border-slate-700/60">
-                  <td className={`${td} text-xs text-slate-500 whitespace-nowrap`}>{fmtDate(c.created_at)}</td>
-                  <td className={`${td} text-xs text-slate-400`}>{c.requested_by}</td>
-                  <td className={`${td} text-xs text-slate-300 max-w-xs`}><span className="line-clamp-2">{c.question}</span></td>
+                <tr key={c.id} className="border-t border-dt-border">
+                  <td className={`${td} text-xs text-dt-muted whitespace-nowrap`}>{fmtDate(c.created_at)}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{c.requested_by}</td>
+                  <td className={`${td} text-xs text-dt-support max-w-xs`}><span className="line-clamp-2">{c.question}</span></td>
                   <td className={td}><Chip label={c.status} cls={STATUS_CHIP[c.status]} /></td>
-                  <td className={`${td} text-xs text-slate-400`}>{c.confidence ?? '—'}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{c.confidence ?? '—'}</td>
                   <td className={td}>
                     <button className="text-xs text-purple-400 hover:text-purple-300 whitespace-nowrap"
                       onClick={() => { setScribeFor(c); setScribeConnector(connectors[0]?.id ?? ''); }}>
@@ -898,7 +898,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {/* Scribe queue */}
       <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-1">Scribe — write-back queue</h3>
-        <p className="text-[11px] text-slate-500 mb-3">
+        <p className="text-[11px] text-dt-muted mb-3">
           Structurally grounded: every write must originate from a consultation (FK-enforced), payloads come only from whitelisted templates
           interpolated from that consultation, and every request is human-gated in v1. Approve or reject in{' '}
           <button className="text-indigo-400 hover:text-indigo-300" onClick={() => setPage('ops_human_tasks')}>Human Tasks</button>.
@@ -908,15 +908,15 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
         ) : (
           <div className="space-y-2">
             {scribe.map(r => (
-              <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2.5">
+              <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset px-3 py-2.5">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-xs font-medium text-white">
                     {r.action_key === 'add_internal_note' ? 'Internal note' : r.action_key === 'reply_to_ticket' ? 'Public reply' : 'Status update'} → ticket #{r.external_ref}
                   </span>
                   <Chip label={r.status.replace('_', ' ')} cls={STATUS_CHIP[r.status]} />
-                  <span className="text-[10px] text-slate-500">consultation {r.consultation_id.slice(0, 8)}…</span>
+                  <span className="text-[10px] text-dt-muted">consultation {r.consultation_id.slice(0, 8)}…</span>
                 </div>
-                <p className="text-[11px] text-slate-400 font-mono truncate">{JSON.stringify(r.payload)}</p>
+                <p className="text-[11px] text-dt-support font-mono truncate">{JSON.stringify(r.payload)}</p>
                 {r.status === 'failed' && r.result && (
                   <p className="text-[11px] text-red-300 mt-1">write failed: {String((r.result as { error?: string }).error ?? 'unknown')} (recorded honestly)</p>
                 )}
@@ -930,7 +930,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {flagFor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setFlagFor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-3">Flag "{flagFor.title}"</h2>
             <select className={selectCls + ' w-full mb-3'} value={flagKind} onChange={e => setFlagKind(e.target.value as QualityFlag['flag'])}>
               <option value="stale">Stale</option>
@@ -987,9 +987,9 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {scribeFor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setScribeFor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-slate-800 border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-dt-card border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold text-white mb-1">Scribe write-back</h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-dt-muted mb-4">
               Grounded in consultation <span className="font-mono">{scribeFor.id.slice(0, 8)}…</span>. The payload is built server-side from
               the consultation only — you choose the target and action, never the text.
             </p>
@@ -1026,9 +1026,9 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Currently auto-executes once trusted</span>
                     )}
                     {actionDefFor(scribeAction)!.risk.idempotent && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-600 text-slate-400">Safe to retry</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-600 text-dt-support">Safe to retry</span>
                     )}
-                    <span className="text-[10px] text-slate-600">{actionDefFor(scribeAction)!.description}</span>
+                    <span className="text-[10px] text-dt-faint">{actionDefFor(scribeAction)!.description}</span>
                   </div>
                 )}
                 <input className={inputCls + ' mb-3'} placeholder="Target ticket ref (e.g. 12345)" value={scribeRef} onChange={e => { setScribeRef(e.target.value); setScribePreview(null); }} />
@@ -1041,7 +1041,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                     {scribePreview.ok ? (
                       <>
                         <p className="font-medium mb-1">{scribePreview.receipt_preview}</p>
-                        <p className="font-mono text-[10px] text-slate-500 truncate">{scribePreview.preview?.method} {scribePreview.preview?.url}</p>
+                        <p className="font-mono text-[10px] text-dt-muted truncate">{scribePreview.preview?.method} {scribePreview.preview?.url}</p>
                       </>
                     ) : (
                       <p>{scribePreview.detail ?? scribePreview.error}</p>

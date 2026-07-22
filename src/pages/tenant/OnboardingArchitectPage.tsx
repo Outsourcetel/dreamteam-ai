@@ -44,21 +44,21 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
         <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300 text-lg">{meta.icon}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">{meta.kind}</span>
+            <span className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold">{meta.kind}</span>
           </div>
           <h4 className="text-white font-semibold leading-tight mt-0.5">{title}</h4>
 
           {/* Details drawn from the proposal's parameters */}
-          <div className="mt-2 space-y-1 text-[13px] text-slate-300">
-            {str(params.department) && <div><span className="text-slate-500">Department:</span> {str(params.department)}</div>}
-            {str(params.persona_name) && <div><span className="text-slate-500">Answers as:</span> {str(params.persona_name)}</div>}
-            {str(params.category) && !str(params.provider) && <div><span className="text-slate-500">Type:</span> {str(params.category)}</div>}
-            {str(params.description) && <p className="text-slate-400">{str(params.description)}</p>}
+          <div className="mt-2 space-y-1 text-[13px] text-dt-support">
+            {str(params.department) && <div><span className="text-dt-muted">Department:</span> {str(params.department)}</div>}
+            {str(params.persona_name) && <div><span className="text-dt-muted">Answers as:</span> {str(params.persona_name)}</div>}
+            {str(params.category) && !str(params.provider) && <div><span className="text-dt-muted">Type:</span> {str(params.category)}</div>}
+            {str(params.description) && <p className="text-dt-support">{str(params.description)}</p>}
             {str(params.outline) && (
-              <div className="mt-1 rounded-lg bg-black/20 border border-white/5 p-2.5 whitespace-pre-wrap text-slate-400 text-[12.5px]">{str(params.outline)}</div>
+              <div className="mt-1 rounded-lg bg-black/20 border border-white/5 p-2.5 whitespace-pre-wrap text-dt-support text-[12.5px]">{str(params.outline)}</div>
             )}
-            {str(params.charter) && <p className="text-slate-400">{str(params.charter)}</p>}
-            {str(params.provider) && <div><span className="text-slate-500">System:</span> {str(params.provider)}</div>}
+            {str(params.charter) && <p className="text-dt-support">{str(params.charter)}</p>}
+            {str(params.provider) && <div><span className="text-dt-muted">System:</span> {str(params.provider)}</div>}
           </div>
         </div>
 
@@ -124,14 +124,14 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
         <>
           {/* The brief */}
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <label className="block text-sm font-medium text-slate-200">Tell Ada about your business</label>
-            <p className="mt-1 text-[13px] text-slate-400">What do you do, and what would you like your AI team to handle for your customers?</p>
+            <label className="block text-sm font-medium text-dt-body">Tell Ada about your business</label>
+            <p className="mt-1 text-[13px] text-dt-support">What do you do, and what would you like your AI team to handle for your customers?</p>
             <textarea
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               rows={4}
               placeholder="e.g. We run a dental clinic and want an employee that answers patient questions about appointments, billing and insurance…"
-              className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 text-[14px] text-white placeholder:text-slate-600 outline-none focus:border-indigo-400/60"
+              className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 text-[14px] text-white placeholder:text-dt-faint outline-none focus:border-indigo-400/60"
             />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
@@ -142,12 +142,12 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                 {busy ? 'Ada is designing your setup…' : 'Design my setup'}
               </button>
               {!busy && !result && (
-                <span className="text-[12.5px] text-slate-500">Takes ~30 seconds.</span>
+                <span className="text-[12.5px] text-dt-muted">Takes ~30 seconds.</span>
               )}
             </div>
             {!result && !busy && (
               <div className="mt-4 border-t border-white/5 pt-3">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold mb-2">Need inspiration?</div>
+                <div className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold mb-2">Need inspiration?</div>
                 <div className="flex flex-col gap-1.5">
                   {EXAMPLES.map((ex) => (
                     <button key={ex} onClick={() => setDesc(ex)} className="text-left text-[13px] text-indigo-300/90 hover:text-indigo-200">“{ex}”</button>
@@ -162,7 +162,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
           )}
 
           {busy && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-slate-400">
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
               Ada is reading your brief and designing the smallest setup that fits…
             </div>
           )}
@@ -175,7 +175,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                   Ada got busy and couldn't finish this pass. Please try again in a minute.
                 </div>
               ) : result.proposals.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-slate-400">
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
                   Ada didn't propose anything this time. Try describing your needs with a bit more detail.
                 </div>
               ) : (
@@ -183,10 +183,10 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                   {result.summary && (
                     <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/[0.06] p-4">
                       <div className="text-[11px] uppercase tracking-wide text-indigo-300 font-semibold">Ada proposes</div>
-                      <p className="mt-1 text-[13.5px] text-slate-200">{result.summary}</p>
+                      <p className="mt-1 text-[13.5px] text-dt-body">{result.summary}</p>
                     </div>
                   )}
-                  <p className="mt-4 mb-2 text-[12.5px] text-slate-500">
+                  <p className="mt-4 mb-2 text-[12.5px] text-dt-muted">
                     Review each item and approve what you want. Nothing is created until you approve it — new employees start supervised and can't act until you finish setting them up.
                   </p>
                   <div className="flex flex-col gap-3">

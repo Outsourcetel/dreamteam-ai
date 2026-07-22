@@ -98,12 +98,12 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">Response Pre-Approval Rules</h4>
-        <p className="text-xs text-slate-400">Define when {de.name}'s responses need human review before sending.</p>
+        <p className="text-xs text-dt-support">Define when {de.name}'s responses need human review before sending.</p>
       </div>
 
       {/* Strategy Selection */}
-      <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
-        <label className="text-xs font-medium text-slate-400 block">Pre-Approval Strategy</label>
+      <div className="bg-dt-card border border-dt-border rounded-lg p-3 space-y-2">
+        <label className="text-xs font-medium text-dt-support block">Pre-Approval Strategy</label>
         <div className="space-y-1.5">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -112,9 +112,9 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
               value="all"
               checked={config.strategy === 'all'}
               onChange={e => setConfig({ ...config, strategy: 'all' })}
-              className="rounded border-slate-600"
+              className="rounded border-dt-border-strong"
             />
-            <span className="text-xs text-slate-300">Review ALL responses (safest)</span>
+            <span className="text-xs text-dt-support">Review ALL responses (safest)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -123,9 +123,9 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
               value="rule_based"
               checked={config.strategy === 'rule_based'}
               onChange={e => setConfig({ ...config, strategy: 'rule_based' })}
-              className="rounded border-slate-600"
+              className="rounded border-dt-border-strong"
             />
-            <span className="text-xs text-slate-300">Rule-based (see rules below)</span>
+            <span className="text-xs text-dt-support">Rule-based (see rules below)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -134,38 +134,38 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
               value="never"
               checked={config.strategy === 'never'}
               onChange={e => setConfig({ ...config, strategy: 'never' })}
-              className="rounded border-slate-600"
+              className="rounded border-dt-border-strong"
             />
-            <span className="text-xs text-slate-300">Never review (fastest)</span>
+            <span className="text-xs text-dt-support">Never review (fastest)</span>
           </label>
         </div>
       </div>
 
       {/* Rules (if rule-based) */}
       {config.strategy === 'rule_based' && (
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
-          <div className="text-xs font-medium text-slate-400">Rules</div>
+        <div className="bg-dt-card border border-dt-border rounded-lg p-3 space-y-2">
+          <div className="text-xs font-medium text-dt-support">Rules</div>
 
           {config.rules && config.rules.length > 0 ? (
             config.rules.map(rule => (
-              <div key={rule.id} className="bg-slate-900/50 border border-slate-600 rounded p-2 flex items-start justify-between text-xs">
+              <div key={rule.id} className="bg-dt-inset border border-dt-border-strong rounded p-2 flex items-start justify-between text-xs">
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold text-indigo-300">{RULE_LABELS[rule.rule_type]}</span>
-                  <p className="text-slate-400 mt-1 font-mono">{rule.condition}</p>
-                  <p className="text-slate-500 mt-1">
+                  <p className="text-dt-support mt-1 font-mono">{rule.condition}</p>
+                  <p className="text-dt-muted mt-1">
                     {rule.requires_approval ? '→ Require human review' : '→ Can send automatically'}
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2 flex-shrink-0">
                   <button
                     onClick={() => setEditingRule(rule)}
-                    className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+                    className="px-2 py-1 bg-dt-panel hover:bg-dt-panel rounded text-xs transition-colors"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDeleteRule(rule.id)}
-                    className="px-2 py-1 bg-slate-700 hover:bg-red-900/40 text-red-300 rounded text-xs transition-colors"
+                    className="px-2 py-1 bg-dt-panel hover:bg-red-900/40 text-red-300 rounded text-xs transition-colors"
                   >
                     Remove
                   </button>
@@ -173,12 +173,12 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
               </div>
             ))
           ) : (
-            <p className="text-xs text-slate-500">No rules defined.</p>
+            <p className="text-xs text-dt-muted">No rules defined.</p>
           )}
 
           <button
             onClick={handleAddRule}
-            className="w-full px-2 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors text-center"
+            className="w-full px-2 py-1.5 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors text-center"
           >
             + Add Rule
           </button>
@@ -187,23 +187,23 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
 
       {/* Timeout Configuration */}
       {config.strategy === 'rule_based' && (
-        <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
+        <div className="bg-dt-card border border-dt-border rounded-lg p-3 space-y-2">
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1">Review Timeout</label>
+            <label className="text-xs font-medium text-dt-support block mb-1">Review Timeout</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 min="1"
                 value={config.review_timeout_minutes || 30}
                 onChange={e => setConfig({ ...config, review_timeout_minutes: Number(e.target.value) })}
-                className="w-16 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                className="w-16 bg-dt-page border border-dt-border-strong rounded px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
               />
-              <span className="text-xs text-slate-400">minutes</span>
+              <span className="text-xs text-dt-support">minutes</span>
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1">If review times out:</label>
+            <label className="text-xs font-medium text-dt-support block mb-1">If review times out:</label>
             <div className="space-y-1">
               <label className="flex items-center gap-2 cursor-pointer text-xs">
                 <input
@@ -212,9 +212,9 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                   value="escalate"
                   checked={(config.on_timeout || 'escalate') === 'escalate'}
                   onChange={e => setConfig({ ...config, on_timeout: 'escalate' })}
-                  className="rounded border-slate-600"
+                  className="rounded border-dt-border-strong"
                 />
-                <span className="text-slate-300">Escalate instead (safe)</span>
+                <span className="text-dt-support">Escalate instead (safe)</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer text-xs">
                 <input
@@ -223,9 +223,9 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                   value="send"
                   checked={(config.on_timeout || 'escalate') === 'send'}
                   onChange={e => setConfig({ ...config, on_timeout: 'send' })}
-                  className="rounded border-slate-600"
+                  className="rounded border-dt-border-strong"
                 />
-                <span className="text-slate-300">Send anyway (risky)</span>
+                <span className="text-dt-support">Send anyway (risky)</span>
               </label>
             </div>
           </div>
@@ -235,19 +235,19 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
       {/* Rule Editor Modal */}
       {editingRule && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => setEditingRule(null)} />
+          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setEditingRule(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-4 space-y-3">
+            <div className="pointer-events-auto w-full max-w-md bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl p-4 space-y-3">
               <h3 className="text-sm font-semibold text-white">
                 {config.rules?.find(r => r.id === editingRule.id) ? 'Edit Rule' : 'Add Pre-Approval Rule'}
               </h3>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Rule Type</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Rule Type</label>
                 <select
                   value={editingRule.rule_type}
                   onChange={e => setEditingRule({ ...editingRule, rule_type: e.target.value as any })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 >
                   <option value="confidence">Confidence &lt; X%</option>
                   <option value="response_type">Response contains keyword</option>
@@ -258,7 +258,7 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Condition</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Condition</label>
                 <input
                   placeholder={
                     editingRule.rule_type === 'confidence' ? 'e.g., confidence<80' :
@@ -268,7 +268,7 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                   }
                   value={editingRule.condition}
                   onChange={e => setEditingRule({ ...editingRule, condition: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -278,9 +278,9 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                     type="checkbox"
                     checked={editingRule.requires_approval}
                     onChange={e => setEditingRule({ ...editingRule, requires_approval: e.target.checked })}
-                    className="rounded border-slate-600"
+                    className="rounded border-dt-border-strong"
                   />
-                  <span className="text-slate-300">Require human review</span>
+                  <span className="text-dt-support">Require human review</span>
                 </label>
               </div>
 
@@ -299,7 +299,7 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                 </button>
                 <button
                   onClick={() => setEditingRule(null)}
-                  className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+                  className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded text-xs transition-colors"
                 >
                   Cancel
                 </button>
@@ -310,7 +310,7 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {/* Save Button */}
-      <div className="flex items-center gap-2 pt-3 border-t border-slate-700">
+      <div className="flex items-center gap-2 pt-3 border-t border-dt-border">
         <button
           onClick={handleSave}
           disabled={saving}

@@ -150,14 +150,14 @@ export function WorkforceChatHubPage() {
   return (
     <div className="h-screen flex flex-col bg-slate-950">
       {/* Header */}
-      <div className="border-b border-slate-800 bg-slate-900 px-6 py-4">
-        <h1 className="text-2xl font-bold text-slate-100">Workforce Assistant</h1>
-        <p className="text-slate-400 text-sm mt-1">Manage your digital workforce conversationally</p>
+      <div className="border-b border-dt-border bg-dt-page px-6 py-4">
+        <h1 className="text-2xl font-bold text-dt-title">Workforce Assistant</h1>
+        <p className="text-dt-support text-sm mt-1">Manage your digital workforce conversationally</p>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left sidebar: Conversation list */}
-        <div className="w-64 border-r border-slate-800 bg-slate-900 flex flex-col overflow-hidden">
+        <div className="w-64 border-r border-dt-border bg-dt-page flex flex-col overflow-hidden">
           {/* New conversation button */}
           <button
             onClick={() => {
@@ -175,16 +175,16 @@ export function WorkforceChatHubPage() {
               <button
                 key={conv.conversation_id}
                 onClick={() => setCurrentConversation(conv)}
-                className={`w-full text-left px-4 py-3 border-b border-slate-800 transition ${
+                className={`w-full text-left px-4 py-3 border-b border-dt-border transition ${
                   currentConversation?.conversation_id === conv.conversation_id
-                    ? 'bg-slate-800 border-l-2 border-l-blue-500'
-                    : 'hover:bg-slate-800'
+                    ? 'bg-dt-card border-l-2 border-l-blue-500'
+                    : 'hover:bg-dt-panel'
                 }`}
               >
-                <div className="font-medium text-slate-200 text-sm">
+                <div className="font-medium text-dt-body text-sm">
                   {conv.topic.charAt(0).toUpperCase() + conv.topic.slice(1)}
                 </div>
-                <div className="text-xs text-slate-500 mt-1 truncate">
+                <div className="text-xs text-dt-muted mt-1 truncate">
                   {conv.messages[0]?.content || 'No messages'}
                 </div>
               </button>
@@ -193,7 +193,7 @@ export function WorkforceChatHubPage() {
 
           {/* Pending actions count */}
           {pendingActions.length > 0 && (
-            <div className="p-3 border-t border-slate-800 bg-slate-800">
+            <div className="p-3 border-t border-dt-border bg-dt-card">
               <div className="text-xs font-medium text-amber-400 flex items-center">
                 ⚠️ {pendingActions.length} Pending Approval
               </div>
@@ -206,7 +206,7 @@ export function WorkforceChatHubPage() {
           {/* Chat area and dashboard side-by-side */}
           <div className="flex flex-1 overflow-hidden gap-4 p-4">
             {/* Chat messages */}
-            <div className="flex-1 flex flex-col bg-slate-800 rounded-lg overflow-hidden">
+            <div className="flex-1 flex flex-col bg-dt-card rounded-lg overflow-hidden">
               {currentConversation ? (
                 <>
                   {/* Messages */}
@@ -235,7 +235,7 @@ export function WorkforceChatHubPage() {
                   )}
 
                   {/* Input area */}
-                  <div className="border-t border-slate-700 p-4">
+                  <div className="border-t border-dt-border p-4">
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -248,12 +248,12 @@ export function WorkforceChatHubPage() {
                           }
                         }}
                         placeholder="Describe what you need... (e.g., 'I want to hire someone for escalations')"
-                        className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder-slate-500"
+                        className="flex-1 bg-dt-panel border border-dt-border-strong rounded px-3 py-2 text-dt-title placeholder-slate-500"
                       />
                       <button
                         onClick={handleSendMessage}
                         disabled={isLoading || !inputMessage.trim()}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white rounded transition"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-dt-panel text-white rounded transition"
                       >
                         Send
                       </button>
@@ -261,7 +261,7 @@ export function WorkforceChatHubPage() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center h-full text-slate-400">
+                <div className="flex items-center justify-center h-full text-dt-support">
                   <div className="text-center">
                     <p className="text-lg">Start a new conversation</p>
                     <p className="text-sm mt-2">Tell the Workforce Assistant what you need</p>
@@ -277,8 +277,8 @@ export function WorkforceChatHubPage() {
 
               {/* Pending actions */}
               {pendingActions.length > 0 && (
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="font-bold text-slate-100 mb-3">Pending Approval ({pendingActions.length})</h3>
+                <div className="bg-dt-card rounded-lg p-4">
+                  <h3 className="font-bold text-dt-title mb-3">Pending Approval ({pendingActions.length})</h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {pendingActions.map((action) => (
                       <DraftApprovalCard key={action.action_id} action={action} />

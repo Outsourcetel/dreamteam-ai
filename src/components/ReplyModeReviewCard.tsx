@@ -48,7 +48,7 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
 
   const confidenceColor =
     draft.confidence === undefined
-      ? 'text-slate-400'
+      ? 'text-dt-support'
       : draft.confidence >= 0.85
         ? 'text-emerald-400'
         : draft.confidence >= 0.7
@@ -59,14 +59,14 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] bg-slate-800 border border-slate-600 rounded-xl shadow-2xl flex flex-col">
+      <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="border-b border-slate-700 px-6 py-4">
+        <div className="border-b border-dt-border px-6 py-4">
           <div className="flex items-center justify-between gap-4 mb-2">
             <h2 className="text-lg font-semibold text-white">Review Draft Response</h2>
-            <div className="text-xs text-slate-400">Expires in {expiresIn}m</div>
+            <div className="text-xs text-dt-support">Expires in {expiresIn}m</div>
           </div>
-          <p className="text-sm text-slate-400">Question: {draft.user_question}</p>
+          <p className="text-sm text-dt-support">Question: {draft.user_question}</p>
         </div>
 
         {/* Content */}
@@ -74,7 +74,7 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
           {/* Confidence Badge */}
           {draft.confidence !== undefined && (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-400">Confidence:</span>
+              <span className="text-xs font-medium text-dt-support">Confidence:</span>
               <span className={`text-sm font-semibold ${confidenceColor}`}>
                 {(draft.confidence * 100).toFixed(0)}%
               </span>
@@ -87,11 +87,11 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
           {/* Draft Content (Read-Only or Edit) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-400">Draft Response</label>
+              <label className="text-xs font-medium text-dt-support">Draft Response</label>
               {!editMode && (
                 <button
                   onClick={() => setEditMode(true)}
-                  className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                  className="text-xs px-2 py-1 bg-dt-panel hover:bg-dt-panel rounded transition-colors"
                 >
                   ✎ Edit
                 </button>
@@ -101,10 +101,10 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
               <textarea
                 value={editedContent}
                 onChange={e => setEditedContent(e.target.value)}
-                className="w-full h-32 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full h-32 bg-dt-page border border-dt-border-strong rounded px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500 font-mono"
               />
             ) : (
-              <div className="bg-slate-900/50 border border-slate-700/50 rounded px-4 py-3 text-sm text-slate-200 whitespace-pre-wrap">
+              <div className="bg-dt-inset border border-dt-border rounded px-4 py-3 text-sm text-dt-body whitespace-pre-wrap">
                 {draft.draft_content}
               </div>
             )}
@@ -113,7 +113,7 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
           {/* Sources */}
           {draft.sources && draft.sources.length > 0 && (
             <div>
-              <label className="text-xs font-medium text-slate-400 block mb-2">Sources</label>
+              <label className="text-xs font-medium text-dt-support block mb-2">Sources</label>
               <div className="space-y-1">
                 {draft.sources.map((source, idx) => (
                   <a
@@ -134,12 +134,12 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
           {/* Rejection Reason (only shown if rejecting) */}
           {rejecting && (
             <div>
-              <label className="text-xs font-medium text-slate-400 block mb-2">Reason for Rejection</label>
+              <label className="text-xs font-medium text-dt-support block mb-2">Reason for Rejection</label>
               <textarea
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
                 placeholder="Why are you rejecting this draft? (sent to DE for improvement)"
-                className="w-full h-20 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-red-500"
+                className="w-full h-20 bg-dt-page border border-dt-border-strong rounded px-3 py-2 text-xs text-dt-body focus:outline-none focus:border-red-500"
               />
             </div>
           )}
@@ -153,12 +153,12 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-700 px-6 py-4 flex gap-2">
+        <div className="border-t border-dt-border px-6 py-4 flex gap-2">
           {!rejecting ? (
             <>
               <button
                 onClick={() => setRejecting(true)}
-                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-red-900/40 text-red-300 rounded text-xs font-medium transition-colors"
+                className="flex-1 px-4 py-2 bg-dt-panel hover:bg-red-900/40 text-red-300 rounded text-xs font-medium transition-colors"
               >
                 ✗ Reject
               </button>
@@ -174,7 +174,7 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
             <>
               <button
                 onClick={() => setRejecting(false)}
-                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-medium transition-colors"
+                className="flex-1 px-4 py-2 bg-dt-panel hover:bg-dt-panel rounded text-xs font-medium transition-colors"
               >
                 Cancel Rejection
               </button>
@@ -191,7 +191,7 @@ export function ReplyModeReviewCard({ draft, onApprove, onReject }: ReplyModeRev
       </div>
 
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-slate-900/70" />
+      <div className="fixed inset-0 z-40 bg-dt-page/70" />
     </div>
   )
 }

@@ -90,23 +90,23 @@ const MfaEnrollmentPanel = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Two-Factor Authentication</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           An extra code from your phone, required before you can open Remote Access into any tenant's workspace.
         </p>
       </div>
 
       {loading ? (
-        <div className="text-slate-500 text-sm">Checking your account…</div>
+        <div className="text-dt-muted text-sm">Checking your account…</div>
       ) : verifiedFactor ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg">
           <div className="flex items-center gap-3 mb-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
             <span className="text-sm font-medium text-white">Two-factor authentication is on</span>
           </div>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             Remote Access now requires a verified code from your authenticator app before it will let you
             into a tenant's workspace.
           </p>
@@ -119,18 +119,18 @@ const MfaEnrollmentPanel = () => {
           </button>
         </div>
       ) : pendingFactorId ? (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg space-y-4">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg space-y-4">
           <div>
             <p className="text-sm font-medium text-white mb-2">1. Scan this with your authenticator app</p>
-            <p className="text-xs text-slate-500 mb-3">Google Authenticator, Authy, 1Password, or any TOTP app.</p>
+            <p className="text-xs text-dt-muted mb-3">Google Authenticator, Authy, 1Password, or any TOTP app.</p>
             {qrCode && (
               <div
                 className="bg-white rounded-lg p-3 inline-block"
                 dangerouslySetInnerHTML={{ __html: qrCode }}
               />
             )}
-            <p className="text-[11px] text-slate-600 mt-2">
-              Can't scan it? Enter this code manually: <span className="font-mono text-slate-400">{secret}</span>
+            <p className="text-[11px] text-dt-faint mt-2">
+              Can't scan it? Enter this code manually: <span className="font-mono text-dt-support">{secret}</span>
             </p>
           </div>
           <div>
@@ -140,7 +140,7 @@ const MfaEnrollmentPanel = () => {
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest w-32 text-center"
+                className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest w-32 text-center"
               />
               <button
                 onClick={verifyCode}
@@ -151,7 +151,7 @@ const MfaEnrollmentPanel = () => {
               </button>
               <button
                 onClick={cancelEnroll}
-                className="px-3 py-2 text-sm text-slate-400 hover:text-slate-300"
+                className="px-3 py-2 text-sm text-dt-support hover:text-dt-support"
               >
                 Cancel
               </button>
@@ -159,9 +159,9 @@ const MfaEnrollmentPanel = () => {
           </div>
         </div>
       ) : (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-lg">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg">
           <p className="text-sm text-white mb-1">Two-factor authentication is off</p>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-dt-muted mb-4">
             Remote Access works without it today, but adding a second factor closes the one real gap
             left on this account.
           </p>

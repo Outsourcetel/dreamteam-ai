@@ -44,7 +44,7 @@ const statusChip = (status: string) => {
   const map: Record<string, string> = {
     draft: 'bg-amber-500/15 text-amber-300',
     published: 'bg-emerald-500/15 text-emerald-300',
-    archived: 'bg-slate-600 text-slate-400',
+    archived: 'bg-slate-600 text-dt-support',
     completed: 'bg-emerald-500/15 text-emerald-300',
     waiting_approval: 'bg-amber-500/15 text-amber-300',
     resume_pending: 'bg-indigo-500/15 text-indigo-300',
@@ -53,7 +53,7 @@ const statusChip = (status: string) => {
     failed: 'bg-red-500/15 text-red-300',
   };
   const label = status === 'waiting_approval' ? 'waiting on human' : status === 'resume_pending' ? 'resuming' : status;
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status] ?? 'bg-slate-700 text-slate-400'}`}>{label}</span>;
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status] ?? 'bg-dt-panel text-dt-support'}`}>{label}</span>;
 };
 
 const stepIcon = (s: RunStep) =>
@@ -62,7 +62,7 @@ const stepIcon = (s: RunStep) =>
 
 const stepColor = (s: RunStep) =>
   s.status === 'done' ? 'text-emerald-400' : s.status === 'waiting' ? 'text-amber-400'
-  : s.status === 'skipped' ? 'text-slate-500' : s.status === 'failed' || s.status === 'cancelled' ? 'text-red-400' : 'text-slate-600';
+  : s.status === 'skipped' ? 'text-dt-muted' : s.status === 'failed' || s.status === 'cancelled' ? 'text-red-400' : 'text-dt-faint';
 
 function RunTimeline({ run }: { run: PlaybookRun }) {
   return (
@@ -70,14 +70,14 @@ function RunTimeline({ run }: { run: PlaybookRun }) {
       {run.steps.map((s, i) => (
         <div key={i} className={`flex items-start gap-2 text-xs rounded-lg px-2 py-1.5 ${s.key === 'human_approval' ? 'bg-amber-500/5' : ''}`}>
           <span className={`flex-shrink-0 ${stepColor(s)}`}>{stepIcon(s)}</span>
-          <span className={`flex-shrink-0 w-5 text-slate-600`}>{i + 1}.</span>
+          <span className={`flex-shrink-0 w-5 text-dt-faint`}>{i + 1}.</span>
           <div className="min-w-0">
-            <span className={s.status === 'pending' ? 'text-slate-600' : 'text-slate-300'}>
+            <span className={s.status === 'pending' ? 'text-dt-faint' : 'text-dt-support'}>
               {s.label}{s.key === 'human_approval' ? ' 🤝' : ''}
             </span>
-            {s.detail && <p className="text-[11px] text-slate-500 mt-0.5 break-words">{s.detail}</p>}
+            {s.detail && <p className="text-[11px] text-dt-muted mt-0.5 break-words">{s.detail}</p>}
           </div>
-          {s.at && <span className="ml-auto text-[10px] text-slate-600 whitespace-nowrap">{new Date(s.at).toLocaleTimeString()}</span>}
+          {s.at && <span className="ml-auto text-[10px] text-dt-faint whitespace-nowrap">{new Date(s.at).toLocaleTimeString()}</span>}
         </div>
       ))}
     </div>
@@ -86,7 +86,7 @@ function RunTimeline({ run }: { run: PlaybookRun }) {
 
 // ── Step param editor per primitive ───────────────────────────────
 
-const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-500';
+const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-xs text-dt-body focus:outline-none focus:border-slate-500';
 const selectCls = inputCls;
 
 function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: (params: Record<string, unknown>) => void }) {
@@ -165,7 +165,7 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
           </div>
           <input className={inputCls} placeholder="Question template" value={String(p.question_template ?? '')}
             onChange={e => set('question_template', e.target.value)} />
-          <p className="text-[10px] text-slate-600">Missing/paused profile or dormant specialist brain → step records as skipped (honest degradation); escalation still fires when chosen.</p>
+          <p className="text-[10px] text-dt-faint">Missing/paused profile or dormant specialist brain → step records as skipped (honest degradation); escalation still fires when chosen.</p>
         </div>
       );
     case 'custom_step':
@@ -173,7 +173,7 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
         <div className="space-y-2">
           <textarea className={inputCls + ' min-h-[80px] resize-y'} placeholder="Describe what this step should do, in your own words — e.g. &quot;Look up the customer's plan in our knowledge base, check their payment status in QuickBooks, and if it's overdue, draft a reminder following our dunning policy.&quot; (templates supported, e.g. {{account.name}})"
             value={String(p.instructions ?? '')} onChange={e => set('instructions', e.target.value)} />
-          <p className="text-[10px] text-slate-600">Your own step. The employee reads your instructions and carries them out — pulling from your knowledge base, acting in your connected systems, consulting a specialist, or following the rules you write. Every action still passes your access grants, guardrails and trust dial. Dormant reasoning brain → step records as skipped (honest degradation).</p>
+          <p className="text-[10px] text-dt-faint">Your own step. The employee reads your instructions and carries them out — pulling from your knowledge base, acting in your connected systems, consulting a specialist, or following the rules you write. Every action still passes your access grants, guardrails and trust dial. Dormant reasoning brain → step records as skipped (honest degradation).</p>
         </div>
       );
     case 'agentic_step':
@@ -181,11 +181,11 @@ function StepParamsEditor({ step, onChange }: { step: DefinitionStep; onChange: 
         <div className="space-y-2">
           <textarea className={inputCls + ' min-h-[60px] resize-y'} placeholder="Goal — what should this step accomplish? (templates supported, e.g. {{account.name}})"
             value={String(p.goal_template ?? '')} onChange={e => set('goal_template', e.target.value)} />
-          <p className="text-[10px] text-slate-600">The DE decides how to reach this goal using whatever tools it's been granted — it doesn't follow a fixed script. Every action still passes through the same access grants, guardrails, and trust dial as a Connector action step. Dormant reasoning brain → step records as skipped (honest degradation), same as Consult specialist.</p>
+          <p className="text-[10px] text-dt-faint">The DE decides how to reach this goal using whatever tools it's been granted — it doesn't follow a fixed script. Every action still passes through the same access grants, guardrails, and trust dial as a Connector action step. Dormant reasoning brain → step records as skipped (honest degradation), same as Consult specialist.</p>
         </div>
       );
     case 'guardrail_check':
-      return <p className="text-[11px] text-slate-500">Re-checks the invoice approval threshold and records the result in the audit chain.</p>;
+      return <p className="text-[11px] text-dt-muted">Re-checks the invoice approval threshold and records the result in the audit chain.</p>;
     case 'checklist':
       return <ChecklistEditor step={step} onChange={onChange} />;
     case 'wait':
@@ -255,9 +255,9 @@ function ConnectorActionEditor({ step, onChange }: { step: DefinitionStep; onCha
 
       {selected && (
         <>
-          {selected.description && <p className="text-[10px] text-slate-500">{selected.description}</p>}
+          {selected.description && <p className="text-[10px] text-dt-muted">{selected.description}</p>}
           {selected.param_schema.length === 0 ? (
-            <p className="text-[10px] text-slate-600">This action takes no parameters.</p>
+            <p className="text-[10px] text-dt-faint">This action takes no parameters.</p>
           ) : (
             <div className="space-y-1.5">
               {selected.param_schema.map(f => (
@@ -276,7 +276,7 @@ function ConnectorActionEditor({ step, onChange }: { step: DefinitionStep; onCha
       {!loading && actions.length === 0 && (
         <p className="text-[10px] text-amber-500">No registered actions yet. A workspace owner/admin can register them; platform helpdesk actions appear once a connector is set up.</p>
       )}
-      <p className="text-[10px] text-slate-600">No connected system for the action's category → step records as skipped and the run continues (honest degradation). Every action passes the same access grants, guardrails and trust dial.</p>
+      <p className="text-[10px] text-dt-faint">No connected system for the action's category → step records as skipped and the run continues (honest degradation). Every action passes the same access grants, guardrails and trust dial.</p>
     </div>
   );
 }
@@ -303,7 +303,7 @@ function EmitEventEditor({ step, onChange }: { step: DefinitionStep; onChange: (
       {!loading && events.length === 0 && (
         <p className="text-[10px] text-amber-500">No events defined yet — create one under Triggers → Manage events.</p>
       )}
-      <p className="text-[10px] text-slate-600">Fires the event when this step runs — any playbook wired to it starts on the next dispatch cycle. Unknown event → step recorded as skipped, run continues.</p>
+      <p className="text-[10px] text-dt-faint">Fires the event when this step runs — any playbook wired to it starts on the next dispatch cycle. Unknown event → step recorded as skipped, run continues.</p>
     </div>
   );
 }
@@ -318,18 +318,18 @@ function CheckKnowledgeEditor({ step, onChange }: { step: DefinitionStep; onChan
       <input className={inputCls} placeholder="What to look up (templates supported, e.g. {{account.name}} refund policy)"
         value={String(p.query_template ?? '')} onChange={e => set('query_template', e.target.value)} />
       <div className="flex gap-2 flex-wrap items-center">
-        <label className="text-[11px] text-slate-500">Fetch</label>
+        <label className="text-[11px] text-dt-muted">Fetch</label>
         <input className={inputCls + ' !w-16'} type="number" min={1} max={10}
           value={typeof p.match_count === 'number' ? p.match_count : 5}
           onChange={e => set('match_count', Math.max(1, Math.min(10, Number(e.target.value))))} />
-        <label className="text-[11px] text-slate-500">matches · if nothing is found</label>
+        <label className="text-[11px] text-dt-muted">matches · if nothing is found</label>
         <select className={selectCls + ' !w-40'} value={String(p.on_miss ?? 'escalate')} onChange={e => set('on_miss', e.target.value)}>
           <option value="escalate">Escalate to a human</option>
           <option value="continue">Continue anyway</option>
           <option value="fail">Stop the run</option>
         </select>
       </div>
-      <p className="text-[10px] text-slate-600">Searches your knowledge base the same way a DE answer does, scoped to this playbook's employee. What it finds is read into the run for later Agentic / Consult steps. Branch on the result with a Decision on <span className="font-mono">step:N.found</span>.</p>
+      <p className="text-[10px] text-dt-faint">Searches your knowledge base the same way a DE answer does, scoped to this playbook's employee. What it finds is read into the run for later Agentic / Consult steps. Branch on the result with a Decision on <span className="font-mono">step:N.found</span>.</p>
     </div>
   );
 }
@@ -367,12 +367,12 @@ function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChang
       {refs.length > 0 && (
         <div className="space-y-1">
           {refs.map((r, i) => (
-            <div key={i} className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{r.kind}</span>
-              <span className="text-[11px] text-slate-300 flex-1 truncate">
+            <div key={i} className="flex items-center gap-2 bg-dt-page border border-dt-border rounded-lg px-2 py-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{r.kind}</span>
+              <span className="text-[11px] text-dt-support flex-1 truncate">
                 {r.kind === 'doc' ? (docs.find(d => d.id === r.doc_id)?.title ?? r.doc_id) : r.kind === 'url' ? r.url : (r.label ?? r.asset_id)}
               </span>
-              <button onClick={() => removeRef(i)} className="text-[11px] text-slate-500 hover:text-rose-400">✕</button>
+              <button onClick={() => removeRef(i)} className="text-[11px] text-dt-muted hover:text-rose-400">✕</button>
             </div>
           ))}
         </div>
@@ -384,7 +384,7 @@ function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChang
             {docs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
           </select>
           <UrlAdder onAdd={(url) => addRef({ kind: 'url', url })} />
-          <label className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 cursor-pointer">
+          <label className="text-[11px] px-2 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong cursor-pointer">
             {uploading ? 'Uploading…' : '+ Upload document'}
             <input type="file" accept=".txt,.md,.markdown,.json,text/*" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) void onUpload(f); e.target.value = ''; }} />
@@ -392,7 +392,7 @@ function ReadReferenceEditor({ step, onChange }: { step: DefinitionStep; onChang
         </div>
       )}
       {err && <p className="text-[10px] text-rose-400">{err}</p>}
-      <p className="text-[10px] text-slate-600">The employee reads all of these into its working context before later Agentic / Consult steps act. Scoped knowledge docs are only readable by an employee they're scoped to. Text, markdown, JSON, and web pages only.</p>
+      <p className="text-[10px] text-dt-faint">The employee reads all of these into its working context before later Agentic / Consult steps act. Scoped knowledge docs are only readable by an employee they're scoped to. Text, markdown, JSON, and web pages only.</p>
     </div>
   );
 }
@@ -408,7 +408,7 @@ function StepRuleRow({ step, onChange }: { step: DefinitionStep; onChange: (para
     onChange(next ? { ...rest, rule: next } : rest);
   };
   if (!open && !rule) {
-    return <button onClick={() => setOpen(true)} className="mt-1.5 text-[10px] text-slate-500 hover:text-slate-300">+ Add a rule to this step</button>;
+    return <button onClick={() => setOpen(true)} className="mt-1.5 text-[10px] text-dt-muted hover:text-dt-support">+ Add a rule to this step</button>;
   }
   return (
     <div className="mt-1.5 flex gap-2 flex-wrap items-center bg-rose-500/5 border border-rose-500/15 rounded-lg px-2 py-1.5">
@@ -420,8 +420,8 @@ function StepRuleRow({ step, onChange }: { step: DefinitionStep; onChange: (para
         <option value="escalate">→ escalate to a human</option>
         <option value="fail">→ stop the run</option>
       </select>
-      <button onClick={() => { setRule(null); setOpen(false); }} className="text-[10px] text-slate-500 hover:text-rose-400">remove</button>
-      <p className="text-[10px] text-slate-600 w-full">If this step's result matches the pattern, the run stops. An extra per-step assertion — your workspace guardrails still apply on top.</p>
+      <button onClick={() => { setRule(null); setOpen(false); }} className="text-[10px] text-dt-muted hover:text-rose-400">remove</button>
+      <p className="text-[10px] text-dt-faint w-full">If this step's result matches the pattern, the run stops. An extra per-step assertion — your workspace guardrails still apply on top.</p>
     </div>
   );
 }
@@ -431,7 +431,7 @@ function UrlAdder({ onAdd }: { onAdd: (url: string) => void }) {
   return (
     <div className="flex gap-1 items-center">
       <input className={inputCls + ' !w-44'} placeholder="https://…" value={url} onChange={e => setUrl(e.target.value)} />
-      <button className="text-[11px] px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40"
+      <button className="text-[11px] px-2 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong disabled:opacity-40"
         disabled={!/^https?:\/\//i.test(url)} onClick={() => { onAdd(url.trim()); setUrl(''); }}>Add link</button>
     </div>
   );
@@ -458,7 +458,7 @@ function StartOnboardingEditor({ step, onChange }: { step: DefinitionStep; onCha
       {!loading && versions.length === 0 && (
         <p className="text-[10px] text-amber-500">No published onboarding templates yet — publish one first (Onboarding → Templates).</p>
       )}
-      <p className="text-[10px] text-slate-600">Creates a real onboarding project for this run's account. A deleted/unpublished template version or no account in context → step records as skipped, run continues.</p>
+      <p className="text-[10px] text-dt-faint">Creates a real onboarding project for this run's account. A deleted/unpublished template version or no account in context → step records as skipped, run continues.</p>
     </div>
   );
 }
@@ -492,20 +492,20 @@ function InstructionEditor({ step, definitionId, onChange }: {
       <textarea className={inputCls + ' min-h-[80px] resize-y'} placeholder="Body — markdown supported (headings, lists, **bold**, links)"
         value={String(p.body_md ?? '')} onChange={e => set('body_md', e.target.value)} />
       <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 cursor-pointer transition-colors">
+        <label className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong cursor-pointer transition-colors">
           {uploading ? 'Uploading…' : '+ Add image or video'}
           <input type="file" accept="image/*,video/*" className="hidden" disabled={uploading}
             onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f); e.target.value = ''; }} />
         </label>
         {media.map((m, i) => (
-          <span key={i} className="text-[11px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 flex items-center gap-1.5">
+          <span key={i} className="text-[11px] px-2 py-1 rounded-lg bg-dt-page border border-dt-border text-dt-support flex items-center gap-1.5">
             {m.kind === 'video' ? '🎬' : '🖼️'} {m.caption || m.asset_id?.slice(0, 8) || 'media'}
-            <button onClick={() => set('media', media.filter((_, k) => k !== i))} className="text-slate-600 hover:text-rose-400">✕</button>
+            <button onClick={() => set('media', media.filter((_, k) => k !== i))} className="text-dt-faint hover:text-rose-400">✕</button>
           </span>
         ))}
       </div>
       {uploadErr && <p className="text-[11px] text-rose-400">✗ {uploadErr}</p>}
-      <p className="text-[10px] text-slate-600">Presented to whoever reads or runs this playbook. Feeds later "Consult specialist" steps as context — dormant until the specialist brain (API key) is activated.</p>
+      <p className="text-[10px] text-dt-faint">Presented to whoever reads or runs this playbook. Feeds later "Consult specialist" steps as context — dormant until the specialist brain (API key) is activated.</p>
     </div>
   );
 }
@@ -523,11 +523,11 @@ function ChecklistEditor({ step, onChange }: { step: DefinitionStep; onChange: (
           <input className={inputCls} placeholder={`Item ${i + 1}`} value={it}
             onChange={e => set(items.map((v, k) => k === i ? e.target.value : v))} />
           <button onClick={() => set(items.filter((_, k) => k !== i))} disabled={items.length <= 1}
-            className="text-xs text-slate-600 hover:text-rose-400 disabled:opacity-30">✕</button>
+            className="text-xs text-dt-faint hover:text-rose-400 disabled:opacity-30">✕</button>
         </div>
       ))}
       <button onClick={() => set([...items, ''])} className="text-[11px] text-indigo-400 hover:text-indigo-300">+ Add item</button>
-      <p className="text-[10px] text-slate-600">Creates a Human Task — the run pauses until every item is ticked.</p>
+      <p className="text-[10px] text-dt-faint">Creates a Human Task — the run pauses until every item is ticked.</p>
     </div>
   );
 }
@@ -540,7 +540,7 @@ function WaitEditor({ step, onChange }: { step: DefinitionStep; onChange: (param
     <div className="flex items-center gap-2">
       <input className={inputCls + ' !w-24'} type="number" min={1} value={typeof p.duration_minutes === 'number' ? p.duration_minutes : 60}
         onChange={e => onChange({ ...p, duration_minutes: Math.max(1, Number(e.target.value) || 1) })} />
-      <span className="text-xs text-slate-500">minutes, then continue automatically (checked every 5 minutes).</span>
+      <span className="text-xs text-dt-muted">minutes, then continue automatically (checked every 5 minutes).</span>
     </div>
   );
 }
@@ -557,7 +557,7 @@ function SubPlaybookEditor({ step, publishedDefs, onChange }: {
         <option value="">Pick a published playbook…</option>
         {publishedDefs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
       </select>
-      <p className="text-[10px] text-slate-600">Runs as a child of this playbook — inherits this playbook's DE access (never more). Only published playbooks can be picked; no cycles allowed.</p>
+      <p className="text-[10px] text-dt-faint">Runs as a child of this playbook — inherits this playbook's DE access (never more). Only published playbooks can be picked; no cycles allowed.</p>
     </div>
   );
 }
@@ -591,15 +591,15 @@ function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
   };
 
   const branchList = (side: 'then' | 'else', steps: DefinitionStep[]) => (
-    <div className="pl-4 border-l-2 border-slate-600 space-y-1.5 mt-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500">{side === 'then' ? 'Then' : 'Else'}</p>
+    <div className="pl-4 border-l-2 border-dt-border-strong space-y-1.5 mt-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-dt-muted">{side === 'then' ? 'Then' : 'Else'}</p>
       {steps.map((bs, i) => {
         const meta = PRIMITIVE_REGISTRY.find(m => m.key === bs.key);
         return (
-          <div key={i} className="rounded-lg border border-slate-700 bg-slate-900/60 p-2">
+          <div key={i} className="rounded-lg border border-dt-border bg-dt-inset p-2">
             <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-xs text-slate-300">{meta?.label ?? bs.key}</span>
-              <button onClick={() => branchRemove(side, i)} className="text-xs text-slate-600 hover:text-rose-400">✕</button>
+              <span className="text-xs text-dt-support">{meta?.label ?? bs.key}</span>
+              <button onClick={() => branchRemove(side, i)} className="text-xs text-dt-faint hover:text-rose-400">✕</button>
             </div>
             <StepParamsEditor step={bs} onChange={params => branchUpdate(side, i, params)} />
           </div>
@@ -608,7 +608,7 @@ function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
       <div className="flex flex-wrap gap-1">
         {BRANCH_PRIMITIVES.map(k => (
           <button key={k} onClick={() => branchAdd(side, k)}
-            className="text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-500 hover:text-slate-200 hover:border-slate-500 transition-colors">
+            className="text-[10px] px-1.5 py-0.5 rounded border border-dt-border-strong text-dt-muted hover:text-dt-body hover:border-dt-border-strong transition-colors">
             + {PRIMITIVE_REGISTRY.find(m => m.key === k)?.label ?? k}
           </button>
         ))}
@@ -634,7 +634,7 @@ function DecisionEditor({ step, stepIndex, allSteps, onChange }: {
       </div>
       {branchList('then', thenSteps)}
       {branchList('else', elseSteps)}
-      <p className="text-[10px] text-slate-600">Decisions can only look at EARLIER steps. One level of branch nesting.</p>
+      <p className="text-[10px] text-dt-faint">Decisions can only look at EARLIER steps. One level of branch nesting.</p>
     </div>
   );
 }
@@ -647,12 +647,12 @@ function TemplateHelp() {
         {'{{ templates }}'} ▾
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-slate-600 bg-slate-800 p-3 shadow-xl">
-          <p className="text-[11px] font-medium text-slate-300 mb-2">Available template variables</p>
+        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-dt-border-strong bg-dt-card p-3 shadow-xl">
+          <p className="text-[11px] font-medium text-dt-support mb-2">Available template variables</p>
           {TEMPLATE_VARS.map(v => (
             <div key={v.token} className="flex gap-2 text-[11px] mb-1">
               <code className="text-indigo-300 whitespace-nowrap">{v.token}</code>
-              <span className="text-slate-500">{v.meaning}</span>
+              <span className="text-dt-muted">{v.meaning}</span>
             </div>
           ))}
         </div>
@@ -691,13 +691,13 @@ function MediaThumb({ m }: { m: StepMedia }) {
     void getPlaybookMediaUrlByAssetId(m.asset_id).then(setUrl).catch(() => undefined);
   }, [m.asset_id, m.url]);
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 inline-block">
+    <div className="rounded-lg border border-dt-border bg-dt-page p-2 inline-block">
       {m.kind === 'video' ? (
-        url ? <video src={url} controls className="max-h-40 rounded" /> : <span className="text-[11px] text-slate-500">🎬 {m.caption || 'video'}</span>
+        url ? <video src={url} controls className="max-h-40 rounded" /> : <span className="text-[11px] text-dt-muted">🎬 {m.caption || 'video'}</span>
       ) : (
-        url ? <img src={url} alt={m.caption || ''} className="max-h-40 rounded" /> : <span className="text-[11px] text-slate-500">🖼️ {m.caption || 'image'}</span>
+        url ? <img src={url} alt={m.caption || ''} className="max-h-40 rounded" /> : <span className="text-[11px] text-dt-muted">🖼️ {m.caption || 'image'}</span>
       )}
-      {m.caption && <p className="text-[10px] text-slate-600 mt-1">{m.caption}</p>}
+      {m.caption && <p className="text-[10px] text-dt-faint mt-1">{m.caption}</p>}
     </div>
   );
 }
@@ -717,7 +717,7 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
           {index !== null && <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
           <span className="text-sm font-medium text-white">{String(p.title ?? 'Instruction')}</span>
         </div>
-        {p.body_md ? <p className="text-xs text-slate-300 whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
+        {p.body_md ? <p className="text-xs text-dt-support whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
         {media.length > 0 && <div className="ml-8 mt-2 flex flex-wrap gap-2">{media.map((m, i) => <MediaThumb key={i} m={m} />)}</div>}
       </div>
     );
@@ -733,10 +733,10 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
           <span className="text-sm text-white">If <code className="text-violet-300">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-violet-300">{String(p.value ?? '')}</code> : null}</span>
         </div>
         <div className="ml-8 mt-1">
-          <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-1">Then</p>
-          {then.length === 0 ? <p className="text-[11px] text-slate-600 ml-2">(nothing)</p> : then.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
-          <p className="text-[10px] uppercase tracking-wider text-slate-600 mt-2">Else</p>
-          {els.length === 0 ? <p className="text-[11px] text-slate-600 ml-2">(nothing)</p> : els.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
+          <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-1">Then</p>
+          {then.length === 0 ? <p className="text-[11px] text-dt-faint ml-2">(nothing)</p> : then.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
+          <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-2">Else</p>
+          {els.length === 0 ? <p className="text-[11px] text-dt-faint ml-2">(nothing)</p> : els.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
         </div>
       </div>
     );
@@ -744,17 +744,17 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
 
   // Everything else — a numbered "document" row with an action chip.
   return (
-    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-slate-700/60'}`}>
-      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>{index + 1}</span>}
-      <span className="text-slate-300">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
-      {s.key === 'connector_action' && <span className="text-[10px] text-slate-600">{String(p.action_category ?? p.category ?? p.provider ?? '—')}{(p.action_key || p.op) ? ` · ${String(p.action_key ?? p.op)}` : ''}</span>}
-      {s.key === 'log_activity' && <span className="text-[10px] text-slate-600 truncate">{String(p.text_template ?? '')}</span>}
-      {s.key === 'checklist' && <span className="text-[10px] text-slate-600">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
-      {s.key === 'wait' && <span className="text-[10px] text-slate-600">{String(p.duration_minutes ?? 0)} min</span>}
-      {s.key === 'sub_playbook' && <span className="text-[10px] text-slate-600">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
-      {s.key === 'check_knowledge' && <span className="text-[10px] text-slate-600 truncate">🔎 {String(p.query_template ?? '')} · miss: {String(p.on_miss ?? 'escalate')}</span>}
-      {s.key === 'read_reference' && <span className="text-[10px] text-slate-600">📄 {Array.isArray(p.refs) ? (p.refs as unknown[]).length : 0} reference(s)</span>}
-      {s.key === 'custom_step' && <span className="text-[10px] text-slate-600 truncate">✦ {String(p.instructions ?? '')}</span>}
+    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-dt-border'}`}>
+      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>{index + 1}</span>}
+      <span className="text-dt-support">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
+      {s.key === 'connector_action' && <span className="text-[10px] text-dt-faint">{String(p.action_category ?? p.category ?? p.provider ?? '—')}{(p.action_key || p.op) ? ` · ${String(p.action_key ?? p.op)}` : ''}</span>}
+      {s.key === 'log_activity' && <span className="text-[10px] text-dt-faint truncate">{String(p.text_template ?? '')}</span>}
+      {s.key === 'checklist' && <span className="text-[10px] text-dt-faint">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
+      {s.key === 'wait' && <span className="text-[10px] text-dt-faint">{String(p.duration_minutes ?? 0)} min</span>}
+      {s.key === 'sub_playbook' && <span className="text-[10px] text-dt-faint">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
+      {s.key === 'check_knowledge' && <span className="text-[10px] text-dt-faint truncate">🔎 {String(p.query_template ?? '')} · miss: {String(p.on_miss ?? 'escalate')}</span>}
+      {s.key === 'read_reference' && <span className="text-[10px] text-dt-faint">📄 {Array.isArray(p.refs) ? (p.refs as unknown[]).length : 0} reference(s)</span>}
+      {s.key === 'custom_step' && <span className="text-[10px] text-dt-faint truncate">✦ {String(p.instructions ?? '')}</span>}
       {(p.rule as { pattern?: string } | undefined)?.pattern && <span className="text-[10px] text-rose-400/70" title={`Step rule: ${String((p.rule as { pattern?: string }).pattern)}`}>⚑ rule</span>}
     </div>
   );
@@ -837,7 +837,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <h3 className="text-sm font-semibold text-white">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
         <TemplateHelp />
@@ -857,15 +857,15 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
           const errs = errsFor(i);
           const isGate = s.key === 'human_approval';
           return (
-            <div key={i} className={`rounded-xl border p-3 ${isGate ? 'border-amber-500/30 bg-amber-500/5' : errs.length ? 'border-rose-700/50 bg-rose-500/5' : 'border-slate-700 bg-slate-800'}`}>
+            <div key={i} className={`rounded-xl border p-3 ${isGate ? 'border-amber-500/30 bg-amber-500/5' : errs.length ? 'border-rose-700/50 bg-rose-500/5' : 'border-dt-border bg-dt-card'}`}>
               <div className="flex items-start gap-3">
-                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>{i + 1}</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-sm font-medium text-white">{meta?.label ?? s.key}</span>
                     {isGate && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Human Gate</span>}
                   </div>
-                  <p className="text-[11px] text-slate-500 mb-2">{meta?.description}</p>
+                  <p className="text-[11px] text-dt-muted mb-2">{meta?.description}</p>
                   {s.key === 'instruction' ? (
                     <InstructionEditor step={s} definitionId={st.id} onChange={params => {
                       const steps = [...st.steps]; steps[i] = { ...s, params }; setSt({ ...st, steps });
@@ -892,9 +892,9 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
                   {errs.map((e, k) => <p key={k} className="text-[11px] text-rose-400 mt-1.5">✗ {e.message}</p>)}
                 </div>
                 <div className="flex flex-col gap-1 flex-shrink-0">
-                  <button onClick={() => move(i, -1)} disabled={i === 0} className="text-xs text-slate-500 hover:text-slate-300 disabled:opacity-30">↑</button>
-                  <button onClick={() => move(i, 1)} disabled={i === st.steps.length - 1} className="text-xs text-slate-500 hover:text-slate-300 disabled:opacity-30">↓</button>
-                  <button onClick={() => remove(i)} className="text-xs text-slate-600 hover:text-rose-400">✕</button>
+                  <button onClick={() => move(i, -1)} disabled={i === 0} className="text-xs text-dt-muted hover:text-dt-support disabled:opacity-30">↑</button>
+                  <button onClick={() => move(i, 1)} disabled={i === st.steps.length - 1} className="text-xs text-dt-muted hover:text-dt-support disabled:opacity-30">↓</button>
+                  <button onClick={() => remove(i)} className="text-xs text-dt-faint hover:text-rose-400">✕</button>
                 </div>
               </div>
             </div>
@@ -910,10 +910,10 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
           ['flow', 'Flow control'],
         ] as const).map(([group, label]) => (
           <div key={group} className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-slate-600 w-32 flex-shrink-0">{label}</span>
+            <span className="text-[10px] uppercase tracking-wider text-dt-faint w-32 flex-shrink-0">{label}</span>
             {PRIMITIVE_REGISTRY.filter(m => m.group === group).map(m => (
               <button key={m.key} onClick={() => addStep(m.key)} title={m.description}
-                className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors">
+                className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                 + {m.label}
               </button>
             ))}
@@ -927,15 +927,15 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
 
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <button onClick={saveDraft} disabled={busy !== null}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save draft'}
         </button>
         <button onClick={publish} disabled={busy !== null || clientErrors.length > 0}
           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
           {busy === 'publish' ? 'Publishing…' : st.status === 'published' ? `Publish v${'{next}'.replace('{next}', '↑')}` : 'Publish'}
         </button>
-        <button onClick={onCancel} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
-        <span className="ml-auto text-[10px] text-slate-600">Publishing validates server-side and snapshots an immutable version — running playbooks never see later edits.</span>
+        <button onClick={onCancel} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
+        <span className="ml-auto text-[10px] text-dt-faint">Publishing validates server-side and snapshots an immutable version — running playbooks never see later edits.</span>
       </div>
 
       <DryRunPreview steps={st.steps} definitionId={st.id} accounts={accounts} disabled={clientErrors.length > 0} />
@@ -951,12 +951,12 @@ function PreviewStepRow({ s, depth = 0 }: { s: PreviewRunStep; depth?: number })
   return (
     <div style={{ marginLeft: depth * 16 }}>
       <div className={`flex items-start gap-2 text-xs rounded-lg px-2 py-1.5 ${s.status === 'failed' ? 'bg-rose-500/5' : s.status === 'waiting' ? 'bg-amber-500/5' : ''}`}>
-        <span className={`flex-shrink-0 ${s.status === 'done' ? 'text-emerald-400' : s.status === 'skipped' ? 'text-slate-500' : s.status === 'failed' ? 'text-rose-400' : s.status === 'waiting' ? 'text-amber-400' : 'text-slate-600'}`}>
+        <span className={`flex-shrink-0 ${s.status === 'done' ? 'text-emerald-400' : s.status === 'skipped' ? 'text-dt-muted' : s.status === 'failed' ? 'text-rose-400' : s.status === 'waiting' ? 'text-amber-400' : 'text-dt-faint'}`}>
           {s.status === 'done' ? '✓' : s.status === 'skipped' ? '↷' : s.status === 'failed' ? '✗' : s.status === 'waiting' ? '⏸' : '·'}
         </span>
         <div className="min-w-0 flex-1">
-          <span className="text-slate-300">{s.label}</span>
-          {s.detail && <p className="text-[11px] text-slate-500 mt-0.5 break-words">{s.detail}</p>}
+          <span className="text-dt-support">{s.label}</span>
+          {s.detail && <p className="text-[11px] text-dt-muted mt-0.5 break-words">{s.detail}</p>}
         </div>
       </div>
       {branch && branch.map((bs, i) => <PreviewStepRow key={i} s={bs} depth={depth + 1} />)}
@@ -988,7 +988,7 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <p className="text-xs font-medium text-indigo-300">Dry-run preview</p>
-          <p className="text-[10px] text-slate-500">Simulates connector calls and writes — nothing is called externally, nothing is persisted, human gates never pause.</p>
+          <p className="text-[10px] text-dt-muted">Simulates connector calls and writes — nothing is called externally, nothing is persisted, human gates never pause.</p>
         </div>
         <button onClick={() => setOpen(o => !o)} disabled={disabled}
           className="text-xs px-3 py-1.5 rounded-lg border border-indigo-700/50 text-indigo-300 hover:border-indigo-500 disabled:opacity-40 transition-colors">
@@ -1012,7 +1012,7 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
             <div className="mb-2">{result.errors.map((e, k) => <p key={k} className="text-[11px] text-rose-400">✗ {e.message}</p>)}</div>
           )}
           {result?.steps && (
-            <div className="space-y-1 bg-slate-900/50 rounded-lg p-2">
+            <div className="space-y-1 bg-dt-inset rounded-lg p-2">
               {result.steps.map((s, i) => <PreviewStepRow key={i} s={s} />)}
             </div>
           )}
@@ -1028,7 +1028,7 @@ function fireChip(status: PlaybookTriggerFire['status']) {
   const map: Record<string, string> = {
     started: 'bg-emerald-500/15 text-emerald-300',
     pending_start: 'bg-indigo-500/15 text-indigo-300',
-    skipped_dedup: 'bg-slate-600 text-slate-400',
+    skipped_dedup: 'bg-slate-600 text-dt-support',
     error: 'bg-red-500/15 text-red-300',
   };
   const label = status === 'skipped_dedup' ? 'deduped' : status === 'pending_start' ? 'pending' : status;
@@ -1119,25 +1119,25 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   }));
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-5">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <h3 className="text-sm font-semibold text-white">Triggers</h3>
         <div className="flex gap-2">
           <button onClick={() => setAdding(adding === 'schedule' ? null : 'schedule')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
             ⏰ Add schedule
           </button>
           <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
             ⚡ Add event rule
           </button>
           <button onClick={() => setShowEvents(v => !v)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
             ◆ Manage events
           </button>
         </div>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         {DISPATCH_MODE === 'cron'
           ? 'Dispatcher runs server-side every 5 minutes (pg_cron) — triggers fire even with every browser closed.'
           : 'Scheduled triggers fire when the workspace is active — always-on dispatch arrives with infrastructure cron.'}
@@ -1148,7 +1148,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {err && <p className="text-[11px] text-rose-400 mb-2">✗ {err}</p>}
 
       {adding === 'schedule' && (
-        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-2">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 mb-3 space-y-2">
           <div className="flex gap-2 flex-wrap items-center">
             <select className={selectCls + ' !w-32'} value={cadence} onChange={e => setCadence(e.target.value as ScheduleCadence)}>
               <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
@@ -1178,7 +1178,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             ) : (
-              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <label className="text-[11px] text-dt-muted flex items-center gap-1.5">
                 renewal within
                 <input className={inputCls + ' !w-16'} type="number" min={1} max={365} value={withinDays} onChange={e => setWithinDays(Number(e.target.value))} />
                 days
@@ -1193,7 +1193,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       )}
 
       {adding === 'event' && (
-        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-2">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 mb-3 space-y-2">
           <div className="flex gap-2 flex-wrap items-center">
             <select className={selectCls + ' !w-64'} value={eventKey} onChange={e => setEventKey(e.target.value)}>
               <optgroup label="Built-in">
@@ -1206,19 +1206,19 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
               )}
             </select>
             {eventKey === 'invoice_overdue' ? (
-              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <label className="text-[11px] text-dt-muted flex items-center gap-1.5">
                 overdue by
                 <input className={inputCls + ' !w-16'} type="number" min={1} max={90} value={overdueDays} onChange={e => setOverdueDays(Number(e.target.value))} />
                 days
               </label>
             ) : eventKey === 'account_at_risk' ? (
-              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <label className="text-[11px] text-dt-muted flex items-center gap-1.5">
                 min ARR $
                 <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minArr} onChange={e => setMinArr(Number(e.target.value))} />
                 (0 = any)
               </label>
             ) : eventKey === 'opportunity_won' ? (
-              <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <label className="text-[11px] text-dt-muted flex items-center gap-1.5">
                 min deal $
                 <input className={inputCls + ' !w-24'} type="number" min={0} step={1000} value={minAmount} onChange={e => setMinAmount(Number(e.target.value))} />
                 (0 = any)
@@ -1228,13 +1228,13 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 <option value="p1">p1</option><option value="p2">p2</option>
               </select>
             ) : null}
-            <label className="text-[11px] text-slate-500 flex items-center gap-1.5">
+            <label className="text-[11px] text-dt-muted flex items-center gap-1.5">
               cooldown
               <input className={inputCls + ' !w-16'} type="number" min={1} max={720} value={cooldown} onChange={e => setCooldown(Number(e.target.value))} />
               h per target
             </label>
           </div>
-          <p className="text-[10px] text-slate-600">{eventDesc}{!isPolled && selectedDef ? ' — fired via the Emit event step, manual fire, or the webhook.' : ''}</p>
+          <p className="text-[10px] text-dt-faint">{eventDesc}{!isPolled && selectedDef ? ' — fired via the Emit event step, manual fire, or the webhook.' : ''}</p>
           <button onClick={() => void addRule()} disabled={busy}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
             {busy ? 'Adding…' : 'Add event rule'}
@@ -1244,10 +1244,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 
       {/* Wave 2b — custom (emitted) event management */}
       {showEvents && (
-        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 mb-3 space-y-3">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 mb-3 space-y-3">
           <div>
             <p className="text-xs font-semibold text-white mb-1">Your events</p>
-            <p className="text-[11px] text-slate-500 mb-2">
+            <p className="text-[11px] text-dt-muted mb-2">
               Define an event your business can fire — from an Emit-event step in a playbook, the Fire button here, or the webhook below. Any playbook with a matching event rule runs when it fires.
             </p>
             <div className="flex gap-2 flex-wrap items-end">
@@ -1265,10 +1265,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           {customEvents.length > 0 && (
             <div className="space-y-1">
               {customEvents.map(d => (
-                <div key={d.id} className="flex items-center justify-between gap-2 bg-slate-800/60 rounded-lg px-3 py-1.5">
-                  <span className="text-[11px] text-slate-300">{d.label} <span className="text-slate-600 font-mono">· {d.event_key}</span></span>
+                <div key={d.id} className="flex items-center justify-between gap-2 bg-dt-card rounded-lg px-3 py-1.5">
+                  <span className="text-[11px] text-dt-support">{d.label} <span className="text-dt-faint font-mono">· {d.event_key}</span></span>
                   <button onClick={() => void fireEvent(d.event_key)}
-                    className="text-[10px] px-2 py-1 rounded border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                    className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                     Fire now
                   </button>
                 </div>
@@ -1277,10 +1277,10 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           )}
           {note && <p className="text-[11px] text-emerald-400">{note}</p>}
 
-          <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-3">
-            <p className="text-[11px] font-semibold text-slate-300 mb-1">Webhook — fire an event from an external system</p>
-            <p className="text-[10px] text-slate-500 mb-1.5">POST with a workspace API key (create one under Security &amp; Access):</p>
-            <pre className="text-[10px] text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap">{`POST ${SUPABASE_URL}/functions/v1/emit-event
+          <div className="rounded-lg border border-dt-border bg-dt-card p-3">
+            <p className="text-[11px] font-semibold text-dt-support mb-1">Webhook — fire an event from an external system</p>
+            <p className="text-[10px] text-dt-muted mb-1.5">POST with a workspace API key (create one under Security &amp; Access):</p>
+            <pre className="text-[10px] text-dt-support font-mono overflow-x-auto whitespace-pre-wrap">{`POST ${SUPABASE_URL}/functions/v1/emit-event
 { "tenant_id": "<your workspace id>",
   "event_key": "deal_signed",
   "api_key": "dt_live_…",
@@ -1291,37 +1291,37 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 
       {/* Existing triggers */}
       {schedules.length === 0 && rules.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-2">No triggers — this playbook only runs manually.</p>
+        <p className="text-xs text-dt-muted mb-2">No triggers — this playbook only runs manually.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
           {schedules.map(s => (
-            <div key={s.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-900/50 flex-wrap">
-              <span className="text-slate-300">⏰ {describeSchedule(s)}</span>
-              <span className="text-[10px] text-slate-600">
+            <div key={s.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-dt-inset flex-wrap">
+              <span className="text-dt-support">⏰ {describeSchedule(s)}</span>
+              <span className="text-[10px] text-dt-faint">
                 {s.account_selector.mode === 'single' ? 'single account' : `renewals within ${s.account_selector.renewal_within_days ?? 60}d`}
               </span>
               {s.active && s.next_fire_at && (
                 <span className="text-[10px] text-indigo-300">next fire {new Date(s.next_fire_at).toLocaleString()}</span>
               )}
-              {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">paused</span>}
+              {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">paused</span>}
               <span className="ml-auto flex gap-2">
                 <button onClick={() => guard(() => setScheduleActive(s.id, !s.active))}
-                  className="text-[11px] text-slate-500 hover:text-slate-300">{s.active ? 'pause' : 'resume'}</button>
+                  className="text-[11px] text-dt-muted hover:text-dt-support">{s.active ? 'pause' : 'resume'}</button>
                 <button onClick={() => guard(() => deleteSchedule(s.id))}
-                  className="text-[11px] text-slate-600 hover:text-rose-400">delete</button>
+                  className="text-[11px] text-dt-faint hover:text-rose-400">delete</button>
               </span>
             </div>
           ))}
           {rules.map(r => (
-            <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-slate-900/50 flex-wrap">
-              <span className="text-slate-300">⚡ {describeEventRule(r)}</span>
-              <span className="text-[10px] text-slate-600">cooldown {r.cooldown_hours}h per target</span>
-              {!r.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">paused</span>}
+            <div key={r.id} className="flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 bg-dt-inset flex-wrap">
+              <span className="text-dt-support">⚡ {describeEventRule(r)}</span>
+              <span className="text-[10px] text-dt-faint">cooldown {r.cooldown_hours}h per target</span>
+              {!r.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">paused</span>}
               <span className="ml-auto flex gap-2">
                 <button onClick={() => guard(() => setEventRuleActive(r.id, !r.active))}
-                  className="text-[11px] text-slate-500 hover:text-slate-300">{r.active ? 'pause' : 'resume'}</button>
+                  className="text-[11px] text-dt-muted hover:text-dt-support">{r.active ? 'pause' : 'resume'}</button>
                 <button onClick={() => guard(() => deleteEventRule(r.id))}
-                  className="text-[11px] text-slate-600 hover:text-rose-400">delete</button>
+                  className="text-[11px] text-dt-faint hover:text-rose-400">delete</button>
               </span>
             </div>
           ))}
@@ -1331,14 +1331,14 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {/* Fires history */}
       {fires.length > 0 && (
         <div>
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">Trigger fires</p>
+          <p className="text-[11px] font-medium text-dt-muted uppercase tracking-wider mb-1.5">Trigger fires</p>
           <div className="space-y-1">
             {fires.slice(0, 10).map(f => (
-              <div key={f.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded-lg bg-slate-900/40 flex-wrap">
-                <span className="text-slate-500 whitespace-nowrap">{new Date(f.fired_at).toLocaleString()}</span>
-                <span className="text-slate-400">{f.source === 'schedule' ? '⏰' : '⚡'}</span>
+              <div key={f.id} className="flex items-center gap-2 text-[11px] px-2 py-1 rounded-lg bg-dt-inset flex-wrap">
+                <span className="text-dt-muted whitespace-nowrap">{new Date(f.fired_at).toLocaleString()}</span>
+                <span className="text-dt-support">{f.source === 'schedule' ? '⏰' : '⚡'}</span>
                 {fireChip(f.status)}
-                <span className="text-slate-500 truncate max-w-[24rem]">{f.detail}</span>
+                <span className="text-dt-muted truncate max-w-[24rem]">{f.detail}</span>
                 {f.run_id && (
                   <button onClick={() => onOpenRun(f.run_id!)} className="ml-auto text-indigo-400 hover:text-indigo-300 whitespace-nowrap">view run →</button>
                 )}
@@ -1372,19 +1372,19 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-2xl rounded-2xl border border-dt-border bg-dt-page p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-white">✨ Draft a playbook with AI</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">✕</button>
+          <button onClick={onClose} className="text-dt-muted hover:text-dt-support">✕</button>
         </div>
-        <p className="text-[11px] text-slate-400 mb-3">Write the procedure in plain language, or paste an existing SOP. The Copilot compiles it into steps and studies it against your knowledge base — surfacing conflicts, questions to answer, and test scenarios before you go live.</p>
+        <p className="text-[11px] text-dt-support mb-3">Write the procedure in plain language, or paste an existing SOP. The Copilot compiles it into steps and studies it against your knowledge base — surfacing conflicts, questions to answer, and test scenarios before you go live.</p>
         <textarea
           value={sop} onChange={e => setSop(e.target.value)} rows={10}
           placeholder={'e.g. When a customer asks to cancel:\n1. Verify the account first.\n2. Check our cancellation & billing policy before quoting any fees.\n3. Ask why — if it is a service problem, offer to fix it first.\n4. Explain the process and equipment return.\n5. If they are angry or mention a lawyer, escalate to a manager.\nNever promise refunds without approval.'}
-          className="w-full text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed" />
+          className="w-full text-xs bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder:text-dt-faint font-mono leading-relaxed" />
         {err && <p className="text-[11px] text-rose-400 mt-2">{err}</p>}
         <div className="flex items-center justify-end gap-2 mt-3">
-          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200">Cancel</button>
+          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
           <button onClick={() => void run()} disabled={busy}
             className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50">
             {busy ? 'Studying & compiling…' : 'Study & draft'}
@@ -1421,9 +1421,9 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
             <div className="text-[11px] font-semibold text-rose-300 mb-1">⚠ Conflicts with your knowledge ({contra.length})</div>
             <ul className="space-y-1.5">
               {contra.map((c, i) => (
-                <li key={i} className="text-[11px] text-slate-300 leading-snug">
-                  <span className="text-slate-400">SOP:</span> {c.sop_says}<br />
-                  <span className="text-slate-400">Knowledge{c.source_title ? ` (${c.source_title})` : ''}:</span> {c.kb_says}
+                <li key={i} className="text-[11px] text-dt-support leading-snug">
+                  <span className="text-dt-support">SOP:</span> {c.sop_says}<br />
+                  <span className="text-dt-support">Knowledge{c.source_title ? ` (${c.source_title})` : ''}:</span> {c.kb_says}
                 </li>
               ))}
             </ul>
@@ -1432,7 +1432,7 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
         {questions.length > 0 && (
           <div>
             <div className="text-[11px] font-semibold text-amber-300 mb-1">❓ Questions to answer ({questions.length})</div>
-            <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300 leading-snug">
+            <ul className="list-disc list-inside space-y-1 text-[11px] text-dt-support leading-snug">
               {questions.map((q, i) => <li key={i}>{q}</li>)}
             </ul>
           </div>
@@ -1440,23 +1440,23 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
         {scenarios.length > 0 && (
           <div>
             <div className="text-[11px] font-semibold text-emerald-300 mb-1">🧪 Test scenarios it will certify against ({scenarios.length})</div>
-            <ul className="space-y-1 text-[11px] text-slate-300 leading-snug">
-              {scenarios.map((s, i) => <li key={i}>“{s.question}” <span className="text-slate-500">({s.category})</span></li>)}
+            <ul className="space-y-1 text-[11px] text-dt-support leading-snug">
+              {scenarios.map((s, i) => <li key={i}>“{s.question}” <span className="text-dt-muted">({s.category})</span></li>)}
             </ul>
           </div>
         )}
         {bindings.length > 0 && (
           <div>
             <div className="text-[11px] font-semibold text-sky-300 mb-1">🔗 Knowledge this playbook depends on ({new Set(bindings.map(b => b.title)).size})</div>
-            <ul className="space-y-0.5 text-[11px] text-slate-300 leading-snug">
+            <ul className="space-y-0.5 text-[11px] text-dt-support leading-snug">
               {[...new Map(bindings.map(b => [b.title, b])).values()].map((b, i) => <li key={i}>{b.title ?? b.doc_id}</li>)}
             </ul>
-            <p className="text-[10px] text-slate-500 mt-1">If any of these change, this playbook can flag that it may be out of date.</p>
+            <p className="text-[10px] text-dt-muted mt-1">If any of these change, this playbook can flag that it may be out of date.</p>
           </div>
         )}
       </div>
       {risk.length > 0 && (
-        <p className="text-[10px] text-slate-500 mt-2">Steps graded: {risk.filter(r => r.grade === 'rail').length} rail (deterministic) · {risk.filter(r => r.grade === 'judgment').length} judgment (the employee reasons).</p>
+        <p className="text-[10px] text-dt-muted mt-2">Steps graded: {risk.filter(r => r.grade === 'rail').length} rail (deterministic) · {risk.filter(r => r.grade === 'judgment').length} judgment (the employee reasons).</p>
       )}
     </div>
   );
@@ -1472,7 +1472,7 @@ const JUDGMENT_KEYS = new Set(['custom_step', 'agentic_step', 'consult_specialis
 const GUIDE_KEYS = new Set(['instruction', 'checklist', 'decision']);
 function stepGrade(key: string): { label: string; cls: string; icon: string } {
   if (JUDGMENT_KEYS.has(key)) return { label: 'Judgment', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40', icon: '✨' };
-  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-slate-600/20 text-slate-300 border-slate-600/40', icon: '📋' };
+  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-slate-600/20 text-dt-support border-dt-border-strong', icon: '📋' };
   return { label: 'Rail', cls: 'bg-cyan-500/10 text-cyan-300 border-cyan-700/40', icon: '⚙️' };
 }
 
@@ -1518,13 +1518,13 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
     <div className="space-y-2">
       {/* PB3 W8 — the procedure's P&L from real runs + the tenant's own baselines */}
       {econ && econ.runs > 0 && (
-        <div className="flex items-center gap-3 flex-wrap rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 text-[11px]">
-          <span className="text-slate-300">📈 {econ.completed}/{econ.runs} runs completed{econ.completion_pct !== null ? ` (${econ.completion_pct}%)` : ''}</span>
-          <span className="text-slate-400">AI cost ${(econ.ai_cost_cents / 100).toFixed(2)}</span>
-          <span className="text-slate-400">~{econ.human_minutes_saved} min of human work covered</span>
+        <div className="flex items-center gap-3 flex-wrap rounded-xl border border-dt-border bg-dt-card px-3 py-2 text-[11px]">
+          <span className="text-dt-support">📈 {econ.completed}/{econ.runs} runs completed{econ.completion_pct !== null ? ` (${econ.completion_pct}%)` : ''}</span>
+          <span className="text-dt-support">AI cost ${(econ.ai_cost_cents / 100).toFixed(2)}</span>
+          <span className="text-dt-support">~{econ.human_minutes_saved} min of human work covered</span>
           {econ.est_value_usd !== null
             ? <span className="text-emerald-400">≈ ${econ.est_value_usd.toFixed(2)} value (your baseline)</span>
-            : <span className="text-slate-600">set workforce baselines to see $ value</span>}
+            : <span className="text-dt-faint">set workforce baselines to see $ value</span>}
         </div>
       )}
       {amendments.map(am => (
@@ -1533,7 +1533,7 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
             <span className="text-[11px] font-semibold text-amber-300">✎ The Practice Engine proposes an improvement</span>
             {am.replay_result?.would_complete && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-700/40">replay verified</span>}
           </div>
-          <p className="text-[11px] text-slate-300 mb-1.5">{am.rationale}</p>
+          <p className="text-[11px] text-dt-support mb-1.5">{am.rationale}</p>
           {am.redline?.length > 0 && (
             <ul className="text-[11px] space-y-0.5 mb-2">
               {am.redline.map((r, i) => (
@@ -1543,12 +1543,12 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
               ))}
             </ul>
           )}
-          <p className="text-[10px] text-slate-500 mb-2">Approving lands it as a new draft — you still review &amp; publish it.</p>
+          <p className="text-[10px] text-dt-muted mb-2">Approving lands it as a new draft — you still review &amp; publish it.</p>
           <div className="flex items-center gap-2">
             <button disabled={busyId === am.id} onClick={() => void decide(am.id, true)}
               className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve → draft</button>
             <button disabled={busyId === am.id} onClick={() => void decide(am.id, false)}
-              className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-rose-300 disabled:opacity-50">Dismiss</button>
+              className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-rose-300 disabled:opacity-50">Dismiss</button>
           </div>
         </div>
       ))}
@@ -1561,13 +1561,13 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
           const meta = PRIMITIVE_REGISTRY.find(m => m.key === s.key);
           const title = (s.params?.title as string) || (s.params?.label as string) || meta?.label || s.key;
           return (
-            <li key={i} className="rounded-lg border border-slate-700/70 bg-slate-800/40 px-3 py-2">
+            <li key={i} className="rounded-lg border border-dt-border bg-dt-card px-3 py-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] text-slate-500 font-mono w-4">{i + 1}</span>
+                <span className="text-[10px] text-dt-muted font-mono w-4">{i + 1}</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded border ${g.cls}`}>{g.icon} {g.label}</span>
-                <span className="text-xs text-slate-200">{String(title).slice(0, 80)}</span>
+                <span className="text-xs text-dt-body">{String(title).slice(0, 80)}</span>
                 {h && h.runs > 0 && (
-                  <span className="ml-auto text-[10px] text-slate-500">
+                  <span className="ml-auto text-[10px] text-dt-muted">
                     ran {h.runs}× · <span className={rate !== null && rate >= 90 ? 'text-emerald-400' : rate !== null && rate >= 60 ? 'text-amber-400' : 'text-rose-400'}>{rate}% clean</span>
                   </span>
                 )}
@@ -1577,7 +1577,7 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
           );
         })}
       </ol>
-      <p className="text-[10px] text-slate-600 pt-1">⚙️ Rail = deterministic &amp; code-run · ✨ Judgment = the employee reasons with tools · 📋 Guide = followed in flow. Health is live from real runs.</p>
+      <p className="text-[10px] text-dt-faint pt-1">⚙️ Rail = deterministic &amp; code-run · ✨ Judgment = the employee reasons with tools · 📋 Guide = followed in flow. Health is live from real runs.</p>
     </div>
   );
 }
@@ -1669,7 +1669,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       {showDraftAi && <DraftWithAiModal onClose={() => setShowDraftAi(false)} onDrafted={(r) => void onDrafted(r)} />}
       <PageHeader
         title="Playbooks"
@@ -1691,30 +1691,30 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
         />
       ) : selectedDef ? (
         <div>
-          <button onClick={() => { setSelectedDefId(null); setOpenRunId(null); }} className="text-xs text-slate-400 hover:text-slate-200 mb-4 transition-colors">← Back to library</button>
+          <button onClick={() => { setSelectedDefId(null); setOpenRunId(null); }} className="text-xs text-dt-support hover:text-dt-body mb-4 transition-colors">← Back to library</button>
 
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-5">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base font-semibold text-white">{selectedDef.name}</h2>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-mono">{selectedDef.key}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{selectedDef.key}</span>
                 {statusChip(selectedDef.status)}
                 {selectedDef.status === 'published' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">v{selectedDef.version}</span>}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setAiEditing(true)}
                   title="Describe what is wrong with this playbook, in plain language"
-                  className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-indigo-600/30 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-200 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg bg-dt-card hover:bg-indigo-600/30 border border-dt-border hover:border-indigo-500/50 text-dt-support hover:text-indigo-200 transition-colors">
                   ✨ Edit with AI
                 </button>
                 <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status })}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
-                <button onClick={() => void archive(selectedDef)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-500 hover:text-rose-300 hover:border-rose-800 transition-colors">Archive</button>
+                <button onClick={() => void archive(selectedDef)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-rose-300 hover:border-rose-800 transition-colors">Archive</button>
               </div>
             </div>
-            {selectedDef.description && <p className="text-sm text-slate-400 mb-3">{selectedDef.description}</p>}
+            {selectedDef.description && <p className="text-sm text-dt-support mb-3">{selectedDef.description}</p>}
 
             {aiEditing && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -1755,10 +1755,10 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
                   {starting ? 'Running…' : `▶ Run v${selectedDef.version}`}
                 </button>
-                <span className="text-[10px] text-slate-600">Runs execute the published v{selectedDef.version} snapshot server-side — later edits never touch in-flight runs.</span>
+                <span className="text-[10px] text-dt-faint">Runs execute the published v{selectedDef.version} snapshot server-side — later edits never touch in-flight runs.</span>
               </div>
             ) : (
-              <p className="text-[11px] text-slate-500">Publish this draft to run it. Drafts are never executable.</p>
+              <p className="text-[11px] text-dt-muted">Publish this draft to run it. Drafts are never executable.</p>
             )}
           </div>
 
@@ -1774,17 +1774,17 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           />
 
           {/* Run history for this definition */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
             <h3 className="text-sm font-semibold text-white mb-3">Runs</h3>
-            {defRuns.length === 0 ? <p className="text-xs text-slate-500">No runs yet.</p> : (
+            {defRuns.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {defRuns.map(r => (
-                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
+                  <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset">
                     <button onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)} className="w-full flex items-center gap-3 px-3 py-2 text-left">
-                      <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
+                      <span className="text-xs text-dt-muted whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
                       {statusChip(r.status)}
-                      <span className="text-[10px] font-mono text-slate-600">v{r.definition_version}</span>
-                      <span className="text-xs text-slate-400 ml-auto">{r.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/{r.steps.length} steps {openRunId === r.id ? '▴' : '▾'}</span>
+                      <span className="text-[10px] font-mono text-dt-faint">v{r.definition_version}</span>
+                      <span className="text-xs text-dt-support ml-auto">{r.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/{r.steps.length} steps {openRunId === r.id ? '▴' : '▾'}</span>
                     </button>
                     {openRunId === r.id && <div className="px-3 pb-3"><RunTimeline run={r} /></div>}
                   </div>
@@ -1796,25 +1796,25 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
       ) : (
         <>
           {/* Definitions library */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
-            <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Your playbooks</p>
+          <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
+            <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Your playbooks</p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowDraftAi(true)}
                   className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
                   ✨ Draft with AI
                 </button>
                 <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft' })}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 font-medium transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong font-medium transition-colors">
                   + New (advanced)
                 </button>
               </div>
             </div>
             {defs.filter(d => d.status !== 'archived').length === 0 ? (
-              <p className="px-5 py-6 text-xs text-slate-500">No playbooks yet — build your first from typed step primitives. Guardrails and human gates are enforced by the server on every run.</p>
+              <p className="px-5 py-6 text-xs text-dt-muted">No playbooks yet — build your first from typed step primitives. Guardrails and human gates are enforced by the server on every run.</p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="bg-slate-900/60">
+                <thead className="bg-dt-inset">
                   <tr>
                     <th className={th}>Playbook</th><th className={th}>Key</th><th className={th}>Status</th>
                     <th className={th}>Version</th><th className={th}>Steps</th><th className={th}>Trigger</th><th className={th}>Runs</th>
@@ -1823,13 +1823,13 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                 <tbody>
                   {defs.filter(d => d.status !== 'archived').map(d => (
                     <tr key={d.id} onClick={() => setSelectedDefId(d.id)}
-                      className="border-t border-slate-700/60 hover:bg-slate-700/30 cursor-pointer transition-colors">
-                      <td className={`${td} text-slate-200 font-medium`}>{d.name}</td>
-                      <td className={`${td} text-xs font-mono text-slate-500`}>{d.key}</td>
+                      className="border-t border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
+                      <td className={`${td} text-dt-body font-medium`}>{d.name}</td>
+                      <td className={`${td} text-xs font-mono text-dt-muted`}>{d.key}</td>
                       <td className={td}>{statusChip(d.status)}</td>
-                      <td className={`${td} text-xs font-mono text-slate-400`}>{d.status === 'published' ? `v${d.version}` : '—'}</td>
-                      <td className={`${td} text-xs text-slate-400`}>{d.steps.length}{d.steps.some(s => s.key === 'human_approval') ? ' · human gate' : ''}</td>
-                      <td className={`${td} text-xs text-slate-500`}>
+                      <td className={`${td} text-xs font-mono text-dt-support`}>{d.status === 'published' ? `v${d.version}` : '—'}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{d.steps.length}{d.steps.some(s => s.key === 'human_approval') ? ' · human gate' : ''}</td>
+                      <td className={`${td} text-xs text-dt-muted`}>
                         <span className="flex flex-wrap gap-1">
                           {schedules.filter(s => s.definition_id === d.id && s.active).map(s => (
                             <span key={s.id} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 whitespace-nowrap">⏰ {describeSchedule(s)}</span>
@@ -1840,7 +1840,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                           {!schedules.some(s => s.definition_id === d.id && s.active) && !eventRules.some(r => r.definition_id === d.id && r.active) && 'manual'}
                         </span>
                       </td>
-                      <td className={`${td} text-xs text-slate-400`}>{runs.filter(r => r.definition_id === d.id).length}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{runs.filter(r => r.definition_id === d.id).length}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1849,26 +1849,26 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           </div>
 
           {/* Legacy built-in playbook */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 mb-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold text-white">Renewal Lifecycle</h3>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">BUILT-IN</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-mono">renewal_v1</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">renewal_v1</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-dt-muted mt-1">
                   The original server-executed renewal playbook — check account → invoice → guardrail → human gate → send. Every step lands in the immutable audit trail.
                 </p>
               </div>
               <button onClick={() => setPage('entity_customer_renewal')}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                 Run from Renewal &amp; Expansion →
               </button>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {RENEWAL_STEP_DEFS.map((s, i) => (
-                <span key={s.key} className="text-[11px] px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
+                <span key={s.key} className="text-[11px] px-2 py-1 rounded-lg bg-dt-page border border-dt-border text-dt-support">
                   {i + 1}. {s.label}{s.key === 'human_approval' ? ' 🤝' : ''}
                 </span>
               ))}
@@ -1876,18 +1876,18 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           </div>
 
           {/* All-runs history */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
             <h3 className="text-sm font-semibold text-white mb-3">Run history</h3>
-            {runs.length === 0 ? <p className="text-xs text-slate-500">No runs yet.</p> : (
+            {runs.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {runs.map(r => (
-                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
+                  <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset">
                     <button onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)} className="w-full flex items-center gap-3 px-3 py-2 text-left flex-wrap">
-                      <span className="text-xs text-slate-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
-                      <span className="text-xs font-mono text-slate-300">{r.playbook_key}</span>
-                      {r.definition_version ? <span className="text-[10px] font-mono text-slate-600">v{r.definition_version}</span> : null}
+                      <span className="text-xs text-dt-muted whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</span>
+                      <span className="text-xs font-mono text-dt-support">{r.playbook_key}</span>
+                      {r.definition_version ? <span className="text-[10px] font-mono text-dt-faint">v{r.definition_version}</span> : null}
                       {statusChip(r.status)}
-                      <span className="text-xs text-slate-400 ml-auto">{r.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/{r.steps.length} steps {openRunId === r.id ? '▴' : '▾'}</span>
+                      <span className="text-xs text-dt-support ml-auto">{r.steps.filter(s => s.status === 'done' || s.status === 'skipped').length}/{r.steps.length} steps {openRunId === r.id ? '▴' : '▾'}</span>
                     </button>
                     {openRunId === r.id && <div className="px-3 pb-3"><RunTimeline run={r} /></div>}
                   </div>
@@ -1899,7 +1899,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

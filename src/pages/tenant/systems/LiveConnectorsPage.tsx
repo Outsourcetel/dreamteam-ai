@@ -36,7 +36,7 @@ function statusChip(status: Connector['status']) {
   const map = {
     connected: ['bg-emerald-400', 'text-emerald-400', 'Connected'],
     error: ['bg-red-400', 'text-red-400', 'Error'],
-    disconnected: ['bg-slate-600', 'text-slate-500', 'Disconnected'],
+    disconnected: ['bg-slate-600', 'text-dt-muted', 'Disconnected'],
   } as const;
   const [dot, text, label] = map[status];
   return (
@@ -58,7 +58,7 @@ function healthBadge(c: Connector) {
     healthy: ['bg-emerald-400', 'text-emerald-400', 'Healthy'],
     degraded: ['bg-amber-400', 'text-amber-400', 'Degraded'],
     down: ['bg-red-400', 'text-red-400', 'Down'],
-    never_connected: ['bg-slate-600', 'text-slate-500', 'Never checked'],
+    never_connected: ['bg-slate-600', 'text-dt-muted', 'Never checked'],
   };
   const [dot, text, label] = map[h];
   const checked = c.last_ok_at || c.last_error_at;
@@ -66,7 +66,7 @@ function healthBadge(c: Connector) {
     <span className="flex items-center gap-1.5" title={HEALTH_LABELS[h]}>
       <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
       <span className={`text-xs ${text}`}>{label}</span>
-      {checked && <span className="text-[10px] text-slate-600">· checked {fmtSince(checked)}</span>}
+      {checked && <span className="text-[10px] text-dt-faint">· checked {fmtSince(checked)}</span>}
     </span>
   );
 }
@@ -95,8 +95,8 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   dropbox: '🗄️', twilio: '📱', typeform: '📝', calendly: '📆', okta: '🔐', contentful: '🗂️', template: '🧱',
 };
 
-const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2';
-const selectCls = 'bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5';
+const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2';
+const selectCls = 'bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1.5';
 
 // ── Connect wizard ────────────────────────────────────────────────
 
@@ -164,48 +164,48 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
           {!category ? (
             <>
               <h2 className="text-sm font-semibold text-white mb-1">Connect a system — what kind is it?</h2>
-              <p className="text-xs text-slate-500 mb-4">DreamTeam speaks in system categories: your Digital Employees ask "the helpdesk" or "the CRM" — whichever brand you actually run answers. Pick the category first.</p>
+              <p className="text-xs text-dt-muted mb-4">DreamTeam speaks in system categories: your Digital Employees ask "the helpdesk" or "the CRM" — whichever brand you actually run answers. Pick the category first.</p>
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {CATEGORIES.map(cat => (
                   <button key={cat} onClick={() => setCategory(cat)}
-                    className="text-left rounded-xl border p-3 transition-colors bg-slate-900 border-slate-700 hover:border-indigo-500/50">
+                    className="text-left rounded-xl border p-3 transition-colors bg-dt-page border-dt-border hover:border-indigo-500/50">
                     <p className="text-sm font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{CATEGORY_LABELS[cat]}</p>
+                    <p className="text-[11px] text-dt-muted mt-0.5">{CATEGORY_LABELS[cat]}</p>
                   </button>
                 ))}
               </div>
-              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                <p className="text-[11px] font-medium text-slate-400 mb-2">How DreamTeam connects to anything — the 5-rung ladder</p>
+              <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
+                <p className="text-[11px] font-medium text-dt-support mb-2">How DreamTeam connects to anything — the 5-rung ladder</p>
                 <div className="space-y-1.5">
                   {CONNECTION_LADDER.map(l => (
                     <div key={l.rung} className="flex items-start gap-2">
-                      <span className="text-[11px] font-medium text-slate-300 flex-shrink-0">{l.rung}</span>
-                      <span className="text-[11px] text-slate-500">{l.how}{l.note && <span className="text-amber-400"> {l.note}</span>}</span>
+                      <span className="text-[11px] font-medium text-dt-support flex-shrink-0">{l.rung}</span>
+                      <span className="text-[11px] text-dt-muted">{l.how}{l.note && <span className="text-amber-400"> {l.note}</span>}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <button onClick={onClose} className="mt-4 text-xs text-slate-400 hover:text-white">Cancel</button>
+              <button onClick={onClose} className="mt-4 text-xs text-dt-support hover:text-white">Cancel</button>
             </>
           ) : !provider ? (
             <>
-              <button onClick={() => setCategory(null)} className="text-xs text-slate-500 hover:text-white mb-2">← Categories</button>
+              <button onClick={() => setCategory(null)} className="text-xs text-dt-muted hover:text-white mb-2">← Categories</button>
               <h2 className="text-sm font-semibold text-white mb-1">Which system is your {CATEGORY_SHORT[category]}?</h2>
-              <p className="text-xs text-slate-500 mb-3">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
+              <p className="text-xs text-dt-muted mb-3">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
               <input value={providerQuery} onChange={e => setProviderQuery(e.target.value)} placeholder="Search 30+ systems…"
                 className={`${inputCls} mb-3`} />
               <div className="grid grid-cols-2 gap-2">
                 {!providerQuery.trim() && (
                 <button onClick={() => { onClose(); onCustom(); }}
-                  className="text-left rounded-xl border p-3 transition-colors bg-slate-900 border-indigo-500/40 hover:border-indigo-400">
+                  className="text-left rounded-xl border p-3 transition-colors bg-dt-page border-indigo-500/40 hover:border-indigo-400">
                   <p className="text-sm font-semibold text-white">🧱 Custom system — build a template</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
+                  <p className="text-[11px] text-dt-muted mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
                 </button>
                 )}
                 {(Object.keys(PROVIDERS) as ConnectorProvider[])
@@ -214,42 +214,42 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                   .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
                   .map(p => (
                     <button key={p} onClick={() => pick(p)}
-                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-slate-900 border-slate-700 hover:border-indigo-500/50' : 'bg-slate-900/50 border-slate-700/60'}`}>
+                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-dt-page border-dt-border hover:border-indigo-500/50' : 'bg-dt-inset border-dt-border'}`}>
                       <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
+                      <p className="text-[11px] text-dt-muted mt-0.5">{PROVIDERS[p].tagline}</p>
                       {!PROVIDERS[p].implemented && <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
                     </button>
                   ))}
-                <div className="text-left rounded-xl border border-dashed border-slate-700 p-3 bg-slate-900/40">
-                  <p className="text-sm font-semibold text-slate-400">🔗 Aggregator (hundreds of systems)</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">One connection covering the long tail of niche tools.</p>
+                <div className="text-left rounded-xl border border-dashed border-dt-border p-3 bg-dt-inset">
+                  <p className="text-sm font-semibold text-dt-support">🔗 Aggregator (hundreds of systems)</p>
+                  <p className="text-[11px] text-dt-muted mt-0.5">One connection covering the long tail of niche tools.</p>
                   <p className="text-[10px] text-amber-400 mt-1">Available on request — built when the first customer needs it (honest, not pretend-integrated).</p>
                 </div>
               </div>
-              <button onClick={onClose} className="mt-4 text-xs text-slate-400 hover:text-white">Cancel</button>
+              <button onClick={onClose} className="mt-4 text-xs text-dt-support hover:text-white">Cancel</button>
             </>
           ) : (
             <>
-              <button onClick={() => setProvider(null)} className="text-xs text-slate-500 hover:text-white mb-2">← All systems</button>
+              <button onClick={() => setProvider(null)} className="text-xs text-dt-muted hover:text-white mb-2">← All systems</button>
               <h2 className="text-sm font-semibold text-white mb-1">Connect {meta!.label}</h2>
-              <p className="text-xs text-slate-500 mb-4">{meta!.tagline}</p>
+              <p className="text-xs text-dt-muted mb-4">{meta!.tagline}</p>
 
               {meta!.oauth ? (
                 <OAuthConnectSection provider={provider!} label={meta!.label} name={name} onClose={onClose} />
               ) : (<>
-              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4">
-                <p className="text-[11px] font-medium text-slate-400 mb-1">How to get credentials</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">{meta!.help}</p>
+              <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
+                <p className="text-[11px] font-medium text-dt-support mb-1">How to get credentials</p>
+                <p className="text-[11px] text-dt-muted leading-relaxed">{meta!.help}</p>
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">{meta!.baseUrlLabel}</label>
+                  <label className="block text-xs text-dt-support mb-1">{meta!.baseUrlLabel}</label>
                   <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={meta!.baseUrlPlaceholder} className={inputCls} />
                 </div>
                 {meta!.fields.map(f => (
                   <div key={f.key}>
-                    <label className="block text-xs text-slate-400 mb-1">{f.label}</label>
+                    <label className="block text-xs text-dt-support mb-1">{f.label}</label>
                     {f.multiline ? (
                       <textarea value={secrets[f.key] ?? ''} onChange={e => setSecrets(s => ({ ...s, [f.key]: e.target.value }))}
                         placeholder={f.placeholder} rows={5} className={`${inputCls} font-mono text-xs`} />
@@ -260,29 +260,29 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                   </div>
                 ))}
                 {meta!.fields.some(f => f.secret) && (
-                  <p className="text-[11px] text-slate-600">Credentials are stored server-side only — never shown again, never readable from the browser, purged instantly on disconnect.</p>
+                  <p className="text-[11px] text-dt-faint">Credentials are stored server-side only — never shown again, never readable from the browser, purged instantly on disconnect.</p>
                 )}
 
                 {provider === 'generic_rest' && (
-                  <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 space-y-2">
-                    <p className="text-[11px] font-medium text-slate-400">Tell DreamTeam how to search this API</p>
+                  <div className="rounded-xl border border-dt-border bg-dt-inset p-3 space-y-2">
+                    <p className="text-[11px] font-medium text-dt-support">Tell DreamTeam how to search this API</p>
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <label className="block text-[11px] text-slate-500 mb-1">Search path</label>
+                        <label className="block text-[11px] text-dt-muted mb-1">Search path</label>
                         <input value={searchPath} onChange={e => setSearchPath(e.target.value)} placeholder="/users" className={inputCls} />
                       </div>
                       <div className="w-28">
-                        <label className="block text-[11px] text-slate-500 mb-1">Query param</label>
+                        <label className="block text-[11px] text-dt-muted mb-1">Query param</label>
                         <input value={queryParam} onChange={e => setQueryParam(e.target.value)} placeholder="q" className={inputCls} />
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <label className="block text-[11px] text-slate-500 mb-1">Items path in the response (optional, e.g. data.results)</label>
+                        <label className="block text-[11px] text-dt-muted mb-1">Items path in the response (optional, e.g. data.results)</label>
                         <input value={itemsPath} onChange={e => setItemsPath(e.target.value)} placeholder="leave empty if the response is a list" className={inputCls} />
                       </div>
                       <div className="flex-1">
-                        <label className="block text-[11px] text-slate-500 mb-1">Record path (optional, {'{ref}'} = id)</label>
+                        <label className="block text-[11px] text-dt-muted mb-1">Record path (optional, {'{ref}'} = id)</label>
                         <input value={recordPath} onChange={e => setRecordPath(e.target.value)} placeholder="/users/{ref}" className={inputCls} />
                       </div>
                     </div>
@@ -290,36 +290,36 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
                 )}
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">System category</label>
+                  <label className="block text-xs text-dt-support mb-1">System category</label>
                   <select value={category} onChange={e => setCategory(e.target.value as SystemCategory)} className={selectCls + ' w-full !py-2 !text-sm'}>
                     {CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-slate-600 mt-1">The category decides what your Digital Employees may ask this system (its canonical operations): CRMs answer "who is this customer?", helpdesks answer "have we solved this before?", knowledge bases answer "what do our docs say?".</p>
+                  <p className="text-[11px] text-dt-faint mt-1">The category decides what your Digital Employees may ask this system (its canonical operations): CRMs answer "who is this customer?", helpdesks answer "have we solved this before?", knowledge bases answer "what do our docs say?".</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Data handling — your choice</label>
+                  <label className="block text-xs text-dt-support mb-1">Data handling — your choice</label>
                   <div className="space-y-1.5">
                     {(['fetch_only', 'ingest'] as ConnectorAccessMode[]).map(m => (
-                      <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-700'}`}>
+                      <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-dt-border'}`}>
                         <input type="radio" checked={accessMode === m} onChange={() => setAccessMode(m)} className="mt-0.5" />
-                        <span className="text-[11px] text-slate-300 leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
+                        <span className="text-[11px] text-dt-support leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
                       </label>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Display name (optional)</label>
+                  <label className="block text-xs text-dt-support mb-1">Display name (optional)</label>
                   <input value={name} onChange={e => setName(e.target.value)} placeholder={`${meta!.label} — production`} className={inputCls} />
                 </div>
               </div>
 
               {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
               <div className="flex gap-3 mt-5">
-                <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs transition-colors disabled:opacity-50">
+                <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors disabled:opacity-50">
                   Cancel
                 </button>
                 <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors disabled:opacity-50">
@@ -372,8 +372,8 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-        <p className="text-[11px] text-slate-500 leading-relaxed">
+      <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
+        <p className="text-[11px] text-dt-muted leading-relaxed">
           Connect by signing in — no keys to paste. You'll be sent to {label} to approve access, then returned here.
         </p>
       </div>
@@ -381,18 +381,18 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
       {configured === false && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-1.5">
           <p className="text-[11px] text-amber-300 font-medium">One-time platform setup</p>
-          <p className="text-[11px] text-slate-400">Register the {label} developer app once, and add this exact redirect URL in its settings:</p>
-          <code className="block text-[10px] text-slate-300 bg-slate-900 rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
+          <p className="text-[11px] text-dt-support">Register the {label} developer app once, and add this exact redirect URL in its settings:</p>
+          <code className="block text-[10px] text-dt-support bg-dt-page rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
         </div>
       )}
 
       {(showSetup || configured === false) && (
-        <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 space-y-2">
-          <p className="text-[11px] font-medium text-slate-400">{label} app credentials — platform admin only</p>
+        <div className="rounded-xl border border-dt-border bg-dt-inset p-3 space-y-2">
+          <p className="text-[11px] font-medium text-dt-support">{label} app credentials — platform admin only</p>
           <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="Client ID" className={inputCls} />
           <input value={clientSecret} onChange={e => setClientSecret(e.target.value)} type="password" placeholder="Client secret" className={inputCls} />
           <button disabled={busy || !clientId.trim()} onClick={() => void saveApp()}
-            className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-slate-600 text-white disabled:opacity-50">
+            className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-dt-panel text-white disabled:opacity-50">
             Save app credentials
           </button>
         </div>
@@ -400,7 +400,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
 
       {err && <p className="text-xs text-red-300">{err}</p>}
       <div className="flex gap-3">
-        <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Cancel</button>
+        <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
         <button disabled={busy || configured !== true} onClick={() => void connect()}
           title={configured !== true ? 'A platform admin must add the app credentials first.' : ''}
           className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">
@@ -408,7 +408,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
         </button>
       </div>
       {configured === true && !showSetup && (
-        <button onClick={() => setShowSetup(true)} className="text-[11px] text-slate-500 hover:text-white">Update app credentials</button>
+        <button onClick={() => setShowSetup(true)} className="text-[11px] text-dt-muted hover:text-white">Update app credentials</button>
       )}
     </div>
   );
@@ -422,17 +422,17 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
 }) {
   const [map, setMap] = useState<Record<string, string>>({ ...(connector.field_map ?? {}) });
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4">
-      <p className="text-[11px] font-medium text-slate-400 mb-1">Field mapping — tell DreamTeam what your fields are called</p>
-      <p className="text-[11px] text-slate-600 mb-3">If your system uses different field names, map them here. Leave a field empty to keep the sensible default.</p>
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
+      <p className="text-[11px] font-medium text-dt-support mb-1">Field mapping — tell DreamTeam what your fields are called</p>
+      <p className="text-[11px] text-dt-faint mb-3">If your system uses different field names, map them here. Leave a field empty to keep the sensible default.</p>
       <div className="space-y-2">
         {MAPPABLE_FIELDS.map(f => (
           <div key={f} className="flex items-center gap-2">
-            <span className="text-xs text-slate-300 w-28 flex-shrink-0 font-mono">{f}</span>
+            <span className="text-xs text-dt-support w-28 flex-shrink-0 font-mono">{f}</span>
             <input value={map[f] ?? ''} onChange={e => setMap(m => ({ ...m, [f]: e.target.value }))}
               placeholder="your field name (optional)"
-              className="bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5 w-52" />
-            <span className="text-[10px] text-slate-600">{MAPPABLE_FIELD_HELP[f]}</span>
+              className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1.5 w-52" />
+            <span className="text-[10px] text-dt-faint">{MAPPABLE_FIELD_HELP[f]}</span>
           </div>
         ))}
       </div>
@@ -448,7 +448,7 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
 const CAND_STATUS_META: Record<string, { label: string; cls: string }> = {
   pending: { label: 'Awaiting review', cls: 'text-amber-300 bg-amber-500/10' },
   approved: { label: 'Approved', cls: 'text-emerald-300 bg-emerald-500/10' },
-  rejected: { label: 'Excluded', cls: 'text-slate-400 bg-slate-500/10' },
+  rejected: { label: 'Excluded', cls: 'text-dt-support bg-slate-500/10' },
   ingested: { label: 'In knowledge', cls: 'text-indigo-300 bg-indigo-500/10' },
 };
 const TYPE_LABEL: Record<string, string> = { pdf: 'PDF', doc: 'Doc', slide: 'Slides', sheet: 'Sheet', text: 'Text', other: 'Other' };
@@ -507,11 +507,11 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
   const isBusy = busy !== null;
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3 mb-4 space-y-4">
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4 space-y-4">
       <div>
-        <p className="text-[11px] font-medium text-slate-400 mb-1">What gets ingested — filters</p>
-        <p className="text-[11px] text-slate-600 mb-3">
-          These control which files land in knowledge <span className="text-slate-500">and surface in live lookups</span>. They are hygiene, not a security wall —
+        <p className="text-[11px] font-medium text-dt-support mb-1">What gets ingested — filters</p>
+        <p className="text-[11px] text-dt-faint mb-3">
+          These control which files land in knowledge <span className="text-dt-muted">and surface in live lookups</span>. They are hygiene, not a security wall —
           the real wall is least-privilege at the source: {
             connector.provider === 'gdrive' ? 'share only the intended folder(s) with the service account (it sees nothing else).'
             : connector.provider === 'notion' ? 'share only the intended pages with the Notion integration (it sees nothing else).'
@@ -522,7 +522,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
         <div className="space-y-3">
           {connector.provider !== 'notion' && (
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">
+            <label className="block text-[11px] text-dt-support mb-1">
               {connector.provider === 'gdrive' ? 'Folder / Shared Drive ID (optional — blank = everything shared)'
                 : connector.provider === 'box' ? 'Folder ID to sync (optional — blank = whole account)'
                 : connector.provider === 'dropbox' ? 'Folder path to sync (optional — blank = everything shared)'
@@ -533,25 +533,25 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
           </div>
           )}
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Exclude files/folders whose name contains (comma-separated)</label>
+            <label className="block text-[11px] text-dt-support mb-1">Exclude files/folders whose name contains (comma-separated)</label>
             <input value={excludeText} onChange={e => setExcludeText(e.target.value)}
               placeholder="draft, confidential, archive, HR" className={`${inputCls} text-xs`} />
           </div>
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Only ingest these file types (none checked = all supported types)</label>
+            <label className="block text-[11px] text-dt-support mb-1">Only ingest these file types (none checked = all supported types)</label>
             <div className="flex flex-wrap gap-2">
               {INGEST_TYPES.map(t => {
                 const on = filters.allow_types?.includes(t.key) ?? false;
                 return (
                   <button key={t.key} onClick={() => toggleType(t.key)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-600 text-slate-400 hover:border-slate-500'}`}>
+                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-dt-border-strong text-dt-support hover:border-dt-border-strong'}`}>
                     {t.label}
                   </button>
                 );
               })}
             </div>
           </div>
-          <label className="flex items-center gap-2 text-xs text-slate-300">
+          <label className="flex items-center gap-2 text-xs text-dt-support">
             <input type="checkbox" checked={filters.require_review} onChange={e => commitFilters({ ...filters, require_review: e.target.checked })} />
             Review before ingest — nothing enters knowledge until you approve it here
           </label>
@@ -562,12 +562,12 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
         </button>
       </div>
 
-      <div className="border-t border-slate-700 pt-3">
+      <div className="border-t border-dt-border pt-3">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-medium text-slate-400">Review queue{loaded ? ` — ${cands.length} file(s)` : ''}</p>
+          <p className="text-[11px] font-medium text-dt-support">Review queue{loaded ? ` — ${cands.length} file(s)` : ''}</p>
           <div className="flex gap-2">
             <button disabled={isBusy} onClick={() => void scan()}
-              className="px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+              className="px-3 py-1.5 rounded-lg text-xs text-dt-body border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
               {busy === 'scan' ? 'Scanning…' : 'Scan for documents'}
             </button>
             {pending.length > 0 && (
@@ -575,26 +575,26 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'approved')}
                   className="px-2.5 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve all</button>
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'rejected')}
-                  className="px-2.5 py-1.5 rounded-lg text-xs text-slate-400 border border-slate-600 hover:border-slate-500 disabled:opacity-50">Exclude all</button>
+                  className="px-2.5 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50">Exclude all</button>
               </>
             )}
           </div>
         </div>
 
         {!loaded ? (
-          <p className="text-[11px] text-slate-600">Loading…</p>
+          <p className="text-[11px] text-dt-faint">Loading…</p>
         ) : cands.length === 0 ? (
-          <p className="text-[11px] text-slate-600">No documents scanned yet. Click "Scan for documents" to list what would be ingested — nothing is stored until you sync.</p>
+          <p className="text-[11px] text-dt-faint">No documents scanned yet. Click "Scan for documents" to list what would be ingested — nothing is stored until you sync.</p>
         ) : (
-          <div className="rounded-lg border border-slate-700 max-h-72 overflow-y-auto divide-y divide-slate-700/60">
+          <div className="rounded-lg border border-dt-border max-h-72 overflow-y-auto divide-y divide-slate-700/60">
             {cands.map(c => {
               const meta = CAND_STATUS_META[c.status] ?? CAND_STATUS_META.pending;
               return (
                 <div key={c.id} className="flex items-center gap-2 px-3 py-2">
-                  <span className="text-[10px] font-mono text-slate-500 w-10 flex-shrink-0">{TYPE_LABEL[c.file_type] ?? c.file_type}</span>
+                  <span className="text-[10px] font-mono text-dt-muted w-10 flex-shrink-0">{TYPE_LABEL[c.file_type] ?? c.file_type}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-slate-200 truncate">{c.title}</p>
-                    {c.path && <p className="text-[10px] text-slate-600 truncate">{c.path}</p>}
+                    <p className="text-xs text-dt-body truncate">{c.title}</p>
+                    {c.path && <p className="text-[10px] text-dt-faint truncate">{c.path}</p>}
                   </div>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${meta.cls} flex-shrink-0`}>{meta.label}</span>
                   {c.status !== 'ingested' && (
@@ -605,7 +605,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                       )}
                       {c.status !== 'rejected' && (
                         <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'rejected')}
-                          className="px-2 py-0.5 rounded text-[10px] text-slate-400 border border-slate-600 hover:border-slate-500 disabled:opacity-50">Exclude</button>
+                          className="px-2 py-0.5 rounded text-[10px] text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50">Exclude</button>
                       )}
                     </div>
                   )}
@@ -618,7 +618,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
           <p className="text-[11px] text-emerald-400/80 mt-2">{approved.length} file(s) approved — click "Sync knowledge" above to ingest them.</p>
         )}
         {!filters.require_review && (
-          <p className="text-[11px] text-slate-600 mt-2">Review is off — "Sync knowledge" ingests every file that matches your filters directly.</p>
+          <p className="text-[11px] text-dt-faint mt-2">Review is off — "Sync knowledge" ingests every file that matches your filters directly.</p>
         )}
       </div>
     </div>
@@ -770,11 +770,11 @@ export default function LiveConnectorsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-5 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Connectors</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-dt-support text-sm mt-1">
             Your systems of record stay yours — DreamTeam reads them live (fetch-only) or keeps a searchable working copy (ingest), and every access is audited.
           </p>
         </div>
@@ -795,10 +795,10 @@ export default function LiveConnectorsPage() {
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
       ) : missingTables ? (
-        <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-5">
-          <p className="text-sm font-medium text-slate-200 mb-1">Connector tables not yet provisioned</p>
-          <p className="text-xs text-slate-400">
-            Run <code className="text-slate-300 bg-slate-700 px-1 py-0.5 rounded">supabase/migrations/026_connector_hub_evidence.sql</code> in the Supabase SQL Editor, then reload.
+        <div className="rounded-xl border border-dt-border-strong bg-dt-card/80 p-5">
+          <p className="text-sm font-medium text-dt-body mb-1">Connector tables not yet provisioned</p>
+          <p className="text-xs text-dt-support">
+            Run <code className="text-dt-support bg-dt-panel px-1 py-0.5 rounded">supabase/migrations/026_connector_hub_evidence.sql</code> in the Supabase SQL Editor, then reload.
           </p>
         </div>
       ) : connectors.length === 0 ? (
@@ -812,9 +812,9 @@ export default function LiveConnectorsPage() {
           />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
             {(Object.keys(PROVIDERS) as ConnectorProvider[]).filter(p => p !== 'template').slice(0, 8).map(p => (
-              <button key={p} onClick={() => setShowConnect(true)} className="text-left bg-slate-800 border border-slate-700 hover:border-indigo-500/50 rounded-xl p-4 transition-colors">
+              <button key={p} onClick={() => setShowConnect(true)} className="text-left bg-dt-card border border-dt-border hover:border-indigo-500/50 rounded-xl p-4 transition-colors">
                 <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">{PROVIDERS[p].tagline}</p>
+                <p className="text-[11px] text-dt-muted mt-0.5">{PROVIDERS[p].tagline}</p>
                 <p className="text-xs text-indigo-400 mt-2">{PROVIDERS[p].implemented ? 'Connect →' : 'Register →'}</p>
               </button>
             ))}
@@ -828,13 +828,13 @@ export default function LiveConnectorsPage() {
             const isBusy = busy === c.id;
             const meta = PROVIDERS[c.provider];
             return (
-              <div key={c.id} className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+              <div key={c.id} className="rounded-2xl border border-dt-border bg-dt-card p-5">
                 {/* Header */}
                 <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-base font-semibold text-white">{PROVIDER_ICON[c.provider]} {c.display_name || meta?.label || c.provider}</h2>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[c.category] ?? c.category}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-500/15 text-teal-300' : 'bg-purple-500/15 text-purple-300'}`}>
                         {c.access_mode === 'fetch_only' ? 'fetch-only · never stored' : 'ingest · working copy'}
@@ -842,21 +842,21 @@ export default function LiveConnectorsPage() {
                       {statusChip(c.status)}
                       {healthBadge(c)}
                     </div>
-                    <p className="text-xs text-slate-500 mt-1">{c.base_url} · last sync {fmtSince(c.last_sync_at)}</p>
+                    <p className="text-xs text-dt-muted mt-1">{c.base_url} · last sync {fmtSince(c.last_sync_at)}</p>
                     {connectorHealth(c) !== 'healthy' && c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
                       Test connection
                     </button>
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
                       Run health check
                     </button>
-                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
                       Field mapping
                     </button>
                     {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
-                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
                         What gets ingested
                       </button>
                     )}
@@ -868,7 +868,7 @@ export default function LiveConnectorsPage() {
                       </button>
                     )}
                     {c.provider === 'zendesk' && (
-                      <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doTicketSync(c)} className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-slate-600 text-white disabled:opacity-50 transition-colors">
+                      <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doTicketSync(c)} className="px-3 py-1.5 rounded-lg text-xs bg-slate-600 hover:bg-dt-panel text-white disabled:opacity-50 transition-colors">
                         Sync tickets
                       </button>
                     )}
@@ -893,20 +893,20 @@ export default function LiveConnectorsPage() {
                 {/* Zendesk-only: per-object mode + write-back registry */}
                 {c.provider === 'zendesk' && objs.length > 0 && (
                   <>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Objects — data mode</p>
-                    <div className="rounded-xl border border-slate-700 overflow-hidden mb-4">
+                    <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Objects — data mode</p>
+                    <div className="rounded-xl border border-dt-border overflow-hidden mb-4">
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-900/60">
+                        <thead className="bg-dt-inset">
                           <tr>
                             {['Object', 'Mode', 'Interval', 'Last synced', 'Enabled'].map(h => (
-                              <th key={h} className="py-2 px-3 text-left text-[11px] uppercase tracking-wide text-slate-500 font-medium">{h}</th>
+                              <th key={h} className="py-2 px-3 text-left text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {objs.map(o => (
-                            <tr key={o.id} className="border-t border-slate-700/60">
-                              <td className="py-2 px-3 text-slate-200">{OBJECT_LABELS[o.object_type] ?? o.object_type}</td>
+                            <tr key={o.id} className="border-t border-dt-border">
+                              <td className="py-2 px-3 text-dt-body">{OBJECT_LABELS[o.object_type] ?? o.object_type}</td>
                               <td className="py-2 px-3">
                                 <select value={o.mode}
                                   onChange={e => void setObjField(o, { mode: e.target.value as ConnectorObjectMode })}
@@ -924,12 +924,12 @@ export default function LiveConnectorsPage() {
                                       <option key={m} value={m}>{m < 60 ? `${m} min` : m === 60 ? '1 hr' : m === 240 ? '4 hrs' : 'Daily'}</option>
                                     ))}
                                   </select>
-                                ) : <span className="text-xs text-slate-600">at action time</span>}
+                                ) : <span className="text-xs text-dt-faint">at action time</span>}
                               </td>
-                              <td className="py-2 px-3 text-xs text-slate-400">{o.mode === 'sync' ? fmtSince(o.last_synced_at) : '—'}</td>
+                              <td className="py-2 px-3 text-xs text-dt-support">{o.mode === 'sync' ? fmtSince(o.last_synced_at) : '—'}</td>
                               <td className="py-2 px-3">
                                 <button onClick={() => void setObjField(o, { enabled: !o.enabled })}
-                                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${o.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>
+                                  className={`text-xs px-2 py-0.5 rounded-full transition-colors ${o.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-dt-panel text-dt-muted'}`}>
                                   {o.enabled ? 'Enabled' : 'Disabled'}
                                 </button>
                               </td>
@@ -938,13 +938,13 @@ export default function LiveConnectorsPage() {
                         </tbody>
                       </table>
                     </div>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Write-back actions — into the system of record</p>
+                    <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Write-back actions — into the system of record</p>
                     <div className="flex flex-wrap gap-2 mb-4">
                       {acts.map(a => (
                         <button key={a.id} onClick={() => void toggleAction(a)}
                           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${a.enabled
                             ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
-                            : 'border-slate-600 bg-slate-800 text-slate-500'}`}>
+                            : 'border-dt-border-strong bg-dt-card text-dt-muted'}`}>
                           {ACTION_LABELS[a.action_key] ?? a.action_key} · {a.enabled ? 'on' : 'off'}
                         </button>
                       ))}
@@ -955,33 +955,33 @@ export default function LiveConnectorsPage() {
                 {/* Read-through search — every provider */}
                 {meta?.implemented && (
                   <>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Live search (read-through)</p>
+                    <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Live search (read-through)</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <input value={rtQuery} onChange={e => setRtQuery(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') void doSearch(c); }}
                         placeholder="Search this system…"
-                        className="bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-3 py-1.5 w-64" />
-                      <button disabled={isBusy} onClick={() => void doSearch(c)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 disabled:opacity-50 transition-colors">
+                        className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-3 py-1.5 w-64" />
+                      <button disabled={isBusy} onClick={() => void doSearch(c)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
                         Search live
                       </button>
-                      <span className="text-[11px] text-slate-600">Fetched at question time — nothing stored, audit event only.</span>
+                      <span className="text-[11px] text-dt-faint">Fetched at question time — nothing stored, audit event only.</span>
                     </div>
                     {rtErr && !rtResult && <p className="text-xs text-red-300 mt-2">{rtErr}</p>}
                     {rtResult?.connectorId === c.id && (
                       <div className="mt-3 space-y-2">
-                        <p className="text-[11px] text-slate-500">{rtResult.items.length} result(s){rtResult.latency ? ` in ${rtResult.latency}ms` : ''} — live from {meta.label}, not persisted.</p>
+                        <p className="text-[11px] text-dt-muted">{rtResult.items.length} result(s){rtResult.latency ? ` in ${rtResult.latency}ms` : ''} — live from {meta.label}, not persisted.</p>
                         {rtResult.items.map((it, i) => (
-                          <div key={i} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+                          <div key={i} className="rounded-xl border border-dt-border bg-dt-page p-3">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-medium text-white">{it.title}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{it.type}</span>
-                              <span className="text-[10px] text-slate-600">ref {it.ref}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{it.type}</span>
+                              <span className="text-[10px] text-dt-faint">ref {it.ref}</span>
                               {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-400 hover:text-indigo-300">open in source ↗</a>}
                             </div>
-                            {it.snippet && <p className="text-[11px] text-slate-400 mt-1">{it.snippet}</p>}
+                            {it.snippet && <p className="text-[11px] text-dt-support mt-1">{it.snippet}</p>}
                           </div>
                         ))}
-                        {rtResult.items.length === 0 && <p className="text-xs text-slate-500">No matches in this system.</p>}
+                        {rtResult.items.length === 0 && <p className="text-xs text-dt-muted">No matches in this system.</p>}
                       </div>
                     )}
                   </>

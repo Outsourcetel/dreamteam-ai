@@ -183,7 +183,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           : 'All digital employees and specialists use this document — click to limit it'}
         className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${scoped
           ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
-          : 'bg-dt-panel text-dt-support hover:bg-slate-600'}`}
+          : 'bg-dt-panel text-dt-support hover:bg-dt-panel'}`}
       >
         {scoped ? `Scoped · ${n}` : 'All digital employees'}
       </button>

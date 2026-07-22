@@ -33,12 +33,12 @@ const ConfirmDeleteModal = ({
   return (
     <Modal title={title} onClose={() => { if (!busy) onClose(); }}>
       <div className="space-y-4">
-        <p className="text-sm text-slate-300 leading-relaxed">{message}</p>
+        <p className="text-sm text-dt-support leading-relaxed">{message}</p>
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
             disabled={busy}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50"
           >
             Cancel
           </button>

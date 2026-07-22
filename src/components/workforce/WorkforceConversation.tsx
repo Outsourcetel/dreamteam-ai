@@ -19,12 +19,12 @@ export function WorkforceConversation({
         className={`max-w-xs px-4 py-2 rounded-lg ${
           isUser
             ? 'bg-blue-600 text-white'
-            : 'bg-slate-700 text-slate-100'
+            : 'bg-dt-panel text-dt-title'
         }`}
       >
         <p className="text-sm whitespace-pre-wrap">{content}</p>
         {timestamp && (
-          <p className={`text-xs mt-1 ${isUser ? 'text-blue-200' : 'text-slate-400'}`}>
+          <p className={`text-xs mt-1 ${isUser ? 'text-blue-200' : 'text-dt-support'}`}>
             {new Date(timestamp).toLocaleTimeString()}
           </p>
         )}

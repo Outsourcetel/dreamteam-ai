@@ -35,8 +35,8 @@ const StatCard = ({
         {trend && <span className="text-xs text-emerald-400">{trend}</span>}
       </div>
       <div className="text-2xl font-bold text-white mb-1">{value}</div>
-      <div className="text-sm text-slate-400">{label}</div>
-      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+      <div className="text-sm text-dt-support">{label}</div>
+      {sub && <div className="text-xs text-dt-muted mt-1">{sub}</div>}
     </div>
   );
 };

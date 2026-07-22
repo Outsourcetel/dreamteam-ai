@@ -22,8 +22,8 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 // Written for a non-developer: plain language everywhere.
 // ============================================================
 
-const inputCls = 'w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2';
-const smallInput = 'bg-slate-900 border border-slate-600 rounded-lg text-xs text-slate-200 px-2 py-1.5';
+const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2';
+const smallInput = 'bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1.5';
 
 interface OpDraft {
   bound: boolean;
@@ -152,36 +152,36 @@ export function TemplateBuilderModal({ onClose, onDone }: {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-sm font-semibold text-white">Custom system — step {step} of 5: {stepTitle}</h2>
-            <button onClick={onClose} className="text-xs text-slate-500 hover:text-white">✕</button>
+            <button onClick={onClose} className="text-xs text-dt-muted hover:text-white">✕</button>
           </div>
-          <p className="text-xs text-slate-500 mb-4">Connect any system that has a REST API — no code, just answers to five questions. The result is a reusable template.</p>
+          <p className="text-xs text-dt-muted mb-4">Connect any system that has a REST API — no code, just answers to five questions. The result is a reusable template.</p>
 
           {step === 1 && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">System name</label>
+                <label className="block text-xs text-dt-support mb-1">System name</label>
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Acme Helpdesk" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">What kind of system is it?</label>
+                <label className="block text-xs text-dt-support mb-1">What kind of system is it?</label>
                 <div className="grid grid-cols-2 gap-2">
                   {CATEGORIES.map(cat => (
                     <button key={cat} onClick={() => { setCategory(cat); setOps({}); setTestOpName(''); }}
-                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-slate-900 border-slate-700 hover:border-indigo-500/40'}`}>
+                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-dt-page border-dt-border hover:border-indigo-500/40'}`}>
                       <p className="text-xs font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{CATEGORY_LABELS[cat]}</p>
+                      <p className="text-[10px] text-dt-muted mt-0.5">{CATEGORY_LABELS[cat]}</p>
                     </button>
                   ))}
                 </div>
-                <p className="text-[11px] text-slate-600 mt-1.5">The kind decides what your Digital Employees may ask it — a helpdesk answers "have we solved this before?", a CRM answers "who is this customer?".</p>
+                <p className="text-[11px] text-dt-faint mt-1.5">The kind decides what your Digital Employees may ask it — a helpdesk answers "have we solved this before?", a CRM answers "who is this customer?".</p>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Notes (optional)</label>
+                <label className="block text-xs text-dt-support mb-1">Notes (optional)</label>
                 <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Anything a teammate should know about this connection" className={inputCls} />
               </div>
             </div>
@@ -190,43 +190,43 @@ export function TemplateBuilderModal({ onClose, onDone }: {
           {step === 2 && (
             <div className="space-y-2">
               {AUTH_TYPES.map(t => (
-                <label key={t} className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${authType === t ? 'border-indigo-500/60 bg-indigo-500/5' : 'border-slate-700'}`}>
+                <label key={t} className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${authType === t ? 'border-indigo-500/60 bg-indigo-500/5' : 'border-dt-border'}`}>
                   <input type="radio" checked={authType === t} onChange={() => setAuthType(t)} className="mt-0.5" />
                   <span>
-                    <span className="text-xs font-semibold text-slate-200 block">{AUTH_META[t].label}</span>
-                    <span className="text-[11px] text-slate-500">{AUTH_META[t].help}</span>
+                    <span className="text-xs font-semibold text-dt-body block">{AUTH_META[t].label}</span>
+                    <span className="text-[11px] text-dt-muted">{AUTH_META[t].help}</span>
                   </span>
                 </label>
               ))}
               {authType === 'api_key_header' && (
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Which header carries the key?</label>
+                  <label className="block text-xs text-dt-support mb-1">Which header carries the key?</label>
                   <input value={headerName} onChange={e => setHeaderName(e.target.value)} placeholder="X-Api-Key" className={inputCls} />
                 </div>
               )}
               {authType === 'oauth2_client_credentials' && (
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Token URL (where the ID + secret become a token)</label>
+                  <label className="block text-xs text-dt-support mb-1">Token URL (where the ID + secret become a token)</label>
                   <input value={tokenUrl} onChange={e => setTokenUrl(e.target.value)} placeholder="https://auth.example.com/oauth/token" className={inputCls} />
                 </div>
               )}
-              <p className="text-[11px] text-slate-600">This template only describes HOW credentials are presented. The actual key/token values are entered when someone connects, stored server-side only, never shown again.</p>
+              <p className="text-[11px] text-dt-faint">This template only describes HOW credentials are presented. The actual key/token values are entered when someone connects, stored server-side only, never shown again.</p>
             </div>
           )}
 
           {step === 3 && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">API base URL</label>
+                <label className="block text-xs text-dt-support mb-1">API base URL</label>
                 <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://{subdomain}.example.com/api/v2" className={inputCls} />
-                <p className="text-[11px] text-slate-600 mt-1">If part of the URL differs per account (like a subdomain), write it in curly braces — e.g. <code className="text-slate-400">{'https://{subdomain}.example.com'}</code> — and declare it below. Whoever connects fills it in.</p>
+                <p className="text-[11px] text-dt-faint mt-1">If part of the URL differs per account (like a subdomain), write it in curly braces — e.g. <code className="text-dt-support">{'https://{subdomain}.example.com'}</code> — and declare it below. Whoever connects fills it in.</p>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-slate-400">Variables people fill in when connecting</label>
+                  <label className="text-xs text-dt-support">Variables people fill in when connecting</label>
                   <button onClick={() => setVars(v => [...v, { key: '', label: '', help: '' }])} className="text-xs text-indigo-400 hover:text-indigo-300">+ Add variable</button>
                 </div>
-                {vars.length === 0 && <p className="text-[11px] text-slate-600">None yet — only needed when the base URL (or a path) contains {'{placeholders}'}.</p>}
+                {vars.length === 0 && <p className="text-[11px] text-dt-faint">None yet — only needed when the base URL (or a path) contains {'{placeholders}'}.</p>}
                 {vars.map((v, i) => (
                   <div key={i} className="flex gap-2 mb-2">
                     <input value={v.key} onChange={e => setVars(a => a.map((x, j) => j === i ? { ...x, key: e.target.value } : x))} placeholder="subdomain" className={smallInput + ' w-32'} />
@@ -241,10 +241,10 @@ export function TemplateBuilderModal({ onClose, onDone }: {
 
           {step === 4 && (
             <div className="space-y-3">
-              <p className="text-[11px] text-slate-500">These are the only things a {CATEGORY_SHORT[category]} may be asked. Bind the ones this API supports — leave the rest off (DreamTeam will say "not supported" honestly). Use <code className="text-slate-400">{'{query}'}</code> for search words and <code className="text-slate-400">{'{ref}'}</code> for a record id.</p>
+              <p className="text-[11px] text-dt-muted">These are the only things a {CATEGORY_SHORT[category]} may be asked. Bind the ones this API supports — leave the rest off (DreamTeam will say "not supported" honestly). Use <code className="text-dt-support">{'{query}'}</code> for search words and <code className="text-dt-support">{'{ref}'}</code> for a record id.</p>
               {/* Test credentials — used live, in-flight only */}
-              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                <p className="text-[11px] font-medium text-slate-400 mb-2">Credentials for testing (used for the live test only — never stored from here)</p>
+              <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
+                <p className="text-[11px] font-medium text-dt-support mb-2">Credentials for testing (used for the live test only — never stored from here)</p>
                 <div className="flex gap-2 flex-wrap">
                   {(definition.variables ?? []).map(v => (
                     <input key={v.key} value={testVars[v.key] ?? ''} onChange={e => setTestVars(s => ({ ...s, [v.key]: e.target.value }))}
@@ -261,11 +261,11 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 const d = ops[o.op] ?? emptyOp();
                 const set = (patch: Partial<OpDraft>) => setOps(s => ({ ...s, [o.op]: { ...(s[o.op] ?? emptyOp()), ...patch } }));
                 return (
-                  <div key={o.op} className={`rounded-xl border p-3 ${d.bound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-slate-700 bg-slate-900/40'}`}>
+                  <div key={o.op} className={`rounded-xl border p-3 ${d.bound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-dt-border bg-dt-inset'}`}>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={d.bound} onChange={e => set({ bound: e.target.checked })} />
-                      <span className="text-xs font-semibold text-slate-200">{o.label}</span>
-                      <span className="text-[10px] text-slate-600 font-mono">{o.op} · {o.kind === 'search' ? 'takes search words {query}' : 'takes a record id {ref}'}</span>
+                      <span className="text-xs font-semibold text-dt-body">{o.label}</span>
+                      <span className="text-[10px] text-dt-faint font-mono">{o.op} · {o.kind === 'search' ? 'takes search words {query}' : 'takes a record id {ref}'}</span>
                     </label>
                     {d.bound && (
                       <div className="mt-2 space-y-2">
@@ -275,7 +275,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                           </select>
                           <input value={d.path_template} onChange={e => set({ path_template: e.target.value })}
                             placeholder={o.kind === 'get' ? '/things/{ref}' : '/things/search'} className={smallInput + ' flex-1'} />
-                          <label className="flex items-center gap-1 text-[11px] text-slate-500">
+                          <label className="flex items-center gap-1 text-[11px] text-dt-muted">
                             <input type="checkbox" checked={d.single_item} onChange={e => set({ single_item: e.target.checked })} /> response is one record
                           </label>
                         </div>
@@ -298,17 +298,17 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                         </button>
                         {testResult?.op === o.op && (
                           <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 overflow-auto max-h-56">
-                              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Raw response from the API</p>
-                              <pre className="text-[10px] text-slate-400 whitespace-pre-wrap break-all">{JSON.stringify(testResult.r.raw_response ?? testResult.r.errors ?? null, null, 1)?.slice(0, 3000)}</pre>
+                            <div className="rounded-lg border border-dt-border bg-dt-page p-2 overflow-auto max-h-56">
+                              <p className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">Raw response from the API</p>
+                              <pre className="text-[10px] text-dt-support whitespace-pre-wrap break-all">{JSON.stringify(testResult.r.raw_response ?? testResult.r.errors ?? null, null, 1)?.slice(0, 3000)}</pre>
                             </div>
-                            <div className="rounded-lg border border-slate-700 bg-slate-900 p-2 overflow-auto max-h-56">
-                              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">What DreamTeam extracted</p>
+                            <div className="rounded-lg border border-dt-border bg-dt-page p-2 overflow-auto max-h-56">
+                              <p className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">What DreamTeam extracted</p>
                               {testResult.r.ok ? (
                                 <>
                                   <p className="text-[10px] text-emerald-400 mb-1">✓ {testResult.r.items.length} item(s) in {testResult.r.latency_ms}ms</p>
                                   {testResult.r.items.slice(0, 5).map((it, i) => (
-                                    <p key={i} className="text-[10px] text-slate-300 mb-1">• <span className="font-medium">{it.title}</span> <span className="text-slate-600">(id {it.ref})</span>{it.snippet ? ` — ${it.snippet.slice(0, 80)}` : ''}</p>
+                                    <p key={i} className="text-[10px] text-dt-support mb-1">• <span className="font-medium">{it.title}</span> <span className="text-dt-faint">(id {it.ref})</span>{it.snippet ? ` — ${it.snippet.slice(0, 80)}` : ''}</p>
                                   ))}
                                   {testResult.r.items.length === 0 && <p className="text-[10px] text-amber-400">The call worked but extracted nothing — check "where results live".</p>}
                                 </>
@@ -329,23 +329,23 @@ export function TemplateBuilderModal({ onClose, onDone }: {
           {step === 5 && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Which operation proves the connection works?</label>
+                <label className="block text-xs text-dt-support mb-1">Which operation proves the connection works?</label>
                 <select value={testOpName} onChange={e => setTestOpName(e.target.value)} className={inputCls}>
                   <option value="">— choose —</option>
                   {boundOps.map(op => <option key={op} value={op}>{op}</option>)}
                 </select>
-                <p className="text-[11px] text-slate-600 mt-1">When someone connects from this template, DreamTeam runs this operation once to verify their credentials.</p>
+                <p className="text-[11px] text-dt-faint mt-1">When someone connects from this template, DreamTeam runs this operation once to verify their credentials.</p>
               </div>
-              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                <p className="text-[11px] text-slate-400">Summary: <span className="text-slate-200">{name || '(unnamed)'}</span> · {CATEGORY_SHORT[category]} · {AUTH_META[authType].label} · {boundOps.length} operation(s) bound{(definition.variables ?? []).length ? ` · variables: ${(definition.variables ?? []).map(v => v.key).join(', ')}` : ''}</p>
+              <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
+                <p className="text-[11px] text-dt-support">Summary: <span className="text-dt-body">{name || '(unnamed)'}</span> · {CATEGORY_SHORT[category]} · {AUTH_META[authType].label} · {boundOps.length} operation(s) bound{(definition.variables ?? []).length ? ` · variables: ${(definition.variables ?? []).map(v => v.key).join(', ')}` : ''}</p>
               </div>
-              <p className="text-[11px] text-slate-600">Publishing makes the template available in your workspace's library so systems can be connected from it. Drafts stay editable and invisible to the connect flow.</p>
+              <p className="text-[11px] text-dt-faint">Publishing makes the template available in your workspace's library so systems can be connected from it. Drafts stay editable and invisible to the connect flow.</p>
             </div>
           )}
 
           {err && <p className="text-xs text-red-300 mt-3 whitespace-pre-wrap">{err}</p>}
           <div className="flex gap-3 mt-5">
-            {step > 1 && <button disabled={busy} onClick={() => setStep(s => s - 1)} className="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">← Back</button>}
+            {step > 1 && <button disabled={busy} onClick={() => setStep(s => s - 1)} className="px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">← Back</button>}
             <div className="flex-1" />
             {step < 5 && (
               <button disabled={busy || (step === 1 && !name.trim()) || (step === 3 && !baseUrl.trim() && false)}
@@ -354,7 +354,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
             )}
             {step === 5 && (
               <>
-                <button disabled={busy} onClick={() => void save(false)} className="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Save draft</button>
+                <button disabled={busy} onClick={() => void save(false)} className="px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Save draft</button>
                 <button disabled={busy} onClick={() => void save(true)} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Saving…' : 'Save & publish'}</button>
               </>
             )}
@@ -398,51 +398,51 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => !busy && onClose()} />
+      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-lg max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6">
+        <div className="pointer-events-auto w-full max-w-lg max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
           <h2 className="text-sm font-semibold text-white mb-1">Connect {template.name}</h2>
-          <p className="text-xs text-slate-500 mb-1">{CATEGORY_SHORT[template.category]} · {AUTH_META[template.definition.auth.type].label}</p>
+          <p className="text-xs text-dt-muted mb-1">{CATEGORY_SHORT[template.category]} · {AUTH_META[template.definition.auth.type].label}</p>
           {template.scope === 'platform' && (
             <p className="text-[11px] text-amber-400 mb-3">Community template — shaped to the public API documentation, untested until connected. Verify results against your account.</p>
           )}
-          {template.description && <p className="text-[11px] text-slate-500 mb-3">{template.description}</p>}
+          {template.description && <p className="text-[11px] text-dt-muted mb-3">{template.description}</p>}
           <div className="space-y-3">
             {(template.definition.variables ?? []).map(v => (
               <div key={v.key}>
-                <label className="block text-xs text-slate-400 mb-1">{v.label || v.key}</label>
+                <label className="block text-xs text-dt-support mb-1">{v.label || v.key}</label>
                 <input value={vars[v.key] ?? ''} onChange={e => setVars(s => ({ ...s, [v.key]: e.target.value }))} placeholder={v.help ?? ''} className={inputCls} />
-                {v.help && <p className="text-[10px] text-slate-600 mt-0.5">{v.help}</p>}
+                {v.help && <p className="text-[10px] text-dt-faint mt-0.5">{v.help}</p>}
               </div>
             ))}
             {secretFields.map(f => (
               <div key={f.key}>
-                <label className="block text-xs text-slate-400 mb-1">{f.label}</label>
+                <label className="block text-xs text-dt-support mb-1">{f.label}</label>
                 <input type="password" value={secrets[f.key] ?? ''} onChange={e => setSecrets(s => ({ ...s, [f.key]: e.target.value }))} className={inputCls} />
               </div>
             ))}
             {secretFields.length > 0 && (
-              <p className="text-[11px] text-slate-600">Credentials are stored server-side only — never shown again, never readable from the browser, purged instantly on disconnect.</p>
+              <p className="text-[11px] text-dt-faint">Credentials are stored server-side only — never shown again, never readable from the browser, purged instantly on disconnect.</p>
             )}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Data handling — your choice</label>
+              <label className="block text-xs text-dt-support mb-1">Data handling — your choice</label>
               <div className="space-y-1.5">
                 {(['fetch_only', 'ingest'] as ConnectorAccessMode[]).map(m => (
-                  <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-slate-700'}`}>
+                  <label key={m} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer ${accessMode === m ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-dt-border'}`}>
                     <input type="radio" checked={accessMode === m} onChange={() => setAccessMode(m)} className="mt-0.5" />
-                    <span className="text-[11px] text-slate-300 leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
+                    <span className="text-[11px] text-dt-support leading-relaxed">{ACCESS_MODE_EXPLAIN[m]}</span>
                   </label>
                 ))}
               </div>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Display name (optional)</label>
+              <label className="block text-xs text-dt-support mb-1">Display name (optional)</label>
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={`${template.name} — production`} className={inputCls} />
             </div>
           </div>
           {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
           <div className="flex gap-3 mt-5">
-            <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs disabled:opacity-50">Cancel</button>
+            <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
             <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
           </div>
         </div>
@@ -459,11 +459,11 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
   onBuild: () => void;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
           <h2 className="text-sm font-semibold text-white">Template library — connect anything with a REST API</h2>
-          <p className="text-xs text-slate-500 mt-0.5">A template turns a system's API into configuration: pick one, enter your credentials, done. Or build your own in five guided steps — no code.</p>
+          <p className="text-xs text-dt-muted mt-0.5">A template turns a system's API into configuration: pick one, enter your credentials, done. Or build your own in five guided steps — no code.</p>
         </div>
         <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white">+ Build a custom template</button>
       </div>
@@ -472,14 +472,14 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
           {templates.map(t => (
-            <div key={t.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3 flex flex-col">
+            <div key={t.id} className="rounded-xl border border-dt-border bg-dt-page p-3 flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs font-semibold text-white">{t.name}</p>
                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-slate-700 text-slate-400' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
                 {t.status === 'draft' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}
               </div>
-              <p className="text-[10px] text-slate-500 mt-1 flex-1">{t.scope === 'platform' ? 'Community template — verify against your account.' : (t.description || 'Custom template built in this workspace.')} {Object.keys(t.definition.ops ?? {}).length} operation(s).</p>
+              <p className="text-[10px] text-dt-muted mt-1 flex-1">{t.scope === 'platform' ? 'Community template — verify against your account.' : (t.description || 'Custom template built in this workspace.')} {Object.keys(t.definition.ops ?? {}).length} operation(s).</p>
               {t.status === 'published' && (
                 <button onClick={() => onUse(t)} className="mt-2 self-start px-2.5 py-1 rounded-lg text-[11px] text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/10">Use this template →</button>
               )}

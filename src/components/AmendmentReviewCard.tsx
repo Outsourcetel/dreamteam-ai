@@ -49,37 +49,37 @@ export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
   }
 
   return (
-    <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 space-y-3">
+    <div className="bg-dt-card border border-dt-border rounded-lg p-4 space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-medium text-dt-support uppercase tracking-wider">
               Amendment Proposal
             </span>
             <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColors[proposal.status]}`}>
               {proposal.status}
             </span>
           </div>
-          <p className="text-sm text-slate-200 font-medium">
+          <p className="text-sm text-dt-body font-medium">
             {entityLabels[proposal.entity_kind]} — {proposal.entity_id}
           </p>
         </div>
       </div>
 
       {/* Rationale */}
-      <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
-        <p className="text-xs text-slate-500 mb-1">Why this change:</p>
-        <p className="text-sm text-slate-300">{proposal.rationale}</p>
+      <div className="bg-dt-inset rounded-lg p-3 border border-dt-border/30">
+        <p className="text-xs text-dt-muted mb-1">Why this change:</p>
+        <p className="text-sm text-dt-support">{proposal.rationale}</p>
       </div>
 
       {/* Redline */}
       <div className="space-y-2">
-        <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Changes</p>
+        <p className="text-xs text-dt-muted uppercase tracking-wider font-medium">Changes</p>
         {proposal.redline.length > 0 ? (
           proposal.redline.map((change, idx) => (
-            <div key={idx} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-2.5 text-xs space-y-1">
-              <p className="text-slate-400 font-mono">{change.field}</p>
+            <div key={idx} className="bg-dt-inset border border-dt-border/30 rounded-lg p-2.5 text-xs space-y-1">
+              <p className="text-dt-support font-mono">{change.field}</p>
               <div className="space-y-0.5">
                 <div className="text-red-400">
                   <span className="opacity-60">- </span>{change.old}
@@ -88,27 +88,27 @@ export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
                   <span className="opacity-60">+ </span>{change.new}
                 </div>
               </div>
-              {change.note && <p className="text-slate-500 italic">{change.note}</p>}
+              {change.note && <p className="text-dt-muted italic">{change.note}</p>}
             </div>
           ))
         ) : (
-          <p className="text-xs text-slate-500">No field changes (configuration only)</p>
+          <p className="text-xs text-dt-muted">No field changes (configuration only)</p>
         )}
       </div>
 
       {/* Evidence */}
       {proposal.evidence && (proposal.evidence.replay_status || proposal.evidence.golden_set_impact) && (
-        <div className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3 space-y-2">
-          <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Testing Evidence</p>
+        <div className="bg-dt-inset border border-dt-border/30 rounded-lg p-3 space-y-2">
+          <p className="text-xs text-dt-muted uppercase tracking-wider font-medium">Testing Evidence</p>
           {proposal.evidence.replay_status && (
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">Playbook Testing:</span>
+              <span className="text-xs text-dt-support">Playbook Testing:</span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
                 proposal.evidence.replay_status === 'passed'
                   ? 'bg-emerald-500/20 text-emerald-300'
                   : proposal.evidence.replay_status === 'failed'
                     ? 'bg-red-500/20 text-red-300'
-                    : 'bg-slate-600 text-slate-300'
+                    : 'bg-slate-600 text-dt-support'
               }`}>
                 {proposal.evidence.replay_status}
               </span>
@@ -116,14 +116,14 @@ export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
           )}
           {proposal.evidence.replay_score_before !== undefined && proposal.evidence.replay_score_after !== undefined && (
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Score:</span>
-              <span className="text-slate-300">
+              <span className="text-dt-support">Score:</span>
+              <span className="text-dt-support">
                 {proposal.evidence.replay_score_before.toFixed(2)} → {proposal.evidence.replay_score_after.toFixed(2)}
               </span>
             </div>
           )}
           {proposal.evidence.golden_set_impact && (
-            <p className="text-xs text-slate-400">Golden set: {proposal.evidence.golden_set_impact}</p>
+            <p className="text-xs text-dt-support">Golden set: {proposal.evidence.golden_set_impact}</p>
           )}
         </div>
       )}
@@ -136,14 +136,14 @@ export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
       )}
 
       {/* Metadata */}
-      <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-700">
+      <div className="flex items-center justify-between text-xs text-dt-muted pt-1 border-t border-dt-border">
         <span>{new Date(proposal.created_at).toLocaleDateString()}</span>
         <span>by {proposal.created_by}</span>
       </div>
 
       {/* Actions */}
       {(proposal.status === 'proposed' || proposal.status === 'approved') && (
-        <div className="flex gap-2 pt-2 border-t border-slate-700">
+        <div className="flex gap-2 pt-2 border-t border-dt-border">
           {proposal.status === 'proposed' && (
             <>
               <button
@@ -155,7 +155,7 @@ export function AmendmentReviewCard({ proposal, onApprove, onReject }: {
               <button
                 onClick={handleReject}
                 disabled={approving || rejecting}
-                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg text-xs font-medium transition-colors">
+                className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel disabled:opacity-50 rounded-lg text-xs font-medium transition-colors">
                 {rejecting ? 'Rejecting...' : 'Dismiss'}
               </button>
             </>

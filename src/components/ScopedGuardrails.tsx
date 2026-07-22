@@ -127,17 +127,17 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
   };
 
   return (
-    <div className={variant === 'full' ? '' : 'rounded-2xl border border-slate-700 bg-slate-800/50 p-6'}>
+    <div className={variant === 'full' ? '' : 'rounded-2xl border border-dt-border bg-dt-card p-6'}>
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Guardrails</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">always enforced</span>
-        <span className="text-[11px] text-slate-500">for {entityLabel}</span>
+        <span className="text-[11px] text-dt-muted">for {entityLabel}</span>
         <button onClick={() => setShowAI(v => !v)}
           className="ml-auto text-[11px] px-2 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50">
           {showAI ? 'Close assistant' : '✨ Set up with AI'}
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Hard limits {scope === 'workspace' ? 'across the whole workspace' : `for ${entityLabel}`}. Guardrails always win —
         an employee can never be talked, trained, or trusted past one.
         {scope !== 'workspace' && ' Workspace-wide rules are inherited and shown greyed out; edit those at the workspace level.'}
@@ -158,17 +158,17 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
           </div>
           <div className="space-y-1.5">
             {proposals.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-slate-900/50 px-3 py-2">
+              <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-dt-inset px-3 py-2">
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
-                <span className="text-slate-200">{describeProposal(p)}</span>
-                {p.rationale && <span className="text-slate-500 hidden sm:inline">— {p.rationale}</span>}
+                <span className="text-dt-body">{describeProposal(p)}</span>
+                {p.rationale && <span className="text-dt-muted hidden sm:inline">— {p.rationale}</span>}
                 <div className="ml-auto flex items-center gap-2 shrink-0">
                   <button onClick={() => void decide(p, true)} disabled={deciding === p.id}
                     className="text-[11px] px-2 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 text-white disabled:opacity-40">
                     {deciding === p.id ? '…' : 'Approve'}
                   </button>
                   <button onClick={() => void decide(p, false)} disabled={deciding === p.id}
-                    className="text-[11px] text-slate-500 hover:text-slate-300 disabled:opacity-40">Dismiss</button>
+                    className="text-[11px] text-dt-muted hover:text-dt-support disabled:opacity-40">Dismiss</button>
                 </div>
               </div>
             ))}
@@ -177,9 +177,9 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
       )}
 
       {rules === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : rules.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-3">No guardrails{scope === 'workspace' ? ' yet' : ` set for ${entityLabel} — workspace rules still apply`}.</p>
+        <p className="text-xs text-dt-muted mb-3">No guardrails{scope === 'workspace' ? ' yet' : ` set for ${entityLabel} — workspace rules still apply`}.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
           {rules.map((r) => {
@@ -187,19 +187,19 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
             return (
               <div key={r.id + (inherited ? '-inh' : '')}
                 className={`flex items-center gap-2 text-xs rounded-lg border px-3 py-2 ${
-                  inherited ? 'border-slate-800 bg-slate-900/30 opacity-60' : 'border-slate-700 bg-slate-900/60'}`}>
+                  inherited ? 'border-dt-border bg-dt-page/30 opacity-60' : 'border-dt-border bg-dt-inset'}`}>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.severity === 'blocking' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
                   {r.severity === 'blocking' ? 'blocks' : 'warns'}
                 </span>
-                <span className="text-slate-200">{r.rule}</span>
-                <span className="text-slate-500">— {describe(r)}</span>
+                <span className="text-dt-body">{r.rule}</span>
+                <span className="text-dt-muted">— {describe(r)}</span>
                 {inherited
-                  ? <span className="ml-auto text-[10px] text-slate-600">workspace-wide</span>
+                  ? <span className="ml-auto text-[10px] text-dt-faint">workspace-wide</span>
                   : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }))} disabled={busy}
-                      className={`ml-auto text-[10px] ${r.active ? 'text-slate-500 hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}`}>
+                      className={`ml-auto text-[10px] ${r.active ? 'text-dt-muted hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}`}>
                       {r.active ? 'pause' : 'resume'}
                     </button>}
-                {!inherited && !r.active && <span className="text-[10px] text-slate-600">(paused)</span>}
+                {!inherited && !r.active && <span className="text-[10px] text-dt-faint">(paused)</span>}
               </div>
             );
           })}
@@ -211,25 +211,25 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
           + Add a guardrail{scope !== 'workspace' ? ` for ${entityLabel}` : ''}
         </button>
       ) : (
-        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-2">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <select value={ruleType} onChange={e => setRuleType(e.target.value as GuardrailRuleType)}
-            className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
             {RULE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label} — {t.hint}</option>)}
           </select>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this rule (e.g. No refunds over policy)"
-            className="w-full bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
           <div className="flex items-center gap-2">
             <input value={value} onChange={e => setValue(e.target.value)}
               placeholder={meta.input === 'money' ? 'Amount in dollars' : meta.input === 'pct' ? 'Max %' : 'Phrase or topic'}
-              className="flex-1 bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             <select value={severity} onChange={e => setSeverity(e.target.value as 'blocking' | 'warning')}
-              className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
               <option value="blocking">Block</option>
               <option value="warning">Warn</option>
             </select>
             <button onClick={submit} disabled={busy || !name.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Add</button>
-            <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+            <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
       )}

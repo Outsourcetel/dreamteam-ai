@@ -695,7 +695,7 @@ function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
             <div className="relative">
               <button onClick={() => setTemplatePickerOpen(!templatePickerOpen)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
                 Change template ▾
               </button>
               {templatePickerOpen && (

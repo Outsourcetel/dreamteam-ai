@@ -13,7 +13,7 @@ export default function HostedChatPage() {
   const brand = params.get('brand') || 'Support';
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#070816] text-slate-100 flex flex-col items-center justify-center p-0 sm:p-6">
+    <div className="relative min-h-screen overflow-hidden bg-[#070816] text-dt-title flex flex-col items-center justify-center p-0 sm:p-6">
       <PortalStyles />
       {/* Aurora field */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -28,8 +28,8 @@ export default function HostedChatPage() {
         <div className="relative z-10 max-w-md text-center px-6">
           <div className="mx-auto mb-5 w-14 h-14 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl flex items-center justify-center text-2xl">🔑</div>
           <h1 className="text-lg font-semibold text-white mb-1.5">This chat link is missing its key</h1>
-          <p className="text-sm text-slate-400 leading-relaxed">Ask the team for the correct URL — it should include{' '}
-            <code className="bg-white/10 px-1.5 py-0.5 rounded text-slate-200">?k=…</code>.</p>
+          <p className="text-sm text-dt-support leading-relaxed">Ask the team for the correct URL — it should include{' '}
+            <code className="bg-white/10 px-1.5 py-0.5 rounded text-dt-body">?k=…</code>.</p>
         </div>
       ) : (
         <div className="relative z-10 w-full h-[100dvh] sm:h-[min(88vh,780px)] sm:max-w-[460px] flex flex-col">
@@ -38,8 +38,8 @@ export default function HostedChatPage() {
           <div className="relative flex-1 min-h-0 overflow-hidden rounded-none sm:rounded-[1.75rem] border border-white/10 bg-white/[0.04] backdrop-blur-2xl shadow-[0_20px_80px_-20px_rgba(79,70,229,0.5)]">
             <ChatCore widgetKey={widgetKey} channel="hosted" brandName={brand} />
           </div>
-          <p className="relative text-center text-[11px] text-slate-500 mt-3 hidden sm:block">
-            Secured support portal · powered by <span className="text-slate-400">DreamTeam</span>
+          <p className="relative text-center text-[11px] text-dt-muted mt-3 hidden sm:block">
+            Secured support portal · powered by <span className="text-dt-support">DreamTeam</span>
           </p>
         </div>
       )}

@@ -85,7 +85,7 @@ export function DEKnowledgeScopePanel({ de }: { de: DigitalEmployee }) {
   };
 
   if (loading) {
-    return <div className="animate-pulse h-32 bg-slate-800 rounded-lg" />;
+    return <div className="animate-pulse h-32 bg-dt-card rounded-lg" />;
   }
 
   const groupedProviders: Record<string, typeof KNOWLEDGE_PROVIDERS> = {};
@@ -98,13 +98,13 @@ export function DEKnowledgeScopePanel({ de }: { de: DigitalEmployee }) {
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">Knowledge Sources</h4>
-        <p className="text-xs text-slate-400">Choose which systems {de.name} should consult when answering questions.</p>
+        <p className="text-xs text-dt-support">Choose which systems {de.name} should consult when answering questions.</p>
       </div>
 
       {/* Knowledge Sources by Category */}
       {Object.entries(groupedProviders).map(([category, providers]) => (
         <div key={category}>
-          <h5 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+          <h5 className="text-xs font-medium text-dt-support uppercase tracking-wider mb-2">
             {category.replace(/_/g, ' ')}
           </h5>
           <div className="space-y-2">
@@ -114,29 +114,29 @@ export function DEKnowledgeScopePanel({ de }: { de: DigitalEmployee }) {
               const enabled = configSource?.enabled ?? false;
 
               return (
-                <label key={source.provider} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors">
+                <label key={source.provider} className="flex items-start gap-3 p-2 rounded-lg hover:bg-dt-card cursor-pointer transition-colors">
                   <input
                     type="checkbox"
                     checked={enabled}
                     onChange={() => toggleSource(source.provider)}
-                    className="mt-1 rounded border-slate-600"
+                    className="mt-1 rounded border-dt-border-strong"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-300">{source.label}</span>
+                      <span className="text-sm font-medium text-dt-support">{source.label}</span>
                       {connector ? (
                         <span className="text-xs px-1.5 py-0.5 bg-emerald-900/30 text-emerald-300 rounded">
                           Connected
                         </span>
                       ) : (
-                        <span className="text-xs px-1.5 py-0.5 bg-slate-700/40 text-slate-400 rounded">
+                        <span className="text-xs px-1.5 py-0.5 bg-dt-panel text-dt-support rounded">
                           Not connected
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500">{source.description}</p>
+                    <p className="text-xs text-dt-muted">{source.description}</p>
                     {connector && connector.last_ok_at && (
-                      <p className="text-xs text-slate-600 mt-1">
+                      <p className="text-xs text-dt-faint mt-1">
                         Last synced: {fmtSince(connector.last_ok_at)}
                       </p>
                     )}
@@ -149,7 +149,7 @@ export function DEKnowledgeScopePanel({ de }: { de: DigitalEmployee }) {
       ))}
 
       {/* Save Button */}
-      <div className="flex items-center gap-2 pt-3 border-t border-slate-700">
+      <div className="flex items-center gap-2 pt-3 border-t border-dt-border">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -162,8 +162,8 @@ export function DEKnowledgeScopePanel({ de }: { de: DigitalEmployee }) {
         )}
       </div>
 
-      <div className="border-t border-slate-700 pt-2">
-        <p className="text-xs text-slate-500">
+      <div className="border-t border-dt-border pt-2">
+        <p className="text-xs text-dt-muted">
           💡 {de.name} will only consult enabled sources when answering questions. Make sure sources are connected before enabling.
         </p>
       </div>

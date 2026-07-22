@@ -91,10 +91,10 @@ export function EmbedWidget({
     center: 'inset-0 flex items-center justify-center',
   }
 
-  const bgColor = theme === 'dark' ? 'bg-slate-800' : 'bg-white'
-  const textColor = theme === 'dark' ? 'text-slate-200' : 'text-slate-900'
-  const borderColor = theme === 'dark' ? 'border-slate-700' : 'border-slate-200'
-  const inputBg = theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
+  const bgColor = theme === 'dark' ? 'bg-dt-card' : 'bg-white'
+  const textColor = theme === 'dark' ? 'text-dt-body' : 'text-slate-900'
+  const borderColor = theme === 'dark' ? 'border-dt-border' : 'border-slate-200'
+  const inputBg = theme === 'dark' ? 'bg-dt-page' : 'bg-slate-100'
   const brandColor = branding.brandColor || '#6366f1'
 
   return (
@@ -135,7 +135,7 @@ export function EmbedWidget({
                   className={`max-w-xs px-3 py-2 rounded text-sm ${
                     msg.role === 'user'
                       ? `text-white` // user messages
-                      : `${textColor} ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'}`
+                      : `${textColor} ${theme === 'dark' ? 'bg-dt-inset' : 'bg-slate-100'}`
                   }`}
                   style={msg.role === 'user' ? { backgroundColor: brandColor } : {}}
                 >
@@ -194,8 +194,8 @@ export function EmbedWidget({
           </form>
 
           {/* Powered By */}
-          <div className="px-4 py-2 text-center border-t border-slate-700/50">
-            <a href="https://dreamteam.ai" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-500 hover:text-slate-400">
+          <div className="px-4 py-2 text-center border-t border-dt-border">
+            <a href="https://dreamteam.ai" target="_blank" rel="noopener noreferrer" className="text-xs text-dt-muted hover:text-dt-support">
               Powered by DreamTeam
             </a>
           </div>

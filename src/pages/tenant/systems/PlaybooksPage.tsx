@@ -429,7 +429,7 @@ function typeBadge(type: PlaybookType) {
     escalation: 'bg-red-500/20 text-red-400',
     cross_function: 'bg-purple-500/20 text-purple-400',
     crisis: 'bg-red-500/20 text-red-400',
-    scheduled: 'bg-slate-600 text-slate-400',
+    scheduled: 'bg-slate-600 text-dt-support',
   };
   const labels: Record<PlaybookType, string> = {
     process: 'Process', response: 'Response', escalation: 'Escalation',
@@ -642,19 +642,19 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
   const evalProgress = scenarios.length > 0 ? Math.min(100, Math.round((evalStep / scenarios.length) * 100)) : 0;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Playbooks"
         subtitle={`${playbooks.length} playbooks · ${activeCount} active${draftCount > 0 ? ` · ${draftCount} draft${draftCount > 1 ? 's' : ''} pending` : ''} — the workflow library every Digital Employee executes from`}
       />
-      <button onClick={() => setPage('intelligence_evals')} className="text-xs text-slate-500 -mt-4 mb-6 block">
+      <button onClick={() => setPage('intelligence_evals')} className="text-xs text-dt-muted -mt-4 mb-6 block">
         Playbook changes are versioned and eval-gated — a draft only publishes after its scenarios pass. <span className="text-indigo-400 hover:text-indigo-300">See Proving Ground →</span>
       </button>
 
       {!selected ? (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+        <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-900/60">
+            <thead className="bg-dt-inset">
               <tr>
                 <th className={th}>Playbook</th>
                 <th className={th}>Version</th>
@@ -673,9 +673,9 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                   <tr
                     key={p.id}
                     onClick={() => { setSelectedId(p.id); setViewMode('published'); setOpenDiff(null); }}
-                    className="border-t border-slate-700/60 hover:bg-slate-700/30 cursor-pointer transition-colors"
+                    className="border-t border-dt-border hover:bg-dt-panel cursor-pointer transition-colors"
                   >
-                    <td className={`${td} text-slate-200 font-medium`}>{p.title}</td>
+                    <td className={`${td} text-dt-body font-medium`}>{p.title}</td>
                     <td className={td}>
                       <span className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] font-medium font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 whitespace-nowrap">{p.version} · published</span>
@@ -685,7 +685,7 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                       </span>
                     </td>
                     <td className={td}>{typeBadge(p.type)}</td>
-                    <td className={`${td} text-xs text-slate-400`}>
+                    <td className={`${td} text-xs text-dt-support`}>
                       <span className="flex items-center gap-1.5">
                         {p.des.map(de => (
                           <span key={de} className="w-5 h-5 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-[9px] font-semibold" title={de}>{de[0]}</span>
@@ -693,9 +693,9 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                         {p.des.join(' + ')}
                       </span>
                     </td>
-                    <td className={`${td} text-xs text-slate-400`}>{p.trigger}</td>
-                    <td className={`${td} text-xs text-slate-500`}>{p.lastRun}</td>
-                    <td className={`${td} text-xs text-slate-400`}>{p.steps.length}{p.steps.some(s => s.humanGate) ? ' · human gate' : ''}</td>
+                    <td className={`${td} text-xs text-dt-support`}>{p.trigger}</td>
+                    <td className={`${td} text-xs text-dt-muted`}>{p.lastRun}</td>
+                    <td className={`${td} text-xs text-dt-support`}>{p.steps.length}{p.steps.some(s => s.humanGate) ? ' · human gate' : ''}</td>
                     <td className={td}><Toggle enabled={p.active} onChange={v => toggleActive(p.id, v)} /></td>
                   </tr>
                 );
@@ -705,34 +705,34 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
         </div>
       ) : (
         <div>
-          <button onClick={() => { setSelectedId(null); setEditingStep(null); setViewMode('published'); closeEval(); }} className="text-xs text-slate-400 hover:text-slate-200 mb-4 transition-colors">
+          <button onClick={() => { setSelectedId(null); setEditingStep(null); setViewMode('published'); closeEval(); }} className="text-xs text-dt-support hover:text-dt-body mb-4 transition-colors">
             ← Back to library
           </button>
 
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-5">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-base font-semibold text-white">{selected.title}</h2>
                 {typeBadge(selected.type)}
                 <span className="text-[10px] font-medium font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">{selected.version} · published</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${selected.active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600 text-slate-500'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${selected.active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600 text-dt-muted'}`}>
                   {selected.active ? 'Active' : 'Paused'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setAmendmentOpen(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 font-medium transition-colors"
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border bg-dt-panel hover:bg-dt-panel text-dt-support font-medium transition-colors"
                 >
                   ✨ Improve this playbook
                 </button>
                 <Toggle enabled={selected.active} onChange={v => toggleActive(selected.id, v)} />
               </div>
             </div>
-            <p className="text-sm text-slate-400 mb-3">{selected.objective}</p>
-            <div className="flex items-center gap-5 text-xs text-slate-500 flex-wrap">
-              <span>Trigger: <span className="text-slate-300">{selected.trigger}</span></span>
-              <span>Last run: <span className="text-slate-300">{selected.lastRun}</span></span>
+            <p className="text-sm text-dt-support mb-3">{selected.objective}</p>
+            <div className="flex items-center gap-5 text-xs text-dt-muted flex-wrap">
+              <span>Trigger: <span className="text-dt-support">{selected.trigger}</span></span>
+              <span>Last run: <span className="text-dt-support">{selected.lastRun}</span></span>
               <span>
                 DEs:{' '}
                 <button onClick={() => setPage('workforce_des')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
@@ -746,20 +746,20 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             <button
               onClick={() => { setViewMode('published'); setEditingStep(null); }}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${!viewingDraft ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${!viewingDraft ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300' : 'border-dt-border text-dt-support hover:text-dt-body'}`}
             >
               Published {selected.version}
             </button>
             {selectedDraft && (
               <button
                 onClick={() => { setViewMode('draft'); setEditingStep(null); }}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${viewingDraft ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${viewingDraft ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-dt-border text-dt-support hover:text-dt-body'}`}
               >
                 Draft {selectedDraft.version}
               </button>
             )}
             {!selectedDraft && (
-              <span className="text-[11px] text-slate-600">No draft — editing a step forks {bumpVersion(selected.version)} automatically; the published version stays live.</span>
+              <span className="text-[11px] text-dt-faint">No draft — editing a step forks {bumpVersion(selected.version)} automatically; the published version stays live.</span>
             )}
             {viewingDraft && selectedDraft && (
               <button
@@ -775,7 +775,7 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
           {viewingDraft && selectedDraft && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 mb-4">
               <p className="text-xs font-medium text-amber-400 mb-1">Editing draft {selectedDraft.version} — published {selected.version} unchanged</p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-dt-support">
                 Change summary: {selectedDraft.summary}. This draft is not live — DEs keep executing {selected.version} until the draft passes its eval scenarios in the Proving Ground and is published.
               </p>
             </div>
@@ -787,9 +787,9 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
           {/* Step list */}
           <div className="space-y-2">
             {viewSteps.map(s => (
-              <div key={s.step} className={`rounded-xl border p-4 ${s.humanGate ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-700 bg-slate-800'}`}>
+              <div key={s.step} className={`rounded-xl border p-4 ${s.humanGate ? 'border-amber-500/30 bg-amber-500/5' : 'border-dt-border bg-dt-card'}`}>
                 <div className="flex items-start gap-3">
-                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${s.humanGate ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-400'}`}>
+                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${s.humanGate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>
                     {s.step}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -801,20 +801,20 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                       <div className="flex flex-col gap-2 mt-1">
                         <textarea
                           autoFocus rows={2} value={stepDraft} onChange={e => setStepDraft(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-slate-600 resize-none"
+                          className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-xs text-dt-body focus:outline-none focus:border-dt-border-strong resize-none"
                         />
                         <div className="flex items-center gap-2 flex-wrap">
                           <button onClick={() => saveStep(s.step)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg">
                             {viewingDraft ? 'Save to draft' : `Save as draft ${bumpVersion(selected.version)}`}
                           </button>
-                          <button onClick={() => setEditingStep(null)} className="text-slate-400 hover:text-slate-200 text-xs">Cancel</button>
-                          {!viewingDraft && <span className="text-[10px] text-slate-500">Published {selected.version} stays unchanged — the edit forks a draft.</span>}
+                          <button onClick={() => setEditingStep(null)} className="text-dt-support hover:text-dt-body text-xs">Cancel</button>
+                          {!viewingDraft && <span className="text-[10px] text-dt-muted">Published {selected.version} stays unchanged — the edit forks a draft.</span>}
                         </div>
                       </div>
                     ) : (
                       <button
                         onClick={() => { setEditingStep(s.step); setStepDraft(s.description); }}
-                        className="text-left text-xs text-slate-400 hover:text-slate-200 transition-colors leading-relaxed"
+                        className="text-left text-xs text-dt-support hover:text-dt-body transition-colors leading-relaxed"
                         title="Click to edit step"
                       >
                         {s.description}
@@ -830,19 +830,19 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {/* Version history — mirrors the CompliancePage diff pattern */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mt-6">
-            <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Version History — {selected.title}</p>
-              <button onClick={() => setPage('intelligence_evals')} className="text-xs text-slate-500">
+          <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mt-6">
+            <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between flex-wrap gap-2">
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Version History — {selected.title}</p>
+              <button onClick={() => setPage('intelligence_evals')} className="text-xs text-dt-muted">
                 Every published version passed its eval scenarios — <span className="text-indigo-400 hover:text-indigo-300">see Proving Ground →</span>
               </button>
             </div>
             {getHistory(selected.id).length === 0 ? (
-              <p className="px-5 py-4 text-xs text-slate-500">No recorded versions yet — the next publish creates the first history entry.</p>
+              <p className="px-5 py-4 text-xs text-dt-muted">No recorded versions yet — the next publish creates the first history entry.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-700">
+                  <tr className="border-b border-dt-border">
                     <th className={th}>Version</th>
                     <th className={th}>Date</th>
                     <th className={th}>Change summary</th>
@@ -857,25 +857,25 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                     const open = openDiff === key;
                     return (
                       <React.Fragment key={key}>
-                        <tr className="hover:bg-slate-700/20 transition-colors">
+                        <tr className="hover:bg-dt-panel/20 transition-colors">
                           <td className={`${td} text-indigo-400 font-mono text-xs`}>{v.version}</td>
-                          <td className={`${td} text-slate-500 text-xs`}>{v.date}</td>
-                          <td className={`${td} text-slate-200 text-xs`}>{v.summary}</td>
-                          <td className={`${td} text-slate-400 text-xs`}>{v.changedBy}</td>
+                          <td className={`${td} text-dt-muted text-xs`}>{v.date}</td>
+                          <td className={`${td} text-dt-body text-xs`}>{v.summary}</td>
+                          <td className={`${td} text-dt-support text-xs`}>{v.changedBy}</td>
                           <td className={`${td} text-xs`}>
                             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 whitespace-nowrap">✓ {v.evalResult}</span>
                           </td>
                           <td className={`${td} text-right`}>
                             <button
                               onClick={() => setOpenDiff(open ? null : key)}
-                              className={`text-xs px-2 py-1 rounded-lg border transition-colors ${open ? 'border-indigo-500 text-indigo-300' : 'border-slate-600 text-slate-400 hover:text-white hover:border-slate-500'}`}>
+                              className={`text-xs px-2 py-1 rounded-lg border transition-colors ${open ? 'border-indigo-500 text-indigo-300' : 'border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong'}`}>
                               {open ? 'Hide diff' : 'Diff'}
                             </button>
                           </td>
                         </tr>
                         {open && (
                           <tr>
-                            <td colSpan={6} className="px-5 py-3 bg-slate-900/60">
+                            <td colSpan={6} className="px-5 py-3 bg-dt-inset">
                               <div className="font-mono text-xs space-y-1">
                                 {v.diff.removed.map((line, i) => (
                                   <div key={`r${i}`} className="text-red-400/90 bg-red-500/5 rounded px-2 py-1">− {line}</div>
@@ -900,14 +900,14 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
       {/* ── Eval & publish modal (simulated) ─────────────────────── */}
       {evalOpen && selected && selectedDraft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={closeEval}>
-          <div className="w-full max-w-lg rounded-2xl border border-slate-600 bg-slate-800 p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-lg rounded-2xl border border-dt-border-strong bg-dt-card p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 mb-1">
               <h3 className="text-sm font-semibold text-white">Eval gate — {selected.title} {selectedDraft.version}</h3>
-              <button onClick={closeEval} className="text-slate-500 hover:text-slate-300 text-sm">✕</button>
+              <button onClick={closeEval} className="text-dt-muted hover:text-dt-support text-sm">✕</button>
             </div>
             <p className="text-[10px] uppercase tracking-wider text-indigo-400 mb-3">Simulated run — design preview</p>
 
-            <div className="w-full bg-slate-700 rounded-full h-1.5 mb-3">
+            <div className="w-full bg-dt-panel rounded-full h-1.5 mb-3">
               <div className="h-1.5 rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${evalProgress}%` }} />
             </div>
 
@@ -917,11 +917,11 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                 const running = !evalDone && i === evalStep;
                 return (
                   <div key={sc.name} className={`flex items-start gap-2 text-xs rounded-lg px-2 py-1.5 ${reached && !sc.pass ? 'bg-red-500/5' : ''}`}>
-                    <span className={`flex-shrink-0 ${reached ? (sc.pass ? 'text-emerald-400' : 'text-red-400') : running ? 'text-indigo-400' : 'text-slate-600'}`}>
+                    <span className={`flex-shrink-0 ${reached ? (sc.pass ? 'text-emerald-400' : 'text-red-400') : running ? 'text-indigo-400' : 'text-dt-faint'}`}>
                       {reached ? (sc.pass ? '✓' : '✗') : running ? '▶' : '·'}
                     </span>
                     <div className="min-w-0">
-                      <span className={reached ? 'text-slate-300' : running ? 'text-slate-200' : 'text-slate-600'}>{sc.name}</span>
+                      <span className={reached ? 'text-dt-support' : running ? 'text-dt-body' : 'text-dt-faint'}>{sc.name}</span>
                       {reached && !sc.pass && sc.failNote && (
                         <p className="text-[11px] text-red-300/90 mt-0.5">{sc.failNote}</p>
                       )}
@@ -937,16 +937,16 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
                   {passCount}/{scenarios.length} scenarios passed {allPass ? '— gate open' : `— ${failing.length} failing`}
                 </p>
                 {allPass ? (
-                  <p className="text-[11px] text-slate-400 mt-1">All playbook eval scenarios passed — {selectedDraft.version} is cleared to publish. The run will be appended to Proving Ground history.</p>
+                  <p className="text-[11px] text-dt-support mt-1">All playbook eval scenarios passed — {selectedDraft.version} is cleared to publish. The run will be appended to Proving Ground history.</p>
                 ) : (
                   <p className="text-[11px] text-red-300/90 mt-1">Publishing blocked — resolve the failing scenario. The published {selected.version} stays live; this draft cannot ship until the scenario passes.</p>
                 )}
-                <p className="text-[10px] text-slate-600 mt-2">This is a scripted simulation landing on seeded results — no model was executed.</p>
+                <p className="text-[10px] text-dt-faint mt-2">This is a scripted simulation landing on seeded results — no model was executed.</p>
               </div>
             )}
 
             <div className="flex items-center justify-end gap-2">
-              <button onClick={closeEval} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:text-slate-200 transition-colors">Close</button>
+              <button onClick={closeEval} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body transition-colors">Close</button>
               <button
                 onClick={publishDraft}
                 disabled={!evalDone || !allPass}
@@ -971,7 +971,7 @@ function DemoPlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

@@ -39,7 +39,7 @@ export function DEConfigurationTab({ de, tenant_id }: DEConfigurationTabProps) {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="animate-pulse h-48 bg-slate-800 rounded-lg" />
+        <div className="animate-pulse h-48 bg-dt-card rounded-lg" />
       </div>
     )
   }
@@ -71,13 +71,13 @@ export function DEConfigurationTab({ de, tenant_id }: DEConfigurationTabProps) {
       {/* Header */}
       <div>
         <h2 className="text-lg font-semibold text-white mb-2">{de.name} Configuration</h2>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-dt-support">
           Customize how {de.name} operates: limits, rules, approval gates, knowledge sources, and escalation routing.
         </p>
       </div>
 
       {/* Configuration Form */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-6">
         <ConfigurationUIGenerator
           tenant_id={tenant_id}
           entity_kind="de"
@@ -92,9 +92,9 @@ export function DEConfigurationTab({ de, tenant_id }: DEConfigurationTabProps) {
       </div>
 
       {/* Help Section */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-slate-300">ℹ️ Configuration Guide</h3>
-        <div className="text-xs text-slate-400 space-y-2">
+      <div className="bg-dt-card border border-dt-border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-dt-support">ℹ️ Configuration Guide</h3>
+        <div className="text-xs text-dt-support space-y-2">
           <p>
             <strong>Authority:</strong> Set decision limits (refund authority, commitment thresholds). Requests above these limits escalate to a human.
           </p>

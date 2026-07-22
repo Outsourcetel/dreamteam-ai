@@ -104,19 +104,19 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">Escalation Routing Rules</h4>
-        <p className="text-xs text-slate-400">Define when and where {de.name} escalates issues to humans.</p>
+        <p className="text-xs text-dt-support">Define when and where {de.name} escalates issues to humans.</p>
       </div>
 
       {/* Rules List */}
       <div className="space-y-2">
         {config.rules.length === 0 ? (
-          <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 text-center">
-            <p className="text-xs text-slate-400">No escalation rules yet.</p>
-            <p className="text-xs text-slate-500 mt-1">Click "Add Rule" to create one.</p>
+          <div className="bg-dt-card border border-dt-border rounded-lg p-4 text-center">
+            <p className="text-xs text-dt-support">No escalation rules yet.</p>
+            <p className="text-xs text-dt-muted mt-1">Click "Add Rule" to create one.</p>
           </div>
         ) : (
           config.rules.map(rule => (
-            <div key={rule.id} className="bg-slate-800/60 border border-slate-700 rounded-lg p-3 space-y-2">
+            <div key={rule.id} className="bg-dt-card border border-dt-border rounded-lg p-3 space-y-2">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
@@ -124,24 +124,24 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
                       {RULE_TYPE_LABELS[rule.rule_type]}
                     </span>
                     {rule.sla_hours && (
-                      <span className="text-xs text-slate-400">SLA: {rule.sla_hours}h</span>
+                      <span className="text-xs text-dt-support">SLA: {rule.sla_hours}h</span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-300 font-mono">{rule.condition}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    → Escalate to: <span className="text-slate-300">{ESCALATION_TARGETS.find(t => t.value === rule.action)?.label || rule.action}</span>
+                  <p className="text-xs text-dt-support font-mono">{rule.condition}</p>
+                  <p className="text-xs text-dt-support mt-1">
+                    → Escalate to: <span className="text-dt-support">{ESCALATION_TARGETS.find(t => t.value === rule.action)?.label || rule.action}</span>
                   </p>
                 </div>
                 <div className="flex gap-1 ml-2">
                   <button
                     onClick={() => setEditingRule(rule)}
-                    className="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                    className="px-2 py-1 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDeleteRule(rule.id)}
-                    className="px-2 py-1 text-xs bg-slate-700 hover:bg-red-900/40 text-red-300 rounded transition-colors"
+                    className="px-2 py-1 text-xs bg-dt-panel hover:bg-red-900/40 text-red-300 rounded transition-colors"
                   >
                     Remove
                   </button>
@@ -155,9 +155,9 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
       {/* Rule Editor Modal */}
       {editingRule && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => setEditingRule(null)} />
+          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setEditingRule(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-4 space-y-3">
+            <div className="pointer-events-auto w-full max-w-md max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl p-4 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-white">
                   {config.rules.find(r => r.id === editingRule.id) ? 'Edit Rule' : 'Add Escalation Rule'}
@@ -165,11 +165,11 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Rule Type</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Rule Type</label>
                 <select
                   value={editingRule.rule_type}
                   onChange={e => setEditingRule({ ...editingRule, rule_type: e.target.value as any })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 >
                   <option value="topic">Topic-Based (if topic = X)</option>
                   <option value="confidence">Confidence-Based (if confidence &lt; X%)</option>
@@ -179,7 +179,7 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Condition</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Condition</label>
                 <input
                   placeholder={
                     editingRule.rule_type === 'topic' ? 'e.g., topic="billing"' :
@@ -189,16 +189,16 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
                   }
                   value={editingRule.condition}
                   onChange={e => setEditingRule({ ...editingRule, condition: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Escalate To</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">Escalate To</label>
                 <select
                   value={editingRule.action}
                   onChange={e => setEditingRule({ ...editingRule, action: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 >
                   <option value="">-- Select target --</option>
                   {ESCALATION_TARGETS.map(target => (
@@ -208,14 +208,14 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">SLA (hours to respond)</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">SLA (hours to respond)</label>
                 <input
                   type="number"
                   min="0"
                   placeholder="e.g., 4"
                   value={editingRule.sla_hours || ''}
                   onChange={e => setEditingRule({ ...editingRule, sla_hours: e.target.value ? Number(e.target.value) : undefined })}
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-page border border-dt-border-strong rounded px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -234,7 +234,7 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
                 </button>
                 <button
                   onClick={() => setEditingRule(null)}
-                  className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs transition-colors"
+                  className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded text-xs transition-colors"
                 >
                   Cancel
                 </button>
@@ -245,10 +245,10 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
       )}
 
       {/* Action Buttons */}
-      <div className="flex gap-2 pt-2 border-t border-slate-700">
+      <div className="flex gap-2 pt-2 border-t border-dt-border">
         <button
           onClick={handleAddRule}
-          className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-medium transition-colors"
+          className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded text-xs font-medium transition-colors"
         >
           + Add Rule
         </button>
@@ -264,8 +264,8 @@ export function SophieEscalationRules({ de }: { de: DigitalEmployee }) {
         )}
       </div>
 
-      <div className="border-t border-slate-700 pt-2">
-        <p className="text-xs text-slate-500">
+      <div className="border-t border-dt-border pt-2">
+        <p className="text-xs text-dt-muted">
           💡 Each rule defines a condition that triggers an escalation. Rules are evaluated in order.
         </p>
       </div>

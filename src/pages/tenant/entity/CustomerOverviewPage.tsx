@@ -29,7 +29,7 @@ const JOURNEY_STAGES: Record<CompanyId, JourneyStage[]> = {
     { page: 'entity_customer_bd', label: 'Business Development', icon: '◎', stat: '6 pursuits', statColor: 'text-indigo-300' },
     { page: 'entity_customer_sales', label: 'Sales', icon: '↗', stat: '3 proposals', statColor: 'text-indigo-300' },
     { page: 'entity_customer_onboarding', label: 'Onboarding', icon: '⚙', stat: '1 engagement setup', statColor: 'text-amber-300' },
-    { page: 'entity_customer_support', label: 'Support', icon: '💬', stat: '—', statColor: 'text-slate-500' },
+    { page: 'entity_customer_support', label: 'Support', icon: '💬', stat: '—', statColor: 'text-dt-muted' },
     { page: 'entity_customer_success', label: 'Success', icon: '♥', stat: '4 engagements', statColor: 'text-emerald-300' },
     { page: 'entity_customer_renewal', label: 'Renewal & Expansion', icon: '⟳', stat: '2 renewals', statColor: 'text-amber-300' },
   ],
@@ -97,17 +97,17 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const [showImport, setShowImport] = React.useState(false);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       {/* Header */}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Customer Lifecycle</h1>
-          <p className="text-slate-400 text-sm mt-1">One relationship, end-to-end — no handoffs</p>
-          <p className="text-xs text-slate-600 mt-0.5">
+          <p className="text-dt-support text-sm mt-1">One relationship, end-to-end — no handoffs</p>
+          <p className="text-xs text-dt-faint mt-0.5">
             {dataMode === 'live' ? (liveTenantName || 'Your company') : `${activeCompany.name} · ${activeCompany.industry}`}
           </p>
           {dataMode === 'live' && (
-            <p className="text-[11px] text-slate-500 mt-1">Jump to any stage below to manage it. Import your customers to populate this view.</p>
+            <p className="text-[11px] text-dt-muted mt-1">Jump to any stage below to manage it. Import your customers to populate this view.</p>
           )}
         </div>
         {dataMode === 'live' && (
@@ -125,22 +125,22 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 
       {/* Journey bar */}
       <div className="mb-8">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Customer journey</h2>
+        <h2 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-3">Customer journey</h2>
         <div className="flex items-stretch gap-1 overflow-x-auto pb-2">
           {stages.map((s, i) => (
             <React.Fragment key={s.page}>
               <button
                 onClick={() => setPage(s.page)}
-                className="flex-shrink-0 w-40 text-left rounded-xl p-3.5 border border-slate-700 bg-slate-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                className="flex-shrink-0 w-40 text-left rounded-xl p-3.5 border border-dt-border bg-dt-card hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
               >
                 <div className="text-lg mb-1.5">{s.icon}</div>
                 <p className="text-xs font-semibold text-white leading-tight mb-1 group-hover:text-indigo-200">{s.label}</p>
                 {dataMode === 'live'
-                  ? <p className="text-xs font-medium text-slate-500">Open →</p>
+                  ? <p className="text-xs font-medium text-dt-muted">Open →</p>
                   : <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>}
               </button>
               {i < stages.length - 1 && (
-                <div className="flex-shrink-0 self-center text-slate-600 text-lg px-0.5">→</div>
+                <div className="flex-shrink-0 self-center text-dt-faint text-lg px-0.5">→</div>
               )}
             </React.Fragment>
           ))}
@@ -149,12 +149,12 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 
       {/* Assigned DEs */}
       <div className="mb-8">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Digital Employees on this entity</h2>
+        <h2 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-3">Digital Employees on this entity</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {dataMode === 'live' ? (
             <button
               onClick={() => setPage('workforce_des')}
-              className="col-span-full flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-700 text-xs text-slate-500 hover:border-slate-600"
+              className="col-span-full flex items-center justify-center rounded-xl p-4 border border-dashed border-dt-border text-xs text-dt-muted hover:border-dt-border-strong"
             >
               Assign Digital Employees to your customer stages from the Roster →
             </button>
@@ -162,7 +162,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <button
               key={de.name}
               onClick={() => setPage('workforce_des')}
-              className="flex items-center gap-3 text-left rounded-xl p-4 border border-slate-700 bg-slate-800 hover:border-slate-600 transition-all"
+              className="flex items-center gap-3 text-left rounded-xl p-4 border border-dt-border bg-dt-card hover:border-dt-border-strong transition-all"
             >
               <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                 {de.name[0]}
@@ -172,16 +172,16 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
                   <span className={`w-2 h-2 rounded-full ${healthDot(de.health)}`} />
                   <span className="text-sm font-semibold text-white">{de.name}</span>
                 </div>
-                <p className="text-xs text-slate-400 truncate">{de.role}</p>
+                <p className="text-xs text-dt-support truncate">{de.role}</p>
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-sm font-bold text-emerald-400">{de.confidence}%</p>
-                <p className="text-[10px] text-slate-500">confidence</p>
+                <p className="text-[10px] text-dt-muted">confidence</p>
               </div>
             </button>
           ))}
           {dataMode !== 'live' && activeCompanyId === 'tcp' && (
-            <div className="flex items-center justify-center rounded-xl p-4 border border-dashed border-slate-700 text-xs text-slate-600">
+            <div className="flex items-center justify-center rounded-xl p-4 border border-dashed border-dt-border text-xs text-dt-faint">
               BD & Sales handled by humans — no DE assigned yet
             </div>
           )}
@@ -189,7 +189,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       </div>
 
       {/* Cross-stage activity */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <h2 className="text-sm font-semibold text-white mb-4">Recent cross-stage activity</h2>
         <div className="space-y-2">
           {dataMode === 'live' && (
@@ -199,10 +199,10 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
             <div key={i} className={`border-l-2 pl-3 py-1 ${toneBorder(item.tone)}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-2 flex-1 min-w-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0 mt-0.5">{item.stage}</span>
-                  <p className="text-xs text-slate-300 leading-relaxed">{item.text}</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support flex-shrink-0 mt-0.5">{item.stage}</span>
+                  <p className="text-xs text-dt-support leading-relaxed">{item.text}</p>
                 </div>
-                <span className="text-xs text-slate-600 flex-shrink-0">{item.time}</span>
+                <span className="text-xs text-dt-faint flex-shrink-0">{item.time}</span>
               </div>
             </div>
           ))}

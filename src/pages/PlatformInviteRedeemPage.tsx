@@ -41,7 +41,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-dt-page flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
@@ -54,7 +54,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
         {!authedUser ? (
           <>
             <h2 className="text-2xl font-bold text-white mb-1 text-center">Platform invitation</h2>
-            <p className="text-slate-400 text-sm mb-6 text-center leading-relaxed">
+            <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
               Sign in (or create an account) first, then come back to this same link to accept your
               invitation.
             </p>
@@ -69,14 +69,14 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
           <div className="text-center py-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
             <h2 className="text-xl font-bold text-white mb-2">You're in</h2>
-            <p className="text-slate-400 text-sm leading-relaxed">
+            <p className="text-dt-support text-sm leading-relaxed">
               Taking you to the Platform Console…
             </p>
           </div>
         ) : (
           <>
             <h2 className="text-2xl font-bold text-white mb-1 text-center">Accept platform invitation</h2>
-            <p className="text-slate-400 text-sm mb-6 text-center leading-relaxed">
+            <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
               You're signed in as {authedUser.email}. Accepting this invitation will give this account
               platform-level access — above any single tenant.
             </p>
@@ -88,8 +88,8 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
             >
               {loading ? <><Spinner /> Accepting...</> : 'Accept platform invitation'}
             </button>
-            <div className="border-t border-slate-700 mt-6 pt-5 text-center">
-              <p className="text-xs text-slate-600">
+            <div className="border-t border-dt-border mt-6 pt-5 text-center">
+              <p className="text-xs text-dt-faint">
                 Wrong account?{' '}
                 <button
                   onClick={() => { void (async () => { await handleLogout(); })(); }}

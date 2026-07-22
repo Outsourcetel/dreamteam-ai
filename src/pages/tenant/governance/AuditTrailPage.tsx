@@ -262,7 +262,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
           )}
           <button
             onClick={() => void load()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors"
           >
             Refresh
           </button>
@@ -651,7 +651,7 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
             Retention: <span className="text-white">{RETENTION[activeCompanyId]}</span>
           </span>
           <button onClick={() => exportCsv(filtered)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
             ↓ Export CSV
           </button>
         </div>

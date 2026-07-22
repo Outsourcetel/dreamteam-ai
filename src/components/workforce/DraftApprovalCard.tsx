@@ -45,10 +45,10 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
   };
 
   return (
-    <div className="bg-slate-700 border border-slate-600 rounded p-2 text-xs">
-      <div className="font-medium text-slate-200">{actionLabel[action.action_type] || action.action_type}</div>
+    <div className="bg-dt-panel border border-dt-border-strong rounded p-2 text-xs">
+      <div className="font-medium text-dt-body">{actionLabel[action.action_type] || action.action_type}</div>
       {action.proposal_rationale && (
-        <p className="text-slate-400 mt-1 line-clamp-2">{action.proposal_rationale}</p>
+        <p className="text-dt-support mt-1 line-clamp-2">{action.proposal_rationale}</p>
       )}
 
       {error && <div className="text-red-300 mt-1">{error}</div>}
@@ -71,7 +71,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
             </>
           )}
         </button>
-        <button className="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 text-slate-100 rounded text-xs transition flex items-center justify-center gap-1">
+        <button className="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 text-dt-title rounded text-xs transition flex items-center justify-center gap-1">
           <XCircle className="w-3 h-3" />
           Reject
         </button>

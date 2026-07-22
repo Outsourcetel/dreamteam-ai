@@ -216,21 +216,21 @@ const SettingsPage = ({
     .filter(t => t !== 'ai_engine' || isDTUser);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           Manage your workspace, AI engine, and client token budgets
         </p>
       </div>
-      <div className="flex gap-1 bg-slate-700 rounded-xl p-1 mb-6 overflow-x-auto w-fit">
+      <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6 overflow-x-auto w-fit">
         {tabList.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-              activeTab === t ? 'text-white' : 'text-slate-400 hover:text-white'
+              activeTab === t ? 'text-white' : 'text-dt-support hover:text-white'
             }`}
             style={activeTab === t ? { backgroundColor: accentColor } : {}}
           >
@@ -252,33 +252,33 @@ const SettingsPage = ({
               </p>
             </div>
           )}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">Workspace Details</h2>
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1.5">Workspace Name</label>
+                <label className="text-xs font-medium text-dt-support block mb-1.5">Workspace Name</label>
                 <input
                   value={orgName}
                   onChange={e => setOrgName(e.target.value)}
                   placeholder="Your organisation name"
-                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1.5">Industry</label>
+                <label className="text-xs font-medium text-dt-support block mb-1.5">Industry</label>
                 <select
                   value={industry}
                   onChange={e => setIndustry(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 >
                   {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
               </div>
               {/* Wave 4 — work-object vocabulary: what YOU call the people
                   you serve and your value metric. Read by every live page. */}
-              <div className="md:col-span-2 rounded-xl border border-slate-700 bg-slate-900/40 p-4">
+              <div className="md:col-span-2 rounded-xl border border-dt-border bg-dt-inset p-4">
                 <p className="text-xs font-semibold text-white mb-0.5">Your vocabulary</p>
-                <p className="text-[11px] text-slate-500 mb-3">Relabels the whole workspace — Patients instead of Customers, Contract value instead of ARR. Seeded from your industry; yours to change.</p>
+                <p className="text-[11px] text-dt-muted mb-3">Relabels the whole workspace — Patients instead of Customers, Contract value instead of ARR. Seeded from your industry; yours to change.</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {([
                     ['party_singular', 'You serve one…', 'Customer'],
@@ -290,41 +290,41 @@ const SettingsPage = ({
                     ['ai_tone', 'DE tone of voice', 'e.g. warm, concise, formal'],
                   ] as const).map(([k, label, ph]) => (
                     <div key={k}>
-                      <label className="text-[11px] font-medium text-slate-400 block mb-1">{label}</label>
+                      <label className="text-[11px] font-medium text-dt-support block mb-1">{label}</label>
                       <input value={vocabDraft[k] ?? ''} placeholder={ph}
                         onChange={e => setVocabDraft(v => ({ ...v, [k]: e.target.value }))}
-                        className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
                     </div>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1.5">Contact Email</label>
+                <label className="text-xs font-medium text-dt-support block mb-1.5">Contact Email</label>
                 <input
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
                   type="email"
-                  className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1.5">Brand Colour</label>
+                <label className="text-xs font-medium text-dt-support block mb-1.5">Brand Colour</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-slate-700 border border-slate-600 p-0.5"
+                    className="w-10 h-10 rounded-lg cursor-pointer bg-dt-panel border border-dt-border-strong p-0.5"
                   />
                   <input
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
                     placeholder="#6366f1"
-                    className="flex-1 bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                    className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
                   />
-                  <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-slate-600" style={{ backgroundColor: brandColor }} />
+                  <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-dt-border-strong" style={{ backgroundColor: brandColor }} />
                 </div>
-                <p className="text-xs text-slate-600 mt-1.5">Applied to sidebar, buttons, and highlights across the platform.</p>
+                <p className="text-xs text-dt-faint mt-1.5">Applied to sidebar, buttons, and highlights across the platform.</p>
               </div>
             </div>
             <div className="mt-5 flex items-center gap-3">
@@ -343,9 +343,9 @@ const SettingsPage = ({
 
           <CommsSettingsCard accentColor={accentColor} />
 
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Danger Zone</h2>
-            <p className="text-xs text-slate-500 mb-4">Irreversible actions — proceed with care.</p>
+            <p className="text-xs text-dt-muted mb-4">Irreversible actions — proceed with care.</p>
             <button className="px-4 py-2 text-xs font-medium text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-all">
               Delete Workspace
             </button>
@@ -356,9 +356,9 @@ const SettingsPage = ({
       {/* ── AI Engine (platform admins only — keys are shared platform-wide) ── */}
       {activeTab === 'ai_engine' && isDTUser && (
         <div className="max-w-2xl space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
-            <p className="text-xs text-slate-400 mb-5">
+            <p className="text-xs text-dt-support mb-5">
               These keys are stored encrypted in your database and shared across all your client tenants.
               You control usage and spend via the Usage & Budgets tab.
             </p>
@@ -366,7 +366,7 @@ const SettingsPage = ({
             {/* Anthropic */}
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-400">Anthropic API Key</label>
+                <label className="text-xs font-medium text-dt-support">Anthropic API Key</label>
                 {anthropicSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
                   : <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">Not set — DE responses disabled</span>}
@@ -376,9 +376,9 @@ const SettingsPage = ({
                 value={anthropicKey}
                 onChange={e => setAnthropicKey(e.target.value)}
                 placeholder={anthropicSet ? 'Enter new key to replace existing…' : 'sk-ant-…'}
-                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-dt-faint mt-1">
                 Get your key at console.anthropic.com → API Keys. Powers all Digital Employee responses.
               </p>
             </div>
@@ -386,19 +386,19 @@ const SettingsPage = ({
             {/* OpenAI */}
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-400">OpenAI API Key <span className="text-slate-600 font-normal">(optional)</span></label>
+                <label className="text-xs font-medium text-dt-support">OpenAI API Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {openaiSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — semantic search active</span>
-                  : <span className="text-xs text-slate-500 bg-slate-600/50 px-2 py-0.5 rounded">Not set — keyword search only</span>}
+                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — keyword search only</span>}
               </div>
               <input
                 type="password"
                 value={openaiKey}
                 onChange={e => setOpenaiKey(e.target.value)}
                 placeholder={openaiSet ? 'Enter new key to replace existing…' : 'sk-…'}
-                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-dt-faint mt-1">
                 Enables vector/semantic search in the knowledge base — significantly improves DE answer quality.
               </p>
             </div>
@@ -406,19 +406,19 @@ const SettingsPage = ({
             {/* Google */}
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-slate-400">Google AI Key <span className="text-slate-600 font-normal">(optional)</span></label>
+                <label className="text-xs font-medium text-dt-support">Google AI Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {googleSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini models active</span>
-                  : <span className="text-xs text-slate-500 bg-slate-600/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
+                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
               </div>
               <input
                 type="password"
                 value={googleKey}
                 onChange={e => setGoogleKey(e.target.value)}
                 placeholder={googleSet ? 'Enter new key to replace existing…' : 'AIza…'}
-                className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-dt-faint mt-1">
                 Get your key at aistudio.google.com → API Keys. Enables Gemini 1.5 Flash (cheapest overall) and Gemini 2.0 Flash.
               </p>
             </div>
@@ -437,13 +437,13 @@ const SettingsPage = ({
             </div>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">How billing works</h2>
-            <div className="space-y-2 text-xs text-slate-400 mt-3">
-              <div className="flex gap-3"><span className="text-slate-600 w-4">1</span><span>You pay Anthropic directly for token usage across all tenants.</span></div>
-              <div className="flex gap-3"><span className="text-slate-600 w-4">2</span><span>Each tenant has a monthly token budget you set — DEs stop responding when the budget is hit.</span></div>
-              <div className="flex gap-3"><span className="text-slate-600 w-4">3</span><span>Haiku costs ~$0.25/M input tokens and ~$1.25/M output tokens — a 500-token query costs ~$0.001.</span></div>
-              <div className="flex gap-3"><span className="text-slate-600 w-4">4</span><span>You can price AI usage into your service fee or charge clients per token at your own margin.</span></div>
+            <div className="space-y-2 text-xs text-dt-support mt-3">
+              <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>You pay Anthropic directly for token usage across all tenants.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Each tenant has a monthly token budget you set — DEs stop responding when the budget is hit.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>Haiku costs ~$0.25/M input tokens and ~$1.25/M output tokens — a 500-token query costs ~$0.001.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">4</span><span>You can price AI usage into your service fee or charge clients per token at your own margin.</span></div>
             </div>
           </div>
         </div>
@@ -452,9 +452,9 @@ const SettingsPage = ({
       {/* ── Usage & Budgets ────────────────────────────────────────── */}
       {activeTab === 'usage' && (
         <div className="max-w-3xl space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Monthly AI Budget</h2>
-            <p className="text-xs text-slate-400 mb-5">
+            <p className="text-xs text-dt-support mb-5">
               {/* RLS scopes this list to what the caller can see: a normal
                   workspace sees only itself; an operator sees their clients —
                   so the copy stays singular-first, not "per client". */}
@@ -474,22 +474,22 @@ const SettingsPage = ({
                   const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
                   const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : accentColor;
                   return (
-                    <div key={t.id} className="bg-slate-700/50 rounded-xl p-4">
+                    <div key={t.id} className="bg-dt-panel rounded-xl p-4">
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div>
                           <div className="text-sm text-white font-medium">{t.name}</div>
-                          <div className="text-xs text-slate-500 mt-0.5">{t.plan} · {t.status}</div>
+                          <div className="text-xs text-dt-muted mt-0.5">{t.plan} · {t.status}</div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <input
                             type="number"
                             value={budgetEdits[t.id] ?? ''}
                             onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
-                            className="w-28 bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
+                            className="w-28 bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
                             min={0}
                             step={10000}
                           />
-                          <span className="text-xs text-slate-500">tokens/mo</span>
+                          <span className="text-xs text-dt-muted">tokens/mo</span>
                           <button
                             onClick={() => handleSaveBudget(t.id)}
                             disabled={budgetSaving === t.id}
@@ -500,7 +500,7 @@ const SettingsPage = ({
                           </button>
                         </div>
                       </div>
-                      <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                      <div className="flex justify-between text-xs text-dt-muted mb-1.5">
                         <span>{fmt(used)} used</span>
                         <span>{pct}% of {fmt(budget)}</span>
                       </div>
@@ -528,9 +528,9 @@ const SettingsPage = ({
       {/* ── Widget & API (live mode only) ─────────────────────────── */}
       {activeTab === 'widget' && (
         <div className="max-w-3xl space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Widget Keys</h2>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-dt-support mb-4">
               Publishable keys for embedding your support chat widget in your product. Keys can only ask
               questions — they can never read or change data. We store only a hash; the key is shown once.
             </p>
@@ -541,7 +541,7 @@ const SettingsPage = ({
                   New key generated — copy it now, it will not be shown again
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs text-white font-mono bg-slate-700 rounded-lg px-3 py-2 break-all">{generatedKey}</code>
+                  <code className="flex-1 text-xs text-white font-mono bg-dt-panel rounded-lg px-3 py-2 break-all">{generatedKey}</code>
                   <button
                     onClick={handleCopyKey}
                     className="px-3 py-2 text-xs text-white rounded-lg flex-shrink-0"
@@ -558,7 +558,7 @@ const SettingsPage = ({
                 value={newKeyLabel}
                 onChange={e => setNewKeyLabel(e.target.value)}
                 placeholder="Key label (e.g. Production portal)"
-                className="flex-1 bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
               <button
                 onClick={handleGenerateKey}
@@ -575,13 +575,13 @@ const SettingsPage = ({
             ) : (
               <div className="space-y-2">
                 {widgetKeys.map(k => (
-                  <div key={k.id} className="flex items-center justify-between gap-3 bg-slate-700/50 rounded-xl px-4 py-3">
+                  <div key={k.id} className="flex items-center justify-between gap-3 bg-dt-panel rounded-xl px-4 py-3">
                     <div className="min-w-0">
                       <div className="text-sm text-white font-medium truncate">
                         {k.label}
                         {!k.active && <span className="ml-2 text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded">Revoked</span>}
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
+                      <div className="text-xs text-dt-muted mt-0.5">
                         Created {new Date(k.created_at).toLocaleDateString()} · {k.request_count} requests ·
                         {k.last_used_at ? ` last used ${new Date(k.last_used_at).toLocaleString()}` : ' never used'}
                       </div>
@@ -600,25 +600,25 @@ const SettingsPage = ({
             )}
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Embed Snippet</h2>
-            <p className="text-xs text-slate-400 mb-3">
+            <p className="text-xs text-dt-support mb-3">
               Paste into your product, replacing the placeholders. Full reference:{' '}
               <a href="https://github.com/Outsourcetel/dreamteam-ai/blob/main/docs/WIDGET-EMBED.md" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">docs/WIDGET-EMBED.md</a>
               {' '}· try it on the <a href="/widget-demo.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">demo page</a>.
             </p>
-            <pre className="text-xs text-slate-300 font-mono bg-slate-700 rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
+            <pre className="text-xs text-dt-support font-mono bg-dt-panel rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
           </div>
 
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">End-User Activity</h2>
-            <p className="text-xs text-slate-400 mb-3">Recent end users who asked questions through the widget.</p>
+            <p className="text-xs text-dt-support mb-3">Recent end users who asked questions through the widget.</p>
             {endUserSessions.length === 0 ? (
               <LiveEmptyState icon="◎" title="No end-user activity yet" body="Recent end users who ask questions through the widget will show up here." />
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-slate-500 text-left">
+                  <tr className="text-dt-muted text-left">
                     <th className="pb-2 font-medium">Account</th>
                     <th className="pb-2 font-medium">Name</th>
                     <th className="pb-2 font-medium">First seen</th>
@@ -627,11 +627,11 @@ const SettingsPage = ({
                 </thead>
                 <tbody>
                   {endUserSessions.map(s => (
-                    <tr key={s.id} className="border-t border-slate-700 text-slate-300">
+                    <tr key={s.id} className="border-t border-dt-border text-dt-support">
                       <td className="py-2 font-mono">{s.account_external_ref || '—'}</td>
                       <td className="py-2">{s.display_name || s.end_user_ref || '—'}</td>
-                      <td className="py-2 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
-                      <td className="py-2 text-slate-500">{new Date(s.last_seen_at).toLocaleString()}</td>
+                      <td className="py-2 text-dt-muted">{new Date(s.created_at).toLocaleDateString()}</td>
+                      <td className="py-2 text-dt-muted">{new Date(s.last_seen_at).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -643,10 +643,10 @@ const SettingsPage = ({
 
       {(activeTab === 'billing' || activeTab === 'security') && (
         <div className="max-w-2xl">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-8 text-center">
             <div className="text-4xl mb-3">*</div>
             <div className="text-sm font-medium text-white mb-1 capitalize">{activeTab} Settings</div>
-            <div className="text-xs text-slate-400">Configuration options for {activeTab} coming soon.</div>
+            <div className="text-xs text-dt-support">Configuration options for {activeTab} coming soon.</div>
           </div>
         </div>
       )}

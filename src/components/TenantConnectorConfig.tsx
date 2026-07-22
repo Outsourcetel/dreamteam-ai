@@ -119,7 +119,7 @@ export function TenantConnectorConfig() {
     return (
       <div className="space-y-3">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="h-20 bg-slate-800 rounded-lg animate-pulse" />
+          <div key={i} className="h-20 bg-dt-card rounded-lg animate-pulse" />
         ))}
       </div>
     );
@@ -135,14 +135,14 @@ export function TenantConnectorConfig() {
 
   return (
     <div className="space-y-6">
-      <div className="text-xs text-slate-400 mb-4">
+      <div className="text-xs text-dt-support mb-4">
         Select the systems Sophie should consult. When you're ready, click "Configure" to add credentials.
       </div>
 
       {/* Connector List by Category */}
       {Object.entries(providersByCategory).map(([category, providers]) => (
         <div key={category}>
-          <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3 ml-1">
+          <h3 className="text-xs font-semibold text-dt-support uppercase tracking-wider mb-3 ml-1">
             {category.replace(/_/g, ' ')}
           </h3>
           <div className="space-y-2">
@@ -154,7 +154,7 @@ export function TenantConnectorConfig() {
               return (
                 <div
                   key={provider}
-                  className="bg-slate-800/60 border border-slate-700 rounded-lg p-4 flex items-center justify-between"
+                  className="bg-dt-card border border-dt-border rounded-lg p-4 flex items-center justify-between"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -177,9 +177,9 @@ export function TenantConnectorConfig() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500">{meta.tagline}</p>
+                    <p className="text-xs text-dt-muted">{meta.tagline}</p>
                     {config.connector && config.connector.last_ok_at && (
-                      <p className="text-xs text-slate-600 mt-1">
+                      <p className="text-xs text-dt-faint mt-1">
                         Last sync: {fmtSince(config.connector.last_ok_at)}
                       </p>
                     )}
@@ -190,13 +190,13 @@ export function TenantConnectorConfig() {
                       <>
                         <button
                           onClick={() => handleConfigureClick(provider)}
-                          className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+                          className="px-3 py-1.5 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors"
                         >
                           Update
                         </button>
                         <button
                           onClick={() => handleDisconnect(provider)}
-                          className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-red-900/40 text-red-300 rounded transition-colors"
+                          className="px-3 py-1.5 text-xs bg-dt-panel hover:bg-red-900/40 text-red-300 rounded transition-colors"
                         >
                           Disconnect
                         </button>
@@ -220,26 +220,26 @@ export function TenantConnectorConfig() {
       {/* Credential Input Modal */}
       {activeProvider && (
         <>
-          <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={() => setActiveProvider(null)} />
+          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setActiveProvider(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-xl max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="pointer-events-auto w-full max-w-xl max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6 space-y-4">
               <div>
                 <h2 className="text-sm font-semibold text-white">
                   Configure {PROVIDERS[activeProvider].label}
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">{PROVIDERS[activeProvider].tagline}</p>
+                <p className="text-xs text-dt-muted mt-1">{PROVIDERS[activeProvider].tagline}</p>
               </div>
 
-              <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-                <p className="text-xs font-medium text-slate-400 mb-1">How to get credentials</p>
-                <p className="text-xs text-slate-500 leading-relaxed">{PROVIDERS[activeProvider].help}</p>
+              <div className="rounded-lg border border-dt-border bg-dt-inset p-3">
+                <p className="text-xs font-medium text-dt-support mb-1">How to get credentials</p>
+                <p className="text-xs text-dt-muted leading-relaxed">{PROVIDERS[activeProvider].help}</p>
               </div>
 
               {/* Dynamic credential form */}
               <div className="space-y-3">
                 {PROVIDERS[activeProvider].fields.map(field => (
                   <div key={field.key}>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">
+                    <label className="block text-xs text-dt-support mb-1 font-medium">
                       {field.label}
                     </label>
                     {field.multiline ? (
@@ -247,7 +247,7 @@ export function TenantConnectorConfig() {
                         placeholder={field.placeholder}
                         value={credentialForm[field.key] || ''}
                         onChange={e => setCredentialForm({ ...credentialForm, [field.key]: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2 focus:outline-none focus:border-indigo-500"
                         rows={3}
                       />
                     ) : (
@@ -256,7 +256,7 @@ export function TenantConnectorConfig() {
                         placeholder={field.placeholder}
                         value={credentialForm[field.key] || ''}
                         onChange={e => setCredentialForm({ ...credentialForm, [field.key]: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2 focus:outline-none focus:border-indigo-500"
                       />
                     )}
                   </div>
@@ -265,7 +265,7 @@ export function TenantConnectorConfig() {
                 {/* Base URL if needed */}
                 {!['gdrive', 'hubspot', 'slack', 'notion', 'teams', 'box', 'github', 'stripe'].includes(activeProvider) && (
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1 font-medium">
+                    <label className="block text-xs text-dt-support mb-1 font-medium">
                       {PROVIDERS[activeProvider].baseUrlLabel}
                     </label>
                     <input
@@ -273,7 +273,7 @@ export function TenantConnectorConfig() {
                       placeholder={PROVIDERS[activeProvider].baseUrlPlaceholder}
                       value={credentialForm.baseUrl || ''}
                       onChange={e => setCredentialForm({ ...credentialForm, baseUrl: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 px-3 py-2 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                 )}
@@ -296,7 +296,7 @@ export function TenantConnectorConfig() {
                 <button
                   onClick={() => setActiveProvider(null)}
                   disabled={savingProvider === activeProvider}
-                  className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg text-sm transition-colors"
+                  className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel disabled:opacity-50 rounded-lg text-sm transition-colors"
                 >
                   Cancel
                 </button>

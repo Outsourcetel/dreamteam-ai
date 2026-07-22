@@ -102,8 +102,8 @@ const PlatformConsolePage = ({
   const tenantsGatedPage = page !== 'platform_team' && page !== 'platform_security';
   if (tenantsGatedPage && !dbTenantsLoaded) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6 flex items-center justify-center">
-        <p className="text-sm text-slate-500">Loading tenants…</p>
+      <div className="p-6 flex items-center justify-center">
+        <p className="text-sm text-dt-muted">Loading tenants…</p>
       </div>
     );
   }
@@ -117,10 +117,10 @@ const PlatformConsolePage = ({
     const totalUsers = tenants.reduce((s, t) => s + t.usersCount, 0);
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Platform Overview</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-dt-support text-sm mt-1">
             DreamTeam AI — Master control centre for all tenants and system
             health
           </p>
@@ -204,15 +204,15 @@ const PlatformConsolePage = ({
     const hasMoreRows = searchedRows.length > rowsToRender.length;
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Tenants & Remote Access</h1>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-dt-support text-sm mt-1">
               Manage all client workspaces — view, configure, support tenants, or start remote access sessions. Indented rows are sub-tenants nested under their parent.
             </p>
             {debrisTenants.length > 0 && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-dt-muted mt-1">
                 {showTestDebris
                   ? `Showing ${debrisTenants.length} suspended test tenant${debrisTenants.length === 1 ? '' : 's'} from earlier security testing — never billed, never active.`
                   : `${debrisTenants.length} suspended test tenant${debrisTenants.length === 1 ? '' : 's'} from earlier security testing hidden.`}{' '}
@@ -238,9 +238,9 @@ const PlatformConsolePage = ({
             value={tenantSearch}
             onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
             placeholder="Search by name, ID, slug, or email…"
-            className="w-full max-w-md bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+            className="w-full max-w-md bg-dt-card border border-dt-border text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
           />
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-dt-muted">
             {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
           </span>
         </div>
@@ -254,10 +254,10 @@ const PlatformConsolePage = ({
 
         <PendingApprovalsPanel />
 
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {[
                   'Tenant',
                   'Admin',
@@ -270,7 +270,7 @@ const PlatformConsolePage = ({
                 ].map((h) => (
                   <th
                     key={h}
-                    className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider"
+                    className="text-left px-4 py-3 text-xs font-medium text-dt-support uppercase tracking-wider"
                   >
                     {h}
                   </th>
@@ -281,11 +281,11 @@ const PlatformConsolePage = ({
               {rowsToRender.map(({ tenant: t, depth }) => (
                 <tr
                   key={t.id}
-                  className="hover:bg-slate-700/30 cursor-pointer transition-all"
+                  className="hover:bg-dt-panel cursor-pointer transition-all"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3" style={{ paddingLeft: depth * 24 }}>
-                      {depth > 0 && <span className="text-slate-600 text-xs flex-shrink-0">&#8627;</span>}
+                      {depth > 0 && <span className="text-dt-faint text-xs flex-shrink-0">&#8627;</span>}
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                         style={{
@@ -304,7 +304,7 @@ const PlatformConsolePage = ({
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-slate-500">
+                        <div className="text-xs text-dt-muted">
                           {t.industry}
                         </div>
                       </div>
@@ -314,10 +314,10 @@ const PlatformConsolePage = ({
                     {tenantOverview[t.id]?.admin_email ? (
                       <div>
                         <div className="text-sm text-white">{tenantOverview[t.id]?.admin_name || '—'}</div>
-                        <div className="text-xs text-slate-500">{tenantOverview[t.id]?.admin_email}</div>
+                        <div className="text-xs text-dt-muted">{tenantOverview[t.id]?.admin_email}</div>
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-600">no admin user</span>
+                      <span className="text-xs text-dt-faint">no admin user</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -350,7 +350,7 @@ const PlatformConsolePage = ({
                   <td className="px-4 py-3 text-sm text-white">
                     {tenantOverview[t.id]?.user_count ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-400">
+                  <td className="px-4 py-3 text-xs text-dt-support">
                     {tenantOverview[t.id]?.last_activity
                       ? relativeTime(tenantOverview[t.id]?.last_activity)
                       : 'no activity yet'}
@@ -359,7 +359,7 @@ const PlatformConsolePage = ({
                     <div className="flex gap-2">
                       <button
                         onClick={() => setSelectedTenant(t)}
-                        className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
+                        className="text-xs px-2 py-1 bg-dt-panel hover:bg-dt-panel text-dt-support rounded-lg transition-all"
                       >
                         View
                       </button>
@@ -386,7 +386,7 @@ const PlatformConsolePage = ({
           <div className="flex justify-center mt-4">
             <button
               onClick={() => setTenantRowLimit((n) => n + TENANT_PAGE_SIZE)}
-              className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+              className="px-4 py-2 text-sm text-dt-support bg-dt-card border border-dt-border hover:border-dt-border-strong rounded-xl transition-all"
             >
               Show {Math.min(TENANT_PAGE_SIZE, searchedRows.length - rowsToRender.length)} more (of {searchedRows.length} total)
             </button>
@@ -416,8 +416,8 @@ const PlatformConsolePage = ({
                   { label: 'Created', value: relativeTime(selectedTenant.createdAt) || '—' },
                   { label: 'Slug', value: selectedTenant.slug, noCap: true },
                 ].map((item, i) => (
-                  <div key={i} className="bg-slate-700 rounded-xl p-3">
-                    <div className="text-xs text-slate-400 mb-0.5">
+                  <div key={i} className="bg-dt-panel rounded-xl p-3">
+                    <div className="text-xs text-dt-support mb-0.5">
                       {item.label}
                     </div>
                     <div className={`text-sm font-medium text-white ${(item as { noCap?: boolean }).noCap ? '' : 'capitalize'} break-all`}>
@@ -426,17 +426,17 @@ const PlatformConsolePage = ({
                   </div>
                 ))}
               </div>
-              <div className="bg-slate-700 rounded-xl p-3">
-                <div className="text-xs text-slate-400 mb-0.5">Tenant ID</div>
-                <div className="text-xs font-mono text-slate-300 break-all">{selectedTenant.id}</div>
+              <div className="bg-dt-panel rounded-xl p-3">
+                <div className="text-xs text-dt-support mb-0.5">Tenant ID</div>
+                <div className="text-xs font-mono text-dt-support break-all">{selectedTenant.id}</div>
               </div>
 
-              <div className="bg-slate-700 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="bg-dt-panel rounded-xl p-4 flex items-center justify-between gap-4">
                 <div>
                   <div className="text-sm font-medium text-white">
                     Let this tenant create sub-tenants instantly
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">
+                  <div className="text-xs text-dt-support mt-0.5">
                     Off by default — a request to create a sub-tenant under {selectedTenant.name} goes to the
                     platform for approval first. Turn this on once you trust {selectedTenant.name} to create
                     their own sub-accounts without review.
@@ -445,7 +445,7 @@ const PlatformConsolePage = ({
                 <SelfServeToggle tenant={selectedTenant} onChanged={(v) => setSelectedTenant({ ...selectedTenant, allowSelfServeSubtenants: v })} />
               </div>
 
-              <div className="bg-slate-700 rounded-xl p-4">
+              <div className="bg-dt-panel rounded-xl p-4">
                 <div className="flex items-center justify-between gap-4 mb-1">
                   <div className="text-sm font-medium text-white">Plan</div>
                   <PlanSelector
@@ -453,7 +453,7 @@ const PlatformConsolePage = ({
                     onChanged={(plan, budget) => setSelectedTenant({ ...selectedTenant, plan, monthlyTokens: selectedTenant.monthlyTokens, tokenLimit: budget })}
                   />
                 </div>
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-dt-support">
                   Changing plan resets this tenant's token budget to that plan's default — you can still raise it
                   manually afterward if this specific customer needs more.
                 </div>
@@ -517,7 +517,7 @@ const PlatformConsolePage = ({
                   their team sees. This session is recorded — who accessed it, when, and for how long.
                 </p>
               </div>
-              <div className="space-y-2 text-xs text-slate-400">
+              <div className="space-y-2 text-xs text-dt-support">
                 <div className="flex justify-between">
                   <span>Access Level</span>
                   <span className="text-amber-300 font-medium">
@@ -553,10 +553,10 @@ const PlatformConsolePage = ({
     tenants.forEach((t) => { byPlan[t.plan] = (byPlan[t.plan] || 0) + 1; });
 
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">Revenue</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-dt-support text-sm mt-1">
             Plan mix across all tenants — no billing system is connected yet, so no dollar figures are shown.
           </p>
         </div>
@@ -575,14 +575,14 @@ const PlatformConsolePage = ({
           <StatCard label="Enterprise" value={String(byPlan.enterprise)} icon="★" color="purple" trend="Plan tier" />
         </div>
 
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {['Tenant', 'Plan', 'Status'].map((h) => (
                   <th
                     key={h}
-                    className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider"
+                    className="text-left px-4 py-3 text-xs font-medium text-dt-support uppercase tracking-wider"
                   >
                     {h}
                   </th>
@@ -591,7 +591,7 @@ const PlatformConsolePage = ({
             </thead>
             <tbody className="divide-y divide-slate-700">
               {tenants.slice(0, revenueRowLimit).map((t) => (
-                <tr key={t.id} className="hover:bg-slate-700/20 transition-all">
+                <tr key={t.id} className="hover:bg-dt-panel/20 transition-all">
                   <td className="px-4 py-3 text-sm text-white">{t.name}</td>
                   <td className="px-4 py-3">
                     <Badge
@@ -626,7 +626,7 @@ const PlatformConsolePage = ({
           <div className="flex justify-center mt-4">
             <button
               onClick={() => setRevenueRowLimit((n) => n + 50)}
-              className="px-4 py-2 text-sm text-slate-300 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+              className="px-4 py-2 text-sm text-dt-support bg-dt-card border border-dt-border hover:border-dt-border-strong rounded-xl transition-all"
             >
               Show 50 more (of {tenants.length} total)
             </button>
@@ -647,7 +647,7 @@ const PlatformConsolePage = ({
 
   return (
     <div className="flex-1 p-6">
-      <p className="text-slate-400">Platform Console</p>
+      <p className="text-dt-support">Platform Console</p>
     </div>
   );
 };
@@ -709,10 +709,10 @@ const PlatformHealthPage = () => {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">System Health</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           Connector health across every tenant — the one system-health signal this platform actually tracks today.
         </p>
       </div>
@@ -731,29 +731,29 @@ const PlatformHealthPage = () => {
         </p>
       </div>
 
-      {rows === null && <p className="text-xs text-slate-500 text-center py-10">Loading connector health…</p>}
+      {rows === null && <p className="text-xs text-dt-muted text-center py-10">Loading connector health…</p>}
       {rows !== null && rows.length === 0 && (
-        <p className="text-xs text-slate-500 text-center py-10">No connectors configured by any tenant yet.</p>
+        <p className="text-xs text-dt-muted text-center py-10">No connectors configured by any tenant yet.</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 {['Tenant', 'Connector', 'Status', 'Consecutive Failures', 'Last OK', 'Last Error'].map((h) => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">{h}</th>
+                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-dt-support uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
               {rows.map((r) => (
-                <tr key={r.connector_id} className="hover:bg-slate-700/20 transition-all">
+                <tr key={r.connector_id} className="hover:bg-dt-panel/20 transition-all">
                   <td className="px-4 py-3 text-sm text-white">{r.tenant_name}</td>
-                  <td className="px-4 py-3 text-sm text-slate-300">{r.display_name || r.provider}</td>
+                  <td className="px-4 py-3 text-sm text-dt-support">{r.display_name || r.provider}</td>
                   <td className="px-4 py-3">{statusBadge(r)}</td>
                   <td className="px-4 py-3 text-sm text-white">{r.consecutive_failures}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400">{relativeTime(r.last_ok_at)}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400 max-w-xs truncate">{r.last_error || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-dt-support">{relativeTime(r.last_ok_at)}</td>
+                  <td className="px-4 py-3 text-xs text-dt-support max-w-xs truncate">{r.last_error || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -853,21 +853,21 @@ const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
   };
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+    <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <h2 className="text-sm font-semibold text-white mb-4">Recent Platform Events</h2>
       {events === null && (
-        <p className="text-xs text-slate-500 text-center py-6">Loading recent activity…</p>
+        <p className="text-xs text-dt-muted text-center py-6">Loading recent activity…</p>
       )}
       {events !== null && events.length === 0 && (
-        <p className="text-xs text-slate-500 text-center py-6">No platform activity recorded yet.</p>
+        <p className="text-xs text-dt-muted text-center py-6">No platform activity recorded yet.</p>
       )}
       {events !== null && events.length > 0 && (
         <div className="space-y-3">
           {events.map((e) => (
             <div key={e.key} className="flex items-start gap-3">
               <span className={`text-sm ${toneClasses[e.tone]}`}>{toneGlyph[e.tone]}</span>
-              <span className="text-sm text-slate-300 flex-1">{e.text}</span>
-              <span className="text-xs text-slate-600 whitespace-nowrap">{relativeTime(e.time)}</span>
+              <span className="text-sm text-dt-support flex-1">{e.text}</span>
+              <span className="text-xs text-dt-faint whitespace-nowrap">{relativeTime(e.time)}</span>
             </div>
           ))}
         </div>
@@ -959,34 +959,34 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
   const tenantIdsInLog = Array.from(new Set(rows.map((r) => r.tenant_id)));
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mt-6">
+    <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden mt-6">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
       >
         <div>
           <p className="text-sm font-semibold text-white">Write audit log</p>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-dt-support mt-0.5">
             Every change made to a tenant's data during a remote-access session — who, what, and where.
           </p>
         </div>
-        <span className="text-xs text-slate-500 flex-shrink-0">{expanded ? 'Hide ▲' : 'Show ▼'}</span>
+        <span className="text-xs text-dt-muted flex-shrink-0">{expanded ? 'Hide ▲' : 'Show ▼'}</span>
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-700 px-5 py-4">
-          {loading && <p className="text-xs text-slate-500 py-4 text-center">Loading write log…</p>}
+        <div className="border-t border-dt-border px-5 py-4">
+          {loading && <p className="text-xs text-dt-muted py-4 text-center">Loading write log…</p>}
           {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
 
           {!loading && !error && (
             <>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">Tenant</label>
+                  <label className="text-xs text-dt-muted">Tenant</label>
                   <select
                     value={tenantFilter}
                     onChange={(e) => setTenantFilter(e.target.value)}
-                    className="bg-slate-700 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
+                    className="bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
                   >
                     <option value="all">All tenants</option>
                     {tenantIdsInLog.map((tid) => (
@@ -996,27 +996,27 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                 </div>
                 <button
                   onClick={load}
-                  className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
+                  className="text-xs px-3 py-1.5 bg-dt-panel hover:bg-dt-panel text-dt-support rounded-lg transition-all"
                 >
                   Refresh
                 </button>
               </div>
 
               {visibleRows.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">
+                <p className="text-xs text-dt-muted py-6 text-center">
                   No remote-access writes recorded{tenantFilter !== 'all' ? ' for this tenant' : ''} yet.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="border-b border-slate-700">
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Tenant</th>
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Table</th>
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Operation</th>
-                        <th className="px-3 py-2 text-xs font-medium text-slate-500">Changed fields</th>
+                      <tr className="border-b border-dt-border">
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">When</th>
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">Who</th>
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">Tenant</th>
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">Table</th>
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">Operation</th>
+                        <th className="px-3 py-2 text-xs font-medium text-dt-muted">Changed fields</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
@@ -1026,24 +1026,24 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                           <tr
                             key={row.id}
                             onClick={() => setDetailRow(row)}
-                            className="cursor-pointer hover:bg-slate-700/50 transition-all"
+                            className="cursor-pointer hover:bg-dt-panel transition-all"
                           >
-                            <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+                            <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                               {new Date(row.created_at).toLocaleString()}
                             </td>
                             <td className="px-3 py-2.5 text-xs text-white whitespace-nowrap">
                               {row.operator_name || 'Platform admin'}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-300 whitespace-nowrap">
+                            <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                               {tenantName(row.tenant_id)}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-300 font-mono">{row.table_name}</td>
+                            <td className="px-3 py-2.5 text-xs text-dt-support font-mono">{row.table_name}</td>
                             <td className="px-3 py-2.5">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-600 text-slate-300'}`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-600 text-dt-support'}`}>
                                 {row.operation}
                               </span>
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-400 max-w-xs truncate">
+                            <td className="px-3 py-2.5 text-xs text-dt-support max-w-xs truncate">
                               {fields.length > 0 ? fields.join(', ') : '—'}
                             </td>
                           </tr>
@@ -1064,30 +1064,30 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
           onClose={() => setDetailRow(null)}
         >
           <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-            <div className="text-xs text-slate-400 space-y-1">
-              <div><span className="text-slate-500">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
-              <div><span className="text-slate-500">Who:</span> {detailRow.operator_name || 'Platform admin'}</div>
-              <div><span className="text-slate-500">Tenant:</span> {tenantName(detailRow.tenant_id)}</div>
-              <div><span className="text-slate-500">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
+            <div className="text-xs text-dt-support space-y-1">
+              <div><span className="text-dt-muted">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
+              <div><span className="text-dt-muted">Who:</span> {detailRow.operator_name || 'Platform admin'}</div>
+              <div><span className="text-dt-muted">Tenant:</span> {tenantName(detailRow.tenant_id)}</div>
+              <div><span className="text-dt-muted">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Changed fields</p>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Changed fields</p>
               {changedFields(detailRow).length === 0 ? (
-                <p className="text-xs text-slate-500">No field-level changes to show.</p>
+                <p className="text-xs text-dt-muted">No field-level changes to show.</p>
               ) : (
                 <div className="space-y-2">
                   {changedFields(detailRow).map((field) => (
-                    <div key={field} className="bg-slate-700 rounded-xl p-3">
+                    <div key={field} className="bg-dt-panel rounded-xl p-3">
                       <div className="text-xs font-mono text-amber-300 mb-1">{field}</div>
-                      <div className="text-xs text-slate-400 space-y-1">
+                      <div className="text-xs text-dt-support space-y-1">
                         <div>
-                          <span className="text-slate-500">before:</span>{' '}
+                          <span className="text-dt-muted">before:</span>{' '}
                           <span className="font-mono break-all">
                             {detailRow.old_data ? JSON.stringify(detailRow.old_data[field]) : '—'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-500">after:</span>{' '}
+                          <span className="text-dt-muted">after:</span>{' '}
                           <span className="font-mono break-all text-white">
                             {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
                           </span>
@@ -1149,11 +1149,11 @@ const PendingApprovalsPanel = () => {
   if (requests.length === 0) return null;
 
   return (
-    <div className="bg-slate-800 border border-amber-500/30 rounded-xl overflow-hidden mb-6">
-      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+    <div className="bg-dt-card border border-amber-500/30 rounded-xl overflow-hidden mb-6">
+      <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-white">Waiting on your approval</p>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-dt-support mt-0.5">
             These tenants asked to create a sub-account. Nothing is created until you approve or reject.
           </p>
         </div>
@@ -1166,7 +1166,7 @@ const PendingApprovalsPanel = () => {
           <div key={r.id} className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="text-sm text-white font-medium">{r.proposed_name}</div>
-              <div className="text-xs text-slate-500 mt-0.5">
+              <div className="text-xs text-dt-muted mt-0.5">
                 {r.proposed_industry ? r.proposed_industry + ' · ' : ''}
                 requested {new Date(r.created_at).toLocaleString()}
                 {r.proposed_parent_tenant_id ? ' · sub-tenant request' : ' · new top-level tenant'}
@@ -1194,14 +1194,14 @@ const PendingApprovalsPanel = () => {
       {rejectTarget && (
         <Modal title={'Reject request — ' + rejectTarget.proposed_name} onClose={() => setRejectTarget(null)}>
           <div className="space-y-4">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-dt-support">
               Tell the requester why this sub-tenant isn't being created. This reason is recorded and visible to them.
             </p>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="e.g. Please provide more detail about the intended use case"
-              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
+              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
             />
             <button
               disabled={!rejectReason.trim()}
@@ -1281,7 +1281,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
         </button>
         <button
           onClick={() => setConfirming(false)}
-          className="px-3 py-2.5 text-sm text-slate-400 hover:text-white transition-all"
+          className="px-3 py-2.5 text-sm text-dt-support hover:text-white transition-all"
         >
           Cancel
         </button>
@@ -1296,7 +1296,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
       className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50 ${
         isSuspended
           ? 'text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30'
-          : 'text-slate-400 hover:text-white bg-slate-700'
+          : 'text-dt-support hover:text-white bg-dt-panel'
       }`}
     >
       {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
@@ -1336,7 +1336,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-red-300">Delete this tenant</div>
-          <div className="text-xs text-slate-400 mt-0.5">
+          <div className="text-xs text-dt-support mt-0.5">
             {canDelete
               ? 'Permanent and irreversible — removes the workspace, its people, digital employees, playbooks, knowledge, and history.'
               : 'Suspend this tenant first. Deletion is only allowed on a suspended workspace, so a live tenant is never one click from gone.'}
@@ -1354,7 +1354,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
       </div>
       {arming && (
         <div className="mt-3 space-y-2">
-          <label className="block text-xs text-slate-400">
+          <label className="block text-xs text-dt-support">
             Type the tenant slug <span className="font-mono text-red-300">{tenant.slug}</span> to confirm.
           </label>
           <input
@@ -1362,7 +1362,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder={tenant.slug}
             autoFocus
-            className="w-full bg-slate-900 border border-slate-700 text-white text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-red-500"
+            className="w-full bg-dt-page border border-dt-border text-white text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-red-500"
           />
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
@@ -1376,7 +1376,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
             <button
               onClick={() => { setArming(false); setError(''); setConfirmText(''); }}
               disabled={busy}
-              className="px-3 py-2 text-sm text-slate-400 hover:text-white transition-all"
+              className="px-3 py-2 text-sm text-dt-support hover:text-white transition-all"
             >
               Cancel
             </button>
@@ -1419,13 +1419,13 @@ const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan:
         value={tenant.plan}
         onChange={(e) => void handleChange(e.target.value as Tenant['plan'])}
         disabled={saving}
-        className="bg-slate-800 border border-slate-600 text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-dt-card border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
       >
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
         <option value="enterprise">Enterprise</option>
       </select>
-      {saving && <span className="text-xs text-slate-500">Saving…</span>}
+      {saving && <span className="text-xs text-dt-muted">Saving…</span>}
       {error && <span className="text-xs text-red-400">{error}</span>}
     </div>
   );
@@ -1460,21 +1460,21 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
     <Modal title="Provision a new tenant" onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="text-xs text-slate-400 mb-1 block">Tenant name</label>
+          <label className="text-xs text-dt-support mb-1 block">Tenant name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Acme Manufacturing"
-            className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <div>
-          <label className="text-xs text-slate-400 mb-1 block">Industry (optional)</label>
+          <label className="text-xs text-dt-support mb-1 block">Industry (optional)</label>
           <input
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="e.g. Manufacturing"
-            className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -1519,7 +1519,7 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
     if (res.ok) setOverrides((prev) => ({ ...prev, [key]: next }));
   };
 
-  if (loading) return <div className="text-xs text-slate-500 py-6 text-center">Loading features…</div>;
+  if (loading) return <div className="text-xs text-dt-muted py-6 text-center">Loading features…</div>;
 
   const categories = Array.from(new Set(registry.map((r) => r.category || 'other')));
 
@@ -1527,16 +1527,16 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
     <div className="space-y-4 max-h-[65vh] overflow-y-auto">
       {categories.map((cat) => (
         <div key={cat}>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">{cat.replace(/_/g, ' ')}</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">{cat.replace(/_/g, ' ')}</p>
           <div className="space-y-2">
             {registry.filter((r) => (r.category || 'other') === cat).map((r) => {
               const hasOverride = Object.prototype.hasOwnProperty.call(overrides, r.key);
               const isOn = hasOverride ? overrides[r.key] : r.default_enabled;
               return (
-                <div key={r.key} className="bg-slate-700 rounded-xl p-3 flex items-center justify-between gap-3">
+                <div key={r.key} className="bg-dt-panel rounded-xl p-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm text-white font-medium">{r.label}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
+                    <div className="text-xs text-dt-muted mt-0.5">
                       {r.description} · {r.default_enabled ? 'ON by default' : 'OFF by default'},
                       {' '}currently {isOn ? 'ON' : 'OFF'} for this tenant{hasOverride ? ' (custom override)' : ''}
                     </div>

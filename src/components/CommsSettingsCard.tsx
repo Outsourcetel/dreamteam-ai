@@ -27,26 +27,26 @@ export default function CommsSettingsCard({ accentColor = '#6366f1' }: { accentC
   };
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+    <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <h2 className="text-sm font-semibold text-white mb-1">Communications</h2>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-dt-muted mb-4">
         The address your digital employees send approved emails from. Sending stays draft-for-approval — nothing goes out
         without a person approving it — and needs an email provider key (Settings → AI Engine) to actually deliver.
       </p>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1.5">From address</label>
+            <label className="text-xs font-medium text-dt-support block mb-1.5">From address</label>
             <input value={fromEmail} onChange={e => setFromEmail(e.target.value)} type="email" placeholder="renewals@yourcompany.com"
-              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
-            <p className="text-[11px] text-slate-600 mt-1">Must be on a domain you've verified with your email provider.</p>
+              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
+            <p className="text-[11px] text-dt-faint mt-1">Must be on a domain you've verified with your email provider.</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-400 block mb-1.5">From name (optional)</label>
+            <label className="text-xs font-medium text-dt-support block mb-1.5">From name (optional)</label>
             <input value={fromName} onChange={e => setFromName(e.target.value)} placeholder="Acme Renewals"
-              className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => void save()} disabled={saving || !fromEmail.trim()}

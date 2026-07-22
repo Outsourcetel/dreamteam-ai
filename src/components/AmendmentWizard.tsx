@@ -108,14 +108,14 @@ export function AmendmentWizard({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-slate-900/70" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={onClose} />
 
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-          <div className="flex-shrink-0 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl overflow-hidden flex flex-col">
+          <div className="flex-shrink-0 border-b border-dt-border px-6 py-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-white">Improve {entity_name}</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-dt-muted mt-0.5">
                 {step === 'problem' && 'Step 1: Describe the issue'}
                 {step === 'context' && 'Step 2: Add context'}
                 {step === 'working' && 'Generating proposal...'}
@@ -123,7 +123,7 @@ export function AmendmentWizard({
                 {step === 'done' && 'Submitted'}
               </p>
             </div>
-            <button onClick={onClose} className="text-slate-500 hover:text-slate-200 text-xl">
+            <button onClick={onClose} className="text-dt-muted hover:text-dt-body text-xl">
               ✕
             </button>
           </div>
@@ -132,7 +132,7 @@ export function AmendmentWizard({
             {step === 'problem' && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-2">
+                  <label className="text-xs font-medium text-dt-support block mb-2">
                     What is not working?
                   </label>
                   <textarea
@@ -141,20 +141,20 @@ export function AmendmentWizard({
                     value={problem}
                     onChange={e => { setProblem(e.target.value); setError(null) }}
                     placeholder="Describe the issue..."
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 resize-none"
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500 resize-none"
                   />
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-dt-muted mt-1">
                     {problem.length < 20 ? `${20 - problem.length} more chars` : '✓ Ready'}
                   </p>
                 </div>
 
-                <div className="bg-slate-900/50 rounded-lg p-3 space-y-1.5">
-                  <p className="text-xs text-slate-500 font-medium">Examples:</p>
+                <div className="bg-dt-inset rounded-lg p-3 space-y-1.5">
+                  <p className="text-xs text-dt-muted font-medium">Examples:</p>
                   {problemExamples[entity_kind].map((ex, i) => (
                     <button
                       key={i}
                       onClick={() => setProblem(ex)}
-                      className="text-left text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded hover:bg-slate-800/50">
+                      className="text-left text-xs text-dt-support hover:text-indigo-400 px-2 py-1 rounded hover:bg-dt-card">
                       • {ex}
                     </button>
                   ))}
@@ -173,7 +173,7 @@ export function AmendmentWizard({
                     className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg text-xs font-medium text-white">
                     Continue
                   </button>
-                  <button onClick={onClose} className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs">
+                  <button onClick={onClose} className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded-lg text-xs">
                     Cancel
                   </button>
                 </div>
@@ -183,13 +183,13 @@ export function AmendmentWizard({
             {step === 'context' && (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-2">Add context (optional)</label>
+                  <label className="text-xs font-medium text-dt-support block mb-2">Add context (optional)</label>
                   <textarea
                     rows={3}
                     value={context}
                     onChange={e => setContext(e.target.value)}
                     placeholder={contextPlaceholders[entity_kind]}
-                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 resize-none"
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500 resize-none"
                   />
                 </div>
 
@@ -199,7 +199,7 @@ export function AmendmentWizard({
                     className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-medium text-white">
                     Generate Proposal
                   </button>
-                  <button onClick={() => setStep('problem')} className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs">
+                  <button onClick={() => setStep('problem')} className="flex-1 px-3 py-2 bg-dt-panel hover:bg-dt-panel rounded-lg text-xs">
                     Back
                   </button>
                 </div>
@@ -209,11 +209,11 @@ export function AmendmentWizard({
             {step === 'working' && (
               <div className="space-y-4 py-8 text-center">
                 <div className="flex justify-center">
-                  <div className="w-12 h-12 border-4 border-slate-600 border-t-indigo-500 rounded-full animate-spin" />
+                  <div className="w-12 h-12 border-4 border-dt-border-strong border-t-indigo-500 rounded-full animate-spin" />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm text-slate-200">{PHASE_MESSAGES[phaseIdx]}</p>
-                  <p className="text-xs text-slate-500">{phaseIdx + 1} of {PHASE_MESSAGES.length}</p>
+                  <p className="text-sm text-dt-body">{PHASE_MESSAGES[phaseIdx]}</p>
+                  <p className="text-xs text-dt-muted">{phaseIdx + 1} of {PHASE_MESSAGES.length}</p>
                 </div>
               </div>
             )}
@@ -230,8 +230,8 @@ export function AmendmentWizard({
               <div className="space-y-4 py-8 text-center">
                 <div className="text-4xl text-emerald-400">✓</div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-slate-200">Amendment submitted</p>
-                  <p className="text-xs text-slate-500">Proposal awaiting review.</p>
+                  <p className="text-sm font-medium text-dt-body">Amendment submitted</p>
+                  <p className="text-xs text-dt-muted">Proposal awaiting review.</p>
                 </div>
                 <button
                   onClick={onClose}

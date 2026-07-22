@@ -32,12 +32,12 @@ import type { Opportunity as PipelineOpportunity } from '../../../lib/pipelineAp
 const healthColor = (h: number) => (h >= 70 ? 'bg-emerald-500' : h >= 45 ? 'bg-amber-500' : 'bg-red-500');
 const healthText = (h: number) => (h >= 70 ? 'text-emerald-300' : h >= 45 ? 'text-amber-300' : 'text-red-300');
 
-const inputCls = 'bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 
 function StatusChip({ status }: { status: CustomerAccount['status'] }) {
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-      status === 'churned' ? 'bg-slate-600/50 text-slate-400'
+      status === 'churned' ? 'bg-slate-600/50 text-dt-support'
       : status === 'at_risk' ? 'bg-red-500/15 text-red-300'
       : 'bg-emerald-500/15 text-emerald-300'
     }`}>{status.replace('_', ' ')}</span>
@@ -52,19 +52,19 @@ function BreakdownPopover({ c }: { c: HealthComponents }) {
     { label: 'Activity recency', count: c.activity_recency?.days_since == null ? 'never' : `${c.activity_recency.days_since}d ago`, penalty: c.activity_recency?.penalty ?? 0, weight: c.activity_recency?.weight ?? 0 },
   ];
   return (
-    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-slate-600 bg-slate-800 shadow-2xl p-3">
+    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-dt-border-strong bg-dt-card shadow-2xl p-3">
       <p className="text-[11px] font-semibold text-white mb-2">Health breakdown — score {c.score}</p>
       <div className="space-y-1">
         {rows.map(r => (
           <div key={r.label} className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-400">{r.label} <span className="text-slate-600">({r.count})</span></span>
-            <span className={r.penalty > 0 ? 'text-red-300 font-medium' : 'text-slate-600'}>
-              {r.penalty > 0 ? `−${r.penalty}` : '0'} <span className="text-slate-600">/ {r.weight}</span>
+            <span className="text-dt-support">{r.label} <span className="text-dt-faint">({r.count})</span></span>
+            <span className={r.penalty > 0 ? 'text-red-300 font-medium' : 'text-dt-faint'}>
+              {r.penalty > 0 ? `−${r.penalty}` : '0'} <span className="text-dt-faint">/ {r.weight}</span>
             </span>
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-slate-600 mt-2">100 − penalties = score · computed {new Date(c.computed_at).toLocaleString()}</p>
+      <p className="text-[10px] text-dt-faint mt-2">100 − penalties = score · computed {new Date(c.computed_at).toLocaleString()}</p>
     </div>
   );
 }
@@ -111,48 +111,48 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md h-full overflow-y-auto bg-slate-800 border-l border-slate-600 p-5" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md h-full overflow-y-auto bg-dt-card border-l border-dt-border-strong p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <h3 className="text-white font-semibold">{account.name}</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
         </div>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <StatusChip status={account.status} />
           <span className={`text-xs font-semibold ${healthText(account.health_score)}`}>health {account.health_score}</span>
-          <span className="text-xs text-slate-400">{fmtMoneyK(account.arr_cents)} ARR</span>
-          {account.renewal_date && <span className="text-xs text-slate-500">renews {account.renewal_date}</span>}
-          {account.csm && <span className="text-xs text-slate-500">CSM {account.csm}</span>}
+          <span className="text-xs text-dt-support">{fmtMoneyK(account.arr_cents)} ARR</span>
+          {account.renewal_date && <span className="text-xs text-dt-muted">renews {account.renewal_date}</span>}
+          {account.csm && <span className="text-xs text-dt-muted">CSM {account.csm}</span>}
         </div>
 
         {err && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
         {/* Why this score */}
-        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4">
+        <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
           <p className="text-[11px] font-semibold text-white mb-1">Why this score</p>
-          <p className="text-xs text-slate-400">{describeComponents(c)}</p>
-          <p className="text-[10px] text-slate-600 mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
+          <p className="text-xs text-dt-support">{describeComponents(c)}</p>
+          <p className="text-[10px] text-dt-faint mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
 
         {wonOpps.length > 0 && (
-          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4">
+          <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
             <p className="text-[11px] font-semibold text-white mb-1">Won from pipeline</p>
             {wonOpps.map(o => (
-              <p key={o.id} className="text-xs text-slate-400">
+              <p key={o.id} className="text-xs text-dt-support">
                 {o.name} · {o.amount_cents != null ? fmtMoneyK(o.amount_cents) : '—'}
-                {o.closed_at && <span className="text-slate-600"> · won {new Date(o.closed_at).toLocaleDateString()}</span>}
+                {o.closed_at && <span className="text-dt-faint"> · won {new Date(o.closed_at).toLocaleDateString()}</span>}
               </p>
             ))}
-            <p className="text-[10px] text-slate-600 mt-1">Sales → Customer handoff</p>
+            <p className="text-[10px] text-dt-faint mt-1">Sales → Customer handoff</p>
           </div>
         )}
 
         {onboarding && (
-          <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-4 flex items-center justify-between gap-2">
+          <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4 flex items-center justify-between gap-2">
             <div>
               <p className="text-[11px] font-semibold text-white">Onboarding project</p>
-              <p className="text-xs text-slate-400">{onboarding.name} · {onboarding.status.replace('_', ' ')} · {onboarding.progress_pct}%</p>
+              <p className="text-xs text-dt-support">{onboarding.name} · {onboarding.status.replace('_', ' ')} · {onboarding.progress_pct}%</p>
             </div>
-            <span className="text-[10px] text-slate-600 whitespace-nowrap">Customer → Onboarding</span>
+            <span className="text-[10px] text-dt-faint whitespace-nowrap">Customer → Onboarding</span>
           </div>
         )}
 
@@ -161,15 +161,15 @@ function AccountDrawer({ account, onClose, onChanged }: {
             <Section title={`Open tickets (${signals.openTickets.length})`}>
               {signals.openTickets.length === 0 ? <Empty text="No open tickets." /> : signals.openTickets.map(t => (
                 <div key={t.id} className="flex items-center justify-between gap-2 text-xs py-1">
-                  <span className="text-slate-300 truncate">{t.subject}</span>
-                  <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${t.status === 'escalated' ? 'bg-red-500/15 text-red-300' : 'bg-slate-700 text-slate-400'}`}>{t.priority} · {t.status}</span>
+                  <span className="text-dt-support truncate">{t.subject}</span>
+                  <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${t.status === 'escalated' ? 'bg-red-500/15 text-red-300' : 'bg-dt-panel text-dt-support'}`}>{t.priority} · {t.status}</span>
                 </div>
               ))}
             </Section>
             <Section title={`Overdue invoices (${signals.overdueInvoices.length})`}>
               {signals.overdueInvoices.length === 0 ? <Empty text="No overdue invoices." /> : signals.overdueInvoices.map(inv => (
                 <div key={inv.id} className="flex items-center justify-between text-xs py-1">
-                  <span className="text-slate-300">{fmtMoney(inv.amount_cents)}</span>
+                  <span className="text-dt-support">{fmtMoney(inv.amount_cents)}</span>
                   <span className="text-red-300">due {inv.due_date}</span>
                 </div>
               ))}
@@ -177,18 +177,18 @@ function AccountDrawer({ account, onClose, onChanged }: {
             <Section title="Recent activity">
               {signals.recentActivity.length === 0 ? <Empty text="No activity recorded for this account yet." /> : signals.recentActivity.map(a => (
                 <div key={a.id} className="text-xs py-1">
-                  <span className="text-slate-400">{a.text}</span>
-                  <span className="text-slate-600 ml-1.5">{new Date(a.created_at).toLocaleDateString()}</span>
+                  <span className="text-dt-support">{a.text}</span>
+                  <span className="text-dt-faint ml-1.5">{new Date(a.created_at).toLocaleDateString()}</span>
                 </div>
               ))}
             </Section>
             <Section title="At-risk trigger fires">
               {signals.atRiskFires.length === 0 ? <Empty text="No event-trigger fires for this account." /> : signals.atRiskFires.map(f => (
                 <div key={f.id} className="flex items-center justify-between gap-2 text-xs py-1">
-                  <span className="text-slate-400 truncate">{f.detail || f.status}</span>
+                  <span className="text-dt-support truncate">{f.detail || f.status}</span>
                   <span className={`px-1.5 py-0.5 rounded whitespace-nowrap ${
                     f.status === 'started' ? 'bg-emerald-500/15 text-emerald-300'
-                    : f.status === 'skipped_dedup' ? 'bg-slate-700 text-slate-500'
+                    : f.status === 'skipped_dedup' ? 'bg-dt-panel text-dt-muted'
                     : f.status === 'error' ? 'bg-red-500/15 text-red-300' : 'bg-indigo-500/15 text-indigo-300'
                   }`}>{f.status.replace('_', ' ')}</span>
                 </div>
@@ -198,10 +198,10 @@ function AccountDrawer({ account, onClose, onChanged }: {
         )}
 
         {/* Run playbook */}
-        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mt-4">
+        <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mt-4">
           <p className="text-[11px] font-semibold text-white mb-2">Run a playbook on this account</p>
           {defs.length === 0 ? (
-            <p className="text-xs text-slate-500">No published playbooks yet — build one in Playbooks.</p>
+            <p className="text-xs text-dt-muted">No published playbooks yet — build one in Playbooks.</p>
           ) : (
             <div className="flex gap-2">
               <select className={`${inputCls} flex-1 !py-1.5 !text-xs`} value={selDef} onChange={e => setSelDef(e.target.value)}>
@@ -222,12 +222,12 @@ function AccountDrawer({ account, onClose, onChanged }: {
 }
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 mb-3">
+  <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-3">
     <p className="text-[11px] font-semibold text-white mb-1.5">{title}</p>
     {children}
   </div>
 );
-const Empty = ({ text }: { text: string }) => <p className="text-xs text-slate-600">{text}</p>;
+const Empty = ({ text }: { text: string }) => <p className="text-xs text-dt-faint">{text}</p>;
 
 // ── Health config panel ───────────────────────────────────────────
 function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecomputed }: {
@@ -260,7 +260,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
 
   const slider = (key: keyof HealthWeights, label: string) => (
     <label key={key} className="block">
-      <span className="flex justify-between text-[11px] text-slate-400 mb-1">
+      <span className="flex justify-between text-[11px] text-dt-support mb-1">
         <span>{label}</span><span className="text-white font-medium">{w[key]}</span>
       </span>
       <input type="range" min={0} max={50} value={w[key]} className="w-full accent-indigo-500"
@@ -269,16 +269,16 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
   );
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 mb-5">
+    <div className="rounded-2xl border border-dt-border bg-dt-card mb-5">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 text-left">
         <span className="text-sm font-semibold text-white">Health scoring config</span>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-dt-muted">
           {lastComputed ? `last computed ${new Date(lastComputed).toLocaleString()}` : 'not computed yet'} {open ? '▴' : '▾'}
         </span>
       </button>
       {open && (
         <div className="px-5 pb-5">
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-[11px] text-dt-muted mb-3">
             Weights are the maximum penalty each signal can subtract from 100. Nightly recompute runs server-side; the page also refreshes stale scores on load.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 mb-4">
@@ -288,12 +288,12 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
             {slider('activity_recency', 'Activity recency')}
           </div>
           <div className="flex items-center gap-4 mb-4 flex-wrap">
-            <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+            <label className="text-[11px] text-dt-support flex items-center gap-1.5">
               at-risk below
               <input type="number" min={0} max={100} value={t.at_risk_below} className={`${inputCls} !w-16 !py-1 !text-xs`}
                 onChange={e => setT({ ...t, at_risk_below: Number(e.target.value) })} />
             </label>
-            <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+            <label className="text-[11px] text-dt-support flex items-center gap-1.5">
               healthy above
               <input type="number" min={0} max={100} value={t.healthy_above} className={`${inputCls} !w-16 !py-1 !text-xs`}
                 onChange={e => setT({ ...t, healthy_above: Number(e.target.value) })} />
@@ -306,7 +306,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
               {busy === 'save' ? 'Saving…' : 'Save config'}
             </button>
             <button onClick={() => void recompute()} disabled={busy !== null}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
               {busy === 'compute' ? 'Recomputing…' : 'Recompute now'}
             </button>
           </div>
@@ -418,7 +418,7 @@ export default function CustomerSuccessLive() {
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6" onClick={() => setPopoverId(null)}>
+    <div className="p-6" onClick={() => setPopoverId(null)}>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
           title={`${vocab.party_singular} Success — ${vocab.party_singular} Lifecycle`}
@@ -426,7 +426,7 @@ export default function CustomerSuccessLive() {
         />
         {!missingTables && !loading && accounts.length > 0 && (
           <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-slate-600 hover:border-slate-500 hover:text-white transition-colors">
+            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors">
               + Import CSV
             </button>
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
@@ -461,10 +461,10 @@ export default function CustomerSuccessLive() {
               { label: vocab.party_plural, value: String(stats.total), color: 'text-white' },
               { label: 'At risk', value: String(stats.atRisk), color: stats.atRisk > 0 ? 'text-red-300' : 'text-emerald-300' },
               { label: 'Avg health', value: String(stats.avgHealth), color: healthText(stats.avgHealth) },
-              { label: `${vocab.value_metric} at risk`, value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-slate-300' },
+              { label: `${vocab.value_metric} at risk`, value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-dt-support' },
             ].map(s => (
-              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+              <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               </div>
             ))}
@@ -477,13 +477,13 @@ export default function CustomerSuccessLive() {
           />
 
           {/* Accounts table */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
             <h3 className="text-sm font-semibold text-white mb-1">Account health</h3>
-            <p className="text-[11px] text-slate-500 mb-3">Click a health bar for the component breakdown · click a row for signal detail.</p>
-            <div className="overflow-x-auto rounded-xl border border-slate-700">
+            <p className="text-[11px] text-dt-muted mb-3">Click a health bar for the component breakdown · click a row for signal detail.</p>
+            <div className="overflow-x-auto rounded-xl border border-dt-border">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-700">
+                  <tr className="border-b border-dt-border">
                     {[vocab.party_singular, 'Health', 'Status', vocab.value_metric, vocab.renewal_label, 'CSM', 'Last activity',
                       ...entityFields.map(f => f.label)].map(h => <th key={h} className={th}>{h}</th>)}
                   </tr>
@@ -494,35 +494,35 @@ export default function CustomerSuccessLive() {
                     const days = a.health_components?.activity_recency?.days_since;
                     return (
                       <tr key={a.id} onClick={() => setDrawerAccount(a)}
-                        className={`border-b border-slate-700/60 transition-colors cursor-pointer ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-700/30'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
+                        className={`border-b border-dt-border transition-colors cursor-pointer ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-dt-panel'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
                         <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
                         <td className={td} onClick={e => e.stopPropagation()}>
                           <div className="relative">
                             <button className="flex items-center gap-2 min-w-[110px] w-full"
                               title={describeComponents(a.health_components)}
                               onClick={() => setPopoverId(popoverId === a.id ? null : a.id)}>
-                              <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="flex-1 h-1.5 bg-dt-panel rounded-full overflow-hidden">
                                 <div className={`h-full rounded-full ${healthColor(a.health_score)}`} style={{ width: `${a.health_score}%` }} />
                               </div>
                               <span className={`text-xs font-medium w-6 text-right ${healthText(a.health_score)}`}>{a.health_score}</span>
                             </button>
                             {popoverId === a.id && a.health_components && <BreakdownPopover c={a.health_components} />}
                             {popoverId === a.id && !a.health_components && (
-                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-slate-600 bg-slate-800 shadow-2xl p-3 text-[11px] text-slate-400">
+                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-dt-border-strong bg-dt-card shadow-2xl p-3 text-[11px] text-dt-support">
                                 Not computed yet — use “Recompute now” in the health config panel.
                               </div>
                             )}
                           </div>
                         </td>
                         <td className={td}><StatusChip status={a.status} /></td>
-                        <td className={`${td} text-slate-300 text-xs`}>{fmtMoneyK(a.arr_cents)}</td>
-                        <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>{a.renewal_date || '—'}</td>
-                        <td className={`${td} text-slate-400 text-xs`}>{a.csm || '—'}</td>
-                        <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>
+                        <td className={`${td} text-dt-support text-xs`}>{fmtMoneyK(a.arr_cents)}</td>
+                        <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{a.renewal_date || '—'}</td>
+                        <td className={`${td} text-dt-support text-xs`}>{a.csm || '—'}</td>
+                        <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>
                           {days == null ? (a.health_components ? 'never' : '—') : days === 0 ? 'today' : `${days}d ago`}
                         </td>
                         {entityFields.map(f => (
-                          <td key={f.id} className={`${td} text-slate-400 text-xs`}>{String(a.attributes?.[f.field_key] ?? '—')}</td>
+                          <td key={f.id} className={`${td} text-dt-support text-xs`}>{String(a.attributes?.[f.field_key] ?? '—')}</td>
                         ))}
                       </tr>
                     );
@@ -541,24 +541,24 @@ export default function CustomerSuccessLive() {
       {/* Add account modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-white font-semibold mb-4">Add {vocab.party_singular.toLowerCase()}</h3>
             <div className="space-y-3 mb-5">
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">{vocab.party_singular} name</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">{vocab.party_singular} name</label>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Acme Corp" className={`w-full ${inputCls}`} />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">{vocab.value_metric} ({vocab.value_metric_hint})</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">{vocab.value_metric} ({vocab.value_metric_hint})</label>
                 <input value={newArr} onChange={e => setNewArr(e.target.value)} placeholder="84000" type="number" className={`w-full ${inputCls}`} />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">CSM</label>
+                <label className="text-xs font-medium text-dt-support block mb-1">CSM</label>
                 <input value={newCsm} onChange={e => setNewCsm(e.target.value)} placeholder="P. Sharma" className={`w-full ${inputCls}`} />
               </div>
               {entityFields.map(f => (
                 <div key={f.id}>
-                  <label className="text-xs font-medium text-slate-400 block mb-1">{f.label}</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1">{f.label}</label>
                   <input value={newAttrs[f.field_key] ?? ''} type={f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : 'text'}
                     onChange={e => setNewAttrs(prev => ({ ...prev, [f.field_key]: e.target.value }))}
                     className={`w-full ${inputCls}`} />
@@ -570,7 +570,7 @@ export default function CustomerSuccessLive() {
                 className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
                 {saving ? 'Saving…' : `Add ${vocab.party_singular.toLowerCase()}`}
               </button>
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-all">
+              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">
                 Cancel
               </button>
             </div>

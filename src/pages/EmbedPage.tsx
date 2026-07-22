@@ -52,10 +52,10 @@ export function EmbedPage() {
 
   if (error) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-slate-900 p-4">
+      <div className="w-full h-full flex items-center justify-center bg-dt-page p-4">
         <div className="text-center max-w-sm">
           <p className="text-red-300 text-sm font-medium mb-2">⚠️ {error}</p>
-          <p className="text-slate-400 text-xs">
+          <p className="text-dt-support text-xs">
             If this problem persists, contact support@dreamteam.ai
           </p>
         </div>
@@ -65,14 +65,14 @@ export function EmbedPage() {
 
   if (!authenticated) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-slate-900">
-        <p className="text-slate-400 text-sm">Initializing...</p>
+      <div className="w-full h-full flex items-center justify-center bg-dt-page">
+        <p className="text-dt-support text-sm">Initializing...</p>
       </div>
     )
   }
 
   return (
-    <div className="w-full h-full bg-slate-900">
+    <div className="w-full h-full bg-dt-page">
       {tenant_id && de_id && (
         <EmbedWidget
           tenant_id={tenant_id}

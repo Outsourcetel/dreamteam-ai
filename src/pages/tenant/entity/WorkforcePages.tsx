@@ -26,7 +26,7 @@ import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 function WorkforceNotYetAvailable({ title, setPage }: { title: string; setPage?: (p: Page) => void }) {
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title={title} subtitle="Our People" />
       <LiveEmptyState
         icon="◉"
@@ -56,13 +56,13 @@ const WF_STAGES: Record<CompanyId, WfStage[]> = {
     { page: 'entity_workforce_talent', label: 'Talent', icon: '◎', stat: '2 open roles', statColor: 'text-indigo-300' },
     { page: 'entity_workforce_onboarding', label: 'Onboarding', icon: '⚙', stat: '1 in progress', statColor: 'text-amber-300' },
     { page: 'entity_workforce_development', label: 'Performance & Dev', icon: '↗', stat: 'Cycle opens Jul 15', statColor: 'text-emerald-300' },
-    { page: 'entity_workforce_payroll', label: 'Payroll & Benefits', icon: '$', stat: 'Next run Jul 15', statColor: 'text-slate-300' },
+    { page: 'entity_workforce_payroll', label: 'Payroll & Benefits', icon: '$', stat: 'Next run Jul 15', statColor: 'text-dt-support' },
   ],
   pwc: [
     { page: 'entity_workforce_talent', label: 'Talent', icon: '◎', stat: '1 open role', statColor: 'text-indigo-300' },
-    { page: 'entity_workforce_onboarding', label: 'Onboarding', icon: '⚙', stat: 'None in progress', statColor: 'text-slate-500' },
+    { page: 'entity_workforce_onboarding', label: 'Onboarding', icon: '⚙', stat: 'None in progress', statColor: 'text-dt-muted' },
     { page: 'entity_workforce_development', label: 'Performance & Dev', icon: '↗', stat: 'Cycle opens Aug 1', statColor: 'text-emerald-300' },
-    { page: 'entity_workforce_payroll', label: 'Payroll & Benefits', icon: '$', stat: 'Next run Jul 15', statColor: 'text-slate-300' },
+    { page: 'entity_workforce_payroll', label: 'Payroll & Benefits', icon: '$', stat: 'Next run Jul 15', statColor: 'text-dt-support' },
   ],
 };
 
@@ -76,7 +76,7 @@ const HEADCOUNT_STATS: Record<CompanyId, { label: string; value: string; sub: st
   pwc: [
     { label: 'Staff', value: '118', sub: 'across 3 practice areas', color: 'text-white' },
     { label: 'Open roles', value: '1', sub: 'Senior Tax Associate', color: 'text-indigo-300' },
-    { label: 'Onboarding', value: '0', sub: 'none in progress', color: 'text-slate-400' },
+    { label: 'Onboarding', value: '0', sub: 'none in progress', color: 'text-dt-support' },
     { label: 'Retention', value: '91%', sub: 'trailing 12 months', color: 'text-emerald-300' },
   ],
 };
@@ -91,29 +91,29 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Our People" setPage={setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Our People</h1>
-        <p className="text-slate-400 text-sm mt-1">The humans and their DE partner</p>
-        <p className="text-xs text-slate-600 mt-0.5">{activeCompany.name} · {activeCompany.industry}</p>
+        <p className="text-dt-support text-sm mt-1">The humans and their DE partner</p>
+        <p className="text-xs text-dt-faint mt-0.5">{activeCompany.name} · {activeCompany.industry}</p>
       </div>
 
       {/* Journey bar */}
       <div className="mb-8">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Employee journey</h2>
+        <h2 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-3">Employee journey</h2>
         <div className="flex items-stretch gap-1 overflow-x-auto pb-2">
           {stages.map((s, i) => (
             <React.Fragment key={s.page}>
               <button
                 onClick={() => setPage(s.page)}
-                className="flex-shrink-0 w-44 text-left rounded-xl p-3.5 border border-slate-700 bg-slate-800 hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
+                className="flex-shrink-0 w-44 text-left rounded-xl p-3.5 border border-dt-border bg-dt-card hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-all group"
               >
                 <div className="text-lg mb-1.5">{s.icon}</div>
                 <p className="text-xs font-semibold text-white leading-tight mb-1 group-hover:text-indigo-200">{s.label}</p>
                 <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>
               </button>
               {i < stages.length - 1 && (
-                <div className="flex-shrink-0 self-center text-slate-600 text-lg px-0.5">→</div>
+                <div className="flex-shrink-0 self-center text-dt-faint text-lg px-0.5">→</div>
               )}
             </React.Fragment>
           ))}
@@ -122,9 +122,9 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
 
       {/* DE card / no-DE callout */}
       <div className="mb-8">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Digital Employees on this entity</h2>
+        <h2 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-3">Digital Employees on this entity</h2>
         {isTcp ? (
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <div className="rounded-xl border border-dt-border bg-dt-card p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">R</div>
               <div className="flex-1 min-w-0">
@@ -132,13 +132,13 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <span className="text-sm font-semibold text-white">Riley</span>
                 </div>
-                <p className="text-xs text-slate-400">HR &amp; People DE — onboarding, leave, policy queries, org chart</p>
+                <p className="text-xs text-dt-support">HR &amp; People DE — onboarding, leave, policy queries, org chart</p>
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-sm font-bold text-emerald-400">83%</p>
-                <p className="text-[10px] text-slate-500">confidence</p>
+                <p className="text-[10px] text-dt-muted">confidence</p>
               </div>
-              <button onClick={() => setPage('workforce_des')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 border border-slate-600 transition-colors flex-shrink-0">
+              <button onClick={() => setPage('workforce_des')} className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel border border-dt-border-strong transition-colors flex-shrink-0">
                 Manage →
               </button>
             </div>
@@ -148,8 +148,8 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-700 bg-slate-800/40 px-4 py-4 flex-wrap">
-            <p className="text-xs text-slate-500">Workforce operations handled by humans — no workforce DE assigned yet.</p>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-dt-border bg-dt-card px-4 py-4 flex-wrap">
+            <p className="text-xs text-dt-muted">Workforce operations handled by humans — no workforce DE assigned yet.</p>
             <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Assign a DE →</button>
           </div>
         )}
@@ -158,10 +158,10 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
       {/* Headcount stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map(s => (
-          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+          <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
             <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{s.sub}</p>
+            <p className="text-xs text-dt-muted mt-0.5">{s.sub}</p>
           </div>
         ))}
       </div>
@@ -210,56 +210,56 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Talent — Our People" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Talent — Our People"
         subtitle={`${roles.length} open role${roles.length === 1 ? '' : 's'} — pipeline tracked from sourcing to offer`}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Open roles</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          <div className="overflow-x-auto rounded-xl border border-dt-border">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   {['Role', 'Team', 'Opened', 'Sourced', 'Screening', 'Interview', 'Offer'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {roles.map((r, i) => (
-                  <tr key={r.title} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === roles.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={r.title} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === roles.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{r.title}</td>
-                    <td className={`${td} text-slate-400 text-xs`}>{r.team}</td>
-                    <td className={`${td} text-slate-500 text-xs whitespace-nowrap`}>{r.opened}</td>
-                    <td className={`${td} text-slate-300 text-xs`}>{r.sourced}</td>
-                    <td className={`${td} text-slate-300 text-xs`}>{r.screening}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{r.team}</td>
+                    <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{r.opened}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{r.sourced}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{r.screening}</td>
                     <td className={`${td} text-indigo-300 text-xs`}>{r.interview}</td>
-                    <td className={`${td} text-xs ${r.offer > 0 ? 'text-emerald-300 font-medium' : 'text-slate-600'}`}>{r.offer}</td>
+                    <td className={`${td} text-xs ${r.offer > 0 ? 'text-emerald-300 font-medium' : 'text-dt-faint'}`}>{r.offer}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">Recruiting is human-led; interview scheduling and candidate comms are candidates for DE automation.</p>
+          <p className="mt-3 text-[11px] text-dt-muted">Recruiting is human-led; interview scheduling and candidate comms are candidates for DE automation.</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Candidate funnel</h3>
           <div className="space-y-3">
             {funnel.map(f => (
               <div key={f.stage}>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-slate-400">{f.stage}</span>
+                  <span className="text-dt-support">{f.stage}</span>
                   <span className="text-white font-medium">{f.count}</span>
                 </div>
-                <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-3 bg-dt-panel rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${f.color}`} style={{ width: `${(f.count / maxCount) * 100}%` }} />
                 </div>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500 mt-4">Combined pipeline across all open roles.</p>
+          <p className="text-[11px] text-dt-muted mt-4">Combined pipeline across all open roles.</p>
         </div>
       </div>
     </div>
@@ -297,49 +297,49 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
 
   if (!isTcp) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Onboarding — Our People" subtitle="New-hire onboarding checklists and progress" />
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-800/40 p-12 text-center">
-          <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl mb-4">⚙</div>
-          <p className="text-sm font-medium text-slate-300 mb-1">No onboarding in progress</p>
-          <p className="text-xs text-slate-500 max-w-sm">When a candidate accepts an offer, their onboarding checklist appears here automatically.</p>
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-dt-border bg-dt-card p-12 text-center">
+          <div className="w-12 h-12 rounded-xl bg-dt-card border border-dt-border flex items-center justify-center text-xl mb-4">⚙</div>
+          <p className="text-sm font-medium text-dt-support mb-1">No onboarding in progress</p>
+          <p className="text-xs text-dt-muted max-w-sm">When a candidate accepts an offer, their onboarding checklist appears here automatically.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title="Onboarding — Our People" subtitle="1 new hire onboarding this week — Riley runs the checklist, humans own the judgment calls" />
 
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 max-w-3xl">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 max-w-3xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h3 className="text-sm font-semibold text-white">Jordan K. — Backend Engineer</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Week 1 of 4 · started Jun 30</p>
+            <p className="text-xs text-dt-muted mt-0.5">Week 1 of 4 · started Jun 30</p>
           </div>
           <div className="text-right">
             <p className="text-sm font-bold text-indigo-300">{pct}%</p>
-            <p className="text-[10px] text-slate-500">{doneCount} of {JORDAN_TASKS.length} tasks</p>
+            <p className="text-[10px] text-dt-muted">{doneCount} of {JORDAN_TASKS.length} tasks</p>
           </div>
         </div>
-        <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-5">
+        <div className="h-2 bg-dt-panel rounded-full overflow-hidden mb-5">
           <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
         </div>
         <div className="space-y-2">
           {JORDAN_TASKS.map(t => (
-            <div key={t.task} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${t.done ? 'border-slate-700 bg-slate-800/40' : 'border-slate-700 bg-slate-800'}`}>
-              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${t.done ? 'bg-emerald-500/20 text-emerald-400' : 'border border-slate-600 text-slate-600'}`}>
+            <div key={t.task} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${t.done ? 'border-dt-border bg-dt-card' : 'border-dt-border bg-dt-card'}`}>
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${t.done ? 'bg-emerald-500/20 text-emerald-400' : 'border border-dt-border-strong text-dt-faint'}`}>
                 {t.done ? '✓' : ''}
               </span>
-              <span className={`flex-1 text-xs ${t.done ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{t.task}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${t.owner === 'Riley' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>
+              <span className={`flex-1 text-xs ${t.done ? 'text-dt-muted line-through' : 'text-dt-body'}`}>{t.task}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${t.owner === 'Riley' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>
                 {t.owner === 'Riley' ? 'Riley (DE)' : t.ownerDetail || 'Human'}
               </span>
             </div>
           ))}
         </div>
-        <p className="mt-4 text-[11px] text-slate-500">
+        <p className="mt-4 text-[11px] text-dt-muted">
           Riley executes routine steps automatically and nudges human owners when their tasks come due.
         </p>
       </div>
@@ -377,46 +377,46 @@ export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Performance & Development — Our People" setPage={_setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title="Performance & Development — Our People" subtitle="Review cycles, skills coverage, and development plans" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 h-fit">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5 h-fit">
           <h3 className="text-sm font-semibold text-white mb-1">{cycle.name}</h3>
-          <p className="text-xs text-slate-500 mb-4">Opens {cycle.opens}</p>
+          <p className="text-xs text-dt-muted mb-4">Opens {cycle.opens}</p>
           <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400">Completion</span>
+            <span className="text-dt-support">Completion</span>
             <span className="text-white font-medium">{cycle.completion}%</span>
           </div>
-          <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-3">
+          <div className="h-2 bg-dt-panel rounded-full overflow-hidden mb-3">
             <div className="h-full rounded-full bg-indigo-500" style={{ width: `${cycle.completion}%` }} />
           </div>
-          <p className="text-xs text-slate-400 mb-1">{cycle.selfReviews}</p>
-          <p className="text-[11px] text-slate-500">{cycle.note}</p>
+          <p className="text-xs text-dt-support mb-1">{cycle.selfReviews}</p>
+          <p className="text-[11px] text-dt-muted">{cycle.note}</p>
         </div>
 
-        <div className="lg:col-span-2 rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="lg:col-span-2 rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-3">Skills matrix</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          <div className="overflow-x-auto rounded-xl border border-dt-border">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   {['Skill area', 'Strong', 'Developing', 'Gap'].map(h => <th key={h} className={th}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {skills.map((s, i) => (
-                  <tr key={s.skill} className={`border-b border-slate-700/60 hover:bg-slate-700/30 transition-colors ${i === skills.length - 1 ? 'border-b-0' : ''}`}>
+                  <tr key={s.skill} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === skills.length - 1 ? 'border-b-0' : ''}`}>
                     <td className={`${td} font-medium text-white`}>{s.skill}</td>
                     <td className={`${td} text-emerald-300 text-xs`}>{s.strong}</td>
                     <td className={`${td} text-indigo-300 text-xs`}>{s.developing}</td>
-                    <td className={`${td} text-xs ${s.gap > 1 ? 'text-amber-300' : s.gap === 1 ? 'text-slate-300' : 'text-slate-600'}`}>{s.gap || '—'}</td>
+                    <td className={`${td} text-xs ${s.gap > 1 ? 'text-amber-300' : s.gap === 1 ? 'text-dt-support' : 'text-dt-faint'}`}>{s.gap || '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">Gap counts feed hiring priorities on the Talent page.</p>
+          <p className="mt-3 text-[11px] text-dt-muted">Gap counts feed hiring priorities on the Talent page.</p>
         </div>
       </div>
     </div>
@@ -457,37 +457,37 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
   if (dataMode === 'live') return <WorkforceNotYetAvailable title="Payroll & Benefits — Our People" setPage={setPage} />;
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title="Payroll & Benefits — Our People" subtitle="Payroll runs, benefits enrollment, and approval gates" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Next payroll run */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Next payroll run</p>
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Next payroll run</p>
           <p className="text-2xl font-bold text-white">{data.date}</p>
           <div className="mt-4 space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Headcount</span>
+              <span className="text-dt-support">Headcount</span>
               <span className="text-white font-medium">{data.headcount}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Estimated gross</span>
+              <span className="text-dt-support">Estimated gross</span>
               <span className="text-white font-medium">{data.gross}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">Status</span>
+              <span className="text-dt-support">Status</span>
               <span className="text-indigo-300 font-medium">{isTcp ? 'Riley preparing' : 'In preparation'}</span>
             </div>
           </div>
         </div>
 
         {/* Benefits */}
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5">
+        <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Benefits enrollment</h3>
           <div className="space-y-3">
             {data.benefits.map(b => (
               <div key={b.label} className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">{b.label}</span>
+                <span className="text-dt-support">{b.label}</span>
                 <span className="text-white font-medium">{b.value}</span>
               </div>
             ))}
@@ -497,7 +497,7 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
         {/* Approval gate note */}
         <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-5">
           <h3 className="text-sm font-semibold text-indigo-200 mb-2">{isTcp ? 'Riley prepares, human approves' : 'Human-run with approval gate'}</h3>
-          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+          <p className="text-xs text-dt-support leading-relaxed mb-3">
             {isTcp
               ? 'Riley assembles the payroll register and flags anomalies. The run never executes without a human sign-off — an Approval Gate routes it to the CS Manager per DE configuration.'
               : 'Payroll is prepared by the finance team. An approval gate requires partner sign-off before any run executes. Assigning a workforce DE would automate register preparation.'}

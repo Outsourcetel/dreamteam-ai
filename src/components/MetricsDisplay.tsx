@@ -44,7 +44,7 @@ export function MetricsDisplay({ tenant_id, de_id, tags, columns = 2 }: MetricsD
   }
 
   if (loading) {
-    return <div className="text-xs text-slate-500 py-4">Loading metrics...</div>
+    return <div className="text-xs text-dt-muted py-4">Loading metrics...</div>
   }
 
   if (error) {
@@ -57,8 +57,8 @@ export function MetricsDisplay({ tenant_id, de_id, tags, columns = 2 }: MetricsD
 
   if (metrics.length === 0) {
     return (
-      <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4 text-center">
-        <p className="text-xs text-slate-500">No metrics defined for this domain</p>
+      <div className="bg-dt-card border border-dt-border rounded-lg p-4 text-center">
+        <p className="text-xs text-dt-muted">No metrics defined for this domain</p>
       </div>
     )
   }
@@ -68,7 +68,7 @@ export function MetricsDisplay({ tenant_id, de_id, tags, columns = 2 }: MetricsD
   }
 
   const getStatusColor = (metric: CustomMetric, value?: number): string => {
-    if (!value || !metric.thresholds) return "text-slate-300"
+    if (!value || !metric.thresholds) return "text-dt-support"
     if (metric.thresholds.critical && value <= metric.thresholds.critical)
       return "text-red-400"
     if (metric.thresholds.warning && value <= metric.thresholds.warning)
@@ -93,20 +93,20 @@ export function MetricsDisplay({ tenant_id, de_id, tags, columns = 2 }: MetricsD
         return (
           <div
             key={metric.metric_id}
-            className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
+            className="bg-dt-card border border-dt-border rounded-lg p-3 space-y-2">
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-slate-400">{metric.name}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{metric.description}</p>
+                <p className="text-xs font-medium text-dt-support">{metric.name}</p>
+                <p className="text-xs text-dt-muted mt-0.5">{metric.description}</p>
               </div>
             </div>
 
-            <div className="pt-1 border-t border-slate-700">
+            <div className="pt-1 border-t border-dt-border">
               <p className={`text-lg font-semibold ${statusColor}`}>
                 {formatValue(metric, metricValue?.value)}
               </p>
               {metricValue?.trend && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-dt-muted mt-1">
                   {metricValue.trend === "up" && "📈 Improving"}
                   {metricValue.trend === "down" && "📉 Declining"}
                   {metricValue.trend === "stable" && "→ Stable"}
@@ -114,7 +114,7 @@ export function MetricsDisplay({ tenant_id, de_id, tags, columns = 2 }: MetricsD
               )}
 
               {metricValue?.comparison && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-dt-muted mt-1">
                   {metricValue.comparison.changePercent > 0 ? "+" : ""}
                   {metricValue.comparison.changePercent.toFixed(1)}% vs last period
                 </p>

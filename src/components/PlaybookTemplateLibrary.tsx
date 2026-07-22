@@ -81,7 +81,7 @@ export function PlaybookTemplateLibrary() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xs text-slate-400 mb-4">
+      <div className="text-xs text-dt-support mb-4">
         Baseline templates for each operational domain. Clone any template to start a new playbook in your workspace.
       </div>
 
@@ -92,7 +92,7 @@ export function PlaybookTemplateLibrary() {
           className={`px-3 py-1 text-xs rounded-full transition-colors ${
             selectedDomain === null
               ? 'bg-indigo-600 text-white'
-              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              : 'bg-dt-panel text-dt-support hover:bg-dt-panel'
           }`}
         >
           All Domains
@@ -104,7 +104,7 @@ export function PlaybookTemplateLibrary() {
             className={`px-3 py-1 text-xs rounded-full transition-colors ${
               selectedDomain === domain
                 ? 'bg-indigo-600 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                : 'bg-dt-panel text-dt-support hover:bg-dt-panel'
             }`}
           >
             {domain}
@@ -117,19 +117,19 @@ export function PlaybookTemplateLibrary() {
         {filtered.map(template => (
           <div
             key={template.id}
-            className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3"
+            className="bg-dt-card border border-dt-border rounded-lg p-4 space-y-3"
           >
             <div>
               <div className="flex items-start justify-between gap-2 mb-1">
                 <h4 className="text-sm font-semibold text-white">{template.name}</h4>
-                <span className="text-xs bg-slate-700/40 text-slate-400 px-2 py-1 rounded">
+                <span className="text-xs bg-dt-panel text-dt-support px-2 py-1 rounded">
                   {template.domain}
                 </span>
               </div>
-              <p className="text-xs text-slate-400">{template.description}</p>
+              <p className="text-xs text-dt-support">{template.description}</p>
             </div>
 
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-dt-muted">
               {template.step_count} steps · {template.published ? 'Published' : 'Draft'}
             </div>
 
@@ -141,7 +141,7 @@ export function PlaybookTemplateLibrary() {
               >
                 {cloning === template.id ? 'Cloning...' : 'Clone Template'}
               </button>
-              <button className="flex-1 px-3 py-2 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors">
+              <button className="flex-1 px-3 py-2 text-xs bg-dt-panel hover:bg-dt-panel rounded transition-colors">
                 Preview
               </button>
             </div>
@@ -150,13 +150,13 @@ export function PlaybookTemplateLibrary() {
       </div>
 
       {filtered.length === 0 && (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 text-center">
-          <p className="text-sm text-slate-400">No templates in {selectedDomain} domain yet.</p>
+        <div className="bg-dt-card border border-dt-border rounded-lg p-8 text-center">
+          <p className="text-sm text-dt-support">No templates in {selectedDomain} domain yet.</p>
         </div>
       )}
 
-      <div className="border-t border-slate-700 pt-3">
-        <p className="text-xs text-slate-500">
+      <div className="border-t border-dt-border pt-3">
+        <p className="text-xs text-dt-muted">
           💡 Templates are read-only. Cloning creates an editable draft in your workspace.
         </p>
       </div>

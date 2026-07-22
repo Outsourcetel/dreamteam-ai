@@ -23,13 +23,13 @@ const PageTabs = ({
   setPage?: (p: Page) => void;
   accentColor?: string;
 }) => (
-  <div className="flex flex-wrap gap-1 bg-slate-700 rounded-xl p-1 mb-6 w-fit">
+  <div className="flex flex-wrap gap-1 bg-dt-panel rounded-xl p-1 mb-6 w-fit">
     {tabs.map((t) => (
       <button
         key={t.id}
         onClick={() => setPage && setPage(t.id)}
         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-          page === t.id ? 'text-white' : 'text-slate-400 hover:text-white'
+          page === t.id ? 'text-white' : 'text-dt-support hover:text-white'
         }`}
         style={page === t.id ? { backgroundColor: accentColor || '#6366f1' } : {}}
       >

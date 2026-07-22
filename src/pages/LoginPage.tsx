@@ -179,7 +179,7 @@ const LoginPage = ({
   );
 
   return (
-    <div className="min-h-screen bg-slate-900 flex">
+    <div className="min-h-screen bg-dt-page flex">
       {leftPanel}
       <div className="flex-1 flex flex-col justify-center p-8 lg:p-16">
         <div className="max-w-sm mx-auto w-full">
@@ -189,13 +189,13 @@ const LoginPage = ({
           </div>
 
           {/* Tab switcher */}
-          <div className="flex gap-1 bg-slate-700 rounded-xl p-1 mb-6">
+          <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6">
             <button onClick={() => setTab('signin')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}>
               Sign In
             </button>
             <button onClick={() => setTab('signup')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}>
               Create Account
             </button>
           </div>
@@ -204,7 +204,7 @@ const LoginPage = ({
           {tab === 'signin' && !showForgot && (
             <>
               <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
-              <p className="text-slate-400 text-sm mb-6">Sign in to your workspace</p>
+              <p className="text-dt-support text-sm mb-6">Sign in to your workspace</p>
               {deactivatedMessage && (
                 <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                   <p className="text-xs text-red-300">{deactivatedMessage}</p>
@@ -212,20 +212,20 @@ const LoginPage = ({
               )}
               <form onSubmit={handleLogin} className="space-y-4 mb-6">
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                   <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-medium text-slate-400">Password</label>
+                    <label className="text-xs font-medium text-dt-support">Password</label>
                     <button type="button" onClick={() => { setShowForgot(true); setForgotEmail(email); setForgotSent(false); setForgotError(''); }}
                       className="text-xs text-indigo-400 hover:text-indigo-300 underline">
                       Forgot password?
                     </button>
                   </div>
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 {error && <p className="text-xs text-red-400">{error}</p>}
                 <button type="submit" disabled={loading}
@@ -233,8 +233,8 @@ const LoginPage = ({
                   {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
                 </button>
               </form>
-              <div className="border-t border-slate-700 pt-5 text-center">
-                <p className="text-xs text-slate-600">
+              <div className="border-t border-dt-border pt-5 text-center">
+                <p className="text-xs text-dt-faint">
                   Don't have an account?{' '}
                   <button onClick={() => setTab('signup')} className="text-indigo-400 hover:text-indigo-300 underline">
                     Create your organization
@@ -243,7 +243,7 @@ const LoginPage = ({
                 {import.meta.env.DEV && (
                   <button
                     onClick={() => onLogin({ id: 'dev-demo-user', name: 'Demo User', email: 'demo@local.dev', role: 'tenant_admin', tenantId: 'demo-tenant' })}
-                    className="mt-3 text-xs text-slate-500 hover:text-slate-300 underline"
+                    className="mt-3 text-xs text-dt-muted hover:text-dt-support underline"
                   >
                     Enter demo (local dev only)
                   </button>
@@ -259,7 +259,7 @@ const LoginPage = ({
                 <div className="text-center py-4">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
                   <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
-                  <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                  <p className="text-dt-support text-sm mb-6 leading-relaxed">
                     If an account exists for {forgotEmail}, a password reset link is on its way.
                   </p>
                   <button onClick={() => setShowForgot(false)}
@@ -270,12 +270,12 @@ const LoginPage = ({
               ) : (
                 <>
                   <h2 className="text-2xl font-bold text-white mb-1">Reset your password</h2>
-                  <p className="text-slate-400 text-sm mb-6">We'll email you a link to set a new one.</p>
+                  <p className="text-dt-support text-sm mb-6">We'll email you a link to set a new one.</p>
                   <form onSubmit={handleForgotPassword} className="space-y-4">
                     <div>
-                      <label className="text-xs font-medium text-slate-400 block mb-1.5">Email</label>
+                      <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                       <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@company.com" autoFocus
-                        className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                     </div>
                     {forgotError && <p className="text-xs text-red-400">{forgotError}</p>}
                     <button type="submit" disabled={forgotLoading}
@@ -283,7 +283,7 @@ const LoginPage = ({
                       {forgotLoading ? <><Spinner /> Sending...</> : 'Send reset link'}
                     </button>
                     <button type="button" onClick={() => setShowForgot(false)}
-                      className="w-full text-center text-xs text-slate-500 hover:text-slate-300 underline">
+                      className="w-full text-center text-xs text-dt-muted hover:text-dt-support underline">
                       Back to sign in
                     </button>
                   </form>
@@ -296,32 +296,32 @@ const LoginPage = ({
           {tab === 'signup' && !suSuccess && (
             <>
               <h2 className="text-2xl font-bold text-white mb-1">Create your organization</h2>
-              <p className="text-slate-400 text-sm mb-6">Set up your Digital Workforce in minutes</p>
+              <p className="text-dt-support text-sm mb-6">Set up your Digital Workforce in minutes</p>
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Full Name</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Full Name</label>
                   <input value={suFullName} onChange={e => setSuFullName(e.target.value)} type="text" placeholder="Sarah Mitchell"
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Work Email</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Work Email</label>
                   <input value={suEmail} onChange={e => setSuEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Password</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Password</label>
                   <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
-                <div className="border-t border-slate-700 pt-4">
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Organization Name</label>
+                <div className="border-t border-dt-border pt-4">
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Organization Name</label>
                   <input value={suOrgName} onChange={e => setSuOrgName(e.target.value)} type="text" placeholder="Acme Corp"
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1.5">Industry</label>
+                  <label className="text-xs font-medium text-dt-support block mb-1.5">Industry</label>
                   <select value={suIndustry} onChange={e => setSuIndustry(e.target.value)}
-                    className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
                     {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
                   </select>
                 </div>
@@ -330,7 +330,7 @@ const LoginPage = ({
                   className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                   {suLoading ? <><Spinner /> Creating account...</> : 'Create Organization'}
                 </button>
-                <p className="text-xs text-slate-600 text-center">
+                <p className="text-xs text-dt-faint text-center">
                   By signing up you agree to DreamTeam's{' '}
                   <a href="/terms" className="text-indigo-400 hover:underline">terms of service</a>{' '}
                   and{' '}
@@ -345,7 +345,7 @@ const LoginPage = ({
             <div className="text-center py-8">
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
               <h2 className="text-xl font-bold text-white mb-2">Organization created</h2>
-              <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+              <p className="text-dt-support text-sm mb-6 leading-relaxed">
                 Check your email to confirm your account, then sign in to access your workspace.
               </p>
               <button onClick={() => { setTab('signin'); setSuSuccess(false); setEmail(suEmail); }}
@@ -361,7 +361,7 @@ const LoginPage = ({
                   const { error } = await supabase.auth.resend({ type: 'signup', email: suEmail });
                   setResendState(error ? 'error' : 'sent');
                 }}
-                className="w-full mt-3 py-2 text-xs text-slate-400 hover:text-white transition-colors">
+                className="w-full mt-3 py-2 text-xs text-dt-support hover:text-white transition-colors">
                 {resendState === 'sent' ? 'Confirmation email re-sent ✓'
                   : resendState === 'sending' ? 'Sending…'
                   : resendState === 'error' ? "Couldn't resend — try again in a minute"

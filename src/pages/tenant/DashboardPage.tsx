@@ -225,7 +225,7 @@ function healthLabelColor(health: EntityHealth): string {
   if (health === 'active') return 'text-emerald-400';
   if (health === 'degraded') return 'text-amber-400';
   if (health === 'at_risk') return 'text-red-400';
-  return 'text-slate-500';
+  return 'text-dt-muted';
 }
 
 function trendIcon(trend: OutcomeTrend): string {
@@ -244,7 +244,7 @@ function trendLabel(trend: OutcomeTrend): string {
 
 function trendColor(trend: OutcomeTrend): string {
   if (trend === 'up') return 'text-emerald-400';
-  if (trend === 'stable') return 'text-slate-400';
+  if (trend === 'stable') return 'text-dt-support';
   if (trend === 'warn') return 'text-amber-400';
   return 'text-red-400';
 }
@@ -257,7 +257,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-600 text-slate-400';
+  return 'bg-slate-600 text-dt-support';
 }
 
 function taskBadgeLabel(type: TaskType): string {
@@ -653,7 +653,7 @@ function DemoDashboardPage({
   const entityList: EntityData[] = [data.entities.customer, data.entities.vendor, data.entities.workforce];
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
+    <div className="flex-1 flex flex-col overflow-hidden bg-dt-page">
       {healthConfigSavedToast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium shadow-lg">
           Health thresholds saved ✓
@@ -671,19 +671,19 @@ function DemoDashboardPage({
             >
               {activeCompany.badge}
             </span>
-            <span className="text-xs text-slate-500">{activeCompany.industry}</span>
+            <span className="text-xs text-dt-muted">{activeCompany.industry}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">Updated: {formatTime(lastUpdated)}</span>
+            <span className="text-xs text-dt-muted">Updated: {formatTime(lastUpdated)}</span>
             <button
               onClick={openHealthConfig}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white text-xs transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel hover:text-white text-xs transition-colors"
             >
               <span>⚙</span> Health Config
             </button>
             <button
               onClick={() => window.location.reload()}
-              className="w-8 h-8 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
+              className="w-8 h-8 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-sm transition-colors"
             >
               ↻
             </button>
@@ -702,13 +702,13 @@ function DemoDashboardPage({
             <button
               key={kpi.label}
               onClick={() => setPage(kpi.navPage)}
-              className={`bg-slate-800 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-600 transition-all ${
-                kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-700'
+              className={`bg-dt-card border rounded-xl p-4 text-left cursor-pointer hover:border-dt-border-strong transition-all ${
+                kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-dt-border'
               }`}
             >
-              <div className={`text-base mb-2 ${kpi.alert ? 'text-amber-400' : 'text-slate-400'}`}>{kpi.icon}</div>
+              <div className={`text-base mb-2 ${kpi.alert ? 'text-amber-400' : 'text-dt-support'}`}>{kpi.icon}</div>
               <div className={`text-xl font-bold mb-0.5 ${kpi.alert ? 'text-amber-300' : 'text-white'}`}>{kpi.value}</div>
-              <div className="text-xs text-slate-500">{kpi.label}</div>
+              <div className="text-xs text-dt-muted">{kpi.label}</div>
             </button>
           ))}
         </div>
@@ -720,14 +720,14 @@ function DemoDashboardPage({
             <button
               onClick={() => setPage('intelligence_performance')}
               title={roi.formula}
-              className="w-full -mt-3 bg-slate-800 border border-emerald-500/25 hover:border-emerald-500/50 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap text-left transition-all"
+              className="w-full -mt-3 bg-dt-card border border-emerald-500/25 hover:border-emerald-500/50 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap text-left transition-all"
             >
               <span className="text-[9px] font-bold tracking-widest text-emerald-400 uppercase flex-shrink-0">Value this month</span>
-              <span className="text-sm text-slate-200">
+              <span className="text-sm text-dt-body">
                 {roi.tasks.toLocaleString()} tasks · ~{roiK(roi.humanCost)} equivalent human cost · {roiK(roi.deCost)} DE cost —{' '}
                 <span className="text-emerald-300 font-semibold">{roi.savingsPct}% savings (~{roiK(roi.savings)})</span>
               </span>
-              <span className="text-[11px] text-slate-500 ml-auto flex-shrink-0">
+              <span className="text-[11px] text-dt-muted ml-auto flex-shrink-0">
                 estimate vs human baseline · how is this calculated? →
               </span>
             </button>
@@ -736,19 +736,19 @@ function DemoDashboardPage({
 
         {/* Entities */}
         <div>
-          <div className="text-[9px] font-bold tracking-widest text-slate-600 uppercase mb-3">
+          <div className="text-[9px] font-bold tracking-widest text-dt-faint uppercase mb-3">
             WHO WE SERVE
           </div>
           <div className="grid grid-cols-3 gap-4">
             {entityList.map((entity) => (
               <div
                 key={entity.label}
-                className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3"
+                className="bg-dt-card border border-dt-border rounded-xl p-4 flex flex-col gap-3"
               >
                 {/* Header row */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400 text-sm">{entity.icon}</span>
+                    <span className="text-dt-support text-sm">{entity.icon}</span>
                     <span className="text-sm font-semibold text-white">{entity.label}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -758,7 +758,7 @@ function DemoDashboardPage({
                     </div>
                     <button
                       onClick={() => setPage(entity.subPage)}
-                      className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
+                      className="w-6 h-6 rounded-md bg-dt-panel text-dt-support hover:text-white hover:bg-dt-panel flex items-center justify-center text-xs transition-colors"
                     >
                       →
                     </button>
@@ -766,10 +766,10 @@ function DemoDashboardPage({
                 </div>
 
                 {/* DEs */}
-                <div className="text-xs text-slate-400">
-                  <span className="text-slate-600 text-[10px]">DEs: </span>
+                <div className="text-xs text-dt-support">
+                  <span className="text-dt-faint text-[10px]">DEs: </span>
                   {entity.des.length === 0
-                    ? <span className="text-slate-600 italic">none assigned</span>
+                    ? <span className="text-dt-faint italic">none assigned</span>
                     : entity.des.length <= 3
                       ? entity.des.join(' · ')
                       : `${entity.des.slice(0, 3).join(' · ')} +${entity.des.length - 3} more`
@@ -796,11 +796,11 @@ function DemoDashboardPage({
 
                 {/* Legacy departments */}
                 <div>
-                  <div className="h-px bg-slate-700 mb-2" />
-                  <div className="text-[10px] text-slate-600 mb-1.5">Legacy departments</div>
+                  <div className="h-px bg-dt-panel mb-2" />
+                  <div className="text-[10px] text-dt-faint mb-1.5">Legacy departments</div>
                   <div className="flex flex-wrap gap-1">
                     {entity.legacy.map(dept => (
-                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">
+                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">
                         {dept}
                       </span>
                     ))}
@@ -813,7 +813,7 @@ function DemoDashboardPage({
 
         {/* Outcomes */}
         <div>
-          <div className="text-[9px] font-bold tracking-widest text-slate-600 uppercase mb-3">
+          <div className="text-[9px] font-bold tracking-widest text-dt-faint uppercase mb-3">
             OUTCOMES — what we achieve
           </div>
           <div className="grid grid-cols-4 gap-4">
@@ -821,8 +821,8 @@ function DemoDashboardPage({
               <button
                 key={outcome.label}
                 onClick={() => setPage(outcome.page)}
-                className={`bg-slate-800 border rounded-xl p-4 text-left flex flex-col gap-3 hover:border-slate-600 transition-all ${
-                  outcome.alerts && outcome.alerts > 0 ? 'border-amber-500/30 hover:border-amber-500/50' : 'border-slate-700'
+                className={`bg-dt-card border rounded-xl p-4 text-left flex flex-col gap-3 hover:border-dt-border-strong transition-all ${
+                  outcome.alerts && outcome.alerts > 0 ? 'border-amber-500/30 hover:border-amber-500/50' : 'border-dt-border'
                 }`}
               >
                 {/* Header */}
@@ -831,7 +831,7 @@ function DemoDashboardPage({
                     <span className={`text-sm ${trendColor(outcome.trend)}`}>{outcome.icon}</span>
                     <span className="text-xs font-semibold text-white leading-tight">{outcome.label}</span>
                   </div>
-                  <span className="text-slate-600 text-xs">↗</span>
+                  <span className="text-dt-faint text-xs">↗</span>
                 </div>
 
                 {/* Metric */}
@@ -845,11 +845,11 @@ function DemoDashboardPage({
 
                 {/* Legacy departments */}
                 <div>
-                  <div className="h-px bg-slate-700 mb-2" />
-                  <div className="text-[10px] text-slate-600 mb-1">Legacy departments</div>
+                  <div className="h-px bg-dt-panel mb-2" />
+                  <div className="text-[10px] text-dt-faint mb-1">Legacy departments</div>
                   <div className="flex flex-wrap gap-1">
                     {outcome.legacy.map(dept => (
-                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">
+                      <span key={dept} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">
                         {dept}
                       </span>
                     ))}
@@ -864,14 +864,14 @@ function DemoDashboardPage({
         <div className="grid grid-cols-5 gap-4">
 
           {/* Human Tasks (60%) */}
-          <div className="col-span-3 bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div className="col-span-3 bg-dt-card border border-dt-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
+              <span className="text-[9px] font-bold tracking-widest text-dt-faint uppercase">
                 HUMAN TASKS — {live.humanTasks} pending
               </span>
               <button
                 onClick={() => setPage('ops_human_tasks')}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="text-xs text-dt-muted hover:text-dt-support transition-colors"
               >
                 View all →
               </button>
@@ -879,30 +879,30 @@ function DemoDashboardPage({
             <div className="space-y-1">
               {/* Header */}
               <div className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 px-2 pb-1">
-                <span className="text-[9px] text-slate-600 uppercase tracking-wider">Type</span>
-                <span className="text-[9px] text-slate-600 uppercase tracking-wider">Title</span>
-                <span className="text-[9px] text-slate-600 uppercase tracking-wider">DE</span>
-                <span className="text-[9px] text-slate-600 uppercase tracking-wider">Age</span>
+                <span className="text-[9px] text-dt-faint uppercase tracking-wider">Type</span>
+                <span className="text-[9px] text-dt-faint uppercase tracking-wider">Title</span>
+                <span className="text-[9px] text-dt-faint uppercase tracking-wider">DE</span>
+                <span className="text-[9px] text-dt-faint uppercase tracking-wider">Age</span>
                 <span />
               </div>
               {/* Chat-dock escalations (pending) surface at the top of the queue */}
               {pendingChatEscs.map((esc) => (
                 <div
                   key={esc.id}
-                  className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors hover:bg-slate-700/50"
+                  className="grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors hover:bg-dt-panel"
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle('review_gate')}`}>
                     {taskBadgeLabel('review_gate')}
                   </span>
                   <div className="min-w-0 flex items-center gap-1.5">
-                    <span className="text-xs text-slate-200 truncate">{esc.title}</span>
+                    <span className="text-xs text-dt-body truncate">{esc.title}</span>
                     <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-300 flex-shrink-0">via DE chat</span>
                   </div>
-                  <span className="text-xs text-slate-400 truncate">{esc.de}</span>
-                  <span className="text-xs text-slate-500">{chatEscalationAge(esc.createdAt)}</span>
+                  <span className="text-xs text-dt-support truncate">{esc.de}</span>
+                  <span className="text-xs text-dt-muted">{chatEscalationAge(esc.createdAt)}</span>
                   <button
                     onClick={() => setPage('ops_human_tasks')}
-                    className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                    className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs transition-colors"
                   >
                     →
                   </button>
@@ -914,7 +914,7 @@ function DemoDashboardPage({
                 <div
                   key={task.id}
                   className={`grid grid-cols-[100px_1fr_60px_50px_24px] gap-2 items-center px-2 py-2 rounded-lg transition-colors ${
-                    decided ? 'opacity-60 hover:opacity-100 hover:bg-slate-700/50' : task.urgent ? 'bg-amber-500/8' : 'hover:bg-slate-700/50'
+                    decided ? 'opacity-60 hover:opacity-100 hover:bg-dt-panel' : task.urgent ? 'bg-amber-500/8' : 'hover:bg-dt-panel'
                   }`}
                 >
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
@@ -922,8 +922,8 @@ function DemoDashboardPage({
                   </span>
                   <div className="min-w-0 flex items-center gap-1.5">
                     <div className="min-w-0">
-                      <div className="text-xs text-slate-200 truncate">{task.title}</div>
-                      {task.detail && <div className="text-[10px] text-slate-500">{task.detail}</div>}
+                      <div className="text-xs text-dt-body truncate">{task.title}</div>
+                      {task.detail && <div className="text-[10px] text-dt-muted">{task.detail}</div>}
                     </div>
                     {decided === 'approved' && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 flex-shrink-0">Approved</span>
@@ -932,11 +932,11 @@ function DemoDashboardPage({
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 flex-shrink-0">Rejected</span>
                     )}
                   </div>
-                  <span className="text-xs text-slate-400 truncate">{task.de}</span>
-                  <span className="text-xs text-slate-500">{task.age}</span>
+                  <span className="text-xs text-dt-support truncate">{task.de}</span>
+                  <span className="text-xs text-dt-muted">{task.age}</span>
                   <button
                     onClick={() => setPage('ops_human_tasks')}
-                    className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                    className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs transition-colors"
                   >
                     →
                   </button>
@@ -947,12 +947,12 @@ function DemoDashboardPage({
           </div>
 
           {/* Live Activity (40%) */}
-          <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div className="col-span-2 bg-dt-card border border-dt-border rounded-xl p-4">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">LIVE ACTIVITY</span>
+              <span className="text-[9px] font-bold tracking-widest text-dt-faint uppercase">LIVE ACTIVITY</span>
               <button
                 onClick={() => setPage('ops_activity')}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="text-xs text-dt-muted hover:text-dt-support transition-colors"
               >
                 View log →
               </button>
@@ -961,15 +961,15 @@ function DemoDashboardPage({
               {data.activity.map((item, i) => (
                 <div
                   key={i}
-                  className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(item.type)} hover:bg-slate-700/40 transition-colors`}
+                  className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(item.type)} hover:bg-dt-panel transition-colors`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${activityDotColor(item.type)}`} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-slate-300 leading-tight truncate">{item.text}</div>
-                    <div className="text-[10px] text-slate-600 mt-0.5">{item.time}</div>
+                    <div className="text-xs text-dt-support leading-tight truncate">{item.text}</div>
+                    <div className="text-[10px] text-dt-faint mt-0.5">{item.time}</div>
                   </div>
                   {item.confidence !== undefined && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support flex-shrink-0">
                       {item.confidence}%
                     </span>
                   )}
@@ -985,53 +985,53 @@ function DemoDashboardPage({
       {showHealthConfig && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-slate-900/60"
+            className="fixed inset-0 z-40 bg-dt-inset"
             onClick={() => setShowHealthConfig(false)}
           />
-          <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-slate-800 border-l border-slate-700 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b border-slate-700">
+          <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-dt-card border-l border-dt-border flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-dt-border">
               <h2 className="text-sm font-semibold text-white">Configure DE Health Thresholds</h2>
               <button
                 onClick={() => setShowHealthConfig(false)}
-                className="w-7 h-7 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors"
+                className="w-7 h-7 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-xs transition-colors"
               >
                 ×
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-6">
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-dt-support leading-relaxed">
                 These thresholds determine when a DE shows as Active, Degraded, or At Risk.
               </p>
 
               {/* Confidence Score */}
               <div>
-                <div className="text-xs font-semibold text-slate-300 mb-3">Confidence Score</div>
+                <div className="text-xs font-semibold text-dt-support mb-3">Confidence Score</div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Amber below</span>
+                    <span className="text-xs text-dt-support">Amber below</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.confidence_amber}
                         onChange={e => updateDraft('confidence_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Red below</span>
+                    <span className="text-xs text-dt-support">Red below</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.confidence_red}
                         onChange={e => updateDraft('confidence_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                 </div>
@@ -1039,32 +1039,32 @@ function DemoDashboardPage({
 
               {/* Escalation Rate */}
               <div>
-                <div className="text-xs font-semibold text-slate-300 mb-3">Escalation Rate</div>
+                <div className="text-xs font-semibold text-dt-support mb-3">Escalation Rate</div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Amber above</span>
+                    <span className="text-xs text-dt-support">Amber above</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.escalation_amber}
                         onChange={e => updateDraft('escalation_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Red above</span>
+                    <span className="text-xs text-dt-support">Red above</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.escalation_red}
                         onChange={e => updateDraft('escalation_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                 </div>
@@ -1072,32 +1072,32 @@ function DemoDashboardPage({
 
               {/* Knowledge Staleness */}
               <div>
-                <div className="text-xs font-semibold text-slate-300 mb-3">Knowledge Staleness</div>
+                <div className="text-xs font-semibold text-dt-support mb-3">Knowledge Staleness</div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Amber after</span>
+                    <span className="text-xs text-dt-support">Amber after</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.staleness_amber}
                         onChange={e => updateDraft('staleness_amber', Number(e.target.value))}
                         min={0} max={365}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">days</span>
+                      <span className="text-xs text-dt-muted">days</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Red after</span>
+                    <span className="text-xs text-dt-support">Red after</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.staleness_red}
                         onChange={e => updateDraft('staleness_red', Number(e.target.value))}
                         min={0} max={365}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">days</span>
+                      <span className="text-xs text-dt-muted">days</span>
                     </div>
                   </div>
                 </div>
@@ -1105,42 +1105,42 @@ function DemoDashboardPage({
 
               {/* Error Rate */}
               <div>
-                <div className="text-xs font-semibold text-slate-300 mb-3">Error Rate</div>
+                <div className="text-xs font-semibold text-dt-support mb-3">Error Rate</div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Amber above</span>
+                    <span className="text-xs text-dt-support">Amber above</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.error_rate_amber}
                         onChange={e => updateDraft('error_rate_amber', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-400">Red above</span>
+                    <span className="text-xs text-dt-support">Red above</span>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
                         value={draftConfig.error_rate_red}
                         onChange={e => updateDraft('error_rate_red', Number(e.target.value))}
                         min={0} max={100}
-                        className="w-16 text-right bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
+                        className="w-16 text-right bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-slate-500"
                       />
-                      <span className="text-xs text-slate-500">%</span>
+                      <span className="text-xs text-dt-muted">%</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-700 flex gap-3">
+            <div className="p-5 border-t border-dt-border flex gap-3">
               <button
                 onClick={resetHealthConfig}
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 text-xs transition-colors"
+                className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors"
               >
                 Reset to defaults
               </button>

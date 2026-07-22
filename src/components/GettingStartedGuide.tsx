@@ -70,7 +70,7 @@ export default function GettingStartedGuide({
   if (hidden) {
     return (
       <button onClick={reopen}
-        className="self-start inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:border-indigo-500/50 transition-colors">
+        className="self-start inline-flex items-center gap-2 rounded-lg border border-dt-border bg-dt-card px-3 py-1.5 text-xs font-medium text-dt-support hover:text-white hover:border-indigo-500/50 transition-colors">
         <span className="text-indigo-400">✦</span> Setup guide
       </button>
     );
@@ -117,10 +117,10 @@ export default function GettingStartedGuide({
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">✓</span>
           <div>
             <p className="text-white font-semibold text-[14px]">Your AI workforce is live</p>
-            <p className="text-slate-400 text-xs mt-0.5">Hired, taught, tested and on your website. Watch it work in Performance, or hire for another role anytime.</p>
+            <p className="text-dt-support text-xs mt-0.5">Hired, taught, tested and on your website. Watch it work in Performance, or hire for another role anytime.</p>
           </div>
         </div>
-        <button onClick={hide} className="flex-none text-xs text-slate-500 hover:text-white transition-colors">Hide ✕</button>
+        <button onClick={hide} className="flex-none text-xs text-dt-muted hover:text-white transition-colors">Hide ✕</button>
       </div>
     );
   }
@@ -132,17 +132,17 @@ export default function GettingStartedGuide({
           <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 text-lg">✦</div>
           <div>
             <h2 className="text-white font-semibold text-[15px]">Set up your AI workforce</h2>
-            <p className="text-slate-400 text-xs mt-0.5">
+            <p className="text-dt-support text-xs mt-0.5">
               {state == null ? 'Checking your progress…' : `${doneCount} of ${steps.length} steps done — about 10 minutes total.`}
             </p>
           </div>
         </div>
         <button onClick={hide} title="Hide (reopen anytime from the Setup guide button)"
-          className="flex-none text-xs text-slate-500 hover:text-white transition-colors">Hide ✕</button>
+          className="flex-none text-xs text-dt-muted hover:text-white transition-colors">Hide ✕</button>
       </div>
 
       {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-slate-700/60 mb-4 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-dt-panel/60 mb-4 overflow-hidden">
         <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
           style={{ width: state == null ? '4%' : `${Math.max(4, (doneCount / steps.length) * 100)}%` }} />
       </div>
@@ -152,16 +152,16 @@ export default function GettingStartedGuide({
           const isCurrent = i === currentIdx;
           return (
             <li key={s.title}
-              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-slate-800/80 border border-indigo-500/40' : 'bg-slate-800/30 border border-transparent'}`}>
+              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-dt-card/80 border border-indigo-500/40' : 'bg-dt-panel border border-transparent'}`}>
               <div className="flex items-start gap-3">
                 <span className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold ${
-                  s.done ? 'bg-emerald-500/20 text-emerald-300' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-slate-700 text-slate-400'
+                  s.done ? 'bg-emerald-500/20 text-emerald-300' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'
                 }`}>{s.done ? '✓' : i + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-[13.5px] font-medium ${s.done ? 'text-slate-400 line-through decoration-slate-600' : 'text-white'}`}>{s.title}</p>
+                  <p className={`text-[13.5px] font-medium ${s.done ? 'text-dt-support line-through decoration-slate-600' : 'text-white'}`}>{s.title}</p>
                   {isCurrent && (
                     <>
-                      <p className="text-slate-300 text-[13px] mt-1 leading-relaxed">{s.body}</p>
+                      <p className="text-dt-support text-[13px] mt-1 leading-relaxed">{s.body}</p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
                           className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500 transition-colors">
@@ -169,7 +169,7 @@ export default function GettingStartedGuide({
                         </button>
                         {s.secondary && (
                           <button onClick={() => setPage(s.secondary.page)}
-                            className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
+                            className="rounded-lg border border-dt-border-strong px-3 py-1.5 text-xs text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                             {s.secondary.label}
                           </button>
                         )}
@@ -179,7 +179,7 @@ export default function GettingStartedGuide({
                 </div>
                 {!s.done && !isCurrent && (
                   <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
-                    className="flex-none text-[11px] text-slate-500 hover:text-indigo-300 transition-colors mt-1">
+                    className="flex-none text-[11px] text-dt-muted hover:text-indigo-300 transition-colors mt-1">
                     Jump ahead →
                   </button>
                 )}

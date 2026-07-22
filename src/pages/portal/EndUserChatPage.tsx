@@ -272,13 +272,13 @@ const EndUserChatPage = ({
     const logoUrl = portalBrandConfig.brandLogoUrl || '';
 
     return (
-      <div className="flex-1 flex flex-col h-full bg-slate-900 overflow-hidden">
+      <div className="flex-1 flex flex-col h-full bg-dt-page overflow-hidden">
         <div className="flex-shrink-0 px-6 pt-6">
           <PageTabs tabs={PORTAL_TABS} page={'eu_chat' as Page} setPage={setPage} accentColor={accentColor} />
         </div>
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="w-full max-w-sm">
-            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+            <div className="bg-dt-card border border-dt-border rounded-2xl p-6 shadow-2xl">
               <div className="flex flex-col items-center mb-5">
                 {logoUrl ? (
                   <img src={logoUrl} alt={tenantName} className="w-12 h-12 object-contain rounded-xl mb-3" />
@@ -289,20 +289,20 @@ const EndUserChatPage = ({
                   </div>
                 )}
                 <h2 className="text-lg font-bold text-white text-center">{headline}</h2>
-                <p className="text-xs text-slate-400 mt-1 text-center">Please fill in your details to start chatting</p>
+                <p className="text-xs text-dt-support mt-1 text-center">Please fill in your details to start chatting</p>
               </div>
 
               <div className="space-y-3">
                 {prechatFields.map(field => (
                   <div key={field.id}>
-                    <label className="text-xs font-medium text-slate-400 block mb-1">
+                    <label className="text-xs font-medium text-dt-support block mb-1">
                       {field.label}{field.required && <span className="text-red-400 ml-0.5">*</span>}
                     </label>
                     {field.type === 'select' ? (
                       <select
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
-                        className={`w-full bg-slate-700 border rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-slate-600 focus:border-indigo-500'}`}>
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}>
                         <option value="">Select…</option>
                         <option>Billing question</option>
                         <option>Technical issue</option>
@@ -315,7 +315,7 @@ const EndUserChatPage = ({
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
                         placeholder={field.label}
-                        className={`w-full bg-slate-700 border rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-slate-600 focus:border-indigo-500'}`}
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}
                       />
                     )}
                     {prechatErrors[field.id] && <p className="text-xs text-red-400 mt-1">{field.label} is required</p>}
@@ -338,13 +338,13 @@ const EndUserChatPage = ({
 
   // ── Main chat view ─────────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-900 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-dt-page overflow-hidden">
       <div className="flex-shrink-0 px-6 pt-6">
         <PageTabs tabs={PORTAL_TABS} page={'eu_chat' as Page} setPage={setPage} accentColor={accentColor} />
       </div>
 
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-slate-700 px-6 py-4 flex items-center justify-between"
+      <div className="flex-shrink-0 border-b border-dt-border px-6 py-4 flex items-center justify-between"
         style={{ borderBottomColor: accentColor + '30' }}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white"
@@ -355,19 +355,19 @@ const EndUserChatPage = ({
             <div className="text-sm font-semibold text-white">{tenantName}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="text-xs text-slate-400">AI Assistant · Online</span>
+              <span className="text-xs text-dt-support">AI Assistant · Online</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {customerIdentity && (
-            <div className="text-xs text-slate-500">Chatting as <span className="text-slate-300">{customerIdentity.name}</span></div>
+            <div className="text-xs text-dt-muted">Chatting as <span className="text-dt-support">{customerIdentity.name}</span></div>
           )}
           <div className="flex items-center gap-2">
             {conversationId && (
               <button
                 onClick={startNew}
-                className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-600 transition-all"
+                className="text-xs text-dt-muted hover:text-dt-support px-3 py-1.5 rounded-lg border border-dt-border-strong hover:border-dt-border-strong transition-all"
               >
                 New conversation
               </button>
@@ -375,7 +375,7 @@ const EndUserChatPage = ({
             {setPage && (
               <button
                 onClick={() => setPage('entity_customer_support')}
-                className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-600 transition-all"
+                className="text-xs text-dt-muted hover:text-dt-support px-3 py-1.5 rounded-lg border border-dt-border-strong hover:border-dt-border-strong transition-all"
               >
                 Admin view →
               </button>
@@ -403,7 +403,7 @@ const EndUserChatPage = ({
 
               <div className={`max-w-[72%] space-y-1.5 ${m.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
                 {m.role !== 'user' && m.deName && (
-                  <div className="text-xs text-slate-500 px-1">{m.deName}</div>
+                  <div className="text-xs text-dt-muted px-1">{m.deName}</div>
                 )}
 
                 {isImageMsg && attachDataUrl ? (
@@ -411,7 +411,7 @@ const EndUserChatPage = ({
                     <img src={attachDataUrl} alt={m.text} className="max-w-full max-h-64 object-cover rounded-2xl" />
                   </div>
                 ) : isFileMsg ? (
-                  <div className="bg-slate-700 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <div className="bg-dt-panel rounded-lg px-3 py-2 flex items-center gap-2">
                     <span className="text-lg">📄</span>
                     <div>
                       <div className="text-xs text-white font-medium">
@@ -425,7 +425,7 @@ const EndUserChatPage = ({
                       ? 'text-white rounded-br-sm'
                       : m.role === 'system'
                       ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-bl-sm'
-                      : 'bg-slate-700 text-slate-100 rounded-bl-sm'
+                      : 'bg-dt-panel text-dt-title rounded-bl-sm'
                   }`}
                     style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
                     {m.text}
@@ -438,7 +438,7 @@ const EndUserChatPage = ({
                     <span className={`text-xs px-2 py-0.5 rounded font-mono ${
                       m.confidence >= 80 ? 'text-emerald-400 bg-emerald-400/10'
                       : m.confidence >= 60 ? 'text-amber-400 bg-amber-400/10'
-                      : 'text-slate-500 bg-slate-600/50'
+                      : 'text-dt-muted bg-slate-600/50'
                     }`}>
                       {m.confidence}% confident
                     </span>
@@ -448,7 +448,7 @@ const EndUserChatPage = ({
                 {m.sources && m.sources.length > 0 && (
                   <div className="px-1 space-y-0.5">
                     {m.sources.slice(0, 2).map((s, i) => (
-                      <div key={i} className="text-xs text-slate-600 flex items-center gap-1">
+                      <div key={i} className="text-xs text-dt-faint flex items-center gap-1">
                         <span>◈</span>
                         <span className="truncate">{s.title}</span>
                       </div>
@@ -460,18 +460,18 @@ const EndUserChatPage = ({
                 {m.role === 'de' && !m.escalated && conversationId && tenantId && (
                   <div className="flex items-center gap-2 px-1 mt-0.5">
                     {csatRated[m.id] ? (
-                      <span className="text-xs text-slate-600">
+                      <span className="text-xs text-dt-faint">
                         {csatRated[m.id] === 1 ? 'Thanks for the feedback!' : 'Thanks — we\'ll improve.'}
                       </span>
                     ) : (
                       <>
-                        <span className="text-xs text-slate-600">Helpful?</span>
+                        <span className="text-xs text-dt-faint">Helpful?</span>
                         <button
                           onClick={async () => {
                             setCsatRated(prev => ({ ...prev, [m.id]: 1 }));
                             await submitCSAT(conversationId, tenantId, 1);
                           }}
-                          className="text-slate-600 hover:text-emerald-400 transition-colors text-sm"
+                          className="text-dt-faint hover:text-emerald-400 transition-colors text-sm"
                           title="Yes, helpful"
                         >👍</button>
                         <button
@@ -479,7 +479,7 @@ const EndUserChatPage = ({
                             setCsatRated(prev => ({ ...prev, [m.id]: -1 }));
                             await submitCSAT(conversationId, tenantId, -1);
                           }}
-                          className="text-slate-600 hover:text-red-400 transition-colors text-sm"
+                          className="text-dt-faint hover:text-red-400 transition-colors text-sm"
                           title="Not helpful"
                         >👎</button>
                       </>
@@ -487,7 +487,7 @@ const EndUserChatPage = ({
                   </div>
                 )}
 
-                <div className="text-xs text-slate-600 px-1">{m.ts}</div>
+                <div className="text-xs text-dt-faint px-1">{m.ts}</div>
               </div>
             </div>
           );
@@ -499,7 +499,7 @@ const EndUserChatPage = ({
               style={{ backgroundColor: accentColor }}>
               {tenantName[0]}
             </div>
-            <div className="bg-slate-700 rounded-2xl rounded-bl-sm px-4 py-3">
+            <div className="bg-dt-panel rounded-2xl rounded-bl-sm px-4 py-3">
               <div className="flex gap-1">
                 {[0, 1, 2].map(i => (
                   <span key={i} className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce"
@@ -514,9 +514,9 @@ const EndUserChatPage = ({
           <div className="flex justify-center">
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-5 py-3 text-center max-w-sm">
               <div className="text-xs font-medium text-amber-300 mb-1">Handed to our team</div>
-              <div className="text-xs text-slate-400">A human agent will review your conversation and respond shortly.</div>
+              <div className="text-xs text-dt-support">A human agent will review your conversation and respond shortly.</div>
               <button onClick={startNew}
-                className="mt-3 text-xs text-slate-400 hover:text-white underline transition-all">
+                className="mt-3 text-xs text-dt-support hover:text-white underline transition-all">
                 Start a new conversation
               </button>
             </div>
@@ -527,9 +527,9 @@ const EndUserChatPage = ({
       </div>
 
       {/* Input */}
-      <div className="flex-shrink-0 border-t border-slate-700 px-6 py-4">
+      <div className="flex-shrink-0 border-t border-dt-border px-6 py-4">
         {escalated ? (
-          <div className="text-center text-xs text-slate-600">
+          <div className="text-center text-xs text-dt-faint">
             This conversation has been escalated to our team.{' '}
             <button onClick={startNew} className="text-indigo-400 hover:text-indigo-300 underline">Start new</button>
           </div>
@@ -543,21 +543,21 @@ const EndUserChatPage = ({
                     {att.type.startsWith('image/') ? (
                       <div className="relative">
                         <img src={att.dataUrl} alt={att.name}
-                          className="w-10 h-10 rounded-lg object-cover border border-slate-600" />
+                          className="w-10 h-10 rounded-lg object-cover border border-dt-border-strong" />
                         <button onClick={() => removeAttachment(idx)}
                           className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-600 hover:bg-red-600 text-white text-[10px] flex items-center justify-center transition-colors">
                           ✕
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 pr-6 relative">
+                      <div className="flex items-center gap-1.5 bg-dt-panel border border-dt-border-strong rounded-lg px-2 py-1.5 pr-6 relative">
                         <span className="text-sm">📄</span>
                         <div className="min-w-0">
                           <div className="text-xs text-white truncate max-w-24">{att.name}</div>
-                          <div className="text-[10px] text-slate-500">{formatBytes(att.size)}</div>
+                          <div className="text-[10px] text-dt-muted">{formatBytes(att.size)}</div>
                         </div>
                         <button onClick={() => removeAttachment(idx)}
-                          className="absolute top-0.5 right-1 text-slate-500 hover:text-red-400 text-xs transition-colors">
+                          className="absolute top-0.5 right-1 text-dt-muted hover:text-red-400 text-xs transition-colors">
                           ✕
                         </button>
                       </div>
@@ -580,7 +580,7 @@ const EndUserChatPage = ({
               {/* Paperclip button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex-shrink-0 w-10 h-10 rounded-xl border border-slate-600 hover:border-slate-500 bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-400 hover:text-white transition-all"
+                className="flex-shrink-0 w-10 h-10 rounded-xl border border-dt-border-strong hover:border-dt-border-strong bg-dt-panel hover:bg-dt-panel flex items-center justify-center text-dt-support hover:text-white transition-all"
                 title="Attach file"
               >
                 📎
@@ -592,7 +592,7 @@ const EndUserChatPage = ({
                 onKeyDown={handleKey}
                 placeholder="Type your message…"
                 rows={2}
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none transition-all"
+                className="flex-1 bg-dt-panel border border-dt-border-strong rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none transition-all"
               />
               <button
                 onClick={send}
@@ -606,8 +606,8 @@ const EndUserChatPage = ({
           </>
         )}
         <div className="flex items-center justify-between mt-2">
-          <div className="text-xs text-slate-600">Enter to send · Shift+Enter for new line</div>
-          <div className="text-xs text-slate-600">Powered by {tenantName} AI</div>
+          <div className="text-xs text-dt-faint">Enter to send · Shift+Enter for new line</div>
+          <div className="text-xs text-dt-faint">Powered by {tenantName} AI</div>
         </div>
       </div>
     </div>

@@ -9,7 +9,7 @@ export function LiveLoadingSkeleton({ rows = 4 }: { rows?: number }) {
   return (
     <div className="space-y-2 animate-pulse">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-12 rounded-xl bg-slate-800 border border-slate-700" />
+        <div key={i} className="h-12 rounded-xl bg-dt-card border border-dt-border" />
       ))}
     </div>
   );
@@ -17,14 +17,14 @@ export function LiveLoadingSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function MissingTablesNotice() {
   return (
-    <div className="rounded-xl border border-slate-600 bg-slate-800/80 p-5 flex items-start gap-3">
-      <span className="text-slate-400 text-lg flex-shrink-0">◇</span>
+    <div className="rounded-xl border border-dt-border-strong bg-dt-card/80 p-5 flex items-start gap-3">
+      <span className="text-dt-support text-lg flex-shrink-0">◇</span>
       <div>
-        <p className="text-sm font-medium text-slate-200 mb-1">Live data tables not yet provisioned</p>
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-sm font-medium text-dt-body mb-1">Live data tables not yet provisioned</p>
+        <p className="text-xs text-dt-support leading-relaxed">
           Your workspace is connected, but the Customer data tables haven't been created in the
           database yet. Ask your administrator to run{' '}
-          <code className="text-slate-300 bg-slate-700 px-1 py-0.5 rounded">supabase/migrations/011_customer_entity.sql</code>{' '}
+          <code className="text-dt-support bg-dt-panel px-1 py-0.5 rounded">supabase/migrations/011_customer_entity.sql</code>{' '}
           in the Supabase SQL Editor, then reload this page.
         </p>
       </div>
@@ -72,10 +72,10 @@ export function LiveEmptyState({
   onSecondary?: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center py-16 rounded-2xl border border-dashed border-slate-700 bg-slate-800/30">
-      <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl mb-4">{icon}</div>
-      <h2 className="text-lg font-semibold text-slate-200 mb-2">{title}</h2>
-      <p className="text-sm text-slate-500 max-w-sm mb-6">{body}</p>
+    <div className="flex flex-col items-center justify-center text-center py-16 rounded-2xl border border-dashed border-dt-border bg-dt-panel">
+      <div className="w-12 h-12 rounded-xl bg-dt-card border border-dt-border flex items-center justify-center text-xl mb-4">{icon}</div>
+      <h2 className="text-lg font-semibold text-dt-body mb-2">{title}</h2>
+      <p className="text-sm text-dt-muted max-w-sm mb-6">{body}</p>
       <div className="flex gap-3">
         {primaryLabel && onPrimary && (
           <button
@@ -88,7 +88,7 @@ export function LiveEmptyState({
         {secondaryLabel && onSecondary && (
           <button
             onClick={onSecondary}
-            className="px-4 py-2 rounded-lg text-sm text-slate-300 border border-slate-600 hover:border-slate-500 hover:text-white transition-colors"
+            className="px-4 py-2 rounded-lg text-sm text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors"
           >
             {secondaryLabel}
           </button>

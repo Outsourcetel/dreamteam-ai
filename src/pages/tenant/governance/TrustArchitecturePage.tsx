@@ -155,7 +155,7 @@ export default function TrustArchitecturePage() {
           subtitle="How DreamTeam is built, what data goes where, and what we haven't done yet — honestly labeled"
         />
         <button onClick={copyDoc}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           {copied ? '✓ Copied' : 'Copy as text'}
         </button>
       </div>

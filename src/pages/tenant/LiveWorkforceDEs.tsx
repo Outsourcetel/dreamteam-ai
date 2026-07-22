@@ -147,12 +147,12 @@ function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: P
   const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">How this DE operates</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">operating charter</span>
       </div>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-dt-muted mb-4">
         The playbooks assigned to this DE, in priority order. When more than one active playbook matches the same
         trigger, the lowest-numbered priority runs first. Drag with the arrows to reprioritize.
       </p>
@@ -160,25 +160,25 @@ function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: P
       {error && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
 
       {sorted.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-3">No playbooks assigned yet — this DE only runs playbooks it's directly assigned.</p>
+        <p className="text-xs text-dt-muted mb-3">No playbooks assigned yet — this DE only runs playbooks it's directly assigned.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
           {sorted.map((a, i) => {
             const def = defs.find(d => d.id === a.playbook_id);
             return (
-              <div key={a.id} className={`flex items-center gap-3 text-xs rounded-lg px-3 py-2 ${a.active ? 'bg-slate-900/60' : 'bg-slate-900/30 opacity-60'}`}>
-                <span className="w-6 h-6 rounded-lg bg-slate-700 text-slate-400 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{a.priority}</span>
-                <button onClick={() => setPage('systems_playbooks')} className="text-slate-200 hover:text-indigo-300 transition-colors truncate flex-1 text-left">
+              <div key={a.id} className={`flex items-center gap-3 text-xs rounded-lg px-3 py-2 ${a.active ? 'bg-dt-inset' : 'bg-dt-page/30 opacity-60'}`}>
+                <span className="w-6 h-6 rounded-lg bg-dt-panel text-dt-support flex items-center justify-center text-[11px] font-bold flex-shrink-0">{a.priority}</span>
+                <button onClick={() => setPage('systems_playbooks')} className="text-dt-body hover:text-indigo-300 transition-colors truncate flex-1 text-left">
                   {def?.name ?? 'Unknown playbook'}
                 </button>
-                {!a.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500 flex-shrink-0">paused</span>}
+                {!a.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">paused</span>}
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => void move(a, -1)} disabled={busy || i === 0} className="text-slate-500 hover:text-slate-300 disabled:opacity-30">↑</button>
-                  <button onClick={() => void move(a, 1)} disabled={busy || i === sorted.length - 1} className="text-slate-500 hover:text-slate-300 disabled:opacity-30">↓</button>
+                  <button onClick={() => void move(a, -1)} disabled={busy || i === 0} className="text-dt-muted hover:text-dt-support disabled:opacity-30">↑</button>
+                  <button onClick={() => void move(a, 1)} disabled={busy || i === sorted.length - 1} className="text-dt-muted hover:text-dt-support disabled:opacity-30">↓</button>
                   <button onClick={() => void (async () => { setBusy(true); try { await setAssignmentActive(a.id, !a.active); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
-                    className="text-slate-500 hover:text-slate-300 disabled:opacity-30 ml-1">{a.active ? 'pause' : 'resume'}</button>
+                    className="text-dt-muted hover:text-dt-support disabled:opacity-30 ml-1">{a.active ? 'pause' : 'resume'}</button>
                   <button onClick={() => setRemoveTarget(a)} disabled={busy}
-                    className="text-slate-600 hover:text-rose-400 disabled:opacity-30 ml-1">remove</button>
+                    className="text-dt-faint hover:text-rose-400 disabled:opacity-30 ml-1">remove</button>
                 </div>
               </div>
             );
@@ -189,7 +189,7 @@ function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: P
       {adding ? (
         <div className="flex items-center gap-2 flex-wrap">
           <select value={pickId} onChange={e => setPickId(e.target.value)}
-            className="bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-slate-500 !w-64">
+            className="bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-xs text-dt-body focus:outline-none focus:border-slate-500 !w-64">
             <option value="">Pick a published playbook…</option>
             {unassigned.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
@@ -197,19 +197,19 @@ function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: P
             className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium disabled:opacity-40 transition-colors">
             {busy ? 'Adding…' : 'Add'}
           </button>
-          <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+          <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
         </div>
       ) : (
         <button onClick={() => setAdding(true)} disabled={unassigned.length === 0}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
           + Assign a playbook
         </button>
       )}
       {unassigned.length === 0 && !adding && defs.length > 0 && (
-        <p className="mt-2 text-[11px] text-slate-600">Every published playbook is already assigned.</p>
+        <p className="mt-2 text-[11px] text-dt-faint">Every published playbook is already assigned.</p>
       )}
       {defs.length === 0 && (
-        <p className="mt-2 text-[11px] text-slate-600">No published playbooks yet — build one in Playbooks first.</p>
+        <p className="mt-2 text-[11px] text-dt-faint">No published playbooks yet — build one in Playbooks first.</p>
       )}
       {removeTarget && (
         <ConfirmDeleteModal
@@ -372,30 +372,30 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
       </div>
 
       {adding && (
-        <div className="rounded-xl border border-slate-600 bg-slate-900/60 p-4 space-y-3">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-dt-support">
               Role / label (required)
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Account Success DE"
-                className="mt-1 w-full bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
             </label>
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-dt-support">
               Persona name (optional)
               <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="e.g. Jordan"
-                className="mt-1 w-full bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
             </label>
           </div>
-          <label className="text-xs text-slate-400 block">
+          <label className="text-xs text-dt-support block">
             Department
             <input value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Account Success"
-              className="mt-1 w-full bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
           </label>
-          <label className="text-xs text-slate-400 block">
+          <label className="text-xs text-dt-support block">
             What does this Digital Employee do?
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder="Plain language — what this DE is responsible for"
-              className="mt-1 w-full bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none" />
+              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
           </label>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-[11px] text-dt-muted">
             Starts supervised with no data access and no playbooks — you (or an admin) grant those next, the same way for every DE.
           </p>
           <div className="flex items-center gap-2">
@@ -403,7 +403,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
               className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium disabled:opacity-40 transition-colors">
               {busy ? 'Creating…' : 'Create'}
             </button>
-            <button onClick={() => setAdding(false)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+            <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
       )}
@@ -437,15 +437,15 @@ function DePerformancePanel({ deId }: { deId: string }) {
   if (loading) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Performance</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">real metrics</span>
       </div>
-      <p className="text-xs text-slate-500 mb-5">Computed from this employee's own decisions and runs — not estimated.</p>
+      <p className="text-xs text-dt-muted mb-5">Computed from this employee's own decisions and runs — not estimated.</p>
 
       {!metrics || metrics.total_decisions === 0 ? (
-        <p className="text-xs text-slate-500">No decisions recorded yet for this employee.</p>
+        <p className="text-xs text-dt-muted">No decisions recorded yet for this employee.</p>
       ) : (
         <div className="grid grid-cols-4 gap-3">
           {[
@@ -454,15 +454,15 @@ function DePerformancePanel({ deId }: { deId: string }) {
             { label: 'Escalation', value: `${metrics.escalation_rate}%` },
             { label: 'Error rate', value: `${metrics.error_rate}%` },
           ].map(t => (
-            <div key={t.label} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-              <div className="text-[11px] text-slate-500">{t.label}</div>
-              <div className="text-lg font-semibold text-slate-100 mt-0.5">{t.value}</div>
+            <div key={t.label} className="rounded-xl border border-dt-border bg-dt-inset p-3">
+              <div className="text-[11px] text-dt-muted">{t.label}</div>
+              <div className="text-lg font-semibold text-dt-title mt-0.5">{t.value}</div>
             </div>
           ))}
         </div>
       )}
       {metrics && metrics.total_decisions > 0 && (
-        <p className="mt-4 text-[11px] text-slate-500">
+        <p className="mt-4 text-[11px] text-dt-muted">
           {metrics.total_decisions} inquiries this period{metrics.high_frustration_count > 0 ? ` · ${metrics.high_frustration_count} auto-escalated for frustration` : ''}
         </p>
       )}
@@ -492,17 +492,17 @@ function DeKnowledgeScopePanel({ deId }: { deId: string }) {
   }, [deId]);
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Knowledge scope</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">control fabric</span>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-dt-muted">
         This employee reads every company-wide document, plus{' '}
-        <span className="text-slate-300">{scopedCount === null ? '…' : scopedCount}</span>{' '}
+        <span className="text-dt-support">{scopedCount === null ? '…' : scopedCount}</span>{' '}
         document{scopedCount === 1 ? '' : 's'} specifically scoped to it.
       </p>
-      <p className="mt-3 text-[11px] text-slate-500">
+      <p className="mt-3 text-[11px] text-dt-muted">
         Manage scoping from the Knowledge Library — each document's "Who can use this" setting.
       </p>
     </div>
@@ -566,16 +566,16 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
   const statusChip = (s: string) =>
     s === 'open' ? 'bg-amber-500/15 text-amber-300'
     : s === 'reviewed' ? 'bg-indigo-500/15 text-indigo-300'
-    : 'bg-slate-700 text-slate-500';
+    : 'bg-dt-panel text-dt-muted';
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Incidents</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">durable record</span>
         {openCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{openCount} open</span>}
       </div>
-      <p className="text-xs text-slate-500 mb-5">
+      <p className="text-xs text-dt-muted mb-5">
         Guardrail blocks, automatic trust demotions, failed eval runs, and human-rejected actions —
         captured every 5 minutes as reviewable records. Review or close each with a resolution note;
         every decision is audited.
@@ -583,26 +583,26 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       {incidents.length === 0 ? (
-        <p className="text-xs text-slate-500">No incidents on record — a clean history.</p>
+        <p className="text-xs text-dt-muted">No incidents on record — a clean history.</p>
       ) : (
         <div className="space-y-1.5">
           {incidents.map(inc => (
-            <div key={inc.id} className="rounded-lg bg-slate-900/60">
+            <div key={inc.id} className="rounded-lg bg-dt-inset">
               <button onClick={() => { setOpenId(k => k === inc.id ? null : inc.id); setNote(''); }}
                 className="w-full flex items-center gap-3 text-left px-3 py-2 text-xs">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sevDot(inc.severity)}`} />
-                <span className="flex-1 text-slate-300 truncate">{inc.title}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500 flex-shrink-0">{INCIDENT_KIND_LABELS[inc.kind] ?? inc.kind}</span>
-                {inc.de_id === null && <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500 flex-shrink-0">workspace-wide</span>}
+                <span className="flex-1 text-dt-support truncate">{inc.title}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">{INCIDENT_KIND_LABELS[inc.kind] ?? inc.kind}</span>
+                {inc.de_id === null && <span className="text-[9px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">workspace-wide</span>}
                 <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${statusChip(inc.status)}`}>{inc.status}</span>
-                <span className="text-slate-600 flex-shrink-0">{new Date(inc.occurred_at).toLocaleDateString()}</span>
+                <span className="text-dt-faint flex-shrink-0">{new Date(inc.occurred_at).toLocaleDateString()}</span>
               </button>
               {openId === inc.id && (
-                <div className="px-3 pb-3 text-[11px] text-slate-500 space-y-2">
-                  {typeof inc.detail?.reasoning === 'string' && <p className="text-slate-400">{inc.detail.reasoning as string}</p>}
-                  {typeof inc.detail?.action === 'string' && <p className="text-slate-400">{inc.detail.action as string}</p>}
-                  {typeof inc.detail?.request_summary === 'string' && <p className="text-slate-400">{inc.detail.request_summary as string}</p>}
-                  {inc.resolution_note && <p>Resolution: <span className="text-slate-300">{inc.resolution_note}</span></p>}
+                <div className="px-3 pb-3 text-[11px] text-dt-muted space-y-2">
+                  {typeof inc.detail?.reasoning === 'string' && <p className="text-dt-support">{inc.detail.reasoning as string}</p>}
+                  {typeof inc.detail?.action === 'string' && <p className="text-dt-support">{inc.detail.action as string}</p>}
+                  {typeof inc.detail?.request_summary === 'string' && <p className="text-dt-support">{inc.detail.request_summary as string}</p>}
+                  {inc.resolution_note && <p>Resolution: <span className="text-dt-support">{inc.resolution_note}</span></p>}
                   <p>Occurred {new Date(inc.occurred_at).toLocaleString()} · provenance-linked to the immutable audit record.</p>
                   {inc.status !== 'closed' && (
                     <div className="pt-1 space-y-2">
@@ -610,7 +610,7 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
                         value={note}
                         onChange={e => setNote(e.target.value)}
                         placeholder="Resolution note (optional)"
-                        className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-dt-card border border-dt-border text-dt-body text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500"
                       />
                       <div className="flex gap-2">
                         {inc.status === 'open' && (
@@ -620,7 +620,7 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
                           </button>
                         )}
                         <button onClick={() => void review(inc.id, 'closed')} disabled={busy}
-                          className="px-2.5 py-1 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 disabled:opacity-50">
+                          className="px-2.5 py-1 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel disabled:opacity-50">
                           Close incident
                         </button>
                       </div>
@@ -632,7 +632,7 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
           ))}
         </div>
       )}
-      <p className="mt-4 text-[11px] text-slate-500">
+      <p className="mt-4 text-[11px] text-dt-muted">
         <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
           View the full Audit Trail →
         </button>
@@ -660,7 +660,7 @@ function DeHealthInline({ deId }: { deId: string }) {
         {meta.label}
       </span>
       {health.cost_per_task_usd !== null && (
-        <span className="text-[11px] text-slate-500">${health.cost_per_task_usd.toFixed(3)}/task</span>
+        <span className="text-[11px] text-dt-muted">${health.cost_per_task_usd.toFixed(3)}/task</span>
       )}
     </>
   );
@@ -749,34 +749,34 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Skills</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">evidence-assessed</span>
         <button onClick={() => void assess()} disabled={assessing}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-50">
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-50">
           {assessing ? 'Assessing…' : 'Assess now'}
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Proficiency is measured from real 30-day evidence, never self-reported. Level 5 (Expert) is
         awarded by a person, not the assessment — so it tops out at Advanced automatically.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {skills === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : skills.length === 0 ? (
-        <p className="text-xs text-slate-500">No assessment yet — run one with “Assess now”.</p>
+        <p className="text-xs text-dt-muted">No assessment yet — run one with “Assess now”.</p>
       ) : (
         <div className="space-y-3">
           {skills.map(s => {
             const cat = s.category ?? '';
             const assessed = s.proficiency != null;
             return (
-              <div key={s.skill_key} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+              <div key={s.skill_key} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-white font-medium">{s.name ?? s.skill_key}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{catLabel(cat)}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{catLabel(cat)}</span>
                   {/* Says plainly where the number came from. */}
                   {s.is_custom && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">rated by a person</span>
@@ -787,7 +787,7 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                       L{s.proficiency} · {PROFICIENCY_NAME[s.proficiency!]}
                     </span>
                   ) : (
-                    <span className="ml-auto text-xs text-slate-600">Not yet assessed</span>
+                    <span className="ml-auto text-xs text-dt-faint">Not yet assessed</span>
                   )}
                 </div>
                 {/* proficiency dots 1..5 */}
@@ -796,29 +796,29 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                     {[1, 2, 3, 4, 5].map(l => (
                       <span key={l} className={`h-1.5 flex-1 rounded-full ${
                         l <= s.proficiency! ? (s.proficiency! >= 4 ? 'bg-emerald-400' : s.proficiency! >= 3 ? 'bg-teal-400' : 'bg-amber-400')
-                        : l === 5 ? 'bg-slate-700 border border-dashed border-slate-600' : 'bg-slate-700'}`} />
+                        : l === 5 ? 'bg-dt-panel border border-dashed border-dt-border-strong' : 'bg-dt-panel'}`} />
                     ))}
                   </div>
                 )}
-                <p className="text-[11px] text-slate-500 mt-1.5">{s.detail}</p>
+                <p className="text-[11px] text-dt-muted mt-1.5">{s.detail}</p>
                 {/* Built-in proficiency stays evidence-only and is never
                     settable by hand; only workspace skills get this. */}
                 {s.is_custom && (
                   <div className="flex items-center gap-1.5 mt-2">
-                    <span className="text-[10px] text-slate-600 mr-1">Rate:</span>
+                    <span className="text-[10px] text-dt-faint mr-1">Rate:</span>
                     {[1, 2, 3, 4, 5].map(l => (
                       <button key={l} disabled={saving}
                         onClick={() => void rateSkill(s.skill_key, l)}
                         className={`text-[10px] w-6 h-6 rounded border transition-colors ${
                           s.proficiency === l
                             ? 'bg-sky-500/20 border-sky-500/50 text-sky-200'
-                            : 'border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'}`}>
+                            : 'border-dt-border text-dt-muted hover:border-dt-border-strong hover:text-dt-support'}`}>
                         {l}
                       </button>
                     ))}
                     {s.proficiency != null && (
                       <button onClick={() => void rateSkill(s.skill_key, null)} disabled={saving}
-                        className="text-[10px] text-slate-600 hover:text-rose-300 ml-1">Clear</button>
+                        className="text-[10px] text-dt-faint hover:text-rose-300 ml-1">Clear</button>
                     )}
                   </div>
                 )}
@@ -833,17 +833,17 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
           + Add a skill your business cares about
         </button>
       ) : (
-        <div className="mt-3 rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-2">
-          <p className="text-[11px] text-slate-400">
+        <div className="mt-3 rounded-xl border border-dt-border-strong bg-dt-inset p-3 space-y-2">
+          <p className="text-[11px] text-dt-support">
             Add a skill specific to your work. The platform has no way to measure it automatically,
             so you rate it yourself — it will be labelled &ldquo;rated by a person&rdquo; wherever it appears,
             to keep it distinct from the evidence-assessed ones above.
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Telecom provisioning"
-              className="flex-1 min-w-[180px] bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 min-w-[180px] bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             <select value={newCat} onChange={e => setNewCat(e.target.value)}
-              className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
               {(categories.length ? categories : Object.keys(SKILL_CATEGORY_LABEL).map(k => ({ key: k, label: SKILL_CATEGORY_LABEL[k], sort_order: 0, is_custom: false })))
                 .map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
@@ -854,7 +854,7 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
               {saving ? 'Adding…' : 'Add skill'}
             </button>
             <button onClick={() => { setAdding(false); setNewName(''); }}
-              className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+              className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
       )}
@@ -930,16 +930,16 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
   const daysLeft = (expiresAt: string) => Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000);
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">expiring attestations</span>
         <button onClick={() => setShowCertify(s => !s)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200">
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
           {showCertify ? 'Cancel' : 'Certify…'}
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         A certification is a named person attesting this employee is fit for purpose — it expires and
         must be renewed. Quarterly reviews record an honest verdict from real metrics; a below-threshold
         verdict opens an improvement plan with a written consequence.
@@ -947,23 +947,23 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       {showCertify && (
-        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2">
+        <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
           <div className="flex gap-2">
             {/* Types come from certification_types (mig 205) so a workspace
                 can add its own — e.g. an industry accreditation. */}
             <select value={certType} onChange={e => setCertType(e.target.value)} disabled={busy}
               title={certTypes.find(t => t.key === certType)?.description ?? undefined}
-              className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
               {certTypes.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
             </select>
             <input type="text" value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope — e.g. helpdesk replies"
-              className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
             <input type="number" min={1} max={730} value={validDays} onChange={e => setValidDays(e.target.value)}
               title="Validity (days)"
-              className="w-20 bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-20 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
           </div>
           <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="What did you review? (required)"
-            className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <button onClick={() => void certify()} disabled={busy || !note.trim()}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
             Issue certification
@@ -972,9 +972,9 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {certs === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : certs.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-3">No certifications yet — advancing the lifecycle to Certified issues one automatically.</p>
+        <p className="text-xs text-dt-muted mb-3">No certifications yet — advancing the lifecycle to Certified issues one automatically.</p>
       ) : (
         <div className="space-y-1.5 mb-4">
           {certs.map(c => {
@@ -983,16 +983,16 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
               <div key={c.id} className="flex items-center gap-2 text-xs flex-wrap">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                   c.status === 'active' ? (left <= 14 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')
-                  : c.status === 'expired' ? 'bg-rose-500/15 text-rose-300' : 'bg-slate-700 text-slate-500'}`}>
+                  : c.status === 'expired' ? 'bg-rose-500/15 text-rose-300' : 'bg-dt-panel text-dt-muted'}`}>
                   {c.status === 'active' ? (left <= 14 ? `expires in ${left}d` : 'active') : c.status}
                 </span>
-                <span className="text-slate-300">{certTypes.find(t => t.key === c.cert_type)?.label ?? c.cert_type}</span>
-                {c.scope && <span className="text-slate-500">· {c.scope}</span>}
-                <span className="text-slate-600">by {c.issued_by_name} · until {new Date(c.expires_at).toLocaleDateString()}</span>
+                <span className="text-dt-support">{certTypes.find(t => t.key === c.cert_type)?.label ?? c.cert_type}</span>
+                {c.scope && <span className="text-dt-muted">· {c.scope}</span>}
+                <span className="text-dt-faint">by {c.issued_by_name} · until {new Date(c.expires_at).toLocaleDateString()}</span>
                 {c.status === 'active' && (
                   <button onClick={() => { const reason = window.prompt('Revocation reason (required):'); if (reason?.trim()) void run(() => supabase.rpc('revoke_de_certification', { p_cert_id: c.id, p_reason: reason.trim() })); }}
                     disabled={busy}
-                    className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                    className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
                     Revoke
                   </button>
                 )}
@@ -1003,26 +1003,26 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       <div className="flex items-center gap-2 mb-1.5">
-        <p className="text-[11px] uppercase tracking-wide text-slate-500">Performance reviews</p>
+        <p className="text-[11px] uppercase tracking-wide text-dt-muted">Performance reviews</p>
         <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy}
           className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
           {busy ? 'Working…' : 'Run review now'}
         </button>
       </div>
       {reviews.length === 0 ? (
-        <p className="text-xs text-slate-500">No reviews yet — they run quarterly, or on demand.</p>
+        <p className="text-xs text-dt-muted">No reviews yet — they run quarterly, or on demand.</p>
       ) : (
         <div className="space-y-2">
           {reviews.map(r => (
-            <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+            <div key={r.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                   r.verdict === 'meets' ? 'bg-emerald-500/15 text-emerald-300'
                   : r.verdict === 'below' ? 'bg-amber-500/15 text-amber-300'
-                  : 'bg-slate-700 text-slate-400'}`}>
+                  : 'bg-dt-panel text-dt-support'}`}>
                   {r.verdict === 'insufficient_data' ? 'insufficient data' : r.verdict}
                 </span>
-                <span className="text-[11px] text-slate-500">quarter starting {r.period_start}</span>
+                <span className="text-[11px] text-dt-muted">quarter starting {r.period_start}</span>
                 {r.status === 'open' ? (
                   <button onClick={() => void run(() => supabase.rpc('acknowledge_de_performance_review', { p_review_id: r.id }))}
                     disabled={busy}
@@ -1030,10 +1030,10 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
                     Acknowledge
                   </button>
                 ) : (
-                  <span className="ml-auto text-[10px] text-slate-600">acknowledged</span>
+                  <span className="ml-auto text-[10px] text-dt-faint">acknowledged</span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 mt-1.5">{r.summary}</p>
+              <p className="text-[11px] text-dt-support mt-1.5">{r.summary}</p>
             </div>
           ))}
         </div>
@@ -1082,53 +1082,53 @@ function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const resolved = items.filter(i => i.status === 'completed' || i.status === 'dismissed');
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Development</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">evidence-grounded</span>
       </div>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-dt-muted mb-4">
         Proposed from real 8-week performance data (escalation rate, confidence, error rate, guardrail patterns) — or added manually. While one is open, this employee shows as "Improving."
       </p>
       {err && <div className="mb-3 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
       <div className="flex gap-2 mb-3">
-        <button onClick={scan} disabled={scanning} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50">
+        <button onClick={scan} disabled={scanning} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">
           {scanning ? 'Scanning…' : 'Scan for development needs'}
         </button>
-        <button onClick={() => setShowAdd(s => !s)} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+        <button onClick={() => setShowAdd(s => !s)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           + Add manually
         </button>
       </div>
 
       {showAdd && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 space-y-2 mb-3">
+        <div className="rounded-lg border border-dt-border bg-dt-inset p-3 space-y-2 mb-3">
           <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="What does this employee need to work on?"
-            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-xs text-white" />
+            className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white" />
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700">Cancel</button>
+            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
             <button onClick={addManual} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">{busy ? 'Adding…' : 'Add item'}</button>
           </div>
         </div>
       )}
 
       {open.length === 0 ? (
-        <p className="text-xs text-slate-500">No open development items — nothing evidence-based flagged, and none added manually.</p>
+        <p className="text-xs text-dt-muted">No open development items — nothing evidence-based flagged, and none added manually.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
           {open.map(item => (
-            <div key={item.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-xs">
+            <div key={item.id} className="rounded-lg bg-dt-inset px-3 py-2 text-xs">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 mr-1.5">{item.source === 'detected' ? 'detected' : 'manual'}</span>
-                  <span className="text-slate-300">{item.description}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support mr-1.5">{item.source === 'detected' ? 'detected' : 'manual'}</span>
+                  <span className="text-dt-support">{item.description}</span>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   {item.status === 'proposed' && (
                     <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 hover:bg-sky-500/25">Start</button>
                   )}
                   <button onClick={() => setStatus(item.id, 'completed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25">Complete</button>
-                  <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-500 hover:bg-slate-600">Dismiss</button>
+                  <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-muted hover:bg-dt-panel">Dismiss</button>
                 </div>
               </div>
             </div>
@@ -1137,7 +1137,7 @@ function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {resolved.length > 0 && (
-        <p className="text-[11px] text-slate-600">{resolved.length} resolved item{resolved.length === 1 ? '' : 's'} on record.</p>
+        <p className="text-[11px] text-dt-faint">{resolved.length} resolved item{resolved.length === 1 ? '' : 's'} on record.</p>
       )}
     </div>
   );
@@ -1180,27 +1180,27 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
     <Modal title={`Edit ${de.persona_name || de.name}`} onClose={onClose}>
       <div className="space-y-3">
         {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
-        <label className="block text-xs text-slate-400">Name
-          <input value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Name
+          <input value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
-        <label className="block text-xs text-slate-400">Persona name (optional)
-          <input value={personaName} onChange={e => setPersonaName(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Persona name (optional)
+          <input value={personaName} onChange={e => setPersonaName(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
-        <label className="block text-xs text-slate-400">Description
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Description
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
-        <label className="block text-xs text-slate-400">Department
-          <input value={department} onChange={e => setDepartment(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Department
+          <input value={department} onChange={e => setDepartment(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
-        <label className="block text-xs text-slate-400">Confidence threshold (0-100)
-          <input type="number" min={0} max={100} value={confidenceThreshold} onChange={e => setConfidenceThreshold(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Confidence threshold (0-100)
+          <input type="number" min={0} max={100} value={confidenceThreshold} onChange={e => setConfidenceThreshold(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
-        <label className="flex items-center gap-2 text-xs text-slate-300">
+        <label className="flex items-center gap-2 text-xs text-dt-support">
           <input type="checkbox" checked={requiredApproval} onChange={e => setRequiredApproval(e.target.checked)} />
           Require human approval by default
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
           <button onClick={save} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
@@ -1235,22 +1235,22 @@ function TransferOwnerModal({ de, onClose, onSaved }: { de: DigitalEmployee; onC
       <div className="space-y-3">
         {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
         {membersLoading ? (
-          <p className="text-xs text-slate-500">Loading team…</p>
+          <p className="text-xs text-dt-muted">Loading team…</p>
         ) : candidates.length === 0 ? (
-          <p className="text-xs text-slate-500">No other active team members to transfer to.</p>
+          <p className="text-xs text-dt-muted">No other active team members to transfer to.</p>
         ) : (
-          <label className="block text-xs text-slate-400">New owner
-            <select value={target} onChange={e => setTarget(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white">
+          <label className="block text-xs text-dt-support">New owner
+            <select value={target} onChange={e => setTarget(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white">
               <option value="">Select a team member…</option>
               {candidates.map(m => <option key={m.userId} value={m.userId}>{m.fullName} ({m.role})</option>)}
             </select>
           </label>
         )}
-        <label className="block text-xs text-slate-400">Note (optional)
-          <input value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" placeholder="Why this transfer is happening" />
+        <label className="block text-xs text-dt-support">Note (optional)
+          <input value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" placeholder="Why this transfer is happening" />
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
           <button onClick={save} disabled={busy || candidates.length === 0} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Transferring…' : 'Transfer ownership'}</button>
         </div>
       </div>
@@ -1287,12 +1287,12 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
   return (
     <Modal title={`Retire ${de.persona_name || de.name}`} onClose={onClose}>
       <div className="space-y-3">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-dt-support">
           Retirement is terminal — a retired employee cannot be reactivated. Configuration locks read-only and the full history is retained.
         </p>
         {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
         {readiness === null ? (
-          <p className="text-xs text-slate-500">Checking for open dependencies…</p>
+          <p className="text-xs text-dt-muted">Checking for open dependencies…</p>
         ) : readiness.ready ? (
           <div className="rounded-lg border border-emerald-800/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
             No open dependencies — clear to retire.
@@ -1303,11 +1303,11 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
             {readiness.blockers.map(b => <p key={b.kind}>• {b.message}</p>)}
           </div>
         )}
-        <label className="block text-xs text-slate-400">Reason for retirement (required)
-          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white" />
+        <label className="block text-xs text-dt-support">Reason for retirement (required)
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" />
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
           <button onClick={confirm} disabled={busy || !readiness?.ready} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50">{busy ? 'Retiring…' : 'Retire this employee'}</button>
         </div>
       </div>
@@ -1372,26 +1372,26 @@ function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
   if (asRequester === null) return null;
 
   return (
-    <div className="mt-5 pt-5 border-t border-slate-700">
+    <div className="mt-5 pt-5 border-t border-dt-border">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h4 className="text-sm font-semibold text-slate-200">Consultations</h4>
+        <h4 className="text-sm font-semibold text-dt-body">Consultations</h4>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">bounded, single-hop</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         A governed, one-question handoff to another employee — the answer comes from the OTHER employee's own access, never widening this one's.
         Not full delegation: no chains, no fan-out.
       </p>
       {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
-      <p className="text-xs text-slate-400 mb-1">Can consult:</p>
+      <p className="text-xs text-dt-support mb-1">Can consult:</p>
       {asRequester.length === 0 ? (
-        <p className="text-xs text-slate-600 mb-3">No consultation grants yet.</p>
+        <p className="text-xs text-dt-faint mb-3">No consultation grants yet.</p>
       ) : (
         <div className="space-y-1 mb-3">
           {asRequester.map(g => (
-            <div key={g.id} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-1.5 text-xs">
-              <span className="text-slate-300">{nameById[g.target_de_id] || 'Unknown'} <span className="text-slate-600">· {g.category}</span></span>
-              <button onClick={() => toggle(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-700 text-slate-500'}`}>
+            <div key={g.id} className="flex items-center justify-between rounded-lg bg-dt-inset px-3 py-1.5 text-xs">
+              <span className="text-dt-support">{nameById[g.target_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category}</span></span>
+              <button onClick={() => toggle(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
                 {g.active ? 'active' : 'inactive'}
               </button>
             </div>
@@ -1400,33 +1400,33 @@ function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {showAdd ? (
-        <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 space-y-2 mb-3">
-          <select value={targetId} onChange={e => setTargetId(e.target.value)} className="w-full rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-xs text-white">
+        <div className="rounded-lg border border-dt-border bg-dt-inset p-3 space-y-2 mb-3">
+          <select value={targetId} onChange={e => setTargetId(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
             <option value="">Consult which employee…</option>
             {roster.map(d => <option key={d.id} value={d.id}>{d.persona_name || d.name}</option>)}
           </select>
-          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-xs text-white">
+          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
             <option value="">On which category…</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700">Cancel</button>
+            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
             <button onClick={addGrant} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowAdd(true)} className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 mb-3">
+        <button onClick={() => setShowAdd(true)} className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel mb-3">
           + Grant a consultation
         </button>
       )}
 
       {asTarget !== null && asTarget.length > 0 && (
         <>
-          <p className="text-xs text-slate-400 mb-1">Consulted by:</p>
+          <p className="text-xs text-dt-support mb-1">Consulted by:</p>
           <div className="space-y-1">
             {asTarget.map(g => (
-              <div key={g.id} className="rounded-lg bg-slate-900/60 px-3 py-1.5 text-xs text-slate-400">
-                {nameById[g.requester_de_id] || 'Unknown'} <span className="text-slate-600">· {g.category} · {g.active ? 'active' : 'inactive'}</span>
+              <div key={g.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-xs text-dt-support">
+                {nameById[g.requester_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category} · {g.active ? 'active' : 'inactive'}</span>
               </div>
             ))}
           </div>
@@ -1452,23 +1452,23 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Governance</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">config v{de.config_version}</span>
-        {retired && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">retired — read-only</span>}
+        {retired && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">retired — read-only</span>}
       </div>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-dt-muted mb-4">
         Who's accountable for this employee, every configuration change on record, and how retirement works.
       </p>
 
-      <div className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3 mb-3">
+      <div className="flex items-center justify-between rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3">
         <div>
-          <p className="text-xs text-slate-500">Owner</p>
-          <p className="text-sm text-slate-200">{ownerName}</p>
+          <p className="text-xs text-dt-muted">Owner</p>
+          <p className="text-sm text-dt-body">{ownerName}</p>
         </div>
         {!retired && (
-          <button onClick={() => setModal('transfer')} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+          <button onClick={() => setModal('transfer')} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
             Transfer
           </button>
         )}
@@ -1476,11 +1476,11 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
 
       <div className="flex gap-2 mb-3">
         {!retired && (
-          <button onClick={() => setModal('edit')} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+          <button onClick={() => setModal('edit')} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
             Edit configuration
           </button>
         )}
-        <button onClick={loadHistory} className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+        <button onClick={loadHistory} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           {showHistory ? 'Hide' : 'View'} config history
         </button>
         {!retired && (
@@ -1492,17 +1492,17 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
 
       {showHistory && (
         history === null ? (
-          <p className="text-xs text-slate-500">Loading history…</p>
+          <p className="text-xs text-dt-muted">Loading history…</p>
         ) : history.length === 0 ? (
-          <p className="text-xs text-slate-500">No configuration changes on record yet.</p>
+          <p className="text-xs text-dt-muted">No configuration changes on record yet.</p>
         ) : (
           <div className="space-y-1.5">
             {history.map(h => (
-              <div key={h.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-[11px]">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <span className="capitalize text-slate-300">{h.operation.toLowerCase()}</span>
+              <div key={h.id} className="rounded-lg bg-dt-inset px-3 py-2 text-[11px]">
+                <div className="flex items-center gap-2 text-dt-support">
+                  <span className="capitalize text-dt-support">{h.operation.toLowerCase()}</span>
                   <span>by {h.actor_name || 'unknown'}</span>
-                  <span className="ml-auto text-slate-600">{new Date(h.created_at).toLocaleString()}</span>
+                  <span className="ml-auto text-dt-faint">{new Date(h.created_at).toLocaleString()}</span>
                 </div>
               </div>
             ))}
@@ -1535,23 +1535,23 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
   }, [deId]);
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">What this employee can touch</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">default-deny</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         System access via the Control Fabric — a grant is necessary, never sufficient, for a write
         (guardrails and approval gates still apply on top).
       </p>
       {grants === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : grants.length === 0 ? (
-        <p className="text-xs text-slate-500">No system access granted — this employee can’t search, read, or act on any connected system yet.</p>
+        <p className="text-xs text-dt-muted">No system access granted — this employee can’t search, read, or act on any connected system yet.</p>
       ) : (
         <div className="flex flex-wrap gap-2">
           {grants.map(g => (
-            <span key={g.id} className="text-xs px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
+            <span key={g.id} className="text-xs px-2.5 py-1 rounded-lg bg-dt-page border border-dt-border text-dt-support">
               {g.resource_category ?? 'specific connector'}
               <span className={`ml-2 font-semibold ${g.permission === 'write_back' ? 'text-amber-300' : 'text-teal-300'}`}>{g.permission.replace('_', '-')}</span>
             </span>
@@ -1608,26 +1608,26 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Specialists</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">consult desks</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         When this employee needs help beyond its own knowledge, it consults its primary specialist —
         and falls back to the secondary if the primary is paused. Playbook “Consult specialist” steps
-        set to <span className="text-slate-300">auto</span> resolve through this assignment.
+        set to <span className="text-dt-support">auto</span> resolve through this assignment.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       <div className="grid grid-cols-2 gap-3">
         {([1, 2] as const).map(rank => (
           <div key={rank}>
-            <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
             <select
               value={assigned[rank] ?? ''}
               disabled={busy}
               onChange={e => void setRank(rank, e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+              className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
             >
               <option value="">— none —</option>
               {specialists.map(sp => (
@@ -1644,17 +1644,17 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
           grants together, since a specialist is a DE now. Read-only view
           of what this employee can actually reach (list_consultable_for_de). */}
       {consultable.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-slate-700">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Can consult</p>
+        <div className="mt-4 pt-3 border-t border-dt-border">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Can consult</p>
           <div className="flex flex-wrap gap-1.5">
             {consultable.map(c => (
               <span key={c.target_de_id}
                 className={`text-[11px] px-2 py-1 rounded-lg border ${
                   c.is_specialist
                     ? 'bg-violet-500/10 border-violet-500/30 text-violet-200'
-                    : 'bg-slate-700/40 border-slate-600 text-slate-300'}`}>
+                    : 'bg-dt-panel border-dt-border-strong text-dt-support'}`}>
                 {c.name}
-                <span className="text-slate-500 ml-1">
+                <span className="text-dt-muted ml-1">
                   {c.is_specialist ? `specialist${c.rank ? ` · ${c.rank === 1 ? 'primary' : 'backup'}` : ''}` : 'peer'}
                 </span>
               </span>
@@ -1701,12 +1701,12 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Identity & Purpose</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">feeds every answer</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         The title and purpose written here go straight into this employee's working instructions —
         every customer answer is given in this identity. Responsibilities also unlock the lifecycle's
         identity criterion.
@@ -1715,28 +1715,28 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
       <div className="space-y-2">
         <input type="text" value={title} disabled={busy} onChange={e => setTitle(e.target.value)}
           placeholder="Display title — e.g. Customer Support Specialist"
-          className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
         <textarea value={purpose} disabled={busy} onChange={e => setPurpose(e.target.value)} rows={2}
           placeholder="Purpose statement — one to three sentences on what this employee exists to do"
-          className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
         <input type="text" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}
           placeholder="Primary business outcome — e.g. Reduce average resolution time by 40%"
-          className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
         <textarea value={resp} disabled={busy} onChange={e => setResp(e.target.value)} rows={3}
           placeholder={'Responsibilities — one per line, e.g.\nAnswer customer product questions\nDraft ticket replies for approval'}
-          className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
         {/* Standard workforce-record fields (migration 136) — org bookkeeping,
             NOT fed into the answering persona. */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <input type="text" value={empCode} disabled={busy} onChange={e => setEmpCode(e.target.value)}
             placeholder="Employee code — e.g. DE-0042"
-            className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
           <input type="text" value={location} disabled={busy} onChange={e => setLocation(e.target.value)}
             placeholder="Location — e.g. HQ / EU region"
-            className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
           <input type="text" value={costCenter} disabled={busy} onChange={e => setCostCenter(e.target.value)}
             placeholder="Cost center — e.g. CC-SUPPORT"
-            className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
         </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
@@ -1803,24 +1803,24 @@ function DeProfileFieldsPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdate
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <h3 className="text-base font-semibold text-white mb-1">Profile fields</h3>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Your workspace's own employee-record fields — defined once, shown on every profile.
         Changes are config-versioned and land in the audit history like any other profile edit.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {fields.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-3">No custom fields defined yet — add the first below.</p>
+        <p className="text-xs text-dt-muted mb-3">No custom fields defined yet — add the first below.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
           {fields.map(f => (
             <div key={f.id}>
-              <label className="text-[11px] text-slate-400 block mb-1">{f.label}</label>
+              <label className="text-[11px] text-dt-support block mb-1">{f.label}</label>
               <input value={values[f.field_key] ?? ''} disabled={busy}
                 type={f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : 'text'}
                 onChange={e => setValues(prev => ({ ...prev, [f.field_key]: e.target.value }))}
-                className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+                className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
             </div>
           ))}
         </div>
@@ -1834,21 +1834,21 @@ function DeProfileFieldsPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdate
         )}
         {saved && <span className="text-xs text-emerald-400">Saved</span>}
       </div>
-      <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3">
-        <p className="text-[11px] font-medium text-slate-400 mb-2">Add a field (applies to every employee's profile)</p>
+      <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
+        <p className="text-[11px] font-medium text-dt-support mb-2">Add a field (applies to every employee's profile)</p>
         <div className="flex gap-2 flex-wrap items-end">
           <input value={newKey} placeholder="field_key (e.g. region)" disabled={busy}
             onChange={e => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
-            className="w-40 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-40 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <input value={newLabel} placeholder="Label (e.g. Region)" disabled={busy}
             onChange={e => setNewLabel(e.target.value)}
-            className="w-44 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <select value={newType} disabled={busy} onChange={e => setNewType(e.target.value as 'text' | 'number' | 'date')}
-            className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+            className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
             <option value="text">Text</option><option value="number">Number</option><option value="date">Date</option>
           </select>
           <button onClick={() => void addField()} disabled={busy || !newKey.trim()}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 disabled:opacity-50 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-50 transition-colors">
             Add field
           </button>
         </div>
@@ -1887,33 +1887,33 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Availability</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">
           {mode === 'always_on' ? 'always on' : 'business hours'}
         </span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Off-schedule, this employee stops picking up inbox work — its team backup or the specialist
         desk covers, exactly like when it's paused. Reactive Q&A (widget/chat) stays available.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={mode} disabled={busy} onChange={e => setMode(e.target.value)}
-          className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
           <option value="always_on">Always on</option>
           <option value="business_hours">Business hours</option>
         </select>
         {mode === 'business_hours' && (
           <>
             <input type="text" value={tz} disabled={busy} onChange={e => setTz(e.target.value)} placeholder="Timezone, e.g. America/New_York"
-              className="w-44 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
             <input type="number" min={0} max={23} value={startH} disabled={busy} onChange={e => setStartH(e.target.value)} title="Start hour"
-              className="w-16 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
-            <span className="text-xs text-slate-500">to</span>
+              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+            <span className="text-xs text-dt-muted">to</span>
             <input type="number" min={1} max={24} value={endH} disabled={busy} onChange={e => setEndH(e.target.value)} title="End hour"
-              className="w-16 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
           </>
         )}
         <button onClick={() => void save()} disabled={busy}
@@ -1930,7 +1930,7 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
             return (
               <button key={day} disabled={busy}
                 onClick={() => setDays(prev => on ? prev.filter(d => d !== day) : [...prev, day].sort())}
-                className={`text-[10px] px-2 py-1 rounded-lg border ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-slate-700 bg-slate-900 text-slate-600'}`}>
+                className={`text-[10px] px-2 py-1 rounded-lg border ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-dt-border bg-dt-page text-dt-faint'}`}>
                 {label}
               </button>
             );
@@ -1973,12 +1973,12 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Customer replies</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">external chat</span>
       </div>
-      <p className="text-[11px] text-slate-400 mb-4">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
+      <p className="text-[11px] text-dt-support mb-4">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {([
           { key: 'draft' as const, title: 'Draft for approval', desc: 'Every answer waits for a teammate to approve before the customer sees it. Safest — start here.' },
@@ -1988,13 +1988,13 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
             key={o.key}
             onClick={() => void choose(o.key)}
             disabled={busy}
-            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-indigo-500/10') : 'border-slate-700 bg-slate-900/40 hover:border-slate-600'}`}
+            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-indigo-500/10') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
           >
             <div className="flex items-center gap-2">
-              <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-400 bg-emerald-400' : 'border-indigo-400 bg-indigo-400') : 'border-slate-600'}`} />
+              <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-400 bg-emerald-400' : 'border-indigo-400 bg-indigo-400') : 'border-dt-border-strong'}`} />
               <span className="text-sm font-medium text-white">{o.title}</span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1.5 pl-5">{o.desc}</p>
+            <p className="text-[11px] text-dt-support mt-1.5 pl-5">{o.desc}</p>
           </button>
         ))}
       </div>
@@ -2030,21 +2030,21 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">AI Engine</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">
           {de.model_id && MODEL_LABELS[de.model_id] ? de.model_id : 'platform default'}
         </span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         The Claude model this employee thinks with. Every listed model has verified pricing, so the
         Economics and cost numbers stay real whichever you choose. Takes effect on the next answer.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}
-          className="flex-1 min-w-[260px] bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+          className="flex-1 min-w-[260px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
           {models.map(m => (
             <option key={m.model_id} value={m.model_id}>
               {MODEL_LABELS[m.model_id] ?? m.model_id} · ${m.input_price_per_million}/{'$'}{m.output_price_per_million} per M tokens
@@ -2149,32 +2149,32 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Goals & KPIs</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">measured live</span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Targets you set against metrics this workspace tracks. Built-in metrics are computed from real
         activity at view time — never stored, stale, or invented. Metrics you define yourself show a
         value once you record a reading.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {kpis === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : kpis.length === 0 ? (
-        <p className="text-xs text-slate-500 mb-3">No KPIs set yet.</p>
+        <p className="text-xs text-dt-muted mb-3">No KPIs set yet.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
           {kpis.map(k => (
             <div key={k.kpi_id} className="flex items-center gap-2 text-xs flex-wrap">
               <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                k.met === null ? 'bg-slate-700 text-slate-500'
+                k.met === null ? 'bg-dt-panel text-dt-muted'
                 : k.met ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
                 {k.met === null ? 'no data yet' : k.met ? 'on target' : 'off target'}
               </span>
-              <span className="text-slate-300">{k.name}</span>
-              <span className="text-slate-500">
+              <span className="text-dt-support">{k.name}</span>
+              <span className="text-dt-muted">
                 {k.current === null ? '—' : k.current} / target {k.direction === 'higher' ? '≥' : '≤'} {k.target}
                 {k.sample > 0 ? ` · ${k.sample} sampled` : ''}
               </span>
@@ -2189,7 +2189,7 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
               )}
               <button onClick={() => void run(() => supabase.rpc('set_de_kpi', { p_de_id: de.id, p_metric_key: k.metric_key, p_name: k.name, p_target: null, p_direction: k.direction }))}
                 disabled={busy}
-                className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
                 Remove
               </button>
             </div>
@@ -2199,23 +2199,23 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
 
       {reading && (
         <div className="mb-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
-          <p className="text-xs text-slate-300">Record a value for <span className="font-medium">{reading.name}</span></p>
+          <p className="text-xs text-dt-support">Record a value for <span className="font-medium">{reading.name}</span></p>
           <div className="flex items-center gap-2">
             <input type="number" value={readingValue} autoFocus
               onChange={e => setReadingValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void saveReading(); }}
               placeholder="Value"
-              className="w-32 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="w-32 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             <button onClick={() => void saveReading()} disabled={busy || readingValue.trim() === ''}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save</button>
-            <button onClick={() => setReading(null)} className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+            <button onClick={() => setReading(null)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
       )}
 
       <div className="flex items-center gap-2">
         <select value={metricKey} disabled={busy || metrics.length === 0} onChange={e => setMetricKey(e.target.value)}
-          className="flex-1 bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+          className="flex-1 bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
           {metrics.map(m => (
             <option key={m.metric_key} value={m.metric_key}>
               {m.label}{m.unit ? ` (${m.unit})` : ''}{m.source === 'manual' ? ' — you record this' : ''}
@@ -2223,9 +2223,9 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           ))}
         </select>
         <input type="number" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} placeholder="Target"
-          className="w-24 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+          className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
         <button onClick={add} disabled={busy || target.trim() === '' || !selected}
-          className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
           Add KPI
         </button>
       </div>
@@ -2235,29 +2235,29 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           + Track a metric of your own
         </button>
       ) : (
-        <div className="mt-3 rounded-xl border border-slate-600 bg-slate-900/60 p-3 space-y-2">
-          <p className="text-[11px] text-slate-400">
+        <div className="mt-3 rounded-xl border border-dt-border-strong bg-dt-inset p-3 space-y-2">
+          <p className="text-[11px] text-dt-support">
             Define a measure that matters to your business. The platform can&apos;t compute it, so you record the value yourself.
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. First-call resolution"
-              className="flex-1 min-w-[180px] bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 min-w-[180px] bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Unit (%, hrs)"
-              className="w-28 bg-slate-800 border border-slate-600 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="w-28 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             <select value={newDir} onChange={e => setNewDir(e.target.value as 'higher' | 'lower')}
-              className="bg-slate-800 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
               <option value="higher">Higher is better</option>
               <option value="lower">Lower is better</option>
             </select>
           </div>
           {newLabel.trim() && (
-            <p className="text-[10px] text-slate-600">Saved as <code>{slugifyKey(newLabel)}</code></p>
+            <p className="text-[10px] text-dt-faint">Saved as <code>{slugifyKey(newLabel)}</code></p>
           )}
           <div className="flex gap-2">
             <button onClick={() => void defineMetric()} disabled={busy || !newLabel.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Create</button>
             <button onClick={() => { setDefining(false); setNewLabel(''); setNewUnit(''); }}
-              className="text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+              className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
       )}
@@ -2320,41 +2320,41 @@ function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
   const money = (n: number | null) => n === null ? '—' : `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Economics</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">your baselines, never estimated</span>
         <button onClick={() => setShowConfig(s => !s)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200">
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
           {showConfig ? 'Cancel' : 'Baselines…'}
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Work counts and AI cost are always real. Hours saved, FTE equivalent, and ROI are computed
-        only from baselines <span className="text-slate-300">you</span> configure — how long a human
+        only from baselines <span className="text-dt-support">you</span> configure — how long a human
         takes per task and what a human FTE costs. The platform never invents these.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       {showConfig && (
-        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2">
+        <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
           <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Workspace-wide — applies to every employee</p>
           <div className="grid grid-cols-2 gap-2">
-            <label className="text-[11px] text-slate-500">Human minutes per inbox item
+            <label className="text-[11px] text-dt-muted">Human minutes per inbox item
               <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
-                className="mt-0.5 w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
-            <label className="text-[11px] text-slate-500">Human minutes per action
+            <label className="text-[11px] text-dt-muted">Human minutes per action
               <input type="number" min={0.1} step={0.5} value={actMin} disabled={busy} onChange={e => setActMin(e.target.value)} placeholder="e.g. 8"
-                className="mt-0.5 w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
-            <label className="text-[11px] text-slate-500">Human minutes per conversation
+            <label className="text-[11px] text-dt-muted">Human minutes per conversation
               <input type="number" min={0.1} step={0.5} value={convMin} disabled={busy} onChange={e => setConvMin(e.target.value)} placeholder="e.g. 4"
-                className="mt-0.5 w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
-            <label className="text-[11px] text-slate-500">Human FTE cost / month (USD, fully loaded)
+            <label className="text-[11px] text-dt-muted">Human FTE cost / month (USD, fully loaded)
               <input type="number" min={1} value={fteCost} disabled={busy} onChange={e => setFteCost(e.target.value)} placeholder="e.g. 6000"
-                className="mt-0.5 w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
           </div>
           <button onClick={() => void saveBaselines()} disabled={busy}
@@ -2365,31 +2365,31 @@ function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {eco === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Work · 30 days</p>
+            <div className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <p className="text-[10px] uppercase tracking-wide text-dt-muted">Work · 30 days</p>
               <p className="text-sm text-white font-semibold mt-1">
                 {eco.counts.inquiries_handled + eco.counts.actions_executed + eco.counts.conversations_answered}
               </p>
-              <p className="text-[10px] text-slate-600">{eco.counts.inquiries_handled} inbox · {eco.counts.actions_executed} actions · {eco.counts.conversations_answered} conv.</p>
+              <p className="text-[10px] text-dt-faint">{eco.counts.inquiries_handled} inbox · {eco.counts.actions_executed} actions · {eco.counts.conversations_answered} conv.</p>
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">AI cost</p>
+            <div className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <p className="text-[10px] uppercase tracking-wide text-dt-muted">AI cost</p>
               <p className="text-sm text-white font-semibold mt-1">{money(eco.de_cost_usd)}</p>
-              <p className="text-[10px] text-slate-600">real token spend</p>
+              <p className="text-[10px] text-dt-faint">real token spend</p>
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Hours saved</p>
+            <div className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <p className="text-[10px] uppercase tracking-wide text-dt-muted">Hours saved</p>
               <p className="text-sm text-white font-semibold mt-1">{eco.hours_saved ?? '—'}</p>
-              <p className="text-[10px] text-slate-600">{eco.fte_equivalent !== null ? `${eco.fte_equivalent} FTE equivalent` : 'configure to calculate'}</p>
+              <p className="text-[10px] text-dt-faint">{eco.fte_equivalent !== null ? `${eco.fte_equivalent} FTE equivalent` : 'configure to calculate'}</p>
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900 p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">ROI</p>
+            <div className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <p className="text-[10px] uppercase tracking-wide text-dt-muted">ROI</p>
               <p className="text-sm text-white font-semibold mt-1">{eco.roi_ratio !== null ? `${eco.roi_ratio}x` : '—'}</p>
-              <p className="text-[10px] text-slate-600">
+              <p className="text-[10px] text-dt-faint">
                 {eco.monthly_saving_usd !== null ? `≈ ${money(eco.monthly_saving_usd)}/month saved` : 'configure to calculate'}
               </p>
             </div>
@@ -2466,18 +2466,18 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Lifecycle</h3>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
           isOperational ? 'bg-emerald-500/15 text-emerald-300'
           : isPaused ? 'bg-amber-500/15 text-amber-300'
-          : isClosed ? 'bg-slate-700 text-slate-500'
+          : isClosed ? 'bg-dt-panel text-dt-muted'
           : 'bg-indigo-500/15 text-indigo-300'}`}>
           {STAGE_LABELS[stage] ?? stage}
         </span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Stage is a governance gate, not a label: proactive work (inbox, actions, playbooks) needs
         Assigned or beyond, and each advance checks real criteria. Reactive Q&A stays available
         pre-launch — that is the proving ground.
@@ -2490,11 +2490,11 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
           <span key={s} className="flex items-center gap-1">
             <span className={`text-[10px] px-2 py-1 rounded-lg border ${
               s === stage ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200 font-semibold'
-              : chainIdx >= 0 && i < chainIdx ? 'border-slate-700 bg-slate-900 text-emerald-400'
-              : 'border-slate-700 bg-slate-900 text-slate-600'}`}>
+              : chainIdx >= 0 && i < chainIdx ? 'border-dt-border bg-dt-page text-emerald-400'
+              : 'border-dt-border bg-dt-page text-dt-faint'}`}>
               {chainIdx >= 0 && i < chainIdx ? '✓ ' : ''}{STAGE_LABELS[s]}
             </span>
-            {i < LIFECYCLE_CHAIN.length - 1 && <span className="text-slate-600 text-[10px]">→</span>}
+            {i < LIFECYCLE_CHAIN.length - 1 && <span className="text-dt-faint text-[10px]">→</span>}
           </span>
         ))}
         {(stage === 'improving' || isPaused || isClosed) && (
@@ -2507,17 +2507,17 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
       {/* Next-stage criteria */}
       {!isPaused && !isClosed && nextStage && nextCriteria && (
         <div className="mb-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">
             To reach {STAGE_LABELS[nextStage]}
           </p>
           <div className="space-y-1">
             {criteriaEntries.map(([k, met]) => (
-              <p key={k} className={`text-xs ${met ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <p key={k} className={`text-xs ${met ? 'text-emerald-400' : 'text-dt-support'}`}>
                 {met ? '✓' : '○'} {k.split('_').join(' ')}
               </p>
             ))}
             {typeof nextCriteria.detail === 'string' && (
-              <p className="text-[10px] text-slate-600 mt-1">{nextCriteria.detail}</p>
+              <p className="text-[10px] text-dt-faint mt-1">{nextCriteria.detail}</p>
             )}
           </div>
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -2526,7 +2526,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
                 type="text" value={note} disabled={busy}
                 onChange={e => setNote(e.target.value)}
                 placeholder="Certification note — what did you review?"
-                className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
               />
             )}
             <button
@@ -2535,7 +2535,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
               {busy ? 'Working…' : nextStage === 'certified' ? 'Certify' : `Advance to ${STAGE_LABELS[nextStage]}`}
             </button>
-            {!allMet && <span className="text-[10px] text-slate-600">Criteria above must be met first.</span>}
+            {!allMet && <span className="text-[10px] text-dt-faint">Criteria above must be met first.</span>}
           </div>
         </div>
       )}
@@ -2547,7 +2547,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
             type="text" value={note} disabled={busy}
             onChange={e => setNote(e.target.value)}
             placeholder={isPaused ? 'Resume note — what was investigated?' : 'Pause reason (required)'}
-            className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 disabled:opacity-50"
+            className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 disabled:opacity-50"
           />
           {isPaused ? (
             <button
@@ -2570,11 +2570,11 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
       {/* Recent transitions */}
       {events.length > 0 && (
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">Recent transitions</p>
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Recent transitions</p>
           <div className="space-y-1">
             {events.map(ev => (
-              <p key={ev.id} className="text-[11px] text-slate-500">
-                <span className="text-slate-400">{STAGE_LABELS[ev.from_stage] ?? ev.from_stage} → {STAGE_LABELS[ev.to_stage] ?? ev.to_stage}</span>
+              <p key={ev.id} className="text-[11px] text-dt-muted">
+                <span className="text-dt-support">{STAGE_LABELS[ev.from_stage] ?? ev.from_stage} → {STAGE_LABELS[ev.to_stage] ?? ev.to_stage}</span>
                 {' '}· {ev.actor_label}{ev.note ? ` — ${ev.note.slice(0, 100)}` : ''}
                 {' '}· {new Date(ev.created_at).toLocaleDateString()}
               </p>
@@ -2661,40 +2661,40 @@ function DeEscalationPanel({ deId }: { deId: string }) {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Escalation rules</h3>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded ${isPersonal ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${isPersonal ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>
           {isPersonal ? 'personal' : 'workspace default'}
         </span>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         When this employee hands work to a human no matter how confident it is. Guardrails always
         outrank these; the confidence floor lives on the trust dial below.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Frustration threshold</p>
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Frustration threshold</p>
           <input
             type="number" min={0} max={100} value={threshold} disabled={busy}
             onChange={e => setThreshold(e.target.value)}
             placeholder={`inherited (${tenantRow?.frustration_threshold ?? 50})`}
-            className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
           />
-          <p className="text-[10px] text-slate-600 mt-1">
+          <p className="text-[10px] text-dt-faint mt-1">
             A customer scoring ≥ {effectiveThreshold}% on frustration signals always gets a human. Blank = inherit.
           </p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Always-escalate topics</p>
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Always-escalate topics</p>
           <input
             type="text" value={topics} disabled={busy}
             onChange={e => setTopics(e.target.value)}
             placeholder="e.g. refund, contract renewal"
-            className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
           />
-          <p className="text-[10px] text-slate-600 mt-1">
+          <p className="text-[10px] text-dt-faint mt-1">
             Comma-separated phrases — any match routes to a human regardless of confidence.
             {effectiveTopics.length > 0 && !isPersonal ? ` Inherited: ${effectiveTopics.join(', ')}.` : ''}
           </p>
@@ -2707,16 +2707,16 @@ function DeEscalationPanel({ deId }: { deId: string }) {
         </button>
         {saved && <span className="text-xs text-emerald-400">Saved</span>}
         {isPersonal && (
-          <span className="text-[10px] text-slate-600">Clear both fields and save to fall back to the workspace default.</span>
+          <span className="text-[10px] text-dt-faint">Clear both fields and save to fall back to the workspace default.</span>
         )}
       </div>
 
       {/* Named rules in your own words. The two fields above cover the two
           cases the platform can detect on its own; this covers everything
           specific to how your business actually works. */}
-      <div className="mt-5 pt-4 border-t border-slate-700">
-        <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Your own rules</p>
-        <p className="text-[10px] text-slate-600 mb-3">
+      <div className="mt-5 pt-4 border-t border-dt-border">
+        <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Your own rules</p>
+        <p className="text-[10px] text-dt-faint mb-3">
           Describe a situation in plain language and say what should happen. Applied alongside the
           settings above — guardrails still outrank everything here.
         </p>
@@ -2724,20 +2724,20 @@ function DeEscalationPanel({ deId }: { deId: string }) {
         {customRules.length > 0 && (
           <div className="space-y-1.5 mb-3">
             {customRules.map((r, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
+              <div key={i} className="flex items-start gap-2 text-xs rounded-lg border border-dt-border bg-dt-page px-3 py-2">
                 <input type="checkbox" checked={r.enabled} disabled={busy}
                   onChange={() => void persistRules(customRules.map((x, j) => j === i ? { ...x, enabled: !x.enabled } : x))}
                   className="mt-0.5 accent-indigo-500" />
                 <div className="min-w-0 flex-1">
-                  <span className={r.enabled ? 'text-slate-200' : 'text-slate-500 line-through'}>{r.name}</span>
-                  <p className="text-[10px] text-slate-500 mt-0.5">{r.when}</p>
+                  <span className={r.enabled ? 'text-dt-body' : 'text-dt-muted line-through'}>{r.name}</span>
+                  <p className="text-[10px] text-dt-muted mt-0.5">{r.when}</p>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${
                   r.action === 'escalate' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300'}`}>
                   {r.action === 'escalate' ? 'hand to a human' : 'needs approval'}
                 </span>
                 <button onClick={() => void persistRules(customRules.filter((_, j) => j !== i))} disabled={busy}
-                  className="text-[10px] text-slate-600 hover:text-rose-300">Remove</button>
+                  className="text-[10px] text-dt-faint hover:text-rose-300">Remove</button>
               </div>
             ))}
           </div>
@@ -2746,18 +2746,18 @@ function DeEscalationPanel({ deId }: { deId: string }) {
         <div className="flex items-center gap-2 flex-wrap">
           <input value={ruleName} disabled={busy} onChange={e => setRuleName(e.target.value)}
             placeholder="Rule name — e.g. Legal threat"
-            className="w-44 bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <input value={ruleWhen} disabled={busy} onChange={e => setRuleWhen(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addRule(); }}
             placeholder="When — e.g. the customer mentions a lawyer or a regulator"
-            className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <select value={ruleAction} disabled={busy} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
-            className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+            className="bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
             <option value="escalate">Hand to a human</option>
             <option value="require_approval">Needs approval first</option>
           </select>
           <button onClick={addRule} disabled={busy || !ruleName.trim() || !ruleWhen.trim()}
-            className="text-xs px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40">
+            className="text-xs px-3 py-2 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
             Add rule
           </button>
         </div>
@@ -2827,16 +2827,16 @@ function TeamsPanel() {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 mt-6">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mt-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Workforce Teams</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">fallback chains</span>
         <button onClick={() => setShowCreate(s => !s)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200">
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
           {showCreate ? 'Cancel' : '+ New team'}
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 mb-3">
+      <p className="text-[11px] text-dt-muted mb-3">
         Within a team, the highest-ranked available employee owns each shared inbox; backups take
         over automatically when it is paused or unavailable, and the specialist desk covers after
         that. Teams never grant access — a backup still needs its own grant on the system it covers.
@@ -2844,11 +2844,11 @@ function TeamsPanel() {
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       {showCreate && (
-        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2">
+        <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Team name — e.g. Support Workforce"
-            className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
-            className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <button onClick={() => void createTeam()} disabled={busy || !name.trim()}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
             Create team
@@ -2857,42 +2857,42 @@ function TeamsPanel() {
       )}
 
       {teams === null ? (
-        <p className="text-xs text-slate-500">Loading…</p>
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : teams.length === 0 ? (
-        <p className="text-xs text-slate-500">No teams yet — a team defines who owns an inbox and who covers when they can’t.</p>
+        <p className="text-xs text-dt-muted">No teams yet — a team defines who owns an inbox and who covers when they can’t.</p>
       ) : (
         <div className="space-y-4">
           {teams.map(team => {
             const teamMembers = members.filter(m => m.team_id === team.id).sort((a, b) => a.fallback_rank - b.fallback_rank);
             const memberIds = new Set(teamMembers.map(m => m.de_id));
             return (
-              <div key={team.id} className="rounded-xl border border-slate-700 bg-slate-900 p-3">
+              <div key={team.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-white font-medium">{team.name}</span>
                   <button onClick={() => { if (window.confirm(`Archive "${team.name}"? Its fallback chain will stop applying.`)) void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id })); }}
                     disabled={busy}
-                    className="ml-auto text-[10px] text-slate-500 hover:text-rose-300">
+                    className="ml-auto text-[10px] text-dt-muted hover:text-rose-300">
                     Archive
                   </button>
                 </div>
-                {team.purpose && <p className="text-[11px] text-slate-500 mt-0.5">{team.purpose}</p>}
+                {team.purpose && <p className="text-[11px] text-dt-muted mt-0.5">{team.purpose}</p>}
                 <div className="mt-2 space-y-1">
-                  {teamMembers.length === 0 && <p className="text-[11px] text-slate-600">No members yet.</p>}
+                  {teamMembers.length === 0 && <p className="text-[11px] text-dt-faint">No members yet.</p>}
                   {teamMembers.map(m => {
                     const de = m.digital_employees;
                     const eligible = de && ['assigned', 'active', 'improving'].includes(de.lifecycle_status) && de.status === 'active';
                     return (
                       <div key={m.id} className="flex items-center gap-2 text-xs">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${m.fallback_rank === 1 ? 'bg-indigo-500/15 text-indigo-300' : 'bg-slate-700 text-slate-400'}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${m.fallback_rank === 1 ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>
                           {m.fallback_rank === 1 ? 'Primary' : `Backup #${m.fallback_rank - 1}`}
                         </span>
-                        <span className="text-slate-300">{de?.persona_name || de?.name || 'Unknown'}</span>
+                        <span className="text-dt-support">{de?.persona_name || de?.name || 'Unknown'}</span>
                         <span className={`text-[10px] ${eligible ? 'text-emerald-400' : 'text-amber-400'}`}>
                           {eligible ? 'on duty' : (de?.lifecycle_status ?? '')}
                         </span>
                         <button onClick={() => void run(() => supabase.rpc('set_workforce_team_member', { p_team_id: team.id, p_de_id: m.de_id, p_fallback_rank: null }))}
                           disabled={busy}
-                          className="ml-auto text-[10px] text-slate-600 hover:text-rose-300">
+                          className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
                           Remove
                         </button>
                       </div>
@@ -2902,14 +2902,14 @@ function TeamsPanel() {
                 <div className="mt-2 flex items-center gap-2">
                   <select value={addDe[team.id] ?? ''} disabled={busy}
                     onChange={e => setAddDe(prev => ({ ...prev, [team.id]: e.target.value }))}
-                    className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                    className="flex-1 bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
                     <option value="">Add a member…</option>
                     {des.filter(d => !memberIds.has(d.id)).map(d => (
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
                   <button onClick={() => addMember(team.id)} disabled={busy || !addDe[team.id]}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40">
+                    className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
                     Add
                   </button>
                 </div>
@@ -3098,10 +3098,10 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
   if (!selectedDe) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         {/* Rendered under the Workforce hub — the hub names the view, so
             just the guidance line here (north-star polish pass). */}
-        <p className="text-slate-400 text-sm mb-5">
+        <p className="text-dt-support text-sm mb-5">
           {liveTenantName || 'Your company'} · Click an employee to see their profile — trust dial, charter, performance, and more
         </p>
         <div className="max-w-3xl">
@@ -3113,13 +3113,13 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="mb-6">
-        <button onClick={() => setSelectedDe(null)} className="text-xs text-slate-400 hover:text-slate-200 mb-3 transition-colors">
+        <button onClick={() => setSelectedDe(null)} className="text-xs text-dt-support hover:text-dt-body mb-3 transition-colors">
           ← All Digital Employees
         </button>
         <h1 className="text-2xl font-bold text-white">{selectedDe.persona_name || selectedDe.name}</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <p className="text-dt-support text-sm mt-1">
           {liveTenantName || 'Your company'} · {selectedDe.department || selectedDe.category}
         </p>
       </div>
@@ -3133,7 +3133,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
       ) : (
         <div className="max-w-3xl space-y-6">
           {/* DE card — real identity, not a hardcoded persona */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xl">
                 {(selectedDe.persona_name || selectedDe.name).charAt(0).toUpperCase()}
@@ -3141,11 +3141,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
                   <h2 className="text-base font-semibold text-white">{selectedDe.persona_name || selectedDe.name}</h2>
-                  {selectedDe.persona_name && <span className="text-xs text-slate-400">{selectedDe.name}</span>}
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>{selectedDe.status}</span>
+                  {selectedDe.persona_name && <span className="text-xs text-dt-support">{selectedDe.name}</span>}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-dt-panel text-dt-muted'}`}>{selectedDe.status}</span>
                   <DeHealthInline deId={selectedDe.id} />
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-dt-muted mt-0.5">
                   {selectedDe.description || 'No description set yet.'}
                 </p>
               </div>
@@ -3160,15 +3160,15 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               profile, not one endless scroll. flex-wrap (not overflow) so
               it never shows a horizontal scrollbar; on narrow screens the
               tabs wrap to a second row instead. */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-slate-700">
+          <div className="flex flex-wrap items-center gap-1 border-b border-dt-border">
             {[...DETAIL_TABS, ...(selectedDe.is_specialist ? [{ key: 'specialist' as const, label: 'Specialist Tools' }] : [])].map(t => (
               <button
                 key={t.key}
                 onClick={() => setDetailTab(t.key)}
                 className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
                   detailTab === t.key
-                    ? 'border-indigo-500 text-white bg-slate-800/40'
-                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'
+                    ? 'border-indigo-500 text-white bg-dt-card'
+                    : 'border-transparent text-dt-support hover:text-dt-body hover:bg-dt-panel'
                 }`}
               >
                 {t.label}
@@ -3202,7 +3202,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           {detailTab === 'specialist' && selectedDe.is_specialist && (
             selectedDe.specialist_key
               ? <SpecialistLive specialistKey={selectedDe.specialist_key} setPage={setPage} />
-              : <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-sm text-slate-400">
+              : <div className="rounded-2xl border border-dt-border bg-dt-card p-6 text-sm text-dt-support">
                   This specialist has no linked toolset key.
                 </div>
           )}
@@ -3259,21 +3259,21 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
 
           {/* Trust dial */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
             <div className="mb-1 flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-white">Trust dial</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
             </div>
-            <p className="text-[11px] text-slate-500 mb-2">
+            <p className="text-[11px] text-dt-muted mb-2">
               Personal to {selectedDe.persona_name || selectedDe.name} — set a value here and it applies to this employee only.
               Leave a card at its workspace default and this employee follows the shared setting instead.
             </p>
-            <p className="text-xs text-slate-500 mb-1">
+            <p className="text-xs text-dt-muted mb-1">
               Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
               both the {thresholdCents !== null ? fmtMoneyK(thresholdCents) : 'guardrail'} approval threshold <em>and</em> the trust-dial limit.
             </p>
-            <p className="text-xs text-slate-400 mb-5">
-              Evidence: <span className="text-slate-300">{evidenceLine}</span>
+            <p className="text-xs text-dt-support mb-5">
+              Evidence: <span className="text-dt-support">{evidenceLine}</span>
             </p>
 
             <div className="space-y-4">
@@ -3281,17 +3281,17 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                 const meta = AUTONOMY_ACTION_META[type];
                 const d = drafts[type] ?? { enabled: false, amount: '', confidence: '' };
                 return (
-                  <div key={type} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                  <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-slate-200 font-medium">{meta.label}</span>
+                          <span className="text-sm text-dt-body font-medium">{meta.label}</span>
                           {isPersonal[type] ? (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300" title="This value is set for this employee specifically.">
                               Personal
                             </span>
                           ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500" title="No personal override — this employee follows the workspace-wide default.">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="No personal override — this employee follows the workspace-wide default.">
                               Workspace default
                             </span>
                           )}
@@ -3301,12 +3301,12 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                             </span>
                           )}
                           {meta.dormant && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500" title="Stored now; enforced when the DE brain is activated (R1)">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="Stored now; enforced when the DE brain is activated (R1)">
                               dormant until activation
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-1">{meta.description}</p>
+                        <p className="text-[11px] text-dt-muted mt-1">{meta.description}</p>
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
                         <input
@@ -3315,26 +3315,26 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                           onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, enabled: e.target.checked } }))}
                           className="accent-indigo-500"
                         />
-                        <span className="text-xs text-slate-400">{d.enabled ? 'Enabled' : 'Off'}</span>
+                        <span className="text-xs text-dt-support">{d.enabled ? 'Enabled' : 'Off'}</span>
                       </label>
                     </div>
                     <div className="mt-3 flex items-center gap-3 flex-wrap">
                       {meta.unit === 'amount' ? (
-                        <label className="flex items-center gap-2 text-xs text-slate-400">
+                        <label className="flex items-center gap-2 text-xs text-dt-support">
                           Max amount $
                           <input
                             type="number" min={0} value={d.amount} placeholder="e.g. 5000"
                             onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, amount: e.target.value } }))}
-                            className="w-28 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                            className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
                           />
                         </label>
                       ) : (
-                        <label className="flex items-center gap-2 text-xs text-slate-400">
+                        <label className="flex items-center gap-2 text-xs text-dt-support">
                           Min confidence %
                           <input
                             type="number" min={0} max={100} value={d.confidence} placeholder="e.g. 75"
                             onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, confidence: e.target.value } }))}
-                            className="w-20 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-200 text-xs focus:border-indigo-500 focus:outline-none"
+                            className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
                           />
                         </label>
                       )}
@@ -3351,7 +3351,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
               })}
             </div>
 
-            <p className="mt-4 text-[11px] text-slate-500">
+            <p className="mt-4 text-[11px] text-dt-muted">
               Every change is recorded as a config_change event on the immutable audit trail.{' '}
               <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
                 View Audit Trail →
@@ -3360,7 +3360,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           </div>
 
           {/* Earned Trust */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
             <div className="mb-1 flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-white">Earned trust</h3>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
@@ -3368,7 +3368,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
             <p className="text-[11px] text-amber-400/80 mb-2">
               The earned-progression ladder is still workspace-wide today, not yet per employee — the personal dial above can be set below or above it, but the ladder itself tracks evidence for the whole workspace.
             </p>
-            <p className="text-xs text-slate-500 mb-5">
+            <p className="text-xs text-dt-muted mb-5">
               Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
               A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
             </p>
@@ -3382,11 +3382,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                 if (!policy) return null;
                 const meta = AUTONOMY_ACTION_META[type];
                 return (
-                  <div key={type} className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
+                  <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-slate-200 font-medium">{meta.label}</span>
+                          <span className="text-sm text-dt-body font-medium">{meta.label}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
                             {TRUST_LEVEL_LABELS[policy.current_level] ?? `Level ${policy.current_level}`}
                           </span>
@@ -3417,14 +3417,14 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                           const inverse = c.key === 'guardrail_blocks';
                           return (
                             <div key={c.key} className="flex items-center gap-3">
-                              <div className="w-44 flex-shrink-0 text-[11px] text-slate-400">{c.label}</div>
-                              <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                              <div className="w-44 flex-shrink-0 text-[11px] text-dt-support">{c.label}</div>
+                              <div className="flex-1 h-1.5 rounded-full bg-dt-panel overflow-hidden">
                                 <div
                                   className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
                                   style={{ width: `${inverse ? (c.met ? 100 : 100) : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
                                 />
                               </div>
-                              <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-slate-500'}`} title={c.detail}>
+                              <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-dt-muted'}`} title={c.detail}>
                                 {c.met ? '✓ ' : ''}{c.detail}
                               </div>
                             </div>
@@ -3432,7 +3432,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                         })}
                       </div>
                     ) : (
-                      <p className="mt-3 text-[11px] text-slate-500">Evidence not available yet.</p>
+                      <p className="mt-3 text-[11px] text-dt-muted">Evidence not available yet.</p>
                     )}
                   </div>
                 );
@@ -3441,24 +3441,24 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
             {trustHistory.length > 0 && (
               <div className="mt-5">
-                <h4 className="text-xs font-semibold text-slate-300 mb-2">Promotion history</h4>
+                <h4 className="text-xs font-semibold text-dt-support mb-2">Promotion history</h4>
                 <ul className="space-y-1.5">
                   {trustHistory.map(h => (
-                    <li key={h.id} className="text-[11px] text-slate-500 flex items-start gap-2">
+                    <li key={h.id} className="text-[11px] text-dt-muted flex items-start gap-2">
                       <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                         h.kind === 'trust_promoted' ? 'bg-emerald-500' :
                         h.kind === 'trust_demoted' ? 'bg-rose-500' :
                         h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
                       }`} />
                       <span className="flex-1">{h.action}</span>
-                      <span className="flex-shrink-0 text-slate-600">{new Date(h.created_at).toLocaleDateString()}</span>
+                      <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            <p className="mt-4 text-[11px] text-slate-500">
+            <p className="mt-4 text-[11px] text-dt-muted">
               Evidence is computed on the server from the Proving Ground, human reviews, and the guardrail record — never asserted by the browser.
               Promotions and demotions are recorded on the immutable audit trail.
             </p>

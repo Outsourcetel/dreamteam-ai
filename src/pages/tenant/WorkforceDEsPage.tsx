@@ -553,16 +553,16 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
   return (
     <div className="grid grid-cols-2 gap-6 p-6">
       {/* Left: editable fields */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Identity & Configuration</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Identity & Configuration</p>
 
         {/* Status */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
-          <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Status</span>
+        <div className="flex items-start justify-between py-2.5 border-b border-dt-border">
+          <span className="text-xs text-dt-muted w-36 flex-shrink-0 pt-0.5">Status</span>
           <div className="flex gap-2">
             {(['active', 'inactive'] as const).map(s => (
               <button key={s} onClick={() => { setStatus(s); saveAll({ status: s }) }}
-                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${status === s ? (s === 'active' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-red-500/20 border-red-500/40 text-red-400') : 'border-slate-600 text-slate-500 hover:border-slate-600'}`}>
+                className={`text-xs px-3 py-1 rounded-lg border transition-colors ${status === s ? (s === 'active' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-red-500/20 border-red-500/40 text-red-400') : 'border-dt-border-strong text-dt-muted hover:border-dt-border-strong'}`}>
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
             ))}
@@ -570,24 +570,24 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
         </div>
 
         {/* Role */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
-          <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Role</span>
+        <div className="flex items-start justify-between py-2.5 border-b border-dt-border">
+          <span className="text-xs text-dt-muted w-36 flex-shrink-0 pt-0.5">Role</span>
           {editing === 'role' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setRole(draft); saveAll({ role: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
-              <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+              <button onClick={() => setEditing(null)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
             </div>
           ) : (
-            <button onClick={() => { setEditing('role'); setDraft(role) }} className="flex-1 text-left text-sm text-slate-200 hover:text-indigo-400 transition-colors">{role}</button>
+            <button onClick={() => { setEditing('role'); setDraft(role) }} className="flex-1 text-left text-sm text-dt-body hover:text-indigo-400 transition-colors">{role}</button>
           )}
         </div>
 
         {/* Entity */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
-          <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Entity</span>
+        <div className="flex items-start justify-between py-2.5 border-b border-dt-border">
+          <span className="text-xs text-dt-muted w-36 flex-shrink-0 pt-0.5">Entity</span>
           <select value={entity} onChange={e => { const v = e.target.value as DEEntity; setEntity(v); saveAll({ entity: v }) }}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong">
             {(['customer', 'vendor', 'workforce', 'specialist'] as DEEntity[]).map(e => (
               <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>
             ))}
@@ -595,40 +595,40 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
         </div>
 
         {/* Language */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
-          <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Language</span>
+        <div className="flex items-start justify-between py-2.5 border-b border-dt-border">
+          <span className="text-xs text-dt-muted w-36 flex-shrink-0 pt-0.5">Language</span>
           {editing === 'language' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setLanguage(draft); saveAll({ language: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
-              <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+              <button onClick={() => setEditing(null)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
             </div>
           ) : (
-            <button onClick={() => { setEditing('language'); setDraft(language) }} className="flex-1 text-left text-sm text-slate-200 hover:text-indigo-400 transition-colors">{language}</button>
+            <button onClick={() => { setEditing('language'); setDraft(language) }} className="flex-1 text-left text-sm text-dt-body hover:text-indigo-400 transition-colors">{language}</button>
           )}
         </div>
 
         {/* Timezone */}
-        <div className="flex items-start justify-between py-2.5 border-b border-slate-700">
-          <span className="text-xs text-slate-500 w-36 flex-shrink-0 pt-0.5">Timezone</span>
+        <div className="flex items-start justify-between py-2.5 border-b border-dt-border">
+          <span className="text-xs text-dt-muted w-36 flex-shrink-0 pt-0.5">Timezone</span>
           {editing === 'timezone' ? (
             <div className="flex items-center gap-2 flex-1">
-              <input autoFocus className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" value={draft} onChange={e => setDraft(e.target.value)} />
+              <input autoFocus className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" value={draft} onChange={e => setDraft(e.target.value)} />
               <button onClick={() => { setTimezone(draft); saveAll({ timezone: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
-              <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+              <button onClick={() => setEditing(null)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
             </div>
           ) : (
-            <button onClick={() => { setEditing('timezone'); setDraft(timezone) }} className="flex-1 text-left text-sm text-slate-200 hover:text-indigo-400 transition-colors">{timezone}</button>
+            <button onClick={() => { setEditing('timezone'); setDraft(timezone) }} className="flex-1 text-left text-sm text-dt-body hover:text-indigo-400 transition-colors">{timezone}</button>
           )}
         </div>
 
         {/* Channels */}
-        <div className="py-2.5 border-b border-slate-700">
-          <p className="text-xs text-slate-500 mb-2">Channels</p>
+        <div className="py-2.5 border-b border-dt-border">
+          <p className="text-xs text-dt-muted mb-2">Channels</p>
           <div className="flex flex-wrap gap-2">
             {allChannels.map(ch => (
               <button key={ch} onClick={() => toggleChannel(ch)}
-                className={`text-xs px-3 py-1 rounded-full border transition-colors ${channels.includes(ch) ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'border-slate-600 text-slate-500 hover:border-slate-600'}`}>
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${channels.includes(ch) ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400' : 'border-dt-border-strong text-dt-muted hover:border-dt-border-strong'}`}>
                 {ch}
               </button>
             ))}
@@ -637,26 +637,26 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
 
         {/* Description */}
         <div className="py-2.5">
-          <p className="text-xs text-slate-500 mb-2">Description</p>
+          <p className="text-xs text-dt-muted mb-2">Description</p>
           {editing === 'description' ? (
             <div className="flex flex-col gap-2">
-              <textarea autoFocus rows={4} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-slate-600 resize-none" value={draft} onChange={e => setDraft(e.target.value)} />
+              <textarea autoFocus rows={4} className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong resize-none" value={draft} onChange={e => setDraft(e.target.value)} />
               <div className="flex gap-2">
                 <button onClick={() => { setDescription(draft); saveAll({ description: draft }) }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
-                <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+                <button onClick={() => setEditing(null)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
               </div>
             </div>
           ) : (
-            <button onClick={() => { setEditing('description'); setDraft(description) }} className="text-left text-sm text-slate-300 hover:text-indigo-400 transition-colors leading-relaxed">{description}</button>
+            <button onClick={() => { setEditing('description'); setDraft(description) }} className="text-left text-sm text-dt-support hover:text-indigo-400 transition-colors leading-relaxed">{description}</button>
           )}
         </div>
       </div>
 
       {/* Right: quick stats */}
       <div className="space-y-4">
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance Snapshot</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Performance Snapshot</p>
             {onSuggestImprovement && (
               <button onClick={onSuggestImprovement} className="text-indigo-600 hover:text-indigo-400 text-xs px-2.5 py-1 rounded-lg border border-indigo-500/30 hover:border-indigo-500/50 transition-colors">✨ Suggest improvement</button>
             )}
@@ -666,32 +666,32 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
               { label: 'AI Confidence', value: `${de.confidence}%`, color: confidenceColor(de.confidence) },
               { label: 'Escalation Rate', value: `${de.escalationRate}%`, color: de.escalationRate > 20 ? 'text-red-400' : de.escalationRate > 12 ? 'text-amber-400' : 'text-emerald-400' },
               { label: 'Resolution Rate', value: `${de.resolutionRate}%`, color: de.resolutionRate >= 85 ? 'text-emerald-400' : de.resolutionRate >= 70 ? 'text-amber-400' : 'text-red-400' },
-              { label: 'Avg Response Time', value: de.avgResponseTime, color: 'text-slate-200' },
+              { label: 'Avg Response Time', value: de.avgResponseTime, color: 'text-dt-body' },
               { label: 'Error Rate', value: `${de.errorRate}%`, color: de.errorRate > 10 ? 'text-red-400' : de.errorRate > 4 ? 'text-amber-400' : 'text-emerald-400' },
             ].map(m => (
-              <div key={m.label} className="flex justify-between items-center bg-slate-900 rounded-lg px-3 py-2">
-                <span className="text-xs text-slate-500">{m.label}</span>
+              <div key={m.label} className="flex justify-between items-center bg-dt-page rounded-lg px-3 py-2">
+                <span className="text-xs text-dt-muted">{m.label}</span>
                 <span className={`text-sm font-medium ${m.color}`}>{m.value}</span>
               </div>
             ))}
           </div>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Training & Certification</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Training & Certification</p>
           <div className="space-y-2">
-            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-500">Status</span>
+            <div className="flex justify-between bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-muted">Status</span>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${de.trainingStatus === 'certified' ? 'bg-emerald-500/20 text-emerald-400' : de.trainingStatus === 'in_training' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
                 {de.trainingStatus === 'certified' ? 'Certified' : de.trainingStatus === 'in_training' ? 'In Training' : 'Needs Recertification'}
               </span>
             </div>
-            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-500">Last Trained</span>
-              <span className="text-sm text-slate-200">{de.lastTrained}</span>
+            <div className="flex justify-between bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-muted">Last Trained</span>
+              <span className="text-sm text-dt-body">{de.lastTrained}</span>
             </div>
-            <div className="flex justify-between bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-500">Next Recertification</span>
-              <span className="text-sm text-slate-200">{de.nextRecert}</span>
+            <div className="flex justify-between bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-muted">Next Recertification</span>
+              <span className="text-sm text-dt-body">{de.nextRecert}</span>
             </div>
           </div>
         </div>
@@ -738,7 +738,7 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
           <p className={`text-sm font-semibold ${de.trainingStatus === 'certified' ? 'text-emerald-400' : de.trainingStatus === 'in_training' ? 'text-blue-400' : 'text-red-400'}`}>
             {de.trainingStatus === 'certified' ? 'Certified' : de.trainingStatus === 'in_training' ? 'In Training' : 'Needs Recertification'}
           </p>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-dt-support mt-0.5">
             {de.trainingStatus === 'needs_recert'
               ? `Recertification was due on ${de.nextRecert} — 2 failing scenarios in the eval suite, see Proving Ground.`
               : 'All required modules passed. Certification is backed by a passing eval suite.'}
@@ -750,8 +750,8 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
       </div>
 
       {/* Config */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Certification Configuration</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Certification Configuration</p>
         <div className="grid grid-cols-2 gap-4">
           {[
             { label: 'Last Trained', val: lastTrained, set: setLastTrained, type: 'date' },
@@ -760,20 +760,20 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
             { label: 'Pass Threshold (%)', val: threshold, set: setThreshold, type: 'number' },
           ].map(f => (
             <div key={f.label}>
-              <label className="text-xs text-slate-500 block mb-1">{f.label}</label>
+              <label className="text-xs text-dt-muted block mb-1">{f.label}</label>
               <input type={f.type} value={f.val} onChange={e => f.set(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="w-full bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" />
             </div>
           ))}
         </div>
       </div>
 
       {/* Modules table */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Training Modules</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Training Modules</p>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium">Module</th>
               <th className="text-left pb-2 font-medium w-32">Progress</th>
               <th className="text-left pb-2 font-medium w-28">Status</th>
@@ -782,22 +782,22 @@ function TabTraining({ de, setPage }: { de: DEProfile; setPage: (p: Page) => voi
           </thead>
           <tbody>
             {modules.map((m, i) => (
-              <tr key={i} className="border-b border-slate-700/50 last:border-0">
-                <td className="py-2.5 text-slate-200">{m.name}</td>
+              <tr key={i} className="border-b border-dt-border last:border-0">
+                <td className="py-2.5 text-dt-body">{m.name}</td>
                 <td className="py-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-slate-700 rounded-full h-1.5">
+                    <div className="flex-1 bg-dt-panel rounded-full h-1.5">
                       <div className={`h-1.5 rounded-full ${m.progress === 100 ? 'bg-emerald-500' : m.progress > 0 ? 'bg-indigo-500' : 'bg-slate-600'}`} style={{ width: `${m.progress}%` }} />
                     </div>
-                    <span className="text-xs text-slate-400 w-8">{m.progress}%</span>
+                    <span className="text-xs text-dt-support w-8">{m.progress}%</span>
                   </div>
                 </td>
                 <td className="py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' : m.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-600 text-slate-500'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${m.status === 'complete' ? 'bg-emerald-500/20 text-emerald-400' : m.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-600 text-dt-muted'}`}>
                     {m.status === 'complete' ? 'Complete' : m.status === 'in_progress' ? 'In Progress' : 'Not Started'}
                   </span>
                 </td>
-                <td className="py-2.5 text-slate-400 text-xs">{m.lastCompleted}</td>
+                <td className="py-2.5 text-dt-support text-xs">{m.lastCompleted}</td>
               </tr>
             ))}
           </tbody>
@@ -817,14 +817,14 @@ function TabKnowledge({ de }: { de: DEProfile }) {
   return (
     <div className="p-6 space-y-6">
       {/* Collections */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Knowledge Collections</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Knowledge Collections</p>
           <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium">Collection</th>
               <th className="text-left pb-2 font-medium w-28">Access Level</th>
               <th className="text-left pb-2 font-medium w-40">Coverage</th>
@@ -833,23 +833,23 @@ function TabKnowledge({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {de.knowledge.collections.map((c, i) => (
-              <tr key={i} className="border-b border-slate-700/50 last:border-0">
-                <td className="py-2.5 text-slate-200">{c.name}</td>
+              <tr key={i} className="border-b border-dt-border last:border-0">
+                <td className="py-2.5 text-dt-body">{c.name}</td>
                 <td className="py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.accessLevel === 'read_write' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-600 text-slate-400'}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.accessLevel === 'read_write' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-600 text-dt-support'}`}>
                     {c.accessLevel === 'read_write' ? 'Read/Write' : 'Read'}
                   </span>
                 </td>
                 <td className="py-2.5">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-slate-700 rounded-full h-1.5">
+                    <div className="flex-1 bg-dt-panel rounded-full h-1.5">
                       <div className={`h-1.5 rounded-full ${c.coverage >= 90 ? 'bg-emerald-500' : c.coverage >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${c.coverage}%` }} />
                     </div>
-                    <span className="text-xs text-slate-400 w-8">{c.coverage}%</span>
+                    <span className="text-xs text-dt-support w-8">{c.coverage}%</span>
                   </div>
                 </td>
                 <td className="py-2.5 text-center">
-                  <button className="text-slate-500 hover:text-red-400 text-xs transition-colors">Remove</button>
+                  <button className="text-dt-muted hover:text-red-400 text-xs transition-colors">Remove</button>
                 </td>
               </tr>
             ))}
@@ -858,19 +858,19 @@ function TabKnowledge({ de }: { de: DEProfile }) {
       </div>
 
       {/* Knowledge Types */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Knowledge Type Access</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Knowledge Type Access</p>
         <div className="space-y-2">
           {types.map((t, i) => (
-            <div key={i} className="flex items-center gap-4 bg-slate-900 rounded-lg px-3 py-2.5">
+            <div key={i} className="flex items-center gap-4 bg-dt-page rounded-lg px-3 py-2.5">
               <Toggle enabled={t.enabled} onChange={v => setTypes(prev => prev.map((p, j) => j === i ? { ...p, enabled: v } : p))} />
-              <span className="text-sm text-slate-200 flex-1">{t.type}</span>
+              <span className="text-sm text-dt-body flex-1">{t.type}</span>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">Confidence floor</span>
+                <span className="text-xs text-dt-muted">Confidence floor</span>
                 <input type="number" min={0} max={100} value={t.confidenceFloor}
                   onChange={e => setTypes(prev => prev.map((p, j) => j === i ? { ...p, confidenceFloor: Number(e.target.value) } : p))}
-                  className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
-                <span className="text-xs text-slate-500">%</span>
+                  className="w-16 bg-dt-card border border-dt-border-strong rounded px-2 py-1 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" />
+                <span className="text-xs text-dt-muted">%</span>
               </div>
             </div>
           ))}
@@ -878,18 +878,18 @@ function TabKnowledge({ de }: { de: DEProfile }) {
       </div>
 
       {/* Gap Detection */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Gap Detection</p>
-        <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5 mb-3">
-          <span className="text-sm text-slate-200">Enable gap detection</span>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Gap Detection</p>
+        <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5 mb-3">
+          <span className="text-sm text-dt-body">Enable gap detection</span>
           <Toggle enabled={gapDetection} onChange={setGapDetection} />
         </div>
         <div className="flex items-center gap-4 px-1">
-          <span className="text-xs text-slate-500">Sensitivity</span>
+          <span className="text-xs text-dt-muted">Sensitivity</span>
           {(['low', 'medium', 'high'] as const).map(s => (
             <label key={s} className="flex items-center gap-2 cursor-pointer">
               <input type="radio" checked={gapSensitivity === s} onChange={() => setGapSensitivity(s)} className="accent-indigo-500" />
-              <span className="text-sm text-slate-300 capitalize">{s}</span>
+              <span className="text-sm text-dt-support capitalize">{s}</span>
             </label>
           ))}
         </div>
@@ -915,42 +915,42 @@ function TabSOPs({ de }: { de: DEProfile }) {
   }
 
   const statusBadge = (s: SOP['status']) => {
-    const styles = { active: 'bg-emerald-500/20 text-emerald-400', draft: 'bg-amber-500/20 text-amber-400', archived: 'bg-slate-600 text-slate-500' }
+    const styles = { active: 'bg-emerald-500/20 text-emerald-400', draft: 'bg-amber-500/20 text-amber-400', archived: 'bg-slate-600 text-dt-muted' }
     return <span className={`text-xs px-2 py-0.5 rounded-full ${styles[s]}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>
   }
 
   return (
     <div className="p-6 space-y-4">
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Standard Operating Procedures</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Standard Operating Procedures</p>
           <button onClick={() => setShowAdd(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add SOP</button>
         </div>
         {showAdd && (
-          <div className="bg-slate-900 border border-slate-600 rounded-xl p-4 mb-4 flex flex-col gap-3">
+          <div className="bg-dt-page border border-dt-border-strong rounded-xl p-4 mb-4 flex flex-col gap-3">
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-slate-500 block mb-1">Title</label>
-                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="SOP title..." />
+                <label className="text-xs text-dt-muted block mb-1">Title</label>
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="SOP title..." />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">Category</label>
-                <input value={newCat} onChange={e => setNewCat(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Category..." />
+                <label className="text-xs text-dt-muted block mb-1">Category</label>
+                <input value={newCat} onChange={e => setNewCat(e.target.value)} className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="Category..." />
               </div>
               <div>
-                <label className="text-xs text-slate-500 block mb-1">Version</label>
-                <input value={newVer} onChange={e => setNewVer(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="1.0" />
+                <label className="text-xs text-dt-muted block mb-1">Version</label>
+                <input value={newVer} onChange={e => setNewVer(e.target.value)} className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="1.0" />
               </div>
             </div>
             <div className="flex gap-2">
               <button onClick={addSOP} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
-              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+              <button onClick={() => setShowAdd(false)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
             </div>
           </div>
         )}
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium">Title</th>
               <th className="text-left pb-2 font-medium w-28">Category</th>
               <th className="text-left pb-2 font-medium w-20">Version</th>
@@ -961,19 +961,19 @@ function TabSOPs({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {sops.map(s => (
-              <tr key={s.id} className="border-b border-slate-700/50 last:border-0 relative">
-                <td className="py-2.5 text-slate-200">{s.title}</td>
-                <td className="py-2.5 text-slate-400 text-xs">{s.category}</td>
-                <td className="py-2.5 text-slate-400 text-xs">{s.version}</td>
-                <td className="py-2.5 text-slate-400 text-xs">{s.lastUpdated}</td>
+              <tr key={s.id} className="border-b border-dt-border last:border-0 relative">
+                <td className="py-2.5 text-dt-body">{s.title}</td>
+                <td className="py-2.5 text-dt-support text-xs">{s.category}</td>
+                <td className="py-2.5 text-dt-support text-xs">{s.version}</td>
+                <td className="py-2.5 text-dt-support text-xs">{s.lastUpdated}</td>
                 <td className="py-2.5">{statusBadge(s.status)}</td>
                 <td className="py-2.5 relative">
-                  <button onClick={() => setOpenMenu(openMenu === s.id ? null : s.id)} className="text-slate-500 hover:text-slate-300 text-base px-1">•••</button>
+                  <button onClick={() => setOpenMenu(openMenu === s.id ? null : s.id)} className="text-dt-muted hover:text-dt-support text-base px-1">•••</button>
                   {openMenu === s.id && (
-                    <div className="absolute right-0 top-8 bg-slate-700 border border-slate-600 rounded-lg shadow-xl z-10 min-w-32">
-                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'active' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">Activate</button>
-                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'archived' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">Archive</button>
-                      <button onClick={() => setOpenMenu(null)} className="block w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-600">View</button>
+                    <div className="absolute right-0 top-8 bg-dt-panel border border-dt-border-strong rounded-lg shadow-xl z-10 min-w-32">
+                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'active' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-dt-body hover:bg-dt-panel">Activate</button>
+                      <button onClick={() => { setSops(prev => prev.map(p => p.id === s.id ? { ...p, status: 'archived' as const } : p)); setOpenMenu(null) }} className="block w-full text-left px-3 py-2 text-sm text-dt-body hover:bg-dt-panel">Archive</button>
+                      <button onClick={() => setOpenMenu(null)} className="block w-full text-left px-3 py-2 text-sm text-dt-body hover:bg-dt-panel">View</button>
                     </div>
                   )}
                 </td>
@@ -998,7 +998,7 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
       escalation: 'bg-red-500/20 text-red-400',
       cross_function: 'bg-purple-500/20 text-purple-400',
       crisis: 'bg-red-500/20 text-red-400',
-      scheduled: 'bg-slate-600 text-slate-400',
+      scheduled: 'bg-slate-600 text-dt-support',
     }
     const labels: Record<PlaybookAssignment['type'], string> = {
       process: 'Process', response: 'Response', escalation: 'Escalation',
@@ -1020,11 +1020,11 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6">
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Assigned Playbooks</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Assigned Playbooks</p>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium w-16">Priority</th>
               <th className="text-left pb-2 font-medium">Title</th>
               <th className="text-left pb-2 font-medium w-32">Type</th>
@@ -1034,17 +1034,17 @@ function TabPlaybooks({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {playbooks.map((p, i) => (
-              <tr key={p.id} className="border-b border-slate-700/50 last:border-0">
-                <td className="py-2.5 text-slate-400 text-xs font-mono">#{p.priority}</td>
-                <td className="py-2.5 text-slate-200">{p.title}</td>
+              <tr key={p.id} className="border-b border-dt-border last:border-0">
+                <td className="py-2.5 text-dt-support text-xs font-mono">#{p.priority}</td>
+                <td className="py-2.5 text-dt-body">{p.title}</td>
                 <td className="py-2.5">{typeBadge(p.type)}</td>
                 <td className="py-2.5">
                   <Toggle enabled={p.active} onChange={v => setPlaybooks(prev => prev.map(pb => pb.id === p.id ? { ...pb, active: v } : pb))} />
                 </td>
                 <td className="py-2.5">
                   <div className="flex gap-1">
-                    <button onClick={() => move(p.id, 'up')} disabled={i === 0} className="text-slate-500 hover:text-slate-300 disabled:opacity-30 text-base px-1">↑</button>
-                    <button onClick={() => move(p.id, 'down')} disabled={i === playbooks.length - 1} className="text-slate-500 hover:text-slate-300 disabled:opacity-30 text-base px-1">↓</button>
+                    <button onClick={() => move(p.id, 'up')} disabled={i === 0} className="text-dt-muted hover:text-dt-support disabled:opacity-30 text-base px-1">↑</button>
+                    <button onClick={() => move(p.id, 'down')} disabled={i === playbooks.length - 1} className="text-dt-muted hover:text-dt-support disabled:opacity-30 text-base px-1">↓</button>
                   </div>
                 </td>
               </tr>
@@ -1074,14 +1074,14 @@ function TabSystems({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6">
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Connected Systems</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Connected Systems</p>
           <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Connect System</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium">System</th>
               <th className="text-left pb-2 font-medium w-28">Type</th>
               <th className="text-left pb-2 font-medium w-28">Access Level</th>
@@ -1092,17 +1092,17 @@ function TabSystems({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {systems.map(s => (
-              <tr key={s.id} className="border-b border-slate-700/50 last:border-0">
-                <td className="py-2.5 text-slate-200 font-medium">{s.name}</td>
-                <td className="py-2.5 text-xs text-slate-400">{s.type}</td>
+              <tr key={s.id} className="border-b border-dt-border last:border-0">
+                <td className="py-2.5 text-dt-body font-medium">{s.name}</td>
+                <td className="py-2.5 text-xs text-dt-support">{s.type}</td>
                 <td className="py-2.5">{accessBadge(s.accessLevel)}</td>
                 <td className="py-2.5">
                   <div className="flex items-center gap-1.5">
                     {statusDot(s.status)}
-                    <span className="text-xs text-slate-400 capitalize">{s.status}</span>
+                    <span className="text-xs text-dt-support capitalize">{s.status}</span>
                   </div>
                 </td>
-                <td className="py-2.5 text-xs text-slate-400">{s.lastSync}</td>
+                <td className="py-2.5 text-xs text-dt-support">{s.lastSync}</td>
                 <td className="py-2.5">
                   <div className="flex gap-2">
                     <button onClick={() => setSystems(prev => prev.map(p => p.id === s.id ? { ...p, status: 'disconnected' as const } : p))} className="text-xs text-red-400 hover:text-red-300 transition-colors">Revoke</button>
@@ -1134,46 +1134,46 @@ function TabGuardrails({ de }: { de: DEProfile }) {
   return (
     <div className="p-6 space-y-6">
       {/* Industry Template */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Industry Template</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Industry Template</p>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-200">{de.guardrails.industryTemplate}</p>
-            <p className="text-xs text-slate-500 mt-1">v{de.guardrails.version} · Updated {de.guardrails.lastUpdated}</p>
+            <p className="text-sm text-dt-body">{de.guardrails.industryTemplate}</p>
+            <p className="text-xs text-dt-muted mt-1">v{de.guardrails.version} · Updated {de.guardrails.lastUpdated}</p>
           </div>
-          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-600 rounded-lg px-3 py-1.5">Change Template</button>
+          <button className="text-dt-support hover:text-dt-body text-sm border border-dt-border-strong rounded-lg px-3 py-1.5">Change Template</button>
         </div>
       </div>
 
       {/* Customer Overrides */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Customer Overrides</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Customer Overrides</p>
           <button onClick={() => setShowAddOverride(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add Override</button>
         </div>
         {showAddOverride && (
-          <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 mb-3 flex gap-3 items-end flex-wrap">
+          <div className="bg-dt-page border border-dt-border-strong rounded-lg p-3 mb-3 flex gap-3 items-end flex-wrap">
             <div className="flex-1 min-w-48">
-              <label className="text-xs text-slate-500 block mb-1">Rule</label>
-              <input value={newRule} onChange={e => setNewRule(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Rule description..." />
+              <label className="text-xs text-dt-muted block mb-1">Rule</label>
+              <input value={newRule} onChange={e => setNewRule(e.target.value)} className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="Rule description..." />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">Type</label>
-              <select value={newType} onChange={e => setNewType(e.target.value as 'allow' | 'restrict')} className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+              <label className="text-xs text-dt-muted block mb-1">Type</label>
+              <select value={newType} onChange={e => setNewType(e.target.value as 'allow' | 'restrict')} className="bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong">
                 <option value="restrict">Restrict</option>
                 <option value="allow">Allow</option>
               </select>
             </div>
             <button onClick={() => { if (newRule) { setOverrides(prev => [...prev, { id: 'co' + Date.now(), rule: newRule, type: newType, addedBy: 'Admin', date: '2026-07-03' }]); setNewRule(''); setShowAddOverride(false) } }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
-            <button onClick={() => setShowAddOverride(false)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+            <button onClick={() => setShowAddOverride(false)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
           </div>
         )}
         {overrides.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-4">No overrides configured.</p>
+          <p className="text-sm text-dt-muted text-center py-4">No overrides configured.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-slate-500 border-b border-slate-700">
+              <tr className="text-xs text-dt-muted border-b border-dt-border">
                 <th className="text-left pb-2 font-medium">Rule</th>
                 <th className="text-left pb-2 font-medium w-20">Type</th>
                 <th className="text-left pb-2 font-medium w-24">Added By</th>
@@ -1183,17 +1183,17 @@ function TabGuardrails({ de }: { de: DEProfile }) {
             </thead>
             <tbody>
               {overrides.map(o => (
-                <tr key={o.id} className="border-b border-slate-700/50 last:border-0">
-                  <td className="py-2.5 text-slate-200">{o.rule}</td>
+                <tr key={o.id} className="border-b border-dt-border last:border-0">
+                  <td className="py-2.5 text-dt-body">{o.rule}</td>
                   <td className="py-2.5">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${o.type === 'allow' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                       {o.type.charAt(0).toUpperCase() + o.type.slice(1)}
                     </span>
                   </td>
-                  <td className="py-2.5 text-xs text-slate-400">{o.addedBy}</td>
-                  <td className="py-2.5 text-xs text-slate-400">{o.date}</td>
+                  <td className="py-2.5 text-xs text-dt-support">{o.addedBy}</td>
+                  <td className="py-2.5 text-xs text-dt-support">{o.date}</td>
                   <td className="py-2.5">
-                    <button onClick={() => setOverrides(prev => prev.filter(p => p.id !== o.id))} className="text-slate-500 hover:text-red-400 text-sm transition-colors">×</button>
+                    <button onClick={() => setOverrides(prev => prev.filter(p => p.id !== o.id))} className="text-dt-muted hover:text-red-400 text-sm transition-colors">×</button>
                   </td>
                 </tr>
               ))}
@@ -1203,35 +1203,35 @@ function TabGuardrails({ de }: { de: DEProfile }) {
       </div>
 
       {/* DE Restrictions */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">DE Restrictions</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">DE Restrictions</p>
           <button onClick={() => setShowAddRestriction(v => !v)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">+ Add Restriction</button>
         </div>
         {showAddRestriction && (
           <div className="flex gap-2 mb-3">
-            <input value={newRestriction} onChange={e => setNewRestriction(e.target.value)} className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Restriction rule..." />
+            <input value={newRestriction} onChange={e => setNewRestriction(e.target.value)} className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="Restriction rule..." />
             <button onClick={() => { if (newRestriction) { setRestrictions(prev => [...prev, newRestriction]); setNewRestriction(''); setShowAddRestriction(false) } }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
-            <button onClick={() => setShowAddRestriction(false)} className="text-slate-400 hover:text-slate-200 text-sm">Cancel</button>
+            <button onClick={() => setShowAddRestriction(false)} className="text-dt-support hover:text-dt-body text-sm">Cancel</button>
           </div>
         )}
         <div className="space-y-2">
           {restrictions.map((r, i) => (
-            <div key={i} className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-sm text-slate-300">{r}</span>
-              <button onClick={() => setRestrictions(prev => prev.filter((_, j) => j !== i))} className="text-slate-500 hover:text-red-400 transition-colors ml-4">×</button>
+            <div key={i} className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-sm text-dt-support">{r}</span>
+              <button onClick={() => setRestrictions(prev => prev.filter((_, j) => j !== i))} className="text-dt-muted hover:text-red-400 transition-colors ml-4">×</button>
             </div>
           ))}
         </div>
       </div>
 
       {/* Settings */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Settings</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Settings</p>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">PII Handling</label>
-            <select value={piiHandling} onChange={e => setPiiHandling(e.target.value as typeof piiHandling)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            <label className="text-xs text-dt-muted block mb-1">PII Handling</label>
+            <select value={piiHandling} onChange={e => setPiiHandling(e.target.value as typeof piiHandling)} className="w-full bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong">
               <option value="mask">Mask</option>
               <option value="hash">Hash</option>
               <option value="redact">Redact</option>
@@ -1239,15 +1239,15 @@ function TabGuardrails({ de }: { de: DEProfile }) {
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Content Filter</label>
-            <select value={contentFilter} onChange={e => setContentFilter(e.target.value as typeof contentFilter)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600">
+            <label className="text-xs text-dt-muted block mb-1">Content Filter</label>
+            <select value={contentFilter} onChange={e => setContentFilter(e.target.value as typeof contentFilter)} className="w-full bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong">
               <option value="strict">Strict</option>
               <option value="standard">Standard</option>
               <option value="permissive">Permissive</option>
             </select>
           </div>
         </div>
-        <p className="text-xs text-slate-600 mt-4">All guardrail changes are versioned and auditable. Current: v{de.guardrails.version}</p>
+        <p className="text-xs text-dt-faint mt-4">All guardrail changes are versioned and auditable. Current: v{de.guardrails.version}</p>
       </div>
     </div>
   )
@@ -1281,39 +1281,39 @@ function TabHumanLoop({ de, companyId }: { de: DEProfile; companyId: string }) {
   return (
     <div className="p-6 space-y-4">
       {touchpoints.map((tp, i) => (
-        <div key={tp.type} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div key={tp.type} className="bg-dt-card border border-dt-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-semibold text-slate-300 bg-slate-700 px-2 py-1 rounded">{typeLabels[tp.type] ?? tp.type.toUpperCase()}</span>
+            <span className="text-xs font-semibold text-dt-support bg-dt-panel px-2 py-1 rounded">{typeLabels[tp.type] ?? tp.type.toUpperCase()}</span>
             <Toggle enabled={tp.enabled} onChange={v => update(i, { enabled: v })} />
           </div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Triggers when:</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Triggers when:</p>
           <div className="space-y-3">
-            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-400 w-44">Confidence threshold</span>
+            <div className="flex items-center gap-3 bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-support w-44">Confidence threshold</span>
               <input type="number" min={0} max={100} value={tp.confidenceThreshold}
                 onChange={e => update(i, { confidenceThreshold: Number(e.target.value) })}
-                className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
-              <span className="text-xs text-slate-500">% (0 = always require)</span>
+                className="w-16 bg-dt-card border border-dt-border-strong rounded px-2 py-1 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" />
+              <span className="text-xs text-dt-muted">% (0 = always require)</span>
             </div>
             {tp.amountThreshold !== undefined && (
-              <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
-                <span className="text-xs text-slate-400 w-44">Amount threshold</span>
-                <span className="text-sm text-slate-500">$</span>
+              <div className="flex items-center gap-3 bg-dt-page rounded-lg px-3 py-2">
+                <span className="text-xs text-dt-support w-44">Amount threshold</span>
+                <span className="text-sm text-dt-muted">$</span>
                 <input type="number" value={tp.amountThreshold ?? ''}
                   onChange={e => update(i, { amountThreshold: e.target.value ? Number(e.target.value) : undefined })}
-                  className="w-24 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="leave blank to disable" />
+                  className="w-24 bg-dt-card border border-dt-border-strong rounded px-2 py-1 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="leave blank to disable" />
               </div>
             )}
-            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-400 w-44">Escalate to</span>
+            <div className="flex items-center gap-3 bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-support w-44">Escalate to</span>
               <input type="text" value={tp.escalateTo} onChange={e => update(i, { escalateTo: e.target.value })}
-                className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
+                className="flex-1 bg-dt-card border border-dt-border-strong rounded px-2 py-1 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" />
             </div>
-            <div className="flex items-center gap-3 bg-slate-900 rounded-lg px-3 py-2">
-              <span className="text-xs text-slate-400 w-44">Response SLA</span>
+            <div className="flex items-center gap-3 bg-dt-page rounded-lg px-3 py-2">
+              <span className="text-xs text-dt-support w-44">Response SLA</span>
               <input type="number" min={1} value={tp.slaDays} onChange={e => update(i, { slaDays: Number(e.target.value) })}
-                className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-slate-600" />
-              <span className="text-xs text-slate-500">day(s)</span>
+                className="w-16 bg-dt-card border border-dt-border-strong rounded px-2 py-1 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" />
+              <span className="text-xs text-dt-muted">day(s)</span>
             </div>
           </div>
         </div>
@@ -1336,9 +1336,9 @@ function TabPerformance({ de, companyId }: { de: DEProfile; companyId: string })
     { key: 'resolution', label: 'Resolution Rate', value: `${de.resolutionRate}%`, color: de.resolutionRate >= 85 ? 'text-emerald-400' : de.resolutionRate >= 70 ? 'text-amber-400' : 'text-red-400' },
     { key: 'confidence', label: 'AI Confidence (avg)', value: `${de.confidence}%`, color: confidenceColor(de.confidence) },
     { key: 'escalation', label: 'Escalation Rate', value: `${de.escalationRate}%`, color: de.escalationRate > 20 ? 'text-red-400' : de.escalationRate > 12 ? 'text-amber-400' : 'text-emerald-400' },
-    { key: 'response', label: 'Avg Response Time', value: de.avgResponseTime, color: 'text-slate-200' },
+    { key: 'response', label: 'Avg Response Time', value: de.avgResponseTime, color: 'text-dt-body' },
     { key: 'error', label: 'Error Rate', value: `${de.errorRate}%`, color: de.errorRate > 10 ? 'text-red-400' : de.errorRate > 4 ? 'text-amber-400' : 'text-emerald-400' },
-    { key: 'tasks', label: 'Tasks This Month', value: String(TASKS_THIS_MONTH[de.id] ?? 0), color: 'text-slate-200' },
+    { key: 'tasks', label: 'Tasks This Month', value: String(TASKS_THIS_MONTH[de.id] ?? 0), color: 'text-dt-body' },
   ]
 
   const setThreshold = (key: string, field: 'amber' | 'red', val: string) => {
@@ -1352,40 +1352,40 @@ function TabPerformance({ de, companyId }: { de: DEProfile; companyId: string })
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Performance Metrics</p>
-        <div className="flex bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Performance Metrics</p>
+        <div className="flex bg-dt-card border border-dt-border rounded-lg p-0.5 gap-0.5">
           {(['7d', '30d', '90d'] as const).map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 text-xs rounded-md transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>{p}</button>
+            <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 text-xs rounded-md transition-colors ${period === p ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}>{p}</button>
           ))}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
         {metrics.map(m => (
-          <div key={m.key} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <p className="text-xs text-slate-500 mb-1">{m.label}</p>
+          <div key={m.key} className="bg-dt-card border border-dt-border rounded-xl p-4">
+            <p className="text-xs text-dt-muted mb-1">{m.label}</p>
             <p className={`text-2xl font-bold mb-3 ${m.color}`}>{m.value}</p>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-500 w-24">Amber threshold</span>
                 <input type="text" value={thresholds[m.key]?.amber ?? ''} onChange={e => setThreshold(m.key, 'amber', e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 75%" />
+                  className="flex-1 bg-dt-page border border-dt-border rounded px-2 py-0.5 text-xs text-dt-support focus:outline-none focus:border-dt-border-strong" placeholder="e.g. 75%" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-red-500 w-24">Red threshold</span>
                 <input type="text" value={thresholds[m.key]?.red ?? ''} onChange={e => setThreshold(m.key, 'red', e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-slate-600" placeholder="e.g. 60%" />
+                  className="flex-1 bg-dt-page border border-dt-border rounded px-2 py-0.5 text-xs text-dt-support focus:outline-none focus:border-dt-border-strong" placeholder="e.g. 60%" />
               </div>
             </div>
           </div>
         ))}
       </div>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap">
-        <span className="text-xs text-slate-500">vs company average:</span>
-        <span className="text-xs text-slate-400">Resolution <span className="text-slate-200">84%</span></span>
-        <span className="text-slate-600">|</span>
-        <span className="text-xs text-slate-400">Confidence <span className="text-slate-200">88%</span></span>
-        <span className="text-slate-600">|</span>
-        <span className="text-xs text-slate-400">Escalation <span className="text-slate-200">11%</span></span>
+      <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap">
+        <span className="text-xs text-dt-muted">vs company average:</span>
+        <span className="text-xs text-dt-support">Resolution <span className="text-dt-body">84%</span></span>
+        <span className="text-dt-faint">|</span>
+        <span className="text-xs text-dt-support">Confidence <span className="text-dt-body">88%</span></span>
+        <span className="text-dt-faint">|</span>
+        <span className="text-xs text-dt-support">Escalation <span className="text-dt-body">11%</span></span>
       </div>
     </div>
   )
@@ -1419,14 +1419,14 @@ function TabAudit({ de }: { de: DEProfile }) {
       <PendingAmendmentsWidget entity_kind="de" entity_id={de.id} />
 
       {/* Audit Log */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Audit Log</p>
-          <button className="text-slate-400 hover:text-slate-200 text-sm border border-slate-600 rounded-lg px-3 py-1.5">Export Log</button>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Audit Log</p>
+          <button className="text-dt-support hover:text-dt-body text-sm border border-dt-border-strong rounded-lg px-3 py-1.5">Export Log</button>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-slate-500 border-b border-slate-700">
+            <tr className="text-xs text-dt-muted border-b border-dt-border">
               <th className="text-left pb-2 font-medium w-36">Timestamp</th>
               <th className="text-left pb-2 font-medium">Action</th>
               <th className="text-left pb-2 font-medium w-40">Outcome</th>
@@ -1435,10 +1435,10 @@ function TabAudit({ de }: { de: DEProfile }) {
           </thead>
           <tbody>
             {de.auditLog.map(a => (
-              <tr key={a.id} className="border-b border-slate-700/50 last:border-0">
-                <td className="py-2.5 text-xs text-slate-500 font-mono">{a.timestamp}</td>
-                <td className="py-2.5 text-slate-200 text-sm">{a.action}</td>
-                <td className="py-2.5 text-xs text-slate-400">{a.outcome}</td>
+              <tr key={a.id} className="border-b border-dt-border last:border-0">
+                <td className="py-2.5 text-xs text-dt-muted font-mono">{a.timestamp}</td>
+                <td className="py-2.5 text-dt-body text-sm">{a.action}</td>
+                <td className="py-2.5 text-xs text-dt-support">{a.outcome}</td>
                 <td className="py-2.5">
                   <div className="flex items-center justify-center">{auditTypeDot(a.type)}</div>
                 </td>
@@ -1449,46 +1449,46 @@ function TabAudit({ de }: { de: DEProfile }) {
       </div>
 
       {/* Memory & Self-Learning */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory & Self-Learning</p>
-        <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
-          <span className="text-sm text-slate-200">Self-learning enabled</span>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4 space-y-4">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Memory & Self-Learning</p>
+        <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5">
+          <span className="text-sm text-dt-body">Self-learning enabled</span>
           <Toggle enabled={selfLearning} onChange={setSelfLearning} />
         </div>
         <div className="flex items-center gap-4 px-1">
-          <span className="text-xs text-slate-500">Learning rate</span>
+          <span className="text-xs text-dt-muted">Learning rate</span>
           {(['low', 'medium', 'high'] as const).map(r => (
             <label key={r} className="flex items-center gap-2 cursor-pointer">
               <input type="radio" checked={learningRate === r} onChange={() => setLearningRate(r)} className="accent-indigo-500" />
-              <span className="text-sm text-slate-300 capitalize">{r}</span>
+              <span className="text-sm text-dt-support capitalize">{r}</span>
             </label>
           ))}
         </div>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-slate-500">Approved topic priorities</p>
+            <p className="text-xs text-dt-muted">Approved topic priorities</p>
             <button onClick={() => setShowTopicInput(v => !v)} className="text-xs text-indigo-400 hover:text-indigo-300">+ Add topic</button>
           </div>
           {showTopicInput && (
             <div className="flex gap-2 mb-2">
               <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && newTopic) { setTopics(p => [...p, newTopic]); setNewTopic(''); setShowTopicInput(false) } }}
-                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-slate-600" placeholder="Topic..." autoFocus />
+                className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-border-strong" placeholder="Topic..." autoFocus />
               <button onClick={() => { if (newTopic) { setTopics(p => [...p, newTopic]); setNewTopic(''); setShowTopicInput(false) } }} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
             {topics.map((t, i) => (
-              <span key={i} className="flex items-center gap-1 text-xs bg-slate-700 border border-slate-600 rounded-full px-3 py-1 text-slate-300">
+              <span key={i} className="flex items-center gap-1 text-xs bg-dt-panel border border-dt-border-strong rounded-full px-3 py-1 text-dt-support">
                 {t}
-                <button onClick={() => setTopics(p => p.filter((_, j) => j !== i))} className="text-slate-500 hover:text-red-400 ml-1">×</button>
+                <button onClick={() => setTopics(p => p.filter((_, j) => j !== i))} className="text-dt-muted hover:text-red-400 ml-1">×</button>
               </span>
             ))}
           </div>
         </div>
-        <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+        <div className="bg-dt-page border border-dt-border rounded-lg p-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-slate-400">
+            <span className="text-sm text-dt-support">
               {hasValidation ? '1 behavior awaiting human validation' : '0 behaviors awaiting validation'}
             </span>
             {hasValidation && (
@@ -1498,9 +1498,9 @@ function TabAudit({ de }: { de: DEProfile }) {
             )}
           </div>
           {showValidation && hasValidation && (
-            <div className="mt-3 bg-slate-800 border border-slate-600 rounded-lg p-3">
-              <p className="text-xs text-slate-500 mb-1">Proposed behavior</p>
-              <p className="text-sm text-slate-200 mb-3">When leave request is submitted by same employee twice in 24 hrs, auto-reject duplicate.</p>
+            <div className="mt-3 bg-dt-card border border-dt-border-strong rounded-lg p-3">
+              <p className="text-xs text-dt-muted mb-1">Proposed behavior</p>
+              <p className="text-sm text-dt-body mb-3">When leave request is submitted by same employee twice in 24 hrs, auto-reject duplicate.</p>
               <div className="flex gap-2">
                 <button onClick={() => setShowValidation(false)} className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5 rounded-lg">Approve</button>
                 <button onClick={() => setShowValidation(false)} className="bg-red-600/30 hover:bg-red-600/50 text-red-400 text-sm px-3 py-1.5 rounded-lg border border-red-500/30">Reject</button>
@@ -1518,7 +1518,7 @@ function TabAudit({ de }: { de: DEProfile }) {
 function TrendArrow({ trend }: { trend: 'up' | 'down' | 'flat' }) {
   if (trend === 'up') return <span className="text-amber-400">↑</span>
   if (trend === 'down') return <span className="text-emerald-400">↓</span>
-  return <span className="text-slate-500">→</span>
+  return <span className="text-dt-muted">→</span>
 }
 
 function HumanProfile({ person, des, onSelectDE, setPage }: {
@@ -1531,65 +1531,65 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-700 flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${person.color} border border-slate-600`}>
+      <div className="px-6 py-4 border-b border-dt-border flex items-center gap-4">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${person.color} border border-dt-border-strong`}>
           {person.avatarInitials}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-base font-semibold text-slate-100">{person.name}</h2>
-            <span className="text-xs text-slate-400">{person.title}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-slate-300">Human</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">{person.team}</span>
+            <h2 className="text-base font-semibold text-dt-title">{person.name}</h2>
+            <span className="text-xs text-dt-support">{person.title}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-dt-support">Human</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-dt-panel text-dt-support">{person.team}</span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{person.email}</p>
+          <p className="text-xs text-dt-muted mt-0.5">{person.email}</p>
         </div>
       </div>
 
       <div className="p-6 grid grid-cols-2 gap-6">
         {/* Partnership */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Partnership — works with</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Partnership — works with</p>
           <div className="space-y-2">
             {partners.map(de => (
               <button key={de.id} onClick={() => onSelectDE(de.id)}
-                className="w-full flex items-center gap-3 bg-slate-900 hover:bg-slate-700/70 rounded-lg px-3 py-2.5 transition-colors text-left">
+                className="w-full flex items-center gap-3 bg-dt-page hover:bg-dt-panel/70 rounded-lg px-3 py-2.5 transition-colors text-left">
                 <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-sm">
                   {de.name[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-200">{de.name}</p>
-                  <p className="text-xs text-slate-500">{de.role}</p>
+                  <p className="text-sm text-dt-body">{de.name}</p>
+                  <p className="text-xs text-dt-muted">{de.role}</p>
                 </div>
                 <span className="text-xs text-indigo-400">Profile →</span>
               </button>
             ))}
-            {partners.length === 0 && <p className="text-sm text-slate-500">No DE partnerships yet.</p>}
+            {partners.length === 0 && <p className="text-sm text-dt-muted">No DE partnerships yet.</p>}
           </div>
         </div>
 
         {/* Gate duties */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Gate duties</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Gate duties</p>
             <button onClick={() => setPage('ops_human_tasks')} className="text-xs text-amber-400 hover:text-amber-300 transition-colors">
               {person.pendingItems} pending →
             </button>
           </div>
           <div className="space-y-2">
             {person.approves.map((a, i) => (
-              <div key={i} className="flex items-start gap-2 bg-slate-900 rounded-lg px-3 py-2">
+              <div key={i} className="flex items-start gap-2 bg-dt-page rounded-lg px-3 py-2">
                 <span className="text-indigo-400 text-xs mt-0.5">✋</span>
-                <span className="text-sm text-slate-300 leading-snug">{a}</span>
+                <span className="text-sm text-dt-support leading-snug">{a}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* This week's load */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">This week's load</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">This week's load</p>
             <span className="text-sm"><TrendArrow trend={person.loadTrend} /></span>
           </div>
           <div className="grid grid-cols-2 gap-2 mb-3">
@@ -1599,9 +1599,9 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
               { label: 'Reviews', value: person.weeklyLoad.reviews },
               { label: 'Avg response', value: `${person.weeklyLoad.avgResponseHrs} hrs` },
             ].map(m => (
-              <div key={m.label} className="bg-slate-900 rounded-lg px-3 py-2">
-                <p className="text-xs text-slate-500">{m.label}</p>
-                <p className="text-lg font-semibold text-slate-200">{m.value}</p>
+              <div key={m.label} className="bg-dt-page rounded-lg px-3 py-2">
+                <p className="text-xs text-dt-muted">{m.label}</p>
+                <p className="text-lg font-semibold text-dt-body">{m.value}</p>
               </div>
             ))}
           </div>
@@ -1614,15 +1614,15 @@ function HumanProfile({ person, des, onSelectDE, setPage }: {
         </div>
 
         {/* Expertise */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Expertise</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-3">Expertise</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {person.expertiseTags.map(t => (
-              <span key={t} className="text-xs bg-slate-700 border border-slate-600 rounded-full px-3 py-1 text-slate-300">{t}</span>
+              <span key={t} className="text-xs bg-dt-panel border border-dt-border-strong rounded-full px-3 py-1 text-dt-support">{t}</span>
             ))}
           </div>
-          <p className="text-xs text-slate-500">
-            Consulted by DEs <span className="text-slate-200 font-medium">{person.consultedByDEs} times</span> this month
+          <p className="text-xs text-dt-muted">
+            Consulted by DEs <span className="text-dt-body font-medium">{person.consultedByDEs} times</span> this month
           </p>
         </div>
       </div>
@@ -1652,53 +1652,53 @@ function OrgView({ des, people, isTCP, onSelectDE, onSelectHuman, setPage }: {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      <p className="text-xs text-slate-500 mb-4">How the mixed workforce maps onto the entities it serves — Digital Employees and humans, side by side.</p>
+      <p className="text-xs text-dt-muted mb-4">How the mixed workforce maps onto the entities it serves — Digital Employees and humans, side by side.</p>
       <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }}>
         {shown.map(col => {
           const colDEs = des.filter(d => d.entity === col.key)
           const colHumans = people.filter(p => p.orgColumn === col.key)
           return (
-            <div key={col.key} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 pb-2 border-b border-slate-700">{col.label}</p>
+            <div key={col.key} className="bg-dt-card border border-dt-border rounded-xl p-4">
+              <p className="text-xs font-semibold text-dt-support uppercase tracking-wider mb-3 pb-2 border-b border-dt-border">{col.label}</p>
               <div className="space-y-2">
                 {colDEs.map(de => (
                   <button key={de.id} onClick={() => onSelectDE(de.id)}
-                    className="w-full flex items-center gap-2.5 bg-slate-900 hover:bg-slate-700/70 border border-slate-700 rounded-lg px-3 py-2 transition-colors text-left">
+                    className="w-full flex items-center gap-2.5 bg-dt-page hover:bg-dt-panel/70 border border-dt-border rounded-lg px-3 py-2 transition-colors text-left">
                     <div className="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xs flex-shrink-0">
                       {de.name[0]}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <StatusDot status={de.status} />
-                        <span className="text-sm text-slate-200 truncate">{de.name}</span>
+                        <span className="text-sm text-dt-body truncate">{de.name}</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 truncate">{de.role}</p>
+                      <p className="text-[11px] text-dt-muted truncate">{de.role}</p>
                     </div>
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 flex-shrink-0">DE</span>
                   </button>
                 ))}
                 {colHumans.map(p => (
                   <button key={p.id} onClick={() => onSelectHuman(p.id)}
-                    className="w-full flex items-center gap-2.5 bg-slate-900 hover:bg-slate-700/70 border border-slate-700 rounded-lg px-3 py-2 transition-colors text-left">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-600 ${p.color}`}>
+                    className="w-full flex items-center gap-2.5 bg-dt-page hover:bg-dt-panel/70 border border-dt-border rounded-lg px-3 py-2 transition-colors text-left">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-dt-border-strong ${p.color}`}>
                       {p.avatarInitials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-slate-200 truncate block">{p.name}</span>
-                      <p className="text-[11px] text-slate-500 truncate">{p.title}</p>
+                      <span className="text-sm text-dt-body truncate block">{p.name}</span>
+                      <p className="text-[11px] text-dt-muted truncate">{p.title}</p>
                     </div>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-600 text-slate-300 flex-shrink-0">H</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-600 text-dt-support flex-shrink-0">H</span>
                   </button>
                 ))}
                 {col.key === 'vendor' && colDEs.length === 0 && (
                   <button onClick={() => setPage('entity_vendor')}
-                    className="w-full border border-dashed border-slate-600 rounded-lg px-3 py-3 text-left hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-colors">
-                    <p className="text-xs font-medium text-slate-400">No DE serving Vendors yet</p>
+                    className="w-full border border-dashed border-dt-border-strong rounded-lg px-3 py-3 text-left hover:border-indigo-500/50 hover:bg-indigo-500/5 transition-colors">
+                    <p className="text-xs font-medium text-dt-support">No DE serving Vendors yet</p>
                     <p className="text-[11px] text-indigo-400 mt-1">Automation opportunity →</p>
                   </button>
                 )}
                 {colDEs.length === 0 && colHumans.length === 0 && col.key !== 'vendor' && (
-                  <p className="text-xs text-slate-600 py-2 text-center">—</p>
+                  <p className="text-xs text-dt-faint py-2 text-center">—</p>
                 )}
               </div>
             </div>
@@ -1780,18 +1780,18 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
+    <div className="flex-1 flex flex-col overflow-hidden bg-dt-page">
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+      <div className="flex-shrink-0 border-b border-dt-border px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">Workforce HQ</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Humans and Digital Employees — one team · {des.length} DEs · {people.length} humans</p>
+          <h1 className="text-lg font-semibold text-dt-title">Workforce HQ</h1>
+          <p className="text-xs text-dt-muted mt-0.5">Humans and Digital Employees — one team · {des.length} DEs · {people.length} humans</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
+          <div className="flex bg-dt-card border border-dt-border rounded-lg p-0.5 gap-0.5">
             {(['roster', 'org'] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors ${view === v ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}>
                 {v === 'roster' ? 'Roster' : 'Org view'}
               </button>
             ))}
@@ -1806,38 +1806,38 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       /* Body: split panel */
       <div className="flex flex-1 overflow-hidden">
         {/* Left: mixed roster */}
-        <div className="w-60 flex-shrink-0 bg-slate-800 border-r border-slate-700 overflow-y-auto">
+        <div className="w-60 flex-shrink-0 bg-dt-card border-r border-dt-border overflow-y-auto">
           <div className="p-3 space-y-1">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 pt-1 pb-1">Digital Employees ({des.length})</p>
+            <p className="text-[10px] font-semibold text-dt-muted uppercase tracking-wider px-2 pt-1 pb-1">Digital Employees ({des.length})</p>
             {des.map(de => (
               <button
                 key={de.id}
                 onClick={() => selectDE(de.id)}
-                className={`w-full text-left rounded-xl p-3 transition-colors ${selected.kind === 'de' && selected.id === de.id ? 'bg-slate-700 border border-slate-600' : 'hover:bg-slate-700/50'}`}
+                className={`w-full text-left rounded-xl p-3 transition-colors ${selected.kind === 'de' && selected.id === de.id ? 'bg-dt-panel border border-dt-border-strong' : 'hover:bg-dt-panel'}`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <StatusDot status={de.status} />
-                  <span className="text-sm font-medium text-slate-100">{de.name}</span>
+                  <span className="text-sm font-medium text-dt-title">{de.name}</span>
                 </div>
-                <p className="text-xs text-slate-400 ml-4 leading-tight mb-1.5">{de.role}</p>
+                <p className="text-xs text-dt-support ml-4 leading-tight mb-1.5">{de.role}</p>
                 <div className="ml-4">
                   <EntityBadge entity={de.entity} />
                 </div>
               </button>
             ))}
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-2 pt-3 pb-1">Humans ({people.length})</p>
+            <p className="text-[10px] font-semibold text-dt-muted uppercase tracking-wider px-2 pt-3 pb-1">Humans ({people.length})</p>
             {people.map(p => (
               <button
                 key={p.id}
                 onClick={() => selectHuman(p.id)}
-                className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 ${selected.kind === 'human' && selected.id === p.id ? 'bg-slate-700 border border-slate-600' : 'hover:bg-slate-700/50'}`}
+                className={`w-full text-left rounded-xl p-2.5 transition-colors flex items-center gap-2.5 ${selected.kind === 'human' && selected.id === p.id ? 'bg-dt-panel border border-dt-border-strong' : 'hover:bg-dt-panel'}`}
               >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-slate-600 ${p.color}`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-[10px] flex-shrink-0 border border-dt-border-strong ${p.color}`}>
                   {p.avatarInitials}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-slate-100 truncate block">{p.name}</span>
-                  <p className="text-xs text-slate-400 leading-tight truncate">{p.title}</p>
+                  <span className="text-sm font-medium text-dt-title truncate block">{p.name}</span>
+                  <p className="text-xs text-dt-support leading-tight truncate">{p.title}</p>
                 </div>
               </button>
             ))}
@@ -1850,30 +1850,30 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
         ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* DE header */}
-          <div className="flex-shrink-0 px-6 py-4 border-b border-slate-700 flex items-center gap-4">
+          <div className="flex-shrink-0 px-6 py-4 border-b border-dt-border flex items-center gap-4">
             <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-lg">
               {selectedDE.name[0]}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-base font-semibold text-slate-100">{selectedDE.name}</h2>
-                <span className="text-xs text-slate-400">{selectedDE.role}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDE.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : selectedDE.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' : selectedDE.status === 'at_risk' ? 'bg-red-500/20 text-red-400' : 'bg-slate-600 text-slate-500'}`}>
+                <h2 className="text-base font-semibold text-dt-title">{selectedDE.name}</h2>
+                <span className="text-xs text-dt-support">{selectedDE.role}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDE.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : selectedDE.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' : selectedDE.status === 'at_risk' ? 'bg-red-500/20 text-red-400' : 'bg-slate-600 text-dt-muted'}`}>
                   {selectedDE.status.replace('_', ' ')}
                 </span>
                 <EntityBadge entity={selectedDE.entity} />
               </div>
-              <p className="text-xs text-slate-500 mt-0.5 truncate">{selectedDE.description}</p>
+              <p className="text-xs text-dt-muted mt-0.5 truncate">{selectedDE.description}</p>
             </div>
           </div>
 
           {/* Tab bar */}
-          <div className="flex-shrink-0 flex border-b border-slate-700 overflow-x-auto">
+          <div className="flex-shrink-0 flex border-b border-dt-border overflow-x-auto">
             {TABS.map((tab, i) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(i)}
-                className={`px-3 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? 'border-indigo-500 text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+                className={`px-3 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? 'border-indigo-500 text-dt-body' : 'border-transparent text-dt-muted hover:text-dt-support'}`}
               >
                 {tab}
               </button>

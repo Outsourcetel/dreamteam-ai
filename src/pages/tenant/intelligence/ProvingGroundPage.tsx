@@ -234,11 +234,11 @@ const OUTCOME_CHIP: Record<RunOutcome, { label: string; cls: string }> = {
 };
 
 const TRIGGER_CLS: Record<RunRow['triggerType'], string> = {
-  'Nightly': 'bg-slate-600/50 text-slate-300',
+  'Nightly': 'bg-slate-600/50 text-dt-support',
   'Knowledge publish': 'bg-indigo-500/15 text-indigo-400',
   'Learned behavior': 'bg-sky-500/15 text-sky-400',
   'Recertification': 'bg-amber-500/15 text-amber-400',
-  'Manual': 'bg-slate-600/50 text-slate-400',
+  'Manual': 'bg-slate-600/50 text-dt-support',
   'Playbook publish': 'bg-purple-500/15 text-purple-400',
 };
 
@@ -334,12 +334,12 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
   const simProgress = suite.scenarios.length > 0 ? Math.min(100, Math.round((simStep / suite.scenarios.length) * 100)) : 0;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Proving Ground"
         subtitle="Every Digital Employee is continuously tested against golden scenarios. No knowledge update, learned behavior, playbook change, or recertification ships without passing."
       />
-      <p className="text-[11px] text-slate-600 -mt-4 mb-6">Design preview — runs are simulated.</p>
+      <p className="text-[11px] text-dt-faint -mt-4 mb-6">Design preview — runs are simulated.</p>
 
       {/* ── Section A: Suite summary strip ─────────────────────── */}
       <div className={`grid grid-cols-1 md:grid-cols-2 ${suites.length > 2 ? 'lg:grid-cols-3' : ''} gap-3 mb-6`}>
@@ -350,20 +350,20 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             <button
               key={s.deId}
               onClick={() => selectDe(s.deId)}
-              className={`text-left bg-slate-800 border rounded-2xl p-4 transition-colors ${active ? 'border-indigo-500/60' : 'border-slate-700 hover:border-slate-600'}`}
+              className={`text-left bg-dt-card border rounded-2xl p-4 transition-colors ${active ? 'border-indigo-500/60' : 'border-dt-border hover:border-dt-border-strong'}`}
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-7 h-7 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-xs font-semibold">{s.name[0]}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-100">{s.name}</p>
-                  <p className="text-[10px] text-slate-500 truncate">{s.role}</p>
+                  <p className="text-sm font-semibold text-dt-title">{s.name}</p>
+                  <p className="text-[10px] text-dt-muted truncate">{s.role}</p>
                 </div>
-                <span className={`text-sm ${s.trend === 'up' ? 'text-emerald-400' : s.trend === 'down' ? 'text-red-400' : 'text-slate-500'}`}>
+                <span className={`text-sm ${s.trend === 'up' ? 'text-emerald-400' : s.trend === 'down' ? 'text-red-400' : 'text-dt-muted'}`}>
                   {s.trend === 'up' ? '↗' : s.trend === 'down' ? '↘' : '→'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-slate-500">{s.total} golden scenarios</span>
+                <span className="text-dt-muted">{s.total} golden scenarios</span>
                 <span className={failCount > 0 ? 'text-red-400 font-medium' : 'text-emerald-400 font-medium'}>
                   {s.passed}/{s.total} passed
                 </span>
@@ -372,7 +372,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                 <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${s.certified ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
                   {s.certified ? 'Certified — suite passing' : s.blockedNote ?? 'Failing'}
                 </span>
-                <span className="text-[10px] text-slate-600">{s.lastRun}</span>
+                <span className="text-[10px] text-dt-faint">{s.lastRun}</span>
               </div>
             </button>
           );
@@ -380,14 +380,14 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section B: Run history ─────────────────────────────── */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-2">
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Run History — event-triggered</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Suites run automatically on knowledge publish, playbook publish, learned-behavior approval, recertification, and nightly. A failing run blocks deployment — nothing ships around it.</p>
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Run History — event-triggered</p>
+          <p className="text-[11px] text-dt-muted mt-0.5">Suites run automatically on knowledge publish, playbook publish, learned-behavior approval, recertification, and nightly. A failing run blocks deployment — nothing ships around it.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-900/60">
+            <thead className="bg-dt-inset">
               <tr>
                 <th className={th}>Time</th>
                 <th className={th}>Trigger</th>
@@ -399,16 +399,16 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             </thead>
             <tbody>
               {runs.map(r => (
-                <tr key={r.id} className={`border-t border-slate-700/60 ${r.outcome === 'blocked' ? 'bg-red-500/5' : r.outcome === 'failed' ? 'bg-red-500/[0.03]' : ''}`}>
-                  <td className={`${td} text-xs text-slate-500 font-mono whitespace-nowrap`}>{r.time}</td>
+                <tr key={r.id} className={`border-t border-dt-border ${r.outcome === 'blocked' ? 'bg-red-500/5' : r.outcome === 'failed' ? 'bg-red-500/[0.03]' : ''}`}>
+                  <td className={`${td} text-xs text-dt-muted font-mono whitespace-nowrap`}>{r.time}</td>
                   <td className={td}>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full mr-2 whitespace-nowrap ${TRIGGER_CLS[r.triggerType]}`}>{r.triggerType}</span>
-                    <span className="text-xs text-slate-300">{r.trigger}</span>
-                    {r.note && <p className="text-[11px] text-slate-500 mt-1">{r.note}</p>}
+                    <span className="text-xs text-dt-support">{r.trigger}</span>
+                    {r.note && <p className="text-[11px] text-dt-muted mt-1">{r.note}</p>}
                   </td>
-                  <td className={`${td} text-xs text-slate-300`}>{r.de}</td>
-                  <td className={`${td} text-xs whitespace-nowrap ${r.outcome === 'blocked' || r.outcome === 'failed' ? 'text-red-400' : r.outcome === 'awaiting' ? 'text-amber-400' : 'text-slate-300'}`}>{r.result}</td>
-                  <td className={`${td} text-xs text-slate-500 whitespace-nowrap`}>{r.duration}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{r.de}</td>
+                  <td className={`${td} text-xs whitespace-nowrap ${r.outcome === 'blocked' || r.outcome === 'failed' ? 'text-red-400' : r.outcome === 'awaiting' ? 'text-amber-400' : 'text-dt-support'}`}>{r.result}</td>
+                  <td className={`${td} text-xs text-dt-muted whitespace-nowrap`}>{r.duration}</td>
                   <td className={td}>
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${OUTCOME_CHIP[r.outcome].cls}`}>{OUTCOME_CHIP[r.outcome].label}</span>
                   </td>
@@ -420,18 +420,18 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section C: Suite detail + E: simulated run ─────────── */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
         <div className="px-5 pt-4 pb-3 flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Golden Scenario Suite — {suite.name}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">{suite.role} · {suite.total} scenarios · last run {suite.lastRun}</p>
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Golden Scenario Suite — {suite.name}</p>
+            <p className="text-[11px] text-dt-muted mt-0.5">{suite.role} · {suite.total} scenarios · last run {suite.lastRun}</p>
           </div>
           <div className="flex items-center gap-2">
             {suites.map(s => (
               <button
                 key={s.deId}
                 onClick={() => selectDe(s.deId)}
-                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${s.deId === selectedDeId ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : 'border-slate-700 text-slate-400 hover:text-slate-200'}`}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${s.deId === selectedDeId ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300' : 'border-dt-border text-dt-support hover:text-dt-body'}`}
               >
                 {s.name}
               </button>
@@ -450,11 +450,11 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
         {(simRunning || simDone) && (
           <div className="mx-5 mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4">
             <p className="text-[10px] uppercase tracking-wider text-indigo-400 mb-2">Simulated run — design preview</p>
-            <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
+            <div className="w-full bg-dt-panel rounded-full h-1.5 mb-2">
               <div className="h-1.5 rounded-full bg-indigo-500 transition-all duration-150" style={{ width: `${simProgress}%` }} />
             </div>
             {simRunning ? (
-              <p className="text-xs text-slate-300 font-mono truncate">
+              <p className="text-xs text-dt-support font-mono truncate">
                 [{simStep + 1}/{suite.scenarios.length}] {suite.scenarios[Math.min(simStep, suite.scenarios.length - 1)].name}
               </p>
             ) : (
@@ -470,9 +470,9 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                     <p className="text-xs text-amber-400 mt-2">Recertification remains blocked until these scenarios pass.</p>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 mt-1">All golden scenarios passed — {suite.name} remains certified for deployment.</p>
+                  <p className="text-xs text-dt-support mt-1">All golden scenarios passed — {suite.name} remains certified for deployment.</p>
                 )}
-                <p className="text-[10px] text-slate-600 mt-2">This is a scripted simulation landing on seeded results — no model was executed.</p>
+                <p className="text-[10px] text-dt-faint mt-2">This is a scripted simulation landing on seeded results — no model was executed.</p>
               </div>
             )}
           </div>
@@ -480,7 +480,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-900/60">
+            <thead className="bg-dt-inset">
               <tr>
                 <th className={th}>Scenario</th>
                 <th className={th}>Category</th>
@@ -495,10 +495,10 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                 return (
                   <React.Fragment key={sc.id}>
                     <tr
-                      className={`border-t border-slate-700/60 ${isFail ? 'bg-red-500/5 cursor-pointer hover:bg-red-500/10' : ''}`}
+                      className={`border-t border-dt-border ${isFail ? 'bg-red-500/5 cursor-pointer hover:bg-red-500/10' : ''}`}
                       onClick={() => isFail && setExpandedScenario(expanded ? null : sc.id)}
                     >
-                      <td className={`${td} text-xs text-slate-300 leading-relaxed`}>
+                      <td className={`${td} text-xs text-dt-support leading-relaxed`}>
                         {isFail && <span className="text-red-400 mr-1.5">{expanded ? '▾' : '▸'}</span>}
                         {sc.name}
                         {sc.addedFrom && <p className="text-[10px] text-indigo-400/80 mt-1">◆ {sc.addedFrom}</p>}
@@ -512,23 +512,23 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
                         </span>
                       </td>
                       <td className={`${td} text-xs whitespace-nowrap`}>
-                        <span className="text-slate-500">{sc.confExpected}%</span>
-                        <span className="text-slate-600 mx-1">/</span>
-                        <span className={isFail && sc.confActual > sc.confExpected ? 'text-red-400' : 'text-slate-300'}>{sc.confActual}%</span>
+                        <span className="text-dt-muted">{sc.confExpected}%</span>
+                        <span className="text-dt-faint mx-1">/</span>
+                        <span className={isFail && sc.confActual > sc.confExpected ? 'text-red-400' : 'text-dt-support'}>{sc.confActual}%</span>
                         {isFail && sc.confActual > sc.confExpected && <span className="text-[10px] text-red-400/80 ml-1.5">overconfident</span>}
                       </td>
                     </tr>
                     {isFail && expanded && (
-                      <tr className="border-t border-slate-700/40 bg-slate-900/60">
+                      <tr className="border-t border-dt-border bg-dt-inset">
                         <td colSpan={4} className="px-4 py-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs mb-3">
                             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
                               <p className="text-[10px] uppercase tracking-wide text-emerald-400 mb-1">Expected</p>
-                              <p className="text-slate-300 leading-relaxed">{sc.expected}</p>
+                              <p className="text-dt-support leading-relaxed">{sc.expected}</p>
                             </div>
                             <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
                               <p className="text-[10px] uppercase tracking-wide text-red-400 mb-1">Actual</p>
-                              <p className="text-slate-300 leading-relaxed">{sc.actual}</p>
+                              <p className="text-dt-support leading-relaxed">{sc.actual}</p>
                             </div>
                           </div>
                           {sc.rootCause && (
@@ -549,30 +549,30 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
       </div>
 
       {/* ── Section D: Calibration panel ───────────────────────── */}
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Calibration — {suite.name}</p>
-        <p className="text-sm text-slate-200 mb-4">{suite.calibrationSummary}</p>
+      <div className="bg-dt-card border border-dt-border rounded-2xl p-5">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-1">Calibration — {suite.name}</p>
+        <p className="text-sm text-dt-body mb-4">{suite.calibrationSummary}</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {suite.calibration.map(b => {
             const gap = b.reported - b.actual;
             const flagged = !!b.flag;
             return (
-              <div key={b.band} className={`rounded-xl p-3 border ${flagged ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-700 bg-slate-900'}`}>
+              <div key={b.band} className={`rounded-xl p-3 border ${flagged ? 'border-amber-500/40 bg-amber-500/5' : 'border-dt-border bg-dt-page'}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-slate-400">Reported {b.band}%</span>
+                  <span className="text-xs text-dt-support">Reported {b.band}%</span>
                   {flagged && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400">Overconfident</span>}
                 </div>
                 {/* reported bar */}
                 <div className="mb-1.5">
-                  <div className="flex justify-between text-[10px] text-slate-500 mb-0.5"><span>Self-reported</span><span>{b.reported}%</span></div>
-                  <div className="w-full bg-slate-700 rounded-full h-1.5">
+                  <div className="flex justify-between text-[10px] text-dt-muted mb-0.5"><span>Self-reported</span><span>{b.reported}%</span></div>
+                  <div className="w-full bg-dt-panel rounded-full h-1.5">
                     <div className="h-1.5 rounded-full bg-slate-500" style={{ width: `${b.reported}%` }} />
                   </div>
                 </div>
                 {/* actual bar */}
                 <div>
-                  <div className="flex justify-between text-[10px] text-slate-500 mb-0.5"><span>Actually correct</span><span className={flagged ? 'text-amber-400' : ''}>{b.actual}%</span></div>
-                  <div className="w-full bg-slate-700 rounded-full h-1.5">
+                  <div className="flex justify-between text-[10px] text-dt-muted mb-0.5"><span>Actually correct</span><span className={flagged ? 'text-amber-400' : ''}>{b.actual}%</span></div>
+                  <div className="w-full bg-dt-panel rounded-full h-1.5">
                     <div className={`h-1.5 rounded-full ${flagged ? 'bg-amber-500' : gap > 6 ? 'bg-amber-400/70' : 'bg-emerald-500'}`} style={{ width: `${b.actual}%` }} />
                   </div>
                 </div>
@@ -580,7 +580,7 @@ function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {
             );
           })}
         </div>
-        <p className="text-[11px] text-slate-500">
+        <p className="text-[11px] text-dt-muted">
           Autonomy thresholds (roadmap) will be gated on calibration, not self-reported confidence — a DE that is overconfident earns less autonomy, whatever number it reports.
         </p>
       </div>

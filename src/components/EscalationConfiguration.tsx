@@ -52,16 +52,16 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
   };
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
+    <div className="bg-dt-card border border-dt-border rounded-xl p-5 space-y-4">
       <div>
         <h4 className="text-sm font-semibold text-white mb-1">Escalation Configuration</h4>
-        <p className="text-xs text-slate-400">Define how this DE escalates to humans when needed.</p>
+        <p className="text-xs text-dt-support">Define how this DE escalates to humans when needed.</p>
       </div>
 
       <div className="space-y-4">
         {/* Escalation Routes */}
         <div>
-          <label className="text-xs font-medium text-slate-300 block mb-2">
+          <label className="text-xs font-medium text-dt-support block mb-2">
             Escalation Routes (topics/conditions)
           </label>
           <div className="space-y-2">
@@ -78,9 +78,9 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
                     setConfig({ ...config, escalation_routes: routes.filter(r => r !== 'support_lead') });
                   }
                 }}
-                className="rounded border-slate-600"
+                className="rounded border-dt-border-strong"
               />
-              <label htmlFor="support-lead" className="text-sm text-slate-300 cursor-pointer">
+              <label htmlFor="support-lead" className="text-sm text-dt-support cursor-pointer">
                 Support Lead (topic-based escalations)
               </label>
             </div>
@@ -97,9 +97,9 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
                     setConfig({ ...config, escalation_routes: routes.filter(r => r !== 'finance') });
                   }
                 }}
-                className="rounded border-slate-600"
+                className="rounded border-dt-border-strong"
               />
-              <label htmlFor="finance" className="text-sm text-slate-300 cursor-pointer">
+              <label htmlFor="finance" className="text-sm text-dt-support cursor-pointer">
                 Finance Lead (billing/refund questions)
               </label>
             </div>
@@ -115,9 +115,9 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
                     setConfig({ ...config, always_escalate_to: null });
                   }
                 }}
-                className="rounded border-slate-600"
+                className="rounded border-dt-border-strong"
               />
-              <label htmlFor="founder" className="text-sm text-slate-300 cursor-pointer">
+              <label htmlFor="founder" className="text-sm text-dt-support cursor-pointer">
                 Always escalate to Founder (high-risk decisions)
               </label>
             </div>
@@ -126,21 +126,21 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
 
         {/* SLA Configuration */}
         <div>
-          <label htmlFor="sla" className="text-xs font-medium text-slate-300 block mb-2">
+          <label htmlFor="sla" className="text-xs font-medium text-dt-support block mb-2">
             Approval SLA (hours to respond)
           </label>
           <select
             id="sla"
             value={config.sla_hours}
             onChange={(e) => setConfig({ ...config, sla_hours: Number(e.target.value) })}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500"
+            className="w-full bg-dt-panel border border-dt-border-strong rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-slate-500"
           >
             <option value={1}>1 hour (urgent)</option>
             <option value={4}>4 hours</option>
             <option value={24}>24 hours (standard)</option>
             <option value={48}>48 hours</option>
           </select>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-dt-muted mt-1">
             Escalation tasks will trigger alerts if not reviewed within this window.
           </p>
         </div>
@@ -160,8 +160,8 @@ export function EscalationConfiguration({ de }: { de: DigitalEmployee }) {
         </div>
       </div>
 
-      <div className="border-t border-slate-700 pt-3">
-        <p className="text-xs text-slate-500">
+      <div className="border-t border-dt-border pt-3">
+        <p className="text-xs text-dt-muted">
           💡 These settings control how {de.name} escalates decisions to humans. Configure by topic for flexibility or always escalate for highest governance.
         </p>
       </div>

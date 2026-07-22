@@ -62,10 +62,10 @@ export function DETrainingPanel({ deId }: DETrainingPanelProps) {
   }
 
   return (
-    <div className="bg-slate-800 rounded-lg p-4">
+    <div className="bg-dt-card rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
         <BookOpen className="w-4 h-4 text-blue-400" />
-        <h3 className="font-bold text-slate-100">Train This DE</h3>
+        <h3 className="font-bold text-dt-title">Train This DE</h3>
         <span className="text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded ml-auto">
           {currentStage.toUpperCase()}
         </span>
@@ -74,11 +74,11 @@ export function DETrainingPanel({ deId }: DETrainingPanelProps) {
       <div className="space-y-3">
         {/* Feedback type */}
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Feedback Type</label>
+          <label className="text-xs text-dt-support block mb-1">Feedback Type</label>
           <select
             value={feedbackType}
             onChange={(e) => setFeedbackType(e.target.value as any)}
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-100 text-sm"
+            className="w-full bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-dt-title text-sm"
           >
             <option value="approval">✓ Approval (DE did well)</option>
             <option value="correction">✎ Correction (DE should do this instead)</option>
@@ -88,24 +88,24 @@ export function DETrainingPanel({ deId }: DETrainingPanelProps) {
 
         {/* Human decision */}
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Your Decision / Feedback</label>
+          <label className="text-xs text-dt-support block mb-1">Your Decision / Feedback</label>
           <textarea
             value={humanDecision}
             onChange={(e) => setHumanDecision(e.target.value)}
             placeholder="e.g., 'This response was too formal. Customers need more empathy.'"
-            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-100 text-sm h-16 resize-none"
+            className="w-full bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-dt-title text-sm h-16 resize-none"
           />
         </div>
 
         {/* Correction detail (if correction) */}
         {feedbackType === 'correction' && (
           <div>
-            <label className="text-xs text-slate-400 block mb-1">What should it do instead?</label>
+            <label className="text-xs text-dt-support block mb-1">What should it do instead?</label>
             <textarea
               value={correctionDetail}
               onChange={(e) => setCorrectionDetail(e.target.value)}
               placeholder="e.g., 'Acknowledge their frustration, use simpler language, offer a specific solution'"
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-slate-100 text-sm h-12 resize-none"
+              className="w-full bg-dt-panel border border-dt-border-strong rounded px-2 py-1 text-dt-title text-sm h-12 resize-none"
             />
           </div>
         )}
@@ -114,7 +114,7 @@ export function DETrainingPanel({ deId }: DETrainingPanelProps) {
         <button
           onClick={handleSubmitFeedback}
           disabled={isSubmitting}
-          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white text-sm rounded transition"
+          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-dt-panel text-white text-sm rounded transition"
         >
           {isSubmitting ? 'Recording...' : 'Record Feedback'}
         </button>

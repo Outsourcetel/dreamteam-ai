@@ -34,7 +34,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
-  skipped_not_connected: ['Not connected — skipped', 'bg-slate-500 text-slate-200'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-slate-500 text-dt-body'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked', 'bg-rose-500/20 text-rose-300'],
 };
@@ -63,7 +63,7 @@ const BUCKETS: Array<{ key: BucketKey; label: string; match: (d: InquiryDecision
   { key: 'blocked', label: 'Blocked / no access', match: d => d === 'blocked_guardrail' || d === 'skipped_no_access', cls: 'text-rose-300', active: 'border-rose-500/60 bg-rose-500/10' },
   { key: 'acted', label: 'Acted', match: d => d === 'acted', cls: 'text-emerald-300', active: 'border-emerald-500/60 bg-emerald-500/10' },
   { key: 'auto', label: 'Auto-sent', match: d => d === 'would_auto_send', cls: 'text-emerald-400', active: 'border-emerald-500/60 bg-emerald-500/10' },
-  { key: 'all', label: 'All activity', match: () => true, cls: 'text-slate-300', active: 'border-indigo-500/60 bg-indigo-500/10' },
+  { key: 'all', label: 'All activity', match: () => true, cls: 'text-dt-support', active: 'border-indigo-500/60 bg-indigo-500/10' },
 ];
 
 function Chip({ label, cls }: { label: string; cls: string }) {
@@ -74,17 +74,17 @@ function StepList({ steps }: { steps: EvidenceStep[] }) {
   return (
     <div className="space-y-2 mt-2">
       {steps.map((s, i) => {
-        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-600 text-slate-300'];
+        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-600 text-dt-support'];
         return (
           <div key={i} className="flex gap-2">
             <span className="text-sm leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-medium text-white">{STEP_LABEL[s.kind] ?? s.kind}</span>
-                <span className="text-[10px] text-slate-400">{s.system}</span>
+                <span className="text-[10px] text-dt-support">{s.system}</span>
                 <Chip label={ol} cls={oc} />
               </div>
-              <p className="text-[11px] text-slate-300 mt-0.5">{s.summary}</p>
+              <p className="text-[11px] text-dt-support mt-0.5">{s.summary}</p>
             </div>
           </div>
         );
@@ -115,42 +115,42 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
   }, [expanded, decision?.action_execution_id, execution]);
 
   return (
-    <div className={`rounded-lg border ${isSimulation ? 'border-purple-500/30' : 'border-slate-700'} bg-slate-800/40 overflow-hidden`}>
+    <div className={`rounded-lg border ${isSimulation ? 'border-purple-500/30' : 'border-dt-border'} bg-dt-card overflow-hidden`}>
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-slate-800/80 transition-colors"
+        className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-dt-panel/80 transition-colors"
       >
-        <span className="text-slate-500 text-[10px] w-4 flex-shrink-0">{expanded ? '▼' : '▶'}</span>
-        <span className="font-mono text-[10px] text-slate-500 w-24 flex-shrink-0 hidden sm:block">{fmtTime(run.created_at)}</span>
-        <span className="text-[11px] text-slate-300 w-28 flex-shrink-0 truncate hidden md:block">{row.subject_name ?? '—'}</span>
-        <span className="text-xs text-slate-100 flex-1 min-w-0 truncate">{run.inquiry}</span>
+        <span className="text-dt-muted text-[10px] w-4 flex-shrink-0">{expanded ? '▼' : '▶'}</span>
+        <span className="font-mono text-[10px] text-dt-muted w-24 flex-shrink-0 hidden sm:block">{fmtTime(run.created_at)}</span>
+        <span className="text-[11px] text-dt-support w-28 flex-shrink-0 truncate hidden md:block">{row.subject_name ?? '—'}</span>
+        <span className="text-xs text-dt-title flex-1 min-w-0 truncate">{run.inquiry}</span>
         {catLabel && <span className="hidden lg:inline"><Chip label={catLabel} cls="bg-indigo-500/15 text-indigo-300" /></span>}
-        {decision?.confidence != null && <span className="text-[10px] text-slate-400 w-9 text-right flex-shrink-0 tabular-nums">{decision.confidence}%</span>}
+        {decision?.confidence != null && <span className="text-[10px] text-dt-support w-9 text-right flex-shrink-0 tabular-nums">{decision.confidence}%</span>}
         {meta ? <Chip label={meta.label} cls={`border ${meta.cls}`} />
-          : <Chip label="Answered" cls="bg-slate-700 text-slate-300" />}
+          : <Chip label="Answered" cls="bg-dt-panel text-dt-support" />}
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-slate-700/60 space-y-3">
+        <div className="px-3 pb-3 pt-1 border-t border-dt-border space-y-3">
           <div className="flex items-center gap-2 flex-wrap text-[10px] sm:hidden">
-            <span className="font-mono text-slate-500">{fmtTime(run.created_at)}</span>
-            {row.subject_name && <span className="text-slate-400">· {row.subject_name}</span>}
+            <span className="font-mono text-dt-muted">{fmtTime(run.created_at)}</span>
+            {row.subject_name && <span className="text-dt-support">· {row.subject_name}</span>}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {isSimulation && <Chip label="SIMULATION — not a real item" cls="bg-purple-500/20 text-purple-300 border border-purple-500/40" />}
-            {decision && <Chip label={SOURCE_LABEL[decision.source] ?? decision.source} cls="bg-slate-700 text-slate-300" />}
-            {run.account_ref && <Chip label={`account ${run.account_ref}`} cls="bg-slate-700 text-slate-300" />}
+            {decision && <Chip label={SOURCE_LABEL[decision.source] ?? decision.source} cls="bg-dt-panel text-dt-support" />}
+            {run.account_ref && <Chip label={`account ${run.account_ref}`} cls="bg-dt-panel text-dt-support" />}
           </div>
 
           {decision?.reasoning && (
             <div>
-              <p className="text-[11px] font-medium text-slate-400 mb-1">Why</p>
-              <p className="text-xs text-slate-100 leading-relaxed">{decision.reasoning}</p>
+              <p className="text-[11px] font-medium text-dt-support mb-1">Why</p>
+              <p className="text-xs text-dt-title leading-relaxed">{decision.reasoning}</p>
               {decision.human_task_id && <p className="text-[11px] text-amber-300 mt-1">A human review task was created for this.</p>}
             </div>
           )}
           {!decision && (
-            <p className="text-[11px] text-slate-400">Human-invoked consultation — no automatic decision recorded (a human reading the answer is the decision here).</p>
+            <p className="text-[11px] text-dt-support">Human-invoked consultation — no automatic decision recorded (a human reading the answer is the decision here).</p>
           )}
 
           {execution && (
@@ -163,7 +163,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
           )}
 
           <div>
-            <p className="text-[11px] font-medium text-slate-400">Evidence — {run.steps?.length ?? 0} step(s)</p>
+            <p className="text-[11px] font-medium text-dt-support">Evidence — {run.steps?.length ?? 0} step(s)</p>
             <StepList steps={run.steps ?? []} />
           </div>
         </div>
@@ -267,22 +267,22 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
 
   const filtersActive = bucket !== 'all' || subject !== 'all' || source !== 'all' || category !== 'all' || search.trim() !== '';
   const clearFilters = () => { setBucket('all'); setSubject('all'); setSource('all'); setCategory('all'); setSearch(''); };
-  const selectCls = 'text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500';
+  const selectCls = 'text-xs bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body focus:outline-none focus:border-indigo-500';
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="DE at Work" subtitle="Live proactive-triage queue." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
-          <p className="text-xs text-slate-400">Apply <code className="mx-1 text-slate-300">supabase/migrations/034_proactive_inquiry_triage.sql</code> in the Supabase SQL Editor, then reload.</p>
+          <p className="text-xs text-dt-support">Apply <code className="mx-1 text-dt-support">supabase/migrations/034_proactive_inquiry_triage.sql</code> in the Supabase SQL Editor, then reload.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <PageHeader
           title="DE at Work"
@@ -290,7 +290,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
         />
         <button
           onClick={() => setShowSim(s => !s)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-purple-500 hover:text-purple-300 transition-colors whitespace-nowrap"
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-purple-500 hover:text-purple-300 transition-colors whitespace-nowrap"
         >
           {showSim ? 'Hide simulator' : 'Simulate an inquiry'}
         </button>
@@ -298,7 +298,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
 
       {showSim && (
         <div className="mb-5 rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
-          <p className="text-xs text-slate-400 mb-2">
+          <p className="text-xs text-dt-support mb-2">
             Runs the exact same evidence + triage pipeline right now, so you can watch the mechanism without waiting for a real item.
             Always tagged as a simulation — never mixed with real triage. Real automatic triage runs every 5 minutes via the dispatch cron.
           </p>
@@ -307,7 +307,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
               value={simInquiry}
               onChange={(e) => setSimInquiry(e.target.value)}
               placeholder='e.g. "My API key stopped working after the update"'
-              className="flex-1 min-w-[280px] text-sm bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+              className="flex-1 min-w-[280px] text-sm bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
             />
             <button
               onClick={runSimulation}
@@ -326,10 +326,10 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
           <button
             key={b.key}
             onClick={() => setBucket(b.key)}
-            className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${bucket === b.key ? b.active : 'border-slate-700 bg-slate-800/40 hover:border-slate-600'}`}
+            className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${bucket === b.key ? b.active : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}
           >
             <div className={`text-xl font-semibold tabular-nums ${b.cls}`}>{bucketCounts[b.key]}</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">{b.label}</div>
+            <div className="text-[11px] text-dt-support mt-0.5">{b.label}</div>
           </button>
         ))}
       </div>
@@ -340,7 +340,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search item or account…"
-          className="flex-1 min-w-[200px] text-xs bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          className="flex-1 min-w-[200px] text-xs bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500"
         />
         <select value={subject} onChange={e => setSubject(e.target.value)} className={selectCls}>
           <option value="all">All employees</option>
@@ -359,17 +359,17 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
           </select>
         )}
         {filtersActive && (
-          <button onClick={clearFilters} className="text-xs px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 transition-colors">Clear</button>
+          <button onClick={clearFilters} className="text-xs px-2.5 py-1.5 rounded-lg text-dt-support hover:text-dt-body transition-colors">Clear</button>
         )}
       </div>
 
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-dt-muted">
           {filtersActive ? `${filtered.length} of ${rows.length} shown` : `${rows.length} recent run(s)`}
         </span>
-        {lastPolledAt && <span className="text-[10px] text-slate-600">Updated {lastPolledAt.toLocaleTimeString()} · refreshes every 8s</span>}
+        {lastPolledAt && <span className="text-[10px] text-dt-faint">Updated {lastPolledAt.toLocaleTimeString()} · refreshes every 8s</span>}
       </div>
 
       {loading ? (
@@ -389,7 +389,7 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
             <div className="text-center mt-4">
               <button
                 onClick={() => setLimit(l => l + PAGE_SIZE)}
-                className="text-xs px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-indigo-500 transition-colors"
+                className="text-xs px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 transition-colors"
               >
                 Load older activity
               </button>
