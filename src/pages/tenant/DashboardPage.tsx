@@ -9,6 +9,7 @@ import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import { useDataMode } from '../../lib/dataMode';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
+import { StatTile, PanelCard, Chip, Button, EmptyState } from '../../design/primitives';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
   getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
@@ -361,22 +362,16 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
     : 'kb_gap';
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+    <div className="p-6 flex flex-col gap-6 text-dt-body">
 
         {/* Top bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-white">{liveTenantName || 'Your company'}</h1>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold text-white bg-emerald-600">LIVE</span>
-            <span className="text-xs text-slate-500">Real workspace data</span>
+            <h1 className="text-2xl font-semibold text-dt-title">{liveTenantName || 'Your company'}</h1>
+            <Chip tone="ok" dot pulse>LIVE</Chip>
+            <span className="text-xs text-dt-muted">Real workspace data</span>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-8 h-8 rounded-lg bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm transition-colors"
-          >
-            ↻
-          </button>
+          <Button kind="ghost" size="sm" onClick={() => window.location.reload()} aria-label="Refresh">↻</Button>
         </div>
 
         {/* Always-available getting-started guide (dismissible, reopenable) */}
@@ -390,63 +385,51 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
           <MissingTablesNotice />
         ) : (
           <>
-            {/* KPI row */}
-            <div className="grid grid-cols-6 gap-3">
+            {/* KPI row — StatTiles, responsive (2/3/6 across widths) */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               {kpis.map((kpi) => (
-                <button
-                  key={kpi.label}
-                  onClick={() => setPage(kpi.navPage)}
-                  className={`bg-slate-800 border rounded-xl p-4 text-left cursor-pointer hover:border-slate-600 transition-all ${
-                    kpi.alert ? 'border-amber-500/40 hover:border-amber-500/60' : 'border-slate-700'
-                  }`}
-                >
-                  <div className={`text-base mb-2 ${kpi.alert ? 'text-amber-400' : 'text-slate-400'}`}>{kpi.icon}</div>
-                  <div className={`text-xl font-bold mb-0.5 ${kpi.alert ? 'text-amber-300' : 'text-white'}`}>{kpi.value}</div>
-                  <div className="text-xs text-slate-500">{kpi.label}</div>
-                </button>
+                <StatTile key={kpi.label} icon={kpi.icon} label={kpi.label} value={kpi.value}
+                  tone={kpi.alert ? 'warn' : undefined} onClick={() => setPage(kpi.navPage)} />
               ))}
             </div>
 
             {/* Customer entity card */}
             <div>
-              <div className="text-[9px] font-bold tracking-widest text-slate-600 uppercase mb-3">
-                WHO WE SERVE
+              <div className="text-[10px] uppercase tracking-wide text-dt-muted mb-3">
+                Who we serve
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-dt-border bg-dt-card p-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-sm">◎</span>
-                      <span className="text-sm font-semibold text-white">Customer Lifecycle</span>
+                      <span className="text-dt-support text-sm">◎</span>
+                      <span className="text-sm font-semibold text-dt-title">Customer Lifecycle</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${atRisk > 0 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                        <span className={`text-[10px] font-medium ${atRisk > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>{atRisk > 0 ? 'Attention' : 'Healthy'}</span>
-                      </div>
+                      <Chip tone={atRisk > 0 ? 'warn' : 'ok'} dot>{atRisk > 0 ? 'Attention' : 'Healthy'}</Chip>
                       <button
-                        onClick={() => setPage('entity_customer')}
-                        className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
+                        onClick={() => setPage('entity_customer')} aria-label="Open Customer Lifecycle"
+                        className="w-6 h-6 rounded-md bg-dt-panel text-dt-support hover:text-dt-title hover:bg-dt-inset flex items-center justify-center text-xs transition-colors"
                       >
                         →
                       </button>
                     </div>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    <span className="text-slate-600 text-[10px]">ARR under management: </span>
-                    <span className="text-slate-200 font-medium">{fmtMoneyK(arrCents)}</span>
+                  <div className="text-xs text-dt-support">
+                    <span className="text-dt-muted text-[10px]">ARR under management: </span>
+                    <span className="text-dt-body font-medium">{fmtMoneyK(arrCents)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setPage('entity_customer_support')}
-                      className="flex-1 text-xs text-indigo-300 hover:text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/15 rounded-lg px-2 py-1.5 text-left transition-colors"
+                      className="flex-1 text-xs text-dt-accent-text hover:brightness-110 bg-dt-accent-soft rounded-lg px-2 py-1.5 text-left transition-colors"
                     >
                       {openTickets} open ticket{openTickets === 1 ? '' : 's'} ↗
                     </button>
                     {pendingTasks > 0 && (
                       <button
                         onClick={() => setPage('ops_human_tasks')}
-                        className="text-xs text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg px-2 py-1.5 whitespace-nowrap transition-colors"
+                        className="text-xs text-dt-warn bg-dt-warn-soft hover:brightness-110 rounded-lg px-2 py-1.5 whitespace-nowrap transition-colors"
                       >
                         {pendingTasks} Human Tasks
                       </button>
@@ -459,60 +442,50 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                   { label: 'Vendors & Partners', icon: '◈', page: 'entity_vendor' as Page },
                   { label: 'Our People', icon: '◉', page: 'entity_workforce' as Page },
                 ].map(e => (
-                  <div key={e.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3 opacity-70">
+                  <div key={e.label} className="rounded-xl border border-dt-border bg-dt-card p-4 flex flex-col gap-3 opacity-70">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-slate-400 text-sm">{e.icon}</span>
-                        <span className="text-sm font-semibold text-white">{e.label}</span>
+                        <span className="text-dt-support text-sm">{e.icon}</span>
+                        <span className="text-sm font-semibold text-dt-title">{e.label}</span>
                       </div>
                       <button
-                        onClick={() => setPage(e.page)}
-                        className="w-6 h-6 rounded-md bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 flex items-center justify-center text-xs transition-colors"
+                        onClick={() => setPage(e.page)} aria-label={`Open ${e.label}`}
+                        className="w-6 h-6 rounded-md bg-dt-panel text-dt-support hover:text-dt-title hover:bg-dt-inset flex items-center justify-center text-xs transition-colors"
                       >
                         →
                       </button>
                     </div>
-                    <div className="text-xs text-slate-600 italic">Not yet on the production track</div>
+                    <div className="text-xs text-dt-faint italic">Not yet on the production track</div>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Bottom row — Human Tasks + Live Activity */}
-            <div className="grid grid-cols-5 gap-4">
-              <div className="col-span-3 bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">
-                    HUMAN TASKS — {pendingTasks} pending
-                  </span>
-                  <button
-                    onClick={() => setPage('ops_human_tasks')}
-                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                  >
-                    View all →
-                  </button>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+              <PanelCard className="lg:col-span-3" title={`Human tasks — ${pendingTasks} pending`}
+                actions={<Button kind="ghost" size="sm" onClick={() => setPage('ops_human_tasks')}>View all →</Button>}>
                 {tasks.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4 text-center">No tasks yet — DE decisions requiring a human will show up here.</p>
+                  <EmptyState headline="No tasks yet">DE decisions requiring a human will show up here.</EmptyState>
                 ) : (
                   <div className="space-y-1">
                     {tasks.slice(0, 6).map(task => (
-                      <div key={task.id} className="grid grid-cols-[100px_1fr_60px_24px] gap-2 items-center px-2 py-2 rounded-lg hover:bg-slate-700/50 transition-colors">
+                      <div key={task.id} className="grid grid-cols-[100px_1fr_60px_24px] gap-2 items-center px-2 py-2 rounded-lg hover:bg-dt-panel transition-colors">
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
                           {taskBadgeLabel(task.type)}
                         </span>
                         <div className="min-w-0 flex items-center gap-1.5">
                           <div className="min-w-0">
-                            <div className="text-xs text-slate-200 truncate">{task.title}</div>
-                            {task.detail && <div className="text-[10px] text-slate-500">{task.detail}</div>}
+                            <div className="text-xs text-dt-body truncate">{task.title}</div>
+                            {task.detail && <div className="text-[10px] text-dt-muted">{task.detail}</div>}
                           </div>
-                          {task.status === 'approved' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 flex-shrink-0">Approved</span>}
-                          {task.status === 'rejected' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 flex-shrink-0">Rejected</span>}
+                          {task.status === 'approved' && <Chip tone="ok" className="flex-shrink-0">Approved</Chip>}
+                          {task.status === 'rejected' && <Chip tone="danger" className="flex-shrink-0">Rejected</Chip>}
                         </div>
-                        <span className="text-xs text-slate-500">{liveActivityAge(task.created_at).replace(' ago', '')}</span>
+                        <span className="text-xs text-dt-muted">{liveActivityAge(task.created_at).replace(' ago', '')}</span>
                         <button
-                          onClick={() => setPage('ops_human_tasks')}
-                          className="w-6 h-6 rounded bg-slate-700 text-slate-500 hover:text-white flex items-center justify-center text-xs transition-colors"
+                          onClick={() => setPage('ops_human_tasks')} aria-label="Open human tasks"
+                          className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-dt-title flex items-center justify-center text-xs transition-colors"
                         >
                           →
                         </button>
@@ -520,14 +493,11 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                     ))}
                   </div>
                 )}
-              </div>
+              </PanelCard>
 
-              <div className="col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[9px] font-bold tracking-widest text-slate-600 uppercase">LIVE ACTIVITY</span>
-                </div>
+              <PanelCard className="lg:col-span-2" title="Live activity">
                 {activity.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4 text-center">No activity yet.</p>
+                  <EmptyState headline="No activity yet." />
                 ) : (
                   <div className="space-y-1">
                     {activity.map(item => {
@@ -535,26 +505,25 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                       return (
                         <div
                           key={item.id}
-                          className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(t)} hover:bg-slate-700/40 transition-colors`}
+                          className={`flex items-start gap-2.5 px-2 py-2 rounded-lg border-l-2 ${activityBorderColor(t)} hover:bg-dt-panel transition-colors`}
                         >
                           <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${activityDotColor(t)}`} />
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs text-slate-300 leading-tight">{item.text}</div>
-                            <div className="text-[10px] text-slate-600 mt-0.5">{item.actor} · {liveActivityAge(item.created_at)}</div>
+                            <div className="text-xs text-dt-support leading-tight">{item.text}</div>
+                            <div className="text-[10px] text-dt-faint mt-0.5">{item.actor} · {liveActivityAge(item.created_at)}</div>
                           </div>
                           {item.confidence != null && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 flex-shrink-0">{item.confidence}%</span>
+                            <Chip tone="neutral" className="flex-shrink-0">{item.confidence}%</Chip>
                           )}
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </div>
+              </PanelCard>
             </div>
           </>
         )}
-      </div>
     </div>
   );
 }

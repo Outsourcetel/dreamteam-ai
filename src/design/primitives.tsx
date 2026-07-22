@@ -68,16 +68,22 @@ export function PanelCard({ title, badge, actions, children, className = '' }:
 }
 
 /* ── StatTile — a number at a glance ────────────────────────────────────── */
-export function StatTile({ label, value, sub, tone }:
-  { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: Tone }) {
+export function StatTile({ label, value, sub, tone, icon, onClick }:
+  { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: Tone; icon?: React.ReactNode; onClick?: () => void }) {
   const v = tone ? { ok: 'text-dt-ok', warn: 'text-dt-warn', danger: 'text-dt-danger', info: 'text-dt-info', neutral: 'text-dt-title', accent: 'text-dt-accent-text' }[tone] : 'text-dt-title';
-  return (
-    <div className="rounded-xl border border-dt-border bg-dt-card px-4 py-3 min-w-0">
+  const border = tone === 'warn' ? 'border-dt-warn-border' : tone === 'danger' ? 'border-dt-danger-border' : 'border-dt-border';
+  const inner = (
+    <>
+      {icon && <div className={`text-base mb-2 ${tone === 'warn' ? 'text-dt-warn' : 'text-dt-support'}`}>{icon}</div>}
       <div className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">{label}</div>
       <div className={`text-xl font-semibold ${v}`}>{value}</div>
       {sub && <div className="text-[11px] text-dt-muted mt-0.5">{sub}</div>}
-    </div>
+    </>
   );
+  if (onClick) {
+    return <button onClick={onClick} className={`rounded-xl border ${border} bg-dt-card px-4 py-3 min-w-0 text-left hover:border-dt-border-strong transition-colors`}>{inner}</button>;
+  }
+  return <div className={`rounded-xl border ${border} bg-dt-card px-4 py-3 min-w-0`}>{inner}</div>;
 }
 
 /* ── DetailTile — a labeled fact (Employee-File-strip style) ────────────── */
