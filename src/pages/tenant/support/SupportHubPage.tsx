@@ -1,4 +1,5 @@
 import type { Page } from '../../../types';
+import { TabBar } from '../../../design/primitives';
 import SupportInboxPage from './SupportInboxPage';
 import SupportCommandCenterPage from './SupportCommandCenterPage';
 import SupportTriageRulesPage from './SupportTriageRulesPage';
@@ -7,27 +8,22 @@ import SupportTriageRulesPage from './SupportTriageRulesPage';
 // IA). The INBOX is primary: it's the floor where you watch the DE answer and
 // step in. The old Command Center becomes the Overview tab; triage rules ride
 // along as config. Tabs stay real Page keys so old /support/* URLs deep-link.
-const TABS: { page: Page; label: string }[] = [
-  { page: 'support_inbox', label: 'Inbox' },
-  { page: 'support_command_center', label: 'Overview' },
-  { page: 'support_triage_rules', label: 'Triage rules' },
+// Design System v1 pilot surface — composes from src/design primitives.
+const TABS: { key: Page; label: string }[] = [
+  { key: 'support_inbox', label: 'Inbox' },
+  { key: 'support_command_center', label: 'Overview' },
+  { key: 'support_triage_rules', label: 'Triage rules' },
 ];
 
 const SupportHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => void }) => (
-  <div className="flex-1 flex flex-col overflow-hidden bg-slate-900 text-slate-200">
+  <div className="flex-1 flex flex-col overflow-hidden bg-dt-page text-dt-body">
     <div className="shrink-0 px-6 pt-8">
-      <h1 className="text-2xl font-semibold text-white">Support</h1>
-      <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+      <h1 className="text-2xl font-semibold text-dt-title">Support</h1>
+      <p className="text-sm text-dt-support mt-1 max-w-2xl">
         Your support operation in one place — live conversations first, the numbers and the rules behind them one tab away.
       </p>
-      <div className="flex gap-1 mt-5 border-b border-slate-700/60 overflow-x-auto scrollbar-none">
-        {TABS.map(t => (
-          <button key={t.page} onClick={() => setPage(t.page)}
-            className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.page ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
-            {t.label}
-          </button>
-        ))}
+      <div className="mt-5">
+        <TabBar tabs={TABS} active={tab} onSelect={setPage} />
       </div>
     </div>
     {tab === 'support_inbox' && <SupportInboxPage setPage={setPage} embedded />}

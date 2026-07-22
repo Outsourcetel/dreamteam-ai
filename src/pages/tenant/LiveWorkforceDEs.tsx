@@ -34,6 +34,7 @@ import {
 import type { KpiMetric, SkillCategory, CertificationType, EscalationRule } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import EmployeeFileStrip from '../../components/workforce/EmployeeFileStrip';
+import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
@@ -286,30 +287,23 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   if (des === null) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6">
-      <div className="mb-1 flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Your Digital Employees</h3>
-        {!adding && (
-          <div className="flex items-center gap-2">
-            {/* Retiring an employee used to leave it in this list forever,
-                so the action looked like it had done nothing. */}
-            {retiredCount > 0 && (
-              <button onClick={() => setShowRetired(v => !v)}
-                className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600 transition-colors">
-                {showRetired ? 'Hide retired' : `Show retired (${retiredCount})`}
-              </button>
-            )}
-            <button onClick={() => setHiring(true)}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
-              ✨ Hire with AI
-            </button>
-            <button onClick={() => setAdding(true)}
-              className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium transition-colors">
-              + Add manually
-            </button>
-          </div>
-        )}
-      </div>
+    <PanelCard
+      title="Your Digital Employees"
+      actions={!adding && (
+        <>
+          {/* Retiring an employee used to leave it in this list forever,
+              so the action looked like it had done nothing. */}
+          {retiredCount > 0 && (
+            <Button kind="ghost" size="sm" onClick={() => setShowRetired(v => !v)}>
+              {showRetired ? 'Hide retired' : `Show retired (${retiredCount})`}
+            </Button>
+          )}
+          <Button kind="primary" size="sm" onClick={() => setHiring(true)}>✨ Hire with AI</Button>
+          <Button kind="secondary" size="sm" onClick={() => setAdding(true)}>+ Add manually</Button>
+        </>
+      )}
+    >
+      <div>
       {hiring && (
         <HireEmployeeWizard
           onClose={() => setHiring(false)}
@@ -330,52 +324,51 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
           </div>
         </div>
       )}
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-dt-muted mb-4">
         Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
         data access, playbooks, and trust build up the same way for every department.
       </p>
 
-      {error && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
+      {error && <Banner tone="danger" className="mb-3">{error}</Banner>}
 
       <div className="space-y-2 mb-3">
         {des.map(de => (
-          // Row is a div, not a button: "Edit with AI" is a second action and
-          // a button cannot legally nest inside another button.
-          <div key={de.id}
-            className="w-full flex items-center gap-3 text-xs rounded-lg px-3 py-2.5 bg-slate-900/60 hover:bg-slate-800 hover:ring-1 hover:ring-indigo-500/40 transition-all">
-            <button onClick={() => onSelect(de)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
-              <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold flex-shrink-0">
+          <EntityRow
+            key={de.id}
+            onOpen={() => onSelect(de)}
+            avatar={
+              <div className="w-8 h-8 rounded-lg bg-dt-accent-soft border border-dt-accent/30 flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
                 {(de.persona_name || de.name).charAt(0).toUpperCase()}
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-slate-200 font-medium">{de.persona_name || de.name}</span>
-                  {de.persona_name && <span className="text-slate-500">— {de.name}</span>}
-                  {/* Wave 4: absorbed specialists live in the one roster now,
-                      flagged rather than kept in a separate desk. */}
-                  {de.is_specialist && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300">specialist</span>
-                  )}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${de.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-500'}`}>{de.status}</span>
-                  {health[de.id] && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
-                      {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5 truncate">{de.department || de.category} · {de.description || 'No description yet.'}</p>
-              </div>
-            </button>
-            <button onClick={() => setEditingDe({ id: de.id, label: de.persona_name || de.name })}
-              title="Describe what to change, in plain language"
-              className="flex-shrink-0 text-[11px] px-2 py-1 rounded-md bg-slate-800 hover:bg-indigo-600/30 border border-slate-700 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-200 transition-colors">
-              ✨ Edit with AI
-            </button>
-            <button onClick={() => onSelect(de)} aria-label={`Open ${de.name}`}
-              className="text-slate-600 hover:text-slate-300 flex-shrink-0">→</button>
-          </div>
+            }
+            title={de.persona_name || de.name}
+            titleExtra={de.persona_name ? <span className="text-xs text-dt-muted">— {de.name}</span> : undefined}
+            chips={
+              <>
+                {/* Wave 4: absorbed specialists live in the one roster now. */}
+                {de.is_specialist && <Chip tone="accent">specialist</Chip>}
+                <Chip tone={de.status === 'active' ? 'ok' : 'neutral'}>{de.status}</Chip>
+                {health[de.id] && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
+                    {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
+                  </span>
+                )}
+              </>
+            }
+            meta={`${de.department || de.category} · ${de.description || 'No description yet.'}`}
+            actions={
+              <Button kind="ai" size="sm" title="Describe what to change, in plain language"
+                onClick={() => setEditingDe({ id: de.id, label: de.persona_name || de.name })}>
+                ✨ Edit with AI
+              </Button>
+            }
+          />
         ))}
-        {des.length === 0 && <p className="text-xs text-slate-500">No Digital Employees yet — add your first one below.</p>}
+        {des.length === 0 && (
+          <EmptyState headline="No digital employees yet">
+            Hire your first one with AI above — it starts supervised, with no data access until you grant it.
+          </EmptyState>
+        )}
       </div>
 
       {adding && (
@@ -414,7 +407,8 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </PanelCard>
   );
 }
 

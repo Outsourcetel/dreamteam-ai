@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabase';
 import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
+import { DetailTile } from '../../design/primitives';
 
 // Employee File strip — the at-a-glance answer to "does this employee have a
 // real job?": their standard procedure, the systems they work in, the
 // objectives they're carrying, and how much trust they've earned. Sits at the
 // top of the per-DE profile (north-star: an employee, not a settings page).
+// Design System v1 pilot surface.
 
 interface SopInfo { name: string; status: string }
 interface FileFacts {
@@ -16,10 +18,10 @@ interface FileFacts {
 }
 
 const TRUST_STYLE: Record<string, string> = {
-  supervised: 'text-slate-300',
-  established: 'text-sky-300',
-  trusted: 'text-indigo-300',
-  autonomous: 'text-emerald-300',
+  supervised: 'text-dt-body',
+  established: 'text-dt-info',
+  trusted: 'text-dt-accent-text',
+  autonomous: 'text-dt-ok',
 };
 
 const CLOSED_OBJECTIVE_STATES = ['achieved', 'closed', 'cancelled', 'done', 'retired'];
@@ -55,52 +57,43 @@ export default function EmployeeFileStrip({ de }: { de: DigitalEmployee }) {
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-      <Tile label="Standard procedure">
+      <DetailTile label="Standard procedure">
         {!facts.loaded ? <Dim>…</Dim>
           : published.length > 0 ? (
             <>
-              <span className="text-sm font-medium text-white truncate block">{published[0].name}</span>
-              <span className="text-[11px] text-emerald-400">published{published.length > 1 ? ` +${published.length - 1} more` : ''}{drafts.length > 0 ? ` · ${drafts.length} draft` : ''}</span>
+              <span className="text-sm font-medium text-dt-title truncate block">{published[0].name}</span>
+              <span className="text-[11px] text-dt-ok">published{published.length > 1 ? ` +${published.length - 1} more` : ''}{drafts.length > 0 ? ` · ${drafts.length} draft` : ''}</span>
             </>
           ) : drafts.length > 0 ? (
             <>
-              <span className="text-sm font-medium text-white truncate block">{drafts[0].name}</span>
-              <span className="text-[11px] text-amber-400">draft — awaiting review</span>
+              <span className="text-sm font-medium text-dt-title truncate block">{drafts[0].name}</span>
+              <span className="text-[11px] text-dt-warn">draft — awaiting review</span>
             </>
           ) : <Dim>None attached yet</Dim>}
-      </Tile>
-      <Tile label="Connected systems">
+      </DetailTile>
+      <DetailTile label="Connected systems">
         {!facts.loaded ? <Dim>…</Dim>
           : facts.systems.total > 0 ? (
             <>
-              <span className="text-sm font-medium text-white">{facts.systems.total} connected</span>
-              <span className="text-[11px] text-slate-400 block">{facts.systems.operable > 0 ? `${facts.systems.operable} operable via browser` : 'read/write via connectors'}</span>
+              <span className="text-sm font-medium text-dt-title">{facts.systems.total} connected</span>
+              <span className="text-[11px] text-dt-support block">{facts.systems.operable > 0 ? `${facts.systems.operable} operable via browser` : 'read/write via connectors'}</span>
             </>
           ) : <Dim>None yet</Dim>}
-      </Tile>
-      <Tile label="Objectives in flight">
+      </DetailTile>
+      <DetailTile label="Objectives in flight">
         {!facts.loaded ? <Dim>…</Dim>
           : facts.objectivesLive > 0
-            ? <span className="text-sm font-medium text-white">{facts.objectivesLive} live</span>
+            ? <span className="text-sm font-medium text-dt-title">{facts.objectivesLive} live</span>
             : <Dim>None right now</Dim>}
-      </Tile>
-      <Tile label="Trust level">
-        <span className={`text-sm font-medium capitalize ${TRUST_STYLE[trust] ?? 'text-slate-300'}`}>{trust}</span>
-        <span className="text-[11px] text-slate-500 block">earned through evidence</span>
-      </Tile>
-    </div>
-  );
-}
-
-function Tile({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 px-4 py-3 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">{label}</div>
-      {children}
+      </DetailTile>
+      <DetailTile label="Trust level">
+        <span className={`text-sm font-medium capitalize ${TRUST_STYLE[trust] ?? 'text-dt-body'}`}>{trust}</span>
+        <span className="text-[11px] text-dt-muted block">earned through evidence</span>
+      </DetailTile>
     </div>
   );
 }
 
 function Dim({ children }: { children: React.ReactNode }) {
-  return <span className="text-sm text-slate-500">{children}</span>;
+  return <span className="text-sm text-dt-muted">{children}</span>;
 }
