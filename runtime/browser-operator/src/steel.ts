@@ -25,9 +25,17 @@ export class Steel {
     });
     if (!res.ok) throw new Error(`steel createSession ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const s = await res.json() as { id: string; websocketUrl?: string; connectUrl?: string; wsUrl?: string };
-    const connectUrl = s.websocketUrl || s.connectUrl || s.wsUrl || '';
-    if (!connectUrl) throw new Error('steel createSession: no CDP connect url in response');
-    return { id: s.id, connectUrl };
+    const raw = s.websocketUrl || s.connectUrl || s.wsUrl || '';
+    if (!raw) throw new Error('steel createSession: no CDP connect url in response');
+    // Steel self-host advertises its BIND address (ws://0.0.0.0:3000) — rewrite
+    // to the address we actually reach it on (the compose service hostname).
+    const cu = new URL(raw);
+    if (['0.0.0.0', '127.0.0.1', 'localhost'].includes(cu.hostname)) {
+      const base = new URL(this.baseUrl);
+      cu.hostname = base.hostname;
+      if (base.port) cu.port = base.port;
+    }
+    return { id: s.id, connectUrl: cu.toString() };
   }
 
   /** A human-viewable live URL (for the human_login credential policy). */
