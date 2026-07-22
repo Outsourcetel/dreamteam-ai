@@ -13,6 +13,10 @@ import {
   type DePerformanceMetrics, type DeInquiryMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
 } from '../../lib/api';
 import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
+import {
+  getDeSkills, getDeExecutionLog, getDeExperience, SKILL_LABELS,
+  type DeSkill, type DeRun, type DeExperience,
+} from '../../lib/employeeRecordApi';
 import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 import MissionPanel from '../../components/MissionPanel';
@@ -52,11 +56,12 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // One employee, ONE page (founder structural fix 2026-07-22): the old
 // in-roster profile panel merged into this file — its sections render via
 // DeProfileSections so nothing exists in two places anymore.
-type FileTab = 'today' | 'operating' | 'performance' | 'workbench'
+type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
   | 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'operating', label: 'How I operate' },
+  { key: 'record', label: 'Record' },
   { key: 'performance', label: 'Performance' },
   { key: 'workbench', label: 'Workbench' },
   { key: 'profile', label: 'Profile' },
@@ -306,6 +311,158 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   );
 }
 
+// ── Record — the living employment record (Tier-1 surfacing) ──────
+// Three datasets the file was sitting on but never showed: evidence-earned
+// skills, the run-by-run execution log (which model served each answer —
+// the failover, per reply), and the lived-experience ledger.
+const relTime = (iso: string) => {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const isFallbackModel = (m: string | null) => !!m && /bedrock|anthropic\.|openai|gpt|gemini|google/i.test(m);
+
+function SkillMatrix({ skills }: { skills: DeSkill[] }) {
+  const known = Object.keys(SKILL_LABELS);
+  const byKey = new Map(skills.map(s => [s.skill_key, s]));
+  const rows = [...known, ...skills.map(s => s.skill_key).filter(k => !known.includes(k))];
+  return (
+    <div className="space-y-2.5">
+      {rows.map(key => {
+        const s = byKey.get(key);
+        const meta = SKILL_LABELS[key] ?? { label: key.replace(/_/g, ' '), blurb: '' };
+        const prof = s?.proficiency ?? 0;
+        return (
+          <div key={key} className="flex items-center gap-3">
+            <div className="w-44 shrink-0">
+              <p className="text-xs font-medium text-dt-title capitalize">{meta.label}</p>
+              {meta.blurb && <p className="text-[10px] text-dt-muted leading-tight">{meta.blurb}</p>}
+            </div>
+            <div className="flex-1 flex gap-1">
+              {[1, 2, 3, 4, 5].map(n => (
+                <div key={n} className={`h-2 flex-1 rounded-full ${n <= prof ? 'bg-dt-accent' : 'bg-dt-border'}`} />
+              ))}
+            </div>
+            <div className="w-24 shrink-0 text-right">
+              {s ? <span className="text-[10px] text-dt-muted">{s.sample_size} sample{s.sample_size === 1 ? '' : 's'}</span>
+                 : <span className="text-[10px] text-dt-faint">not yet assessed</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecordTab({ de }: { de: DigitalEmployee }) {
+  const [skills, setSkills] = useState<DeSkill[] | null>(null);
+  const [runs, setRuns] = useState<DeRun[] | null>(null);
+  const [exp, setExp] = useState<DeExperience[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDeSkills(de.id).then(s => !cancelled && setSkills(s)).catch(() => !cancelled && setSkills([]));
+    getDeExecutionLog(de.id, 25).then(r => !cancelled && setRuns(r)).catch(() => !cancelled && setRuns([]));
+    getDeExperience(de.id, 40).then(e => !cancelled && setExp(e)).catch(() => !cancelled && setExp([]));
+    return () => { cancelled = true; };
+  }, [de.id]);
+
+  const name = de.persona_name ?? de.name;
+
+  return (
+    <div className="space-y-5">
+      {/* Skills — evidence-earned competencies */}
+      <PanelCard title="Skills — earned from evidence, not assigned">
+        <p className="text-xs text-dt-muted mb-3 -mt-1">{name}'s proficiency is re-assessed automatically from real work — each bar is backed by a sample count, not a claim.</p>
+        {skills === null ? <p className="text-sm text-dt-muted py-6 text-center">Assessing…</p>
+          : <SkillMatrix skills={skills} />}
+      </PanelCard>
+
+      {/* Execution log — how each run was actually served */}
+      <PanelCard title="Execution log — every answer, and how it was served">
+        <p className="text-xs text-dt-muted mb-3 -mt-1">The model that served each run, latency, tokens, confidence, and whether it went to a human. This is the failover made visible, one reply at a time.</p>
+        {runs === null ? <p className="text-sm text-dt-muted py-6 text-center">Loading runs…</p>
+          : runs.length === 0 ? <p className="text-sm text-dt-muted py-6 text-center">No traced runs yet — they appear here as {name} answers and works.</p>
+          : (
+            <div className="overflow-x-auto -mx-1">
+              <table className="w-full text-xs min-w-[560px]">
+                <thead>
+                  <tr className="text-dt-muted text-left border-b border-dt-border">
+                    <th className="py-1.5 pl-1 font-medium">When</th>
+                    <th className="py-1.5 font-medium">Work</th>
+                    <th className="py-1.5 font-medium">Served by</th>
+                    <th className="py-1.5 font-medium text-right">Latency</th>
+                    <th className="py-1.5 font-medium text-right">Tokens</th>
+                    <th className="py-1.5 font-medium text-right">Conf.</th>
+                    <th className="py-1.5 pr-1 font-medium text-right">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((r, i) => (
+                    <tr key={i} className="border-b border-dt-border/50">
+                      <td className="py-1.5 pl-1 text-dt-support whitespace-nowrap">{relTime(r.started_at)}</td>
+                      <td className="py-1.5 text-dt-body">{r.name === 'chat de-answer' ? 'Answered a question' : r.name === 'invoke_agent de-work' ? `Worked a task${r.turns ? ` (${r.turns} steps)` : ''}` : r.name}</td>
+                      <td className="py-1.5">
+                        {r.model
+                          ? <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono ${isFallbackModel(r.model) ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-dt-inset text-dt-support'}`}>{r.model.replace(/^(us\.)?anthropic\./, '').replace(/-v1:0$/, '')}</span>
+                          : <span className="text-dt-faint">—</span>}
+                      </td>
+                      <td className="py-1.5 text-right text-dt-support whitespace-nowrap">{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : '—'}</td>
+                      <td className="py-1.5 text-right text-dt-support">{(r.input_tokens ?? 0) + (r.output_tokens ?? 0) || '—'}</td>
+                      <td className="py-1.5 text-right text-dt-support">{r.confidence != null ? `${r.confidence}%` : '—'}</td>
+                      <td className="py-1.5 pr-1 text-right">
+                        {r.escalated ? <Chip tone="warn">escalated</Chip>
+                          : r.work_status === 'done' ? <Chip tone="ok">done</Chip>
+                          : r.confidence != null ? <Chip tone="ok">answered</Chip>
+                          : <span className="text-dt-faint text-[10px]">{r.work_status ?? '—'}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </PanelCard>
+
+      {/* Experience ledger — what the employee has done and learned */}
+      <PanelCard title="Experience — what this employee has done">
+        <p className="text-xs text-dt-muted mb-3 -mt-1">Each entry is a real action or decision, kept with a link back to the evidence that produced it. This is the record that makes an employee worth keeping — and impossible to export.</p>
+        {exp === null ? <p className="text-sm text-dt-muted py-6 text-center">Loading…</p>
+          : exp.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-dt-border px-4 py-6 text-center">
+              <p className="text-sm text-dt-support">{name} hasn't logged real-world experience yet.</p>
+              <p className="text-xs text-dt-muted mt-1">Experience accrues as {name} executes actions on connected systems — each success or human-gated decision is recorded here with its evidence. It fills as the work happens.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {exp.map(e => {
+                const f = e.fact_summary ?? {};
+                return (
+                  <div key={e.id} className="relative pl-4 border-l-2 border-dt-border">
+                    <span className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-dt-accent" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {e.category && <Chip tone="neutral">{e.category.replace(/_/g, ' ')}</Chip>}
+                      {e.from_action && <span className="text-[10px] text-dt-muted">from an action it took</span>}
+                      {e.from_evidence && <span className="text-[10px] text-dt-muted">from an evidence run</span>}
+                      <span className="text-[10px] text-dt-faint ml-auto">{relTime(e.created_at)}</span>
+                    </div>
+                    {f.what_happened && <p className="text-xs text-dt-body mt-1">{f.what_happened}</p>}
+                    <div className="flex items-center gap-3 mt-0.5 text-[11px]">
+                      {f.decision_made && <span className="text-dt-support">{f.decision_made}</span>}
+                      {f.outcome && <span className="text-dt-muted">· {f.outcome}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+      </PanelCard>
+    </div>
+  );
+}
+
 // ── The page ──────────────────────────────────────────────────────
 
 export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => void }) {
@@ -406,6 +563,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
       {tab === 'today' && <TodayTab de={de} setPage={setPage} />}
       {tab === 'operating' && <OperatingModelPanel de={de} />}
+      {tab === 'record' && <RecordTab de={de} />}
       {tab === 'performance' && (currentTenant?.id
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
