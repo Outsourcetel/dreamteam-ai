@@ -51,7 +51,15 @@ export const getDeWorkItems = async (deId: string): Promise<WorkItemRow[]> => {
     .select('id, title, kind, status, scheduled_for, attempts, last_error, result, created_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(50);
   if (error) throw error;
-  return (data ?? []) as WorkItemRow[];
+  // Execution order, not insertion order (operating-model audit Q2): live
+  // items first in the order they will actually run, then history newest-first.
+  const rows = (data ?? []) as WorkItemRow[];
+  const liveRank = (s: string) => (s === 'running' ? 0 : s === 'queued' ? 1 : s === 'waiting_human' ? 2 : 9);
+  const live = rows.filter(r => liveRank(r.status) < 9)
+    .sort((a, b) => liveRank(a.status) - liveRank(b.status)
+      || new Date(a.scheduled_for ?? a.created_at).getTime() - new Date(b.scheduled_for ?? b.created_at).getTime());
+  const done = rows.filter(r => liveRank(r.status) === 9);
+  return [...live, ...done];
 };
 
 export const getDeTrace = async (deId: string, limit = 60): Promise<TraceRow[]> => {

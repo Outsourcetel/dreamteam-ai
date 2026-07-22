@@ -12,6 +12,11 @@ const KIND_META: Record<string, { label: string; tone: Tone }> = {
   date_horizon: { label: 'watching dates', tone: 'accent' },
   state_condition: { label: 'watching state', tone: 'accent' },
   metric_threshold: { label: 'watching metrics', tone: 'accent' },
+  // Deliberately outside the 5-min scheduler: the live inbox poller handles
+  // these continuously (the engine's `kind <> 'inbox'` skip is intentional
+  // dedup, not a dead path — operating-model audit defect resolved as
+  // by-design, now labeled honestly).
+  inbox: { label: 'live inbox — always listening', tone: 'ok' },
 };
 
 const fmt = (iso: string | null | undefined) =>
@@ -63,9 +68,9 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
                   </div>
                   {w.description && <p className="text-xs text-dt-support mt-1">{w.description}</p>}
                   <p className="text-xs text-dt-muted mt-0.5">
-                    {fmt(w.next_fire_at) ? `next check ${fmt(w.next_fire_at)}` : 'no next check scheduled'}
-                    {fmt(w.last_run_at) ? ` · last ran ${fmt(w.last_run_at)}` : ' · has not run yet'}
-                    {typeof w.last_match_count === 'number' ? ` · found ${w.last_match_count} last time` : ''}
+                    {w.kind === 'inbox'
+                      ? 'continuous — handled by the live inbox poller in real time, not the 5-minute scheduler'
+                      : `${fmt(w.next_fire_at) ? `next check ${fmt(w.next_fire_at)}` : 'no next check scheduled'}${fmt(w.last_run_at) ? ` · last ran ${fmt(w.last_run_at)}` : ' · has not run yet'}${typeof w.last_match_count === 'number' ? ` · found ${w.last_match_count} last time` : ''}`}
                   </p>
                 </div>
               );

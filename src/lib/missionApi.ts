@@ -121,3 +121,33 @@ export async function getOperatingModel(deId: string): Promise<{ notReady: boole
   if (!res || (res as { ok: boolean }).ok === false) return { notReady: false, model: null };
   return { notReady: false, model: res as unknown as OperatingModel };
 }
+
+// ── Workforce board (docs/17 C2: whole-workforce now / next / blocked) ──
+
+export interface BoardNextItem { kind: 'work_item' | 'case_wait' | 'watcher' | 'objective_wake' | string; title: string; when: string | null }
+export interface WorkforceBoardRow {
+  de_id: string;
+  name: string;
+  persona_name: string | null;
+  department: string | null;
+  trust_level: string | null;
+  lifecycle_status: string;
+  now: { title: string; since: string | null } | null;
+  next_up: BoardNextItem[];
+  listens_live: boolean;
+  waiting_on_you: number;
+  blocked_objectives: number;
+  open_objectives: number;
+  done_today: number;
+}
+
+export async function getWorkforceBoard(deId?: string): Promise<{ notReady: boolean; board: WorkforceBoardRow[] }> {
+  const { data, error } = await supabase.rpc('get_workforce_board', deId ? { p_de_id: deId } : {});
+  if (error) {
+    if (MISSING(error.message)) return { notReady: true, board: [] };
+    throw new Error(error.message);
+  }
+  const res = data as { ok: boolean; board?: WorkforceBoardRow[] };
+  if (!res?.ok) return { notReady: false, board: [] };
+  return { notReady: false, board: res.board ?? [] };
+}

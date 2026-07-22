@@ -4,6 +4,8 @@ import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
 import { getDeWorkItems, getDeObjectives, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
+import { getWorkforceBoard, type WorkforceBoardRow } from '../../lib/missionApi';
+import { fmtWhen } from '../../components/WorkforceBoard';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
@@ -70,6 +72,7 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
   const [work, setWork] = useState<WorkItemRow[] | null>(null);
   const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
   const [activity, setActivity] = useState<DEActivityRow[]>([]);
+  const [board, setBoard] = useState<WorkforceBoardRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,6 +85,11 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
         setActivity(a);
       })
       .catch(e => { if (!cancelled) { setError((e as Error).message); setWork([]); } });
+    // The same board read the whole-workforce view uses, scoped to this DE —
+    // one truth for "what happens next", no second codepath (docs/17 C2).
+    getWorkforceBoard(de.id)
+      .then(r => { if (!cancelled) setBoard(r.board[0] ?? null); })
+      .catch(() => { /* the panel simply doesn't render */ });
     return () => { cancelled = true; };
   }, [de.id]);
 
@@ -96,6 +104,28 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
       {error && <Banner tone="danger">{error}</Banner>}
 
       <MissionPanel de={de} />
+
+      {board && (board.next_up.length > 0 || board.listens_live || board.waiting_on_you > 0) && (
+        <PanelCard title="Next up — in order"
+          badge={board.waiting_on_you > 0 ? <Chip tone="warn">{board.waiting_on_you} wait{board.waiting_on_you === 1 ? 's' : ''} on you</Chip> : undefined}>
+          {board.next_up.length === 0 ? (
+            <p className="text-sm text-dt-muted">Nothing on the schedule.</p>
+          ) : (
+            <div className="divide-y divide-dt-border">
+              {board.next_up.map((n, i) => (
+                <div key={i} className="flex items-center gap-3 py-2">
+                  <span className="text-sm">{({ work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁' } as Record<string, string>)[n.kind] ?? '•'}</span>
+                  <p className="text-sm text-dt-body flex-1 truncate">{n.title}</p>
+                  <span className="text-xs text-dt-muted whitespace-nowrap">{fmtWhen(n.when)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {board.listens_live && (
+            <p className="text-xs text-dt-support mt-2">Plus continuous: listening to the live support inbox in real time.</p>
+          )}
+        </PanelCard>
+      )}
 
       <PanelCard title="Working right now" badge={inMotion.length > 0 ? <Chip tone="info" dot pulse>{inMotion.length} in motion</Chip> : undefined}>
         {inMotion.length === 0 ? (

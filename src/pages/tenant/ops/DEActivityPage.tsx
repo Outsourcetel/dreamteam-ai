@@ -8,6 +8,7 @@ import { getActionExecution, ActionExecutionRow } from '../../../lib/connectorAp
 import { CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts';
 import type { Page } from '../../../types';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
+import WorkforceBoard from '../../../components/WorkforceBoard';
 
 // ============================================================
 // "DE at work" — the live proactive-triage queue (migration 034),
@@ -174,7 +175,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
 
 const PAGE_SIZE = 40;
 
-export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Page) => void }) {
+export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void }) {
   const [rows, setRows] = useState<DEActivityRow[]>([]);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
@@ -294,6 +295,12 @@ export default function DEActivityPage({ setPage: _setPage }: { setPage: (p: Pag
         >
           {showSim ? 'Hide simulator' : 'Simulate an inquiry'}
         </button>
+      </div>
+
+      {/* docs/17 C2: the whole-workforce board leads the tab — every DE's
+          now / next / blocked, not just those with a live triage row. */}
+      <div className="mb-5">
+        <WorkforceBoard setPage={setPage} />
       </div>
 
       {showSim && (
