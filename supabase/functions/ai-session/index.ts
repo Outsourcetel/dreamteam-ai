@@ -96,6 +96,33 @@ const TOOLS = [
       required: ['what', 'why'],
     },
   },
+  // ── Estate read tools (founder: "AI at every level") — the assistant can SEE
+  // the Connectors / Governance / Knowledge-gap estates so answers on those
+  // tabs are grounded in live rows, never guessed. Read-only by construction.
+  {
+    name: 'list_systems',
+    description:
+      "See this workspace's connected systems: each connector's category and status, which digital employees " +
+      'have access (and at what level), and how many write-back actions are registered on it. Use this before ' +
+      'answering ANY question about connections, access or actions.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_guardrails',
+    description:
+      "See this workspace's current guardrail rules — name, kind, what they match or the threshold, severity, " +
+      'on/off, and scope. Use before answering any question about safety rules. You still cannot change them; ' +
+      'route changes through propose_change.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_knowledge_gaps',
+    description:
+      'See the open knowledge gaps the platform detected (clusters of similar customer questions the employees ' +
+      'could not answer well) and the detection policy settings. Pair with knowledge.create: after reviewing a ' +
+      'gap, you can draft the missing document yourself in the same conversation.',
+    input_schema: { type: 'object', properties: {} },
+  },
 ];
 
 // ── Governance mode (Part 2) ────────────────────────────────────────────────
@@ -361,7 +388,12 @@ serve(async (req) => {
       `Make the change rather than describing how the user could do it themselves — that is the point of you.\n\n` +
       `You CANNOT change guardrails, trust levels, connector credentials, publishing/going live, lifecycle status, ` +
       `or anything a customer would see. If asked for one of those, use propose_change and explain plainly that ` +
-      `a person has to approve it — do not apologise at length, just say who needs to do what.\n` +
+      `a person has to approve it — do not apologise at length, just say who needs to do what.\n\n` +
+      `You can SEE the wider workspace when a question calls for it: list_systems (connected systems, which ` +
+      `employee can access what, registered write-back actions), list_guardrails (current safety rules), and ` +
+      `list_knowledge_gaps (questions employees couldn't answer, plus detection settings). Ground answers in ` +
+      `those tools instead of guessing. A favourite move: when the user asks about knowledge gaps, review them ` +
+      `and offer to draft the missing document right away with knowledge.create.\n` +
       (canAutoApply
         ? ''
         : `\nIMPORTANT: this is a remote-access support session, so you may NOT apply anything. Use propose_change ` +
@@ -407,6 +439,66 @@ serve(async (req) => {
             .textSearch('search_tsv', String(input.query ?? ''), { type: 'websearch' })
             .limit(8);
           out = { results: (docs ?? []).map((d) => ({ id: d.id, title: d.title })) };
+
+        } else if (t.name === 'list_systems') {
+          const [{ data: conns }, { data: grants }, { data: acts }, { data: desRows }] = await Promise.all([
+            admin.from('connectors').select('id, display_name, provider, category, status, access_mode').eq('tenant_id', tenantId).limit(60),
+            admin.from('data_access_grants').select('subject_id, resource_id, resource_category, permission').eq('tenant_id', tenantId).eq('subject_kind', 'de').limit(300),
+            admin.from('action_definitions').select('provider, category, risk, status').eq('tenant_id', tenantId).limit(200),
+            admin.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tenantId).limit(60),
+          ]);
+          const deName = new Map((desRows ?? []).map((d: { id: string; name: string; persona_name: string | null }) => [d.id, d.persona_name || d.name]));
+          const lines = (conns ?? []).map((c: Record<string, unknown>) => {
+            // Same precedence as the Connectors page: connector-specific grant
+            // beats category-wide; write_back beats read for display.
+            const byDe = new Map<string, string>();
+            for (const g of (grants ?? []) as Array<Record<string, unknown>>) {
+              const applies = g.resource_id === c.id || (!g.resource_id && g.resource_category === c.category);
+              if (!applies) continue;
+              const name = deName.get(String(g.subject_id));
+              if (!name) continue;
+              const prev = byDe.get(name);
+              if (!prev || g.resource_id === c.id || (g.permission === 'write_back' && prev !== 'write_back')) byDe.set(name, String(g.permission));
+            }
+            const who = [...byDe.entries()].map(([n, p]) => `${n} (${p})`).join(', ') || 'no employee has access yet';
+            const a = ((acts ?? []) as Array<Record<string, unknown>>).filter((x) => x.provider === c.provider && x.status !== 'retired');
+            const destructive = a.filter((x) => x.risk === 'destructive').length;
+            return `- ${c.display_name ?? c.provider} [${c.category ?? 'uncategorised'}] — ${c.status}${c.access_mode ? `, ${c.access_mode}` : ''}; employee access: ${who}; registered actions: ${a.length}${destructive ? ` (${destructive} destructive — always human-approved)` : ''}`;
+          });
+          out = { systems: lines.join('\n') || 'No systems connected yet.' };
+
+        } else if (t.name === 'list_guardrails') {
+          const [{ data: rules }, { data: desRows }] = await Promise.all([
+            admin.from('guardrail_rules').select('rule, rule_type, pattern, threshold, severity, active, scope, scope_ref, compliance_pack_key').eq('tenant_id', tenantId).order('created_at').limit(120),
+            admin.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tenantId).limit(60),
+          ]);
+          const deName = new Map((desRows ?? []).map((d: { id: string; name: string; persona_name: string | null }) => [d.id, d.persona_name || d.name]));
+          const lines = ((rules ?? []) as Array<Record<string, unknown>>).map((r) => {
+            const what = r.pattern ? `matches "${String(r.pattern).slice(0, 120)}"` : r.threshold != null ? `threshold ${r.threshold}` : '';
+            const scope = r.scope === 'de' && r.scope_ref ? `only ${deName.get(String(r.scope_ref)) ?? 'one employee'}` : 'whole workspace';
+            return `- ${r.rule} [${r.rule_type}] — ${what}; ${String(r.severity)}; ${r.active ? 'ON' : 'off'}; scope: ${scope}${r.compliance_pack_key ? `; from compliance pack ${r.compliance_pack_key}` : ''}`;
+          });
+          out = { guardrails: lines.join('\n') || 'No guardrail rules yet.' };
+
+        } else if (t.name === 'list_knowledge_gaps') {
+          const [{ data: gaps }, { data: policies }] = await Promise.all([
+            admin.from('knowledge_gap_clusters').select('id, category, member_count, severity_score, root_cause_category, reviewer_summary, status, representative_run_id, last_seen_at').eq('tenant_id', tenantId).neq('status', 'resolved').order('severity_score', { ascending: false }).limit(20),
+            admin.from('knowledge_gap_policies').select('category, min_confidence_floor, min_cluster_size, window_days, similarity_threshold, enabled').eq('tenant_id', tenantId).limit(20),
+          ]);
+          // The representative question lives on the cluster's exemplar run.
+          const runIds = ((gaps ?? []) as Array<Record<string, unknown>>).map((g) => g.representative_run_id).filter(Boolean);
+          const { data: runs } = runIds.length > 0
+            ? await admin.from('evidence_runs').select('id, inquiry').in('id', runIds as string[])
+            : { data: [] as Array<{ id: string; inquiry: string }> };
+          const inquiryOf = new Map((runs ?? []).map((r: { id: string; inquiry: string }) => [r.id, r.inquiry]));
+          const gapLines = ((gaps ?? []) as Array<Record<string, unknown>>).map((g) =>
+            `- [${g.status}] "${String(inquiryOf.get(String(g.representative_run_id)) ?? g.reviewer_summary ?? 'unknown question').slice(0, 160)}" — ${g.member_count} similar question(s), severity ${g.severity_score}${g.root_cause_category ? `, cause: ${g.root_cause_category}` : ''}`);
+          const polLines = ((policies ?? []) as Array<Record<string, unknown>>).map((p) =>
+            `- ${p.category}: confidence floor ${p.min_confidence_floor}, cluster size ${p.min_cluster_size}, window ${p.window_days}d, similarity ${p.similarity_threshold}${p.enabled ? '' : ' (DISABLED)'}`);
+          out = {
+            open_gaps: gapLines.join('\n') || 'No open knowledge gaps — nothing has crossed the detection thresholds.',
+            detection_policies: polLines.join('\n') || 'Default detection policies.',
+          };
 
         } else if (t.name === 'propose_change') {
           proposed.push({ what: String(input.what ?? ''), why: String(input.why ?? '') });

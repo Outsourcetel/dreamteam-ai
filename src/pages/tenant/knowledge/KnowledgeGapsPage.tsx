@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import AISessionPanel from '../../../components/AISessionPanel';
 import { useAuth } from '../../../context/AuthContext';
 import { COMPANY_SUMMARY } from '../../../data/companies';
 import type { CompanyId } from '../../../data/companies';
@@ -608,6 +609,7 @@ function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[];
 function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
   const [clusters, setClusters] = useState<KnowledgeGapCluster[]>([]);
   const [policies, setPolicies] = useState<KnowledgeGapPolicy[]>([]);
+  const [showAi, setShowAi] = useState(false);
   const [revisions, setRevisions] = useState<KnowledgeRevisionRequest[]>([]);
   const [des, setDes] = useState<DigitalEmployee[]>([]);
   const [repInfo, setRepInfo] = useState<Record<string, RepInfo>>({});
@@ -708,7 +710,19 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
 
   return (
     <div className="p-6 relative">
-      <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
+      <div className="flex items-start justify-between gap-4">
+        <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
+        <button onClick={() => setShowAi((v) => !v)} className="shrink-0 border border-dt-border-strong hover:border-indigo-500 text-dt-body text-sm px-4 py-2 rounded-lg transition-colors">
+          {showAi ? 'Close assistant' : '✨ Work gaps with AI'}
+        </button>
+      </div>
+
+      {showAi && (
+        <div className="mb-6">
+          <AISessionPanel subjectKind="workspace" subjectLabel="Knowledge gaps"
+            examples={['Summarize my open knowledge gaps', 'Draft a document for the most severe gap', 'Why is nothing being detected — are the thresholds too strict?']} />
+        </div>
+      )}
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 

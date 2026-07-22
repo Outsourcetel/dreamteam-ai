@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../../supabase';
+import AISessionPanel from '../../../components/AISessionPanel';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import { CustomerApiError } from '../../../lib/customerApi';
 import {
@@ -682,6 +683,7 @@ export default function LiveConnectorsPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const [showConnect, setShowConnect] = useState(false);
+  const [showAi, setShowAi] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [templates, setTemplates] = useState<AdapterTemplate[]>([]);
   const [useTemplate, setUseTemplate] = useState<AdapterTemplate | null>(null);
@@ -823,12 +825,24 @@ export default function LiveConnectorsPage() {
             Your systems of record stay yours — DreamTeam reads them live (fetch-only) or keeps a searchable working copy (ingest), and every access is audited.
           </p>
         </div>
-        {connectors.length > 0 && (
-          <button onClick={() => setShowConnect(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-            + Connect a system
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowAi((v) => !v)} className="border border-dt-border-strong hover:border-indigo-500 text-dt-body text-sm px-4 py-2 rounded-lg transition-colors">
+            {showAi ? 'Close assistant' : '✨ Ask about systems'}
           </button>
-        )}
+          {connectors.length > 0 && (
+            <button onClick={() => setShowConnect(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+              + Connect a system
+            </button>
+          )}
+        </div>
       </div>
+
+      {showAi && (
+        <div className="mb-6">
+          <AISessionPanel subjectKind="workspace" subjectLabel="Connected systems"
+            examples={['Which employees can write to which systems?', 'What actions are registered and which always need my approval?', 'What do I need to connect our helpdesk?']} />
+        </div>
+      )}
 
       {toast && <div className="mb-4 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-200">{toast}</div>}
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
