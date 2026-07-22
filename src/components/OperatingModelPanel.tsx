@@ -46,9 +46,44 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
 
   const active = model.work_sources.filter(w => w.active);
   const inactive = model.work_sources.filter(w => !w.active);
+  const nextUp = model.next_up ?? [];
+  const rhythm = model.rhythm;
 
   return (
     <div className="space-y-5">
+      {model.current_focus && (
+        <PanelCard title="Current focus" badge={<Chip tone="info" dot pulse>in progress</Chip>}>
+          <p className="text-sm text-dt-body">{model.current_focus.title}</p>
+          <p className="text-xs text-dt-muted mt-1">
+            {model.current_focus.next_wake_at ? `next check-in ${fmt(model.current_focus.next_wake_at)}` : 'working continuously'}
+            {model.current_focus.wake_count > 0 ? ` · checked ${model.current_focus.wake_count} time${model.current_focus.wake_count === 1 ? '' : 's'} so far` : ''}
+            {model.current_focus.due_at ? ` · due ${fmt(model.current_focus.due_at)}` : ''}
+            {model.current_focus.mission_id ? ' · part of a mission you ordered' : ''}
+          </p>
+        </PanelCard>
+      )}
+
+      {(nextUp.length > 0 || model.listens_live) && (
+        <PanelCard title="What happens next — in order">
+          {nextUp.length === 0 ? (
+            <p className="text-sm text-dt-muted">Nothing on the schedule.</p>
+          ) : (
+            <div className="divide-y divide-dt-border">
+              {nextUp.map((n, i) => (
+                <div key={i} className="flex items-center gap-3 py-2">
+                  <span className="text-sm">{({ work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁' } as Record<string, string>)[n.kind] ?? '•'}</span>
+                  <p className="text-sm text-dt-body flex-1 truncate">{n.title}</p>
+                  <span className="text-xs text-dt-muted whitespace-nowrap">{n.when ? fmt(n.when) : 'when its turn comes'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {model.listens_live && (
+            <p className="text-xs text-dt-support mt-2">Plus continuous: the live support inbox, answered in real time.</p>
+          )}
+        </PanelCard>
+      )}
+
       <PanelCard title="Where my work comes from"
         badge={<Chip tone={active.length > 0 ? 'ok' : 'neutral'}>{active.length} active source{active.length === 1 ? '' : 's'}</Chip>}>
         {model.work_sources.length === 0 ? (
@@ -95,7 +130,7 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
         )}
       </PanelCard>
 
-      <div className="grid md:grid-cols-2 gap-3">
+      <div className="grid md:grid-cols-3 gap-3">
         <PanelCard title="On my plate">
           <p className="text-2xl font-semibold text-dt-title">{model.open_objectives}</p>
           <p className="text-xs text-dt-support mt-1">open objective{model.open_objectives === 1 ? '' : 's'} in the work queue right now.</p>
@@ -103,6 +138,12 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
         <PanelCard title="Waiting on you">
           <p className="text-2xl font-semibold text-dt-title">{model.waiting_on_human}</p>
           <p className="text-xs text-dt-support mt-1">item{model.waiting_on_human === 1 ? '' : 's'} at your approval desk from this employee.</p>
+        </PanelCard>
+        <PanelCard title="Rhythm — last 7 days">
+          <p className="text-2xl font-semibold text-dt-title">{rhythm?.done_7d ?? 0}<span className="text-sm text-dt-muted font-normal"> done</span>{typeof rhythm?.deliverables_7d === 'number' ? <span className="text-sm text-dt-muted font-normal"> · {rhythm.deliverables_7d} deliverable{rhythm.deliverables_7d === 1 ? '' : 's'}</span> : null}</p>
+          <p className="text-xs text-dt-support mt-1 truncate">
+            {rhythm?.last_deliverable ? `latest: "${rhythm.last_deliverable.title}" ${fmt(rhythm.last_deliverable.at)}` : 'no deliverables produced yet.'}
+          </p>
         </PanelCard>
       </div>
     </div>

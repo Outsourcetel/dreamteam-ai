@@ -109,6 +109,11 @@ export interface OperatingModel {
   playbooks: { key: string; name: string; status: string; version: number; steps: number; trigger_type: string | null }[];
   open_objectives: number;
   waiting_on_human: number;
+  // v2 (mig 255): the complete first-class object — focus, order, output.
+  current_focus: { title: string; status: string; next_wake_at: string | null; wake_count: number; mission_id: string | null; due_at: string | null } | null;
+  next_up: { kind: string; title: string; when: string | null }[];
+  listens_live: boolean;
+  rhythm: { done_7d: number; deliverables_7d: number; last_deliverable: { title: string; at: string } | null };
 }
 
 export async function getOperatingModel(deId: string): Promise<{ notReady: boolean; model: OperatingModel | null }> {
