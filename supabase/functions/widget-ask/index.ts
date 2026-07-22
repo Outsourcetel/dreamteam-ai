@@ -22,9 +22,10 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { durableRateLimited, clientIp } from '../_shared/rateLimit.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
@@ -179,17 +180,13 @@ function looksNonEnglish(q: string): boolean {
 
 // Translate a query to English for RETRIEVAL only (Haiku — cheapest).
 // The answer model still gets the original question and mirrors its language.
-async function translateForRetrieval(apiKey: string, q: string, model: string): Promise<string> {
+async function translateForRetrieval(admin: SupabaseClient, q: string, model: string): Promise<string> {
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model, max_tokens: 200,
-        system: 'Translate the user message to English for use as a search query. Output ONLY the translation — no quotes, no notes.',
-        messages: [{ role: 'user', content: q }],
-      }),
-    });
+    const res = await llmMessages(admin, {
+      model, max_tokens: 200,
+      system: 'Translate the user message to English for use as a search query. Output ONLY the translation — no quotes, no notes.',
+      messages: [{ role: 'user', content: q }],
+    }, 'widget-ask:translate');
     if (!res.ok) return q;
     const d = await res.json();
     const t = String((d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '').trim();
@@ -498,7 +495,10 @@ serve(async (req) => {
       }
     }
 
+    // anthropicKey now serves ONLY the SSE streaming path (the provider
+    // chain is buffered); hasLLM gates everything else via the shared client.
     const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
+    const hasLLM = await hasLLMProvider(admin);
     // Latency/economics (P1 option 1, founder-approved): simple questions
     // route to the archetype's 'simple' model (Haiku via mig-163 routes) —
     // roughly half the answer time for most support questions — while
@@ -535,8 +535,8 @@ serve(async (req) => {
     // the customer's language. English queries pay nothing extra.
     let retrievalText = question;
     let retrievalEmbedding = qEmbedding;
-    if (anthropicKey && looksNonEnglish(question)) {
-      const translated = await translateForRetrieval(anthropicKey, question, model);
+    if (hasLLM && looksNonEnglish(question)) {
+      const translated = await translateForRetrieval(admin, question, model);
       if (translated && translated !== question) {
         retrievalText = translated;
         retrievalEmbedding = await embedText(translated);
@@ -569,8 +569,7 @@ serve(async (req) => {
     const context = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : 'No documents matched the question.';
 
     // ── LLM (cost governor #2: budget ceiling; #3: prompt-cached persona) ──
-    // anthropicKey was resolved above (also used for cross-language retrieval).
-    if (!anthropicKey) return json({ error: 'llm_not_configured', conversation_id: convId });
+    if (!hasLLM) return json({ error: 'llm_not_configured', conversation_id: convId });
     const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (budgetCheck && budgetCheck.allowed === false) return json({ error: 'ai_budget_exceeded', conversation_id: convId });
 
@@ -599,7 +598,9 @@ serve(async (req) => {
     // ══════════════════════════════════════════════════════════════
     // A founder escalation-rule match must never stream to the customer —
     // fall through to the non-streaming path, which routes it to a human.
-    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit) {
+    // Streaming needs the direct Anthropic key (SSE passthrough); without it
+    // the request falls through to the buffered path and the provider chain.
+    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey) {
       const blockingRules = await loadBlockingRules(admin, tenantId, subjectDeId);
       const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
       const META = '###META###';
@@ -622,10 +623,12 @@ serve(async (req) => {
         }),
       });
       if (!llmRes.ok || !llmRes.body) {
-        const detail = await llmRes.text();
-        console.error('Anthropic error (stream)', llmRes.status, detail);
-        return json({ error: 'llm_error', status: llmRes.status, conversation_id: convId }, 502);
-      }
+        // Primary couldn't serve the stream — fall through to the buffered
+        // path below, which walks the full provider chain (Bedrock →
+        // optional cross-vendor) instead of dead-ending the widget.
+        const detail = await llmRes.text().catch(() => '');
+        console.error('Anthropic error (stream) — falling back to buffered chain', llmRes.status, detail);
+      } else {
       const upstream = llmRes.body.getReader();
       const encoder = new TextEncoder();
 
@@ -775,24 +778,21 @@ serve(async (req) => {
         status: 200,
         headers: { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' },
       });
+      } // end streaming-served else
     }
 
     // The persona + fixed instructions are stable across turns → prompt-cached.
     const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model, max_tokens: 1024,
-        system: [
-          { type: 'text', text: instructionBlock, cache_control: { type: 'ephemeral' } },
-          // Injection firewall (#9): same marking as the streaming path.
-          { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
-        ],
-        messages: [{ role: 'user', content: question }],
-      }),
-    });
+    const res = await llmMessages(admin, {
+      model, max_tokens: 1024,
+      system: [
+        { type: 'text', text: instructionBlock, cache_control: { type: 'ephemeral' } },
+        // Injection firewall (#9): same marking as the streaming path.
+        { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
+      ],
+      messages: [{ role: 'user', content: question }],
+    }, 'widget-ask');
     if (!res.ok) {
       const detail = await res.text();
       console.error('Anthropic error', res.status, detail);

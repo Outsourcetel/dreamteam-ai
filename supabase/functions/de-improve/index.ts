@@ -26,7 +26,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -56,8 +56,7 @@ serve(async (req) => {
       if (resolvedTenant !== tenant_id) return json({ error: 'forbidden' }, 403);
     }
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
@@ -91,10 +90,7 @@ serve(async (req) => {
 
     const system = 'You write corrective knowledge-base articles for a customer-support AI. Given a question the AI answered WRONGLY, the judge\'s explanation, and existing docs, write ONE focused article that would make the answer correct. Ground it in the judge\'s explanation of the correct behaviour — do NOT invent facts beyond it. Return ONLY JSON {"title": string, "content": string} (content 3-10 sentences, plain prose).' + FIREWALL_RULES;
     const user = `<failure>\nQuestion: ${wrapUntrusted(String(fail.question), 'eval-question')}\nWrong answer given: ${wrapUntrusted(String(fail.answer ?? ''), 'eval-answer')}\nJudge's explanation: ${wrapUntrusted(String(fail.rationale ?? ''), 'judge-rationale')}\n${fail.reference ? `Reference (known-correct facts): ${wrapUntrusted(String(fail.reference), 'eval-reference')}\n` : ''}</failure>\n\n<existing_docs>\n${wrapUntrusted(kbContext.slice(0, 6000), 'tenant-kb')}\n</existing_docs>`;
-    const llm = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, system, messages: [{ role: 'user', content: user }] }),
-    });
+    const llm = await llmMessages(admin, { model: 'claude-sonnet-5', max_tokens: 900, system, messages: [{ role: 'user', content: user }] }, 'de-improve');
     if (!llm.ok) return json({ error: 'proposal_llm_failed', status: llm.status }, 502);
     const ld = await llm.json();
     const text = (ld.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';

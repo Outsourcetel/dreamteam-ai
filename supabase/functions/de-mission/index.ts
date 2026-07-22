@@ -9,7 +9,7 @@
 // budget = SOFT warning only (tenant AI budget stays the hard ceiling).
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted } from '../_shared/injectionSafety.ts';
 
@@ -107,7 +107,7 @@ async function operatingModel(admin: SupabaseClient, tenantId: string, deId: str
   return { de, watchers: watchers ?? [], playbooks: (playbooks ?? []).map(p => ({ key: p.key, name: p.name, version: p.version, steps: Array.isArray(p.steps) ? p.steps.length : 0 })) };
 }
 
-async function compile(admin: SupabaseClient, apiKey: string, tenantId: string, missionId: string) {
+async function compile(admin: SupabaseClient, tenantId: string, missionId: string) {
   const { data: mission } = await admin.from('de_missions').select('*').eq('id', missionId).eq('tenant_id', tenantId).maybeSingle();
   if (!mission) return json({ error: 'mission_not_found' }, 404);
   if (!['draft', 'failed', 'awaiting_approval'].includes(mission.status)) {
@@ -138,14 +138,10 @@ async function compile(admin: SupabaseClient, apiKey: string, tenantId: string, 
 
   let plan: Record<string, unknown>;
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL, max_tokens: 2048, system,
-        messages: [{ role: 'user', content: wrapUntrusted(mission.directive_text, 'directive') }],
-      }),
-    });
+    const res = await llmMessages(admin, {
+      model: DEFAULT_MODEL, max_tokens: 2048, system,
+      messages: [{ role: 'user', content: wrapUntrusted(mission.directive_text, 'directive') }],
+    }, 'de-mission');
     const body = await res.text();
     if (!res.ok) throw new Error(`anthropic_${res.status}: ${body.slice(0, 300)}`);
     const data = JSON.parse(body);
@@ -301,11 +297,10 @@ serve(async (req) => {
     }
 
     if (action === 'compile') {
-      const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-      if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+      if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
       const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
       if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
-      return await compile(admin, apiKey, tenantId, missionId);
+      return await compile(admin, tenantId, missionId);
     }
     if (action === 'approve') {
       const excluded = Array.isArray(body.excluded_refs) ? body.excluded_refs.map(String) : [];

@@ -22,7 +22,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
@@ -38,7 +38,7 @@ const MAX_COUNT = 5;
 const MAX_COUNT_HISTORICAL = 20;
 const PASS_THRESHOLD = 80;
 
-async function scenarioQuestions(admin: SupabaseClient, apiKey: string, tenantId: string, deId: string, mode: string, count: number): Promise<Array<{ question: string; reference: string | null }>> {
+async function scenarioQuestions(admin: SupabaseClient, tenantId: string, deId: string, mode: string, count: number): Promise<Array<{ question: string; reference: string | null }>> {
   if (mode === 'golden') {
     const { data } = await admin.from('golden_qa').select('question, expected_fragments').eq('tenant_id', tenantId).eq('active', true).limit(count);
     return (data ?? []).map((g: { question: string; expected_fragments: string[] }) => ({ question: g.question, reference: Array.isArray(g.expected_fragments) && g.expected_fragments.length ? `Key facts the answer should contain: ${g.expected_fragments.join('; ')}` : null }));
@@ -66,10 +66,7 @@ async function scenarioQuestions(admin: SupabaseClient, apiKey: string, tenantId
     `Name: ${de?.name ?? 'Support agent'} (${de?.department ?? 'Support'}). Role: ${de?.description ?? 'answers customer questions'}. Responsibilities: ${(de?.responsibilities ?? []).join(', ')}`,
     'de-profile',
   )}\nGenerate ${count} distinct customer questions.`;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 800, system, messages: [{ role: 'user', content: user }] }),
-  });
+  const res = await llmMessages(admin, { model: 'claude-sonnet-5', max_tokens: 800, system, messages: [{ role: 'user', content: user }] }, 'de-simulate');
   if (!res.ok) return [];
   const d = await res.json();
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
@@ -113,12 +110,11 @@ serve(async (req) => {
       .select('id').eq('id', de_id).eq('tenant_id', tenant_id).maybeSingle();
     if (!simDe) return json({ error: 'de_not_in_tenant' }, 403);
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
-    const scenarios = await scenarioQuestions(admin, apiKey, tenant_id, de_id, mode, count);
+    const scenarios = await scenarioQuestions(admin, tenant_id, de_id, mode, count);
     if (scenarios.length === 0) return json({ error: mode === 'historical' ? 'no_historical_questions' : mode === 'golden' ? 'no_golden_qa' : 'scenario_generation_failed' }, 400);
 
     // The run records the config fingerprint it TESTS (mig 181): a cert

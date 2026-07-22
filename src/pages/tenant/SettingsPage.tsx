@@ -58,9 +58,12 @@ const SettingsPage = ({
 
   // AI Engine tab
   const [anthropicKey, setAnthropicKey] = useState('');
+  const [bedrockKey, setBedrockKey] = useState('');
+  const [bedrockRegion, setBedrockRegion] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [googleKey, setGoogleKey] = useState('');
   const [anthropicSet, setAnthropicSet] = useState(false);
+  const [bedrockSet, setBedrockSet] = useState(false);
   const [openaiSet, setOpenaiSet] = useState(false);
   const [googleSet, setGoogleSet] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
@@ -97,9 +100,10 @@ const SettingsPage = ({
     if (activeTab === 'ai_engine' && isDTUser) {
       Promise.all([
         hasPlatformConfigKey('ANTHROPIC_API_KEY'),
+        hasPlatformConfigKey('BEDROCK_API_KEY'),
         hasPlatformConfigKey('OPENAI_API_KEY'),
         hasPlatformConfigKey('GOOGLE_AI_KEY'),
-      ]).then(([a, o, g]) => { setAnthropicSet(a); setOpenaiSet(o); setGoogleSet(g); });
+      ]).then(([a, b, o, g]) => { setAnthropicSet(a); setBedrockSet(b); setOpenaiSet(o); setGoogleSet(g); });
     }
     if (activeTab === 'widget' && dataMode === 'live' && tenant?.id) {
       Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
@@ -143,6 +147,8 @@ const SettingsPage = ({
   const handleSaveKeys = async () => {
     const entries: Record<string, string> = {};
     if (anthropicKey.trim()) entries['ANTHROPIC_API_KEY'] = anthropicKey.trim();
+    if (bedrockKey.trim()) entries['BEDROCK_API_KEY'] = bedrockKey.trim();
+    if (bedrockRegion.trim()) entries['BEDROCK_REGION'] = bedrockRegion.trim();
     if (openaiKey.trim()) entries['OPENAI_API_KEY'] = openaiKey.trim();
     if (googleKey.trim()) entries['GOOGLE_AI_KEY'] = googleKey.trim();
     if (!Object.keys(entries).length) return;
@@ -152,6 +158,8 @@ const SettingsPage = ({
     setKeyStatus(ok ? 'saved' : 'error');
     if (ok) {
       if (anthropicKey.trim()) { setAnthropicSet(true); setAnthropicKey(''); }
+      if (bedrockKey.trim()) { setBedrockSet(true); setBedrockKey(''); }
+      if (bedrockRegion.trim()) setBedrockRegion('');
       if (openaiKey.trim()) { setOpenaiSet(true); setOpenaiKey(''); }
       if (googleKey.trim()) { setGoogleSet(true); setGoogleKey(''); }
     }
@@ -378,7 +386,9 @@ const SettingsPage = ({
             <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
             <p className="text-xs text-dt-support mb-5">
               These keys are stored encrypted in your database and shared across all your client tenants.
-              You control usage and spend via the Usage & Budgets tab.
+              Every answer tries the engines in order — Anthropic first, then the Bedrock Claude fallback,
+              then the optional cross-vendor tiers — and the first configured engine that responds serves it.
+              You control usage and spend via the Usage &amp; Budgets tab.
             </p>
 
             {/* Anthropic */}
@@ -386,8 +396,8 @@ const SettingsPage = ({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">Anthropic API Key</label>
                 {anthropicSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
-                  : <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">Not set — DE responses disabled</span>}
+                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — primary engine</span>
+                  : <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">Not set — answers fall to the next engine</span>}
               </div>
               <input
                 type="password"
@@ -397,7 +407,38 @@ const SettingsPage = ({
                 className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
-                Get your key at console.anthropic.com → API Keys. Powers all Digital Employee responses.
+                Get your key at console.anthropic.com → API Keys. The primary engine for all Digital Employee responses.
+              </p>
+            </div>
+
+            {/* Bedrock — the same Claude models via AWS, the recommended fallback */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-dt-support">Amazon Bedrock Key — Claude fallback <span className="text-dt-faint font-normal">(recommended)</span></label>
+                {bedrockSet
+                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — fallback armed</span>
+                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — no fallback if Anthropic is unavailable</span>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={bedrockKey}
+                  onChange={e => setBedrockKey(e.target.value)}
+                  placeholder={bedrockSet ? 'Enter new key to replace existing…' : 'Bedrock API key…'}
+                  className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+                <input
+                  type="text"
+                  value={bedrockRegion}
+                  onChange={e => setBedrockRegion(e.target.value)}
+                  placeholder="Region (us-east-1)"
+                  className="w-44 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+              <p className="text-xs text-dt-faint mt-1">
+                The SAME Claude models sold through AWS — zero behavior drift when Anthropic direct is down.
+                In the AWS console: enable Claude model access in Bedrock, then generate a Bedrock API key.
+                Billed to your AWS account at the same per-token list prices.
               </p>
             </div>
 
@@ -406,8 +447,8 @@ const SettingsPage = ({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">OpenAI API Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {openaiSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — semantic search active</span>
-                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — keyword search only</span>}
+                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — cross-vendor fallback armed</span>
+                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — optional tier</span>}
               </div>
               <input
                 type="password"
@@ -417,7 +458,9 @@ const SettingsPage = ({
                 className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
-                Enables vector/semantic search in the knowledge base — significantly improves DE answer quality.
+                Optional third tier: used only when both Claude engines are unreachable. A different brain than
+                your employees were certified on — continuity cover, not an equivalent. (Semantic search runs on
+                built-in embeddings and does not need this key.)
               </p>
             </div>
 
@@ -426,8 +469,8 @@ const SettingsPage = ({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">Google AI Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {googleSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini models active</span>
-                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — Gemini models unavailable</span>}
+                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini fallback armed</span>
+                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — optional tier</span>}
               </div>
               <input
                 type="password"
@@ -437,14 +480,14 @@ const SettingsPage = ({
                 className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
-                Get your key at aistudio.google.com → API Keys. Enables Gemini 1.5 Flash (cheapest overall) and Gemini 2.0 Flash.
+                Optional fourth tier (Gemini) — same continuity-only role as OpenAI. Get a key at aistudio.google.com → API Keys.
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSaveKeys}
-                disabled={keySaving || (!anthropicKey.trim() && !openaiKey.trim() && !googleKey.trim())}
+                disabled={keySaving || (!anthropicKey.trim() && !bedrockKey.trim() && !bedrockRegion.trim() && !openaiKey.trim() && !googleKey.trim())}
                 className="px-6 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
                 style={{ backgroundColor: accentColor }}
               >
@@ -456,9 +499,18 @@ const SettingsPage = ({
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">How failover works</h2>
+            <div className="space-y-2 text-xs text-dt-support mt-3">
+              <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>Every answer tries Anthropic first. If it can't respond (key problem, rate limit, outage), the same request runs on the next configured engine — automatically, per answer.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Bedrock serves the identical Claude models, so answers, guardrails and certifications behave the same. OpenAI/Gemini are different brains — continuity cover only.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>The moment Anthropic recovers, traffic flows back on its own — nothing to switch manually. Failovers are logged in the edge-function logs.</span></div>
+            </div>
+          </div>
+
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">How billing works</h2>
             <div className="space-y-2 text-xs text-dt-support mt-3">
-              <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>You pay Anthropic directly for token usage across all tenants.</span></div>
+              <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>You pay the provider that served the answer — Anthropic directly, or AWS when the Bedrock fallback steps in (same per-token list prices).</span></div>
               <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Each tenant has a monthly token budget you set — DEs stop responding when the budget is hit.</span></div>
               <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>Haiku costs ~$0.25/M input tokens and ~$1.25/M output tokens — a 500-token query costs ~$0.001.</span></div>
               <div className="flex gap-3"><span className="text-dt-faint w-4">4</span><span>You can price AI usage into your service fee or charge clients per token at your own margin.</span></div>

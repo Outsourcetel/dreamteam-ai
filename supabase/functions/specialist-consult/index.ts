@@ -53,7 +53,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { resolveDeModel } from '../_shared/deModel.ts';
@@ -663,11 +663,11 @@ async function runResolveInquiry(
   }
 
   // LLM answer step — dormant-honest, same gate as consult.
-  const resolveApiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-  const { data: resolveBudgetCheck } = resolveApiKey
+  const resolveHasLLM = await hasLLMProvider(admin);
+  const { data: resolveBudgetCheck } = resolveHasLLM
     ? await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId })
     : { data: null };
-  const answerStatus = !resolveApiKey ? 'llm_not_configured' : (resolveBudgetCheck && resolveBudgetCheck.allowed === false) ? 'ai_budget_exceeded' : 'answered';
+  const answerStatus = !resolveHasLLM ? 'llm_not_configured' : (resolveBudgetCheck && resolveBudgetCheck.allowed === false) ? 'ai_budget_exceeded' : 'answered';
   let answerText: string | null = null;
   if (answerStatus === 'answered') {
     const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
@@ -675,15 +675,11 @@ async function runResolveInquiry(
     // the token usage is attributed to.
     const usageDeId = opts.deId ?? (subjectKind === 'de' ? subjectId : null);
     const model = await resolveDeModel(admin, tenantId, usageDeId);
-    const res2 = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': resolveApiKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model, max_tokens: 1024,
-        system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${wrapUntrusted(evidenceText, 'evidence-citations')}${FIREWALL_RULES}`,
-        messages: [{ role: 'user', content: wrapUntrusted(inquiry, 'customer-inquiry') }],
-      }),
-    });
+    const res2 = await llmMessages(admin, {
+      model, max_tokens: 1024,
+      system: `Answer the customer inquiry ONLY from the evidence citations below. Cite [n] for every claim. If evidence is insufficient, say so plainly.\n\nEvidence:\n${wrapUntrusted(evidenceText, 'evidence-citations')}${FIREWALL_RULES}`,
+      messages: [{ role: 'user', content: wrapUntrusted(inquiry, 'customer-inquiry') }],
+    }, 'specialist-consult:answer');
     if (res2.ok) {
       const d2 = await res2.json();
       // Claude 5 models can emit a 'thinking' block before the text block.
@@ -1620,8 +1616,7 @@ serve(async (req) => {
         .then(({ error }) => { if (error) console.error('increment_metric_tenant:', error.message); });
 
     // ── DORMANT-HONEST: no key → blocked_llm row, plumbing returned ──
-    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!anthropicKey) {
+    if (!(await hasLLMProvider(admin))) {
       const { data: row } = await admin.from('spec_consultations').insert({
         tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, answer: null, confidence: null,
@@ -1629,7 +1624,7 @@ serve(async (req) => {
       }).select('id').single();
       await bump('consultations');
       await audit(admin, tenantId, prof.name,
-        `Consultation recorded (brain not activated) — retrieval exercised across ${retrieved.length} source${retrieved.length === 1 ? '' : 's'}; answer blocked pending ANTHROPIC_API_KEY`,
+        `Consultation recorded (brain not activated) — retrieval exercised across ${retrieved.length} source${retrieved.length === 1 ? '' : 's'}; answer blocked pending an AI engine key`,
         'config_change',
         { kind: 'specialist_consult', consultation_id: row?.id ?? null, profile_key: profileKey, status: 'blocked_llm', requested_by: requestedBy, sources: retrieved.length });
       return json({
@@ -1675,11 +1670,7 @@ Answer ONLY from the source excerpts below. Every claim must trace to a cited so
 Source excerpts:
 ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- Reference material supplied by the requesting playbook ---\n${wrapUntrusted(runDocuments, 'playbook-documents')}` : ''}${FIREWALL_RULES}`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(question, 'consult-question') }] }),
-    });
+    const res = await llmMessages(admin, { model: MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(question, 'consult-question') }] }, 'specialist-consult');
     if (!res.ok) {
       const detail = await res.text();
       console.error('Anthropic error', res.status, detail);

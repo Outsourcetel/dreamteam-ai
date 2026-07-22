@@ -20,7 +20,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 
@@ -57,8 +57,7 @@ serve(async (req) => {
       if (resolvedTenant !== tenant_id) return json({ error: 'forbidden' }, 403);
     }
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
@@ -92,11 +91,7 @@ serve(async (req) => {
       + `${reference ? `REFERENCE (key facts the answer should be faithful to — may be partial):\n${wrapUntrusted(reference.slice(0, 4000), 'eval-reference')}` : 'REFERENCE: none provided.'}\n\n`
       + `${kbContext ? `KNOWLEDGE BASE CONTEXT (the DE's actual sources — facts here are grounded, not invention):\n${wrapUntrusted(kbContext, 'tenant-kb')}` : 'KNOWLEDGE BASE CONTEXT: none retrieved — judge plausibility and appropriate hedging.'}`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: JUDGE_MODEL, max_tokens: 512, system, messages: [{ role: 'user', content: user }] }),
-    });
+    const res = await llmMessages(admin, { model: JUDGE_MODEL, max_tokens: 512, system, messages: [{ role: 'user', content: user }] }, 'eval-judge');
     if (!res.ok) return json({ error: `judge_error_${res.status}` }, 502);
     const d = await res.json();
     // Meter the judge's own spend.

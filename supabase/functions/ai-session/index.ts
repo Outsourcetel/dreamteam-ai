@@ -23,7 +23,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
@@ -135,16 +135,12 @@ const GOV_TOOLS = [
 interface ContentBlock { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }
 
 async function callModel(
-  apiKey: string,
+  admin: SupabaseClient,
   system: string,
   messages: Array<{ role: string; content: unknown }>,
   tools: unknown[] = TOOLS,
 ): Promise<{ blocks: ContentBlock[]; stop: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 4096, system, tools, messages }),
-  });
+  const res = await llmMessages(admin, { model: MODEL, max_tokens: 4096, system, tools, messages }, 'ai-session');
   if (!res.ok) return { error: `llm_http_${res.status}` };
   const d = await res.json();
   return {
@@ -303,8 +299,7 @@ serve(async (req) => {
     const userMessage = String(body.message ?? '').slice(0, MAX_MESSAGE_CHARS).trim();
     if (!userMessage) return json({ error: 'message required' }, 400);
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
@@ -390,7 +385,7 @@ serve(async (req) => {
     });
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const r = await callModel(apiKey, system, messages, isGov ? GOV_TOOLS : TOOLS);
+      const r = await callModel(admin, system, messages, isGov ? GOV_TOOLS : TOOLS);
       if ('error' in r) return json({ error: r.error, session_id: sessionId }, 502);
       inTok += r.inTok; outTok += r.outTok;
       reply = textOf(r.blocks) || reply;

@@ -13,7 +13,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
@@ -23,12 +23,8 @@ const CORS = {
 };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-async function claude(apiKey: string, system: string, user: string): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1024, system, messages: [{ role: 'user', content: user }] }),
-  });
+async function claude(admin: SupabaseClient, system: string, user: string): Promise<string> {
+  const res = await llmMessages(admin, { model: 'claude-sonnet-5', max_tokens: 1024, system, messages: [{ role: 'user', content: user }] }, 'de-perceive');
   if (!res.ok) throw new Error(`anthropic_${res.status}: ${(await res.text()).slice(0, 200)}`);
   const d = await res.json();
   return (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
@@ -60,8 +56,7 @@ serve(async (req) => {
       if (!(prof?.layer === 'platform' || prof?.tenant_id === tenant_id)) return json({ error: 'forbidden' }, 403);
     }
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
 
     // Cost governance: this is an LLM call site — it must sit inside the
     // same budget net as every other one (was previously ungated).
@@ -78,7 +73,7 @@ serve(async (req) => {
       if (!fields || fields.length === 0 || !text) return json({ error: 'fields (or template_id) and text required' }, 400);
       const fieldList = fields.map((f: { key: string; label?: string; type?: string }) => `- ${f.key} (${f.type ?? 'string'}): ${f.label ?? f.key}`).join('\n');
       const system = 'You extract structured fields from a document. Return ONLY JSON: {"fields": {<key>: <value or null>}, "confidence": {<key>: 0-1}}. Use null when the document does not contain a field. Never invent values.' + FIREWALL_RULES;
-      const out = parseJson(await claude(apiKey, system, `Fields to extract:\n${fieldList}\n\nDocument:\n${wrapUntrusted(text.slice(0, 8000), 'uploaded-document')}`));
+      const out = parseJson(await claude(admin,system, `Fields to extract:\n${fieldList}\n\nDocument:\n${wrapUntrusted(text.slice(0, 8000), 'uploaded-document')}`));
       const extracted = (out?.fields as Record<string, unknown>) ?? {};
       const confidence = (out?.confidence as Record<string, unknown>) ?? {};
       const { data: row, error } = await admin.from('extraction_results')
@@ -97,7 +92,7 @@ serve(async (req) => {
       if (!defs || defs.length === 0) return json({ error: 'no analytics queries available' }, 404);
       const catalog = defs.map((d: { key: string; name: string; description: string; param_schema: unknown }) => `- key "${d.key}" (${d.name}): ${d.description}. params: ${JSON.stringify(d.param_schema)}`).join('\n');
       const system = 'You pick the ONE analytics query that answers the question. Return ONLY JSON: {"key": "<one of the listed keys, or null>", "params": {...}}. Never invent a key.' + FIREWALL_RULES;
-      const pick = parseJson(await claude(apiKey, system, `Available queries:\n${catalog}\n\nQuestion: ${wrapUntrusted(question.slice(0, 2000), 'user-question')}`));
+      const pick = parseJson(await claude(admin,system, `Available queries:\n${catalog}\n\nQuestion: ${wrapUntrusted(question.slice(0, 2000), 'user-question')}`));
       const key = pick?.key as string | null;
       if (!key || !defs.some((d: { key: string }) => d.key === key)) {
         return json({ key: null, result: null, note: 'no vetted query matched the question' });

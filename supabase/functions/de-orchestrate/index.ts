@@ -27,7 +27,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 
@@ -85,8 +85,7 @@ serve(async (req) => {
     let chosen = supervisor_de_id as string;
     let routeReason = 'no teammates granted — answered directly';
     if (mates.length > 0) {
-      const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-      if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+      if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
       const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
       if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 
@@ -95,10 +94,7 @@ serve(async (req) => {
         ...mates.map((m, i) => `${i + 1}. ${m.persona_name || m.name}: ${m.description ?? ''} Responsibilities: ${(m.responsibilities ?? []).join('; ')}`),
       ].join('\n');
       const system = 'You are a team supervisor routing an incoming question to the best-suited team member. Pick BY RESPONSIBILITY FIT — choose 0 (yourself) when the question fits you best or fits nobody clearly. Return ONLY JSON {"route_to": number, "reason": string(short)}.' + FIREWALL_RULES;
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST', headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: ROUTING_MODEL, max_tokens: 200, system, messages: [{ role: 'user', content: `Team:\n${roster}\n\nIncoming question:\n${wrapUntrusted(question, 'customer-question')}` }] }),
-      });
+      const res = await llmMessages(admin, { model: ROUTING_MODEL, max_tokens: 200, system, messages: [{ role: 'user', content: `Team:\n${roster}\n\nIncoming question:\n${wrapUntrusted(question, 'customer-question')}` }] }, 'de-orchestrate');
       if (res.ok) {
         const d = await res.json();
         admin.rpc('record_de_token_usage', { p_tenant_id: tenant_id, p_de_id: supervisor_de_id, p_model_id: ROUTING_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });

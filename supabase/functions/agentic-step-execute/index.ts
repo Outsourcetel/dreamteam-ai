@@ -53,7 +53,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
@@ -124,7 +124,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // 'rate_limited' state instead of a hard 'failed'. Backoffs are kept
 // short enough to stay well inside the edge worker's wall clock.
 async function callAnthropic(
-  apiKey: string, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: AnthropicTool[],
+  admin: SupabaseClient, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: AnthropicTool[],
 ): Promise<{ content: ContentBlock[]; stop_reason: string; usage: { input_tokens: number; output_tokens: number } }> {
   const backoffs = [1500, 4000, 8000];
   let lastStatus = 0;
@@ -132,21 +132,17 @@ async function callAnthropic(
   for (let attempt = 0; attempt <= backoffs.length; attempt++) {
     let res: Response;
     try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model, max_tokens: 2048,
-          // Prompt caching (5-min ephemeral). The breakpoint on the system block
-          // caches the tools + system prefix (tools precede system in the cache
-          // hierarchy) — that prefix is byte-identical across every iteration of
-          // this tool-use loop, so iterations 2+ read it at 0.1x instead of
-          // re-billing the whole prefix at 1x. Mirrors the de-work executor.
-          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-          messages,
-          tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-        }),
-      });
+      res = await llmMessages(admin, {
+        model, max_tokens: 2048,
+        // Prompt caching (5-min ephemeral). The breakpoint on the system block
+        // caches the tools + system prefix (tools precede system in the cache
+        // hierarchy) — that prefix is byte-identical across every iteration of
+        // this tool-use loop, so iterations 2+ read it at 0.1x instead of
+        // re-billing the whole prefix at 1x. Mirrors the de-work executor.
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        messages,
+        tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+      }, 'agentic-step');
     } catch (netErr) {
       // network blip — treat as transient
       lastStatus = 0; lastBody = String(netErr).slice(0, 200);
@@ -292,7 +288,7 @@ async function markTerminal(
 async function runLoop(
   admin: SupabaseClient, tenantId: string, runId: string, goal: string,
   deName: string, model: string, escalationModel: string, escalationThreshold: number | null,
-  tools: AnthropicTool[], policy: Policy, deId: string, apiKey: string,
+  tools: AnthropicTool[], policy: Policy, deId: string,
   contextDocuments = '', charter = '', playbookRunId = '',
   onGate: 'continue' | 'pause' = 'continue', stepIndex = -1,
 ): Promise<Record<string, unknown>> {
@@ -351,7 +347,7 @@ async function runLoop(
     const useModel = (escalationThreshold != null && iterationCount >= escalationThreshold) ? escalationModel : model;
     let resp;
     try {
-      resp = await callAnthropic(apiKey, useModel, system, messages, tools);
+      resp = await callAnthropic(admin,useModel, system, messages, tools);
     } catch (e) {
       // A persistent rate-limit/overload ends in an honest, retryable
       // 'rate_limited' state (the run can be re-driven later) rather than
@@ -544,8 +540,7 @@ serve(async (req) => {
       return json({ status: 'failed', agentic_step_run_id: runId, error: 'disabled_by_tenant_policy' });
     }
 
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) {
+    if (!(await hasLLMProvider(admin))) {
       await markTerminal(admin, runId, 'blocked_llm', { reason: 'llm_not_configured' });
       await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',
         `Agentic step blocked — reasoning not activated (ANTHROPIC_API_KEY) — "${goal.slice(0, 160)}"`,
@@ -597,7 +592,7 @@ serve(async (req) => {
       admin, tenantId!, runId, goal, deRow.name ?? 'Digital employee',
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
-      tools, policy, deId, apiKey, contextDocuments, charter, playbookRunId,
+      tools, policy, deId, contextDocuments, charter, playbookRunId,
       onGate, stepIndex,
     );
 

@@ -20,7 +20,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
@@ -524,8 +524,7 @@ serve(async (req) => {
       : 'No documents matched the question.';
 
     // ── Claude ──
-    const anthropicKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!anthropicKey) {
+    if (!(await hasLLMProvider(admin))) {
       return json({ error: 'llm_not_configured', conversation_id: convId });
     }
 
@@ -559,23 +558,15 @@ Knowledge documents:
 ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES}`;
 
     const model = subjectDeId ? await resolveDeModel(admin, tenantId, subjectDeId) : DEFAULT_MODEL;
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        // 1024 truncated long JSON envelopes mid-string (the replay-path
-        // parse leak); parseModelJson now salvages truncation too, but not
-        // truncating in the first place is the real fix.
-        max_tokens: 1536,
-        system,
-        messages: [{ role: 'user', content: question }],
-      }),
-    });
+    const res = await llmMessages(admin, {
+      model,
+      // 1024 truncated long JSON envelopes mid-string (the replay-path
+      // parse leak); parseModelJson now salvages truncation too, but not
+      // truncating in the first place is the real fix.
+      max_tokens: 1536,
+      system,
+      messages: [{ role: 'user', content: question }],
+    }, 'de-answer');
     if (!res.ok) {
       const detail = await res.text();
       console.error('Anthropic error', res.status, detail);

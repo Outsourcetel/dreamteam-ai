@@ -23,7 +23,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
@@ -50,14 +50,10 @@ interface ContentBlock { type: string; text?: string; id?: string; name?: string
 // Anthropic call with bounded retry on transient throttling (429 / 529 / 5xx).
 // de-work uses raw fetch (no SDK auto-retry), so a brief rate-limit or overload
 // otherwise throws straight through and defers the whole objective +30min.
-async function anthropicWithRetry(apiKey: string, body: Record<string, unknown>, label: string): Promise<{ content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; usage?: { input_tokens?: number; output_tokens?: number } }> {
+async function anthropicWithRetry(admin: SupabaseClient, body: Record<string, unknown>, label: string): Promise<{ content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; usage?: { input_tokens?: number; output_tokens?: number } }> {
   let lastStatus = 0, lastBody = '';
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const res = await llmMessages(admin, body, `de-work:${label}`);
     if (res.ok) return await res.json();
     lastStatus = res.status;
     lastBody = (await res.text()).slice(0, 300);
@@ -97,7 +93,7 @@ async function operableSystemsBriefing(admin: SupabaseClient, deId: string): Pro
   } catch { return ''; }
 }
 
-async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
+async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
   // The employee's SOP + guardrails (operator config) shape the plan — without
   // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
   const brief = await deBriefing(admin, obj.de_id);
@@ -111,7 +107,7 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
   // the output budget, so it intermittently ate the plan JSON before the steps
   // were emitted (tokens spent, 0 parseable steps → silent defer). A planner
   // that returns structured JSON doesn't need thinking. Retry transient 429/529.
-  const d = await anthropicWithRetry(apiKey, { model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }, 'planner');
+  const d = await anthropicWithRetry(admin,{ model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }, 'planner');
   // Meter BEFORE any early return, and AWAITED — a lazy supabase-js thenable
   // never fires unless awaited, and unmetered planner spend can never trip
   // the very budget gate that checks it (consolidation-review finding).
@@ -152,7 +148,7 @@ async function planObjective(admin: SupabaseClient, apiKey: string, obj: { id: s
 // (close + escalate to a human). Idempotency keys carry the wake counter
 // (obj-<id>-w<n>-step-<m>) so a crashed/re-run wake can't double-enqueue.
 async function reviewObjective(
-  admin: SupabaseClient, apiKey: string,
+  admin: SupabaseClient,
   obj: { id: string; tenant_id: string; de_id: string; title: string; description: string },
   wakeN: number,
 ): Promise<{ assessment: string; enqueued: number }> {
@@ -168,7 +164,7 @@ async function reviewObjective(
 
   const system = 'You review progress on a long-running business objective owned by an AI employee. Decide: "achieved" (the goal is met — be strict, only when the completed work actually accomplishes it), "blocked" (cannot progress without human help), or "continue" (more work needed). If continue, propose 1-3 concrete NEXT steps that build on what happened — not a restart. Return ONLY JSON {"assessment":"achieved"|"blocked"|"continue","note":string,"next_steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}.' + FIREWALL_RULES;
   // thinking disabled + retry, same rationale as planObjective (structured JSON).
-  const d = await anthropicWithRetry(apiKey, { model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
+  const d = await anthropicWithRetry(admin,{ model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
   // AWAITED — lazy thenable; unmetered reviewer spend evades the budget gate.
   await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
@@ -213,24 +209,21 @@ async function reviewObjective(
   return { assessment, enqueued };
 }
 
-async function callAnthropic(apiKey: string, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: unknown[]) {
+async function callAnthropic(admin: SupabaseClient, model: string, system: string, messages: Array<{ role: string; content: unknown }>, tools: unknown[]) {
   const backoffs = [1500, 4000];
   let lastStatus = 0, lastBody = '';
   for (let attempt = 0; attempt <= backoffs.length; attempt++) {
     let res: Response;
     try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        // Prompt caching (P1 economics): the system prompt + tool schemas are
-        // identical across a task's serial turns — cache them so turns 2-6
-        // pay ~10% for that prefix instead of full price.
-        body: JSON.stringify({
-          model, max_tokens: 4096,
-          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-          messages, tools,
-        }),
-      });
+      // Prompt caching (P1 economics): the system prompt + tool schemas are
+      // identical across a task's serial turns — cache them so turns 2-6
+      // pay ~10% for that prefix instead of full price. Cross-vendor
+      // fallbacks strip cache_control inside the shared client.
+      res = await llmMessages(admin, {
+        model, max_tokens: 4096,
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        messages, tools,
+      }, 'de-work:executor');
     } catch (e) { lastStatus = 0; lastBody = String(e); if (attempt < backoffs.length) { await sleep(backoffs[attempt]); continue; } break; }
     if (res.ok) {
       const d = await res.json();
@@ -440,7 +433,7 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
   }
 }
 
-async function workItem(admin: SupabaseClient, apiKey: string, item: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }): Promise<{ id: string; status: string; summary: string; turns: number }> {
+async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }): Promise<{ id: string; status: string; summary: string; turns: number }> {
   const tenantId = item.tenant_id, deId = item.de_id;
   const spanStart = new Date().toISOString();   // OTel (#13)
   // Wave-2 (truth audit docs/15): the identity panel's title/purpose/
@@ -601,7 +594,7 @@ async function workItem(admin: SupabaseClient, apiKey: string, item: { id: strin
 
   let done = false, summary = '', finalStatus = 'done', turn = 0;
   for (turn = 0; turn < MAX_TURNS && !done; turn++) {
-    const resp = await callAnthropic(apiKey, model, system, messages, tools);
+    const resp = await callAnthropic(admin, model, system, messages, tools);
     // Meter every call — check_tenant_ai_budget sums de_token_usage, so an
     // unmetered executor could never trip the very budget it checks.
     // AWAITED: a floating promise is silently dropped when the edge isolate
@@ -659,8 +652,7 @@ serve(async (req) => {
     if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))) {
       return json({ error: 'unauthorized' }, 401);
     }
-    const apiKey = await getAIKey(admin, 'ANTHROPIC_API_KEY');
-    if (!apiKey) return json({ error: 'llm_not_configured' }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
 
     const body = await req.json().catch(() => ({}));
 
@@ -710,7 +702,7 @@ serve(async (req) => {
         const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
         if (deBudget && deBudget.allowed === false) { await deferPlan(o.id); continue; }
         try {
-          const steps = await planObjective(admin, apiKey, o);
+          const steps = await planObjective(admin, o);
           planned.push({ objective_id: o.id, steps });
           if (steps === 0) await deferPlan(o.id);   // unparseable/empty plan → back off, don't hot-loop
         } catch (e) {
@@ -749,7 +741,7 @@ serve(async (req) => {
           // so a concurrent run that lost the race gets an error and skips.
           const { data: wakeN, error: wakeErr } = await admin.rpc('begin_objective_wake', { p_objective_id: o.id });
           if (wakeErr) continue;
-          woken.push({ objective_id: o.id, ...(await reviewObjective(admin, apiKey, o, Number(wakeN))) });
+          woken.push({ objective_id: o.id, ...(await reviewObjective(admin, o, Number(wakeN))) });
         } catch (e) { console.error('reviewObjective:', e); }
       }
     }
@@ -798,7 +790,7 @@ serve(async (req) => {
           await admin.rpc('complete_de_work_item', { p_id: it.id, p_status: 'failed', p_error: 'de_budget_exceeded', p_retry_delay_seconds: 3600 });
           results.push({ id: it.id, status: 'failed', summary: 'de_budget_exceeded' }); continue;
         }
-        results.push(await workItem(admin, apiKey, it));
+        results.push(await workItem(admin, it));
       } catch (e) {
         await admin.rpc('complete_de_work_item', { p_id: it.id, p_status: 'failed', p_error: String(e).slice(0, 300) });
         results.push({ id: it.id, status: 'failed', summary: String(e).slice(0, 200) });

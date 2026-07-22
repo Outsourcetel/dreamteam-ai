@@ -14,7 +14,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAIKey } from "../_shared/aiKeys.ts";
+import { hasLLMProvider, llmMessages } from "../_shared/llm.ts";
 import { resolveTenantWithRemoteAccess } from "../_shared/resolveTenant.ts";
 import { wrapUntrusted, FIREWALL_RULES } from "../_shared/injectionSafety.ts";
 import { resolveDeModel } from "../_shared/deModel.ts";
@@ -135,8 +135,7 @@ Remember: You're helping humans build and manage their digital workforce, not re
 ${FIREWALL_RULES}`;
 
     // ── Model call (shared registry model, timeout, awaited metering) ──
-    const apiKey = await getAIKey(admin, "ANTHROPIC_API_KEY");
-    if (!apiKey) return json({ error: "ai_not_configured" }, 503);
+    if (!(await hasLLMProvider(admin))) return json({ error: "ai_not_configured" }, 503);
     const model = await resolveDeModel(admin, tenant_id, assistant.id);
 
     const history = conversationMessages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
@@ -144,12 +143,9 @@ ${FIREWALL_RULES}`;
       content: m.content,
     }));
 
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model, max_tokens: 2000, system: systemPrompt, messages: history }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    // (The old direct call carried a 60s AbortSignal; the shared client owns
+    // transport now — provider errors advance the chain instead of hanging.)
+    const res = await llmMessages(admin, { model, max_tokens: 2000, system: systemPrompt, messages: history }, "workforce-chat");
     if (!res.ok) {
       console.error("workforce-chat llm_error status", res.status);
       return json({ error: "llm_error" }, 502);
