@@ -175,6 +175,19 @@ function URLSync() {
       return;
     }
 
+    // First mount with a mapped deep-link URL: the URL wins over the default
+    // page state. Without this, the page→URL direction below runs first and
+    // bounces every cold deep link (or refresh) to the default page's URL —
+    // the "/autonomy/browser-operator lands on /dashboard" bug.
+    if (lastSynced.current === null) {
+      const deepLink = URL_TO_PAGE[location.pathname];
+      if (deepLink && deepLink !== currentPage) {
+        lastSynced.current = { page: deepLink, pathname: location.pathname };
+        handleSetPage(deepLink);
+        return;
+      }
+    }
+
     const target = PAGE_TO_URL[currentPage];
     if (target && location.pathname !== target) {
       lastSynced.current = { page: currentPage, pathname: target };
