@@ -74,12 +74,12 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getDeWorkItems(de.id), getDeObjectives(de.id), listDEActivity(60)])
+    Promise.all([getDeWorkItems(de.id), getDeObjectives(de.id), listDEActivity(10, de.id)])
       .then(([w, o, a]) => {
         if (cancelled) return;
         setWork(w);
         setObjectives(o.filter(x => ['open', 'in_progress', 'blocked'].includes(x.status)));
-        setActivity(a.filter(r => r.evidence_run.de_id === de.id).slice(0, 10));
+        setActivity(a);
       })
       .catch(e => { if (!cancelled) { setError((e as Error).message); setWork([]); } });
     return () => { cancelled = true; };

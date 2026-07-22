@@ -517,18 +517,26 @@ export interface DEActivityRow {
   subject_name?: string | null;
 }
 
-export async function listDEActivity(limit = 30): Promise<DEActivityRow[]> {
+// Wave-2 fix (truth audit 2026-07-22): optional deId pushes the per-employee
+// filter INTO the query. Before, callers filtered client-side after a
+// tenant-wide limit — on a busy tenant a DE outside the newest N rows showed
+// a false "no decisions yet". Decisions are now fetched for exactly the
+// returned runs, not by their own tenant-wide limit.
+export async function listDEActivity(limit = 30, deId?: string | null): Promise<DEActivityRow[]> {
   const tid = await requireTenantId();
-  const [{ data: runs, error: runErr }, { data: decisions, error: decErr }, { data: des }, { data: specs }] = await Promise.all([
-    supabase.from('evidence_runs').select('*').eq('tenant_id', tid)
-      .order('created_at', { ascending: false }).limit(limit),
-    supabase.from('evidence_run_decisions').select('*').eq('tenant_id', tid)
-      .order('created_at', { ascending: false }).limit(limit),
+  let runsQ = supabase.from('evidence_runs').select('*').eq('tenant_id', tid);
+  if (deId) runsQ = runsQ.eq('de_id', deId);
+  const [{ data: runs, error: runErr }, { data: des }, { data: specs }] = await Promise.all([
+    runsQ.order('created_at', { ascending: false }).limit(limit),
     supabase.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tid),
     // Specialists are Digital Employees now (migrations 208/211).
     supabase.from('digital_employees').select('id, name, persona_name').eq('tenant_id', tid).eq('is_specialist', true),
   ]);
   if (runErr) raise('listDEActivity (evidence_runs)', runErr);
+  const runIds = ((runs ?? []) as EvidenceRun[]).map((r) => r.id);
+  const { data: decisions, error: decErr } = runIds.length > 0
+    ? await supabase.from('evidence_run_decisions').select('*').eq('tenant_id', tid).in('evidence_run_id', runIds)
+    : { data: [], error: null };
   if (decErr) raise('listDEActivity (evidence_run_decisions)', decErr);
   const byRun = new Map<string, EvidenceRunDecision>();
   for (const d of (decisions ?? []) as EvidenceRunDecision[]) byRun.set(d.evidence_run_id, d);

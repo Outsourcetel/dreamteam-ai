@@ -186,6 +186,34 @@ function friendlyWorkbenchError(raw: string): string {
 
 // Whether the DE's passing certification still vouches for its CURRENT config.
 // state: certified (fresh) | stale (config changed since last pass) | failed | uncertified.
+// Wave-2 (truth audit 2026-07-22): the certification loop finally closes —
+// run the tenant's golden exam WITH this employee answering; a passing suite
+// writes role_certifications via certify_de_from_eval inside eval-run.
+export const runCertificationEval = async (deId: string): Promise<{ status: string; certification: { status?: string; score_pct?: number } | null }> => {
+  const { data, error } = await supabase.functions.invoke('eval-run', { body: { trigger: 'manual', de_id: deId } });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const parsed = await ctx.json() as { error?: string };
+        throw new Error(parsed?.error === 'llm_not_configured'
+          ? 'The workforce brain is offline — certification exams run the real answer pipeline and need the AI key.'
+          : (parsed?.error ?? error.message));
+      } catch (e) { if (e instanceof Error) throw e; }
+    }
+    throw new Error(error.message ?? String(error));
+  }
+  let res = data as { run_id: string; status: string; remaining?: number; certification?: { status?: string; score_pct?: number } | null };
+  // Batched suites: keep re-invoking with run_id + de_id until finished.
+  let guard = 0;
+  while (res?.status === 'running' && (res.remaining ?? 0) > 0 && guard++ < 20) {
+    const { data: next, error: nextErr } = await supabase.functions.invoke('eval-run', { body: { run_id: res.run_id, de_id: deId } });
+    if (nextErr) throw new Error(nextErr.message ?? String(nextErr));
+    res = next as typeof res;
+  }
+  return { status: res?.status ?? 'unknown', certification: res?.certification ?? null };
+};
+
 export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> => {
   const { data, error } = await supabase.rpc('de_certification_status', { p_de_id: deId });
   if (error) throw error;

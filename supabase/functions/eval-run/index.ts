@@ -68,6 +68,12 @@ serve(async (req) => {
       if (['manual', 'knowledge_publish', 'scheduled'].includes(body?.trigger)) trigger = body.trigger;
     } catch { /* empty body → manual */ }
 
+    // Wave-2: optional certification target — when set, THIS employee answers
+    // its own exam (de_id forwarded to de-answer) and a passing suite writes
+    // a role_certifications row. Callers must re-send de_id on batch resumes.
+    const targetDeId = (typeof body?.de_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.de_id)) ? body.de_id : null;
+    const targetArchetype = (typeof body?.archetype_key === 'string' && body.archetype_key) ? body.archetype_key : null;
+
     // ── Auth: service/dispatch caller with an explicit tenant (enables
     // headless + scheduled runs — same dual pattern as ingest-chunks),
     // or a user JWT ──
@@ -172,7 +178,9 @@ serve(async (req) => {
             'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
             ...(isServiceCaller && headerSecret ? { 'x-dispatch-secret': headerSecret } : {}),
           },
-          body: JSON.stringify(isServiceCaller ? { question: qa.question, tenant_id: tenantId } : { question: qa.question }),
+          body: JSON.stringify(isServiceCaller
+            ? { question: qa.question, tenant_id: tenantId, ...(targetDeId ? { de_id: targetDeId } : {}) }
+            : { question: qa.question, ...(targetDeId ? { de_id: targetDeId } : {}) }),
         });
         const data = await res.json().catch(() => ({} as Record<string, unknown>));
 
@@ -231,7 +239,23 @@ serve(async (req) => {
     await saveProgress(true);
     await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
 
-    return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed, remaining: 0 });
+    // Wave-2 (truth audit 2026-07-22, docs/15): a targeted run finally
+    // CERTIFIES — certify_de_from_eval had zero callers, so Proving Ground
+    // passes never produced a certification and the go-live gate was
+    // unsatisfiable through the app. Best-effort: a cert failure never
+    // breaks the eval result itself.
+    let certification: Record<string, unknown> | null = null;
+    if (targetDeId) {
+      try {
+        const { data: cert, error: certErr } = await admin.rpc('certify_de_from_eval', {
+          p_de_id: targetDeId, p_archetype_key: targetArchetype, p_eval_run_id: runId, p_threshold_pct: 80,
+        });
+        if (certErr) console.error('certify_de_from_eval:', certErr.message);
+        else certification = cert as Record<string, unknown>;
+      } catch (e) { console.error('certify_de_from_eval:', e); }
+    }
+
+    return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed, remaining: 0, certification });
   } catch (err) {
     console.error('eval-run error:', err);
     return json({ error: String(err) }, 500);

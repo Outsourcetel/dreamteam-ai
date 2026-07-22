@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
-  getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks,
+  getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks, runCertificationEval,
   getReplaySources, runReplay,
   getDeMemoryGrouped, forgetMemory, saveObjective, decideException,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
@@ -63,6 +63,20 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [certs, setCerts] = useState<CertRow[]>([]);
   const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
+  const [certRun, setCertRun] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
+
+  const runCertExam = async () => {
+    setCertRun({ busy: true, note: null });
+    try {
+      const r = await runCertificationEval(deId);
+      const c = r.certification;
+      setCertRun({ busy: false, note: c ? `Exam ${r.status} — certification ${c.status} at ${c.score_pct}%.` : `Exam ${r.status} — no certification recorded.` });
+      setCerts(await getDeCertifications(deId));
+      setCertStatus(await getDeCertStatus(deId));
+    } catch (e) {
+      setCertRun({ busy: false, note: (e as Error).message });
+    }
+  };
   const [training, setTraining] = useState<TrainingRow[]>([]);
   // Replay Lab
   const [replaySources, setReplaySources] = useState<ReplaySource[]>([]);
@@ -496,8 +510,22 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
               </div>
             )}
 
+            {section === 'certification' && (
+              <div className="flex items-center gap-3 mb-3">
+                <button onClick={() => void runCertExam()} disabled={certRun.busy}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                  {certRun.busy ? 'Running exam…' : 'Run certification exam'}
+                </button>
+                <span className="text-[11px] text-dt-muted flex-1">
+                  This employee answers the workspace's golden exam through the real pipeline — a pass at 80%+ writes a certification.
+                </span>
+              </div>
+            )}
+            {section === 'certification' && certRun.note && (
+              <p className="text-xs text-dt-support mb-3">{certRun.note}</p>
+            )}
             {section === 'certification' && (certs.length === 0 ? (
-              <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — that record shows here." />
+              <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — run the exam above; the record shows here." />
             ) : (
               <div className="space-y-2">
                 {certStatus?.state === 'stale' && (
