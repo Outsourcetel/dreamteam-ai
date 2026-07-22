@@ -5,6 +5,7 @@ import { Sidebar, MfaEnrollmentPanel } from './components';
 import DEChatDock from './components/DEChatDock';
 import PageErrorBoundary from './components/PageErrorBoundary';
 import LoginPage from './pages/LoginPage';
+import ProofPage from './pages/ProofPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
 import HostedChatPage from './pages/chat/HostedChatPage';
 import OrgSetupScreen from './pages/OrgSetupScreen';
@@ -306,6 +307,10 @@ function AppShell() {
   // in — intercepted here for the same reason as /platform/redeem above.
   if (location.pathname === '/terms') return <TermsOfServicePage onBack={() => window.history.back()} />;
   if (location.pathname === '/privacy') return <PrivacyPolicyPage onBack={() => window.history.back()} />;
+
+  // Public proof page (docs/18 Move 1) — counter-positioning surface for
+  // cold prospects; live production counters, no auth, no tenant data.
+  if (location.pathname === '/proof') return <ProofPage />;
 
   // Public hosted support chat (/chat?k=<widget key>) — a customer-facing
   // surface, so it must render before any auth gate. The widget key is the

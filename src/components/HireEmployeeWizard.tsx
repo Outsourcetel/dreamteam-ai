@@ -276,6 +276,24 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </div>
               </div>
 
+              {/* docs/18 Move 2: the buy-vs-build math, cited. Third-party
+                  figures only — labeled as such, never presented as ours. */}
+              <div className="rounded-xl bg-dt-card border border-dt-border p-3">
+                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">The alternative, measured by others</p>
+                <ul className="space-y-1 text-xs text-dt-support">
+                  <li>
+                    · Internal agent builds succeed roughly half as often as vendor partnerships (~33% vs ~67%), and 95% of enterprise GenAI pilots showed no P&L impact —{' '}
+                    <a href="https://mlq.ai/media/quarterly_decks/v0.1_State_of_AI_in_Business_2025_Report.pdf" target="_blank" rel="noreferrer" className="text-indigo-300 hover:underline">MIT NANDA, 2025 ↗</a>
+                  </li>
+                  <li>
+                    · Over 40% of agentic-AI projects are predicted to be canceled by end-2027, mostly on governance and risk-control gaps —{' '}
+                    <a href="https://www.gartner.com/en/newsroom/press-releases/2025-06-25-gartner-predicts-over-40-percent-of-agentic-ai-projects-will-be-canceled-by-end-of-2027" target="_blank" rel="noreferrer" className="text-indigo-300 hover:underline">Gartner, Jun 2025 ↗</a>
+                  </li>
+                  <li>· Enterprise single-function agent contracts commonly run $200–350k in year one (published pricing teardowns of Sierra-class vendors, 2026 — third-party estimates).</li>
+                  <li className="text-dt-body">· This hire: supervised from day one, spend hard-capped by your AI budget, metered per resolved outcome — and it starts today.</li>
+                </ul>
+              </div>
+
               {draft.study.coverage && (
                 <div className="rounded-xl bg-dt-card border border-dt-border p-3">
                   <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">What I found in your knowledge</p>
