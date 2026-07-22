@@ -218,7 +218,17 @@ serve(async (req) => {
         p_source_kind: 'conversation', p_source_ref: convId,
       });
       if (draftErr) disposition = `draft_failed:${draftErr.message}`;
-      else { disposition = 'reply_drafted_for_approval'; draftId = dId as string | null; }
+      else {
+        disposition = 'reply_drafted_for_approval'; draftId = dId as string | null;
+        // The thread must not claim delivery that hasn't happened: de-answer
+        // recorded the answer as a normal message, but for email nothing
+        // reaches the customer until the draft is approved — flip the bubble
+        // to draft_pending so the inbox shows it as awaiting approval.
+        const { data: lastMsg } = await admin.from('de_messages')
+          .select('id').eq('tenant_id', tenantId).eq('conversation_id', convId).eq('role', 'assistant')
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (lastMsg?.id) await admin.from('de_messages').update({ delivery: 'draft_pending' }).eq('id', lastMsg.id);
+      }
     }
 
     await admin.from('activity_events').insert({

@@ -81,6 +81,89 @@ export async function setConversationState(conversationId: string, state: { stat
   if (error) throw new Error(error.message);
 }
 
+// ── G3 handoff completion (mig 257) ──────────────────────────────────
+
+/** Hand the thread back to its DE, optionally teaching it a lesson the DE
+ *  recalls on the customer's next message (conversation-scoped memory). */
+export async function handoffBackToDe(conversationId: string, note?: string): Promise<void> {
+  const { error } = await supabase.rpc('handoff_back_to_de', {
+    p_conversation_id: conversationId, p_note: note?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** A human's free-form reply on an EMAIL conversation — actually delivered
+ *  via the send-email-reply edge fn (send first, record after). */
+export async function sendEmailReply(conversationId: string, content: string): Promise<void> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.functions.invoke('send-email-reply', {
+    body: { conversation_id: conversationId, content, tenant_id: tid },
+  });
+  if (error) {
+    // supabase-js wraps non-2xx as a generic FunctionsHttpError; surface the
+    // function's honest detail (e.g. "no verified from-address") instead.
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      const b = await ctx.json().catch(() => null) as { detail?: string; error?: string } | null;
+      throw new Error(b?.detail || b?.error || error.message);
+    }
+    throw new Error(error.message);
+  }
+  const d = data as { ok?: boolean; detail?: string; error?: string } | null;
+  if (!d?.ok) throw new Error(d?.detail || d?.error || 'Reply was not sent.');
+}
+
+/** The pending DE-drafted email reply for a conversation (mig 179 gate). */
+export interface PendingEmailDraft { id: string; human_task_id: string | null; body: string; subject: string | null }
+export async function getPendingEmailDraft(conversationId: string): Promise<PendingEmailDraft | null> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.from('outbound_drafts')
+    .select('id, human_task_id, body, subject')
+    .eq('tenant_id', tid).eq('source_kind', 'conversation').eq('source_ref', conversationId)
+    .eq('status', 'pending_approval')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as PendingEmailDraft | null) ?? null;
+}
+
+/** Approve a DE's email draft from the inbox — the SAME loop as the
+ *  Approvals desk (task decided → send-outbound delivers), plus an optional
+ *  edit first. Returns delivery truth so the UI never claims a blocked send. */
+export async function approveEmailDraft(
+  conversationId: string, draftMessageId: string, editedContent?: string,
+): Promise<{ sent: boolean; detail?: string }> {
+  const draft = await getPendingEmailDraft(conversationId);
+  if (!draft) throw new Error('No pending email draft found for this conversation.');
+  const edited = editedContent?.trim();
+  if (edited && edited !== draft.body) {
+    const { error } = await supabase.rpc('edit_outbound_draft', { p_draft_id: draft.id, p_body: edited });
+    if (error) throw new Error(error.message);
+  }
+  if (draft.human_task_id) {
+    const { data: task } = await supabase.from('human_tasks').select('*')
+      .eq('id', draft.human_task_id).maybeSingle();
+    if (task && task.status === 'pending') {
+      const { decideHumanTask } = await import('./customerApi');
+      await decideHumanTask(task, 'approved');
+    }
+  }
+  const { deliverOutbound } = await import('./commsApi');
+  const res = await deliverOutbound(draft.id);
+  if (res.sent) {
+    // Only now does the thread bubble flip to "sent" — approve_draft_reply
+    // requires delivery='draft_pending', so this is a no-op on re-runs.
+    await approveDraft(draftMessageId, edited).catch(() => { /* bubble state only */ });
+  }
+  return { sent: res.sent, detail: res.detail };
+}
+
+/** Display name for the conversation's DE (for the hand-back button). */
+export async function getDeDisplayName(deId: string): Promise<string> {
+  const { data } = await supabase.from('digital_employees')
+    .select('persona_name, name').eq('id', deId).maybeSingle();
+  return data?.persona_name || data?.name || 'the DE';
+}
+
 // ── Support Command Center — operator-wide aggregates ────────────────
 export interface SupportOverview {
   total: number;

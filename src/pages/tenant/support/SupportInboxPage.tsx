@@ -4,6 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import {
   listSupportConversations, getConversationThread, claimConversation, sendHumanReply,
   approveDraft, setConversationState, subscribeSupport,
+  sendEmailReply, approveEmailDraft, handoffBackToDe, getDeDisplayName,
   type SupportConversation, type SupportMessage,
 } from '../../../lib/supportInboxApi';
 import type { Page } from '../../../types';
@@ -64,6 +65,11 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const [busy, setBusy] = useState(false);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  // G3 hand-back: return the thread to its DE with an optional lesson note.
+  const [handback, setHandback] = useState(false);
+  const [handbackNote, setHandbackNote] = useState('');
+  const [deName, setDeName] = useState('the DE');
+  const [notice, setNotice] = useState<string | null>(null);
   const selRef = useRef<string | null>(null);
   selRef.current = selId;
 
@@ -102,6 +108,15 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   });
   const sel = convs.find(c => c.id === selId) ?? null;
   const pendingDraft = thread.find(m => m.delivery === 'draft_pending');
+  const isEmail = sel?.channel === 'email';
+
+  useEffect(() => {
+    setHandback(false); setHandbackNote(''); setNotice(null);
+    if (!sel?.de_id) { setDeName('the DE'); return; }
+    let cancelled = false;
+    void getDeDisplayName(sel.de_id).then(n => { if (!cancelled) setDeName(n); });
+    return () => { cancelled = true; };
+  }, [selId, sel?.de_id]);
   const counts = {
     needs_human: convs.filter(c => c.status === 'needs_human').length,
     mine: convs.filter(c => c.owner_user_id === myId && c.status !== 'resolved').length,
@@ -116,11 +131,33 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
 
   // Clear the reply box only AFTER the send succeeds — clearing first
   // loses the agent's typed message on a failed send.
+  // Email conversations deliver for real (send-email-reply / send-outbound);
+  // chat channels keep the thread-row path the customer already polls.
   const doSend = () => {
     const t = reply.trim(); if (!t || !selId) return;
-    void run(async () => { await sendHumanReply(selId, t); setReply(''); });
+    void run(async () => {
+      if (isEmail) await sendEmailReply(selId, t); else await sendHumanReply(selId, t);
+      setReply('');
+    });
   };
-  const doApprove = (id: string, edited?: string) => { setEditDraftId(null); void run(() => approveDraft(id, edited)); };
+  const doApprove = (id: string, edited?: string) => {
+    setEditDraftId(null); setNotice(null);
+    if (isEmail && selId) {
+      void run(async () => {
+        const res = await approveEmailDraft(selId, id, edited);
+        if (!res.sent) setNotice(res.detail || 'Approved, but the email could not be sent yet — the draft is saved.');
+      });
+    } else {
+      void run(() => approveDraft(id, edited));
+    }
+  };
+  const doHandback = () => {
+    if (!selId) return;
+    void run(async () => {
+      await handoffBackToDe(selId, handbackNote);
+      setHandback(false); setHandbackNote('');
+    });
+  };
 
   return (
     <div className="relative flex-1 flex flex-col overflow-hidden bg-dt-page">
@@ -187,6 +224,9 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                     {sel.status !== 'human_owned' && sel.status !== 'resolved' && (
                       <button disabled={busy} onClick={() => void run(() => claimConversation(sel.id))} className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-50 transition-all">Take over</button>
                     )}
+                    {(sel.status === 'human_owned' || sel.status === 'needs_human') && sel.de_id && (
+                      <button disabled={busy} onClick={() => setHandback(h => !h)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Return to {deName}</button>
+                    )}
                     {sel.status !== 'resolved'
                       ? <button disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'resolved' }))} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-emerald-500 disabled:opacity-50">Resolve</button>
                       : <button disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'human_owned' }))} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support disabled:opacity-50">Reopen</button>}
@@ -196,6 +236,21 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   {[sel.end_user_name, sel.account_external_ref ? `account ${sel.account_external_ref}` : null, sel.channel].filter(Boolean).join(' · ')}
                 </p>
                 {sel.handoff_summary && <p className="text-[11px] text-amber-300/80 mt-1.5 bg-amber-500/5 border border-amber-500/20 rounded-lg px-2.5 py-1.5">Handoff: {sel.handoff_summary}</p>}
+                {notice && <p className="text-[11px] text-amber-300 mt-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">{notice}</p>}
+                {handback && (
+                  <div className="mt-2 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-2.5">
+                    <p className="text-[11px] text-dt-support mb-1.5">
+                      Hand this conversation back to <span className="text-dt-body font-medium">{deName}</span>. Add a note and {deName} will remember it on the customer's next message.
+                    </p>
+                    <textarea value={handbackNote} onChange={e => setHandbackNote(e.target.value)} rows={2}
+                      placeholder={`Optional lesson for ${deName} — e.g. "Customer is on the legacy plan; offer the loyalty discount before any refund talk."`}
+                      className="w-full text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-title placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    <div className="flex gap-2 mt-1.5">
+                      <button disabled={busy} onClick={doHandback} className="text-xs px-3 py-1 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white disabled:opacity-50">Hand back{handbackNote.trim() ? ' with note' : ''}</button>
+                      <button onClick={() => setHandback(false)} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5">
@@ -235,7 +290,11 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                     </div>
                   );
                 })}
-                {pendingDraft && <p className="self-center text-[11px] text-dt-muted mt-1">The customer sees a holding message until you approve or reply.</p>}
+                {pendingDraft && (
+                  <p className="self-center text-[11px] text-dt-muted mt-1">
+                    {isEmail ? 'Nothing has been emailed yet — approving sends this reply to the customer.' : 'The customer sees a holding message until you approve or reply.'}
+                  </p>
+                )}
                 <div ref={threadEndRef} />
               </div>
 
@@ -249,7 +308,11 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   <button disabled={!reply.trim() || busy || sel.status === 'resolved'} onClick={doSend}
                     className="flex-shrink-0 text-sm px-4 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-40 disabled:shadow-none transition-all">Send</button>
                 </div>
-                <p className="text-[10px] text-dt-muted mt-1.5">Your reply goes straight to the customer. This conversation becomes yours.</p>
+                <p className="text-[10px] text-dt-muted mt-1.5">
+                  {isEmail ? `Sent as an email reply to ${sel.end_user_name || 'the customer'}. This conversation becomes yours.`
+                    : sel.channel === 'dock' ? 'The teammate sees your reply in their assistant thread. This conversation becomes yours.'
+                    : 'Your reply goes straight to the customer. This conversation becomes yours.'}
+                </p>
               </div>
             </>
           )}
