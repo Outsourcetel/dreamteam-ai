@@ -14,10 +14,7 @@ import PrivacyPolicyPage from './pages/legal/PrivacyPolicyPage';
 import PlatformConsolePage from './pages/platform/PlatformConsolePage';
 import MyAccountBadge from './pages/platform/MyAccountBadge';
 import DashboardPage from './pages/tenant/DashboardPage';
-import KnowledgeLibraryPage from './pages/tenant/knowledge/KnowledgeLibraryPage';
-import KnowledgeIngestionPage from './pages/tenant/knowledge/KnowledgeIngestionPage';
-import KnowledgeGapsPage from './pages/tenant/knowledge/KnowledgeGapsPage';
-import KnowledgeQualityPage from './pages/tenant/knowledge/KnowledgeQualityPage';
+import KnowledgeHubPage from './pages/tenant/knowledge/KnowledgeHubPage';
 import SettingsPage from './pages/tenant/SettingsPage';
 import CompliancePage from './pages/tenant/governance/CompliancePage';
 import AuditTrailPage from './pages/tenant/governance/AuditTrailPage';
@@ -460,15 +457,12 @@ function AppShell() {
         return <WorkforceDEsPage setPage={handleSetPage} />;
       case 'workforce_chat':
         return <WorkforceChatHubPage />;
-      // ── Knowledge ─────────────────────────────────────────────
+      // ── Knowledge (one hub, four tabs — old URLs deep-link to tabs) ──
       case 'knowledge_library':
-        return <KnowledgeLibraryPage setPage={handleSetPage} />;
       case 'knowledge_ingestion':
-        return <KnowledgeIngestionPage setPage={handleSetPage} />;
       case 'knowledge_gaps':
-        return <KnowledgeGapsPage setPage={handleSetPage} />;
       case 'knowledge_quality':
-        return <KnowledgeQualityPage />;
+        return <KnowledgeHubPage tab={currentPage} setPage={handleSetPage} />;
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
         return <ConnectorsPage setPage={handleSetPage} />;

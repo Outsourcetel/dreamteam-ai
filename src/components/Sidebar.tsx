@@ -209,10 +209,9 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
     {
       title: 'KNOWLEDGE',
       groups: [
-        { id: 'kb_library', label: 'Library', icon: '◫', page: 'knowledge_library' },
-        { id: 'kb_ingestion', label: 'Ingestion & Sources', icon: '↓', page: 'knowledge_ingestion' },
-        { id: 'kb_gaps', label: 'Gap Detection', icon: '△', page: 'knowledge_gaps', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
-        { id: 'kb_quality', label: 'Quality & Coverage', icon: '✓', page: 'knowledge_quality' },
+        // One destination — Library/Sources/Gaps/Quality live as tabs inside
+        // the Knowledge hub (north-star IA consolidation).
+        { id: 'kb', label: 'Knowledge', icon: '◫', page: 'knowledge_library', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
       ],
     },
     {
@@ -365,7 +364,9 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
     });
   };
 
-  const isActive = (p: Page) => page === p;
+  const isActive = (p: Page) => page === p
+    // Hub tabs are distinct Page keys — keep the single nav entry lit on any of them.
+    || (p === 'knowledge_library' && String(page).startsWith('knowledge_'));
   const isChildActive = (children?: SubItem[]) => children?.some(c => c.id === page);
 
   if (collapsed) {
