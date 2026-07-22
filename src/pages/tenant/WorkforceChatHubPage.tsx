@@ -152,7 +152,10 @@ export function WorkforceChatHubPage() {
       {/* Header */}
       <div className="border-b border-dt-border bg-dt-page px-6 py-4">
         <h1 className="text-2xl font-bold text-dt-title">Workforce Assistant</h1>
-        <p className="text-dt-support text-sm mt-1">Manage your digital workforce conversationally</p>
+        <p className="text-dt-support text-sm mt-1">
+          Manage your digital workforce conversationally — hire, improve, monitor, retire.
+          <span className="text-dt-muted"> For editing knowledge, playbooks or settings in plain language, use the ✨ Workspace Assistant (bottom-right on any page).</span>
+        </p>
       </div>
 
       <div className="flex flex-1 overflow-hidden">

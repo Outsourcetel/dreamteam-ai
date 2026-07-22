@@ -14,6 +14,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataSt
 // Setup use, so a tenant's stored industry always matches a template.
 import { INDUSTRY_NAMES as INDUSTRIES } from '../../lib/industries';
 import CommsSettingsCard from '../../components/CommsSettingsCard';
+import AISessionPanel from '../../components/AISessionPanel';
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -43,6 +44,8 @@ const SettingsPage = ({
     return 'general';
   });
 
+  // W4-E: the workspace assistant, reachable where settings live.
+  const [showAi, setShowAi] = useState(false);
   // General tab
   const [orgName, setOrgName] = useState(tenant?.name || '');
   const [industry, setIndustry] = useState(tenant?.industry || 'Technology');
@@ -218,12 +221,27 @@ const SettingsPage = ({
   return (
     <div className="p-6">
       <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-dt-support text-sm mt-1">
-          Manage your workspace, AI engine, and client token budgets
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Settings</h1>
+          <p className="text-dt-support text-sm mt-1">
+            Manage your workspace, AI engine, and client token budgets
+          </p>
+        </div>
+        <button onClick={() => setShowAi(v => !v)}
+          className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors shrink-0">
+          ✨ Ask about settings
+        </button>
       </div>
+      {/* W4-E: the workspace assistant reaches Settings — it explains any
+          setting in plain language; sensitive changes come back as
+          proposals for a person, never auto-applied. */}
+      {showAi && (
+        <div className="mb-6">
+          <AISessionPanel subjectKind="workspace" subjectLabel="Workspace settings"
+            examples={['What does the confidence floor do?', 'Explain the AI budget and what happens when it runs out', 'Which model are my employees using?']} />
+        </div>
+      )}
       <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6 overflow-x-auto w-fit">
         {tabList.map((t) => (
           <button

@@ -675,8 +675,13 @@ export default function DEChatDock() {
           )}
 
           {isLive && dockMode === 'do' ? (
-            <div className="flex-1 min-h-0">
-              <AISessionPanel subjectKind="workspace" subjectLabel="Your workspace" />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <p className="text-[10px] text-dt-muted px-3 pt-2">
+                Edits knowledge, playbook drafts and employee descriptions (undoable). To hire or restructure the workforce itself, use the Workforce Assistant hub.
+              </p>
+              <div className="flex-1 min-h-0">
+                <AISessionPanel subjectKind="workspace" subjectLabel="Your workspace" />
+              </div>
             </div>
           ) : (
           <>

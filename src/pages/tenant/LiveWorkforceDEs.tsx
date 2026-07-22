@@ -3,6 +3,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
 import type { Page } from '../../types';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
+import { AmendmentWizard } from '../../components/AmendmentWizard';
+import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget';
 import { CustomerApiError, fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
 import {
@@ -3395,6 +3397,39 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
   );
 }
 
+/** W4-E: the judged amendment flow, restored for LIVE employees. Plain-
+ *  language problem → entity-amend proposes against the golden set → a
+ *  human review card decides. Nothing auto-applies. */
+function DeAmendmentBlock({ de }: { de: DigitalEmployee }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="flex items-center gap-2 flex-wrap mb-1">
+        <h3 className="text-base font-semibold text-white">Improve this employee</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">judged proposal · human-approved</span>
+        <button onClick={() => setOpen(true)}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors">
+          ✨ Suggest improvement
+        </button>
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        Describe what is not working in plain language. The proposal is tested against this employee's golden exam
+        before it reaches you — and nothing changes until you approve it below.
+      </p>
+      <PendingAmendmentsWidget entity_kind="de" entity_id={de.id} />
+      {open && (
+        <AmendmentWizard
+          entity_kind="de"
+          entity_id={de.id}
+          entity_name={de.persona_name ?? de.name}
+          onClose={() => setOpen(false)}
+          onSuccess={() => setOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The merged profile sections consumed by EmployeeFilePage — the single
  *  employee page. Keys mirror its tab keys. */
 export type DeProfileSectionKey = 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
@@ -3406,6 +3441,11 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
     return (
       <div className="space-y-6">
         <EmployeeFileStrip de={de} />
+        {/* W4-E (docs/16): the golden-gated amendment flow was demo-only —
+            live DEs lost it in the live/demo split. Restored on the live
+            Employee File: describe the problem → judged proposal → human
+            review card. */}
+        <DeAmendmentBlock de={de} />
         <DeIdentityPanel de={de} onUpdated={onUpdated} />
         <DeProfileFieldsPanel de={de} onUpdated={onUpdated} />
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
