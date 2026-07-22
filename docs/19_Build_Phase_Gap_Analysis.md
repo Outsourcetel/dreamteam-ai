@@ -1,68 +1,127 @@
-# 19 — Build-Phase Gap Analysis (2026-07-23)
+# 19 — Build-Phase Gap Analysis
+### Code-verified capability inventory vs three bars, with scored picks
+*v2, 2026-07-23. Replaces the v1 list. Method: every "have" below was
+code-or-DB-verified in this repo (most exercised live this week); every
+market bar is sourced from the docs/18 research. Scoring: Impact (1–5,
+weighted toward docs/18 strategy + pilot survival) × Confidence (0.5–1.0,
+evidence quality) ÷ Effort (sessions). Higher = build sooner.*
 
-*Synthesis of the current state after everything shipped through 2026-07-23:
-all truth-audit programs closed (W1/W2/W4-A–E, ledger), docs/17 C1–C6
-complete, LLM failover spine live on Bedrock, board + operating model live,
-pile triaged 10→1. This ranks what remains by STRUCTURAL value for the build
-phase, with the Outsourcetel pilot as the forcing function.*
+## 0. The three bars
 
-## Tier 1 — pilot-critical (do before/with the pilot)
+- **Bar A — Pilot survives** (Outsourcetel live use, weeks): nothing
+  customer-visible breaks silently; the founder can operate alone.
+- **Bar B — Mid-market production** (first external tenants, months): the
+  feature floor buyers in our beachhead compare against (Decagon-class CX
+  table stakes + our multi-role differentiators).
+- **Bar C — Category leadership** (the employment layer, quarters): the
+  moats in docs/18 §3 made durable (M1 compounding, M5 network).
 
-1. **Inbound email channel.** The support surface is chat + widget; real
-   support traffic is email. Named in the deep audit as a true gap; the
-   conversation lifecycle (conversation=ticket, inbox, front-DE) is ready to
-   receive it. Scope: inbound address → parse → de-answer pipeline → draft
-   reply under reply-mode gates → thread back out. Biggest single
-   capability gap between "pilot" and "production support desk."
-2. **The proof hour as pilot gate (operation, not build).** Now unblocked on
-   Bedrock: run Remy mission E2E, a rule-forced escalation, certification
-   exams across the roster, one gap→golden→doc loop, one judged amendment.
-   Output feeds the Move-1 case-study page. Run it as pilot kickoff.
-3. **Pilot ops pack (small builds):**
-   - Sentry DSN activation (integration shipped dormant) — error visibility
-     before real users hit errors.
-   - Platform Console "AI Engine" tab (promised): keys, chain status,
-     last-failover display — no more Remote-Access detour for ops.
-   - Fix noteFailover's silent platform_config_set write (marker row never
-     lands; log line works).
-4. **Budget headroom decision.** July cap = 970k tokens (~400k fresh);
-   August resets to 400k (~$6 worst case). A real pilot with daily traffic
-   likely wants 2–5M tokens (~$10–30/mo realistic blended) — founder call
-   when pilot volume shows up; AWS $10 budget alert will flag it.
+## 1. Verified capability inventory (what is REAL today)
 
-## Tier 2 — the docs/18 moves (moat-building)
+Channels: web widget (live-tested; streams only on Anthropic-direct, buffered
+fallback otherwise), in-app chat, internal missions/objectives, A2A
+endpoints. Governance: guardrails enforced in the live path (proven again
+2026-07-23: refund demand → honest refusal + human task), un-toggleable
+compliance packs (attach picker fixed today), escalation rules, action gate
+w/ scoped guardrails, budgets (429-hard), audit chain, exceptions desk w/
+producer. Trust: evidence-earned dial, certification exams (24-question run
+executing live at time of writing), proving ground, rehearsal-at-hire.
+Visibility: workforce board (now/next/blocked), operating model v2, outcome
+statement w/ per-DE economics, decision traces humanized. Learning: gap
+detection fed by live channels, gap→draft doc via assistant, judged
+amendments, golden-exam growth, eval gate DB-enforced. Resilience: 4-provider
+LLM spine, Bedrock primary live, $10 spend guard (two layers). Meter: 99¢
+resolution rails. 66 connector adapters + registry + grants; browser
+operator (parked-then-unblocked); role kits ×12.
 
-5. **Case-study proof page** (Move 1) — 1 session, marketing surface.
-6. **Buy-vs-build calculator** on the hire wizard job-spec (Move 2) — small.
-7. **BYO-agent enrollment spec** (Move 3) — design session; A2A + delegation
-   tokens + action gate give a head start. The strategic judo.
+## 2. Gap register
 
-## Tier 3 — structural debt with leverage (post-pilot-start)
+Legend: [A/B/C] = bar it blocks · I=Impact C=Confidence E=Effort(sessions)
+· Score = I×C/E.
 
-8. **Self-evolution organs** (machinery built but starving): amendment
-   fitness loop, drift sentinel, learning review cadence, ramp KPI. The
-   self-improving-workforce story needs these four to be true at scale.
-9. **Records → gates:** cert expiry pauses autonomy; KPI misses spawn
-   development items. Turns Layer-B records into Layer-A controls.
-10. **Assistant deep-merge** (one spine for workforce-chat + ai-session) —
-    the one remaining two-brains seam; needs its own design session.
-11. **Zendesk SoR sync / ticket write-back** — connector is production-ready,
-    needs credentials + pilot demand.
-12. **Email-adjacent:** send-outbound exists (drafts→approve→send); inbound
-    completes the loop (see #1).
+### G1 — Inbound email channel [A,B] — **Score 4.5** (I5 C0.9 E1)
+Evidence: no inbound-email path exists (deep-audit finding, re-verified:
+send-outbound only). Market bar: email is the default support channel
+mid-market; Decagon/Sierra treat it as table stakes. Machinery ready:
+conversation=ticket lifecycle, front-DE, reply-mode gates, drafts. Scope:
+inbound address (provider webhook) → thread → de-answer → draft under
+approval → threaded reply. Serves M1 (more real traffic → more learning).
 
-## External / waiting
+### G2 — Pilot ops pack [A] — **Score 4.2** (I4 C0.95 E0.9)
+(a) Sentry DSN activation (integration dormant; founder supplies DSN);
+(b) Console AI-Engine tab (promised; keys/chain/last-failover — currently a
+Remote-Access detour); (c) noteFailover marker silently failing (log-only
+today); (d) RA-session dashboard mislabel ("Demo Workspace", zeroed tiles —
+verified in-browser 2026-07-22). Cheap, and the founder operates alone.
 
-13. **Frontier models on Bedrock** — AWS sales/account upgrade unlocks
-    Sonnet 5/Opus 4.8/Fable 5; map flips back via config only.
-14. **Anthropic org restoration** — restores streaming widget replies, Batch
-    API (50% eval savings), first-party frontier. Chain auto-recovers.
-15. **SSO / advanced ACL** — enterprise-sale blockers, not pilot blockers.
+### G3 — Human handoff surface completion [A,B] — **Score 3.6** (I4 C0.9 E1)
+Evidence: escalations create human_tasks (proven today) and the Approvals
+desk lists them; but resolution flow back to the CUSTOMER after a human
+takes over (reply-from-inbox on an escalated thread, close-the-loop note to
+the DE's memory) is thin. Decagon-class bar: agent→human→agent handoff is
+a first-class demo. Mostly UI + one write path on the existing inbox.
 
-## Recommended picks (the next structural wins)
+### G4 — Self-evolution organs [C→M1] — **Score 3.2** (I5 C0.8 E1.25)
+The four starving loops (built, unfed): amendment fitness (win-rate of
+applied amendments), drift sentinel (behavior change alarms on evals),
+learning review cadence (weekly digest of what the workforce learned —
+feeds founder AND the proof page), ramp KPI (time-to-trust per hire). This
+IS moat M1's compounding engine; MIT says memory+learning loops are where
+the 5% live. Data exists for all four (evals, amendments, certifications).
 
-**Pick 1: Inbound email** (Tier 1.1) — the largest honest capability gap and
-the thing a pilot will hit first. **Pick 2: Pilot ops pack + proof hour**
-(Tier 1.2/1.3) — cheap, and converts the pilot into evidence for Move 1.
-**Pick 3: Case-study page + calculator** (Tier 2) — ship while pilot
-evidence is fresh. BYO-agent spec next design session after that.
+### G5 — Proof page + buy-vs-build block [B, Move 1+2] — **Score 3.0**
+(I4 C0.9 E1.2) Direct build-out of docs/18 moves with acceptance criteria
+already defined. Depends on G2a (Sentry keeps the page honest) and pilot
+telemetry accumulating.
+
+### G6 — Records→gates [B,C] — **Score 2.7** (I4 C0.85 E1.25)
+Cert expiry pauses autonomy; KPI misses spawn development items; health
+drops demote reply-mode. Converts Layer-B records into Layer-A controls —
+the "governance that actually bites" story Gartner's 40% lack. Touches the
+trust ladder carefully; needs its own session.
+
+### G7 — SoR write-back completion (Zendesk sync first) [B] — **Score 2.4**
+(I3 C0.8 E1) Connector production-ready, needs creds + one pilot workflow.
+Rises sharply the day a pilot tenant runs Zendesk; otherwise parked-ready.
+
+### G8 — BYO-agent enrollment spec [C, Move 3] — **Score 2.1** (I5 C0.7 E1.7)
+Design-first (docs/18 §5). Head start verified: A2A, delegation tokens,
+action gate. Build only after spec review; the demo target (toolkit agent
+completes one governed task) is the acceptance test.
+
+### G9 — Assistant deep-merge (one spine) [B] — **Score 1.8** (I3 C0.9 E1.5)
+Two assistants with cross-pointers today (honest but inelegant). Merge
+workforce-chat onto ai-session's tool spine. Quality-of-product, not
+blocking; schedule opportunistically.
+
+### G10 — Voice channel [B-partial] — **Score 1.2** (I3 C0.6 E1.5+)
+Market signal real (Sierra/Retell monetize voice heavily). NOT our
+beachhead's first ask and heavy to do honestly (telephony, latency,
+barge-in). Deliberate defer with quarterly re-check — do not build now.
+
+### G11 — SSO/SAML + SOC 2 track [B-procurement] — **Score 1.0**
+(I4 C0.9 E3+) Blocks enterprise procurement, not pilot or first mid-market
+deals. Start the SOC 2 evidence-collection HABIT now (cheap: we already
+have audit trails); defer the audit spend until first blocked deal.
+
+### External/waiting (no build): frontier models on Bedrock (AWS sales),
+Anthropic org restoration (auto-recovers; returns widget streaming + Batch
+50% eval savings), July→Aug budget re-tighten (calendar note exists).
+
+## 3. The committed sequence
+
+1. **G2 pilot ops pack** (this week — founder supplies Sentry DSN)
+2. **G1 inbound email** (the structural win; start immediately after)
+3. **G3 handoff completion** (rides G1's surfaces)
+4. **G5 proof page + calculator** (as pilot telemetry accumulates)
+5. **G4 self-evolution organs** (the moat engine; next big session)
+6. **G6 records→gates** → **G8 BYO spec** → **G7 on demand** → **G9**
+
+**Explicit non-builds this phase:** G10 voice, G11 SOC 2 audit spend,
+demo-fiction purge (Fresh Tenant Program owns it), frontier-model chasing.
+
+## 4. What would change this ranking
+A pilot tenant on Zendesk (G7 jumps to #2). A blocked deal on SSO (G11
+jumps). Sierra/Decagon shipping self-serve mid-market pricing (accelerate
+G5/G4 — the moat race shortens). Labs shipping employment-layer features
+(accelerate G8 — neutrality becomes the story).
