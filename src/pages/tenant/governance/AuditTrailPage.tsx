@@ -108,11 +108,11 @@ function actorAvatar(e: AuditEvent) {
   }
   if (e.actorType === 'human') {
     return (
-      <span className="w-6 h-6 rounded-full bg-slate-600 text-slate-300 flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
+      <span className="w-6 h-6 rounded-full bg-slate-600 text-dt-support flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
     )
   }
   return (
-    <span className="w-6 h-6 rounded-full bg-slate-700 text-slate-500 flex items-center justify-center text-[10px] flex-shrink-0">⊟</span>
+    <span className="w-6 h-6 rounded-full bg-dt-panel text-dt-muted flex items-center justify-center text-[10px] flex-shrink-0">⊟</span>
   )
 }
 
@@ -239,11 +239,11 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
   const visibleRows = tableFilter === 'all' ? rows : rows.filter((r) => r.table_name === tableFilter)
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mb-6">
-      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between gap-4 flex-wrap">
+    <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden mb-6">
+      <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm font-semibold text-white">Team activity log</p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-dt-muted mt-0.5">
             Every change your own team made across the platform — visible only to owners and admins.
           </p>
         </div>
@@ -252,7 +252,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
             <select
               value={tableFilter}
               onChange={(e) => setTableFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+              className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500"
             >
               <option value="all">All tables</option>
               {tablesInLog.map((t) => (
@@ -262,7 +262,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
           )}
           <button
             onClick={() => void load()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors"
           >
             Refresh
           </button>
@@ -270,11 +270,11 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
       </div>
 
       <div className="px-5 py-4">
-        {loading && <p className="text-xs text-slate-500 py-4 text-center">Loading team activity…</p>}
+        {loading && <p className="text-xs text-dt-muted py-4 text-center">Loading team activity…</p>}
         {!loading && error && <p className="text-xs text-red-400 py-2">{error}</p>}
 
         {!loading && !error && visibleRows.length === 0 && (
-          <p className="text-xs text-slate-500 py-6 text-center">
+          <p className="text-xs text-dt-muted py-6 text-center">
             No team activity recorded{tableFilter !== 'all' ? ' for this table' : ''} yet.
           </p>
         )}
@@ -283,12 +283,12 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-700">
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Table</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Operation</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Changed fields</th>
+                <tr className="border-b border-dt-border">
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">When</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Who</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Table</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Operation</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Changed fields</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
@@ -298,24 +298,24 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                     <tr
                       key={row.id}
                       onClick={() => setDetailRow(row)}
-                      className="cursor-pointer hover:bg-slate-700/30 transition-colors"
+                      className="cursor-pointer hover:bg-dt-panel/30 transition-colors"
                     >
-                      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                         {new Date(row.created_at).toLocaleString()}
                       </td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                         <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
                         {row.actor_role && (
-                          <span className="text-slate-600 ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>
+                          <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-300 font-mono">{row.table_name}</td>
+                      <td className="px-3 py-2.5 text-xs text-dt-support font-mono">{row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-slate-600 text-slate-300'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
                           {row.operation}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-400 max-w-xs truncate">
+                      <td className="px-3 py-2.5 text-xs text-dt-support max-w-xs truncate">
                         {fields.length > 0 ? fields.join(', ') : '—'}
                       </td>
                     </tr>
@@ -333,32 +333,32 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
           onClose={() => setDetailRow(null)}
         >
           <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-            <div className="text-xs text-slate-400 space-y-1">
-              <div><span className="text-slate-500">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
+            <div className="text-xs text-dt-support space-y-1">
+              <div><span className="text-dt-muted">When:</span> {new Date(detailRow.created_at).toLocaleString()}</div>
               <div>
-                <span className="text-slate-500">Who:</span> {detailRow.actor_name || 'Team member'}
-                {detailRow.actor_role && <span className="text-slate-600 capitalize"> ({detailRow.actor_role.replace('tenant_', '')})</span>}
+                <span className="text-dt-muted">Who:</span> {detailRow.actor_name || 'Team member'}
+                {detailRow.actor_role && <span className="text-dt-faint capitalize"> ({detailRow.actor_role.replace('tenant_', '')})</span>}
               </div>
-              <div><span className="text-slate-500">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
+              <div><span className="text-dt-muted">Row:</span> <span className="font-mono">{detailRow.row_pk || '—'}</span></div>
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Changed fields</p>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Changed fields</p>
               {activityChangedFields(detailRow).length === 0 ? (
-                <p className="text-xs text-slate-500">No field-level changes to show.</p>
+                <p className="text-xs text-dt-muted">No field-level changes to show.</p>
               ) : (
                 <div className="space-y-2">
                   {activityChangedFields(detailRow).map((field) => (
-                    <div key={field} className="bg-slate-700 rounded-xl p-3">
+                    <div key={field} className="bg-dt-panel rounded-xl p-3">
                       <div className="text-xs font-mono text-indigo-300 mb-1">{field}</div>
-                      <div className="text-xs text-slate-400 space-y-1">
+                      <div className="text-xs text-dt-support space-y-1">
                         <div>
-                          <span className="text-slate-500">before:</span>{' '}
+                          <span className="text-dt-muted">before:</span>{' '}
                           <span className="font-mono break-all">
                             {detailRow.old_data ? JSON.stringify(detailRow.old_data[field]) : '—'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-slate-500">after:</span>{' '}
+                          <span className="text-dt-muted">after:</span>{' '}
                           <span className="font-mono break-all text-white">
                             {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
                           </span>
@@ -453,7 +453,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader
         title="Audit Trail"
         subtitle="Immutable, hash-chained record of every DE action, guardrail check, human approval, and playbook step — records can only be appended, never edited or deleted"
@@ -462,11 +462,11 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
       {/* Date window — tenant-wide, defaults to the last 7 days */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="text-[11px] uppercase tracking-wide text-slate-500 mr-1">Time window</span>
-        <div className="inline-flex rounded-lg border border-slate-700 bg-slate-800 p-0.5">
+        <span className="text-[11px] uppercase tracking-wide text-dt-muted mr-1">Time window</span>
+        <div className="inline-flex rounded-lg border border-dt-border bg-dt-card p-0.5">
           {RANGE_OPTIONS.map(r => (
             <button key={r.label} onClick={() => setDays(r.days)}
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-400 hover:text-slate-200'}`}>
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-dt-support hover:text-dt-body'}`}>
               {r.label}
             </button>
           ))}
@@ -497,11 +497,11 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
               {
                 label: 'Chain integrity',
                 value: verification ? (verification.intact ? `Intact (${verification.checked})` : 'BROKEN') : 'Not verified',
-                color: verification ? (verification.intact ? 'text-emerald-300' : 'text-red-300') : 'text-slate-400',
+                color: verification ? (verification.intact ? 'text-emerald-300' : 'text-red-300') : 'text-dt-support',
               },
             ].map(s => (
-              <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">{s.label}</p>
+              <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
+                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
                 <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
               </div>
             ))}
@@ -509,29 +509,29 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search action or actor…"
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-56" />
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-56" />
             <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as 'all' | AuditCategory)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
               <option value="all">All categories</option>
               {(Object.keys(LIVE_CATEGORY_META) as AuditCategory[]).map(c => (
                 <option key={c} value={c}>{LIVE_CATEGORY_META[c].label}</option>
               ))}
             </select>
             <select value={actorTypeFilter} onChange={e => setActorTypeFilter(e.target.value as 'all' | 'de' | 'human' | 'system')}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
               <option value="all">All actor types</option>
               <option value="de">Digital Employee</option>
               <option value="human">Human</option>
               <option value="system">System</option>
             </select>
             <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
               <option value="all">All actors</option>
               {actors.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
             <div className="flex-1" />
             <button onClick={exportLiveCsv}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:border-dt-border-strong transition-colors">
               ↓ Export CSV
             </button>
             <button onClick={() => void verify()} disabled={verifying}
@@ -550,24 +550,24 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 divide-y divide-slate-700/60">
+          <div className="rounded-2xl border border-dt-border bg-dt-card divide-y divide-slate-700/60">
             {filtered.map(e => (
               <div key={e.id} className="grid grid-cols-12 gap-3 px-5 py-3">
-                <div className="col-span-2 text-xs text-slate-500 pt-0.5 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</div>
+                <div className="col-span-2 text-xs text-dt-muted pt-0.5 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</div>
                 <div className="col-span-2 flex items-start gap-2">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
                     e.actor_type === 'de' ? 'bg-indigo-500/20 text-indigo-300 font-bold'
-                    : e.actor_type === 'human' ? 'bg-slate-600 text-slate-300'
-                    : 'bg-slate-700 text-slate-500'
+                    : e.actor_type === 'human' ? 'bg-slate-600 text-dt-support'
+                    : 'bg-dt-panel text-dt-muted'
                   }`}>{e.actor_type === 'de' ? e.actor.slice(0, 2).toUpperCase() : e.actor_type === 'human' ? '◉' : '⊟'}</span>
                   <div>
-                    <p className="text-xs text-slate-200">{e.actor}</p>
-                    <p className="text-[10px] text-slate-600 capitalize">{e.actor_type === 'de' ? 'Digital Employee' : e.actor_type}</p>
+                    <p className="text-xs text-dt-body">{e.actor}</p>
+                    <p className="text-[10px] text-dt-faint capitalize">{e.actor_type === 'de' ? 'Digital Employee' : e.actor_type}</p>
                   </div>
                 </div>
                 <div className="col-span-6">
-                  <p className={`text-xs leading-snug ${e.category === 'guardrail_block' ? 'text-red-300' : 'text-slate-300'}`}>{e.action}</p>
-                  <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${LIVE_CATEGORY_META[e.category]?.style ?? 'bg-slate-700 text-slate-400'}`}>
+                  <p className={`text-xs leading-snug ${e.category === 'guardrail_block' ? 'text-red-300' : 'text-dt-support'}`}>{e.action}</p>
+                  <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${LIVE_CATEGORY_META[e.category]?.style ?? 'bg-dt-panel text-dt-support'}`}>
                     {LIVE_CATEGORY_META[e.category]?.label ?? e.category}
                   </span>
                 </div>
@@ -582,11 +582,11 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
               </div>
             ))}
             {filtered.length === 0 && (
-              <div className="py-12 text-center text-slate-600 text-sm">No events match your filters.</div>
+              <div className="py-12 text-center text-dt-faint text-sm">No events match your filters.</div>
             )}
           </div>
 
-          <p className="mt-4 text-xs text-slate-600 text-center">
+          <p className="mt-4 text-xs text-dt-faint text-center">
             hash = sha256(prev_hash + tenant + action + detail + timestamp), computed inside the database. UPDATE and DELETE raise an exception — even for administrators.
           </p>
         </>
@@ -640,23 +640,23 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
   ]
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <PageHeader
           title="Audit Trail"
           subtitle="Immutable, hash-chained log of every DE action, human approval, config change, and guardrail block"
         />
         <div className="flex items-center gap-2">
-          <span className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400">
+          <span className="text-xs px-2.5 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support">
             Retention: <span className="text-white">{RETENTION[activeCompanyId]}</span>
           </span>
           <button onClick={() => exportCsv(filtered)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
             ↓ Export CSV
           </button>
         </div>
       </div>
-      <p className="-mt-3 mb-5 text-xs text-slate-500">
+      <p className="-mt-3 mb-5 text-xs text-dt-muted">
         Immutable compliance record with hash-chain verification. For the live operational stream, see the{' '}
         <button onClick={() => setPage && setPage('ops_activity')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
           Activity Log →
@@ -666,53 +666,53 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
       {/* Stats strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {stats.map(s => (
-          <div key={s.label} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+          <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
             <div className={`text-xl font-bold ${s.color || 'text-white'}`}>{s.value}</div>
-            <div className="text-xs text-slate-500 mt-0.5">{s.label}</div>
+            <div className="text-xs text-dt-muted mt-0.5">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Filters */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-4 space-y-3">
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-4 space-y-3">
         <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-slate-500 font-medium w-16">Actor:</span>
+          <span className="text-xs text-dt-muted font-medium w-16">Actor:</span>
           {['all', ...deNames, 'humans'].map(a => (
             <button key={a} onClick={() => setActorFilter(a)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${actorFilter === a ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-slate-600 text-slate-400 hover:text-white'}`}>
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${actorFilter === a ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-dt-border-strong text-dt-support hover:text-white'}`}>
               {a === 'all' ? 'All' : a === 'humans' ? 'Humans' : a}
             </button>
           ))}
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-slate-500 font-medium w-16">Type:</span>
+          <span className="text-xs text-dt-muted font-medium w-16">Type:</span>
           {(['all', 'resolved', 'escalated', 'config_change', 'approval', 'guardrail_violation'] as const).map(t => (
             <button key={t} onClick={() => setTypeFilter(t)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${typeFilter === t ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-slate-600 text-slate-400 hover:text-white'}`}>
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${typeFilter === t ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-dt-border-strong text-dt-support hover:text-white'}`}>
               {t === 'all' ? 'All' : ACTION_TYPE_META[t].label}
             </button>
           ))}
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-xs text-slate-500 font-medium w-16">Entity:</span>
+          <span className="text-xs text-dt-muted font-medium w-16">Entity:</span>
           <select value={entityFilter} onChange={e => setEntityFilter(e.target.value)}
-            className="bg-slate-900 border border-slate-600 text-xs text-slate-200 rounded-lg px-2 py-1.5 focus:outline-none">
+            className="bg-dt-page border border-dt-border-strong text-xs text-dt-body rounded-lg px-2 py-1.5 focus:outline-none">
             <option value="all">All entities</option>
             {entities.map(e => <option key={e}>{e}</option>)}
           </select>
-          <span className="text-xs text-slate-500">From</span>
+          <span className="text-xs text-dt-muted">From</span>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="bg-slate-900 border border-slate-600 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none" />
-          <span className="text-xs text-slate-500">To</span>
+            className="bg-dt-page border border-dt-border-strong text-xs text-dt-body rounded-lg px-2 py-1 focus:outline-none" />
+          <span className="text-xs text-dt-muted">To</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="bg-slate-900 border border-slate-600 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none" />
-          <span className="text-xs text-slate-500 ml-auto">{filtered.length} of {events.length} events</span>
+            className="bg-dt-page border border-dt-border-strong text-xs text-dt-body rounded-lg px-2 py-1 focus:outline-none" />
+          <span className="text-xs text-dt-muted ml-auto">{filtered.length} of {events.length} events</span>
         </div>
       </div>
 
       {/* Event log */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-12 gap-3 px-4 py-3 border-b border-slate-700 text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+      <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+        <div className="grid grid-cols-12 gap-3 px-4 py-3 border-b border-dt-border text-[11px] font-medium text-dt-muted uppercase tracking-wide">
           <div className="col-span-2">Timestamp</div>
           <div className="col-span-2">Actor</div>
           <div className="col-span-4">Action</div>
@@ -722,23 +722,23 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
         </div>
         <div className="divide-y divide-slate-700/50">
           {filtered.map(e => (
-            <div key={e.id} className={`grid grid-cols-12 gap-3 px-4 py-3 items-start transition-colors ${e.actionType === 'guardrail_violation' ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-slate-700/20'}`}>
-              <div className="col-span-2 text-xs text-slate-500 font-mono pt-0.5">{e.timestamp}</div>
+            <div key={e.id} className={`grid grid-cols-12 gap-3 px-4 py-3 items-start transition-colors ${e.actionType === 'guardrail_violation' ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-dt-panel/20'}`}>
+              <div className="col-span-2 text-xs text-dt-muted font-mono pt-0.5">{e.timestamp}</div>
               <div className="col-span-2 flex items-center gap-2 min-w-0">
                 {actorAvatar(e)}
                 <div className="min-w-0">
                   <p className="text-xs text-white font-medium truncate">{e.actor}</p>
-                  <p className="text-[10px] text-slate-600 capitalize">{e.actorType === 'de' ? 'Digital Employee' : e.actorType}</p>
+                  <p className="text-[10px] text-dt-faint capitalize">{e.actorType === 'de' ? 'Digital Employee' : e.actorType}</p>
                 </div>
               </div>
               <div className="col-span-4">
-                <p className={`text-xs leading-snug ${e.actionType === 'guardrail_violation' ? 'text-red-300' : 'text-slate-300'}`}>{e.action}</p>
+                <p className={`text-xs leading-snug ${e.actionType === 'guardrail_violation' ? 'text-red-300' : 'text-dt-support'}`}>{e.action}</p>
                 <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${ACTION_TYPE_META[e.actionType]?.style}`}>
                   {ACTION_TYPE_META[e.actionType]?.label ?? e.actionType}
                 </span>
               </div>
-              <div className="col-span-1 text-xs text-slate-400 pt-0.5">{e.entity}</div>
-              <div className="col-span-2 text-xs text-slate-400 pt-0.5">{e.outcome}</div>
+              <div className="col-span-1 text-xs text-dt-support pt-0.5">{e.entity}</div>
+              <div className="col-span-2 text-xs text-dt-support pt-0.5">{e.outcome}</div>
               <div className="col-span-1 text-right pt-0.5">
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 whitespace-nowrap" title="Hash-chain verified — this entry is cryptographically linked to the previous one and cannot be altered">
                   ⛓ verified
@@ -747,12 +747,12 @@ function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
             </div>
           ))}
           {filtered.length === 0 && (
-            <div className="py-12 text-center text-slate-600 text-sm">No events match your filters.</div>
+            <div className="py-12 text-center text-dt-faint text-sm">No events match your filters.</div>
           )}
         </div>
       </div>
 
-      <p className="mt-4 text-xs text-slate-600 text-center">
+      <p className="mt-4 text-xs text-dt-faint text-center">
         Every entry is hash-chained to its predecessor — records cannot be edited or deleted, only appended.
       </p>
     </div>

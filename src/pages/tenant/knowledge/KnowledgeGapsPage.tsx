@@ -236,14 +236,14 @@ const PWC_GAPS: Gap[] = [
 ];
 
 const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
-  detected: { label: 'Detected', cls: 'bg-slate-600/50 text-slate-300' },
+  detected: { label: 'Detected', cls: 'bg-slate-600/50 text-dt-support' },
   investigating: { label: 'Investigating', cls: 'bg-sky-500/20 text-sky-400' },
   draft_ready: { label: 'Draft ready', cls: 'bg-amber-500/20 text-amber-400' },
   approved: { label: 'Approved', cls: 'bg-emerald-500/20 text-emerald-400' },
   retrained: { label: 'Retrained', cls: 'bg-indigo-500/20 text-indigo-400' },
 };
 
-const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' } as const;
+const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-dt-support' } as const;
 
 const DemoKnowledgeGapsPage = () => {
   const { activeCompanyId, handleSetPage } = useAuth();
@@ -303,55 +303,55 @@ const DemoKnowledgeGapsPage = () => {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
+    <div className="p-6 relative">
       <PageHeader title="Gap Detection" subtitle="The self-healing loop — DE query misses become gap signals, the Resolution Agent mines historical resolutions, a draft article is proposed, and a human approves before DEs retrain." />
 
       {/* Loop diagram strip */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
           {loopNodes.map((n, i) => (
             <React.Fragment key={n.label}>
-              <div className="flex-1 min-w-[100px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-center">
+              <div className="flex-1 min-w-[100px] rounded-xl border border-dt-border bg-dt-page p-3 text-center">
                 <p className="text-indigo-400 text-sm">{n.icon}</p>
-                <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
+                <p className="text-xs font-semibold text-dt-support mt-1">{n.label}</p>
                 <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
               </div>
-              {i < loopNodes.length - 1 && <span className="self-center text-slate-600 flex-shrink-0">→</span>}
+              {i < loopNodes.length - 1 && <span className="self-center text-dt-faint flex-shrink-0">→</span>}
             </React.Fragment>
           ))}
         </div>
-        <p className="text-[11px] text-slate-500 mt-2">Approved articles automatically queue affected DEs for retraining within 24 hours — closing the loop.</p>
+        <p className="text-[11px] text-dt-muted mt-2">Approved articles automatically queue affected DEs for retraining within 24 hours — closing the loop.</p>
       </div>
 
       {/* Header stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Open gaps</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Open gaps</p>
           {/* seeded to match companies.ts kbGaps (TCP 5 / PWC 3) until user actions change it */}
           <p className="text-xl font-bold text-amber-300">{Object.keys(overrides).length === 0 ? summary.kbGaps : openGaps.length}</p>
-          <p className="text-xs text-slate-500 mt-0.5">detected · investigating · draft ready</p>
+          <p className="text-xs text-dt-muted mt-0.5">detected · investigating · draft ready</p>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Resolved this month</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Resolved this month</p>
           <p className="text-xl font-bold text-emerald-300">{resolvedThisMonth}</p>
-          <p className="text-xs text-slate-500 mt-0.5">gaps closed via the loop</p>
+          <p className="text-xs text-dt-muted mt-0.5">gaps closed via the loop</p>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Avg resolution time</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Avg resolution time</p>
           <p className="text-xl font-bold text-white">{avgResolution}</p>
-          <p className="text-xs text-slate-500 mt-0.5">signal → published article</p>
+          <p className="text-xs text-dt-muted mt-0.5">signal → published article</p>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Drafts awaiting approval</p>
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Drafts awaiting approval</p>
           <p className="text-xl font-bold text-indigo-300">{draftsAwaiting}</p>
-          <p className="text-xs text-slate-500 mt-0.5">auto-drafted by the Knowledge Drafting Agent</p>
+          <p className="text-xs text-dt-muted mt-0.5">auto-drafted by the Knowledge Drafting Agent</p>
         </div>
       </div>
 
       {/* Gap table */}
-      <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
-        <table className="w-full text-sm text-slate-300">
-          <thead className="bg-slate-800 border-b border-slate-700">
+      <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
+        <table className="w-full text-sm text-dt-support">
+          <thead className="bg-dt-card border-b border-dt-border">
             <tr>
               <th className={th}>Gap</th>
               <th className={th}>Signal source</th>
@@ -365,13 +365,13 @@ const DemoKnowledgeGapsPage = () => {
             {gaps.map(g => {
               const st = statusOf(g);
               return (
-                <tr key={g.id} onClick={() => setSelectedId(g.id)} className="border-b border-slate-700/60 hover:bg-slate-700/40 cursor-pointer transition-colors">
+                <tr key={g.id} onClick={() => setSelectedId(g.id)} className="border-b border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
                   <td className={td}>
                     <p className="text-white font-medium">{g.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 max-w-md">{g.description}</p>
+                    <p className="text-xs text-dt-muted mt-0.5 max-w-md">{g.description}</p>
                   </td>
-                  <td className={`${td} text-xs text-slate-400`}>{g.source}</td>
-                  <td className={`${td} text-xs text-slate-300`}>{g.frequency}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{g.source}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{g.frequency}</td>
                   <td className={td}>
                     <span className="flex items-center gap-1.5">
                       <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[9px] font-bold">{g.de[0]}</span>
@@ -393,66 +393,66 @@ const DemoKnowledgeGapsPage = () => {
         return (
           <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
             <div className="absolute inset-0 bg-black/50" />
-            <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-800 border-l border-slate-700 overflow-y-auto p-6">
+            <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-dt-card border-l border-dt-border overflow-y-auto p-6">
               <div className="flex items-start justify-between mb-1">
                 <h2 className="text-lg font-semibold text-white">{selected.title}</h2>
-                <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+                <button onClick={() => setSelectedId(null)} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
               </div>
               <div className="flex items-center gap-2 mb-5">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_META[st]?.cls}`}>{STATUS_META[st]?.label ?? st}</span>
-                <span className="text-xs text-slate-500">{selected.frequency} · affects {selected.de}</span>
+                <span className="text-xs text-dt-muted">{selected.frequency} · affects {selected.de}</span>
               </div>
 
               {/* 1. Signal */}
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">1 · Signal</p>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">1 · Signal</p>
               <div className="space-y-2 mb-6">
                 {selected.signals.map(s => (
-                  <div key={s.time} className="bg-slate-900 rounded-lg px-3 py-2">
-                    <p className="text-xs text-slate-300">{s.text}</p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">{s.time}</p>
+                  <div key={s.time} className="bg-dt-page rounded-lg px-3 py-2">
+                    <p className="text-xs text-dt-support">{s.text}</p>
+                    <p className="text-[10px] text-dt-faint mt-0.5">{s.time}</p>
                   </div>
                 ))}
               </div>
 
               {/* 2. Resolution Agent findings */}
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Resolution Agent findings</p>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">2 · Resolution Agent findings</p>
               {selected.searched > 0 ? (
                 <div className="mb-6">
                   <p className="text-xs text-sky-400 mb-2">Searched {selected.searched.toLocaleString()} historical resolutions — found {selected.findings.length} relevant</p>
                   <div className="space-y-2">
                     {selected.findings.map(f => (
-                      <div key={f.ref} className="bg-slate-900 rounded-lg px-3 py-2 border border-slate-700">
+                      <div key={f.ref} className="bg-dt-page rounded-lg px-3 py-2 border border-dt-border">
                         <div className="flex justify-between">
                           <span className="text-xs font-medium text-white">{f.title}</span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 flex-shrink-0 ml-2">{f.ref}</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 mt-0.5">{f.note}</p>
+                        <p className="text-[11px] text-dt-support mt-0.5">{f.note}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-slate-500 mb-6">Resolution Agent has not started — gap queued for investigation.</p>
+                <p className="text-xs text-dt-muted mb-6">Resolution Agent has not started — gap queued for investigation.</p>
               )}
 
               {/* 3. Drafted article */}
               {selected.draft && (
                 <>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">3 · Drafted article</p>
-                  <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 mb-6">
+                  <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">3 · Drafted article</p>
+                  <div className="rounded-xl border border-dt-border bg-dt-page p-4 mb-6">
                     <p className="text-sm font-semibold text-white mb-2">{selected.draft.title}</p>
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400">{selected.draft.entity}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{selected.draft.audience}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{selected.draft.audience}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">{selected.draft.type}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">est. confidence {selected.draft.confidence}%</span>
                     </div>
                     <div className="space-y-2">
                       {selected.draft.paragraphs.map((p, i) => (
-                        <p key={i} className="text-xs text-slate-300 leading-relaxed">{p}</p>
+                        <p key={i} className="text-xs text-dt-support leading-relaxed">{p}</p>
                       ))}
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-3">Sources cited: {selected.draft.sources.join(' · ')}</p>
+                    <p className="text-[10px] text-dt-muted mt-3">Sources cited: {selected.draft.sources.join(' · ')}</p>
                   </div>
                 </>
               )}
@@ -460,7 +460,7 @@ const DemoKnowledgeGapsPage = () => {
               {/* 4. Human gate */}
               {st === 'draft_ready' && selected.draft && (
                 <>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">4 · Human gate</p>
+                  <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">4 · Human gate</p>
                   <div className="flex gap-2 mb-6">
                     <button
                       onClick={() => { setStatus(selected.id, 'approved'); setToast('Article published — affected DEs will retrain within 24h'); }}
@@ -469,12 +469,12 @@ const DemoKnowledgeGapsPage = () => {
                     </button>
                     <button
                       onClick={() => { setStatus(selected.id, 'investigating'); setToast('Changes requested — returned to the Drafting Agent'); }}
-                      className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500">
+                      className="text-sm px-3 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong">
                       Request changes
                     </button>
                     <button
                       onClick={() => { setStatus(selected.id, 'detected'); setToast('Draft rejected — gap remains open'); }}
-                      className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-red-500/50 hover:text-red-400">
+                      className="text-sm px-3 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/50 hover:text-red-400">
                       Reject
                     </button>
                   </div>
@@ -489,10 +489,10 @@ const DemoKnowledgeGapsPage = () => {
               {/* 5. Retrain status */}
               {(st === 'retrained' || selected.retrainedNote) && (
                 <>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">5 · Retrain status</p>
+                  <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">5 · Retrain status</p>
                   <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3">
                     <p className="text-xs text-indigo-300">{selected.retrainedNote ?? `Retrained: ${selected.de} ✓`}</p>
-                    <p className="text-[11px] text-slate-400 mt-1.5">
+                    <p className="text-[11px] text-dt-support mt-1.5">
                       Published articles are added to the owning DE's eval suite.{' '}
                       <button onClick={() => handleSetPage('intelligence_evals')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Open Proving Ground →</button>
                     </p>
@@ -506,7 +506,7 @@ const DemoKnowledgeGapsPage = () => {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}
@@ -538,11 +538,11 @@ function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null)
   const bar = policy?.min_cluster_size ?? 3;
   if (c.severity_score >= bar * 1.5) return { label: 'High', cls: 'text-red-400' };
   if (c.severity_score >= bar) return { label: 'Medium', cls: 'text-amber-400' };
-  return { label: 'Low', cls: 'text-slate-400' };
+  return { label: 'Low', cls: 'text-dt-support' };
 }
 
 const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-600/50 text-slate-300' },
+  open: { label: 'Open', cls: 'bg-slate-600/50 text-dt-support' },
   revision_requested: { label: 'Draft pending review', cls: 'bg-amber-500/20 text-amber-400' },
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
@@ -649,7 +649,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
   const selectedPolicy = selected ? policyFor(selected.category) : null;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6 relative">
+    <div className="p-6 relative">
       <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -669,29 +669,29 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       ) : (
         <>
           {/* Loop diagram strip — real states only */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-5 mb-6">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
             <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
               {loopNodes.map((n, i) => (
                 <React.Fragment key={n.label}>
-                  <div className="flex-1 min-w-[100px] rounded-xl border border-slate-700 bg-slate-900 p-3 text-center">
+                  <div className="flex-1 min-w-[100px] rounded-xl border border-dt-border bg-dt-page p-3 text-center">
                     <p className="text-indigo-400 text-sm">{n.icon}</p>
-                    <p className="text-xs font-semibold text-slate-300 mt-1">{n.label}</p>
+                    <p className="text-xs font-semibold text-dt-support mt-1">{n.label}</p>
                     <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
                   </div>
-                  {i < loopNodes.length - 1 && <span className="self-center text-slate-600 flex-shrink-0">→</span>}
+                  {i < loopNodes.length - 1 && <span className="self-center text-dt-faint flex-shrink-0">→</span>}
                 </React.Fragment>
               ))}
             </div>
-            <p className="text-[11px] text-slate-500 mt-2">
+            <p className="text-[11px] text-dt-muted mt-2">
               Detection and clustering run every 5 minutes against real, low-confidence inquiries — approving a draft updates the knowledge base immediately.
               {recurredCount > 0 && <span className="text-red-400"> {recurredCount} gap{recurredCount === 1 ? '' : 's'} recurred after a fix was applied — the earlier fix may not have worked.</span>}
             </p>
           </div>
 
           {/* Gap table */}
-          <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
-            <table className="w-full text-sm text-slate-300">
-              <thead className="bg-slate-800 border-b border-slate-700">
+          <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
+            <table className="w-full text-sm text-dt-support">
+              <thead className="bg-dt-card border-b border-dt-border">
                 <tr>
                   <th className={th}>Gap</th>
                   <th className={th}>Category</th>
@@ -709,20 +709,20 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   const title = rev?.proposed_title ?? rep?.inquiry ?? '(loading…)';
                   const tier = severityTier(c, policyFor(c.category));
                   return (
-                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-slate-700/60 hover:bg-slate-700/40 cursor-pointer transition-colors">
+                    <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
                       <td className={td}>
                         <p className="text-white font-medium max-w-md truncate">{title}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
+                        <p className="text-xs text-dt-muted mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
                       </td>
-                      <td className={`${td} text-xs text-slate-400`}>{c.category ?? 'any'}</td>
-                      <td className={`${td} text-xs text-slate-300`}>{c.member_count}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{c.category ?? 'any'}</td>
+                      <td className={`${td} text-xs text-dt-support`}>{c.member_count}</td>
                       <td className={td}>
                         {de ? (
                           <span className="flex items-center gap-1.5">
                             <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[9px] font-bold">{de.name[0]}</span>
                             <span className="text-xs">{de.name}</span>
                           </span>
-                        ) : <span className="text-xs text-slate-600">—</span>}
+                        ) : <span className="text-xs text-dt-faint">—</span>}
                       </td>
                       <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
                       <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status]?.cls}`}>{LIVE_STATUS_META[c.status]?.label ?? c.status}</span></td>
@@ -737,24 +737,24 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
           {selected && (
             <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
               <div className="absolute inset-0 bg-black/50" />
-              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-slate-800 border-l border-slate-700 overflow-y-auto p-6">
+              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-dt-card border-l border-dt-border overflow-y-auto p-6">
                 <div className="flex items-start justify-between mb-1">
                   <h2 className="text-lg font-semibold text-white">{selectedRevision?.proposed_title ?? selectedRep?.inquiry ?? 'Gap detail'}</h2>
-                  <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-lg leading-none">✕</button>
+                  <button onClick={() => setSelectedId(null)} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
                 </div>
                 <div className="flex items-center gap-2 mb-5 flex-wrap">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[selected.status].cls}`}>{LIVE_STATUS_META[selected.status].label}</span>
-                  <span className="text-xs text-slate-500">{selected.member_count} similar question{selected.member_count === 1 ? '' : 's'}{selectedPolicy ? ` in a ${selectedPolicy.window_days}-day window` : ''}{selectedDe ? ` · affects ${selectedDe.name}` : ''}</span>
+                  <span className="text-xs text-dt-muted">{selected.member_count} similar question{selected.member_count === 1 ? '' : 's'}{selectedPolicy ? ` in a ${selectedPolicy.window_days}-day window` : ''}{selectedDe ? ` · affects ${selectedDe.name}` : ''}</span>
                 </div>
 
                 {typeof selected.pre_fix_avg_confidence === 'number' && (
-                  <div className="mb-5 bg-slate-900 rounded-lg px-3 py-2">
-                    <p className="text-xs text-slate-400">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
+                  <div className="mb-5 bg-dt-page rounded-lg px-3 py-2">
+                    <p className="text-xs text-dt-support">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
                   </div>
                 )}
 
                 {/* 1. Signal — real cluster members, real inquiry text */}
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">1 · Signal — the questions behind this pattern</p>
+                <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">1 · Signal — the questions behind this pattern</p>
                 {detailLoading ? (
                   <div className="mb-6"><LiveLoadingSkeleton rows={2} /></div>
                 ) : (
@@ -762,9 +762,9 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                     {(detail?.members ?? []).map(m => {
                       const info = detail?.inquiries[m.evidence_run_id];
                       return (
-                        <div key={m.id} className="bg-slate-900 rounded-lg px-3 py-2">
-                          <p className="text-xs text-slate-300">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
-                          <p className="text-[10px] text-slate-600 mt-0.5">
+                        <div key={m.id} className="bg-dt-page rounded-lg px-3 py-2">
+                          <p className="text-xs text-dt-support">{info?.inquiry ?? '(inquiry text unavailable)'}</p>
+                          <p className="text-[10px] text-dt-faint mt-0.5">
                             {info ? new Date(info.created_at).toLocaleString() : ''}
                             {m.similarity_to_representative !== null ? ` · ${Math.round(m.similarity_to_representative * 100)}% similar to the representative question` : ''}
                           </p>
@@ -772,7 +772,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                       );
                     })}
                     {(detail?.members ?? []).length === 0 && !detailLoading && (
-                      <p className="text-xs text-slate-500">No member questions loaded.</p>
+                      <p className="text-xs text-dt-muted">No member questions loaded.</p>
                     )}
                   </div>
                 )}
@@ -780,10 +780,10 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 {/* 2. Drafted revision — real proposed_body_md, server-composed from the evidence above */}
                 {selectedRevision && (
                   <>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">2 · Proposed knowledge update</p>
-                    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 mb-6">
+                    <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">2 · Proposed knowledge update</p>
+                    <div className="rounded-xl border border-dt-border bg-dt-page p-4 mb-6">
                       <p className="text-sm font-semibold text-white mb-2">{selectedRevision.proposed_title}</p>
-                      <pre className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">{selectedRevision.proposed_body_md}</pre>
+                      <pre className="text-xs text-dt-support leading-relaxed whitespace-pre-wrap font-sans">{selectedRevision.proposed_body_md}</pre>
                     </div>
                   </>
                 )}
@@ -791,7 +791,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 {/* 3. Human gate — real approve/reject via the same RPCs Human Tasks uses */}
                 {selected.status === 'revision_requested' && selectedRevision && selectedRevision.status === 'pending_approval' && (
                   <>
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">3 · Human review</p>
+                    <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">3 · Human review</p>
                     <div className="flex gap-2 mb-6">
                       <button
                         disabled={deciding}
@@ -802,7 +802,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                       <button
                         disabled={deciding}
                         onClick={() => void decide(selectedRevision.id, 'rejected')}
-                        className="text-sm px-3 py-2 rounded-lg border border-slate-600 text-slate-400 hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
+                        className="text-sm px-3 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/50 hover:text-red-400 disabled:opacity-50">
                         Reject
                       </button>
                     </div>
@@ -817,7 +817,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 )}
                 {selected.status === 'open' && (
-                  <p className="text-xs text-slate-500 mb-6">
+                  <p className="text-xs text-dt-muted mb-6">
                     Still accumulating — needs {Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count)} more similar question{Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count) === 1 ? '' : 's'} before it's promoted to a reviewable draft.
                   </p>
                 )}
@@ -828,7 +828,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-700 border border-emerald-500/40 text-sm text-slate-100 rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

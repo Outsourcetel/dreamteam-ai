@@ -30,8 +30,8 @@ const ROLE_COLORS: Record<TenantRole, string> = {
   tenant_manager: 'bg-blue-500/15 text-blue-300',
   knowledge_manager: 'bg-purple-500/15 text-purple-300',
   approver: 'bg-cyan-500/15 text-cyan-300',
-  tenant_user: 'bg-slate-600 text-slate-300',
-  read_only: 'bg-slate-700 text-slate-400',
+  tenant_user: 'bg-slate-600 text-dt-support',
+  read_only: 'bg-dt-panel text-dt-support',
 }
 
 // The real permission areas each role carries, straight from useUsers.ts's
@@ -104,10 +104,10 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-700">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Manage Sub-Accounts</p>
-        <p className="text-xs text-slate-500 mt-1">
+    <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-dt-border">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Manage Sub-Accounts</p>
+        <p className="text-xs text-dt-muted mt-1">
           Create a smaller workspace under your account for one of your own customers — they get limited,
           customer-focused access, and your data stays separate from theirs.
         </p>
@@ -116,7 +116,7 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
       <div className="p-5 space-y-4">
         {!loadingList && descendants.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-slate-500">{descendants.length} existing sub-account{descendants.length === 1 ? '' : 's'}</p>
+            <p className="text-xs text-dt-muted">{descendants.length} existing sub-account{descendants.length === 1 ? '' : 's'}</p>
           </div>
         )}
 
@@ -125,13 +125,13 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Sub-account name (e.g. Acme Customer Portal)"
-            className="bg-slate-900 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
           <input
             value={industry}
             onChange={e => setIndustry(e.target.value)}
             placeholder="Industry (optional)"
-            className="bg-slate-900 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
 
@@ -200,9 +200,9 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">API Keys</p>
+    <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">API Keys</p>
         <button
           onClick={() => setShowCreate(true)}
           className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
@@ -212,7 +212,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-700">
+          <tr className="border-b border-dt-border">
             <th className={th}>Name</th>
             <th className={th}>Key</th>
             <th className={th}>Scope</th>
@@ -223,18 +223,18 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
         </thead>
         <tbody className="divide-y divide-slate-700/50">
           {!loading && keys.length === 0 && (
-            <tr><td colSpan={6} className={`${td} text-slate-500 text-xs text-center py-6`}>No API keys yet.</td></tr>
+            <tr><td colSpan={6} className={`${td} text-dt-muted text-xs text-center py-6`}>No API keys yet.</td></tr>
           )}
           {keys.map(k => (
-            <tr key={k.id} className="hover:bg-slate-700/20 transition-colors">
-              <td className={`${td} text-slate-200 text-xs font-medium`}>{k.name}</td>
-              <td className={`${td} text-slate-400 text-xs font-mono`}>{k.display_hint}</td>
-              <td className={`${td} text-slate-400 text-xs`}>{k.scopes.length > 0 ? k.scopes.join(', ') : '—'}</td>
-              <td className={`${td} text-slate-500 text-xs`}>{new Date(k.created_at).toLocaleDateString()}</td>
-              <td className={`${td} text-slate-500 text-xs`}>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
+            <tr key={k.id} className="hover:bg-dt-panel/20 transition-colors">
+              <td className={`${td} text-dt-body text-xs font-medium`}>{k.name}</td>
+              <td className={`${td} text-dt-support text-xs font-mono`}>{k.display_hint}</td>
+              <td className={`${td} text-dt-support text-xs`}>{k.scopes.length > 0 ? k.scopes.join(', ') : '—'}</td>
+              <td className={`${td} text-dt-muted text-xs`}>{new Date(k.created_at).toLocaleDateString()}</td>
+              <td className={`${td} text-dt-muted text-xs`}>{k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
               <td className={td}>
                 {k.revoked_at
-                  ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">Revoked</span>
+                  ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">Revoked</span>
                   : (
                     <button onClick={() => setRevokeTarget(k)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
                       Revoke
@@ -250,16 +250,16 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
         <Modal title="Create API key" onClose={() => { if (!creating) setShowCreate(false) }}>
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-400 mb-1.5 block">Name</label>
+              <label className="text-xs text-dt-support mb-1.5 block">Name</label>
               <input
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 placeholder="e.g. Analytics export"
-                className="w-full bg-slate-900 border border-slate-600 text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 mb-1.5 block">Scope</label>
+              <label className="text-xs text-dt-support mb-1.5 block">Scope</label>
               <div className="flex flex-wrap gap-2">
                 {API_KEY_SCOPES.map(s => (
                   <button
@@ -268,7 +268,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                     className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
                       newScopes.includes(s)
                         ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-slate-900 border-slate-600 text-slate-400 hover:border-slate-500'
+                        : 'bg-dt-page border-dt-border-strong text-dt-support hover:border-dt-border-strong'
                     }`}
                   >
                     {s}
@@ -294,12 +294,12 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
               Copy this key now — for security, it's shown only once and can't be retrieved again.
             </div>
-            <div className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 font-mono text-xs text-emerald-300 break-all">
+            <div className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2.5 font-mono text-xs text-emerald-300 break-all">
               {justCreated.rawKey}
             </div>
             <button
               onClick={() => { navigator.clipboard?.writeText(justCreated.rawKey); }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors"
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors"
             >
               Copy to clipboard
             </button>
@@ -363,18 +363,18 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+    <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">IP Allowlist</p>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">IP Allowlist</p>
+          <p className="text-xs text-dt-muted mt-1">
             Restrict sign-in to approved network ranges — checked once per session, not on every request.
           </p>
         </div>
         <Toggle enabled={enabled} onChange={handleToggle} />
       </div>
       {toggleError && <p className="text-xs text-red-400 mb-2">{toggleError}</p>}
-      {!enabled && !loading && <p className="text-xs text-slate-500">All networks allowed while disabled.</p>}
+      {!enabled && !loading && <p className="text-xs text-dt-muted">All networks allowed while disabled.</p>}
       {enabled && (
         <div className="space-y-2">
           {entries.length === 0 && (
@@ -383,12 +383,12 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
             </div>
           )}
           {entries.map(e => (
-            <div key={e.id} className="flex gap-2 items-center bg-slate-900 rounded-lg px-3 py-2">
-              <span className="flex-1 font-mono text-xs text-slate-200">{e.ip_range}</span>
-              <span className="flex-1 text-xs text-slate-500">{e.label || '—'}</span>
+            <div key={e.id} className="flex gap-2 items-center bg-dt-page rounded-lg px-3 py-2">
+              <span className="flex-1 font-mono text-xs text-dt-body">{e.ip_range}</span>
+              <span className="flex-1 text-xs text-dt-muted">{e.label || '—'}</span>
               <button
                 onClick={() => setRemoveTarget(e)}
-                className="text-slate-500 hover:text-red-400 text-xs px-2 transition-colors"
+                className="text-dt-muted hover:text-red-400 text-xs px-2 transition-colors"
               >
                 ✕
               </button>
@@ -398,12 +398,12 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
       )}
       <div className="flex gap-2 items-center mt-3">
         <input
-          className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
+          className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-xs text-dt-body placeholder-slate-600 focus:outline-none focus:border-slate-500"
           placeholder="192.168.1.0/24" value={newIp}
           onChange={e => setNewIp(e.target.value)}
         />
         <input
-          className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-slate-500"
+          className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-xs text-dt-body placeholder-slate-600 focus:outline-none focus:border-slate-500"
           placeholder="Label (e.g. Office WiFi)" value={newLabel}
           onChange={e => setNewLabel(e.target.value)}
         />
@@ -530,9 +530,9 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
 
   if (!canView) {
     return (
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Access &amp; Security Activity</p>
-        <p className="text-xs text-slate-500">Only a workspace owner or admin can view the security activity log.</p>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Access &amp; Security Activity</p>
+        <p className="text-xs text-dt-muted">Only a workspace owner or admin can view the security activity log.</p>
       </div>
     )
   }
@@ -546,41 +546,41 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
   const rangeLabel = SEC_RANGE_OPTIONS.find(r => r.days === days)?.label ?? 'window'
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between gap-4 flex-wrap">
+    <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Access &amp; Security Activity</p>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Access &amp; Security Activity</p>
+          <p className="text-xs text-dt-muted mt-1">
             Every change to roles, MFA, API keys, session policy, IP allowlist, and data-access grants — tenant-wide, most recent first.
           </p>
         </div>
-        <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
+        <div className="inline-flex rounded-lg border border-dt-border bg-dt-page p-0.5">
           {SEC_RANGE_OPTIONS.map(r => (
             <button key={r.label} onClick={() => setDays(r.days)}
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-400 hover:text-slate-200'}`}>
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-dt-support hover:text-dt-body'}`}>
               {r.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2 flex-wrap">
+      <div className="px-5 py-3 border-b border-dt-border flex items-center gap-2 flex-wrap">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actor or event…"
-          className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-52" />
+          className="bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-52" />
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
           <option value="all">All event types</option>
           {SECURITY_TABLES.map(t => <option key={t} value={t}>{SECURITY_TABLE_LABELS[t]}</option>)}
         </select>
         <select value={opFilter} onChange={e => setOpFilter(e.target.value)}
-          className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
           <option value="all">All actions</option>
           <option value="INSERT">Added</option>
           <option value="UPDATE">Changed</option>
           <option value="DELETE">Removed</option>
         </select>
         <div className="flex-1" />
-        <span className="text-[11px] text-slate-600">{visible.length} event{visible.length === 1 ? '' : 's'} · last {rangeLabel}</span>
+        <span className="text-[11px] text-dt-faint">{visible.length} event{visible.length === 1 ? '' : 's'} · last {rangeLabel}</span>
       </div>
 
       <div className="px-5 py-4">
@@ -593,31 +593,31 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-700">
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">When</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Who</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Event</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Action</th>
-                  <th className="px-3 py-2 text-xs font-medium text-slate-500">Details</th>
+                <tr className="border-b border-dt-border">
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">When</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Who</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Event</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Action</th>
+                  <th className="px-3 py-2 text-xs font-medium text-dt-muted">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {visible.map(row => {
                   const fields = securityChangedFields(row)
                   return (
-                    <tr key={row.id} className="hover:bg-slate-700/20 transition-colors">
-                      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
+                    <tr key={row.id} className="hover:bg-dt-panel/20 transition-colors">
+                      <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                         <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
-                        {row.actor_role && <span className="text-slate-600 ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>}
+                        {row.actor_role && <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-300">{SECURITY_TABLE_LABELS[row.table_name] || row.table_name}</td>
+                      <td className="px-3 py-2.5 text-xs text-dt-support">{SECURITY_TABLE_LABELS[row.table_name] || row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-slate-600 text-slate-300'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
                           {secOperationVerb[row.operation] || row.operation}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-500 max-w-xs truncate">
+                      <td className="px-3 py-2.5 text-xs text-dt-muted max-w-xs truncate">
                         {fields.length > 0 ? fields.join(', ') : '—'}
                       </td>
                     </tr>
@@ -676,14 +676,14 @@ export default function SecurityAccessPage() {
 
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-4">
         <PageHeader
           title="Security & Access"
           subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
         />
         <button onClick={() => handleSetPage('gov_trust')}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors">
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
           Trust &amp; Architecture →
         </button>
       </div>
@@ -695,17 +695,17 @@ export default function SecurityAccessPage() {
         )}
 
         {/* ── RBAC permission matrix ── */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Roles & Permissions</p>
-            <p className="text-xs text-slate-500 mt-1">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-dt-border">
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Roles & Permissions</p>
+            <p className="text-xs text-dt-muted mt-1">
               What each built-in role can do — enforced by real access-control policy, not independently configurable per tenant.
             </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700">
+                <tr className="border-b border-dt-border">
                   <th className={th}>Permission area</th>
                   {ALL_ROLES.map(r => (
                     <th key={r} className={`${th} text-center whitespace-nowrap`}>
@@ -716,8 +716,8 @@ export default function SecurityAccessPage() {
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {PERMISSION_AREAS.map(area => (
-                  <tr key={area} className="hover:bg-slate-700/20 transition-colors">
-                    <td className={`${td} text-slate-200 text-xs`}>{area}</td>
+                  <tr key={area} className="hover:bg-dt-panel/20 transition-colors">
+                    <td className={`${td} text-dt-body text-xs`}>{area}</td>
                     {ALL_ROLES.map(r => {
                       const grants = ROLE_PERMISSIONS[r]
                       const has = grants.includes('All permissions') || grants.includes(area)
@@ -725,7 +725,7 @@ export default function SecurityAccessPage() {
                         <td key={r} className={`${td} text-center`}>
                           {has
                             ? <span className="text-emerald-400 text-sm">✓</span>
-                            : <span className="text-slate-600 text-sm">—</span>}
+                            : <span className="text-dt-faint text-sm">—</span>}
                         </td>
                       )
                     })}
@@ -737,16 +737,16 @@ export default function SecurityAccessPage() {
         </div>
 
         {/* ── Human users (real profiles + auth.users email + auth.mfa_factors, migration 089) ── */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Human Users</p>
-            <span className="text-xs text-slate-500">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between">
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Human Users</p>
+            <span className="text-xs text-dt-muted">
               {membersLoading ? 'Loading…' : `${members.length} member${members.length === 1 ? '' : 's'} · full management in Users`}
             </span>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-700">
+              <tr className="border-b border-dt-border">
                 <th className={th}>Member</th>
                 <th className={th}>Email</th>
                 <th className={th}>Role</th>
@@ -756,30 +756,30 @@ export default function SecurityAccessPage() {
             </thead>
             <tbody className="divide-y divide-slate-700/50">
               {!membersLoading && members.length === 0 && (
-                <tr><td colSpan={5} className={`${td} text-slate-500 text-xs text-center py-6`}>No team members yet.</td></tr>
+                <tr><td colSpan={5} className={`${td} text-dt-muted text-xs text-center py-6`}>No team members yet.</td></tr>
               )}
               {members.map(u => (
-                <tr key={u.userId} className="hover:bg-slate-700/20 transition-colors">
+                <tr key={u.userId} className="hover:bg-dt-panel/20 transition-colors">
                   <td className={td}>
                     <div className="flex items-center gap-2.5">
                       <span className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">
                         {u.avatar}
                       </span>
-                      <span className="text-slate-200 text-xs font-medium">{u.fullName}</span>
+                      <span className="text-dt-body text-xs font-medium">{u.fullName}</span>
                     </div>
                   </td>
-                  <td className={`${td} text-slate-400 text-xs`}>{u.email}</td>
+                  <td className={`${td} text-dt-support text-xs`}>{u.email}</td>
                   <td className={td}>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role] ?? ROLE_COLORS.tenant_user}`}>{ROLE_LABELS[u.role] ?? u.role}</span>
                   </td>
                   <td className={td}>
                     {!canManageSecurity
-                      ? <span className="text-[10px] text-slate-600">Owner/admin only</span>
+                      ? <span className="text-[10px] text-dt-faint">Owner/admin only</span>
                       : mfaStatus[u.userId]
                         ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Enabled</span>
                         : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Missing</span>}
                   </td>
-                  <td className={`${td} text-slate-500 text-xs`}>{u.lastSeen}</td>
+                  <td className={`${td} text-dt-muted text-xs`}>{u.lastSeen}</td>
                 </tr>
               ))}
             </tbody>
@@ -791,35 +791,35 @@ export default function SecurityAccessPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* ── SSO / SAML — honest deferred state ── */}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">SSO / SAML</p>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">Not available yet</span>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">SSO / SAML</p>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-dt-panel text-dt-support">Not available yet</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-dt-support leading-relaxed">
               Supabase Auth (the identity system behind this app) has native SAML 2.0 support ready to use —
               it just requires a Supabase Pro plan or above. This workspace is currently on the Free plan,
               which doesn't support SSO at all.
             </p>
-            <p className="text-xs text-slate-600 mt-3">
+            <p className="text-xs text-dt-faint mt-3">
               Upgrade the Supabase project to enable this — no rebuild needed once that's done.
             </p>
           </div>
 
           {/* ── Session policy card (migration 091) — real, enforced ── */}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Session Policy</p>
+              <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Session Policy</p>
               {policySaved && <span className="text-[10px] text-emerald-300">Saved ✓</span>}
             </div>
             <div className="space-y-3">
-              <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
-                <span className="text-xs text-slate-300">Session timeout (inactivity)</span>
+              <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5">
+                <span className="text-xs text-dt-support">Session timeout (inactivity)</span>
                 <select
                   value={timeoutMinutes}
                   disabled={!canManageSecurity}
                   onChange={e => savePolicy({ timeoutMinutes: Number(e.target.value) })}
-                  className="bg-slate-800 border border-slate-600 text-xs text-slate-200 rounded-lg px-2 py-1 focus:outline-none disabled:opacity-50"
+                  className="bg-dt-card border border-dt-border-strong text-xs text-dt-body rounded-lg px-2 py-1 focus:outline-none disabled:opacity-50"
                 >
                   <option value={60}>1h</option>
                   <option value={240}>4h</option>
@@ -827,16 +827,16 @@ export default function SecurityAccessPage() {
                   <option value={1440}>24h</option>
                 </select>
               </div>
-              <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
+              <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5">
                 <div>
-                  <p className="text-xs text-slate-300">MFA required</p>
-                  <p className="text-[10px] text-slate-600 mt-0.5">Blocks the app until a human user enrolls a second factor</p>
+                  <p className="text-xs text-dt-support">MFA required</p>
+                  <p className="text-[10px] text-dt-faint mt-0.5">Blocks the app until a human user enrolls a second factor</p>
                 </div>
                 <Toggle enabled={mfaRequired} onChange={v => canManageSecurity && savePolicy({ mfaRequired: v })} />
               </div>
-              <div className="bg-slate-900 rounded-lg px-3 py-2.5">
-                <span className="text-xs text-slate-300">Re-auth for sensitive areas</span>
-                <p className="text-[10px] text-slate-600 mt-1">
+              <div className="bg-dt-page rounded-lg px-3 py-2.5">
+                <span className="text-xs text-dt-support">Re-auth for sensitive areas</span>
+                <p className="text-[10px] text-dt-faint mt-1">
                   Not yet enforced for regular workspace actions. Platform-level Remote Access already requires a
                   verified 2FA code once an operator enrolls one.
                 </p>
@@ -849,9 +849,9 @@ export default function SecurityAccessPage() {
         {canManageSecurity && currentTenant?.id ? (
           <ApiKeysPanel tenantId={currentTenant.id} />
         ) : (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">API Keys</p>
-            <p className="text-xs text-slate-500">Only a workspace owner or admin can view and manage API keys.</p>
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">API Keys</p>
+            <p className="text-xs text-dt-muted">Only a workspace owner or admin can view and manage API keys.</p>
           </div>
         )}
 
@@ -859,9 +859,9 @@ export default function SecurityAccessPage() {
         {canManageSecurity && currentTenant?.id ? (
           <IpAllowlistPanel tenantId={currentTenant.id} />
         ) : (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">IP Allowlist</p>
-            <p className="text-xs text-slate-500">Only a workspace owner or admin can view and manage the IP allowlist.</p>
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+            <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">IP Allowlist</p>
+            <p className="text-xs text-dt-muted">Only a workspace owner or admin can view and manage the IP allowlist.</p>
           </div>
         )}
       </div>

@@ -20,7 +20,7 @@ const STATUS_META: Record<Status, { label: string; cls: string }> = {
   live: { label: 'Live', cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' },
   live_pending: { label: 'Live (pending activation)', cls: 'bg-emerald-500/10 text-emerald-300/90 border border-emerald-500/25' },
   designed: { label: 'Designed', cls: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' },
-  roadmap: { label: 'Roadmap', cls: 'bg-slate-600/40 text-slate-400 border border-slate-600' },
+  roadmap: { label: 'Roadmap', cls: 'bg-slate-600/40 text-dt-support border border-dt-border-strong' },
 }
 
 function Chip({ status }: { status: Status }) {
@@ -30,9 +30,9 @@ function Chip({ status }: { status: Status }) {
 
 function Card({ title, status, children }: { title: string; status?: Status; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+    <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{title}</p>
+        <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">{title}</p>
         {status && <Chip status={status} />}
       </div>
       {children}
@@ -42,12 +42,12 @@ function Card({ title, status, children }: { title: string; status?: Status; chi
 
 function Row({ label, status, children }: { label: string; status: Status; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-900 rounded-lg px-3 py-2.5">
+    <div className="bg-dt-page rounded-lg px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-slate-200 font-medium">{label}</span>
+        <span className="text-xs text-dt-body font-medium">{label}</span>
         <Chip status={status} />
       </div>
-      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{children}</p>
+      <p className="text-[11px] text-dt-support mt-1 leading-relaxed">{children}</p>
     </div>
   )
 }
@@ -55,22 +55,22 @@ function Row({ label, status, children }: { label: string; status: Status; child
 // ── Layer diagram (pure divs) ──
 function LayerBox({ title, sub, tone }: { title: string; sub: string; tone: 'front' | 'core' | 'ext' }) {
   const tones = {
-    front: 'border-slate-600 bg-slate-800',
+    front: 'border-dt-border-strong bg-dt-card',
     core: 'border-indigo-500/40 bg-indigo-500/5',
-    ext: 'border-slate-600 bg-slate-900',
+    ext: 'border-dt-border-strong bg-dt-page',
   }
   return (
     <div className={`rounded-xl border px-4 py-3 ${tones[tone]}`}>
-      <p className="text-xs font-semibold text-slate-200">{title}</p>
-      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{sub}</p>
+      <p className="text-xs font-semibold text-dt-body">{title}</p>
+      <p className="text-[11px] text-dt-muted mt-0.5 leading-relaxed">{sub}</p>
     </div>
   )
 }
 
 const Arrow = ({ label }: { label: string }) => (
   <div className="flex flex-col items-center py-1">
-    <span className="text-[10px] text-slate-600">{label}</span>
-    <span className="text-slate-600 leading-none">↓</span>
+    <span className="text-[10px] text-dt-faint">{label}</span>
+    <span className="text-dt-faint leading-none">↓</span>
   </div>
 )
 
@@ -148,25 +148,25 @@ export default function TrustArchitecturePage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-900 p-6">
+    <div className="p-6">
       <div className="flex items-start justify-between gap-4">
         <PageHeader
           title="Trust & Architecture"
           subtitle="How DreamTeam is built, what data goes where, and what we haven't done yet — honestly labeled"
         />
         <button onClick={copyDoc}
-          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-slate-700 border border-slate-600 text-slate-300 hover:bg-slate-600 transition-colors">
+          className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-slate-600 transition-colors">
           {copied ? '✓ Copied' : 'Copy as text'}
         </button>
       </div>
 
       {/* Labeling legend */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <span className="text-[11px] text-slate-500">Every claim on this page is labeled:</span>
-        <span className="flex items-center gap-1.5"><Chip status="live" /><span className="text-[11px] text-slate-400">verified in production</span></span>
-        <span className="flex items-center gap-1.5"><Chip status="designed" /><span className="text-[11px] text-slate-400">spec exists, hardening pending</span></span>
-        <span className="flex items-center gap-1.5"><Chip status="roadmap" /><span className="text-[11px] text-slate-400">planned, not built</span></span>
-        <span className="text-[11px] text-slate-600">Canonical document: docs/TRUST-AND-ARCHITECTURE.md</span>
+      <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <span className="text-[11px] text-dt-muted">Every claim on this page is labeled:</span>
+        <span className="flex items-center gap-1.5"><Chip status="live" /><span className="text-[11px] text-dt-support">verified in production</span></span>
+        <span className="flex items-center gap-1.5"><Chip status="designed" /><span className="text-[11px] text-dt-support">spec exists, hardening pending</span></span>
+        <span className="flex items-center gap-1.5"><Chip status="roadmap" /><span className="text-[11px] text-dt-support">planned, not built</span></span>
+        <span className="text-[11px] text-dt-faint">Canonical document: docs/TRUST-AND-ARCHITECTURE.md</span>
       </div>
 
       <div className="space-y-6">
@@ -195,16 +195,16 @@ export default function TrustArchitecturePage() {
         <Card title="Data flow — one question, end to end" status="live_pending">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             {FLOW_STEPS.map((s, i) => (
-              <div key={s.title} className="bg-slate-900 rounded-lg p-3 border border-slate-700/60">
+              <div key={s.title} className="bg-dt-page rounded-lg p-3 border border-dt-border">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
-                  <p className="text-[11px] font-semibold text-slate-200">{s.title}</p>
+                  <p className="text-[11px] font-semibold text-dt-body">{s.title}</p>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">{s.body}</p>
+                <p className="text-[11px] text-dt-support leading-relaxed">{s.body}</p>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500 mt-3">
+          <p className="text-[11px] text-dt-muted mt-3">
             Honest activation state: the pipeline is deployed but the LLM step is dormant until the ANTHROPIC_API_KEY edge secret is set — it returns an explicit
             "not configured" state instead of an answer. Auth, tenant scoping, retrieval, cache, guardrail machinery, and audit run today.
           </p>
@@ -215,7 +215,7 @@ export default function TrustArchitecturePage() {
           <Card title="Tenant isolation" status="live">
             <div className="space-y-2">
               <Row label="Row-level security on every tenant table" status="live">
-                Every live table carries a policy scoping reads and writes to <code className="text-slate-300">tenant_id in (select tenant_id from profiles where user_id = auth.uid())</code> — migrations 011–019.
+                Every live table carries a policy scoping reads and writes to <code className="text-dt-support">tenant_id in (select tenant_id from profiles where user_id = auth.uid())</code> — migrations 011–019.
               </Row>
               <Row label="Membership-guarded RPCs" status="live">
                 SECURITY DEFINER functions (append_audit_event, verify_audit_chain, set_connector_secret, resume_playbook_on_task) re-check tenant membership before acting, or require the service role.
@@ -250,7 +250,7 @@ export default function TrustArchitecturePage() {
 
         {/* ── Data modes & SoR ── */}
         <Card title="Data modes & the Systems-of-Record principle">
-          <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+          <p className="text-[11px] text-dt-support mb-3 leading-relaxed">
             DreamTeam never replaces a system of record — Zendesk stays the ticket SoR, billing stays the billing SoR. DreamTeam is the work layer on top; our
             permanent, proprietary data is the judgment layer (audit chain, playbook runs, guardrail decisions, approvals).
           </p>
@@ -334,7 +334,7 @@ export default function TrustArchitecturePage() {
             <div className="overflow-x-auto -mx-5">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-700">
+                  <tr className="border-b border-dt-border">
                     <th className={th}>Subprocessor</th>
                     <th className={th}>Role</th>
                     <th className={th}>Data touched</th>
@@ -343,19 +343,19 @@ export default function TrustArchitecturePage() {
                 <tbody className="divide-y divide-slate-700/50">
                   {SUBPROCESSORS.map(([name, role, data]) => (
                     <tr key={name}>
-                      <td className={`${td} text-slate-200 text-xs font-medium`}>{name}</td>
-                      <td className={`${td} text-slate-400 text-xs`}>{role}</td>
-                      <td className={`${td} text-slate-400 text-xs`}>{data}</td>
+                      <td className={`${td} text-dt-body text-xs font-medium`}>{name}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{role}</td>
+                      <td className={`${td} text-dt-support text-xs`}>{data}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-slate-500">Data residency: single US region in v1.</p>
+              <p className="text-[11px] text-dt-muted">Data residency: single US region in v1.</p>
               <Chip status="roadmap" />
             </div>
-            <p className="text-[11px] text-slate-600 mt-1">Region selection is Roadmap.</p>
+            <p className="text-[11px] text-dt-faint mt-1">Region selection is Roadmap.</p>
           </Card>
         </div>
 
@@ -365,7 +365,7 @@ export default function TrustArchitecturePage() {
             <p className="text-xs font-medium text-amber-300 uppercase tracking-wider">What we haven't done yet — and when</p>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">Stated deliberately</span>
           </div>
-          <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+          <p className="text-[11px] text-dt-support mb-3 leading-relaxed">
             A reviewer should hear these from us first. Each gap has a named hardening step; none is hidden behind marketing language.
           </p>
           <div className="overflow-x-auto -mx-5">
@@ -380,15 +380,15 @@ export default function TrustArchitecturePage() {
               <tbody className="divide-y divide-amber-500/10">
                 {LIMITATIONS.map(([gap, state, step]) => (
                   <tr key={gap}>
-                    <td className={`${td} text-slate-200 text-xs font-medium`}>{gap}</td>
-                    <td className={`${td} text-slate-400 text-xs`}>{state}</td>
-                    <td className={`${td} text-slate-400 text-xs`}>{step}</td>
+                    <td className={`${td} text-dt-body text-xs font-medium`}>{gap}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{state}</td>
+                    <td className={`${td} text-dt-support text-xs`}>{step}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-slate-500 mt-3">
+          <p className="text-[11px] text-dt-muted mt-3">
             Standing rule: real customer data is supported only in the live, RLS-backed production track described above — never in demo surfaces.
           </p>
         </div>

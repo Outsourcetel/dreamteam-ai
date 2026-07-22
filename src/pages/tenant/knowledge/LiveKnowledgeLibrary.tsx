@@ -145,7 +145,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     if (s && s.embedded > 0) {
       return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {s.chunks} chunk{s.chunks === 1 ? '' : 's'}</span>;
     }
-    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-500">Keyword only</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">Keyword only</span>;
   };
 
   // ── Scope modal (Who can use this) ──
@@ -183,7 +183,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           : 'All digital employees and specialists use this document — click to limit it'}
         className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${scoped
           ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
-          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}
+          : 'bg-dt-panel text-dt-support hover:bg-slate-600'}`}
       >
         {scoped ? `Scoped · ${n}` : 'All digital employees'}
       </button>
@@ -273,13 +273,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
   if (missingTables) {
     return (
-      <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+      <div className="p-6">
         <PageHeader title="Knowledge Library" subtitle="The documents Alex answers from." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-dt-support">
             The knowledge tables haven't been created yet (migration 012). Apply
-            <code className="mx-1 text-slate-300">supabase/migrations/012_knowledge_docs.sql</code>
+            <code className="mx-1 text-dt-support">supabase/migrations/012_knowledge_docs.sql</code>
             in the Supabase SQL Editor, then reload.
           </p>
         </div>
@@ -288,7 +288,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-900 p-6">
+    <div className="p-6">
       <PageHeader title="Knowledge Library" subtitle="These documents are the only thing Alex answers from — keep them current." />
 
       {error && (
@@ -305,32 +305,32 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </button>
         <button
           onClick={() => fileRef.current?.click()}
-          className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
         >
           Upload file
         </button>
         <button
           onClick={() => setShowUrl(v => !v)}
-          className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
         >
           Import from URL
         </button>
         <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" className="hidden" onChange={onFile} />
         {busyMsg && <span className="text-xs text-indigo-300">{busyMsg}</span>}
-        <span className="text-xs text-slate-500 ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
+        <span className="text-xs text-dt-muted ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
       </div>
 
       {showUrl && (
-        <div className="flex items-center gap-2 mb-4 rounded-xl border border-slate-700 bg-slate-800/50 px-3 py-2">
+        <div className="flex items-center gap-2 mb-4 rounded-xl border border-dt-border bg-dt-card px-3 py-2">
           <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
             placeholder="https://help.yourcompany.com/article/…"
-            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+            className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500"
             onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }} />
           <button onClick={() => void importUrl()} disabled={!!busyMsg || !urlInput.trim()}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
             Fetch & add
           </button>
-          <button onClick={() => { setShowUrl(false); setUrlInput(''); }} className="text-xs px-2 py-1.5 text-slate-500 hover:text-slate-300">✕</button>
+          <button onClick={() => { setShowUrl(false); setUrlInput(''); }} className="text-xs px-2 py-1.5 text-dt-muted hover:text-dt-support">✕</button>
         </div>
       )}
 
@@ -346,9 +346,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           onPrimary={() => setEditor({ ...emptyEditor })}
         />
       ) : (
-        <div className="rounded-2xl border border-slate-700 bg-slate-800/50 overflow-hidden">
-          <table className="w-full text-sm text-slate-300">
-            <thead className="bg-slate-800 border-b border-slate-700">
+        <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
+          <table className="w-full text-sm text-dt-support">
+            <thead className="bg-dt-card border-b border-dt-border">
               <tr>
                 <th className={th}>Title</th>
                 <th className={th}>Preview</th>
@@ -362,16 +362,16 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </thead>
             <tbody>
               {docs.map(d => (
-                <tr key={d.id} className="border-b border-slate-700/60 hover:bg-slate-700/40 transition-colors">
+                <tr key={d.id} className="border-b border-dt-border hover:bg-dt-panel transition-colors">
                   <td className={`${td} text-white font-medium`}>{d.title}</td>
-                  <td className={`${td} text-xs text-slate-400 max-w-xs`}>
+                  <td className={`${td} text-xs text-dt-support max-w-xs`}>
                     <span className="line-clamp-2">{d.content.slice(0, 140)}{d.content.length > 140 ? '…' : ''}</span>
                   </td>
                   <td className={td}>
                     <div className="flex flex-wrap gap-1">
-                      {d.tags.length === 0 && <span className="text-xs text-slate-600">—</span>}
+                      {d.tags.length === 0 && <span className="text-xs text-dt-faint">—</span>}
                       {d.tags.map(t => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">{t}</span>
+                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{t}</span>
                       ))}
                     </div>
                   </td>
@@ -382,7 +382,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   </td>
                   <td className={td}><IndexBadge docId={d.id} /></td>
                   <td className={td}><ScopeBadge doc={d} /></td>
-                  <td className={`${td} text-xs text-slate-400`}>{fmtDate(d.updated_at)}</td>
+                  <td className={`${td} text-xs text-dt-support`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>
                     <div className="flex gap-2 justify-end">
                       <button
@@ -414,7 +414,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {(revisions.length > 0 || revisionsLoading) && (
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
           <h3 className="text-sm font-semibold text-white mb-1">Knowledge Revisions — pending your approval</h3>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-[11px] text-dt-muted mb-3">
             Drafted automatically when a reviewer marked resolved-inquiry evidence "needs improvement" or "inaccurate."
             Nothing changes in the knowledge base until you approve here.
           </p>
@@ -426,7 +426,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 const currentDoc = docs.find(d => d.id === r.source_doc_id);
                 const expanded = expandedRevisionId === r.id;
                 return (
-                  <div key={r.id} className="rounded-xl border border-slate-700 bg-slate-900/50">
+                  <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset">
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
                       onClick={() => setExpandedRevisionId(expanded ? null : r.id)}
@@ -435,30 +435,30 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-indigo-500/20 text-indigo-300' : 'bg-teal-500/20 text-teal-300'}`}>
                         {r.source_doc_id ? 'Edit to existing doc' : 'New doc proposed'}
                       </span>
-                      <span className="text-[10px] text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</span>
+                      <span className="text-[10px] text-dt-muted whitespace-nowrap">{fmtDate(r.created_at)}</span>
                     </button>
                     {expanded && (
                       <div className="px-3 pb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
-                            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">Current</p>
-                            <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                          <div className="rounded-lg border border-dt-border bg-dt-card/60 p-3">
+                            <p className="text-[10px] font-medium text-dt-muted uppercase tracking-wider mb-1">Current</p>
+                            <p className="text-xs text-dt-support whitespace-pre-wrap max-h-48 overflow-y-auto">
                               {currentDoc ? currentDoc.content : '(no existing document — this proposes a brand-new one)'}
                             </p>
                           </div>
                           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
                             <p className="text-[10px] font-medium text-emerald-400 uppercase tracking-wider mb-1">Proposed</p>
-                            <p className="text-xs text-slate-200 whitespace-pre-wrap max-h-48 overflow-y-auto">{r.proposed_body_md}</p>
+                            <p className="text-xs text-dt-body whitespace-pre-wrap max-h-48 overflow-y-auto">{r.proposed_body_md}</p>
                           </div>
                         </div>
-                        <p className="text-[10px] text-slate-500">
-                          Triggered by evidence run <span className="text-slate-400">{r.evidence_run_id}</span> · drafted server-side from the current document, the evidence run's gaps, and the reviewer's note — never free-form model text.
+                        <p className="text-[10px] text-dt-muted">
+                          Triggered by evidence run <span className="text-dt-support">{r.evidence_run_id}</span> · drafted server-side from the current document, the evidence run's gaps, and the reviewer's note — never free-form model text.
                         </p>
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => void decideRevision(r, 'rejected')}
                             disabled={decidingRevisionId === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
+                            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
                           >
                             {decidingRevisionId === r.id ? 'Working…' : 'Reject'}
                           </button>
@@ -484,35 +484,35 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {editor && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit document' : 'Add document'}</h2>
-            <label className="block text-xs text-slate-500 mb-1">Title</label>
+            <label className="block text-xs text-dt-muted mb-1">Title</label>
             <input
               value={editor.title}
               onChange={e => setEditor({ ...editor, title: e.target.value })}
               placeholder="e.g. Refund policy"
-              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
-            <label className="block text-xs text-slate-500 mb-1">Content (plain text or Markdown)</label>
+            <label className="block text-xs text-dt-muted mb-1">Content (plain text or Markdown)</label>
             <textarea
               value={editor.content}
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
               placeholder="Paste the document content Alex should answer from…"
-              className="w-full mb-3 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
             />
-            <label className="block text-xs text-slate-500 mb-1">Tags (comma-separated, optional)</label>
+            <label className="block text-xs text-dt-muted mb-1">Tags (comma-separated, optional)</label>
             <input
               value={editor.tags}
               onChange={e => setEditor({ ...editor, tags: e.target.value })}
               placeholder="billing, refunds"
-              className="w-full mb-5 text-sm bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setEditor(null)}
                 disabled={saving}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong disabled:opacity-40 transition-colors"
               >
                 Cancel
               </button>
@@ -532,22 +532,22 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {scopeDoc && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !scopeSaving && setScopeDoc(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-1">Who can use this document?</h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-dt-muted mb-4">
               “{scopeDoc.title}” — by default every digital employee and specialist answers from it.
-              Select team members to limit it: <span className="text-slate-400">only selected team members
+              Select team members to limit it: <span className="text-dt-support">only selected team members
               will use this document when answering.</span> Leave everything unticked for everyone.
             </p>
             {subjects.length === 0 ? (
-              <p className="text-sm text-slate-500 mb-4">No digital employees or specialists in this workspace yet.</p>
+              <p className="text-sm text-dt-muted mb-4">No digital employees or specialists in this workspace yet.</p>
             ) : (
               <div className="max-h-64 overflow-y-auto mb-4 space-y-1">
                 {subjects.map(s => {
                   const k = skey(s);
                   const checked = scopeSel.has(k);
                   return (
-                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-700/60 cursor-pointer">
+                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-dt-panel/60 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -558,7 +558,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         })}
                         className="accent-indigo-500"
                       />
-                      <span className="text-sm text-slate-200">{s.name}</span>
+                      <span className="text-sm text-dt-body">{s.name}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ml-auto ${s.kind === 'de' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-teal-500/15 text-teal-300'}`}>
                         {s.kind === 'de' ? 'Digital Employee' : 'Specialist'}
                       </span>
@@ -567,14 +567,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 })}
               </div>
             )}
-            <p className="text-[11px] text-slate-600 mb-4">
+            <p className="text-[11px] text-dt-faint mb-4">
               Changes are enforced when answering (server-side) and recorded in the audit trail.
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setScopeDoc(null)}
                 disabled={scopeSaving}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 disabled:opacity-40 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong disabled:opacity-40 transition-colors"
               >
                 Cancel
               </button>
@@ -594,26 +594,26 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {gateConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setGateConfirm(null)}>
           <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-slate-800 border border-red-500/40 rounded-2xl p-6 shadow-2xl">
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-red-500/40 rounded-2xl p-6 shadow-2xl">
             <h2 className="text-lg font-semibold text-white mb-2">Publishing gated by the Proving Ground</h2>
-            <p className="text-sm text-slate-300 mb-1">
+            <p className="text-sm text-dt-support mb-1">
               Last eval run failed ({gateConfirm.gate.passed}/{gateConfirm.gate.total} passed). Publishing may worsen answers.
             </p>
-            <p className="text-xs text-slate-500 mb-5">
+            <p className="text-xs text-dt-muted mb-5">
               Publishing anyway is allowed but recorded in the audit trail. Recommended: review the failing questions first.
             </p>
             <div className="flex justify-end gap-2">
               {setPage && (
                 <button
                   onClick={() => { setGateConfirm(null); setPage('intelligence_evals'); }}
-                  className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors mr-auto"
+                  className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors mr-auto"
                 >
                   View Proving Ground
                 </button>
               )}
               <button
                 onClick={() => setGateConfirm(null)}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:border-slate-500 transition-colors"
+                className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
               >
                 Cancel
               </button>
