@@ -69,6 +69,16 @@ export class Db {
     if (error) throw new Error(`finish: ${error.message}`);
   }
 
+  /** Platform-vault config value (mig 087; service-role only). Lets the worker
+   * reuse the SAME provider key the edge functions use (aiKeys.ts pattern) —
+   * no local copy of the Anthropic key required. */
+  async platformConfig(key: string): Promise<string | null> {
+    const { data, error } = await this.sb.rpc('platform_config_get', { p_key: key });
+    if (error) return null;
+    const v = data as string | null;
+    return v && String(v).trim() ? String(v).trim() : null;
+  }
+
   /** UI-login secret for a domain (Vault-decrypted; mig 243). The model never
    * sees it — the worker types it. Secret is {"username","password"} JSON or a
    * bare password. Returns null if no login is configured for the domain. */

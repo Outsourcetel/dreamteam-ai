@@ -15,12 +15,21 @@ const num = (k: string, d: number): number => Number(process.env[k]) || d;
 
 async function main() {
   const url = env('SUPABASE_URL'); const key = env('SUPABASE_SERVICE_ROLE_KEY');
-  const anthropicKey = env('ANTHROPIC_API_KEY'); const model = env('ANTHROPIC_MODEL', 'claude-sonnet-5');
+  const model = env('ANTHROPIC_MODEL', 'claude-sonnet-5');
   const steelBase = env('STEEL_BASE_URL', 'http://localhost:3000'); const steelKey = env('STEEL_API_KEY');
   const runtimeName = env('RUNTIME_NAME', 'browser-operator-1');
-  if (!url || !key || !anthropicKey) { console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / ANTHROPIC_API_KEY'); process.exit(1); }
+  if (!url || !key) { console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY'); process.exit(1); }
 
   const db = new Db(url, key);
+
+  // Anthropic key: env wins; else the platform vault (mig 087) — the SAME key
+  // the edge functions use, so the worker needs only the service-role secret.
+  let anthropicKey = env('ANTHROPIC_API_KEY');
+  if (!anthropicKey) {
+    anthropicKey = (await db.platformConfig('ANTHROPIC_API_KEY')) ?? '';
+    if (anthropicKey) console.log('[browser-operator] ANTHROPIC_API_KEY resolved from platform vault');
+  }
+  if (!anthropicKey) { console.error('No ANTHROPIC_API_KEY in env or platform vault (platform_config)'); process.exit(1); }
   const steel = new Steel(steelBase, steelKey);
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
