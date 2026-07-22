@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Scrollbars that belong to the dark theme (Windows default chrome was
+   a bright 17px gutter carving up every panel). Thin + slate everywhere. ── */
+@layer base {
+  * {
+    scrollbar-width: thin;                    /* Firefox */
+    scrollbar-color: #334155 transparent;     /* slate-700 thumb */
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+  *::-webkit-scrollbar-thumb:hover { background: #475569; }
+  *::-webkit-scrollbar-corner { background: transparent; }
+}
+
+@layer utilities {
+  /* Scrollable rows (tab strips) that must never SHOW a scrollbar. */
+  .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}

@@ -513,7 +513,11 @@ function AppShell() {
             onLogout={handleLogout}
           />
         )}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        {/* THE scroll region. Pages are natural-height blocks that scroll here;
+            a page that needs a fixed viewport (e.g. the Support inbox panes)
+            opts out with its own flex-1 flex-col root. overflow-hidden here
+            clipped every natural-height page (hubs) with no way to scroll. */}
+        <main className="flex-1 flex flex-col overflow-y-auto">
           {godModeSession && (
             <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">

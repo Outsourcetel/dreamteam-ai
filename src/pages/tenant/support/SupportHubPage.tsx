@@ -20,7 +20,7 @@ const SupportHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => voi
       <p className="text-sm text-slate-400 mt-1 max-w-2xl">
         Your support operation in one place — live conversations first, the numbers and the rules behind them one tab away.
       </p>
-      <div className="flex gap-1 mt-5 border-b border-slate-700/60 overflow-x-auto">
+      <div className="flex gap-1 mt-5 border-b border-slate-700/60 overflow-x-auto scrollbar-none">
         {TABS.map(t => (
           <button key={t.page} onClick={() => setPage(t.page)}
             className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
