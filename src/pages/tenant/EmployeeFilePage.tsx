@@ -323,7 +323,6 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
 // zero per-vertical code — driven by the category-contract layer.
 const domainLabel = (c: string): string => CATEGORY_LABELS[c as SystemCategory] ?? c.replace(/_/g, ' ');
 const domainShort = (c: string): string => CATEGORY_SHORT[c as SystemCategory] ?? c.replace(/_/g, ' ');
-const CONVERSATIONAL = ['helpdesk', 'crm', 'product_system'];
 
 function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [role, setRole] = useState<RoleContext | null>(null);
@@ -342,7 +341,9 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
   const domains: string[] = (role?.archetype_categories?.length ? role.archetype_categories
     : role?.domains ?? []).filter(Boolean);
   const roleName = role?.archetype_name ?? role?.archetype_domain ?? role?.department ?? de.department ?? 'Generalist';
-  const isConversational = domains.some(d => CONVERSATIONAL.includes(d)) || (wp?.conversations.total ?? 0) > 0;
+  // Data-driven, not a hardcoded category list: this employee handles
+  // conversations iff it actually has any.
+  const isConversational = (wp?.conversations.total ?? 0) > 0;
 
   // Group the action work-product by domain category.
   const byCategory = new Map<string, WorkProduct['actions']>();
