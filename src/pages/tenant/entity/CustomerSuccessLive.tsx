@@ -12,6 +12,7 @@ import {
 } from '../../../lib/successApi';
 import type { HealthWeights, HealthThresholds, AccountSignals, HealthComponents } from '../../../lib/successApi';
 import { listDefinitions, startDefinitionRun } from '../../../lib/playbookBuilderApi';
+import { listAccountActivities, type AccountActivity } from '../../../lib/writeBackApi';
 import type { PlaybookDefinition } from '../../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import { getProjectForAccount } from '../../../lib/onboardingApi';
@@ -74,6 +75,9 @@ function AccountDrawer({ account, onClose, onChanged }: {
   account: CustomerAccount; onClose: () => void; onChanged: () => void;
 }) {
   const [signals, setSignals] = useState<AccountSignals | null>(null);
+  // W4-R (docs/16): mig-215's account timeline + next_step were written by
+  // the DE side but never rendered anywhere — the loop's proof was invisible.
+  const [accountActs, setAccountActs] = useState<AccountActivity[]>([]);
   const [onboarding, setOnboarding] = useState<OnboardingProject | null>(null);
   const [wonOpps, setWonOpps] = useState<PipelineOpportunity[]>([]);
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
@@ -92,6 +96,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
         try { setOnboarding(await getProjectForAccount(account.id)); } catch { /* noop */ }
         // best-effort: pipeline tables may not be provisioned yet (023)
         try { setWonOpps(await listWonOpportunitiesForAccount(account.id)); } catch { /* noop */ }
+        try { setAccountActs(await listAccountActivities(account.id, 12)); } catch { /* noop */ }
       } catch (e) { setErr((e as Error).message); }
     })();
   }, [account.id]);
@@ -182,6 +187,21 @@ function AccountDrawer({ account, onClose, onChanged }: {
                 </div>
               ))}
             </Section>
+            {((account.attributes as Record<string, unknown> | null)?.next_step || accountActs.length > 0) && (
+              <Section title="Employee write-backs">
+                {(account.attributes as Record<string, unknown> | null)?.next_step ? (
+                  <p className="text-xs py-1"><span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 mr-1.5">next step</span>
+                    <span className="text-dt-body">{String((account.attributes as Record<string, unknown>).next_step)}</span></p>
+                ) : null}
+                {accountActs.map(a => (
+                  <div key={a.id} className="text-xs py-1">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted mr-1.5">{a.kind.replace(/_/g, ' ')}</span>
+                    <span className="text-dt-support">{a.summary}</span>
+                    <span className="text-dt-faint ml-1.5">{new Date(a.created_at).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </Section>
+            )}
             <Section title="At-risk trigger fires">
               {signals.atRiskFires.length === 0 ? <Empty text="No event-trigger fires for this account." /> : signals.atRiskFires.map(f => (
                 <div key={f.id} className="flex items-center justify-between gap-2 text-xs py-1">

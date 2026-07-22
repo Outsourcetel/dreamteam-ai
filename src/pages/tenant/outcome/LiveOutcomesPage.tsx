@@ -141,14 +141,16 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
   const [guardrail, setGuardrail] = useState<DeGuardrailActivity[]>([]);
   const [evalFails, setEvalFails] = useState<RecentEvalFailure[]>([]);
   const [kpisByDe, setKpisByDe] = useState<Map<string, KpiStatusRow[]>>(new Map());
+  const [metering, setMetering] = useState<OutcomeMetering | null>(null);
   const [workload, setWorkload] = useState<{ salesPipeline: number; onboardingActive: number; supportTickets: number; atRiskAccounts: number; renewalsDue: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [d, p, c, co, g, ef, counts, econRes, healthRes] = await Promise.all([
+      const [d, om, p, c, co, g, ef, counts, econRes, healthRes] = await Promise.all([
         listDigitalEmployees().catch(() => [] as DigitalEmployee[]),
+        getOutcomeMetering(tenantId, 30).catch(() => null),
         getDePerformanceMetrics(tenantId),
         getDeCsatMetrics(tenantId),
         getDeCostMetrics(tenantId),
@@ -159,7 +161,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
         supabase.rpc('list_de_health', { p_tenant_id: tenantId }),
       ]);
       if (cancelled) return;
-      setDes(d); setPerf(p); setCsat(c); setCost(co); setGuardrail(g); setEvalFails(ef);
+      setDes(d); setMetering(om as OutcomeMetering | null); setPerf(p); setCsat(c); setCost(co); setGuardrail(g); setEvalFails(ef);
       setWorkload(counts);
       if (!econRes.error) setEcon(econRes.data as Economics);
       if (!healthRes.error) setHealth((healthRes.data ?? []) as DeHealthRow[]);
@@ -257,7 +259,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-dt-border text-left">
-                    {['Employee', 'Health', 'Decisions', 'Resolution', 'Confidence', 'CSAT', 'KPIs'].map(h => <th key={h} className={th}>{h}</th>)}
+                    {['Employee', 'Health', 'Decisions', 'Resolution', 'Confidence', 'CSAT', 'KPIs', 'Metered value'].map(h => <th key={h} className={th}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -270,7 +272,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
                     const judged = kpis.filter(k => k.met !== null).length;
                     return (
                       <tr key={de.id} className="border-b border-dt-border last:border-b-0">
-                        <td className={`${td} text-dt-body text-xs`}>{de.name}</td>
+                        <td className={`${td} text-dt-body text-xs`}>{de.persona_name ?? de.name}</td>
                         <td className={td}>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${HEALTH_STYLE[h?.state ?? ''] ?? 'bg-dt-panel text-dt-support'}`}>
                             {(h?.state ?? 'unknown').split('_').join(' ')}
@@ -283,6 +285,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
                         <td className={`${td} text-xs font-mono ${judged > 0 && met === judged ? 'text-emerald-300' : judged > 0 && met < judged ? 'text-amber-300' : 'text-dt-muted'}`}>
                           {kpis.length === 0 ? '—' : `${met}/${judged}${kpis.length > judged ? ` (+${kpis.length - judged} no data)` : ''}`}
                         </td>
+                        <td className={`${td} text-xs text-dt-support font-mono`}>{(() => { const b = metering?.by_de.find(x => x.de_id === de.id); return b && b.amount_cents > 0 ? `$${(b.amount_cents / 100).toFixed(2)}` : '—'; })()}</td>
                       </tr>
                     );
                   })}

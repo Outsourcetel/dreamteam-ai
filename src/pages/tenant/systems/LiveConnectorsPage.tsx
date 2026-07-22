@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../../../supabase';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import { CustomerApiError } from '../../../lib/customerApi';
 import {
@@ -629,6 +630,38 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
 
 export default function LiveConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
+  // W4-R: grants + DE names for the per-card access line (read-only view of
+  // the same default-deny matrix Governance → Data Access manages).
+  const [grants, setGrants] = useState<Array<{ subject_id: string; connector_id: string | null; resource_category: string | null; permission: string }>>([]);
+  const [deNames, setDeNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [{ data: g }, { data: d }] = await Promise.all([
+          supabase.from('data_access_grants').select('subject_id, connector_id, resource_category, permission'),
+          supabase.from('digital_employees').select('id, name, persona_name').eq('status', 'active'),
+        ]);
+        if (cancelled) return;
+        setGrants((g ?? []) as typeof grants);
+        setDeNames(new Map(((d ?? []) as Array<{ id: string; name: string; persona_name: string | null }>).map(x => [x.id, x.persona_name ?? x.name])));
+      } catch { /* grants line is best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const grantsFor = (c: Connector): Array<{ name: string; level: string }> => {
+    const byDe = new Map<string, string>();
+    for (const g of grants) {
+      const applies = g.connector_id === c.id || (!g.connector_id && g.resource_category === c.category);
+      if (!applies) continue;
+      const name = deNames.get(g.subject_id);
+      if (!name) continue;
+      const prev = byDe.get(name);
+      // connector-specific beats category; write_back beats read for display
+      if (!prev || g.connector_id === c.id || (g.permission === 'write_back' && prev !== 'write_back')) byDe.set(name, g.permission);
+    }
+    return [...byDe.entries()].map(([name, level]) => ({ name, level }));
+  };
   const [objects, setObjects] = useState<Record<string, ConnectorObject[]>>({});
   const [actions, setActions] = useState<Record<string, ConnectorAction[]>>({});
   const [loading, setLoading] = useState(true);
@@ -843,6 +876,17 @@ export default function LiveConnectorsPage() {
                       {healthBadge(c)}
                     </div>
                     <p className="text-xs text-dt-muted mt-1">{c.base_url} · last sync {fmtSince(c.last_sync_at)}</p>
+                    {/* W4-R (docs/16): a green "Connected" said nothing about which
+                        employee may actually USE the system — the default-deny
+                        grants were invisible in this module. */}
+                    <p className="text-[11px] mt-1">
+                      {(() => {
+                        const g = grantsFor(c);
+                        return g.length === 0
+                          ? <span className="text-amber-300/90">No employee has access to this system yet — grant it in Governance → Data Access.</span>
+                          : <span className="text-dt-muted">Employee access: {g.map(x => `${x.name} (${x.level.replace('_', '-')})`).join(' · ')}</span>;
+                      })()}
+                    </p>
                     {connectorHealth(c) !== 'healthy' && c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
                   </div>
                   <div className="flex gap-2 flex-wrap">

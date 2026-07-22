@@ -1,10 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { useDataMode } from '../../../lib/dataMode';
 import ImportCustomersModal from '../../../components/ImportCustomersModal';
 import { LiveEmptyState } from '../../../components/LiveDataStates';
+import { listActivity, type ActivityEvent } from '../../../lib/customerApi';
+
+// W4-R (docs/16): the live Overview was a dead shell — its activity panel
+// rendered a hardcoded empty state and never called listActivity.
+function LiveActivityFeed() {
+  const [events, setEvents] = useState<ActivityEvent[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void listActivity(15).then(e => { if (!cancelled) setEvents(e); }).catch(() => { if (!cancelled) setEvents([]); });
+    return () => { cancelled = true; };
+  }, []);
+  if (events === null) return <p className="text-xs text-dt-muted py-4">Loading activity…</p>;
+  if (events.length === 0) {
+    return <LiveEmptyState icon="◎" title="No activity yet" body="Activity across your customer stages will appear here as your Digital Employees work." />;
+  }
+  return (
+    <div className="space-y-2">
+      {events.map((e) => (
+        <div key={e.id} className={`border-l-2 pl-3 py-1 ${e.event_type === 'escalated' || e.event_type === 'error' ? 'border-amber-500/60' : e.event_type === 'resolved' || e.event_type === 'approval' ? 'border-emerald-500/60' : 'border-dt-border-strong'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 flex-1 min-w-0">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support flex-shrink-0 mt-0.5">{e.actor}</span>
+              <p className="text-xs text-dt-support leading-relaxed">{e.text}</p>
+            </div>
+            <span className="text-xs text-dt-faint flex-shrink-0">{new Date(e.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ── Seed data (reconciled with src/data/companies.ts) ──────────
 
@@ -192,9 +223,7 @@ const CustomerOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
       <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <h2 className="text-sm font-semibold text-white mb-4">Recent cross-stage activity</h2>
         <div className="space-y-2">
-          {dataMode === 'live' && (
-            <LiveEmptyState icon="◎" title="No activity yet" body="Activity across your customer stages will appear here as your Digital Employees work." />
-          )}
+          {dataMode === 'live' && <LiveActivityFeed />}
           {dataMode !== 'live' && activity.map((item, i) => (
             <div key={i} className={`border-l-2 pl-3 py-1 ${toneBorder(item.tone)}`}>
               <div className="flex items-start justify-between gap-2">
