@@ -1,4 +1,5 @@
 import type { Page } from '../../../types';
+import { InHubContext } from '../../../components/ui';
 import CompliancePage from './CompliancePage';
 import AuditTrailPage from './AuditTrailPage';
 import SecurityAccessPage from './SecurityAccessPage';
@@ -36,12 +37,14 @@ const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => 
         ))}
       </div>
     </div>
-    {tab === 'gov_compliance' && <CompliancePage setPage={setPage} />}
-    {tab === 'gov_audit' && <AuditTrailPage setPage={setPage} />}
-    {tab === 'gov_security' && <SecurityAccessPage />}
-    {tab === 'gov_data_access' && <DataAccessPage />}
-    {tab === 'gov_identity_inventory' && <IdentityInventoryPage />}
-    {tab === 'gov_trust' && <TrustArchitecturePage />}
+    <InHubContext.Provider value={true}>
+      {tab === 'gov_compliance' && <CompliancePage setPage={setPage} />}
+      {tab === 'gov_audit' && <AuditTrailPage setPage={setPage} />}
+      {tab === 'gov_security' && <SecurityAccessPage />}
+      {tab === 'gov_data_access' && <DataAccessPage />}
+      {tab === 'gov_identity_inventory' && <IdentityInventoryPage />}
+      {tab === 'gov_trust' && <TrustArchitecturePage />}
+    </InHubContext.Provider>
   </div>
 );
 

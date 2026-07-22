@@ -1,4 +1,5 @@
 import type { Page } from '../../types';
+import { InHubContext } from '../../components/ui';
 import WorkforceDEsPage from './WorkforceDEsPage';
 import DEActivityPage from './ops/DEActivityPage';
 import { PerformancePage } from './intelligence/IntelligencePages';
@@ -34,11 +35,13 @@ const WorkforceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
         ))}
       </div>
     </div>
-    {tab === 'workforce_des' && <WorkforceDEsPage setPage={setPage} />}
-    {tab === 'ops_de_activity' && <DEActivityPage setPage={setPage} />}
-    {tab === 'intelligence_performance' && <PerformancePage setPage={setPage} />}
-    {tab === 'intelligence_evals' && <ProvingGroundPage setPage={setPage} />}
-    {tab === 'intelligence_learning' && <SelfLearningPage setPage={setPage} />}
+    <InHubContext.Provider value={true}>
+      {tab === 'workforce_des' && <WorkforceDEsPage setPage={setPage} />}
+      {tab === 'ops_de_activity' && <DEActivityPage setPage={setPage} />}
+      {tab === 'intelligence_performance' && <PerformancePage setPage={setPage} />}
+      {tab === 'intelligence_evals' && <ProvingGroundPage setPage={setPage} />}
+      {tab === 'intelligence_learning' && <SelfLearningPage setPage={setPage} />}
+    </InHubContext.Provider>
   </div>
 );
 

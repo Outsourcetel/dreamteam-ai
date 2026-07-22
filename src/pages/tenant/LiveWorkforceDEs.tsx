@@ -3105,12 +3105,11 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
   if (!selectedDe) {
     return (
       <div className="flex-1 overflow-auto bg-slate-900 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Digital Employees</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            {liveTenantName || 'Your company'} · Click an employee to see their profile — trust dial, charter, performance, and more
-          </p>
-        </div>
+        {/* Rendered under the Workforce hub — the hub names the view, so
+            just the guidance line here (north-star polish pass). */}
+        <p className="text-slate-400 text-sm mb-5">
+          {liveTenantName || 'Your company'} · Click an employee to see their profile — trust dial, charter, performance, and more
+        </p>
         <div className="max-w-3xl">
           <RosterPanel onSelect={setSelectedDe} />
           <TeamsPanel />

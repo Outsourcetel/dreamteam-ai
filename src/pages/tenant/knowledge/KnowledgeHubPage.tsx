@@ -1,4 +1,5 @@
 import type { Page } from '../../../types';
+import { InHubContext } from '../../../components/ui';
 import KnowledgeLibraryPage from './KnowledgeLibraryPage';
 import KnowledgeIngestionPage from './KnowledgeIngestionPage';
 import KnowledgeGapsPage from './KnowledgeGapsPage';
@@ -31,10 +32,12 @@ const KnowledgeHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
         ))}
       </div>
     </div>
-    {tab === 'knowledge_library' && <KnowledgeLibraryPage setPage={setPage} />}
-    {tab === 'knowledge_ingestion' && <KnowledgeIngestionPage setPage={setPage} />}
-    {tab === 'knowledge_gaps' && <KnowledgeGapsPage setPage={setPage} />}
-    {tab === 'knowledge_quality' && <KnowledgeQualityPage />}
+    <InHubContext.Provider value={true}>
+      {tab === 'knowledge_library' && <KnowledgeLibraryPage setPage={setPage} />}
+      {tab === 'knowledge_ingestion' && <KnowledgeIngestionPage setPage={setPage} />}
+      {tab === 'knowledge_gaps' && <KnowledgeGapsPage setPage={setPage} />}
+      {tab === 'knowledge_quality' && <KnowledgeQualityPage />}
+    </InHubContext.Provider>
   </div>
 );
 
