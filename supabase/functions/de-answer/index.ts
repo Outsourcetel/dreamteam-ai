@@ -26,6 +26,7 @@ import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
+import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -342,6 +343,7 @@ serve(async (req) => {
     // and this path ran a hardcoded threshold.
     let confidenceFloor: number = ESCALATION_THRESHOLD;
     let escalationRuleHit: string | null = null;
+    let escRuleset: EscRuleset = {};   // mig 262: the generic condition ruleset
     try {
       const [dialRes, escRes, rowsRes] = await Promise.all([
         admin.rpc('resolve_de_autonomy', { p_tenant_id: tenantId, p_action_type: 'answer_dock', p_de_id: subjectDeId, p_source_category: null }),
@@ -352,16 +354,16 @@ serve(async (req) => {
       if (dial?.enabled === false) confidenceFloor = 101;                 // dial off → every answer goes to a human
       else if (typeof dial?.min_confidence === 'number') confidenceFloor = dial.min_confidence;
       const esc = Array.isArray(escRes.data) ? escRes.data[0] : escRes.data;
-      const qLower = String(question ?? '').toLowerCase();
-      const topics: string[] = (esc?.always_escalate_topics ?? []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean);
-      const topicHit = topics.find((t) => t && qLower.includes(t));
-      if (topicHit) escalationRuleHit = `always-escalate topic "${topicHit}"`;
-      if (!escalationRuleHit) {
-        const rows = (rowsRes.data ?? []).filter((r) => r.de_id === subjectDeId || r.de_id === null);
-        const rules = rows.flatMap((r) => Array.isArray(r.custom_rules) ? r.custom_rules : []);
-        const hit = rules.find((r: { when?: string; enabled?: boolean }) => r?.enabled !== false && r?.when && qLower.includes(String(r.when).toLowerCase()));
-        if (hit) escalationRuleHit = `rule "${(hit as { name?: string }).name ?? (hit as { when?: string }).when}"`;
-      }
+      const rows = (rowsRes.data ?? []).filter((r) => r.de_id === subjectDeId || r.de_id === null);
+      escRuleset = {
+        frustration_threshold: esc?.frustration_threshold ?? null,
+        always_escalate_topics: (esc?.always_escalate_topics ?? []) as string[],
+        de_rules: rows.filter((r) => r.de_id === subjectDeId).flatMap((r) => Array.isArray(r.custom_rules) ? r.custom_rules : []),
+        tenant_rules: rows.filter((r) => r.de_id === null).flatMap((r) => Array.isArray(r.custom_rules) ? r.custom_rules : []),
+      };
+      // Pre-answer: topics + text conditions (the message is all we have yet).
+      const pre = evaluateEscalation(escRuleset, { message_text: String(question ?? '') });
+      if (pre.escalate) escalationRuleHit = pre.rule ?? 'escalation rule';
     } catch { /* resolver hiccup → keep the prior default behavior */ }
 
     // ── Conversation (create if needed) + persist the user message ──
@@ -653,6 +655,12 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       });
     }
 
+    // Post-answer: re-evaluate now that confidence is known, so conditions on
+    // confidence/sentiment (not just text) can fire.
+    if (!escalationRuleHit) {
+      const post = evaluateEscalation(escRuleset, { message_text: String(question ?? ''), confidence: parsed.confidence });
+      if (post.escalate) escalationRuleHit = post.rule ?? 'escalation rule';
+    }
     let escalate = parsed.needs_escalation || parsed.confidence < confidenceFloor || escalationRuleHit !== null;
 
     // ── Pre-send Quality Auditor (opt-in per DE) ── an answer that WOULD be

@@ -27,6 +27,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
+import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -275,7 +276,7 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -284,6 +285,25 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
   // adds NO new reach; it drives the exact same Control Fabric path.
   const act = actionMap?.get(name);
   if (act) {
+    // Generic escalation conditions (mig 262), ACTION context: before running
+    // an action, test the DE's rules against action signals — amount (from a
+    // monetary param) and the action itself. A finance DE's "escalate if
+    // amount > 10000" fires HERE, routing to a human instead of executing.
+    // (destructive/trust/guardrail gating still happens in the action gate.)
+    if (escRuleset) {
+      const amt = Number(input.amount ?? input.total ?? input.value);
+      const actionCtx = { action: name, ...(Number.isFinite(amt) ? { amount: amt } : {}) };
+      const verdict = evaluateEscalation(escRuleset, actionCtx);
+      if (verdict.escalate) {
+        await admin.from('human_tasks').insert({
+          tenant_id: tenantId, de_id: deId, type: 'escalation', source: 'de', priority: 'high',
+          title: `Action held for approval — ${name}`,
+          detail: `The employee was about to "${name}" but an escalation rule matched (${verdict.reason ?? verdict.rule}). Review before it proceeds.`,
+          related_table: workItemId ? 'de_work_items' : null, related_id: workItemId ?? null,
+        });
+        return { result: { escalated: true, reason: verdict.rule }, escalated: true, done: true, summary: `Escalated before "${name}": ${verdict.rule}` };
+      }
+    }
     try {
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
         method: 'POST',
@@ -530,6 +550,8 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   const { data: actionRows } = await admin.rpc('get_agentic_tools_for_de', { p_tenant_id: tenantId, p_de_id: deId });
   const actionTools = (actionRows ?? []) as Array<{ name: string; description: string; input_schema: unknown; connector_id?: string; action_key?: string }>;
   const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
+  // Generic escalation ruleset (mig 262) — loaded once, evaluated per action.
+  const escRuleset = await loadEscalationRuleset(admin, tenantId, deId).catch(() => ({} as EscRuleset));
   // Mid-motion tools (EXEC 0.2/0.3/0.4): only offered when this work item is
   // part of a real case (and, for write-backs, an account case) — so the DE
   // itself decides "now I'll wait / write back / prepare a document", instead
@@ -628,7 +650,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
