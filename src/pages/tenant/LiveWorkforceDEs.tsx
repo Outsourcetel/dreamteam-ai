@@ -2925,29 +2925,17 @@ function TeamsPanel() {
   );
 }
 
-// The per-employee detail view groups ~20 panels under these sub-tabs so
-// it reads as a profile, not one endless scroll. Order = how you'd get to
-// know an employee: who they are → what they can do → how much you trust
-// them → how they're growing → the paper trail.
-const DETAIL_TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'workbench', label: 'Workbench' },
-  { key: 'capabilities', label: 'Capabilities' },
-  { key: 'trust', label: 'Trust & Autonomy' },
-  { key: 'development', label: 'Development' },
-  { key: 'governance', label: 'Governance' },
-] as const;
-// 'specialist' is appended at render time only for absorbed specialist DEs.
-type DetailTab = typeof DETAIL_TABS[number]['key'] | 'specialist';
+// ── ONE EMPLOYEE, ONE PAGE (founder structural fix 2026-07-22) ────────────
+// The old in-roster detail panel is gone: clicking an employee opens their
+// Employee File (/workforce/employee?de=…), the single profile. The panels
+// that lived here are exported below as DeProfileSections and rendered by
+// EmployeeFilePage — one Workbench, one profile, one naming convention.
 
-export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
-  const openFile = useOpenEmployeeFile(setPage);
-  const { liveTenantName } = useAuth();
-  const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
-  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
-  // Whether each action type's resolved value came from THIS employee's
-  // own override (true) or the workspace-wide default (false) — drives
-  // the "personal / workspace default" badge on the dial.
+/** Trust & Autonomy — lifecycle gate, per-action dial, earned ladder.
+ *  Extracted from the old detail panel with its state intact. */
+export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
+  de: DigitalEmployee; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
+}) {
   const [isPersonal, setIsPersonal] = useState<Record<string, boolean>>({});
   const [rows, setRows] = useState<Record<string, DEAutonomy>>({});
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
@@ -2958,7 +2946,6 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
-  // Earned trust
   const [policies, setPolicies] = useState<Record<string, TrustPolicy>>({});
   const [trustEvidence, setTrustEvidence] = useState<Record<string, TrustEvidence>>({});
   const [trustHistory, setTrustHistory] = useState<TrustHistoryEvent[]>([]);
@@ -2998,9 +2985,6 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
       const personal: Record<string, boolean> = {};
       ACTION_ORDER.forEach((t, idx) => {
         const r = resolved[idx];
-        // Synthesize a DEAutonomy-shaped row from the resolved values —
-        // the "id" is cosmetic here since resolution can fall through
-        // several tiers with no single backing row.
         byType[t] = {
           id: `resolved:${t}`, tenant_id: '', action_type: t, de_id: deId, source_category: null,
           enabled: r.enabled, max_amount_cents: r.max_amount_cents, min_confidence: r.min_confidence,
@@ -3023,10 +3007,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
     }
   }, [refreshTrust]);
 
-  useEffect(() => { if (selectedDe) void refresh(selectedDe.id); }, [selectedDe, refresh]);
-  // Reset to the first sub-tab only when a DIFFERENT employee is opened —
-  // not on same-employee saves (which replace selectedDe via onUpdated).
-  useEffect(() => { setDetailTab('overview'); }, [selectedDe?.id]);
+  useEffect(() => { void refresh(de.id); }, [de.id, refresh]);
 
   /** Does a dial setting exceed what's been EARNED for its category? */
   const exceedsEarned = useCallback((type: AutonomyActionType, enabled: boolean, maxCents: number | null, minConf: number | null): boolean => {
@@ -3056,7 +3037,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
 
   const save = async (type: AutonomyActionType) => {
     const d = drafts[type];
-    if (!d || !selectedDe) return;
+    if (!d) return;
     setSavingKey(type);
     setError(null);
     try {
@@ -3067,10 +3048,8 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
         min_confidence: meta.unit === 'confidence' && d.confidence.trim() !== ''
           ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
-      }, selectedDe.id);
+      }, de.id);
       setIsPersonal(prev => ({ ...prev, [type]: true }));
-      // Manual raise above the earned level → recorded as an override so
-      // the earned path stays the celebrated one (still guardrail-capped).
       if (exceedsEarned(type, row.enabled, row.max_amount_cents, row.min_confidence)) {
         try {
           await appendAuditEvent({
@@ -3100,378 +3079,301 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
     ? `${evidence.total} invoice approval${evidence.total === 1 ? '' : 's'} on record, ${evidence.approved} approved unchanged (${evidence.approvedPct}%)${evidence.approvedPct >= 80 ? ' — consider raising the limit' : ''}`
     : 'No invoice approvals on record yet — evidence accrues as the DE routes invoices through the human gate.';
 
-  if (!selectedDe) {
-    return (
-      <div className="p-6">
-        {/* Rendered under the Workforce hub — the hub names the view, so
-            just the guidance line here (north-star polish pass). */}
-        <p className="text-dt-support text-sm mb-5">
-          {liveTenantName || 'Your company'} · Click an employee to see their profile — trust dial, charter, performance, and more
-        </p>
-        <div className="max-w-3xl">
-          <RosterPanel onSelect={setSelectedDe} />
-          <TeamsPanel />
+  if (loading) return <LiveLoadingSkeleton rows={4} />;
+  if (missingTables) return <MissingTablesNotice />;
+
+  return (
+    <div className="space-y-6">
+      {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {/* Lifecycle — the governance gate (DE-B4) */}
+      <DeLifecyclePanel de={de} onUpdated={onUpdated} />
+
+      {/* Trust dial */}
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+        <div className="mb-1 flex items-center gap-2 flex-wrap">
+          <h3 className="text-base font-semibold text-white">Trust dial</h3>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
         </div>
+        <p className="text-[11px] text-dt-muted mb-2">
+          Personal to {de.persona_name || de.name} — set a value here and it applies to this employee only.
+          Leave a card at its workspace default and this employee follows the shared setting instead.
+        </p>
+        <p className="text-xs text-dt-muted mb-1">
+          Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
+          both the {thresholdCents !== null ? fmtMoneyK(thresholdCents) : 'guardrail'} approval threshold <em>and</em> the trust-dial limit.
+        </p>
+        <p className="text-xs text-dt-support mb-5">
+          Evidence: <span className="text-dt-support">{evidenceLine}</span>
+        </p>
+
+        <div className="space-y-4">
+          {ACTION_ORDER.map(type => {
+            const meta = AUTONOMY_ACTION_META[type];
+            const d = drafts[type] ?? { enabled: false, amount: '', confidence: '' };
+            return (
+              <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-dt-body font-medium">{meta.label}</span>
+                      {isPersonal[type] ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300" title="This value is set for this employee specifically.">
+                          Personal
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="No personal override — this employee follows the workspace-wide default.">
+                          Workspace default
+                        </span>
+                      )}
+                      {rows[type] && exceedsEarned(type, rows[type].enabled, rows[type].max_amount_cents, rows[type].min_confidence) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="This dial is set above the level the DE has earned from evidence. Still capped by guardrails.">
+                          Manual override
+                        </span>
+                      )}
+                      {meta.dormant && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="Stored now; enforced when the DE brain is activated (R1)">
+                          dormant until activation
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-dt-muted mt-1">{meta.description}</p>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={d.enabled}
+                      onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, enabled: e.target.checked } }))}
+                      className="accent-indigo-500"
+                    />
+                    <span className="text-xs text-dt-support">{d.enabled ? 'Enabled' : 'Off'}</span>
+                  </label>
+                </div>
+                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                  {meta.unit === 'amount' ? (
+                    <label className="flex items-center gap-2 text-xs text-dt-support">
+                      Max amount $
+                      <input
+                        type="number" min={0} value={d.amount} placeholder="e.g. 5000"
+                        onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, amount: e.target.value } }))}
+                        className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
+                      />
+                    </label>
+                  ) : (
+                    <label className="flex items-center gap-2 text-xs text-dt-support">
+                      Min confidence %
+                      <input
+                        type="number" min={0} max={100} value={d.confidence} placeholder="e.g. 75"
+                        onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, confidence: e.target.value } }))}
+                        className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
+                      />
+                    </label>
+                  )}
+                  <button
+                    onClick={() => void save(type)}
+                    disabled={savingKey !== null}
+                    className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all"
+                  >
+                    {savingKey === type ? 'Saving…' : savedKey === type ? 'Saved ✓' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="mt-4 text-[11px] text-dt-muted">
+          Every change is recorded as a config_change event on the immutable audit trail.{' '}
+          <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+            View Audit Trail →
+          </button>
+        </p>
+      </div>
+
+      {/* Earned Trust */}
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+        <div className="mb-1 flex items-center gap-2 flex-wrap">
+          <h3 className="text-base font-semibold text-white">Earned trust</h3>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
+        </div>
+        <p className="text-[11px] text-amber-400/80 mb-2">
+          The earned-progression ladder is still workspace-wide today, not yet per employee — the personal dial above can be set below or above it, but the ladder itself tracks evidence for the whole workspace.
+        </p>
+        <p className="text-xs text-dt-muted mb-5">
+          Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
+          A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
+        </p>
+
+        {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
+
+        <div className="space-y-4">
+          {ACTION_ORDER.map(type => {
+            const policy = policies[type];
+            const ev = trustEvidence[type];
+            if (!policy) return null;
+            const meta = AUTONOMY_ACTION_META[type];
+            return (
+              <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-dt-body font-medium">{meta.label}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
+                        {TRUST_LEVEL_LABELS[policy.current_level] ?? `Level ${policy.current_level}`}
+                      </span>
+                      {ev?.eligible && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Eligible for promotion</span>
+                      )}
+                      {policy.pending_task_id && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Awaiting approval</span>
+                      )}
+                    </div>
+                  </div>
+                  {ev && !ev.at_max_level && (
+                    <button
+                      onClick={() => void requestPromotion(policy)}
+                      disabled={!ev.eligible || requestingId !== null || policy.pending_task_id !== null}
+                      className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
+                      title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
+                    >
+                      {requestingId === policy.id ? 'Requesting…' : requestedId === policy.id ? 'Requested ✓' : `Request promotion to ${TRUST_LEVEL_LABELS[policy.target_level]}`}
+                    </button>
+                  )}
+                </div>
+
+                {ev ? (
+                  <div className="mt-3 space-y-2">
+                    {ev.criteria.map(c => {
+                      const pct = c.required > 0 ? Math.min(100, Math.round((Number(c.actual) / Number(c.required)) * 100)) : 100;
+                      const inverse = c.key === 'guardrail_blocks';
+                      return (
+                        <div key={c.key} className="flex items-center gap-3">
+                          <div className="w-44 flex-shrink-0 text-[11px] text-dt-support">{c.label}</div>
+                          <div className="flex-1 h-1.5 rounded-full bg-dt-panel overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                              style={{ width: `${inverse ? (c.met ? 100 : 100) : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
+                            />
+                          </div>
+                          <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-dt-muted'}`} title={c.detail}>
+                            {c.met ? '✓ ' : ''}{c.detail}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[11px] text-dt-muted">Evidence not available yet.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {trustHistory.length > 0 && (
+          <div className="mt-5">
+            <h4 className="text-xs font-semibold text-dt-support mb-2">Promotion history</h4>
+            <ul className="space-y-1.5">
+              {trustHistory.map(h => (
+                <li key={h.id} className="text-[11px] text-dt-muted flex items-start gap-2">
+                  <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    h.kind === 'trust_promoted' ? 'bg-emerald-500' :
+                    h.kind === 'trust_demoted' ? 'bg-rose-500' :
+                    h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
+                  }`} />
+                  <span className="flex-1">{h.action}</span>
+                  <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <p className="mt-4 text-[11px] text-dt-muted">
+          Evidence is computed on the server from the Proving Ground, human reviews, and the guardrail record — never asserted by the browser.
+          Promotions and demotions are recorded on the immutable audit trail.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** The merged profile sections consumed by EmployeeFilePage — the single
+ *  employee page. Keys mirror its tab keys. */
+export type DeProfileSectionKey = 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
+
+export function DeProfileSections({ de, section, setPage, onUpdated }: {
+  de: DigitalEmployee; section: DeProfileSectionKey; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
+}) {
+  if (section === 'profile') {
+    return (
+      <div className="space-y-6">
+        <EmployeeFileStrip de={de} />
+        <DeIdentityPanel de={de} onUpdated={onUpdated} />
+        <DeProfileFieldsPanel de={de} onUpdated={onUpdated} />
+        <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
       </div>
     );
   }
+  if (section === 'capabilities') {
+    return (
+      <div className="space-y-6">
+        <DeModelPanel de={de} onUpdated={onUpdated} />
+        <DeReplyModePanel de={de} onUpdated={onUpdated} />
+        <OperatingCharterPanel deId={de.id} setPage={setPage} />
+        <DeKnowledgeScopePanel deId={de.id} />
+        <DeSystemAccessPanel deId={de.id} setPage={setPage} />
+        <DeSpecialistsPanel deId={de.id} />
+        <DeEscalationPanel deId={de.id} />
+      </div>
+    );
+  }
+  if (section === 'trust') return <DeTrustAutonomySection de={de} setPage={setPage} onUpdated={onUpdated} />;
+  if (section === 'development') {
+    return (
+      <div className="space-y-6">
+        <DeSkillsPanel de={de} />
+        <DeKpisPanel de={de} />
+        <DeEconomicsPanel de={de} />
+        <DeCertificationsPanel de={de} />
+        <DeDevelopmentPanel de={de} />
+      </div>
+    );
+  }
+  if (section === 'governance') {
+    return (
+      <div className="space-y-6">
+        <ScopedGuardrails scope="employee" scopeRef={de.id} entityLabel={de.persona_name || de.name} />
+        <DeGovernancePanel de={de} onUpdated={onUpdated} />
+        <DeIncidentsPanel de={de} setPage={setPage} />
+      </div>
+    );
+  }
+  if (section === 'specialist') {
+    if (!de.is_specialist) return null;
+    return de.specialist_key
+      ? <SpecialistLive specialistKey={de.specialist_key} setPage={setPage} />
+      : <div className="rounded-2xl border border-dt-border bg-dt-card p-6 text-sm text-dt-support">
+          This specialist has no linked toolset key.
+        </div>;
+  }
+  return null;
+}
 
+export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
+  const openFile = useOpenEmployeeFile(setPage);
+  const { liveTenantName } = useAuth();
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <button onClick={() => setSelectedDe(null)} className="text-xs text-dt-support hover:text-dt-body mb-3 transition-colors">
-          ← All Digital Employees
-        </button>
-        <h1 className="text-2xl font-bold text-white">{selectedDe.persona_name || selectedDe.name}</h1>
-        <p className="text-dt-support text-sm mt-1">
-          {liveTenantName || 'Your company'} · {selectedDe.department || selectedDe.category}
-        </p>
+      {/* Rendered under the Workforce hub — the hub names the view. One
+          employee, one page: a click goes straight to the Employee File. */}
+      <p className="text-dt-support text-sm mb-5">
+        {liveTenantName || 'Your company'} · Click an employee to open their file — work, performance, setup and trust in one place
+      </p>
+      <div className="max-w-3xl">
+        <RosterPanel onSelect={de => openFile(de.id)} />
+        <TeamsPanel />
       </div>
-
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
-
-      {loading ? (
-        <LiveLoadingSkeleton rows={4} />
-      ) : missingTables ? (
-        <MissingTablesNotice />
-      ) : (
-        <div className="max-w-3xl space-y-6">
-          {/* DE card — real identity, not a hardcoded persona */}
-          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold text-xl">
-                {(selectedDe.persona_name || selectedDe.name).charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-base font-semibold text-white">{selectedDe.persona_name || selectedDe.name}</h2>
-                  {selectedDe.persona_name && <span className="text-xs text-dt-support">{selectedDe.name}</span>}
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-dt-panel text-dt-muted'}`}>{selectedDe.status}</span>
-                  <DeHealthInline deId={selectedDe.id} />
-                  <button onClick={() => openFile(selectedDe.id)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Employee File →</button>
-                </div>
-                <p className="text-xs text-dt-muted mt-0.5">
-                  {selectedDe.description || 'No description set yet.'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Employee File strip — the at-a-glance "this employee has a real
-              job": SOP, systems, objectives, trust (north-star legibility). */}
-          <EmployeeFileStrip de={selectedDe} />
-
-          {/* Sub-tab nav — groups the ~20 panels so this reads as a
-              profile, not one endless scroll. flex-wrap (not overflow) so
-              it never shows a horizontal scrollbar; on narrow screens the
-              tabs wrap to a second row instead. */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-dt-border">
-            {[...DETAIL_TABS, ...(selectedDe.is_specialist ? [{ key: 'specialist' as const, label: 'Specialist Tools' }] : [])].map(t => (
-              <button
-                key={t.key}
-                onClick={() => setDetailTab(t.key)}
-                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px transition-colors ${
-                  detailTab === t.key
-                    ? 'border-indigo-500 text-white bg-dt-card'
-                    : 'border-transparent text-dt-support hover:text-dt-body hover:bg-dt-panel'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Overview — who this employee is */}
-          {detailTab === 'overview' && (
-            <div className="space-y-6">
-              <DeIdentityPanel de={selectedDe} onUpdated={setSelectedDe} />
-              <DeProfileFieldsPanel de={selectedDe} onUpdated={setSelectedDe} />
-              {/* Availability — schedule with team/specialist coverage (DE-C4) */}
-              <DeAvailabilityPanel de={selectedDe} onUpdated={setSelectedDe} />
-              {/* Performance — real per-DE data */}
-              <DePerformancePanel deId={selectedDe.id} />
-            </div>
-          )}
-
-          {/* Workbench — the live muscles: memory, work queue, reasoning,
-              exceptions, certification, training, compliance (migs 155-163) */}
-          {detailTab === 'workbench' && (
-            <DeWorkbenchPanel deId={selectedDe.id} />
-          )}
-
-          {/* Specialist Tools — Wave 4. An absorbed specialist keeps its full
-              capability surface (sources, media, consult console, scribe
-              queue, evidence runs) — now reached HERE, inside the one
-              profile, instead of a separate desk. Reuses SpecialistLive
-              keyed by the DE's specialist_key. */}
-          {detailTab === 'specialist' && selectedDe.is_specialist && (
-            selectedDe.specialist_key
-              ? <SpecialistLive specialistKey={selectedDe.specialist_key} setPage={setPage} />
-              : <div className="rounded-2xl border border-dt-border bg-dt-card p-6 text-sm text-dt-support">
-                  This specialist has no linked toolset key.
-                </div>
-          )}
-
-          {/* Capabilities — what this employee can do and reach */}
-          {detailTab === 'capabilities' && (
-            <div className="space-y-6">
-              {/* AI Engine — per-employee model choice (Wave 1.2) */}
-              <DeModelPanel de={selectedDe} onUpdated={setSelectedDe} />
-              {/* Customer reply mode — draft vs auto-send for external chat */}
-              <DeReplyModePanel de={selectedDe} onUpdated={setSelectedDe} />
-              {/* DE operating charter */}
-              <OperatingCharterPanel deId={selectedDe.id} setPage={setPage} />
-              <DeKnowledgeScopePanel deId={selectedDe.id} />
-              {/* The DE-centered hub (2026-07-11 restructure): what this
-                  employee can touch (Control Fabric grants) and who it
-                  consults (primary/secondary specialists, migration 122) */}
-              <DeSystemAccessPanel deId={selectedDe.id} setPage={setPage} />
-              <DeSpecialistsPanel deId={selectedDe.id} />
-              <DeEscalationPanel deId={selectedDe.id} />
-            </div>
-          )}
-
-          {/* Development — how this employee is growing */}
-          {detailTab === 'development' && (
-            <div className="space-y-6">
-              <DeSkillsPanel de={selectedDe} />
-              <DeKpisPanel de={selectedDe} />
-              <DeEconomicsPanel de={selectedDe} />
-              <DeCertificationsPanel de={selectedDe} />
-              <DeDevelopmentPanel de={selectedDe} />
-            </div>
-          )}
-
-          {/* Governance — the paper trail, ownership and incidents */}
-          {detailTab === 'governance' && (
-            <div className="space-y-6">
-              {/* Governance rebuild: the SAME scoped guardrails control shown
-                  on the central Governance page, pre-scoped to this employee.
-                  A DE's own guardrails (plus inherited workspace ones) are
-                  finally visible and editable here, not only centrally. */}
-              <ScopedGuardrails scope="employee" scopeRef={selectedDe.id}
-                entityLabel={selectedDe.persona_name || selectedDe.name} />
-              {/* Governance — config editing/versioning, ownership/transfer, retirement */}
-              <DeGovernancePanel de={selectedDe} onUpdated={setSelectedDe} />
-              <DeIncidentsPanel de={selectedDe} setPage={setPage} />
-            </div>
-          )}
-
-          {/* Trust & Autonomy — lifecycle gate, per-action dial, earned ladder */}
-          {detailTab === 'trust' && (
-            <div className="space-y-6">
-              {/* Lifecycle — the governance gate (DE-B4) */}
-              <DeLifecyclePanel de={selectedDe} onUpdated={setSelectedDe} />
-
-          {/* Trust dial */}
-          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-            <div className="mb-1 flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-white">Trust dial</h3>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
-            </div>
-            <p className="text-[11px] text-dt-muted mb-2">
-              Personal to {selectedDe.persona_name || selectedDe.name} — set a value here and it applies to this employee only.
-              Leave a card at its workspace default and this employee follows the shared setting instead.
-            </p>
-            <p className="text-xs text-dt-muted mb-1">
-              Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
-              both the {thresholdCents !== null ? fmtMoneyK(thresholdCents) : 'guardrail'} approval threshold <em>and</em> the trust-dial limit.
-            </p>
-            <p className="text-xs text-dt-support mb-5">
-              Evidence: <span className="text-dt-support">{evidenceLine}</span>
-            </p>
-
-            <div className="space-y-4">
-              {ACTION_ORDER.map(type => {
-                const meta = AUTONOMY_ACTION_META[type];
-                const d = drafts[type] ?? { enabled: false, amount: '', confidence: '' };
-                return (
-                  <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-dt-body font-medium">{meta.label}</span>
-                          {isPersonal[type] ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300" title="This value is set for this employee specifically.">
-                              Personal
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="No personal override — this employee follows the workspace-wide default.">
-                              Workspace default
-                            </span>
-                          )}
-                          {rows[type] && exceedsEarned(type, rows[type].enabled, rows[type].max_amount_cents, rows[type].min_confidence) && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="This dial is set above the level the DE has earned from evidence. Still capped by guardrails.">
-                              Manual override
-                            </span>
-                          )}
-                          {meta.dormant && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="Stored now; enforced when the DE brain is activated (R1)">
-                              dormant until activation
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-dt-muted mt-1">{meta.description}</p>
-                      </div>
-                      <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-                        <input
-                          type="checkbox"
-                          checked={d.enabled}
-                          onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, enabled: e.target.checked } }))}
-                          className="accent-indigo-500"
-                        />
-                        <span className="text-xs text-dt-support">{d.enabled ? 'Enabled' : 'Off'}</span>
-                      </label>
-                    </div>
-                    <div className="mt-3 flex items-center gap-3 flex-wrap">
-                      {meta.unit === 'amount' ? (
-                        <label className="flex items-center gap-2 text-xs text-dt-support">
-                          Max amount $
-                          <input
-                            type="number" min={0} value={d.amount} placeholder="e.g. 5000"
-                            onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, amount: e.target.value } }))}
-                            className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
-                          />
-                        </label>
-                      ) : (
-                        <label className="flex items-center gap-2 text-xs text-dt-support">
-                          Min confidence %
-                          <input
-                            type="number" min={0} max={100} value={d.confidence} placeholder="e.g. 75"
-                            onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, confidence: e.target.value } }))}
-                            className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
-                          />
-                        </label>
-                      )}
-                      <button
-                        onClick={() => void save(type)}
-                        disabled={savingKey !== null}
-                        className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all"
-                      >
-                        {savingKey === type ? 'Saving…' : savedKey === type ? 'Saved ✓' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <p className="mt-4 text-[11px] text-dt-muted">
-              Every change is recorded as a config_change event on the immutable audit trail.{' '}
-              <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
-                View Audit Trail →
-              </button>
-            </p>
-          </div>
-
-          {/* Earned Trust */}
-          <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-            <div className="mb-1 flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-white">Earned trust</h3>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
-            </div>
-            <p className="text-[11px] text-amber-400/80 mb-2">
-              The earned-progression ladder is still workspace-wide today, not yet per employee — the personal dial above can be set below or above it, but the ladder itself tracks evidence for the whole workspace.
-            </p>
-            <p className="text-xs text-dt-muted mb-5">
-              Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
-              A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
-            </p>
-
-            {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
-
-            <div className="space-y-4">
-              {ACTION_ORDER.map(type => {
-                const policy = policies[type];
-                const ev = trustEvidence[type];
-                if (!policy) return null;
-                const meta = AUTONOMY_ACTION_META[type];
-                return (
-                  <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm text-dt-body font-medium">{meta.label}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
-                            {TRUST_LEVEL_LABELS[policy.current_level] ?? `Level ${policy.current_level}`}
-                          </span>
-                          {ev?.eligible && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Eligible for promotion</span>
-                          )}
-                          {policy.pending_task_id && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Awaiting approval</span>
-                          )}
-                        </div>
-                      </div>
-                      {ev && !ev.at_max_level && (
-                        <button
-                          onClick={() => void requestPromotion(policy)}
-                          disabled={!ev.eligible || requestingId !== null || policy.pending_task_id !== null}
-                          className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
-                          title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
-                        >
-                          {requestingId === policy.id ? 'Requesting…' : requestedId === policy.id ? 'Requested ✓' : `Request promotion to ${TRUST_LEVEL_LABELS[policy.target_level]}`}
-                        </button>
-                      )}
-                    </div>
-
-                    {ev ? (
-                      <div className="mt-3 space-y-2">
-                        {ev.criteria.map(c => {
-                          const pct = c.required > 0 ? Math.min(100, Math.round((Number(c.actual) / Number(c.required)) * 100)) : 100;
-                          const inverse = c.key === 'guardrail_blocks';
-                          return (
-                            <div key={c.key} className="flex items-center gap-3">
-                              <div className="w-44 flex-shrink-0 text-[11px] text-dt-support">{c.label}</div>
-                              <div className="flex-1 h-1.5 rounded-full bg-dt-panel overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
-                                  style={{ width: `${inverse ? (c.met ? 100 : 100) : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
-                                />
-                              </div>
-                              <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-dt-muted'}`} title={c.detail}>
-                                {c.met ? '✓ ' : ''}{c.detail}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-[11px] text-dt-muted">Evidence not available yet.</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {trustHistory.length > 0 && (
-              <div className="mt-5">
-                <h4 className="text-xs font-semibold text-dt-support mb-2">Promotion history</h4>
-                <ul className="space-y-1.5">
-                  {trustHistory.map(h => (
-                    <li key={h.id} className="text-[11px] text-dt-muted flex items-start gap-2">
-                      <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        h.kind === 'trust_promoted' ? 'bg-emerald-500' :
-                        h.kind === 'trust_demoted' ? 'bg-rose-500' :
-                        h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
-                      }`} />
-                      <span className="flex-1">{h.action}</span>
-                      <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <p className="mt-4 text-[11px] text-dt-muted">
-              Evidence is computed on the server from the Proving Ground, human reviews, and the guardrail record — never asserted by the browser.
-              Promotions and demotions are recorded on the immutable audit trail.
-            </p>
-          </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

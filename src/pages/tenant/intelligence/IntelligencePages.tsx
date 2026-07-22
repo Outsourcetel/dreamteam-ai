@@ -518,10 +518,10 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
               <div key={de.id} className="bg-dt-card border border-dt-border rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{de.name[0]}</span>
+                    <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{(de.persona_name ?? de.name)[0]}</span>
                     <div>
-                      <p className="text-sm font-semibold text-white">{de.name}</p>
-                      <p className="text-[11px] text-dt-muted">{de.description || de.category}</p>
+                      <p className="text-sm font-semibold text-white">{de.persona_name ?? de.name}</p>
+                      <p className="text-[11px] text-dt-muted">{de.persona_name ? de.name : (de.description || de.category)}</p>
                     </div>
                   </div>
                   <button onClick={() => openFile(de.id)} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Employee File →</button>
@@ -828,7 +828,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     return () => { cancelled = true; };
   }, [tenantId, range]);
 
-  const nameFor = (id: string) => des.find(d => d.id === id)?.name ?? 'A Digital Employee';
+  const nameFor = (id: string) => { const d = des.find(x => x.id === id); return d ? (d.persona_name ?? d.name) : 'A Digital Employee'; };
 
   // Practical, action-derived insights — each names a concrete next step.
   // FAILED ACTIONS = an operational alarm (usually a broken connector).

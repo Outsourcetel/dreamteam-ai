@@ -15,6 +15,7 @@ import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 import MissionPanel from '../../components/MissionPanel';
 import OperatingModelPanel from '../../components/OperatingModelPanel';
+import { DeProfileSections, type DeProfileSectionKey } from './LiveWorkforceDEs';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, type Tone,
 } from '../../design/primitives';
@@ -46,12 +47,21 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
   acted: { label: 'Acted', tone: 'ok' },
 };
 
-type FileTab = 'today' | 'operating' | 'performance' | 'workbench';
+// One employee, ONE page (founder structural fix 2026-07-22): the old
+// in-roster profile panel merged into this file — its sections render via
+// DeProfileSections so nothing exists in two places anymore.
+type FileTab = 'today' | 'operating' | 'performance' | 'workbench'
+  | 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'operating', label: 'How I operate' },
   { key: 'performance', label: 'Performance' },
   { key: 'workbench', label: 'Workbench' },
+  { key: 'profile', label: 'Profile' },
+  { key: 'capabilities', label: 'Capabilities' },
+  { key: 'trust', label: 'Trust & Autonomy' },
+  { key: 'development', label: 'Development' },
+  { key: 'governance', label: 'Governance' },
 ];
 
 // ── Today — what this employee is doing right now ─────────────────
@@ -269,6 +279,8 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [health, setHealth] = useState<DEHealth | null>(null);
   const [tab, setTab] = useState<FileTab>('today');
+  const onDeUpdated = (updated: DigitalEmployee) =>
+    setDes(prev => (prev ?? []).map(d => (d.id === updated.id ? updated : d)));
 
   useEffect(() => {
     let cancelled = false;
@@ -319,11 +331,12 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
           <Chip tone={STATUS_TONE[de.status] ?? 'neutral'} dot pulse={de.status === 'active'}>{de.status}</Chip>
           <Chip tone={TRUST_TONE[de.trust_level] ?? 'neutral'}>{de.trust_level}</Chip>
           {healthMeta && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${healthMeta.color}`}>{healthMeta.label}</span>}
-          <Button kind="secondary" size="sm" onClick={() => setPage('workforce_des')}>Configure in Roster</Button>
         </div>
       </div>
 
-      <TabBar tabs={FILE_TABS} active={tab} onSelect={(k: FileTab) => setTab(k)} />
+      <TabBar
+        tabs={de.is_specialist ? [...FILE_TABS, { key: 'specialist' as FileTab, label: 'Specialist Tools' }] : FILE_TABS}
+        active={tab} onSelect={(k: FileTab) => setTab(k)} />
 
       {tab === 'today' && <TodayTab de={de} setPage={setPage} />}
       {tab === 'operating' && <OperatingModelPanel de={de} />}
@@ -331,6 +344,9 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
       {tab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
+      {['profile', 'capabilities', 'trust', 'development', 'governance', 'specialist'].includes(tab) && (
+        <DeProfileSections de={de} section={tab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
+      )}
     </div>
   );
 }
