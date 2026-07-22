@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
 import type { Page } from '../../types';
+import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 import { CustomerApiError, fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
 import {
@@ -2829,7 +2830,7 @@ function TeamsPanel() {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mt-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Workforce Teams</h3>
+        <h3 className="text-base font-semibold text-white">Backup &amp; coverage — Workforce Teams</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">fallback chains</span>
         <button onClick={() => setShowCreate(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
@@ -2837,9 +2838,11 @@ function TeamsPanel() {
         </button>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
-        Within a team, the highest-ranked available employee owns each shared inbox; backups take
-        over automatically when it is paused or unavailable, and the specialist desk covers after
-        that. Teams never grant access — a backup still needs its own grant on the system it covers.
+        This answers one question: if an employee is paused, retired, or falls unhealthy, who picks
+        up its work? Within a team, the highest-ranked available employee owns each shared inbox;
+        backups take over automatically when it is paused or unavailable, and the specialist desk
+        covers after that. Teams never grant access — a backup still needs its own grant on the
+        system it covers. Optional: with one employee per function, you can ignore this entirely.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
@@ -2938,6 +2941,7 @@ const DETAIL_TABS = [
 type DetailTab = typeof DETAIL_TABS[number]['key'] | 'specialist';
 
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
+  const openFile = useOpenEmployeeFile(setPage);
   const { liveTenantName } = useAuth();
   const [selectedDe, setSelectedDe] = useState<DigitalEmployee | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('overview');
@@ -3144,6 +3148,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
                   {selectedDe.persona_name && <span className="text-xs text-dt-support">{selectedDe.name}</span>}
                   <span className={`text-xs px-2 py-0.5 rounded-full ${selectedDe.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-dt-panel text-dt-muted'}`}>{selectedDe.status}</span>
                   <DeHealthInline deId={selectedDe.id} />
+                  <button onClick={() => openFile(selectedDe.id)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Employee File →</button>
                 </div>
                 <p className="text-xs text-dt-muted mt-0.5">
                   {selectedDe.description || 'No description set yet.'}

@@ -33,6 +33,19 @@ export const getDeObjectives = async (deId: string): Promise<ObjectiveRow[]> => 
   return (data ?? []) as ObjectiveRow[];
 };
 
+// Tenant-wide "who is mid-task right now" for the Command Centre strip —
+// RLS scopes to the caller's tenant; de_id comes back so rows can group
+// per employee and link to each Employee File.
+export type ActiveWorkRow = WorkItemRow & { de_id: string };
+export const getActiveWorkAcrossDes = async (): Promise<ActiveWorkRow[]> => {
+  const { data, error } = await supabase.from('de_work_items')
+    .select('id, de_id, title, kind, status, scheduled_for, attempts, last_error, result, created_at')
+    .in('status', ['running', 'queued', 'waiting_human'])
+    .order('created_at', { ascending: false }).limit(100);
+  if (error) throw error;
+  return (data ?? []) as ActiveWorkRow[];
+};
+
 export const getDeWorkItems = async (deId: string): Promise<WorkItemRow[]> => {
   const { data, error } = await supabase.from('de_work_items')
     .select('id, title, kind, status, scheduled_for, attempts, last_error, result, created_at')

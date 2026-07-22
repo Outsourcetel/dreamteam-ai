@@ -36,6 +36,7 @@ import SupportHubPage from './pages/tenant/support/SupportHubPage';
 import BrowserOperatorPage from './pages/tenant/autonomy/BrowserOperatorPage';
 import { InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import WorkforceHubPage from './pages/tenant/WorkforceHubPage';
+import EmployeeFilePage from './pages/tenant/EmployeeFilePage';
 import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
@@ -109,6 +110,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   specialist_people:       '/specialist/people',
   // Workforce (DEs)
   workforce_des:       '/workforce/des',
+  workforce_de_file:   '/workforce/employee',
   workforce_chat:      '/workforce/chat',
   // Knowledge
   knowledge_library:   '/knowledge/library',
@@ -459,6 +461,8 @@ function AppShell() {
       case 'intelligence_evals':
       case 'intelligence_learning':
         return <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />;
+      case 'workforce_de_file':
+        return <EmployeeFilePage setPage={handleSetPage} />;
       case 'workforce_chat':
         return <WorkforceChatHubPage />;
       // ── Knowledge (one hub, four tabs — old URLs deep-link to tabs) ──

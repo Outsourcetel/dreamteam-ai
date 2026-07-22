@@ -16,6 +16,9 @@ import {
 } from '../../lib/customerApi';
 import type { CustomerAccount, SupportTicket, RenewalInvoice, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveErrorNotice } from '../../components/LiveDataStates';
+import { getActiveWorkAcrossDes, type ActiveWorkRow } from '../../lib/deWorkbenchApi';
+import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
+import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 
 // ── Health config ────────────────────────────────────────────────
 
@@ -299,6 +302,9 @@ function liveActivityAge(iso: string): string {
 function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName, currentTenant } = useAuth();
   const vocab = useVocabulary();
+  const openFile = useOpenEmployeeFile(setPage);
+  const [working, setWorking] = useState<ActiveWorkRow[]>([]);
+  const [workforce, setWorkforce] = useState<DigitalEmployee[]>([]);
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
@@ -336,6 +342,16 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
         if (!cancelled) setLoading(false);
       }
     })();
+    return () => { cancelled = true; };
+  }, [retryTick]);
+
+  // "Working now" strip — separate, best-effort load so a hiccup here can
+  // never take down the whole dashboard.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([getActiveWorkAcrossDes(), listDigitalEmployees()])
+      .then(([w, d]) => { if (!cancelled) { setWorking(w); setWorkforce(d); } })
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, [retryTick]);
 
@@ -392,6 +408,41 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                   tone={kpi.alert ? 'warn' : undefined} onClick={() => setPage(kpi.navPage)} />
               ))}
             </div>
+
+            {/* Working now — the live per-employee strip: who is mid-task,
+                one click into their Employee File (Phase B legibility). */}
+            <PanelCard title="Working now"
+              badge={working.length > 0 ? <Chip tone="info" dot pulse>{working.length} active</Chip> : undefined}
+              actions={<Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>At Work cockpit →</Button>}>
+              {working.length === 0 ? (
+                <p className="text-xs text-dt-muted">
+                  No employee is mid-task at this second. Watchers, playbook triggers, and the support inbox start work
+                  automatically — the moment something is running, it shows up here with a link to that employee's file.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {[...new Set(working.map(w => w.de_id))].map(deId => {
+                    const de = workforce.find(d => d.id === deId);
+                    const items = working.filter(w => w.de_id === deId);
+                    const running = items.filter(i => i.status === 'running').length;
+                    const waiting = items.filter(i => i.status === 'waiting_human').length;
+                    const name = de?.persona_name ?? de?.name ?? 'Employee';
+                    return (
+                      <button key={deId} onClick={() => openFile(deId)}
+                        className="text-left rounded-xl border border-dt-border bg-dt-page p-3 hover:border-dt-border-strong transition-colors">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="w-7 h-7 rounded-lg bg-dt-accent-soft flex items-center justify-center text-sm">{de?.icon ?? name.charAt(0)}</span>
+                          <span className="text-sm font-medium text-dt-title truncate">{name}</span>
+                          {running > 0 && <Chip tone="info" dot pulse>{running} running</Chip>}
+                          {waiting > 0 && <Chip tone="warn">{waiting} waiting on you</Chip>}
+                        </div>
+                        <p className="text-xs text-dt-support truncate">{items[0].title}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </PanelCard>
 
             {/* Customer entity card */}
             <div>

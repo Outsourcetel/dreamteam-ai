@@ -16,6 +16,7 @@ import {
   type OutcomeMetering, type BenchmarkReport,
 } from '../../../lib/api';
 import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
+import { useOpenEmployeeFile } from '../../../lib/employeeFileRoute';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ── Shared per-DE metrics (numbers from WorkforceDEsPage) ─────────
@@ -358,6 +359,7 @@ function StatTile({ label, value, sub, tone }: { label: string; value: string; s
 }
 
 function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
+  const openFile = useOpenEmployeeFile(setPage);
   const [des, setDes] = useState<DigitalEmployee[]>([]);
   const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]); // all-time — trend + frustration only
   const [inquiry, setInquiry] = useState<DeInquiryMetrics[]>([]);     // windowed counts + quality
@@ -522,7 +524,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                       <p className="text-[11px] text-dt-muted">{de.description || de.category}</p>
                     </div>
                   </div>
-                  <button onClick={() => setPage('workforce_des')} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Profile →</button>
+                  <button onClick={() => openFile(de.id)} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Employee File →</button>
                 </div>
 
                 {!hasActivity ? (
@@ -798,6 +800,7 @@ function DemoInsightsPage({ setPage }: { setPage: (p: Page) => void }) {
 // trend (no separate RPC needed). Config-drift + eval-failure: real
 // signals from migration 096, replacing invented narrative text.
 function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p: Page) => void }) {
+  const openFile = useOpenEmployeeFile(setPage);
   const [des, setDes] = useState<DigitalEmployee[]>([]);
   const [metrics, setMetrics] = useState<DePerformanceMetrics[]>([]);
   const [guardrails, setGuardrails] = useState<DeGuardrailActivity[]>([]);
@@ -968,7 +971,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
                 If your team keeps approving these, raise {b.name}'s trust dial to clear the queue — guardrails still cap what it can do.
               </p>
-              <button onClick={() => setPage('workforce_des')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open Digital Employees →</button>
+              <button onClick={() => openFile(b.de_id)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open {b.name}'s Employee File →</button>
             </div>
           ))}
 
