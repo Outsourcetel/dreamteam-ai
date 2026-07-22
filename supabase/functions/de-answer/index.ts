@@ -783,6 +783,25 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         text: `Chat question escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
+      // W4-D (docs/16, mig 252): a live-channel miss with no knowledge
+      // grounding now feeds the self-healing loop — a minimal evidence row
+      // makes this question clusterable by the gap detector, which was
+      // previously blind to chat entirely.
+      if (parsed.sources.length === 0) {
+        try {
+          const { data: er } = await admin.from('evidence_runs').insert({
+            tenant_id: tenantId, de_id: subjectDeId, inquiry: question.slice(0, 2000),
+            status: 'complete', steps: [], answer_status: 'answered',
+            confidence_inputs: { knowledge_hits: 0 },
+          }).select('id').single();
+          if (er?.id) {
+            await admin.from('evidence_run_decisions').insert({
+              tenant_id: tenantId, evidence_run_id: er.id, source: 'live_channel',
+              decision: 'needs_review', confidence: parsed.confidence, source_category: 'support',
+            });
+          }
+        } catch (e) { console.error('gap bridge (chat):', e); }
+      }
       await auditEvent(admin, tenantId, persona.name, 'de',
         `Chat question escalated to human review — "${truncated}"`,
         'escalated', { confidence: parsed.confidence, conversation_id: convId });

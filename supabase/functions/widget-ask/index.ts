@@ -432,6 +432,23 @@ serve(async (req) => {
         await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de', title: `${(lowConf || escalationRuleHit) ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
         await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${(lowConf || escalationRuleHit) ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
         await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${escalationRuleHit ? `escalated (${escalationRuleHit})` : lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
+        // W4-D (docs/16, mig 252): a widget miss with no knowledge grounding
+        // now feeds the self-healing gap loop (previously blind to this channel).
+        if (lowConf && srcs.length === 0) {
+          try {
+            const { data: er } = await admin.from('evidence_runs').insert({
+              tenant_id: tenantId, de_id: subjectDeId, inquiry: String(question ?? '').slice(0, 2000),
+              status: 'complete', steps: [], answer_status: 'answered',
+              confidence_inputs: { knowledge_hits: 0 },
+            }).select('id').single();
+            if (er?.id) {
+              await admin.from('evidence_run_decisions').insert({
+                tenant_id: tenantId, evidence_run_id: er.id, source: 'live_channel',
+                decision: 'needs_review', confidence: conf, source_category: 'support',
+              });
+            }
+          } catch (e) { console.error('gap bridge (widget):', e); }
+        }
         // Outcome metering (#15): human takes over — FREE.
         if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         // The customer sees a holding message — never the un-approved draft.

@@ -410,13 +410,13 @@ export async function setDefinitionDeBinding(definitionId: string, deId: string 
 }
 
 export async function createDefinition(input: {
-  key: string; name: string; description: string; steps: DefinitionStep[];
+  key: string; name: string; description: string; steps: DefinitionStep[]; de_id?: string | null;
 }): Promise<PlaybookDefinition> {
   const tid = await requireTenantId();
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('playbook_definitions')
-    .insert({ tenant_id: tid, key: input.key, name: input.name, description: input.description, steps: input.steps, created_by: user?.id ?? null })
+    .insert({ tenant_id: tid, key: input.key, name: input.name, description: input.description, steps: input.steps, de_id: input.de_id ?? null, created_by: user?.id ?? null })
     .select().single();
   if (error) raise('createDefinition', error);
   const { appendAuditEvent } = await import('./guardrailApi');
@@ -431,7 +431,7 @@ export async function createDefinition(input: {
 
 export async function updateDefinition(
   id: string,
-  updates: Partial<Pick<PlaybookDefinition, 'name' | 'description' | 'steps' | 'status'>>,
+  updates: Partial<Pick<PlaybookDefinition, 'name' | 'description' | 'steps' | 'status' | 'de_id'>>,
 ): Promise<PlaybookDefinition> {
   const { data, error } = await supabase
     .from('playbook_definitions').update(updates).eq('id', id).select().single();

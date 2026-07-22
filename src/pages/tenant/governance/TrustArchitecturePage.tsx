@@ -97,7 +97,7 @@ const LIMITATIONS: [string, string, string][] = [
   ['Eval publish gate', 'Client-side, soft — override is audited', 'Server-side hard gate in the ingest path'],
   ['Penetration test', 'Not yet performed', 'Before first tenant at real production volume'],
   ['SOC 2', 'Not started', 'Roadmap — the audit chain and this page are the groundwork'],
-  ['RBAC enforcement', 'Roles exist; permission matrix not enforced server-side', 'Per-role policy enforcement'],
+  ['RBAC enforcement', 'Role-gated RLS live for admin/manage page tiers + write policies; the displayed matrix is a description of those server gates, not per-tenant configurable', 'Custom per-tenant roles'],
   ['SSO / SAML, SCIM', 'Not built', 'Enterprise tier trigger'],
   ['LLM activation', 'Pipeline deployed dormant (no ANTHROPIC_API_KEY set)', 'R1 activation + full end-to-end re-test'],
 ]
@@ -127,13 +127,13 @@ AI SAFETY CONTROLS
 Grounded-only answering, confidence + escalation, guardrail answer checks (pattern v1): Live (pending activation). Invoice-threshold guardrails: Live and active now. Proving Ground eval suites with soft, audited publish gate: Live (pending activation). Trust dial (autonomy narrows within guardrails, never overrides them): Live in the invoice/playbook path; answer-confidence floors Designed until activation. Server-side playbook executor with immutable published definitions: Live.
 
 IDENTITY & ACCESS
-Supabase Auth seats + tenant mapping: Live. RBAC matrix / session policy / IP allowlist UI: design-preview, not enforced server-side. SSO/SAML + SCIM: Roadmap. Widget keys sha256-hashed at rest, plaintext shown once: Live. Signed tenant-issued end-user JWTs: Roadmap.
+Supabase Auth seats + tenant mapping: Live. Session policy (timeout + MFA-require): LIVE + enforced. API keys: LIVE (consumed by a2a + emit-event). IP allowlist: LIVE data, app-signout enforcement only — not a network perimeter. SSO/SAML + SCIM: Roadmap. Widget keys sha256-hashed at rest, plaintext shown once: Live. Signed tenant-issued end-user JWTs: Roadmap.
 
 SUBPROCESSORS
 Supabase (US) — all tenant data. Vercel — no tenant data at rest. Anthropic — knowledge chunks + question per request. GitHub — no tenant data. Residency: single US region v1; region selection Roadmap.
 
 KNOWN LIMITATIONS (stated deliberately)
-In-memory widget rate limiting; connector secrets pending Vault/KMS; pattern-match guardrails; client-side soft eval gate; no pen test yet; no SOC 2 yet; RBAC not enforced server-side; SSO/SCIM not built; LLM pipeline dormant until key. Real customer data is supported only in the live, RLS-backed production track — never in demo surfaces.`
+In-memory widget rate limiting; connector secrets pending Vault/KMS; pattern-match guardrails; client-side soft eval gate; no pen test yet; no SOC 2 yet; SSO/SCIM not built; LLM pipeline dormant until key. Real customer data is supported only in the live, RLS-backed production track — never in demo surfaces.`
 
 export default function TrustArchitecturePage() {
   const { handleSetPage } = useAuth()
@@ -311,7 +311,7 @@ export default function TrustArchitecturePage() {
                 Email/password auth with per-user tenant mapping (profiles). Roles: owner / admin / manager / user.
               </Row>
               <Row label="RBAC matrix, session policy, IP allowlist" status="designed">
-                Surfaced on Security &amp; Access; honest note: currently design-preview (demo data, local persistence), not enforced server-side.
+                Surfaced on Security &amp; Access; session policy + API keys + IP allowlist are live server tables (migs 090-092); IP enforcement is app-signout only (honest scope on the panel).
               </Row>
               <Row label="Widget keys hashed at rest" status="live">
                 Publishable keys stored as sha256 hashes only — plaintext shown once at generation, never stored (migration 014).

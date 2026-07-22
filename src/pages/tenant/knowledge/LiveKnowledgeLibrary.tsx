@@ -274,7 +274,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   if (missingTables) {
     return (
       <div className="p-6">
-        <PageHeader title="Knowledge Library" subtitle="The documents Alex answers from." />
+        <PageHeader title="Knowledge Library" subtitle="The documents your digital employees answer from." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
           <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
           <p className="text-xs text-dt-support">
@@ -289,7 +289,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
   return (
     <div className="p-6">
-      <PageHeader title="Knowledge Library" subtitle="These documents are the only thing Alex answers from — keep them current." />
+      <PageHeader title="Knowledge Library" subtitle="These documents are the only thing your digital employees answer from — keep them current." />
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
@@ -498,7 +498,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               value={editor.content}
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
-              placeholder="Paste the document content Alex should answer from…"
+              placeholder="Paste the document content your employees should answer from…"
               className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
             />
             <label className="block text-xs text-dt-muted mb-1">Tags (comma-separated, optional)</label>

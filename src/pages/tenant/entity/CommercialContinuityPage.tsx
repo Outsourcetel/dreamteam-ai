@@ -3,12 +3,13 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import {
   listAgreements, listContinuityCases, listStages, listCaseEvents, proposeContinuityWriteback,
-  fmtMoneyK, motionLabel, daysUntil, CustomerApiError,
+  upsertAgreement, fmtMoneyK, motionLabel, daysUntil, CustomerApiError,
 } from '../../../lib/continuityApi';
 import type {
   CommercialAgreement, ContinuityCase, ContinuityStage, ContinuityCaseEvent,
 } from '../../../lib/continuityApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+import { Modal as DtModal } from '../../../design/primitives';
 
 // ============================================================
 // Commercial Continuity — the renewal EMPLOYEE's full desk (EXEC-2c).
@@ -40,6 +41,74 @@ function StatCard({ label, value, sub, color = 'text-white' }: { label: string; 
       <p className={`text-xl font-bold ${color}`}>{value}</p>
       {sub && <p className="text-xs text-dt-muted mt-0.5">{sub}</p>}
     </div>
+  );
+}
+
+// ── Add agreement — the W4-B entry path (docs/16 gap #1: agreements were
+// seed-only, leaving this whole module permanently empty for new tenants).
+function AddAgreementDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({
+    title: '', counterparty_name: '', party_side: 'sell' as 'sell' | 'buy',
+    agreement_type: 'subscription', value: '', auto_renew: false,
+    start_date: '', end_date: '', renewal_date: '', notice_deadline: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const inp = 'w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body';
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await upsertAgreement({
+        title: f.title.trim(), counterparty_name: f.counterparty_name.trim(),
+        party_side: f.party_side, agreement_type: f.agreement_type,
+        baseline_value_cents: f.value.trim() ? Math.round(Number(f.value) * 100) : null,
+        auto_renew: f.auto_renew,
+        start_date: f.start_date || null, end_date: f.end_date || null,
+        renewal_date: f.renewal_date || null, notice_deadline: f.notice_deadline || null,
+      });
+      onSaved();
+    } catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  };
+  return (
+    <DtModal title="Add a commercial agreement" onClose={onClose}>
+        <div className="space-y-3">
+          <input className={inp} placeholder="Title — e.g. Acme annual subscription" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} />
+          <input className={inp} placeholder="Counterparty — the customer or vendor name" value={f.counterparty_name} onChange={e => setF({ ...f, counterparty_name: e.target.value })} />
+          <div className="grid grid-cols-2 gap-3">
+            <select className={inp} value={f.party_side} onChange={e => setF({ ...f, party_side: e.target.value as 'sell' | 'buy' })}>
+              <option value="sell">We sell (customer agreement)</option>
+              <option value="buy">We buy (vendor agreement)</option>
+            </select>
+            <select className={inp} value={f.agreement_type} onChange={e => setF({ ...f, agreement_type: e.target.value })}>
+              {['subscription', 'maintenance', 'managed_service', 'retainer', 'staff_aug', 'sow', 'purchase', 'lease', 'rental', 'license', 'warranty', 'supplier_contract', 'other']
+                .map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <input className={inp} type="number" placeholder="Annual value $ (optional)" value={f.value} onChange={e => setF({ ...f, value: e.target.value })} />
+            <label className="flex items-center gap-2 text-xs text-dt-support px-1">
+              <input type="checkbox" checked={f.auto_renew} onChange={e => setF({ ...f, auto_renew: e.target.checked })} className="accent-indigo-500" />
+              Auto-renews
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-[11px] text-dt-muted">Start<input className={inp} type="date" value={f.start_date} onChange={e => setF({ ...f, start_date: e.target.value })} /></label>
+            <label className="text-[11px] text-dt-muted">End<input className={inp} type="date" value={f.end_date} onChange={e => setF({ ...f, end_date: e.target.value })} /></label>
+            <label className="text-[11px] text-dt-muted">Renewal date<input className={inp} type="date" value={f.renewal_date} onChange={e => setF({ ...f, renewal_date: e.target.value })} /></label>
+            <label className="text-[11px] text-dt-muted">Notice deadline<input className={inp} type="date" value={f.notice_deadline} onChange={e => setF({ ...f, notice_deadline: e.target.value })} /></label>
+          </div>
+          <p className="text-[11px] text-dt-muted">Dates are never inferred from each other — the employee only acts on the dates you set. The watcher opens a case as each one approaches.</p>
+          {err && <p className="text-xs text-rose-300">{err}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
+            <button onClick={() => void save()} disabled={busy || !f.title.trim() || !f.counterparty_name.trim()}
+              className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+              {busy ? 'Saving…' : 'Add agreement'}
+            </button>
+          </div>
+        </div>
+    </DtModal>
   );
 }
 
@@ -187,6 +256,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
   const [selected, setSelected] = useState<ContinuityCase | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<'renewal_date' | 'notice_deadline' | 'baseline_value_cents'>('renewal_date');
+  const [showAddAgreement, setShowAddAgreement] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const notify = (msg: string) => {
@@ -236,12 +306,19 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Commercial Continuity</h1>
-        <p className="text-dt-support text-sm mt-1">
-          {liveTenantName || 'Your company'} · One employee working every motion — renewals, reorders, warranties and vendor contracts — off each agreement's own dates. Money and stage changes are always human-gated.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Commercial Continuity</h1>
+          <p className="text-dt-support text-sm mt-1">
+            {liveTenantName || 'Your company'} · One employee working every motion — renewals, reorders, warranties and vendor contracts — off each agreement's own dates. Money and stage changes are always human-gated.
+          </p>
+        </div>
+        <button onClick={() => setShowAddAgreement(true)}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shrink-0">
+          + Add agreement
+        </button>
       </div>
+      {showAddAgreement && <AddAgreementDialog onClose={() => setShowAddAgreement(false)} onSaved={() => { setShowAddAgreement(false); void refresh(); }} />}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-dt-border">
@@ -264,8 +341,8 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
           icon="⟳"
           title="No commercial agreements yet"
           body="Add agreements (customer or vendor) with their renewal, notice, warranty or reorder dates. The renewal employee opens a case with the right motion as each date approaches."
-          primaryLabel="Go to Renewal & Expansion"
-          onPrimary={() => setPage('entity_customer_renewal')}
+          primaryLabel="+ Add your first agreement"
+          onPrimary={() => setShowAddAgreement(true)}
         />
       ) : (
         <>

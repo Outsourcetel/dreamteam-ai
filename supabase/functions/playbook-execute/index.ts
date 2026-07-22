@@ -1860,8 +1860,22 @@ async function executeDefinitionSteps(
             await saveRun(admin, run); await stepAudit(i, { child_error: childResult.error });
             return { status: 'failed' };
           }
+          // W4-A (docs/16): the parent no longer records "done" blindly — a
+          // child that ran and FAILED fails this step (and the run); a child
+          // parked at its own approval gate is recorded honestly as waiting.
+          if (childResult.status === 'failed') {
+            step.status = 'failed'; step.at = now();
+            step.detail = `Child playbook run failed — ${childResult.run_id}`;
+            step.output = { child_run_id: childResult.run_id, child_status: childResult.status };
+            run.status = 'failed';
+            await saveRun(admin, run); await stepAudit(i, { child_run_id: childResult.run_id, child_status: childResult.status });
+            return { status: 'failed' };
+          }
+          const childParked = ['waiting_approval', 'waiting_gate', 'waiting'].some((s) => String(childResult.status ?? '').startsWith(s));
           step.status = 'done'; step.at = now();
-          step.detail = `Child run started (${childResult.status}) — ${childResult.run_id}`;
+          step.detail = childParked
+            ? `Child run started and is waiting on a human (${childResult.status}) — ${childResult.run_id}. This parent continued; check the child's own timeline.`
+            : `Child run started (${childResult.status}) — ${childResult.run_id}`;
           step.output = { child_run_id: childResult.run_id, child_status: childResult.status };
           await stepAudit(i, { child_run_id: childResult.run_id, child_status: childResult.status });
           await saveRun(admin, run);

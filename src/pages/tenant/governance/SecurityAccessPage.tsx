@@ -44,7 +44,11 @@ const PERMISSION_AREAS = Array.from(
 )
 const ALL_ROLES = Object.keys(ROLE_LABELS) as TenantRole[]
 
-const API_KEY_SCOPES = ['read:analytics', 'read:knowledge', 'read:conversations', 'write:knowledge'] as const
+// W4-A (docs/16): the old scopes (read:analytics etc.) were DECORATIVE — no
+// endpoint honored them, and the one scope-checking consumer (a2a) rejected
+// any key carrying them. These are the scopes the platform actually checks;
+// an empty selection mints an unrestricted key.
+const API_KEY_SCOPES = ['a2a.message', 'a2a.*'] as const
 
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -368,7 +372,7 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
         <div>
           <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">IP Allowlist</p>
           <p className="text-xs text-dt-muted mt-1">
-            Restrict sign-in to approved network ranges — checked once per session, not on every request.
+            Restrict app sign-in to approved network ranges. Honest scope (docs/16): this signs the browser app out — it is not a network firewall, and API keys or direct calls are not blocked by it.
           </p>
         </div>
         <Toggle enabled={enabled} onChange={handleToggle} />

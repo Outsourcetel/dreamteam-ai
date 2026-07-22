@@ -139,6 +139,9 @@ export interface ActivityEvent {
   text: string;
   confidence: number | null;
   created_at: string;
+  /** W4-A (docs/16): account scoping — without it, renewal/approval events
+   *  never reached the account drawer or the health recency component. */
+  account_id?: string | null;
 }
 
 // ── Errors ────────────────────────────────────────────────────────
@@ -392,6 +395,7 @@ export async function generateInvoice(
   await logActivity({
     actor: 'Renewal DE',
     actor_type: 'de',
+    account_id: account.id,
     event_type: gated ? 'escalated' : 'resolved',
     text: gated
       ? `Renewal invoice for ${account.name} (${fmtMoney(account.arr_cents)}) requires human approval — ${guardrailAllows ? 'trust dial gate' : `exceeds the ${fmtMoney(thresholdCents)} threshold`}`

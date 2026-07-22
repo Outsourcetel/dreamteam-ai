@@ -1,9 +1,10 @@
 /**
  * connector-hub — multi-system SoR connector layer (migration 026).
  *
- * Generalizes the connector-zendesk pattern to six providers behind one
- * adapter interface: zendesk, salesforce, confluence, jira, intercom,
- * generic_rest (+ sharepoint registered honestly as not_implemented).
+ * Generalizes the connector-zendesk pattern behind one adapter interface.
+ * As of 2026-07-22 (W4-A header correction, docs/16) the registry holds
+ * ~68 native adapters + category-op translators + generic_rest + template
+ * adapters — every user-selectable provider has real HTTP-calling code.
  *
  * Actions:
  *   test          — credential/reachability check; sets connector status
@@ -64,11 +65,12 @@
  * sync → 'ingest'. Denials return structured `access_denied` and are
  * audited (data_access_denied). Human wizard calls carry no subject.
  *
- * HONESTY NOTES: salesforce/confluence/jira/intercom adapters are shaped
- * to the providers' documented REST APIs but remain unverified against
- * live instances until real tenant credentials exist. sharepoint returns
- * a structured not_implemented. generic_rest is fully proven against a
- * real external HTTP API.
+ * HONESTY NOTES (corrected 2026-07-22): every adapter is shaped to its
+ * provider's documented REST API, but MOST remain unverified against live
+ * instances until real tenant credentials exist — "implemented" means the
+ * code path is real, not that it has been proven on a live account.
+ * Verified live so far: zendesk, generic_rest. sharepoint HAS a full
+ * Graph adapter (an older note here claimed otherwise).
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';

@@ -137,6 +137,29 @@ async function requireTenantId(): Promise<string> {
 }
 
 // ── Agreements ───────────────────────────────────────────────────────
+// W4-B (docs/16): the missing entry path — agreements were seed-only before.
+export async function upsertAgreement(input: {
+  id?: string | null; title: string; counterparty_name: string; account_id?: string | null;
+  party_side?: 'sell' | 'buy'; agreement_type?: string; status?: string;
+  baseline_value_cents?: number | null; auto_renew?: boolean; notice_period_days?: number | null;
+  start_date?: string | null; end_date?: string | null; renewal_date?: string | null; notice_deadline?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('upsert_commercial_agreement', {
+    p_id: input.id ?? null, p_title: input.title, p_counterparty_name: input.counterparty_name,
+    p_account_id: input.account_id ?? null, p_party_side: input.party_side ?? 'sell',
+    p_agreement_type: input.agreement_type ?? 'subscription', p_status: input.status ?? 'active',
+    p_baseline_value_cents: input.baseline_value_cents ?? null, p_auto_renew: input.auto_renew ?? false,
+    p_notice_period_days: input.notice_period_days ?? null,
+    p_start_date: input.start_date ?? null, p_end_date: input.end_date ?? null,
+    p_renewal_date: input.renewal_date ?? null, p_notice_deadline: input.notice_deadline ?? null,
+  });
+  if (error) raise('upsertAgreement', error);
+  const res = data as { ok?: boolean; error?: string; agreement_id?: string };
+  if (!res?.ok) throw new Error(res?.error === 'not_permitted'
+    ? 'Only owners, admins and managers can add agreements.' : (res?.error ?? 'Could not save the agreement.'));
+  return String(res.agreement_id);
+}
+
 export async function listAgreements(): Promise<CommercialAgreement[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase

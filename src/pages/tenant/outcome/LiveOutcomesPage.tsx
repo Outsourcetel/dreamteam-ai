@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
@@ -8,10 +8,10 @@ import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 import {
   getDePerformanceMetrics, getDeCsatMetrics, getDeCostMetrics,
-  getDeGuardrailActivity, getRecentEvalFailures,
+  getDeGuardrailActivity, getRecentEvalFailures, getOutcomeMetering,
 } from '../../../lib/api';
 import type {
-  DePerformanceMetrics, DeCsatMetrics, DeCostMetrics, DeGuardrailActivity, RecentEvalFailure,
+  DePerformanceMetrics, DeCsatMetrics, DeCostMetrics, DeGuardrailActivity, RecentEvalFailure, OutcomeMetering,
 } from '../../../lib/api';
 import { fetchLiveNavCounts } from '../../../components/Sidebar';
 import { LiveLoadingSkeleton } from '../../../components/LiveDataStates';
@@ -73,6 +73,59 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
       <p className={`text-xl font-bold ${tone ?? 'text-white'}`}>{value}</p>
       {sub && <p className="text-[10px] text-dt-muted mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+// W4-C (docs/16): resolutions delivered + metered value + the per-resolution
+// price, editable by owners/admins (tenant_outcome_pricing had schema + RLS
+// since mig 181 but no product control — 99¢ was effectively hardcoded).
+function MeteringCard({ tenantId }: { tenantId: string }) {
+  const [om, setOm] = useState<OutcomeMetering | null>(null);
+  const [price, setPrice] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const m = await getOutcomeMetering(tenantId, 30).catch(() => null);
+    setOm(m);
+    if (m?.price_per_resolution_cents != null) setPrice((m.price_per_resolution_cents / 100).toFixed(2));
+  }, [tenantId]);
+  useEffect(() => { void load(); }, [load]);
+
+  const savePrice = async () => {
+    const cents = Math.round(Number(price) * 100);
+    if (!Number.isFinite(cents) || cents < 0) { setNote('Enter a valid price.'); return; }
+    setSaving(true); setNote(null);
+    const { error } = await supabase.from('tenant_outcome_pricing')
+      .upsert({ tenant_id: tenantId, price_per_resolution_cents: cents }, { onConflict: 'tenant_id' });
+    setNote(error ? error.message : 'Price saved — applies to outcomes from now on.');
+    setSaving(false);
+    void load();
+  };
+
+  if (!om || (om.totals.resolutions === 0 && om.totals.escalations === 0)) return null;
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Outcome billing · last 30 days</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Tile label="Resolutions delivered" value={String(om.totals.resolutions)} tone="text-emerald-300" />
+        <Tile label="Handed to your team" value={String(om.totals.escalations)} sub="always free" />
+        <Tile label="Metered value" value={`$${(om.totals.billable_amount_cents / 100).toFixed(2)}`} />
+        <div className="bg-dt-card border border-dt-border rounded-xl p-4">
+          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Price per resolution</p>
+          <div className="flex items-center gap-2">
+            <span className="text-dt-support text-sm">$</span>
+            <input value={price} onChange={e => setPrice(e.target.value)}
+              className="w-20 bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1 text-sm text-dt-body" />
+            <button onClick={() => void savePrice()} disabled={saving}
+              className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">
+              {saving ? '…' : 'Save'}
+            </button>
+          </div>
+          {note && <p className="text-[11px] text-dt-muted mt-1">{note}</p>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -162,6 +215,10 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
         title="Outcomes"
         subtitle="What your digital workforce actually delivered — every number is live tenant data, nulls shown honestly until there's evidence"
       />
+
+      {/* ── 0. The BILLING story (W4-C, docs/16): metering lived only on
+          Performance; the page named Outcomes never showed the money. ── */}
+      <MeteringCard tenantId={tenantId} />
 
       {/* ── 1. Business value (economics, 30 days) ── */}
       <div className="mb-6">

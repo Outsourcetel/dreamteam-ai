@@ -4,6 +4,7 @@ import type { Page } from '../../../types';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
 import type { CustomerAccount } from '../../../lib/customerApi';
 import { listPlaybookRuns, RENEWAL_STEP_DEFS } from '../../../lib/playbookApi';
+import { listDigitalEmployees, type DigitalEmployee } from '../../../lib/digitalEmployeesApi';
 import { listPublishedVersions } from '../../../lib/onboardingApi';
 import type { TemplateVersion } from '../../../lib/onboardingApi';
 import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
@@ -670,6 +671,9 @@ interface BuilderState {
   description: string;
   steps: DefinitionStep[];
   status: 'draft' | 'published' | 'archived';
+  // W4-A (docs/16): the owning employee — steers briefing/consult/scoping/
+  // lifecycle gates; was never settable from the builder.
+  de_id: string | null;
 }
 
 const NEW_TEMPLATE: DefinitionStep[] = [
@@ -768,6 +772,24 @@ function PlaybookDocumentView({ steps, publishedDefs }: { steps: DefinitionStep[
   );
 }
 
+// W4-A (docs/16): the owning employee, finally settable where playbooks are
+// authored. The binding steers the work-engine briefing (mig 250), consult
+// 'auto' resolution, knowledge scoping, and the lifecycle/trust gates.
+function DeOwnerPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const [des, setDes] = useState<DigitalEmployee[]>([]);
+  useEffect(() => { void listDigitalEmployees().then(d => setDes(d.filter(x => x.status === 'active'))).catch(() => setDes([])); }, []);
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <span className="text-[11px] text-dt-muted whitespace-nowrap">Owned by</span>
+      <select value={value ?? ''} onChange={e => onChange(e.target.value || null)}
+        className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body">
+        <option value="">No employee (workspace procedure — not injected into any brief)</option>
+        {des.map(d => <option key={d.id} value={d.id}>{d.persona_name ?? d.name}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   initial: BuilderState;
   onDone: (published: boolean) => void;
@@ -804,7 +826,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   const persist = async (): Promise<string | null> => {
     if (!st.name.trim() || !st.key.trim()) { setError('Name and key are required.'); return null; }
     if (st.id) {
-      await updateDefinition(st.id, { name: st.name.trim(), description: st.description, steps: st.steps });
+      await updateDefinition(st.id, { name: st.name.trim(), description: st.description, steps: st.steps, de_id: st.de_id });
       return st.id;
     }
     const def = await createDefinition({
@@ -848,7 +870,8 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
         <input className={inputCls + (st.id ? ' opacity-60' : '')} placeholder="key (slug, e.g. renewal_followup)" disabled={!!st.id}
           value={st.key} onChange={e => setSt({ ...st, key: e.target.value })} />
       </div>
-      <input className={inputCls + ' mb-4'} placeholder="Description" value={st.description} onChange={e => setSt({ ...st, description: e.target.value })} />
+      <input className={inputCls + ' mb-3'} placeholder="Description" value={st.description} onChange={e => setSt({ ...st, description: e.target.value })} />
+      <DeOwnerPicker value={st.de_id} onChange={(v) => setSt({ ...st, de_id: v })} />
 
       {/* Step list */}
       <div className="space-y-2 mb-3">
@@ -932,7 +955,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
         </button>
         <button onClick={publish} disabled={busy !== null || clientErrors.length > 0}
           className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          {busy === 'publish' ? 'Publishing…' : st.status === 'published' ? `Publish v${'{next}'.replace('{next}', '↑')}` : 'Publish'}
+          {busy === 'publish' ? 'Publishing…' : st.status === 'published' ? 'Publish next version' : 'Publish'}
         </button>
         <button onClick={onCancel} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
         <span className="ml-auto text-[10px] text-dt-faint">Publishing validates server-side and snapshots an immutable version — running playbooks never see later edits.</span>
@@ -1361,12 +1384,15 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
 // ============================================================
 function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDrafted: (r: DraftResult) => void }) {
   const [sop, setSop] = useState('');
+  const [deId, setDeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const run = async () => {
     if (sop.trim().length < 40) { setErr('Write or paste at least a few sentences describing the procedure.'); return; }
     setBusy(true); setErr(null);
-    try { onDrafted(await draftPlaybookFromSop({ sopText: sop.trim() })); }
+    // W4-A (docs/16): pass the owning employee so AI drafts stop landing
+    // unbound (de_id null = no briefing/scoping/gates).
+    try { onDrafted(await draftPlaybookFromSop({ sopText: sop.trim(), deId })); }
     catch (e) { setErr((e as Error).message || 'Draft failed.'); }
     finally { setBusy(false); }
   };
@@ -1377,6 +1403,7 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
           <h3 className="text-sm font-semibold text-white">✨ Draft a playbook with AI</h3>
           <button onClick={onClose} className="text-dt-muted hover:text-dt-support">✕</button>
         </div>
+        <DeOwnerPicker value={deId} onChange={setDeId} />
         <p className="text-[11px] text-dt-support mb-3">Write the procedure in plain language, or paste an existing SOP. The Copilot compiles it into steps and studies it against your knowledge base — surfacing conflicts, questions to answer, and test scenarios before you go live.</p>
         <textarea
           value={sop} onChange={e => setSop(e.target.value)} rows={10}
@@ -1707,7 +1734,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   className="text-xs px-3 py-1.5 rounded-lg bg-dt-card hover:bg-indigo-600/30 border border-dt-border hover:border-indigo-500/50 text-dt-support hover:text-indigo-200 transition-colors">
                   ✨ Edit with AI
                 </button>
-                <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status })}
+                <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status, de_id: selectedDef.de_id ?? null })}
                   className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
@@ -1804,7 +1831,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
                   ✨ Draft with AI
                 </button>
-                <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft' })}
+                <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft', de_id: null })}
                   className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong font-medium transition-colors">
                   + New (advanced)
                 </button>
