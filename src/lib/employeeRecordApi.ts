@@ -84,3 +84,10 @@ export async function getWorkforceEconomics(tenantId: string): Promise<Workforce
   if (error) throw new Error(error.message);
   return data as WorkforceEconomics;
 }
+
+/** Set the FTE baseline that converts saved minutes into a dollar value.
+ *  Owner/admin only (enforced in the RPC). */
+export async function setWorkforceFteCost(monthlyUsd: number): Promise<void> {
+  const { error } = await supabase.rpc('set_workforce_baselines', { p_avg_fte_cost_monthly_usd: monthlyUsd });
+  if (error) throw new Error(error.message);
+}

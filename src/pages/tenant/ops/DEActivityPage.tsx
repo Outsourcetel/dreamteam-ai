@@ -9,6 +9,8 @@ import { CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts'
 import type { Page } from '../../../types';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import WorkforceBoard from '../../../components/WorkforceBoard';
+import WorkforceEconomicsPanel from '../../../components/WorkforceEconomicsPanel';
+import { useAuth } from '../../../context/AuthContext';
 
 // ============================================================
 // "DE at work" — the live proactive-triage queue (migration 034),
@@ -176,6 +178,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
 const PAGE_SIZE = 40;
 
 export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void }) {
+  const { currentTenant } = useAuth();
   const [rows, setRows] = useState<DEActivityRow[]>([]);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
@@ -296,6 +299,14 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
           {showSim ? 'Hide simulator' : 'Simulate an inquiry'}
         </button>
       </div>
+
+      {/* Tier-1 surfacing: what the whole workforce is worth (mig 193
+          economics), the CFO number, above the operational board. */}
+      {currentTenant?.id && (
+        <div className="mb-5">
+          <WorkforceEconomicsPanel tenantId={currentTenant.id} />
+        </div>
+      )}
 
       {/* docs/17 C2: the whole-workforce board leads the tab — every DE's
           now / next / blocked, not just those with a live triage row. */}
