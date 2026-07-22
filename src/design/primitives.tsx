@@ -20,6 +20,7 @@ const BTN_KIND = {
   secondary: 'border border-dt-border-strong text-dt-body hover:border-dt-muted hover:bg-dt-panel',
   ghost: 'text-dt-support hover:text-dt-body hover:bg-dt-panel',
   danger: 'bg-rose-600 hover:bg-rose-500 text-white',
+  success: 'bg-emerald-600 hover:bg-emerald-500 text-white',
   ai: 'border border-dt-accent/40 bg-dt-accent-soft text-dt-accent-text hover:border-dt-accent',
 } as const;
 
