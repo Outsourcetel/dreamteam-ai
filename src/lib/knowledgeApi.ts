@@ -38,6 +38,37 @@ import { raise, requireTenantId } from './liveShared';
 
 // ── CRUD ──────────────────────────────────────────────────────────
 
+// Ledger-3 (docs/16): the stored version chain finally gets a viewer — walk
+// previous_version_id from the head, capped at 12 hops.
+export async function listDocVersions(headId: string): Promise<KnowledgeDoc[]> {
+  const chain: KnowledgeDoc[] = [];
+  let cursor: string | null = headId;
+  for (let hop = 0; cursor && hop < 12; hop++) {
+    const { data, error } = await supabase.from('knowledge_docs').select('*').eq('id', cursor).maybeSingle();
+    if (error || !data) break;
+    chain.push(data as KnowledgeDoc);
+    cursor = (data as KnowledgeDoc & { previous_version_id?: string | null }).previous_version_id ?? null;
+  }
+  return chain;
+}
+
+// Ledger-3: gap-detection policy — tunable from the product instead of raw
+// SQL. RLS already scopes/permits tenant writes (mig 070).
+export interface GapPolicy {
+  id: string; category: string | null; min_confidence_floor: number;
+  min_cluster_size: number; window_days: number; similarity_threshold: number; enabled: boolean;
+}
+export async function listGapPolicies(): Promise<GapPolicy[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.from('knowledge_gap_policies').select('*').eq('tenant_id', tid).order('created_at');
+  if (error) throw error;
+  return (data ?? []) as GapPolicy[];
+}
+export async function updateGapPolicy(id: string, patch: Partial<Omit<GapPolicy, 'id' | 'category'>>): Promise<void> {
+  const { error } = await supabase.from('knowledge_gap_policies').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
 export async function listKnowledgeDocs(): Promise<KnowledgeDoc[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase

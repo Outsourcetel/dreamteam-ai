@@ -7,12 +7,13 @@ import {
   DocChunkStatus, listChunkStatus, ingestDocChunks,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
-  extractPdf, extractUrl,
+  extractPdf, extractUrl, listDocVersions,
 } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalApi';
 import type { Page } from '../../../types';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
+import AISessionPanel from '../../../components/AISessionPanel';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -52,10 +53,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // publishes ask for an explicit, audited override. Client-side soft
   // gate v1 — the server-side hard gate is the hardening step.
   const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
+  // Ledger-3: version-history viewer over the stored previous_version_id chain.
+  const [versionsFor, setVersionsFor] = useState<KnowledgeDoc | null>(null);
+  const [versions, setVersions] = useState<KnowledgeDoc[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // PDF/URL ingestion (removes the text-only wall).
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [showUrl, setShowUrl] = useState(false);
+  const [showAi, setShowAi] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   // Knowledge Feedback Loop (migration 032): pending revision requests
   // drafted from evidence-run feedback, awaiting human approve/reject.
@@ -66,7 +71,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
   /** Runs `publish` directly when the gate is clear; otherwise opens the
    *  override dialog. `docTitle` is used for the audit entry on override. */
-  const withEvalGate = async (docTitle: string, publish: () => Promise<void>) => {
+  // Ledger-2 (mig 253): the gate is now DB-ENFORCED — the override path
+  // threads a flag so call sites tag the doc 'eval-gate-override', which the
+  // server trigger honors (the audit entry already records the override).
+  const withEvalGate = async (docTitle: string, publish: (override?: boolean) => Promise<void>) => {
     const gate = await getEvalGate();
     if (gate?.status === 'failed') {
       setGateConfirm({
@@ -74,7 +82,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         proceed: () => {
           setGateConfirm(null);
           void auditEvalGateOverride(gate, docTitle);
-          void publish();
+          void publish(true);
         },
       });
       return;
@@ -195,11 +203,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     await withEvalGate(editor.title.trim(), doSave);
   };
 
-  const doSave = async () => {
+  const doSave = async (override?: boolean) => {
     if (!editor || saving) return;
     setSaving(true);
     setError(null);
     const tags = editor.tags.split(',').map(t => t.trim()).filter(Boolean);
+    if (override) tags.push('eval-gate-override');
     try {
       let docId: string;
       if (editor.id) {
@@ -239,12 +248,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     setError(null);
     const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
     const title = file.name.replace(/\.(txt|md|markdown|pdf)$/i, '');
-    await withEvalGate(title, async () => {
+    await withEvalGate(title, async (override?: boolean) => {
       try {
         setBusyMsg(isPdf ? `Extracting text from ${file.name}…` : null);
         // PDF → server-side text extraction; text/markdown read in-browser.
         const text = isPdf ? (await extractPdf(file)).text : await file.text();
-        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: override ? ['eval-gate-override'] : [] });
         await load();
         index(created.id);
       } catch (err) {
@@ -257,11 +266,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     const url = urlInput.trim();
     if (!/^https?:\/\//i.test(url)) { setError('Enter a full http(s) URL.'); return; }
     setError(null);
-    await withEvalGate(url, async () => {
+    await withEvalGate(url, async (override?: boolean) => {
       try {
         setBusyMsg(`Reading ${url}…`);
         const { title, text } = await extractUrl(url);
-        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+        const created = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: override ? ['eval-gate-override'] : [] });
         setUrlInput(''); setShowUrl(false);
         await load();
         index(created.id);
@@ -315,10 +324,27 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         >
           Import from URL
         </button>
+        <button
+          onClick={() => setShowAi(v => !v)}
+          className="text-sm px-4 py-2 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors"
+        >
+          ✨ Edit with AI
+        </button>
         <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" className="hidden" onChange={onFile} />
         {busyMsg && <span className="text-xs text-indigo-300">{busyMsg}</span>}
         <span className="text-xs text-dt-muted ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
       </div>
+
+      {/* W4-E slice 1 (docs/16): the ✨ spine reaches the page where users
+          actually manage knowledge — same AISessionPanel the roster and
+          builder use; knowledge.create/edit auto-apply with 120h undo. */}
+      {showAi && (
+        <div className="mb-4">
+          <AISessionPanel subjectKind="workspace" subjectLabel="Knowledge Library"
+            examples={['Add an article explaining our refund policy for annual plans', 'Fix the pricing article — the Pro tier is now $49', 'Explain what our employees answer from']}
+            onChanged={() => void load()} />
+        </div>
+      )}
 
       {showUrl && (
         <div className="flex items-center gap-2 mb-4 rounded-xl border border-dt-border bg-dt-card px-3 py-2">
@@ -390,6 +416,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                       >
                         Edit
+                      </button>
+                      <button
+                        onClick={() => { setVersionsFor(d); void listDocVersions(d.id).then(setVersions); }}
+                        className="text-xs text-dt-support hover:text-dt-body transition-colors"
+                      >
+                        History
                       </button>
                       <button
                         onClick={() => setRemoveTarget(d)}
@@ -591,6 +623,39 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       )}
 
       {/* Eval gate override dialog (R3) */}
+      {versionsFor && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={() => { setVersionsFor(null); setVersions(null); }}>
+          <div className="w-full max-w-xl bg-dt-page border-l border-dt-border h-full overflow-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Version history</h2>
+                <p className="text-xs text-dt-muted mt-0.5">{versionsFor.title} — newest first; every revision is an immutable new version.</p>
+              </div>
+              <button onClick={() => { setVersionsFor(null); setVersions(null); }} className="text-dt-support hover:text-white text-sm">✕</button>
+            </div>
+            {versions === null ? (
+              <p className="text-xs text-dt-muted">Loading versions…</p>
+            ) : versions.length <= 1 ? (
+              <p className="text-sm text-dt-muted">Only one version exists — history grows as revisions are approved.</p>
+            ) : (
+              <div className="space-y-3">
+                {versions.map((v, i) => (
+                  <div key={v.id} className="rounded-xl border border-dt-border bg-dt-card p-4">
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${i === 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                        {i === 0 ? 'current' : `v-${i}`}
+                      </span>
+                      <span className="text-sm font-medium text-dt-title">{v.title}</span>
+                      <span className="text-[11px] text-dt-faint ml-auto">{fmtDate(v.created_at)}</span>
+                    </div>
+                    <p className="text-xs text-dt-support whitespace-pre-wrap max-h-32 overflow-y-auto">{v.content.slice(0, 600)}{v.content.length > 600 ? '…' : ''}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {gateConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setGateConfirm(null)}>
           <div className="absolute inset-0 bg-black/60" />

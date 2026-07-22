@@ -11,6 +11,36 @@ import {
 } from '../lib/bookOfWorkApi';
 
 const CONFIGURABLE: WatcherKind[] = ['date_horizon', 'state_condition', 'metric_threshold', 'schedule'];
+
+// Ledger-1 (docs/16): the ENGINE has been source-generalized since migs
+// 220/226 — this form just never exposed it, silently defaulting every
+// watcher to customer_accounts.renewal_date. The registry mirrors the live
+// validate_work_watcher whitelist exactly.
+const DATE_SOURCES: { key: string; label: string; fields: { key: string; label: string }[] }[] = [
+  { key: 'customer_accounts', label: 'accounts', fields: [{ key: 'renewal_date', label: 'renewal date' }] },
+  { key: 'opportunities', label: 'pipeline opportunities', fields: [{ key: 'close_date', label: 'close date' }] },
+  {
+    key: 'commercial_agreements', label: 'agreements', fields: [
+      { key: 'renewal_date', label: 'renewal date' }, { key: 'notice_deadline', label: 'notice deadline' },
+      { key: 'warranty_expiry', label: 'warranty expiry' }, { key: 'next_reorder_date', label: 'next reorder date' },
+      { key: 'cancellation_deadline', label: 'cancellation deadline' },
+      { key: 'pricing_notice_deadline', label: 'pricing notice deadline' }, { key: 'replacement_date', label: 'replacement date' },
+    ],
+  },
+];
+const STATE_SOURCES: { key: string; label: string; fields: { key: string; label: string }[] }[] = [
+  {
+    key: 'customer_accounts', label: 'account', fields: [
+      { key: 'health_score', label: 'health score' }, { key: 'status', label: 'status' },
+      { key: 'arr_cents', label: 'ARR (cents)' }, { key: 'tier', label: 'tier' },
+    ],
+  },
+  {
+    key: 'opportunities', label: 'opportunity', fields: [
+      { key: 'stage', label: 'stage' }, { key: 'amount_cents', label: 'amount (cents)' },
+    ],
+  },
+];
 const STATE_FIELDS = [
   { key: 'health_score', label: 'health score' },
   { key: 'status', label: 'status' },
@@ -37,6 +67,9 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
   const [kind, setKind] = useState<WatcherKind>('date_horizon');
   const [label, setLabel] = useState('');
   const [horizons, setHorizons] = useState('90, 60, 30');
+  const [dateSource, setDateSource] = useState('customer_accounts');
+  const [dateField, setDateField] = useState('renewal_date');
+  const [stateSource, setStateSource] = useState('customer_accounts');
   const [field, setField] = useState('health_score');
   const [op, setOp] = useState('lt');
   const [value, setValue] = useState('');
@@ -58,10 +91,10 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
     let config: Record<string, unknown> = {};
     if (kind === 'date_horizon') {
       const days = horizons.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0);
-      config = { horizons_days: days.length ? days : [90, 60, 30] };
+      config = { source: dateSource, date_field: dateField, horizons_days: days.length ? days : [90, 60, 30] };
     } else if (kind === 'state_condition') {
       if (!value.trim()) { setError('Give the value to compare against.'); return; }
-      config = { field, op, value: value.trim() };
+      config = { source: stateSource, field, op, value: value.trim() };
     } else if (kind === 'metric_threshold') {
       if (!metricKey.trim() || !value.trim()) { setError('Give the KPI key and the value.'); return; }
       config = { metric_key: metricKey.trim(), op: metricOp, value: value.trim() };
@@ -106,17 +139,39 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
             className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
 
           {kind === 'date_horizon' && (
-            <label className="block text-[11px] text-dt-muted">
-              Open a case this many days before each account's renewal date:
-              <input value={horizons} onChange={e => setHorizons(e.target.value)} placeholder="90, 60, 30"
-                className="mt-1 w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
-            </label>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs text-dt-support flex-wrap">
+                <span>Watch</span>
+                <select value={dateSource} onChange={e => {
+                  const src = e.target.value; setDateSource(src);
+                  setDateField(DATE_SOURCES.find(s => s.key === src)?.fields[0].key ?? 'renewal_date');
+                }} className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
+                  {DATE_SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                <span>by their</span>
+                <select value={dateField} onChange={e => setDateField(e.target.value)} className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
+                  {(DATE_SOURCES.find(s => s.key === dateSource)?.fields ?? []).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+              <label className="block text-[11px] text-dt-muted">
+                Open a case this many days before that date:
+                <input value={horizons} onChange={e => setHorizons(e.target.value)} placeholder="90, 60, 30"
+                  className="mt-1 w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              </label>
+            </div>
           )}
           {kind === 'state_condition' && (
             <div className="flex items-center gap-2 text-xs text-dt-support flex-wrap">
-              <span>When an account's</span>
+              <span>When an</span>
+              <select value={stateSource} onChange={e => {
+                const src = e.target.value; setStateSource(src);
+                setField(STATE_SOURCES.find(s => s.key === src)?.fields[0].key ?? 'health_score');
+              }} className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
+                {STATE_SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+              <span>has</span>
               <select value={field} onChange={e => setField(e.target.value)} className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
-                {STATE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                {(STATE_SOURCES.find(s => s.key === stateSource)?.fields ?? []).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
               </select>
               <select value={op} onChange={e => setOp(e.target.value)} className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
                 {NUMERIC_OPS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}

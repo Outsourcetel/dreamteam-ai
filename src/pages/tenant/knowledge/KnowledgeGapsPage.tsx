@@ -10,7 +10,7 @@ import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
   listKnowledgeGapClusters, listKnowledgeGapPolicies, getKnowledgeGapClusterDetail,
-  listKnowledgeRevisionRequests, resolveKnowledgeRevision,
+  listKnowledgeRevisionRequests, resolveKnowledgeRevision, updateGapPolicy,
 } from '../../../lib/knowledgeApi';
 import type { KnowledgeGapCluster, KnowledgeGapPolicy, KnowledgeGapClusterMember, KnowledgeRevisionRequest } from '../../../lib/knowledgeApi';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
@@ -547,6 +547,64 @@ const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; c
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
 
+// Ledger-3: tune the detection policy from the product (RLS already permits
+// tenant writes, mig 070). Plain-language labels; saves per-row.
+function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[]; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, { floor: string; size: string; window: string; sim: string }>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const draftFor = (p: KnowledgeGapPolicy) => drafts[p.id] ?? {
+    floor: String(p.min_confidence_floor), size: String(p.min_cluster_size),
+    window: String(p.window_days), sim: String(p.similarity_threshold),
+  };
+  const save = async (p: KnowledgeGapPolicy) => {
+    const d = draftFor(p);
+    setBusyId(p.id); setErr(null);
+    try {
+      await updateGapPolicy(p.id, {
+        min_confidence_floor: Math.max(0, Math.min(100, Number(d.floor) || 60)),
+        min_cluster_size: Math.max(2, Number(d.size) || 3),
+        window_days: Math.max(1, Number(d.window) || 14),
+        similarity_threshold: Math.max(0.1, Math.min(1, Number(d.sim) || 0.85)),
+      });
+      onSaved();
+    } catch (e) { setErr((e as Error).message); }
+    setBusyId(null);
+  };
+  return (
+    <div className="mb-5 rounded-xl border border-dt-border bg-dt-card p-4">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-white w-full text-left">
+        <span>{open ? '▾' : '▸'}</span> Detection policy
+        <span className="text-[11px] font-normal text-dt-muted">— when similar misses become a gap</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {err && <p className="text-xs text-rose-300">{err}</p>}
+          {policies.map(p => {
+            const d = draftFor(p);
+            const set = (k: keyof typeof d, v: string) => setDrafts(prev => ({ ...prev, [p.id]: { ...draftFor(p), [k]: v } }));
+            const inp = 'w-16 bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1 text-xs text-dt-body';
+            return (
+              <div key={p.id} className="flex items-center gap-2 text-xs text-dt-support flex-wrap">
+                <span className="w-24 text-dt-body">{p.category ?? 'all categories'}</span>
+                <span>below</span><input value={d.floor} onChange={e => set('floor', e.target.value)} className={inp} /><span>% confidence,</span>
+                <input value={d.size} onChange={e => set('size', e.target.value)} className={inp} /><span>+ similar misses within</span>
+                <input value={d.window} onChange={e => set('window', e.target.value)} className={inp} /><span>days (similarity ≥</span>
+                <input value={d.sim} onChange={e => set('sim', e.target.value)} className={inp} /><span>)</span>
+                <button disabled={busyId === p.id} onClick={() => void save(p)}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">
+                  {busyId === p.id ? '…' : 'Save'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
   const [clusters, setClusters] = useState<KnowledgeGapCluster[]>([]);
   const [policies, setPolicies] = useState<KnowledgeGapPolicy[]>([]);
@@ -653,6 +711,12 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       <PageHeader title="Gap Detection" subtitle="Automatic detection of recurring low-confidence answers — clusters of similar questions become a draft knowledge update for a human to review, no manual flagging required." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {/* Ledger-3 (docs/16): the detection thresholds were only tunable via
+          raw SQL — now a product control. */}
+      {!loading && !missingTables && policies.length > 0 && (
+        <GapPolicyPanel policies={policies} onSaved={() => void refresh()} />
+      )}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
