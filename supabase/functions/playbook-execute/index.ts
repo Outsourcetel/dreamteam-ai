@@ -2727,12 +2727,20 @@ serve(async (req) => {
       }
 
       // ── Trust dial (de_autonomy: invoice_auto_send) ──
-      let autonomy: { id: string; enabled: boolean; max_amount_cents: number | null } | null = null;
+      // Wave-1 fix (truth audit 2026-07-22, docs/15): the old raw query had no
+      // de_id filter — the moment any PER-EMPLOYEE invoice override existed,
+      // .maybeSingle() failed on multiple rows and the dial was silently
+      // dropped (guardrail-only auto-send). resolve_de_autonomy walks the
+      // per-DE → workspace cascade correctly; this built-in run has no
+      // assigned DE, so it resolves the workspace tier.
+      let autonomy: { enabled: boolean; max_amount_cents: number | null } | null = null;
       try {
-        const { data: auto } = await admin
-          .from('de_autonomy').select('id, enabled, max_amount_cents')
-          .eq('tenant_id', tenantId).eq('action_type', 'invoice_auto_send').maybeSingle();
-        autonomy = auto ?? null;
+        const { data: auto } = await admin.rpc('resolve_de_autonomy', {
+          p_tenant_id: tenantId, p_action_type: 'invoice_auto_send',
+          p_de_id: null, p_source_category: null,
+        });
+        const row = Array.isArray(auto) ? auto[0] : auto;
+        autonomy = row ? { enabled: !!row.enabled, max_amount_cents: row.max_amount_cents ?? null } : null;
       } catch { autonomy = null; }
 
       // COMPOSITION: autonomy narrows within guardrails, never overrides.

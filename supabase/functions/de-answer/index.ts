@@ -121,7 +121,18 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
     }
     return null;
   } catch (e) {
+    // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
+    // is no longer SILENT — a durable incident lands on the employee's record
+    // so a broken guardrail resolver can't hide.
     console.error('guardrail check failed (fail-open):', e);
+    try {
+      await admin.from('de_incidents').insert({
+        tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
+        title: 'Guardrail check FAILED — answer released without screening (fail-open)',
+        detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'de-answer' },
+        source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
+      });
+    } catch { /* best-effort */ }
     return null;
   }
 }
@@ -324,6 +335,34 @@ serve(async (req) => {
       subjectDeId = firstDe?.id ?? null;
     }
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
+
+    // Wave-1 activation (truth audit 2026-07-22, docs/15): the founder-set
+    // trust-dial floor (answer_dock) and escalation rules now govern this
+    // LIVE channel — previously only the autonomous triage path read them
+    // and this path ran a hardcoded threshold.
+    let confidenceFloor: number = ESCALATION_THRESHOLD;
+    let escalationRuleHit: string | null = null;
+    try {
+      const [dialRes, escRes, rowsRes] = await Promise.all([
+        admin.rpc('resolve_de_autonomy', { p_tenant_id: tenantId, p_action_type: 'answer_dock', p_de_id: subjectDeId, p_source_category: null }),
+        admin.rpc('resolve_de_escalation', { p_tenant_id: tenantId, p_de_id: subjectDeId }),
+        admin.from('de_escalation_rules').select('custom_rules, de_id').eq('tenant_id', tenantId),
+      ]);
+      const dial = Array.isArray(dialRes.data) ? dialRes.data[0] : dialRes.data;
+      if (dial?.enabled === false) confidenceFloor = 101;                 // dial off → every answer goes to a human
+      else if (typeof dial?.min_confidence === 'number') confidenceFloor = dial.min_confidence;
+      const esc = Array.isArray(escRes.data) ? escRes.data[0] : escRes.data;
+      const qLower = String(question ?? '').toLowerCase();
+      const topics: string[] = (esc?.always_escalate_topics ?? []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean);
+      const topicHit = topics.find((t) => t && qLower.includes(t));
+      if (topicHit) escalationRuleHit = `always-escalate topic "${topicHit}"`;
+      if (!escalationRuleHit) {
+        const rows = (rowsRes.data ?? []).filter((r) => r.de_id === subjectDeId || r.de_id === null);
+        const rules = rows.flatMap((r) => Array.isArray(r.custom_rules) ? r.custom_rules : []);
+        const hit = rules.find((r: { when?: string; enabled?: boolean }) => r?.enabled !== false && r?.when && qLower.includes(String(r.when).toLowerCase()));
+        if (hit) escalationRuleHit = `rule "${(hit as { name?: string }).name ?? (hit as { when?: string }).when}"`;
+      }
+    } catch { /* resolver hiccup → keep the prior default behavior */ }
 
     // ── Conversation (create if needed) + persist the user message ──
     // REPLAY: no conversation is ever created, adopted, or written to — a
@@ -572,6 +611,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         }
         await admin.from('human_tasks').insert({
           tenant_id: tenantId,
+          de_id: subjectDeId,
           type: 'escalation',
           source: 'de',
           title: `Guardrail block — ${truncated}`,
@@ -622,7 +662,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       });
     }
 
-    let escalate = parsed.needs_escalation || parsed.confidence < ESCALATION_THRESHOLD;
+    let escalate = parsed.needs_escalation || parsed.confidence < confidenceFloor || escalationRuleHit !== null;
 
     // ── Pre-send Quality Auditor (opt-in per DE) ── an answer that WOULD be
     // auto-sent is independently judged for grounding + correctness first.
@@ -730,10 +770,11 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       await admin.from('human_tasks').insert({
         tenant_id: tenantId,
+        de_id: subjectDeId,
         type: 'escalation',
         source: 'de',
         title: `Chat escalation — ${truncated}`,
-        detail: `${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        detail: `${escalationRuleHit ? `Matched ${escalationRuleHit}. ` : ''}${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
       });

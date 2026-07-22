@@ -651,8 +651,24 @@ serve(async (req) => {
         .eq('status', 'open')
         .or(`next_wake_at.is.null,next_wake_at.lte.${new Date().toISOString()}`)
         .order('created_at', { ascending: true }).limit(10);
+      // Wave-1 fix (truth audit 2026-07-22, docs/15): the goal engine never
+      // re-checked lifecycle — a paused/retired DE's queued objectives kept
+      // planning and executing while every other surface refused it. Resolve
+      // each objective's DE state once per tick and skip the unavailable ones.
+      const objDeIds = [...new Set((objs ?? []).map((o) => o.de_id).filter(Boolean))];
+      const availableDe = new Set<string>();
+      if (objDeIds.length > 0) {
+        const { data: deRows } = await admin.from('digital_employees')
+          .select('id, status, lifecycle_status').in('id', objDeIds);
+        for (const d of (deRows ?? [])) {
+          if (d.status === 'active' && !['paused', 'retired', 'archived'].includes(String(d.lifecycle_status))) {
+            availableDe.add(d.id);
+          }
+        }
+      }
       for (const o of (objs ?? [])) {
         if (planned.length >= 2) break;
+        if (o.de_id && !availableDe.has(o.de_id)) { await deferPlan(o.id); continue; }
         const { count } = await admin.from('de_work_items').select('id', { count: 'exact', head: true }).eq('objective_id', o.id);
         if ((count ?? 0) > 0) {
           // Heal an interrupted plan (worker died between enqueue and status
@@ -689,6 +705,14 @@ serve(async (req) => {
         if (o.status !== 'in_progress') continue;
         const deferWake = () =>
           admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
+        // Wave-1: paused/retired DEs don't wake their goals either.
+        if (o.de_id) {
+          const { data: deRow } = await admin.from('digital_employees')
+            .select('status, lifecycle_status').eq('id', o.de_id).maybeSingle();
+          if (!deRow || deRow.status !== 'active' || ['paused', 'retired', 'archived'].includes(String(deRow.lifecycle_status))) {
+            await deferWake(); continue;
+          }
+        }
         const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
         if (budget && budget.allowed === false) { await deferWake(); continue; }
         const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
@@ -711,6 +735,25 @@ serve(async (req) => {
     } else {
       const { data } = await admin.rpc('claim_de_work_items', { p_limit: Math.min(MAX_ITEMS_PER_RUN, body.max_items ?? MAX_ITEMS_PER_RUN), p_worker: 'de-work', p_tenant_id: body.tenant_id ?? null });
       items = (data ?? []).map((r: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }) => ({ id: r.id, tenant_id: r.tenant_id, de_id: r.de_id, title: r.title, payload: r.payload }));
+    }
+
+    // Wave-1 (truth audit 2026-07-22): release claimed items whose DE is
+    // paused/retired — every other surface refuses an unavailable employee;
+    // the work queue must too. Released items re-queue an hour out so they
+    // resume automatically when the employee does.
+    if (items.length > 0) {
+      const { data: deRows } = await admin.from('digital_employees')
+        .select('id, status, lifecycle_status').in('id', [...new Set(items.map((i) => i.de_id))]);
+      const ok = new Set((deRows ?? [])
+        .filter((d) => d.status === 'active' && !['paused', 'retired', 'archived'].includes(String(d.lifecycle_status)))
+        .map((d) => d.id));
+      const released = items.filter((i) => !ok.has(i.de_id));
+      if (released.length > 0) {
+        await admin.from('de_work_items')
+          .update({ status: 'queued', locked_at: null, locked_by: null, scheduled_for: new Date(Date.now() + 60 * 60 * 1000).toISOString() })
+          .in('id', released.map((i) => i.id));
+        items = items.filter((i) => ok.has(i.de_id));
+      }
     }
 
     const results = [];

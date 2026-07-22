@@ -114,7 +114,17 @@ async function loadBlockingRules(admin: any, tenantId: string, deId: string | nu
     if (!Array.isArray(rules)) return [];
     return (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
   } catch (e) {
+    // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
+    // is no longer SILENT — a durable incident lands on the employee's record.
     console.error('guardrail check failed (fail-open):', e);
+    try {
+      await admin.from('de_incidents').insert({
+        tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
+        title: 'Guardrail check FAILED — widget answered without screening (fail-open)',
+        detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'widget-ask' },
+        source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
+      });
+    } catch { /* best-effort */ }
     return [];
   }
 }
@@ -305,6 +315,34 @@ serve(async (req) => {
     const replyMode: 'draft' | 'auto' = firstDe?.external_reply_mode === 'auto' ? 'auto' : 'draft';
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
 
+    // Wave-1 activation (truth audit 2026-07-22, docs/15): the founder-set
+    // trust-dial floor (answer_widget) and escalation rules now govern this
+    // LIVE channel — previously only the autonomous triage path read them
+    // and this path ran a hardcoded threshold.
+    let confidenceFloor: number = ESCALATION_THRESHOLD;
+    let escalationRuleHit: string | null = null;
+    try {
+      const [dialRes, escRes, rowsRes] = await Promise.all([
+        admin.rpc('resolve_de_autonomy', { p_tenant_id: tenantId, p_action_type: 'answer_widget', p_de_id: subjectDeId, p_source_category: null }),
+        admin.rpc('resolve_de_escalation', { p_tenant_id: tenantId, p_de_id: subjectDeId }),
+        admin.from('de_escalation_rules').select('custom_rules, de_id').eq('tenant_id', tenantId),
+      ]);
+      const dial = Array.isArray(dialRes.data) ? dialRes.data[0] : dialRes.data;
+      if (dial?.enabled === false) confidenceFloor = 101;                 // dial off → every reply goes to a human
+      else if (typeof dial?.min_confidence === 'number') confidenceFloor = dial.min_confidence;
+      const esc = Array.isArray(escRes.data) ? escRes.data[0] : escRes.data;
+      const qLower = String(question ?? '').toLowerCase();
+      const topics: string[] = (esc?.always_escalate_topics ?? []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean);
+      const topicHit = topics.find((t) => t && qLower.includes(t));
+      if (topicHit) escalationRuleHit = `always-escalate topic "${topicHit}"`;
+      if (!escalationRuleHit) {
+        const rows = (rowsRes.data ?? []).filter((r) => r.de_id === subjectDeId || r.de_id === null);
+        const rules = rows.flatMap((r) => Array.isArray(r.custom_rules) ? r.custom_rules : []);
+        const hit = rules.find((r: { when?: string; enabled?: boolean }) => r?.enabled !== false && r?.when && qLower.includes(String(r.when).toLowerCase()));
+        if (hit) escalationRuleHit = `rule "${(hit as { name?: string }).name ?? (hit as { when?: string }).when}"`;
+      }
+    } catch { /* resolver hiccup → keep the prior default behavior */ }
+
     const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null].filter(Boolean).join(' · ');
 
     // ── Conversation (create with lifecycle fields, or reuse) ──
@@ -379,19 +417,21 @@ serve(async (req) => {
         return { conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang };
       }
 
-      const lowConf = conf < ESCALATION_THRESHOLD;
-      // A human is needed when the DE isn't confident (escalation) OR when
-      // this DE is in draft mode (every external reply is human-approved).
-      if (lowConf || replyMode === 'draft') {
-        const handoffSummary = `Customer${accountName ? ` at ${accountName}` : ''} asked: ${truncatedQ}. ${persona.name}'s draft (conf ${conf}%): ${ans.slice(0, 240)}`;
+      const lowConf = conf < confidenceFloor;
+      // A human is needed when the DE isn't confident (escalation), when a
+      // founder-set escalation rule matches the question, OR when this DE is
+      // in draft mode (every external reply is human-approved).
+      if (lowConf || escalationRuleHit !== null || replyMode === 'draft') {
+        const ruleNote = escalationRuleHit ? ` Matched ${escalationRuleHit}.` : '';
+        const handoffSummary = `Customer${accountName ? ` at ${accountName}` : ''} asked: ${truncatedQ}.${ruleNote} ${persona.name}'s draft (conf ${conf}%): ${ans.slice(0, 240)}`;
         if (convId) {
           // Store the real draft (NOT delivered to the customer) for the human to approve/edit.
           await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: true, delivery: 'draft_pending', lang });
           await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: handoffSummary, detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
         }
-        await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `${lowConf ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
-        await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${lowConf ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
-        await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
+        await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de', title: `${(lowConf || escalationRuleHit) ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
+        await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${(lowConf || escalationRuleHit) ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
+        await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${escalationRuleHit ? `escalated (${escalationRuleHit})` : lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
         // Outcome metering (#15): human takes over — FREE.
         if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         // The customer sees a holding message — never the un-approved draft.
@@ -540,7 +580,9 @@ serve(async (req) => {
     // a ###META### partial-prefix guard means no complete blocked span —
     // and no metadata fragment — is ever emitted to the customer.
     // ══════════════════════════════════════════════════════════════
-    if (body.stream === true && replyMode === 'auto') {
+    // A founder escalation-rule match must never stream to the customer —
+    // fall through to the non-streaming path, which routes it to a human.
+    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit) {
       const blockingRules = await loadBlockingRules(admin, tenantId, subjectDeId);
       const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
       const META = '###META###';
@@ -684,7 +726,7 @@ serve(async (req) => {
               }
 
               // Cache write — same policy + language tag as the JSON path.
-              if (qEmbedding && conf >= ESCALATION_THRESHOLD && !needsEsc) {
+              if (qEmbedding && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
                 const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
                 if (!clean) {
                   await admin.from('answer_cache').insert({
@@ -752,7 +794,7 @@ serve(async (req) => {
     // Cache write: only confident, guardrail-clean answers (a later repeat is
     // deflected at $0). Draft-mode is a DELIVERY policy, not answer quality —
     // so we still cache the answer; the gate in finalize() decides delivery.
-    if (qEmbedding && parsed.confidence >= ESCALATION_THRESHOLD && !parsed.needs_escalation) {
+    if (qEmbedding && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
       const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
       if (!clean) {
         await admin.from('answer_cache').insert({

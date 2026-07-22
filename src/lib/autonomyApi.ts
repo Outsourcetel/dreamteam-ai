@@ -43,13 +43,13 @@ export const AUTONOMY_ACTION_META: Record<AutonomyActionType, { label: string; d
   },
   answer_dock: {
     label: 'Answer in the dock unaided',
-    description: 'Minimum confidence for Alex to answer in the workspace dock without escalating. Stored now; enforced in de-answer on activation.',
-    unit: 'confidence', dormant: true,
+    description: 'Minimum confidence to answer in the workspace dock without escalating — enforced live on every dock answer (Wave 1, 2026-07-22). Below the floor, the draft routes to a human. Default floor when unset: 60.',
+    unit: 'confidence', dormant: false,
   },
   answer_widget: {
     label: 'Answer end-users via widget',
-    description: 'Minimum confidence for widget answers to end-users. Stored now; enforced in widget-ask on activation.',
-    unit: 'confidence', dormant: true,
+    description: 'Minimum confidence for widget answers to end-users — enforced live on every widget answer, including streaming (Wave 1, 2026-07-22). Below the floor, the customer gets a human instead. Default floor when unset: 60.',
+    unit: 'confidence', dormant: false,
   },
 };
 
