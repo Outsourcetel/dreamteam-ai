@@ -77,7 +77,10 @@ export default function OutcomeStatement({ setPage }: { setPage: (p: Page) => vo
   const rows = des.map(de => {
     const i = inqBy.get(de.id); const a = actBy.get(de.id); const c = costBy.get(de.id);
     const m = meterBy.get(de.id); const o = outputs.get(de.id);
-    const work = (i?.total_decisions ?? 0) + (a?.executed ?? 0) + (o?.items_done ?? 0);
+    // Work = decisions + executed actions + finished work items + handled
+    // conversations (resolutions AND handoffs are both handled work).
+    const work = (i?.total_decisions ?? 0) + (a?.executed ?? 0) + (o?.items_done ?? 0)
+      + (m?.resolutions ?? 0) + (m?.escalations ?? 0);
     return {
       de, work,
       resolutions: m?.resolutions ?? 0,
