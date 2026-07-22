@@ -36,7 +36,7 @@ export default function DeliverablesPanel({ deId }: { deId: string }) {
                   className="text-[10px] text-indigo-400 hover:text-indigo-300 shrink-0">{open === d.id ? 'hide' : 'read'}</button>
               </div>
               {open === d.id && (
-                <pre className="mt-2 text-xs text-dt-support whitespace-pre-wrap font-sans bg-slate-950/50 rounded-lg p-3 max-h-80 overflow-y-auto">{d.content}</pre>
+                <pre className="mt-2 text-xs text-dt-support whitespace-pre-wrap font-sans bg-dt-inset rounded-lg p-3 max-h-80 overflow-y-auto">{d.content}</pre>
               )}
             </div>
           ))}

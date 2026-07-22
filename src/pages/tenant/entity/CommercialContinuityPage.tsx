@@ -135,7 +135,7 @@ function CaseDrawer({
               <input value={activity} onChange={e => setActivity(e.target.value)} disabled={!canAct || busy} placeholder="Log an activity…"
                 className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body disabled:opacity-50" />
               <button onClick={() => activity.trim() && act('log_activity', { summary: activity.trim() })} disabled={!canAct || busy || !activity.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-slate-400 disabled:opacity-40 transition-all">
+                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-dt-muted disabled:opacity-40 transition-all">
                 Log
               </button>
             </div>
@@ -144,7 +144,7 @@ function CaseDrawer({
               <input value={nextStep} onChange={e => setNextStep(e.target.value)} disabled={!canAct || busy} placeholder="Set the next step…"
                 className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body disabled:opacity-50" />
               <button onClick={() => nextStep.trim() && act('set_next_step', { next_step: nextStep.trim() })} disabled={!canAct || busy || !nextStep.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-slate-400 disabled:opacity-40 transition-all">
+                className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-dt-muted disabled:opacity-40 transition-all">
                 Set
               </button>
             </div>

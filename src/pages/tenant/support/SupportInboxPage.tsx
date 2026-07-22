@@ -228,7 +228,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                         ) : (
                           <div className="flex gap-2 mt-1 justify-end">
                             <button disabled={busy} onClick={() => doApprove(m.id)} className="text-xs px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve &amp; send</button>
-                            <button onClick={() => { setEditDraftId(m.id); setEditText(m.content); }} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-slate-400">Edit</button>
+                            <button onClick={() => { setEditDraftId(m.id); setEditText(m.content); }} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted">Edit</button>
                           </div>
                         )
                       )}

@@ -97,14 +97,14 @@ export interface DEHealth {
 }
 
 export const DE_HEALTH_LABELS: Record<DEHealthState, { label: string; color: string }> = {
-  retired: { label: 'Retired', color: 'bg-slate-700 text-slate-400' },
+  retired: { label: 'Retired', color: 'bg-dt-neutral-soft text-dt-neutral' },
   incident_active: { label: 'Incident', color: 'bg-rose-500/15 text-rose-300' },
   degraded: { label: 'Degraded', color: 'bg-amber-500/15 text-amber-300' },
   low_confidence: { label: 'Low confidence', color: 'bg-amber-500/15 text-amber-300' },
   high_cost: { label: 'High cost', color: 'bg-orange-500/15 text-orange-300' },
   improving: { label: 'Improving', color: 'bg-sky-500/15 text-sky-300' },
   healthy: { label: 'Healthy', color: 'bg-emerald-500/15 text-emerald-300' },
-  insufficient_data: { label: 'Not enough data yet', color: 'bg-slate-700 text-slate-500' },
+  insufficient_data: { label: 'Not enough data yet', color: 'bg-dt-neutral-soft text-dt-neutral' },
 };
 
 /** Real per-DE health, composed only from signals that already exist

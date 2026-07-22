@@ -234,7 +234,7 @@ const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
 // nothing is ever hidden behind a scrollbar, and the badge never moves.
 function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: Page) => void }) {
   return (
-    <div className="border-b border-slate-700 bg-slate-900">
+    <div className="border-b border-dt-border bg-dt-page">
       <div className="flex items-center justify-between pl-6 pr-4 pt-3">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">DT</div>
@@ -249,7 +249,7 @@ function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: P
             onClick={() => setPage(t.page)}
             className={`px-3.5 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
               page === t.page
-                ? 'bg-slate-800 text-white border border-slate-700 border-b-slate-800 -mb-px'
+                ? 'bg-dt-card text-white border border-dt-border border-b-transparent -mb-px'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
           >
@@ -344,7 +344,7 @@ function AppShell() {
   // mfaGateBlocking's own comment in AuthContext).
   if (mfaGateBlocking) {
     return (
-      <div className="flex-1 flex flex-col h-screen bg-slate-900">
+      <div className="flex-1 flex flex-col h-screen bg-dt-page">
         <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3 text-sm text-amber-300">
           Your workspace requires two-factor authentication before you can continue.
         </div>
@@ -508,7 +508,7 @@ function AppShell() {
   return (
     <>
       <URLSync />
-      <div className="flex h-screen bg-slate-900 overflow-hidden">
+      <div className="flex h-screen bg-dt-page overflow-hidden">
         {(!isDTUser || godModeSession) && (
           <Sidebar
             page={currentPage}

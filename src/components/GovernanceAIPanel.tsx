@@ -156,7 +156,7 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
             rows={2} placeholder="Describe a limit you want in place…"
             className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500" />
           <button onClick={() => void send(input)} disabled={busy || !input.trim()}
-            className="self-end px-4 py-2 text-sm rounded bg-slate-100 text-slate-900 font-medium hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed">
+            className="self-end px-4 py-2 text-sm rounded bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed">
             Send
           </button>
         </div>

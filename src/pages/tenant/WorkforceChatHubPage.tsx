@@ -148,7 +148,7 @@ export function WorkforceChatHubPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950">
+    <div className="h-screen flex flex-col bg-dt-page">
       {/* Header */}
       <div className="border-b border-dt-border bg-dt-page px-6 py-4">
         <h1 className="text-2xl font-bold text-dt-title">Workforce Assistant</h1>

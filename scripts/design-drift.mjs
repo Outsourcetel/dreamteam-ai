@@ -10,10 +10,17 @@ const uniq = (pat) => Number(sh(`grep -rhoE "${pat}" ${G} | sort -u | wc -l`));
 const count = (pat) => Number(sh(`grep -rh "${pat}" ${G} | wc -l`));
 const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 
-// Baseline captured 2026-07-22 (program start).
+// Baseline RATCHETED 2026-07-22 after the estate-wide token sweep (was the
+// program-start capture: 34/16/13/10/8/8/85/19). Counts only go DOWN — when a
+// sweep lowers them, tighten these floors in the same commit.
+// Remaining bg/border-slate variants are the SANCTIONED set (doc §7): control
+// shades (slate-500/600 toggles, placeholders, focus rings) + EmbedWidget's
+// light-theme branch (customer-site context). StatCard/Modal file counts
+// include the two legacy ADAPTERS in src/components (thin delegations to the
+// primitives) — retire the counts when their call sites import directly.
 const BASELINE = {
-  'bg-slate variants': 34, 'border-slate variants': 16, 'radius variants': 13,
-  'card padding variants': 10, 'local StatCard-likes (files)': 8, 'local Modals (files)': 8,
+  'bg-slate variants': 8, 'border-slate variants': 3, 'radius variants': 13,
+  'card padding variants': 10, 'local StatCard-likes (files)': 7, 'local Modals (files)': 8,
   'inline style objects': 85, 'raw hex colors': 19,
 };
 const NOW = {

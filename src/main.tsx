@@ -8,7 +8,7 @@ initSentry();
 
 function CrashFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-dt-page p-6">
       <div className="max-w-sm text-center">
         <p className="text-lg font-semibold text-white mb-2">Something went wrong</p>
         <p className="text-sm text-slate-400 mb-4">

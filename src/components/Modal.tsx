@@ -1,34 +1,13 @@
 import React from 'react';
+import { Modal as DtModal } from '../design/primitives';
 
-const Modal = ({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
+// LEGACY ADAPTER — old default-export Modal call sites now render the Design
+// System v1 Modal (docs/design-system.md). New code should import { Modal }
+// from src/design/primitives directly.
+const Modal = ({ title, onClose, children }: {
+  title: string; onClose: () => void; children: React.ReactNode;
 }) => (
-  <div
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-    onClick={onClose}
-  >
-    <div
-      className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <button
-          onClick={onClose}
-          className="text-dt-support hover:text-white text-xl leading-none"
-        >
-          x
-        </button>
-      </div>
-      {children}
-    </div>
-  </div>
+  <DtModal title={title} onClose={onClose}>{children}</DtModal>
 );
 
 export default Modal;

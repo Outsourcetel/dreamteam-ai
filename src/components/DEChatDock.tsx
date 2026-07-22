@@ -874,7 +874,7 @@ export default function DEChatDock() {
             aria-label={`Ask ${de.name}`}
           >
             {de.name[0]}
-            <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
+            <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-dt-page" />
           </button>
         </div>
       )}

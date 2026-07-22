@@ -120,3 +120,43 @@ a next action) · **error** (`Banner tone="danger"` + retry) · **loaded**.
   the numbers only go down. Baseline 2026-07-22: 34 bg-slate variants · 16
   border variants · 13 radii · 8 local StatCards · 8 local Modals · 85 inline
   styles · 19 raw hex.
+
+## 7. Sanctioned exceptions + sweep record (2026-07-22)
+
+The estate-wide token sweep is DONE (commits 5ceb9e6 → this one): every page and
+shared component runs on `dt-*` tokens; `ui.tsx`, `StatCard.tsx`, and
+`Modal.tsx` in `src/components/` are now thin ADAPTERS over the primitives —
+legacy imports keep working, new code imports `src/design/primitives` directly.
+Detector baselines are ratcheted to the post-sweep floor (8 bg-slate · 3
+border-slate · 7 StatCard files · 8 Modal files); they only go down from there.
+
+**Sanctioned raw-slate survivors** (do NOT convert; anything else is drift):
+- **Control shades** — `slate-500`/`slate-600` (+alphas) on toggle knobs and
+  tracks, placeholders (`placeholder-slate-500`), and focus rings. These are
+  interaction affordances, not surfaces or text; they ride the navy remap and
+  read correctly in both surface families. If a `dt-control` token lands later,
+  convert them all in one scripted pass.
+- **EmbedWidget light-theme branch** (`src/components/EmbedWidget.tsx`) — the
+  chat widget renders on CUSTOMERS' websites, where `theme: 'light'` uses
+  `bg-slate-100`/`border-slate-200` as the light neutral ramp on purpose. The
+  app shell never renders this branch.
+
+**Hover/neutral vocabulary** (match the primitives, never invent):
+secondary-button hover border = `hover:border-dt-muted`; neutral status chip =
+`bg-dt-neutral-soft text-dt-neutral`; deep inset wells = `bg-dt-inset`;
+punched-out rings on avatars/dots = `border-dt-page`.
+
+## 8. Width verification — the 3-width procedure
+
+Checklist §5 requires every shipped screen to hold at 1536 / 1280 / 1024. Run it
+without touching the founder's window:
+
+1. Open the page in the agent-driven Chrome tab.
+2. `resize_window` (claude-in-chrome) to **1280×900** — the founder-profile
+   floor for "excellent". Screenshot top AND bottom of the scroll.
+3. Resize to **1024×800** — "usable": no horizontal scrollbar on `<main>`, no
+   clipped action buttons, tables scroll inside `TableScroll` not the page.
+4. Resize back to the original size when done (leave the session as found).
+5. What breaks first is almost always a grid without a `min-w-0` child or a
+   fixed-width sidebar — fix with `grid-cols-1 md:grid-cols-2 xl:grid-cols-N`
+   ladders and `TableScroll`, never by shrinking text below `text-xs`.
