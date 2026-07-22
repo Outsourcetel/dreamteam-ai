@@ -28,16 +28,13 @@ import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
-import DEActivityPage from './pages/tenant/ops/DEActivityPage';
 import SupportHubPage from './pages/tenant/support/SupportHubPage';
 import BrowserOperatorPage from './pages/tenant/autonomy/BrowserOperatorPage';
-import { PerformancePage, InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
-import SelfLearningPage from './pages/tenant/intelligence/SelfLearningPage';
-import ProvingGroundPage from './pages/tenant/intelligence/ProvingGroundPage';
+import { InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
+import WorkforceHubPage from './pages/tenant/WorkforceHubPage';
 import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
-import WorkforceDEsPage from './pages/tenant/WorkforceDEsPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomerOverviewPage from './pages/tenant/entity/CustomerOverviewPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
@@ -450,9 +447,14 @@ function AppShell() {
         return <SpecialistsPage domain="finance_deep" setPage={handleSetPage} />;
       case 'specialist_people':
         return <SpecialistsPage domain="people" setPage={handleSetPage} />;
-      // ── Workforce ─────────────────────────────────────────────
+      // ── Workforce (one hub: Roster / At Work / Performance / Proving
+      // Ground / Self-Learning — old URLs deep-link to tabs) ──
       case 'workforce_des':
-        return <WorkforceDEsPage setPage={handleSetPage} />;
+      case 'ops_de_activity':
+      case 'intelligence_performance':
+      case 'intelligence_evals':
+      case 'intelligence_learning':
+        return <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'workforce_chat':
         return <WorkforceChatHubPage />;
       // ── Knowledge (one hub, four tabs — old URLs deep-link to tabs) ──
@@ -471,8 +473,6 @@ function AppShell() {
         return <HumanTasksPage setPage={handleSetPage} />;
       case 'ops_activity':
         return <ActivityPage setPage={handleSetPage} />;
-      case 'ops_de_activity':
-        return <DEActivityPage setPage={handleSetPage} />;
       // ── Support (one hub: Inbox first, Overview + Rules as tabs) ──
       case 'support_command_center':
       case 'support_triage_rules':
@@ -481,12 +481,6 @@ function AppShell() {
       case 'browser_operator':
         return <BrowserOperatorPage setPage={handleSetPage} />;
       // ── Intelligence ──────────────────────────────────────────
-      case 'intelligence_performance':
-        return <PerformancePage setPage={handleSetPage} />;
-      case 'intelligence_learning':
-        return <SelfLearningPage setPage={handleSetPage} />;
-      case 'intelligence_evals':
-        return <ProvingGroundPage setPage={handleSetPage} />;
       case 'intelligence_insights':
         return <InsightsPage setPage={handleSetPage} />;
       // ── Governance ────────────────────────────────────────────

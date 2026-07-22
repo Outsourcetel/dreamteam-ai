@@ -152,19 +152,19 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       title: 'DIGITAL EMPLOYEES',
       groups: [
         {
+          // One destination — Roster/At Work/Performance/Proving Ground/
+          // Self-Learning are tabs inside the Workforce hub (north-star IA).
           id: 'des',
-          label: 'Roster',
+          label: 'Workforce',
           icon: '⚡',
           page: 'workforce_des',
           // Demo-only badge: NavCounts has no real DE/human headcount, so
           // live tenants get NO badge here rather than a demo company's.
           badge: isLiveMode ? undefined : { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
-        { id: 'de_activity', label: 'DE at Work', icon: '◉', page: 'ops_de_activity' },
         // One destination — Inbox/Overview/Rules are tabs inside the Support hub.
         { id: 'support', label: 'Support', icon: '🎧', page: 'support_inbox' },
         { id: 'browser_operator', label: 'Browser Operator', icon: '🌐', page: 'browser_operator' },
-        { id: 'performance', label: 'Performance', icon: '◔', page: 'intelligence_performance' },
         // Wave 3: live tenants get the single consolidated Outcomes page
         // (real economics/delivery/risk rollup). Demo keeps the 4-page
         // preview group. The alerts badge was demo-seeded (s.alerts) —
@@ -183,8 +183,6 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
                 { id: 'outcome_risk', label: 'Risk Posture' },
               ],
             },
-        { id: 'proving_ground', label: 'Proving Ground', icon: '▦', page: 'intelligence_evals' },
-        { id: 'self_learning', label: 'Self-Learning', icon: '↻', page: 'intelligence_learning' },
         { id: 'insights', label: 'Insights', icon: '✦', page: 'intelligence_insights' },
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
@@ -367,7 +365,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const isActive = (p: Page) => page === p
     // Hub tabs are distinct Page keys — keep the single nav entry lit on any of them.
     || (p === 'knowledge_library' && String(page).startsWith('knowledge_'))
-    || (p === 'support_inbox' && String(page).startsWith('support_'));
+    || (p === 'support_inbox' && String(page).startsWith('support_'))
+    || (p === 'workforce_des' && ['ops_de_activity', 'intelligence_performance', 'intelligence_evals', 'intelligence_learning'].includes(String(page)));
   const isChildActive = (children?: SubItem[]) => children?.some(c => c.id === page);
 
   if (collapsed) {
