@@ -97,11 +97,6 @@ function friendly(raw: string): string {
   return raw;
 }
 
-export async function listKpiMetrics(): Promise<KpiMetric[]> {
-  const { data, error } = await supabase.rpc('list_kpi_metrics');
-  if (error) throw new Error(friendly(error.message));
-  return (data ?? []) as KpiMetric[];
-}
 
 export async function listSkillCategories(): Promise<SkillCategory[]> {
   const { data, error } = await supabase.rpc('list_skill_categories');
