@@ -319,7 +319,7 @@ async function callConsultSpecialist(
   }
 }
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -498,6 +498,25 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       const reply = await callConsultSpecialist(tenantId, key, q, workItemId ?? null);
       return { result: { specialist: key, reply } };
     }
+    case 'delegate_to_colleague': {
+      // The Map is the gate (built from active outbound grants); request_de_task
+      // re-checks the grant + single-hop server-side. Deny on empty/undefined.
+      const colleagueName = String(input.colleague ?? '').trim();
+      const title = String(input.title ?? '').trim();
+      if (!colleagueName || !title) return { result: { error: 'Provide both colleague and title.' } };
+      const toId = delegationTargets?.get(colleagueName.toLowerCase());
+      if (!toId) return { result: { error: `Not permitted to delegate to "${colleagueName}". Only the colleagues listed in your delegate_to_colleague tool are available.` } };
+      const { data: rq, error: rqErr } = await admin.rpc('request_de_task', {
+        p_from_de_id: deId, p_to_de_id: toId, p_title: title,
+        p_context: String(input.context ?? '').slice(0, 4000),
+        p_related_table: 'de_objectives', p_related_id: objectiveId ?? null,
+      });
+      if (rqErr) return { result: { error: rqErr.message } };
+      const rr = (rq ?? {}) as { ok?: boolean; error?: string; detail?: string; request_id?: string; deduped?: boolean };
+      return { result: rr.ok
+        ? { delegated: true, to: colleagueName, request_id: rr.request_id, note: rr.deduped ? 'An identical task was already open — not duplicated.' : 'Handed off — they will pick it up as their own task. Do NOT also do it yourself.' }
+        : { error: rr.error ?? 'could not delegate', detail: rr.detail } };
+    }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: deId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
       // Ledger close-out (docs/16): the Exceptions desk finally has a
@@ -558,9 +577,11 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let oppRef: string | null = null;
   let accountContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
+  let objectiveKind: string | undefined;        // T1.2: single-hop delegation pre-filter
   if (objectiveId) {
     const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description').eq('id', objectiveId).maybeSingle();
     objectiveBriefText = `${obj?.title ?? ''}\n${obj?.description ?? ''}`.trim() || undefined;
+    objectiveKind = (obj?.entity_kind as string | undefined) ?? undefined;
     if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) {
       accountRef = String(obj.entity_ref);
       // The DE's DESK: hand it the account record it's working, so step 1
@@ -644,6 +665,38 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       }
     }
   }
+  // Cross-DE delegation (T1.2): a DE may hand a sub-task to a colleague it has
+  // an active OUTBOUND consultation grant to (mig 111). request_de_task opens a
+  // real tracked case on the receiver, who works it under ITS OWN governance —
+  // and re-checks the grant + single-hop server-side (mig 269). Not offered
+  // while working a task that was itself delegated (objectiveKind==='de_task') —
+  // the single-hop pre-filter, backstopped in SQL.
+  const delegateTools: typeof TOOLS = [];
+  let delegationTargets: Map<string, string> | undefined;   // colleague name (lower) → de_id
+  if (objectiveId && objectiveKind !== 'de_task') {
+    const { data: outGrants } = await admin.from('de_consultation_grants')
+      .select('target_de_id').eq('tenant_id', tenantId).eq('requester_de_id', deId).eq('active', true);
+    const tIds = [...new Set(((outGrants ?? []) as Array<{ target_de_id: string }>).map((g) => g.target_de_id).filter(Boolean))];
+    if (tIds.length > 0) {
+      const { data: colRows } = await admin.from('digital_employees')
+        .select('id, name, persona_name, department').in('id', tIds)
+        .not('lifecycle_status', 'in', '(paused,retired,archived)');
+      const cols = (colRows ?? []) as Array<{ id: string; name?: string; persona_name?: string; department?: string }>;
+      if (cols.length > 0) {
+        delegationTargets = new Map(cols.map((c) => [String(c.persona_name || c.name || '').toLowerCase(), c.id]));
+        const roster = cols.map((c) => `${c.persona_name || c.name} (${c.department || 'colleague'})`).join(', ');
+        delegateTools.push({
+          name: 'delegate_to_colleague',
+          description: `Hand a specific sub-task to a colleague better suited for it. Available: ${roster}. They pick it up as their OWN tracked task under their own governance — so use this only for work that is genuinely theirs, not a way to avoid your own. Give a clear title and enough context. You cannot delegate a task that was delegated to you.`,
+          input_schema: { type: 'object', properties: {
+            colleague: { type: 'string', description: 'the colleague name exactly as listed' },
+            title: { type: 'string', description: 'a short, specific task title' },
+            context: { type: 'string', description: 'what they need to know to do it' },
+          }, required: ['colleague', 'title'] },
+        });
+      }
+    }
+  }
   // Mid-motion tools (EXEC 0.2/0.3/0.4): only offered when this work item is
   // part of a real case (and, for write-backs, an account case) — so the DE
   // itself decides "now I'll wait / write back / prepare a document", instead
@@ -716,7 +769,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       });
     }
   }
-  const tools = [...TOOLS, ...consultTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
+  const tools = [...TOOLS, ...consultTools, ...delegateTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
 
@@ -742,7 +795,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
