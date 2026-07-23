@@ -9,7 +9,7 @@ import {
   KnowledgeCollection, listKnowledgeCollections, createKnowledgeCollection, deleteKnowledgeCollection,
   listDocCollectionIds, assignDocCollection, unassignDocCollection,
   markDocVerified, setDocLifecycle, getMyUserId,
-  bulkAddTag, bulkAssignCollection, bulkMarkVerified, bulkDeleteDocs,
+  bulkAddTag, bulkAssignCollection, bulkMarkVerified, bulkDeleteDocs, bulkReembedDocs, getReembedStatus,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
   extractPdf, extractUrl, listDocVersions,
@@ -67,6 +67,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // Phase-4 WS7: multi-select + bulk maintenance (select-on-page).
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // WS7 Class-B: forced re-embed. Off unless the workspace opts into the
+  // default-OFF knowledge_reembed flag; `pending` counts chunks still re-indexing.
+  const [reembed, setReembed] = useState<{ enabled: boolean; pending: number }>({ enabled: false, pending: 0 });
   // Per-DE knowledge scopes (migration 030)
   const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
   const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
@@ -148,7 +151,19 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     finally { setRevisionsLoading(false); }
   };
 
-  useEffect(() => { void loadRevisions(); }, []);
+  const loadReembed = async () => { try { setReembed(await getReembedStatus()); } catch { /* non-fatal — action stays hidden */ } };
+  useEffect(() => { void loadRevisions(); void loadReembed(); }, []);
+  // Keep the "N re-indexing" pill honest: while a backlog is draining, poll the
+  // status every 30s so it counts down to 0 as the cron works, then stops
+  // polling (the dependency flips false when pending hits 0). Only runs where
+  // the flag is on AND there's actual work — otherwise it never schedules.
+  const reembedPolling = reembed.enabled && reembed.pending > 0;
+  useEffect(() => {
+    if (!reembedPolling) return;
+    const t = setInterval(() => { void loadReembed(); }, 30000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reembedPolling]);
   // Re-search on query/facet/page change (short debounce on typing).
   useEffect(() => {
     const t = setTimeout(() => { void load(); }, 250);
@@ -226,6 +241,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const bulkVerify = () => runBulk(() => bulkMarkVerified([...selected]));
   const bulkDelete = async () => { if (window.confirm(`Delete ${selected.size} document(s)? This can’t be undone.`)) await runBulk(() => bulkDeleteDocs([...selected])); };
   const bulkCollection = async (collectionId: string) => { if (collectionId) await runBulk(() => bulkAssignCollection([...selected], collectionId)); };
+  const bulkReembed = async () => {
+    if (!window.confirm(`Re-index ${selected.size} document(s)? Each document's chunks re-embed in the background; search keeps working the whole time.`)) return;
+    await runBulk(() => bulkReembedDocs([...selected]));
+    await loadReembed();
+  };
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
     setDecidingRevisionId(r.id);
@@ -483,6 +503,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </select>
         <button onClick={() => void newCollection()} title="Create a collection"
           className="text-sm px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 transition-colors">＋ Collection</button>
+        {reembed.enabled && reembed.pending > 0 && (
+          <span title="Search embeddings are being recomputed in the background. Search keeps working the whole time."
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 text-indigo-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+            {reembed.pending.toLocaleString()} re-indexing
+          </span>
+        )}
       </div>
 
       {/* W4-E slice 1 (docs/16): the ✨ spine reaches the page where users
@@ -523,6 +550,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </select>
           )}
           <button disabled={bulkBusy} onClick={() => void bulkVerify()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-emerald-500 disabled:opacity-50">Mark verified</button>
+          {reembed.enabled && (
+            <button disabled={bulkBusy} onClick={() => void bulkReembed()} title="Recompute the search embeddings for these documents in the background" className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Re-index</button>
+          )}
           <button disabled={bulkBusy} onClick={() => void bulkDelete()} className="text-xs px-2.5 py-1 rounded-lg border border-red-500/40 text-red-300 hover:border-red-400 disabled:opacity-50">Delete</button>
           <button disabled={bulkBusy} onClick={() => setSelected(new Set())} className="text-xs px-2 py-1 text-dt-muted hover:text-dt-support ml-auto">Clear</button>
           {bulkBusy && <span className="text-xs text-indigo-300">Working…</span>}

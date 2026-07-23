@@ -194,13 +194,31 @@ async function bulkRpc(fn: string, args: Record<string, unknown>, verb: string):
   const { data, error } = await supabase.rpc(fn, args);
   if (error) throw new Error(error.message);
   const r = data as { ok?: boolean; error?: string; [k: string]: unknown };
-  if (!r?.ok) throw new Error(r?.error === 'too_many' ? `Too many documents selected (max ${r.cap ?? 1000}).` : (r?.error ?? `Bulk ${verb} failed.`));
-  return Number(r.updated ?? r.added ?? r.verified ?? r.deleted ?? 0);
+  if (!r?.ok) {
+    if (r?.error === 'too_many') throw new Error(`Too many documents selected (max ${r.cap ?? 1000}).`);
+    if (r?.error === 'reembed_disabled') throw new Error('Re-embed is turned off for this workspace.');
+    throw new Error(r?.error ?? `Bulk ${verb} failed.`);
+  }
+  return Number(r.updated ?? r.added ?? r.verified ?? r.deleted ?? r.chunks_queued ?? 0);
 }
 export const bulkAddTag = (docIds: string[], tag: string) => bulkRpc('bulk_add_doc_tag', { p_doc_ids: docIds, p_tag: tag }, 'tag');
 export const bulkAssignCollection = (docIds: string[], collectionId: string) => bulkRpc('bulk_assign_collection', { p_doc_ids: docIds, p_collection_id: collectionId }, 'assign');
 export const bulkMarkVerified = (docIds: string[]) => bulkRpc('bulk_mark_verified', { p_doc_ids: docIds }, 'verify');
 export const bulkDeleteDocs = (docIds: string[]) => bulkRpc('bulk_delete_docs', { p_doc_ids: docIds }, 'delete');
+// Class-B: queue an in-place re-embed of the selected docs' chunks (gated on the
+// default-OFF knowledge_reembed flag; the reembed-drain worker refreshes each
+// chunk's vector without ever blanking it). Returns the number of chunks queued.
+export const bulkReembedDocs = (docIds: string[]) => bulkRpc('bulk_reembed_docs', { p_doc_ids: docIds }, 're-embed');
+
+// Whether this workspace has re-embed enabled + how many chunks are still
+// re-indexing. Non-fatal: the UI simply hides the action if the RPC is absent
+// or the flag is off. (enabled=false with the default-OFF flag = the common case.)
+export async function getReembedStatus(): Promise<{ enabled: boolean; pending: number }> {
+  const { data, error } = await supabase.rpc('get_reembed_status');
+  if (error) return { enabled: false, pending: 0 };
+  const r = data as { enabled?: boolean; pending?: number };
+  return { enabled: !!r?.enabled, pending: Number(r?.pending ?? 0) };
+}
 
 // Phase-2 WS4: corpus-level "state of your knowledge" for the Hub overview,
 // in one call over the Phase-1 denormalized signals + gaps + review queue.
