@@ -395,7 +395,7 @@ const prefersReducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function DEChatDock() {
-  const { currentPage, activeCompanyId, handleSetPage } = useAuth();
+  const { currentPage, activeCompanyId, handleSetPage, currentTenant } = useAuth();
   const isLive = true;   // legacy demo mode decommissioned — always live
   const threadId = isLive ? 'live' : activeCompanyId;
   const [open, setOpen] = useState(false);
@@ -533,7 +533,7 @@ export default function DEChatDock() {
   const sendLive = async (text: string) => {
     setTyping(true);
     try {
-      const res = await askDE(text, conversationIdRef.current);
+      const res = await askDE(text, conversationIdRef.current, currentTenant?.id ?? null);
       if (res.conversation_id) conversationIdRef.current = res.conversation_id;
       // de-answer is the source of truth for who actually answered —
       // overwrite the on-mount guess (or confirm it) every reply.

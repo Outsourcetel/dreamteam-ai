@@ -48,6 +48,7 @@ export interface DigitalEmployee {
    *  consult. Still a digital employee; this flags its specialist facet. */
   is_specialist?: boolean;
   specialist_key?: string | null;
+  is_supervisor?: boolean;
 }
 
 /** The roster. Retired and archived employees are hidden by default —
@@ -329,4 +330,12 @@ export async function assignTaskToDe(toDeId: string, title: string, context?: st
 export async function respondDeTask(requestId: string, status: string, result?: string): Promise<void> {
   const { error } = await supabase.rpc('respond_de_task', { p_request_id: requestId, p_status: status, p_result: result ?? null });
   if (error) raise('respondDeTask', error);
+}
+
+// ── Supervisor designation (T1.3, mig 270): one supervisor DE per tenant
+//    routes incoming in-app questions to the best-matched teammate. Owner/
+//    admin only (enforced in set_de_supervisor). ──
+export async function setDeSupervisor(deId: string, isSupervisor: boolean): Promise<void> {
+  const { error } = await supabase.rpc('set_de_supervisor', { p_de_id: deId, p_enable: isSupervisor });
+  if (error) raise('setDeSupervisor', error);
 }

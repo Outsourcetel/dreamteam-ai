@@ -30,6 +30,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { loadTenantGate } from '../_shared/tenantStatus.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -40,13 +41,29 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 const ROUTING_MODEL = 'claude-haiku-4-5';
 const INELIGIBLE = ['paused', 'retired', 'archived'];
 
+// One de-answer caller. de-answer returns llm_not_configured / ai_budget_exceeded
+// as HTTP 200 with an `error` field, and 402 on suspension — so callers must
+// propagate ITS status, never flatten to 502 (which would mis-tell the client
+// the transport failed).
+async function callDeAnswer(body: Record<string, unknown>): Promise<{ r: Response; j: Record<string, unknown> }> {
+  const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: svc, Authorization: `Bearer ${svc}` },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({} as Record<string, unknown>));
+  return { r, j };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   try {
     const body = await req.json().catch(() => ({}));
-    const { tenant_id, supervisor_de_id, question, conversation_id } = body;
-    if (!tenant_id || !supervisor_de_id) return json({ error: 'tenant_id and supervisor_de_id required' }, 400);
+    const { tenant_id, question, conversation_id, de_id: passthroughDeId } = body;
+    const bodySupervisor = typeof body.supervisor_de_id === 'string' && body.supervisor_de_id ? body.supervisor_de_id : null;
+    if (!tenant_id) return json({ error: 'tenant_id required' }, 400);
     if (!question || typeof question !== 'string') return json({ error: 'question required' }, 400);
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -59,6 +76,31 @@ serve(async (req) => {
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
       const resolvedTenant = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, tenant_id);
       if (resolvedTenant !== tenant_id) return json({ error: 'forbidden' }, 403);
+    }
+
+    // Resolve the supervisor: explicit body value, else the tenant's designated
+    // is_supervisor DE. No supervisor configured → byte-identical to today's
+    // direct de-answer (no routing spend, no trace, no supervisor memory).
+    let supervisor_de_id: string;
+    {
+      let resolved: string | null = bodySupervisor;
+      if (!resolved) {
+        const { data: supRow } = await admin.from('digital_employees')
+          .select('id').eq('tenant_id', tenant_id).eq('is_supervisor', true)
+          .not('lifecycle_status', 'in', '(paused,retired,archived)').maybeSingle();
+        resolved = supRow?.id ?? null;
+      }
+      if (!resolved) {
+        const { r, j } = await callDeAnswer({
+          question, tenant_id,
+          ...(typeof passthroughDeId === 'string' && passthroughDeId ? { de_id: passthroughDeId } : {}),
+          ...(conversation_id ? { conversation_id } : {}),
+        });
+        if (j.error) return json({ error: j.error, ...(j.conversation_id ? { conversation_id: j.conversation_id } : {}) }, r.status);
+        return json({ ...j, routed: false, route_reason: 'no supervisor configured — answered directly',
+          handled_by: { de_id: (j.de_id as string) ?? null, name: j.de_name } });
+      }
+      supervisor_de_id = resolved;
     }
 
     // Supervisor + its human-granted routing graph.
@@ -85,6 +127,9 @@ serve(async (req) => {
     let chosen = supervisor_de_id as string;
     let routeReason = 'no teammates granted — answered directly';
     if (mates.length > 0) {
+      // Suspended tenant does no paid AI work — refuse BEFORE the routing call.
+      const gate = await loadTenantGate(admin, tenant_id);
+      if (gate.suspended) return json({ error: 'tenant_suspended' }, 402);
       if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
       const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
       if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
@@ -97,7 +142,7 @@ serve(async (req) => {
       const res = await llmMessages(admin, { model: ROUTING_MODEL, max_tokens: 200, system, messages: [{ role: 'user', content: `Team:\n${roster}\n\nIncoming question:\n${wrapUntrusted(question, 'customer-question')}` }] }, 'de-orchestrate');
       if (res.ok) {
         const d = await res.json();
-        admin.rpc('record_de_token_usage', { p_tenant_id: tenant_id, p_de_id: supervisor_de_id, p_model_id: ROUTING_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
+        await admin.rpc('record_de_token_usage', { p_tenant_id: tenant_id, p_de_id: supervisor_de_id, p_model_id: ROUTING_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
         const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
         try {
           const p = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
@@ -115,13 +160,8 @@ serve(async (req) => {
     }
 
     // The chosen employee answers on the SAME thread (shared memory).
-    const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const ar = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: svc, Authorization: `Bearer ${svc}` },
-      body: JSON.stringify({ question, tenant_id, de_id: chosen, ...(conversation_id ? { conversation_id } : {}) }),
-    });
-    const aj = await ar.json().catch(() => ({}));
-    if (aj.error) return json({ error: aj.error }, 502);
+    const { r: ar, j: aj } = await callDeAnswer({ question, tenant_id, de_id: chosen, ...(conversation_id ? { conversation_id } : {}) });
+    if (aj.error) return json({ error: aj.error, ...(aj.conversation_id ? { conversation_id: aj.conversation_id } : {}) }, ar.status >= 400 ? ar.status : 200);
 
     const routed = chosen !== supervisor_de_id;
     const mate = mates.find(m => m.id === chosen);
@@ -150,6 +190,10 @@ serve(async (req) => {
       needs_escalation: aj.needs_escalation, conversation_id: aj.conversation_id,
       handled_by: { de_id: chosen, name: aj.de_name },
       routed, route_reason: routeReason,
+      ...(aj.blocked ? { blocked: aj.blocked, rule: aj.rule } : {}),
+      ...(aj.cached ? { cached: aj.cached } : {}),
+      ...(aj.no_docs ? { no_docs: aj.no_docs } : {}),
+      ...(aj.draft_id ? { draft_id: aj.draft_id } : {}),
     });
   } catch (err) {
     console.error('de-orchestrate error:', err);

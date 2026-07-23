@@ -44,7 +44,7 @@ import {
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
   listDeProfileFields, addDeProfileField, setDeAttributes, setExternalReplyMode,
-  listDeTaskRequests, assignTaskToDe, respondDeTask,
+  listDeTaskRequests, assignTaskToDe, respondDeTask, setDeSupervisor,
 } from '../../lib/digitalEmployeesApi';
 import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
@@ -1552,6 +1552,14 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
   const [modal, setModal] = useState<'edit' | 'transfer' | 'retire' | null>(null);
   const ownerName = members.find(m => m.userId === de.owner_id)?.fullName ?? (de.owner_id ? 'Unknown' : 'Unassigned');
   const retired = de.lifecycle_status === 'retired';
+  const [supBusy, setSupBusy] = useState(false);
+  const toggleSupervisor = async (next: boolean) => {
+    if (supBusy) return;
+    setSupBusy(true);
+    try { await setDeSupervisor(de.id, next); onUpdated({ ...de, is_supervisor: next }); }
+    catch (e) { console.error('setDeSupervisor', e); }
+    finally { setSupBusy(false); }
+  };
 
   const loadHistory = async () => {
     setShowHistory(s => !s);
@@ -1619,6 +1627,20 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
         )
       )}
 
+      {!retired && (
+        <div className="mt-4 pt-4 border-t border-dt-border">
+          <label className="flex items-center gap-2 text-xs text-dt-support">
+            <input type="checkbox" checked={!!de.is_supervisor} disabled={supBusy}
+              onChange={(e) => void toggleSupervisor(e.target.checked)} />
+            <span className="font-semibold text-dt-title">Supervisor / router</span>
+          </label>
+          {de.is_supervisor && (
+            <p className="text-[11px] text-dt-faint mt-1">
+              Incoming in-app questions route to the teammate best matched by responsibility, using the consultation grants below. If none match, {de.persona_name || de.name} answers directly.
+            </p>
+          )}
+        </div>
+      )}
       {!retired && <DelegationPanel de={de} />}
       {!retired && <ConsultationsPanel de={de} />}
 

@@ -329,6 +329,9 @@ export interface DEAnswerResult {
    *  not a hardcoded display name */
   de_id?: string | null;
   de_name?: string;
+  /** T1.3: a supervisor router picked a different teammate to answer */
+  routed?: boolean;
+  route_reason?: string;
 }
 
 export class DEAnswerError extends Error {
@@ -344,21 +347,27 @@ export class DEAnswerError extends Error {
  *  Forwards the caller's session JWT so the function can resolve the tenant. */
 export async function askDE(
   question: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  tenantId?: string | null,
 ): Promise<DEAnswerResult> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new DEAnswerError('server', 'Not signed in.');
 
+  // T1.3: when we know the tenant, route through de-orchestrate — it resolves
+  // the tenant's designated supervisor DE and either answers directly or routes
+  // to the best-matched teammate. With no supervisor configured it is a pure
+  // pass-through to de-answer, so this is a no-op until a supervisor is set.
+  const endpoint = tenantId ? 'de-orchestrate' : 'de-answer';
   let res: Response;
   try {
-    res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/de-answer`, {
+    res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined }),
+      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined, ...(tenantId ? { tenant_id: tenantId } : {}) }),
     });
   } catch (err) {
     throw new DEAnswerError('network', String(err));
@@ -373,6 +382,9 @@ export async function askDE(
   if (!res.ok || data.error) {
     throw new DEAnswerError('server', String(data.error ?? `HTTP ${res.status}`));
   }
+  // de-orchestrate reports who answered as handled_by:{de_id,name}; de-answer
+  // reports de_id/de_name at top level. Fan them into one shape.
+  const handledBy = (data.handled_by ?? null) as { de_id?: string | null; name?: string } | null;
   return {
     conversation_id: (data.conversation_id as string) ?? null,
     answer: String(data.answer ?? ''),
@@ -383,8 +395,10 @@ export async function askDE(
     cached: !!data.cached,
     blocked: !!data.blocked,
     blocked_rule: typeof data.rule === 'string' ? data.rule : undefined,
-    de_id: typeof data.de_id === 'string' ? data.de_id : null,
-    de_name: typeof data.de_name === 'string' ? data.de_name : undefined,
+    de_id: handledBy?.de_id ?? (typeof data.de_id === 'string' ? data.de_id : null),
+    de_name: handledBy?.name ?? (typeof data.de_name === 'string' ? data.de_name : undefined),
+    routed: !!data.routed,
+    route_reason: typeof data.route_reason === 'string' ? data.route_reason : undefined,
   };
 }
 
