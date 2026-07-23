@@ -551,7 +551,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // promise previously held only for the interactive channels.
   const { data: de } = await admin.from('digital_employees')
     .select('name, persona_name, display_title, purpose_statement, responsibilities, department, description')
-    .eq('id', deId).maybeSingle();
+    .eq('id', deId).eq('tenant_id', tenantId).maybeSingle();  // T2.4 defense-in-depth: a routed de_id can never run a foreign DE
   const deName = de?.persona_name || de?.name || 'the digital employee';
   const identityBits = [
     de?.display_title ? `Your role: ${de.display_title}.` : (de?.department ? `Department: ${de.department}.` : ''),
