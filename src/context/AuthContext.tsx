@@ -423,7 +423,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       UUID_RE.test(userTenantId) &&
       userTenantId.toLowerCase() !== DEMO_TENANT_ID)
   );
-  const dataMode: DataMode = isLiveTenant && !viewingDemo ? 'live' : 'demo';
+  // Legacy TCP/PWC demo surface decommissioned — the app is always live now.
+  const dataMode: DataMode = 'live';
   const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;
 
   // ── Needs org setup (post-signup recovery) ───────────────────────
