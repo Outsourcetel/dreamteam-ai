@@ -144,16 +144,21 @@ serve(async (req) => {
           if (seen.has(pairKey)) continue;
           seen.add(pairKey);
           const dist = Number(n.distance);
-          if (dist <= nearDup) {
-            // Near-duplicate: no LLM needed.
+          if (dist > candMax) continue;   // beyond the candidate band → ignore
+          const signals = lexicalSignals(srcContent, n.neighbor_content ?? '');
+          const numbersDiffer = signals.includes('numbers differ');
+          if (dist <= nearDup && !numbersDiffer) {
+            // Textual near-duplicate with no factual mismatch → record, no LLM.
             await admin.rpc('record_knowledge_conflict', {
               p_tenant_id: row.tenant_id, p_chunk_a: row.chunk_id, p_doc_a: row.doc_id,
               p_chunk_b: n.neighbor_chunk_id, p_doc_b: n.neighbor_doc_id,
               p_relation: 'near_duplicate', p_distance: dist, p_signal: { source: 'distance' }, p_confidence: 1 - dist,
             });
             findings++;
-          } else if (dist <= candMax) {
-            const signals = lexicalSignals(srcContent, n.neighbor_content ?? '');
+          } else {
+            // Candidate band, OR near-identical text whose NUMBERS differ (a likely
+            // factual contradiction the distance band would otherwise mislabel a
+            // duplicate) → spend one LLM adjudication.
             const worthLlm = signals.length > 0 || dist <= highSuspicion;
             if (!worthLlm) continue;
             if (llmCalls >= maxLlm || adjudicatedForChunk >= perChunk) continue;   // budget guard
