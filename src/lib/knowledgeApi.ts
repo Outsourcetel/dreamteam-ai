@@ -105,6 +105,8 @@ export interface SearchDocRow {
   chunk_count: number;
   embedded_count: number;
   updated_at: string;
+  citation_count: number;
+  last_cited_at: string | null;
   total_count: number;
 }
 export interface SearchDocsParams {

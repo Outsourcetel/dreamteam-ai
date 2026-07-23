@@ -470,7 +470,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                       {d.source}
                     </span>
                   </td>
-                  <td className={td}><IndexBadge docId={d.id} chunks={d.chunk_count} embedded={d.embedded_count} /></td>
+                  <td className={td}>
+                    <IndexBadge docId={d.id} chunks={d.chunk_count} embedded={d.embedded_count} />
+                    {d.citation_count > 0 && <div className="text-[10px] text-dt-muted mt-0.5">answered {d.citation_count}×</div>}
+                  </td>
                   <td className={td}><ScopeBadge doc={d} /></td>
                   <td className={`${td} text-xs text-dt-support`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>

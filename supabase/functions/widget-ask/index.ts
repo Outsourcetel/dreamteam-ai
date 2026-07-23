@@ -555,6 +555,8 @@ serve(async (req) => {
       p_match_count: 5, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
     });
     if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
+    // WS2 (mig 280): record which docs the reply consulted (incremental rollup).
+    const citedDocIds = new Set<string>();
     if (Array.isArray(chunks) && chunks.length > 0) {
       for (const c of chunks) {
         const budget = MAX_CONTEXT_CHARS - used;
@@ -563,6 +565,7 @@ serve(async (req) => {
         const title = c.doc_title ?? 'Knowledge document';
         contextParts.push(`[Document: ${title}]\n${bodyText}`);
         used += bodyText.length + title.length;
+        if (c.doc_id) citedDocIds.add(String(c.doc_id));
       }
     }
     if (contextParts.length === 0 && matchErr) {
@@ -572,7 +575,13 @@ serve(async (req) => {
         const bodyText = d.content.slice(0, budget);
         contextParts.push(`[Document: ${d.title}]\n${bodyText}`);
         used += bodyText.length + d.title.length;
+        if ((d as { id?: string }).id) citedDocIds.add(String((d as { id?: string }).id));
       }
+    }
+    // Fire-and-forget usage bump — non-fatal, never blocks a customer reply.
+    if (citedDocIds.size > 0) {
+      admin.rpc('record_knowledge_citations', { p_tenant_id: tenantId, p_doc_ids: [...citedDocIds] })
+        .then(({ error }: { error: unknown }) => { if (error) console.error('record_knowledge_citations:', error); });
     }
     const context = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : 'No documents matched the question.';
 
