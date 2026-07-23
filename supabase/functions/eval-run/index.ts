@@ -104,15 +104,24 @@ serve(async (req) => {
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 
-    // ── Resolve the DE's archetype so a cert exam is scoped to its role.
+    // ── Resolve the DE's archetype(s) so a cert exam is scoped to its role.
     // A targeted run (targetDeId set) sits the UNIVERSAL questions
-    // (archetype_key IS NULL) PLUS its own archetype's questions — never
-    // another role's. A generic run with no target keeps the full tenant
-    // suite unchanged (backward compat with the Proving Ground button). ──
-    let deArchetype: string | null = targetArchetype;
+    // (archetype_key IS NULL) PLUS its primary archetype's questions AND any
+    // exam_archetype_keys extras (a DE that spans roles, e.g. SEO + ads) —
+    // never an unrelated role's. Certification identity stays the single
+    // primary (deArchetype). A generic run with no target keeps the full
+    // tenant suite unchanged (backward compat with the Proving Ground). ──
+    let deArchetype: string | null = targetArchetype; // primary — used for certify
+    let examArchetypes: string[] = [];
     if (targetDeId) {
       const { data: arch } = await admin.rpc('resolve_de_archetype', { p_de_id: targetDeId });
       if (typeof arch === 'string' && arch) deArchetype = arch;
+      const { data: de } = await admin
+        .from('digital_employees').select('exam_archetype_keys').eq('id', targetDeId).maybeSingle();
+      const extras = Array.isArray(de?.exam_archetype_keys)
+        ? de.exam_archetype_keys.filter((x: unknown): x is string => typeof x === 'string' && x.length > 0)
+        : [];
+      examArchetypes = [...new Set([deArchetype, ...extras].filter((x): x is string => !!x))];
     }
 
     // ── Load the suite (active questions, capped) ──
@@ -122,8 +131,8 @@ serve(async (req) => {
       .eq('tenant_id', tenantId)
       .eq('active', true);
     if (targetDeId) {
-      qaQuery = deArchetype
-        ? qaQuery.or(`archetype_key.is.null,archetype_key.eq.${deArchetype}`)
+      qaQuery = examArchetypes.length
+        ? qaQuery.or(`archetype_key.is.null,archetype_key.in.(${examArchetypes.join(',')})`)
         : qaQuery.is('archetype_key', null);
     }
     const { data: qas, error: qaErr } = await qaQuery
