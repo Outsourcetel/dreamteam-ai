@@ -6,6 +6,8 @@ import {
   updateKnowledgeDoc, deleteKnowledgeDoc,
   ingestDocChunks,
   SearchDocRow, searchKnowledgeDocs, getKnowledgeDoc,
+  KnowledgeCollection, listKnowledgeCollections, createKnowledgeCollection, deleteKnowledgeCollection,
+  listDocCollectionIds, assignDocCollection, unassignDocCollection,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
   extractPdf, extractUrl, listDocVersions,
@@ -51,6 +53,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [sourceFilter, setSourceFilter] = useState('');
   const [visFilter, setVisFilter] = useState('');
   const [pageIdx, setPageIdx] = useState(0);
+  // Phase-3 WS5: collections (taxonomy) — filter the corpus + organize docs.
+  const [collections, setCollections] = useState<KnowledgeCollection[]>([]);
+  const [collectionFilter, setCollectionFilter] = useState('');
+  const [collectionDoc, setCollectionDoc] = useState<SearchDocRow | null>(null); // doc whose collections modal is open
+  const [docCollIds, setDocCollIds] = useState<Set<string>>(new Set());
   // Per-DE knowledge scopes (migration 030)
   const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
   const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
@@ -110,9 +117,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       // denormalized embedded_count, so no per-load chunk scan.
       const { rows: r, total: t } = await searchKnowledgeDocs({
         query, source: sourceFilter || null, visibility: visFilter || null,
+        collectionId: collectionFilter || null,
         limit: PAGE_SIZE, offset: pageIdx * PAGE_SIZE,
       });
       setRows(r); setTotal(t);
+      setCollections(await listKnowledgeCollections());
       setDocScopes(await listDocScopes());
       try { setSubjects(await listScopeSubjects()); } catch { /* non-fatal — scoping UI disabled */ }
     } catch (err) {
@@ -136,7 +145,29 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     const t = setTimeout(() => { void load(); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sourceFilter, visFilter, pageIdx]);
+  }, [query, sourceFilter, visFilter, collectionFilter, pageIdx]);
+
+  // ── Collections: create + open the per-doc membership modal ──
+  const newCollection = async () => {
+    const name = window.prompt('New collection name:');
+    if (!name?.trim()) return;
+    try { await createKnowledgeCollection(name.trim()); await load(); }
+    catch (e) { setError((e as Error).message); }
+  };
+  const openCollections = async (doc: SearchDocRow) => {
+    setCollectionDoc(doc);
+    setDocCollIds(new Set(await listDocCollectionIds(doc.id)));
+  };
+  const toggleCollection = async (collectionId: string) => {
+    if (!collectionDoc) return;
+    const has = docCollIds.has(collectionId);
+    try {
+      if (has) await unassignDocCollection(collectionDoc.id, collectionId);
+      else await assignDocCollection(collectionDoc.id, collectionId);
+      setDocCollIds(prev => { const n = new Set(prev); if (has) n.delete(collectionId); else n.add(collectionId); return n; });
+      void load();
+    } catch (e) { setError((e as Error).message); }
+  };
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
     setDecidingRevisionId(r.id);
@@ -387,6 +418,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           <option value="role">Role-shared</option>
           <option value="scoped">Scoped</option>
         </select>
+        <select value={collectionFilter} onChange={e => { setPageIdx(0); setCollectionFilter(e.target.value); }}
+          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
+          <option value="">All collections</option>
+          {collections.map(c => <option key={c.id} value={c.id}>{c.name} ({c.doc_count})</option>)}
+        </select>
+        <button onClick={() => void newCollection()} title="Create a collection"
+          className="text-sm px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 transition-colors">＋ Collection</button>
       </div>
 
       {/* W4-E slice 1 (docs/16): the ✨ spine reaches the page where users
@@ -493,6 +531,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         className="text-xs text-dt-support hover:text-dt-body transition-colors"
                       >
                         History
+                      </button>
+                      <button
+                        onClick={() => void openCollections(d)}
+                        className="text-xs text-dt-support hover:text-dt-body transition-colors"
+                      >
+                        Collections
                       </button>
                       <button
                         onClick={() => setRemoveTarget(d)}
@@ -643,6 +687,34 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Collections modal — organize this doc into collections (WS5) */}
+      {collectionDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm" onClick={() => setCollectionDoc(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-dt-border bg-dt-card p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-white truncate pr-2">Collections — “{collectionDoc.title}”</h3>
+              <button onClick={() => setCollectionDoc(null)} className="text-dt-support hover:text-white text-sm shrink-0">✕</button>
+            </div>
+            {collections.length === 0 ? (
+              <p className="text-xs text-dt-muted">No collections yet — close this and use “＋ Collection” above to make one.</p>
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {collections.map(c => (
+                  <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-dt-panel cursor-pointer">
+                    <input type="checkbox" checked={docCollIds.has(c.id)} onChange={() => void toggleCollection(c.id)} />
+                    <span className="text-sm text-dt-body flex-1 truncate">{c.name}</span>
+                    <span className="text-xs text-dt-muted">{c.doc_count}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-3">
+              <button onClick={() => setCollectionDoc(null)} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">Done</button>
             </div>
           </div>
         </div>

@@ -111,7 +111,7 @@ export interface SearchDocRow {
 }
 export interface SearchDocsParams {
   query?: string; tags?: string[]; source?: string | null; visibility?: string | null;
-  currentOnly?: boolean; limit?: number; offset?: number;
+  collectionId?: string | null; currentOnly?: boolean; limit?: number; offset?: number;
 }
 export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ rows: SearchDocRow[]; total: number }> {
   const { data, error } = await supabase.rpc('search_knowledge_docs', {
@@ -119,6 +119,7 @@ export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ r
     p_tags: p.tags && p.tags.length ? p.tags : null,
     p_source: p.source ?? null,
     p_visibility: p.visibility ?? null,
+    p_collection_id: p.collectionId ?? null,
     p_current_only: p.currentOnly ?? true,
     p_limit: p.limit ?? 50,
     p_offset: p.offset ?? 0,
@@ -126,6 +127,38 @@ export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ r
   if (error) raise('searchKnowledgeDocs', error);
   const rows = (data ?? []) as SearchDocRow[];
   return { rows, total: rows.length ? Number(rows[0].total_count) : 0 };
+}
+
+// ── Phase-3 WS5: collections (taxonomy) ───────────────────────────────────
+export interface KnowledgeCollection { id: string; parent_id: string | null; name: string; description: string | null; doc_count: number }
+export async function listKnowledgeCollections(): Promise<KnowledgeCollection[]> {
+  const { data, error } = await supabase.rpc('list_knowledge_collections');
+  if (error) return [];
+  return (data ?? []) as KnowledgeCollection[];
+}
+export async function createKnowledgeCollection(name: string, description?: string): Promise<void> {
+  const tid = await requireTenantId();
+  const { error } = await supabase.from('knowledge_collections').insert({ tenant_id: tid, name: name.trim(), description: description?.trim() || null });
+  if (error) raise('createKnowledgeCollection', error);
+}
+export async function deleteKnowledgeCollection(id: string): Promise<void> {
+  const { error } = await supabase.from('knowledge_collections').delete().eq('id', id);
+  if (error) raise('deleteKnowledgeCollection', error);
+}
+export async function listDocCollectionIds(docId: string): Promise<string[]> {
+  const { data, error } = await supabase.from('knowledge_doc_collections').select('collection_id').eq('doc_id', docId);
+  if (error) return [];
+  return (data ?? []).map((r: { collection_id: string }) => r.collection_id);
+}
+export async function assignDocCollection(docId: string, collectionId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('assign_doc_collection', { p_doc_id: docId, p_collection_id: collectionId });
+  if (error) raise('assignDocCollection', error);
+  const r = data as { ok?: boolean; error?: string };
+  if (!r?.ok) throw new Error(r?.error ?? 'Could not add to collection.');
+}
+export async function unassignDocCollection(docId: string, collectionId: string): Promise<void> {
+  const { error } = await supabase.rpc('unassign_doc_collection', { p_doc_id: docId, p_collection_id: collectionId });
+  if (error) raise('unassignDocCollection', error);
 }
 
 // Phase-2 WS4: corpus-level "state of your knowledge" for the Hub overview,
