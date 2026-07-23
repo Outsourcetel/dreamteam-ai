@@ -5028,6 +5028,17 @@ serve(async (req) => {
       // skipping decide_action_execution (it already ran once).
       const approvedExecutionId = typeof payload.approved_execution_id === 'string' ? payload.approved_execution_id : null;
 
+      // Resolve the transaction amount ONCE. Both the money gates in the decision
+      // block below AND the post-execution spend-ledger write need it. Convention:
+      // a registry param named 'amount_cents' (already in cents; the only money
+      // param in the registry). Hoisted above the decision block so the
+      // human-approved re-entry path (which skips the decision) still has it.
+      const amtRaw = (validated.values as Record<string, unknown>)['amount_cents'];
+      const hasAmountParam = def.param_schema.some((p) => p.name === 'amount_cents');
+      let amountCents: number | null = null;
+      if (typeof amtRaw === 'number' && Number.isFinite(amtRaw)) amountCents = Math.round(amtRaw);
+      else if (typeof amtRaw === 'string' && /^\d+$/.test(amtRaw.trim())) amountCents = parseInt(amtRaw.trim(), 10);
+
       if (!approvedExecutionId) {
         // ── 2. THE COMPOSITION: destructive-always-gates, THEN guardrail,
         //    THEN trust — decide_action_execution implements all three in
@@ -5041,12 +5052,7 @@ serve(async (req) => {
         // and the trust dollar-ceiling — actually fire. Convention: a param named
         // 'amount_cents' (already in cents; the only money param in the registry).
         // Passing null here is what silently disabled all three (audit critical).
-        const amtRaw = (validated.values as Record<string, unknown>)['amount_cents'];
-        const hasAmountParam = def.param_schema.some((p) => p.name === 'amount_cents');
-        let amountCents: number | null = null;
-        if (typeof amtRaw === 'number' && Number.isFinite(amtRaw)) amountCents = Math.round(amtRaw);
-        else if (typeof amtRaw === 'string' && /^\d+$/.test(amtRaw.trim())) amountCents = parseInt(amtRaw.trim(), 10);
-
+        // amountCents / hasAmountParam are resolved once above (also reused post-exec).
         const { data: decisionRaw } = await admin.rpc('decide_action_execution', {
           p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
           p_de_id: subjectKind === 'de' ? subjectId : null,
@@ -5098,6 +5104,18 @@ serve(async (req) => {
         p_result: { ok: outcome.ok, status: outcome.status ?? null, error: outcome.error ?? null },
         p_task_title: null, p_task_detail: null,
       });
+
+      // GI-1 — record REAL spend so the per-DE spend ledger accumulates and the
+      // cumulative daily/monthly caps in decide_action_execution actually bite
+      // (mig 235 shipped the ledger + cap enforcement but left record_de_spend
+      // with zero callers, so v_spent was always 0 and only a single action that
+      // alone breached a cap ever gated). Only a DE subject has a per-DE ledger;
+      // only a successful monetary execution counts. Both auto-exec and the
+      // human-approved re-entry path reach this point.
+      if (outcome.ok && subjectKind === 'de' && subjectId && amountCents !== null && amountCents > 0) {
+        await admin.rpc('record_de_spend', { p_tenant_id: tenantId, p_de_id: subjectId, p_cents: amountCents });
+      }
+
       await audit('connector_action',
         outcome.ok
           ? `Action EXECUTED — ${outcome.receipt ?? def.label}`
