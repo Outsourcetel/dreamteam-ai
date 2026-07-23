@@ -7,8 +7,9 @@ import { ConfirmDeleteModal } from '../../../components';
 import {
   listKnowledgeDocs, getKnowledgeDocCitationStats, markKnowledgeDocVerified, deleteKnowledgeDoc,
   listDocScopes, listScopeSubjects, getKnowledgeCoverageDemand, getKnowledgeOverview,
+  getKnowledgeConflicts, getKnowledgeConflictStatus, resolveKnowledgeConflict,
 } from '../../../lib/knowledgeApi';
-import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDemand } from '../../../lib/knowledgeApi';
+import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDemand, KnowledgeConflict } from '../../../lib/knowledgeApi';
 
 // ============================================================
 // Quality & Coverage — everything on this page is REAL: per-tag
@@ -61,14 +62,19 @@ function LiveKnowledgeQuality() {
   // the RPC returns only the LIST to avoid an O(corpus) count each load).
   const [coverage, setCoverage] = useState<CoverageDemand | null>(null);
   const [neverCitedTotal, setNeverCitedTotal] = useState<number | null>(null);
+  // WS9: conflict/duplicate findings + whether detection is enabled for this tenant.
+  const [conflicts, setConflicts] = useState<KnowledgeConflict[]>([]);
+  const [conflictEnabled, setConflictEnabled] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [d, cs, sc, subj, cov, ovr] = await Promise.all([
+      const [d, cs, sc, subj, cov, ovr, cst, conf] = await Promise.all([
         listKnowledgeDocs(), getKnowledgeDocCitationStats(), listDocScopes(), listScopeSubjects(),
         getKnowledgeCoverageDemand(), getKnowledgeOverview(),
+        getKnowledgeConflictStatus(), getKnowledgeConflicts('open'),
       ]);
       setDocs(d);
       setCitationStats(cs);
@@ -76,6 +82,8 @@ function LiveKnowledgeQuality() {
       setSubjects(subj);
       setCoverage(cov);
       setNeverCitedTotal(ovr?.never_cited ?? null);
+      setConflictEnabled(cst.enabled);
+      setConflicts(conf);
       setMissingTables(false);
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -111,6 +119,23 @@ function LiveKnowledgeQuality() {
     setToast(`"${doc.title}" deleted.`);
     setConfirmDelete(null);
     await refresh();
+  };
+
+  // WS9: resolve a conflict/duplicate. "Keep A/B" marks the chosen doc authoritative
+  // (a one-tier authority nudge); "Dismiss" clears it with no ranking change.
+  const resolveConflict = async (
+    c: KnowledgeConflict, resolution: 'resolved_pick_a' | 'resolved_pick_b' | 'dismissed') => {
+    setResolvingId(c.id);
+    try {
+      const auth = resolution === 'resolved_pick_a' ? c.doc_a_id : resolution === 'resolved_pick_b' ? c.doc_b_id : null;
+      await resolveKnowledgeConflict(c.id, resolution, auth);
+      setToast(resolution === 'dismissed' ? 'Dismissed.' : 'Resolved — chosen source marked authoritative.');
+      await refresh();
+    } catch (err) {
+      setToast(`Couldn't resolve: ${(err as Error)?.message ?? 'unknown error'}`);
+    } finally {
+      setResolvingId(null);
+    }
   };
 
   const deDes = subjects.filter(s => s.kind === 'de');
@@ -294,6 +319,57 @@ function LiveKnowledgeQuality() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* WS9: Conflicts & Duplicates — only shown where detection is on (or if
+              findings exist). Humans pick the source of truth or dismiss. */}
+          {(conflictEnabled || conflicts.length > 0) && (
+            <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
+              <div className="px-4 py-3 border-b border-dt-border">
+                <h3 className="text-sm font-semibold text-white">Conflicts &amp; duplicates</h3>
+                <p className="text-xs text-dt-muted mt-0.5">Documents that contradict or duplicate each other. Pick the source of truth (nudges its authority) or dismiss.</p>
+              </div>
+              {conflicts.length === 0 ? (
+                <p className="p-6 text-sm text-dt-muted text-center">No conflicts or duplicates detected. New and changed documents are checked automatically.</p>
+              ) : (
+                <div className="divide-y divide-dt-border">
+                  {conflicts.map(c => {
+                    const isConflict = c.relation === 'potential_conflict';
+                    const busy = resolvingId === c.id;
+                    return (
+                      <div key={c.id} className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConflict ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                            {isConflict ? 'Potential conflict' : 'Near-duplicate'}
+                          </span>
+                          {c.confidence != null && <span className="text-[10px] text-dt-faint">{Math.round(c.confidence * 100)}% confidence</span>}
+                          {(c.signal?.lexical ?? []).map((s, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-page text-dt-muted border border-dt-border">{s}</span>
+                          ))}
+                        </div>
+                        {c.signal?.rationale && <p className="text-xs text-dt-support mb-2 italic">“{c.signal.rationale}”</p>}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                          <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
+                            <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document A</p>
+                            <p className="text-xs text-white truncate">{c.doc_a_title}</p>
+                          </div>
+                          <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
+                            <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document B</p>
+                            <p className="text-xs text-white truncate">{c.doc_b_title}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button disabled={busy} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep A as source</button>
+                          <button disabled={busy} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep B as source</button>
+                          <button disabled={busy} onClick={() => void resolveConflict(c, 'dismissed')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">Dismiss</button>
+                          {busy && <span className="text-xs text-indigo-300 self-center">Saving…</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

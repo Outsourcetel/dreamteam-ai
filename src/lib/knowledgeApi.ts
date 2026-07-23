@@ -259,6 +259,37 @@ export async function getKnowledgeCoverageDemand(days = 30, gapLimit = 20, listL
   return c?.ok ? c : null;
 }
 
+// Phase-5 WS9: conflict / duplicate findings for human review. Detection is opt-in
+// (default-OFF flag knowledge_conflict_detection); the status call lets the UI show
+// an honest "not enabled" vs "none found" state.
+export interface KnowledgeConflict {
+  id: string; relation: 'near_duplicate' | 'potential_conflict'; status: string;
+  cosine_distance: number; confidence: number | null;
+  signal: { source?: string; rationale?: string; lexical?: string[]; note?: string } | null;
+  doc_a_id: string; doc_a_title: string; doc_b_id: string; doc_b_title: string;
+  authoritative_doc_id: string | null; detected_at: string;
+}
+export async function getKnowledgeConflicts(status = 'open', relation: string | null = null): Promise<KnowledgeConflict[]> {
+  const { data, error } = await supabase.rpc('get_knowledge_conflicts', { p_status: status, p_relation: relation, p_limit: 50, p_offset: 0 });
+  if (error) return [];
+  return (data ?? []) as KnowledgeConflict[];
+}
+export async function getKnowledgeConflictStatus(): Promise<{ enabled: boolean; open_count: number }> {
+  const { data, error } = await supabase.rpc('get_knowledge_conflict_status');
+  if (error) return { enabled: false, open_count: 0 };
+  const r = data as { enabled?: boolean; open_count?: number };
+  return { enabled: !!r?.enabled, open_count: Number(r?.open_count ?? 0) };
+}
+export async function resolveKnowledgeConflict(
+  id: string, resolution: 'resolved_pick_a' | 'resolved_pick_b' | 'merged' | 'dismissed', authoritativeDocId?: string | null): Promise<void> {
+  const { data, error } = await supabase.rpc('resolve_knowledge_conflict', {
+    p_conflict_id: id, p_resolution: resolution, p_authoritative_doc_id: authoritativeDocId ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string };
+  if (!r?.ok) throw new Error(r?.error ?? 'Resolve failed.');
+}
+
 // Fetch ONE doc with full content — the search rows carry only a preview, so the
 // editor loads the real content on open (no truncation-on-save data loss).
 export async function getKnowledgeDoc(id: string): Promise<KnowledgeDoc | null> {
