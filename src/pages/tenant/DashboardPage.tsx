@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { computeRoi, roiK } from '../../data/roi';
 import { useVocabulary } from '../../lib/vocabulary';
 import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
 import type { ChatEscalation } from '../../lib/chatEscalations';

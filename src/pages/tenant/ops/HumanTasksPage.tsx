@@ -4,7 +4,6 @@ import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
-import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
 import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';

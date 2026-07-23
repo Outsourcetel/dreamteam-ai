@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import type { Page } from '../../types'
-import { getPeople, ROSTER_SELECT_KEY, type Person } from '../../data/people'
+import { type Person } from '../../data/people'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
 import { AmendmentWizard } from '../../components/AmendmentWizard'
 import { DEAuthorityPanel } from '../../components/DEAuthorityPanel'

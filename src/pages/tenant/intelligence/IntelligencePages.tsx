@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { fetchMonthlyUsage, MonthlyUsage } from '../../../lib/usageApi';
 import { PageHeader } from '../../../components/ui';
-import { computeRoi, roiK } from '../../../data/roi';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import {

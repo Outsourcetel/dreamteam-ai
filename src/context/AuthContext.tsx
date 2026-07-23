@@ -380,12 +380,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isDTUser = !!(authedUser && (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(authedUser.role) || authedUser.layer === 'platform'));
   const isTenantUser = !!(authedUser && ['tenant_owner', 'tenant_admin', 'tenant_manager', 'tenant_user'].includes(authedUser.role));
 
-  // COMPANIES_LOOKUP has been EMPTY since the demo-company purge (69605ea),
-  // so this lookup always misses — without a fallback, activeCompany is
-  // undefined and the Sidebar's `activeCompany.id` crashes EVERY tenant
-  // page into the error boundary ("Something went wrong" on login — the
-  // 2026-07-20 production outage). Live tenants get a profile built from
-  // their real tenant record; anything else gets a neutral placeholder.
+  // activeCompany is built directly from the live tenant record. The Sidebar
+  // and other pages read `activeCompany.id`, so it must always be defined —
+  // a missing value crashes every tenant page into the error boundary
+  // ("Something went wrong" on login — the 2026-07-20 production outage).
+  // Live tenants get a profile from their real record; anything else gets a
+  // neutral placeholder.
   const liveName = godModeSession?.tenant?.name ?? dbCurrentTenant?.name ?? null;
   const activeCompany: CompanyProfile = {
     id: activeCompanyId,

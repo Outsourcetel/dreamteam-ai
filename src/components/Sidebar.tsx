@@ -227,13 +227,12 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, liveTenantName } = useAuth();
+  const { activeCompany, isLiveTenant, liveTenantName } = useAuth();
   // No groups open by default — Company Data (the demoted entity
   // section) in particular starts collapsed per the DE-centered IA.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
   const [liveCounts, setLiveCounts] = useState<NavCounts>({
     humanTasks: 0, kbGaps: 0, salesPipeline: 0, onboardingActive: 0, supportTickets: 0, atRiskAccounts: 0, renewalsDue: 0,
   });
@@ -262,12 +261,6 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const role = (user?.role ?? 'tenant_user') as Parameters<typeof canAccessPage>[0];
   const layer = user?.layer as Parameters<typeof canAccessPage>[2];
   const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer);
-  // Platform operators (Outsourcetel) — they may explore the demo companies
-  // for sales; real customers must NEVER see other companies in their nav.
-  const isDtUser = layer === 'platform' || ['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(role as string);
-  // Show the demo-company switcher only to demo/dev logins or platform
-  // operators — never inside a paying customer's live workspace.
-  const showDemoCompanies = !isLiveTenant || isDtUser;
   const nav = buildNav(activeCompany.id, liveCounts, true, vocab)
     .map(section => ({
       ...section,
@@ -354,80 +347,17 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   return (
     <div className="w-60 bg-dt-page border-r border-dt-border flex flex-col flex-shrink-0 overflow-hidden">
 
-      {/* Company selector */}
+      {/* Workspace identity */}
       <div className="p-3 border-b border-dt-border">
-        <button
-          onClick={() => setShowCompanyPicker(!showCompanyPicker)}
-          className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-dt-panel transition-colors group"
-        >
-          {isLiveTenant && !false ? (
-            <>
-              <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-indigo-600">
-                {(liveTenantName || 'C')[0].toUpperCase()}
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className="text-xs font-semibold text-dt-title truncate">{liveTenantName || 'Your company'}</div>
-                <div className="text-[10px] text-emerald-400 truncate">Live workspace</div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ background: activeCompany.badgeColor }}>
-                {activeCompany.badge}
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className="text-xs font-semibold text-dt-title truncate">{activeCompany.name}</div>
-                <div className="text-[10px] text-dt-muted truncate">{isLiveTenant ? 'Demo company' : activeCompany.industry}</div>
-              </div>
-            </>
-          )}
-          <span className="text-dt-faint text-xs group-hover:text-dt-support">⌄</span>
-        </button>
-
-        {showCompanyPicker && (
-          <div className="mt-1 bg-dt-card rounded-lg border border-dt-border-strong overflow-hidden">
-            {isLiveTenant && (
-              <>
-                <button
-                  onClick={() => { setShowCompanyPicker(false); }}
-                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${!false ? 'bg-dt-panel' : ''}`}
-                >
-                  <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
-                    {(liveTenantName || 'C')[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-dt-body">{liveTenantName || 'Your company'}</div>
-                    <div className="text-[10px] text-emerald-400">Live workspace</div>
-                  </div>
-                  {!false && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
-                </button>
-                {showDemoCompanies && (
-                  <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-dt-faint uppercase border-t border-dt-border-strong">
-                    Demo companies
-                  </div>
-                )}
-              </>
-            )}
-            {/* Platform operator inside a demo: the way back to the console
-                (mirrors the App-level false escape). */}
-            {isDtUser && false && (
-              <button
-                onClick={() => { setShowCompanyPicker(false); }}
-                className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors border-b border-dt-border-strong"
-              >
-                <span className="w-7 h-7 rounded-md flex items-center justify-center text-xs bg-dt-panel text-dt-support flex-shrink-0">←</span>
-                <span className="text-xs text-dt-support">Back to Platform Console</span>
-              </button>
-            )}
-            <button
-              onClick={() => { setPage('company_setup'); setShowCompanyPicker(false); }}
-              className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel border-t border-dt-border-strong"
-            >
-              <div className="w-6 h-6 rounded bg-slate-600 flex items-center justify-center text-xs text-dt-support">+</div>
-              <span className="text-xs text-dt-support">Add company</span>
-            </button>
+        <div className="w-full flex items-center gap-2 p-2 rounded-lg">
+          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-indigo-600">
+            {(liveTenantName || activeCompany.name || 'C')[0].toUpperCase()}
           </div>
-        )}
+          <div className="flex-1 text-left min-w-0">
+            <div className="text-xs font-semibold text-dt-title truncate">{liveTenantName || activeCompany.name || 'Your company'}</div>
+            <div className="text-[10px] text-emerald-400 truncate">Live workspace</div>
+          </div>
+        </div>
       </div>
 
       {/* Nav */}
