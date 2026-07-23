@@ -276,7 +276,45 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+// Consult-an-SME (T1.1): ask a specialist DE via the governed specialist-consult
+// endpoint. Single-hop by construction (specialist-consult makes ONE llm call,
+// no nested consult); the target answers under its OWN model/guardrails/grants.
+// Ported from agentic-step-execute so a DE can now consult mid-WORK, not only
+// inside a playbook step. run_id carries the work-item id for provenance.
+async function callConsultSpecialist(
+  tenantId: string, specialistKey: string, question: string, runId: string | null,
+): Promise<string> {
+  try {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/specialist-consult`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      },
+      body: JSON.stringify({
+        action: 'consult', tenant_id: tenantId, profile_key: specialistKey,
+        question, requested_by: 'de', run_id: runId,
+      }),
+    });
+    const d = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (d.error === 'llm_not_configured') return "The specialist could not produce a written answer — no reasoning provider is configured. Retrieval ran, but there's no answer to rely on.";
+    if (d.error === 'ai_budget_exceeded') return 'The specialist could not answer — this workspace has reached its monthly AI usage limit.';
+    if (d.error === 'profile_not_found') return `No specialist with key "${specialistKey}" exists in this workspace — re-check the available specialist keys before consulting again.`;
+    if (d.error === 'profile_paused') return `The "${specialistKey}" specialist is paused and cannot be consulted right now.`;
+    if (d.error) return `The specialist consult failed: ${String(d.error).slice(0, 160)}`;
+    if (d.blocked) return `The specialist's draft answer was withheld by a safety guardrail ("${String(d.rule ?? '')}") and escalated to a human. Proceed without relying on it.`;
+    const cites = Array.isArray(d.citations) && d.citations.length
+      ? ` Sources: ${(d.citations as unknown[]).slice(0, 5).map(String).join('; ')}.` : '';
+    const esc = d.needs_escalation
+      ? ' NOTE: the specialist flagged LOW confidence and escalated this to a human — treat its answer as provisional, not settled.' : '';
+    return `Specialist answer (confidence ${d.confidence ?? '?'}%): ${String(d.answer ?? '').slice(0, 1500)}${cites}${esc}`;
+  } catch (e) {
+    return `Could not reach the specialist: ${String(e).slice(0, 160)}`;
+  }
+}
+
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -441,6 +479,20 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
         ? { queued: true, task_id: r.task_id, status: r.status, note: 'Browser operation created — it is pending human approval; a connected browser worker will run it and its outcome will be recorded. Do NOT retry; move on or mark_done.' }
         : { error: r.error ?? 'could not create operation' } };
     }
+    case 'consult_specialist': {
+      // The Set is the real gate — specialist-consult has NO per-asker check,
+      // so a DE could otherwise consult any specialist by key. Deny on an
+      // empty OR undefined Set (fail-safe). The tool is only offered when the
+      // DE has ≥1 active grant, so a legitimate call always carries a Set.
+      const key = String(input.specialist_key ?? '').trim();
+      const q = String(input.question ?? '').trim();
+      if (!key || !q) return { result: { error: 'Provide both specialist_key and question.' } };
+      if (!allowedSpecialistKeys?.has(key)) {
+        return { result: { error: `Not permitted to consult "${key}". Only the specialists listed in your consult_specialist tool are available.` } };
+      }
+      const reply = await callConsultSpecialist(tenantId, key, q, workItemId ?? null);
+      return { result: { specialist: key, reply } };
+    }
     case 'escalate_to_human': {
       await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: deId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
       // Ledger close-out (docs/16): the Exceptions desk finally has a
@@ -552,6 +604,39 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
   // Generic escalation ruleset (mig 262) — loaded once, evaluated per action.
   const escRuleset = await loadEscalationRuleset(admin, tenantId, deId).catch(() => ({} as EscRuleset));
+  // Consult-an-SME (T1.1): offer a consult_specialist tool ONLY for specialists
+  // this DE has an active consultation grant to (mig 111). A grant is treated as
+  // MEMBERSHIP ("may consult this specialist about anything it knows"), not
+  // per-category scoping — de_consultation_grants.category is kept for audit but
+  // not branched on (System A never enforces it; the target's own sources /
+  // guardrails / model bound the blast radius). Every consult is recorded in
+  // spec_consultations + audit_events (kind='specialist_consult').
+  const consultTools: typeof TOOLS = [];
+  let allowedSpecialistKeys: Set<string> | undefined;
+  {
+    const { data: grantRows } = await admin.from('de_consultation_grants')
+      .select('target_de_id').eq('tenant_id', tenantId).eq('requester_de_id', deId).eq('active', true);
+    const targetIds = [...new Set(((grantRows ?? []) as Array<{ target_de_id: string }>).map((g) => g.target_de_id).filter(Boolean))];
+    if (targetIds.length > 0) {
+      const { data: specRows } = await admin.from('digital_employees')
+        .select('specialist_key, name, persona_name')
+        .in('id', targetIds).eq('is_specialist', true).eq('status', 'active').not('specialist_key', 'is', null);
+      const specs = (specRows ?? []) as Array<{ specialist_key: string; name?: string; persona_name?: string }>;
+      const keys = [...new Set(specs.map((s) => s.specialist_key).filter(Boolean))];
+      if (keys.length > 0) {
+        allowedSpecialistKeys = new Set(keys);
+        const desks = specs.map((s) => `${s.specialist_key} (${s.persona_name || s.name || s.specialist_key})`).join(', ');
+        consultTools.push({
+          name: 'consult_specialist',
+          description: `Ask a specialist colleague when this task needs expertise outside your own. Available: ${desks}. They answer from their own knowledge under their own guardrails — weigh the answer, do not treat it as gospel. Use only when you genuinely need their expertise.`,
+          input_schema: { type: 'object', properties: {
+            specialist_key: { type: 'string', enum: keys },
+            question: { type: 'string', description: 'a specific, self-contained question for the specialist' },
+          }, required: ['specialist_key', 'question'] },
+        });
+      }
+    }
+  }
   // Mid-motion tools (EXEC 0.2/0.3/0.4): only offered when this work item is
   // part of a real case (and, for write-backs, an account case) — so the DE
   // itself decides "now I'll wait / write back / prepare a document", instead
@@ -624,7 +709,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       });
     }
   }
-  const tools = [...TOOLS, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
+  const tools = [...TOOLS, ...consultTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
 
@@ -650,7 +735,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
