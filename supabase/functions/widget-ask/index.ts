@@ -525,7 +525,7 @@ serve(async (req) => {
     // neither be served from nor written to the shared cache (cross-caller leak).
     if (qEmbedding && !looksNonEnglish(question) && !identityVerdict?.verified) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
-        p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE,
+        p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE, p_de_id: subjectDeId,
       });
       const hit = Array.isArray(cacheRows) ? cacheRows[0] : null;
       if (hit) {
@@ -819,7 +819,7 @@ serve(async (req) => {
                 const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
                 if (!clean) {
                   await admin.from('answer_cache').insert({
-                    tenant_id: tenantId, account_id: null, question,
+                    tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,
                     question_embedding: qEmbedding, answer: answerText, confidence: conf, sources: srcs,
                     language: lang ?? 'English',
                   });
@@ -884,7 +884,7 @@ serve(async (req) => {
       const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
       if (!clean) {
         await admin.from('answer_cache').insert({
-          tenant_id: tenantId, account_id: null, question,
+          tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,
           question_embedding: qEmbedding, answer: parsed.answer, confidence: parsed.confidence, sources: parsed.sources,
           // Tag the ANSWER's language (model-reported) so the language gate
           // in match_cached_answer can keep languages apart (migration 164).

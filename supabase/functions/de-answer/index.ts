@@ -418,6 +418,7 @@ serve(async (req) => {
         p_account_id: null,
         p_query_embedding: qEmbedding,
         p_max_distance: CACHE_MAX_DISTANCE,
+        p_de_id: subjectDeId,   // DE-scope the cache (no cross-DE hits)
       });
       const hit = Array.isArray(cacheRows) ? cacheRows[0] : null;
       if (hit) {
@@ -726,6 +727,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,
+        de_id: subjectDeId,   // DE-scope the cache (no cross-DE hits)
         question,
         question_embedding: qEmbedding,
         answer: parsed.answer,
