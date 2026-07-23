@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import { LiveEmptyState } from '../../../components/LiveDataStates';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
@@ -154,7 +153,6 @@ const TYPE_LABELS: Record<ActivityType, string> = {
 
 export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const rows = ACTIVITY[activeCompanyId];
 
   const [deFilter, setDeFilter] = useState<string>('all');

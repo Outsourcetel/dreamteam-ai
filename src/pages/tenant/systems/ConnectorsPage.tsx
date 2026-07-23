@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
-import { useDataMode } from '../../../lib/dataMode';
 import LiveConnectorsPage from './LiveConnectorsPage';
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -256,7 +255,6 @@ function DEAvatar({ name }: { name: string }) {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   const { activeCompanyId } = useAuth();
   return <LiveConnectorsPage />;
   const connectors = CONNECTORS[activeCompanyId];

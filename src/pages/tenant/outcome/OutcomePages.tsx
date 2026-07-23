@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { th, td, PageHeader } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // Found in the 2026-07-09 adversarial go-live audit: none of the 4
@@ -143,7 +142,6 @@ const TCP_MRR = [
 
 export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const maxMrr = Math.max(...TCP_MRR.map(m => m.value));
 
@@ -287,7 +285,6 @@ const releaseBadge = (s: string) => {
 
 export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
 
   return <OutcomeNotYetAvailable title="Product & Delivery" subtitle="Releases, incidents, and engagements — outcome view" setPage={setPage} />;
@@ -573,7 +570,6 @@ const exToneBadge = (tone: FinException['tone']) =>
 
 export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const [resolved, setResolved] = useState<Record<string, 'approved' | 'rejected'>>({});
   const [selected, setSelected] = useState<FinException | null>(null);
@@ -927,7 +923,6 @@ const COMPLIANCE_CALENDAR: Record<CompanyId, { item: string; date: string; statu
 
 export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
 
   return <OutcomeNotYetAvailable title="Risk Posture" subtitle="Compliance alerts and calendar — outcome view" setPage={setPage} />;

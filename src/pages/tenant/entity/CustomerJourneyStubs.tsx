@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import CustomerSuccessLive from './CustomerSuccessLive';
 import { CustomerBDLive, CustomerSalesLive } from './PipelineLive';
 
@@ -71,7 +70,6 @@ const stageBadge = (stage: string) => {
 };
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
-  const dataMode = useDataMode();
   return <CustomerBDLive />;
   return <DemoCustomerBD />;
 };
@@ -191,7 +189,6 @@ const oppStageBadge = (stage: string) => {
 };
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
-  const dataMode = useDataMode();
   return <CustomerSalesLive />;
   return <DemoCustomerSales />;
 };
@@ -293,7 +290,6 @@ const healthText = (h: number) => (h >= 70 ? 'text-emerald-300' : h >= 45 ? 'tex
 const trendIcon = (t: Account['trend']) => (t === 'up' ? '↑' : t === 'down' ? '↓' : '→');
 
 export const CustomerSuccessPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
-  const dataMode = useDataMode();
   return <CustomerSuccessLive />;
   return <DemoCustomerSuccess setPage={setPage} />;
 };

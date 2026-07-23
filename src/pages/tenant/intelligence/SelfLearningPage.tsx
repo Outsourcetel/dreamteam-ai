@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
-import { useDataMode } from '../../../lib/dataMode';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
@@ -840,7 +839,6 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   return <LiveSelfLearning setPage={setPage} />;
   return <DemoSelfLearningPage setPage={setPage} />;
 }

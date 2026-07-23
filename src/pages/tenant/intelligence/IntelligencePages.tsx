@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
-import { useDataMode } from '../../../lib/dataMode';
 import { fetchMonthlyUsage, MonthlyUsage } from '../../../lib/usageApi';
 import { PageHeader } from '../../../components/ui';
 import { COMPANY_SUMMARY } from '../../../data/companies';
@@ -116,9 +115,8 @@ function LiveUsageStrip() {
 // ══════════════════════════════════════════════════════════════════
 
 export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   const { currentTenant } = useAuth();
-  if (dataMode === 'live' && currentTenant?.id) {
+  if (currentTenant?.id) {
     return <LivePerformancePage tenantId={currentTenant.id} setPage={setPage} />;
   }
   return <DemoPerformancePage setPage={setPage} />;
@@ -126,7 +124,6 @@ export function PerformancePage({ setPage }: { setPage: (p: Page) => void }) {
 
 function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const des = METRICS[activeCompanyId];
   const bench = BENCHMARK[activeCompanyId];
   const summary = COMPANY_SUMMARY[activeCompanyId];
@@ -141,7 +138,7 @@ function DemoPerformancePage({ setPage }: { setPage: (p: Page) => void }) {
       />
 
       {/* Live usage counters — real usage_metrics, live tenants only */}
-      {dataMode === 'live' && <LiveUsageStrip />}
+      {<LiveUsageStrip />}
 
       {/* Monthly value summary — same derivation as the dashboard bar (src/data/roi.ts) */}
       {(() => {
@@ -726,9 +723,8 @@ const KIND_META: Record<InsightKind, { label: string; cls: string }> = {
 };
 
 export function InsightsPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   const { currentTenant } = useAuth();
-  if (dataMode === 'live' && currentTenant?.id) {
+  if (currentTenant?.id) {
     return <LiveInsightsPage tenantId={currentTenant.id} setPage={setPage} />;
   }
   return <DemoInsightsPage setPage={setPage} />;

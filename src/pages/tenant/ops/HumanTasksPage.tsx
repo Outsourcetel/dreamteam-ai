@@ -5,7 +5,6 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import { findPersonByName, ROSTER_SELECT_KEY } from '../../../data/people';
-import { useDataMode } from '../../../lib/dataMode';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
 import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
@@ -511,7 +510,6 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
 // ── Page ──────────────────────────────────────────────────────────
 
 export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   return <LiveHumanTasks setPage={setPage} />;
   return <DemoHumanTasksPage setPage={setPage} />;
 }

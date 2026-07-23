@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import { TCP_ARTICLES, PWC_ARTICLES, daysSince, isStale, ConfidenceBar } from './KnowledgeLibraryPage';
-import { useDataMode } from '../../../lib/dataMode';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../../components';
@@ -549,7 +548,6 @@ function LiveKnowledgeQuality() {
 }
 
 export default function KnowledgeQualityPage() {
-  const dataMode = useDataMode();
   return <LiveKnowledgeQuality />;
   return <DemoKnowledgeQualityPage />;
 }

@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -78,7 +77,6 @@ const VENDOR_STATS: Record<CompanyId, { label: string; value: string; sub: strin
 
 export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
-  const dataMode = useDataMode();
   const stages = VENDOR_STAGES[activeCompanyId];
   const stats = VENDOR_STATS[activeCompanyId];
 
@@ -193,7 +191,6 @@ const evalStageBadge = (stage: string) => {
 
 export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const evals = EVALUATIONS[activeCompanyId];
   const rfps = RFPS[activeCompanyId];
 
@@ -287,7 +284,6 @@ const contractStatusBadge = (s: Contract['status']) => {
 
 export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const contracts = CONTRACTS[activeCompanyId];
   const expiring = contracts.filter(c => c.status === 'Expiring soon');
   const isTcp = activeCompanyId === 'tcp';
@@ -395,7 +391,6 @@ const reviewBadge = (s: string) => {
 
 export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const cards = SCORECARDS[activeCompanyId];
   const reviews = REVIEWS[activeCompanyId];
 

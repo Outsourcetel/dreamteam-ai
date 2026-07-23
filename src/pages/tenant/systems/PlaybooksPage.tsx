@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
-import { useDataMode } from '../../../lib/dataMode';
 import LivePlaybookBuilder from './LivePlaybookBuilder';
 import { AmendmentWizard } from '../../../components/AmendmentWizard';
 import { PendingAmendmentsWidget } from '../../../components/PendingAmendmentsWidget';
@@ -455,7 +454,6 @@ type ViewMode = 'published' | 'draft';
 
 
 export default function PlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   return <LivePlaybookBuilder setPage={setPage} />;
   return <DemoPlaybooksPage setPage={setPage} />;
 }

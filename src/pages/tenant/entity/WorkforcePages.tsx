@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import { LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -83,7 +82,6 @@ const HEADCOUNT_STATS: Record<CompanyId, { label: string; value: string; sub: st
 
 export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();
-  const dataMode = useDataMode();
   const stages = WF_STAGES[activeCompanyId];
   const stats = HEADCOUNT_STATS[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
@@ -193,7 +191,6 @@ const ROLES: Record<CompanyId, Role[]> = {
 
 export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const roles = ROLES[activeCompanyId];
   const totals = roles.reduce(
     (acc, r) => ({ sourced: acc.sourced + r.sourced, screening: acc.screening + r.screening, interview: acc.interview + r.interview, offer: acc.offer + r.offer }),
@@ -288,7 +285,6 @@ const JORDAN_TASKS: OnboardTask[] = [
 
 export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const doneCount = JORDAN_TASKS.filter(t => t.done).length;
   const pct = Math.round((doneCount / JORDAN_TASKS.length) * 100);
@@ -367,7 +363,6 @@ const SKILLS: Record<CompanyId, { skill: string; strong: number; developing: num
 
 export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
   const skills = SKILLS[activeCompanyId];
   const cycle = isTcp
@@ -450,7 +445,6 @@ const PAYROLL: Record<CompanyId, { date: string; headcount: number; gross: strin
 
 export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const { activeCompanyId } = useAuth();
-  const dataMode = useDataMode();
   const data = PAYROLL[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
 

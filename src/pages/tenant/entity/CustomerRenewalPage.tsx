@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
-import { useDataMode } from '../../../lib/dataMode';
 import {
   listAccounts, listInvoices, generateInvoice, updateInvoice,
   fmtMoneyK, CustomerApiError, INVOICE_APPROVAL_THRESHOLD_CENTS,
@@ -710,7 +709,6 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 const CustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
-  const dataMode = useDataMode();
   return <LiveCustomerRenewal setPage={setPage} />;
   return <DemoCustomerRenewalPage setPage={setPage} />;
 };

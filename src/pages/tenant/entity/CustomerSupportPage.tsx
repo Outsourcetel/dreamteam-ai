@@ -1,7 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
-import { useDataMode } from '../../../lib/dataMode';
 import { listTickets, updateTicket, CustomerApiError } from '../../../lib/customerApi';
 import type { SupportTicket, TicketStatus } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';

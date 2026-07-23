@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import { useDataMode } from '../../../lib/dataMode';
 import LiveKnowledgeLibrary from './LiveKnowledgeLibrary';
 
 // ============================================================
@@ -124,7 +123,6 @@ const FilterSelect = ({ label, value, onChange, options }: { label: string; valu
 );
 
 const KnowledgeLibraryPage = ({ setPage }: { setPage?: (p: import('../../../types').Page) => void }) => {
-  const dataMode = useDataMode();
   return <LiveKnowledgeLibrary setPage={setPage} />;
   return <DemoKnowledgeLibrary />;
 };

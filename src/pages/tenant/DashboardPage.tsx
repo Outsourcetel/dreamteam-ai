@@ -7,7 +7,6 @@ import { useVocabulary } from '../../lib/vocabulary';
 import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
 import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
-import { useDataMode } from '../../lib/dataMode';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
 import { StatTile, PanelCard, Chip, Button, EmptyState } from '../../design/primitives';
 import {
@@ -589,7 +588,6 @@ export default function DashboardPage(props: {
   accentColor?: string;
   dbStats?: any;
 }) {
-  const dataMode = useDataMode();
   return <LiveDashboard setPage={props.setPage} />;
   return <DemoDashboardPage {...props} />;
 }

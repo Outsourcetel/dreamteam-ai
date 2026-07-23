@@ -3,7 +3,6 @@ import type { AuthUser, Tenant, Page } from '../../types';
 import { PageTabs, ADMIN_TABS } from '../../components';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
-import { useDataMode } from '../../lib/dataMode';
 import {
   generateWidgetKey, fetchWidgetKeys, revokeWidgetKey, fetchEndUserSessions,
   WIDGET_ASK_URL, type WidgetKeyRow, type EndUserSessionRow,
@@ -30,7 +29,6 @@ const SettingsPage = ({
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
   const { refreshTenant, isDTUser } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
-  const dataMode = useDataMode();
   const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>(() => {
     // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
     // lands on the Widget tab instead of the org-name form). Consumed once.
@@ -105,7 +103,7 @@ const SettingsPage = ({
         hasPlatformConfigKey('GOOGLE_AI_KEY'),
       ]).then(([a, b, o, g]) => { setAnthropicSet(a); setBedrockSet(b); setOpenaiSet(o); setGoogleSet(g); });
     }
-    if (activeTab === 'widget' && dataMode === 'live' && tenant?.id) {
+    if (activeTab === 'widget' && tenant?.id) {
       Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
         setWidgetKeys(ks);
         setEndUserSessions(ss);
@@ -221,7 +219,7 @@ const SettingsPage = ({
   });
 </script>`;
 
-  const tabList = ((dataMode === 'live'
+  const tabList = ((true
     ? ['general', 'ai_engine', 'usage', 'widget', 'billing', 'security']
     : ['general', 'ai_engine', 'usage', 'billing', 'security']) as Array<typeof activeTab>)
     .filter(t => t !== 'ai_engine' || isDTUser);
