@@ -5,7 +5,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
@@ -232,6 +232,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
+  const [impRole, setImpRole] = useState<{ archetype: string; peers: number } | null>(null);
+  const [impScope, setImpScope] = useState<'de' | 'role'>('de');
 
   const refresh = async () => {
     setLoading(true);
@@ -268,9 +270,24 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
+  // T2.2: for a self-improvement review, offer publishing the verified fix to
+  // the whole role (all same-archetype employees), not just this DE.
+  useEffect(() => {
+    setImpRole(null); setImpScope('de');
+    const sel = tasks.find(t => t.id === selectedId);
+    if (!sel || sel.related_table !== 'de_improvements' || !sel.related_id || sel.status !== 'pending') return;
+    let cancelled = false;
+    void getImprovementRoleInfo(sel.related_id).then(info => { if (!cancelled) setImpRole(info); }).catch(() => { /* toggle just stays hidden */ });
+    return () => { cancelled = true; };
+  }, [selectedId, tasks]);
+
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected') => {
     setDeciding(true);
     try {
+      // Set the publish scope BEFORE approval (apply_improvement reads it).
+      if (task.related_table === 'de_improvements' && decision === 'approved' && impScope === 'role' && task.related_id) {
+        await setImprovementPublishScope(task.related_id, 'role');
+      }
       await decideHumanTask(task, decision);
       await refresh();
     } catch (err) {
@@ -474,6 +491,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 )}
 
+                {selected.related_table === 'de_improvements' && selected.status === 'pending' && impRole && impRole.peers > 0 && (
+                  <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
+                    <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Who learns from this</p>
+                    <label className="flex items-center gap-2 text-xs text-dt-support mb-1 cursor-pointer">
+                      <input type="radio" name="impscope" checked={impScope === 'de'} onChange={() => setImpScope('de')} />
+                      Just this employee
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-dt-support cursor-pointer">
+                      <input type="radio" name="impscope" checked={impScope === 'role'} onChange={() => setImpScope('role')} />
+                      All {impRole.peers + 1} {impRole.archetype} employees
+                    </label>
+                    {impScope === 'role' && (
+                      <p className="mt-1.5 text-[11px] text-amber-300">Shared with the whole role — confirm this fix contains no customer-specific detail.</p>
+                    )}
+                  </div>
+                )}
                 {selected.status === 'pending' && (
                   <div className="flex gap-2 mt-4">
                     <button

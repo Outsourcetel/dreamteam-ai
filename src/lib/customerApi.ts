@@ -174,6 +174,28 @@ function raise(context: string, error: { code?: string; message: string }): neve
   throw new CustomerApiError(error.message, isMissingTableError(error));
 }
 
+/** T2.2: set a verified self-improvement's publish scope BEFORE approval —
+ *  'de' (default; this employee only) or 'role' (shared with all same-archetype
+ *  employees). Owner/admin + pre-apply enforced server-side (mig 271). */
+export async function setImprovementPublishScope(improvementId: string, scope: 'de' | 'role'): Promise<void> {
+  const { error } = await supabase.rpc('set_improvement_publish_scope', { p_improvement_id: improvementId, p_scope: scope });
+  if (error) raise('setImprovementPublishScope', error);
+}
+
+/** The improvement's DE archetype + how many SAME-archetype peers would inherit
+ *  a role-scoped publish. Returns null when the archetype doesn't resolve — the
+ *  UI then hides the role option (safe default = de-scoped). */
+export async function getImprovementRoleInfo(improvementId: string): Promise<{ archetype: string; peers: number } | null> {
+  const { data: imp } = await supabase.from('de_improvements').select('de_id, tenant_id').eq('id', improvementId).maybeSingle();
+  if (!imp?.de_id) return null;
+  const { data: de } = await supabase.from('digital_employees').select('archetype_key').eq('id', imp.de_id).maybeSingle();
+  const arch = de?.archetype_key as string | null | undefined;
+  if (!arch) return null;
+  const { count } = await supabase.from('digital_employees').select('id', { count: 'exact', head: true })
+    .eq('tenant_id', imp.tenant_id).eq('archetype_key', arch).neq('id', imp.de_id);
+  return { archetype: arch, peers: count ?? 0 };
+}
+
 // ── Tenant resolution (cached per module) ─────────────────────────
 
 let cachedTenantId: string | null = null;
