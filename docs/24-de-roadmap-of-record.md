@@ -18,12 +18,12 @@ Because the *pitch is the governance*, the moat must be **airtight and honestly 
 
 ## Roadmap (ranked, for THIS wedge)
 
-### 1. Governance Integrity — *make the moat bulletproof and honest* (STARTING NOW)
+### 1. Governance Integrity — *make the moat bulletproof and honest* (IN PROGRESS)
 The governance pitch cannot survive dormant/unfed governance features or a security-review hole. This block converts "governed (mostly)" → "provably governed."
 
-- **GI-1 — Spend caps become real.** Wire `record_de_spend` at the action executor (it has zero callers today → `de_spend_ledger` is empty → cumulative daily/monthly caps + the `warn_sent` soft budget are dead). *Cheap, high-leverage.*
-- **GI-2 — Lock the audit-chain insider-write hole.** Revoke direct `INSERT` on `audit_events`, force the hash-chain RPC as the only append path; anchor/harden the chain head. *Cheap, security-review-critical.*
-- **GI-3 — Per-employee earned trust.** Carry `de_id` through the trust ladder (`apply_trust_promotion` never passes it → earning is tenant-wide, contradicting "each employee earns its own trust"). Storage + resolver already support per-DE. *Medium.*
+- **GI-1 — Spend caps become real. ✅ SHIPPED (930bc81).** `record_de_spend` now fires in connector-hub after a successful monetary execution (both auto-exec and human-approved re-entry), so `de_spend_ledger` accumulates and the cumulative daily/monthly caps in `decide_action_execution` actually bite.
+- **GI-2 — Lock the audit-chain insider-write hole. ✅ SHIPPED (mig 305, 930bc81).** Dropped the `audit_events_tenant_insert` RLS policy; the SECURITY DEFINER `append_audit_event` RPC is now the only append path (verified no direct insert anywhere). Also revoked INSERT/UPDATE/DELETE/**TRUNCATE**/TRIGGER/REFERENCES from anon+authenticated — verification caught a live TRUNCATE grant (a one-statement cross-tenant wipe, RLS- and trigger-exempt). Added `audit_chain_head()` for external anchoring.
+- **GI-3 — Per-employee earned trust. ✅ SHIPPED (mig 306, 930bc81).** Threaded `de_id` (+ source_category) through `apply_trust_promotion`, `trust_demote`, and both demotion triggers — a promotion earned on one DE no longer widens the tenant-wide dial. Demotion fixed in the same migration so a per-DE-promoted employee stays demotable ("demote fast" preserved).
 - **GI-4 — Widen what the record clamps, synchronously.** Fold open-critical-incidents + degraded-metrics into the *synchronous* records-gate (today only certs clamp actions in real time; incidents lag a 15-min cron and never touch actions). Add skill-floor / KPI-miss gating so the Employee File broadly bites.
 - **GI-5 — Feed the metric watchers.** Snapshot `get_de_kpi_status` into `de_kpi_readings` (currently manual-writer-only → metric-threshold watchers are inert for the metrics that matter).
 - **GI-6 — Make "it gets measurably better" measurable.** Fix `amendment_metrics` (tenant context + real writers; today reads an unset GUC with zero writers → `fitness_avg_delta` is structurally null) and surface recurrence-closed trend evidence.
