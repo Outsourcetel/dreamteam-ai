@@ -55,6 +55,10 @@ export interface Connector {
   consecutive_failures: number;
   last_sync_at: string | null;
   last_error: string | null;
+  // WS8 scheduled sync (mig 287) — off by default; opt in per connector.
+  scheduled_sync_enabled?: boolean;
+  sync_interval_mins?: number;
+  last_scheduled_sync_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -845,6 +849,18 @@ import { raise, requireTenantId, listTenantRows } from './liveShared';
 
 
 // ── Connector CRUD ────────────────────────────────────────────────
+
+// WS8 (mig 287): owner/admin toggle a connector's scheduled auto-sync. Note the
+// tenant-wide feature flag `knowledge_scheduled_sync` (Platform Console, default
+// OFF) must ALSO be on for the cron to actually run — this is the per-connector half.
+export async function setConnectorSchedule(connectorId: string, enabled: boolean, intervalMins = 1440): Promise<void> {
+  const { data, error } = await supabase.rpc('set_connector_schedule', {
+    p_connector_id: connectorId, p_enabled: enabled, p_interval_mins: intervalMins,
+  });
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string };
+  if (!r?.ok) throw new Error(r?.error === 'not_permitted' ? 'Only owners and admins can change auto-sync.' : (r?.error ?? 'Could not update auto-sync.'));
+}
 
 export async function listConnectors(): Promise<Connector[]> {
   return listTenantRows<Connector>('connectors', 'created_at', true, 'listConnectors');

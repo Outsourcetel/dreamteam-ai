@@ -840,7 +840,15 @@ function templateAdapter(t: TemplateExec) {
 // ════════════════════════════════════════════════════════════════
 
 const MAX_DOC_CHARS = 200_000;   // per-document text cap handed to the ingester
-const MAX_SYNC_FILES = 100;      // files walked per sync run
+// WS8 STEP 8 cap-lift (P4): safe only AFTER content_hash skip (mig 286) makes
+// unchanged docs near-free AND ingestDoc defers embedding to the drain (no inline
+// embed). Was 100. Held at 200 (not higher) per the adversarial review: (a) one
+// invocation must reliably finish walking+fetching+storing this many docs within
+// the edge wall-clock, and (b) one sync must not enqueue more null-embedding
+// chunks than embed-backfill-drain can clear per interval (~4/2min). Corpora
+// beyond this cap are surfaced as `truncated` (below), not silently dropped;
+// paging the rest via connector_sync_cursors is the deferred follow-up.
+const MAX_SYNC_FILES = 200;      // files ingested per sync run
 
 // ── Ingest control (migration 138): filters live in config.ingest ──
 interface IngestFilters {
@@ -4840,20 +4848,21 @@ serve(async (req) => {
         }
         const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
         await admin.from('knowledge_doc_chunks').delete().eq('doc_id', docRow.id);
-        let embedded = 0, chErr: string | undefined;
+        let chErr: string | undefined;
         if (chunks.length > 0) {
-          const rows = [];
-          for (let i = 0; i < chunks.length; i++) {
-            const emb = await embedText(chunks[i]);
-            if (emb) embedded++;
-            rows.push({ tenant_id: tenantId, account_id: null, doc_id: docRow.id, chunk_index: i, content: chunks[i], embedding: emb });
-          }
+          // WS8 STEP 7 (inline→drain): store chunks WITHOUT embedding here and let
+          // embed-backfill-drain embed them (bounded 4/call). Inline synchronous
+          // embedding of every chunk of every doc is what made a lifted file cap
+          // OOM the worker; deferring it makes a large sync cheap + resumable.
+          // The doc is keyword-searchable immediately; semantic lands as the
+          // drain catches up (and the mig-286 skip means only CHANGED docs enqueue).
+          const rows = chunks.map((content, i) => ({ tenant_id: tenantId, account_id: null, doc_id: docRow.id, chunk_index: i, content, embedding: null }));
           const ins = await admin.from('knowledge_doc_chunks').insert(rows);
           if (ins.error) chErr = ins.error.message;
         }
         // Stamp the hash so the NEXT sync of unchanged content skips (above).
         if (!chErr) await admin.from('knowledge_docs').update({ content_hash: newHash }).eq('id', docRow.id);
-        return { ok: true, chunks: chErr ? 0 : chunks.length, embedded, error: chErr };
+        return { ok: true, chunks: chErr ? 0 : chunks.length, embedded: 0, error: chErr };
       };
 
       const filters = ((ctx.config as { ingest?: IngestFilters })?.ingest ?? {}) as IngestFilters;
@@ -4864,7 +4873,9 @@ serve(async (req) => {
         // Review on: ingest ONLY the files an admin has approved.
         const { data: approved } = await admin.from('connector_ingest_candidates')
           .select('external_ref,file_type,title').eq('connector_id', connectorId).eq('status', 'approved');
-        const items: Candidate[] = (approved ?? []).map((a: { external_ref: string; file_type: string; title: string }) =>
+        // Cap review-mode fetches at the per-sync limit too (was uncapped —
+        // fetched ALL approved files' text into memory before the ingest slice).
+        const items: Candidate[] = (approved ?? []).slice(0, MAX_SYNC_FILES).map((a: { external_ref: string; file_type: string; title: string }) =>
           ({ external_ref: a.external_ref, title: a.title, path: '', file_type: a.file_type, size_bytes: null }));
         if (!items.length) {
           return json({ ok: true, upserted: 0, chunked: 0, embedded: 0, detail: 'No approved documents to ingest yet — scan, then approve the files you want in the review queue.' });
@@ -4884,10 +4895,11 @@ serve(async (req) => {
         docs = r.docs ?? [];
       }
 
+      const truncated = docs.length > MAX_SYNC_FILES;   // corpus bigger than one sync run — surfaced, never silently dropped
       let upserted = 0, chunked = 0, embedded = 0;
       const errors: string[] = [];
       const ingestedRefs: string[] = [];
-      for (const doc of docs.slice(0, 50)) {
+      for (const doc of docs.slice(0, MAX_SYNC_FILES)) {   // WS8 cap-lift (embedding is deferred to the drain, so this no longer OOMs)
         const res = await ingestDoc(doc);
         if (!res.ok) { if (res.error && res.error !== 'empty') errors.push(`${doc.external_ref}: ${res.error}`); continue; }
         upserted++; chunked += res.chunks; embedded += res.embedded;
@@ -4904,7 +4916,11 @@ serve(async (req) => {
       await audit('connector_sync',
         `Knowledge sync from ${connector.provider}${reviewMode ? ' (approved only)' : ''} — ${upserted} doc(s) ingested into knowledge (source=connector), ${chunked} chunks, ${embedded} embedded`,
         { upserted, chunked, embedded, review_mode: reviewMode, errors: errors.slice(0, 5) });
-      return json({ ok: true, upserted, chunked, embedded, errors });
+      return json({ ok: true, upserted, chunked, embedded, errors,
+        walked: docs.length, truncated,
+        detail: truncated
+          ? `Ingested ${MAX_SYNC_FILES} of ${docs.length} documents this run; the remaining ${docs.length - MAX_SYNC_FILES} exceed the per-sync limit and aren't ingested yet. Embeddings finish in the background.`
+          : (embedded === 0 && chunked > 0 ? 'Chunks stored — embeddings are indexing in the background.' : undefined) });
     }
 
     // ════════ preview_action — THE GENERALIZED ACTION LAYER, preview ════════

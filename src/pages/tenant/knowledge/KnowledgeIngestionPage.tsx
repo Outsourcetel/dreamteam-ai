@@ -4,7 +4,7 @@ import type { Page } from '../../../types';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
-  listConnectors, connectorHealth, hubSync, PROVIDERS,
+  listConnectors, connectorHealth, hubSync, PROVIDERS, setConnectorSchedule,
 } from '../../../lib/connectorApi';
 import type { Connector } from '../../../lib/connectorApi';
 import { listKnowledgeDocs, listChunkStatus, createKnowledgeDoc, ingestDocChunks, extractPdf, extractUrl } from '../../../lib/knowledgeApi';
@@ -73,7 +73,9 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
     try {
       const r = await hubSync(c.id);
       if (r.ok) {
-        setToast(`${c.display_name || c.provider}: ${r.upserted ?? 0} doc(s) synced, ${r.chunked ?? 0} chunks, ${r.embedded ?? 0} embedded.`);
+        setToast(r.detail
+          ? `${c.display_name || c.provider}: ${r.detail}`
+          : `${c.display_name || c.provider}: ${r.upserted ?? 0} doc(s) synced, ${r.chunked ?? 0} chunks — embeddings indexing in the background.`);
       } else {
         setToast(`${c.display_name || c.provider}: sync failed — ${r.detail ?? r.error ?? 'unknown error'}`);
       }
@@ -83,6 +85,14 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
     } finally {
       setSyncingId(null);
     }
+  };
+
+  const toggleSchedule = async (c: Connector) => {
+    try {
+      await setConnectorSchedule(c.id, !c.scheduled_sync_enabled);
+      setToast(`${c.display_name || c.provider}: auto-sync ${!c.scheduled_sync_enabled ? 'on (daily)' : 'off'}.`);
+      await refresh();
+    } catch (err) { setToast((err as Error)?.message ?? 'Could not update auto-sync.'); }
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,12 +234,20 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                         <td className={`${td} text-xs text-dt-support`}>{c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : 'never'}</td>
                         <td className={td}>
                           {canSync ? (
-                            <button
-                              disabled={syncingId === c.id}
-                              onClick={() => void doSync(c)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
-                              {syncingId === c.id ? 'Syncing…' : 'Sync now'}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                disabled={syncingId === c.id}
+                                onClick={() => void doSync(c)}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+                                {syncingId === c.id ? 'Syncing…' : 'Sync now'}
+                              </button>
+                              <button
+                                onClick={() => void toggleSchedule(c)}
+                                title={c.scheduled_sync_enabled ? 'Auto-sync is on (daily). Click to turn off.' : 'Turn on daily auto-sync for this source.'}
+                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${c.scheduled_sync_enabled ? 'border-emerald-500/50 text-emerald-300' : 'border-dt-border-strong text-dt-muted hover:border-indigo-500'}`}>
+                                {c.scheduled_sync_enabled ? 'Auto-sync ✓' : 'Auto-sync'}
+                              </button>
+                            </div>
                           ) : (
                             <span className="text-[11px] text-dt-faint" title={c.access_mode === 'fetch_only' ? "This source is fetch-only — content is looked up live, never stored" : "This provider doesn't support knowledge sync"}>
                               {c.access_mode === 'fetch_only' ? 'fetch-only' : 'no sync'}
