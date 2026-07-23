@@ -5,6 +5,7 @@ import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, f
 import { useAuth } from '../../context/AuthContext';
 import {
   generateWidgetKey, fetchWidgetKeys, revokeWidgetKey, fetchEndUserSessions,
+  rotateWidgetIdentitySecret, widgetIdentityConfigured,
   WIDGET_ASK_URL, type WidgetKeyRow, type EndUserSessionRow,
 } from '../../lib/widgetApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
@@ -72,6 +73,10 @@ const SettingsPage = ({
   const [endUserSessions, setEndUserSessions] = useState<EndUserSessionRow[]>([]);
   const [newKeyLabel, setNewKeyLabel] = useState('');
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  // T2.3: per-key identity verification secret (shown once on rotate).
+  const [identityConfigured, setIdentityConfigured] = useState<Record<string, boolean>>({});
+  const [identitySecret, setIdentitySecret] = useState<{ keyId: string; secret: string } | null>(null);
+  const [identityBusy, setIdentityBusy] = useState<string | null>(null);
   const [keyGenBusy, setKeyGenBusy] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
 
@@ -107,6 +112,9 @@ const SettingsPage = ({
       Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
         setWidgetKeys(ks);
         setEndUserSessions(ss);
+        // T2.3: which keys have an identity secret configured.
+        Promise.all(ks.filter(k => k.active).map(async k => [k.id, await widgetIdentityConfigured(k.id)] as const))
+          .then(pairs => setIdentityConfigured(Object.fromEntries(pairs)));
       });
     }
     if (activeTab === 'usage') {
@@ -200,6 +208,17 @@ const SettingsPage = ({
     if (!tenant?.id) return;
     await revokeWidgetKey(id);
     setWidgetKeys(await fetchWidgetKeys(tenant.id));
+  };
+
+  const handleRotateIdentity = async (keyId: string) => {
+    if (identityBusy) return;
+    setIdentityBusy(keyId);
+    const r = await rotateWidgetIdentitySecret(keyId);
+    setIdentityBusy(null);
+    if (r.ok && r.secret) {
+      setIdentitySecret({ keyId, secret: r.secret });
+      setIdentityConfigured(prev => ({ ...prev, [keyId]: true }));
+    }
   };
 
   const handleCopyKey = async () => {
@@ -676,6 +695,58 @@ const SettingsPage = ({
               {' '}· try it on the <a href="/widget-demo.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">demo page</a>.
             </p>
             <pre className="text-xs text-dt-support font-mono bg-dt-panel rounded-xl p-4 overflow-x-auto whitespace-pre">{embedSnippet}</pre>
+          </div>
+
+          {/* T2.3: identity verification — lets a verified caller be remembered across conversations */}
+          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-1">Identity verification <span className="text-dt-muted font-normal">· optional</span></h2>
+            <p className="text-xs text-dt-support mb-3">
+              Prove who’s asking so your Digital Employee can remember them across conversations (instead of starting cold each time).
+              Your <strong className="text-dt-body">own server</strong> signs a short hash with a secret only it holds; anonymous visitors are unaffected.
+              Nothing is remembered per-person until you set this up <em>and</em> forward the hash.
+            </p>
+            {widgetKeys.filter(k => k.active).length === 0 ? (
+              <p className="text-xs text-dt-muted">Generate a widget key above first.</p>
+            ) : (
+              <div className="space-y-2">
+                {widgetKeys.filter(k => k.active).map(k => (
+                  <div key={k.id} className="flex items-center justify-between gap-2 bg-dt-page rounded-lg px-3 py-2 border border-dt-border">
+                    <div className="min-w-0">
+                      <p className="text-xs text-white truncate">{k.label}</p>
+                      <p className="text-[11px] mt-0.5">
+                        {identityConfigured[k.id]
+                          ? <span className="text-emerald-300">● Configured</span>
+                          : <span className="text-dt-muted">○ Not configured</span>}
+                      </p>
+                    </div>
+                    <button
+                      disabled={identityBusy === k.id}
+                      onClick={() => void handleRotateIdentity(k.id)}
+                      className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50 shrink-0">
+                      {identityBusy === k.id ? '…' : identityConfigured[k.id] ? 'Rotate secret' : 'Set up'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {identitySecret && (
+              <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-[11px] text-amber-200 mb-1.5 font-medium">Copy this secret now — it’s shown only once. Store it in your server’s environment; never ship it to the browser.</p>
+                <code className="block text-[11px] text-white font-mono bg-dt-panel rounded-lg px-3 py-2 break-all mb-2">{identitySecret.secret}</code>
+                <p className="text-[11px] text-dt-support mb-1">On your server, sign each end user’s hash and pass it to the widget as <code className="text-indigo-300">userHash</code>:</p>
+                <pre className="text-[11px] text-dt-support font-mono bg-dt-panel rounded-lg p-3 overflow-x-auto whitespace-pre">{`const crypto = require('crypto');
+const b64url = s => Buffer.from(s, 'utf8').toString('base64url');
+const canonical =
+  'dtwidget.v1\\n' +
+  'euid=' + b64url(endUserRef) + '\\n' +
+  'acct=' + b64url(accountRef || '');
+const userHash = crypto
+  .createHmac('sha256', SECRET)   // the secret above, from env
+  .update(canonical).digest('hex');
+// then: DreamTeamWidget.init({ …, endUserRef, accountRef, userHash })`}</pre>
+                <button onClick={() => setIdentitySecret(null)} className="mt-2 text-[11px] text-dt-muted hover:text-dt-support">Done — I’ve saved it</button>
+              </div>
+            )}
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">

@@ -203,6 +203,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-dt-panel text-dt-support">{c.channel}</span>
                       {c.detected_language && c.detected_language !== 'English' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-dt-panel text-dt-support">{c.detected_language}</span>}
                       {c.priority !== 'normal' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300">{c.priority}</span>}
+                      {c.identity_verified && <span title="This caller proved their identity" className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300">✓ verified</span>}
                     </div>
                   </button>
                 );

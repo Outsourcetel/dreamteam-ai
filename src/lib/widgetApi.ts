@@ -76,6 +76,22 @@ export async function revokeWidgetKey(keyId: string): Promise<boolean> {
   return !error;
 }
 
+// T2.3: per-widget-key identity secret. rotate returns the secret ONCE (server-
+// side use only — the tenant's own server signs userHash with it). configured
+// just tells the UI whether a secret exists (never reveals it).
+export async function rotateWidgetIdentitySecret(widgetKeyId: string): Promise<{ ok: boolean; secret?: string; error?: string }> {
+  const { data, error } = await supabase.rpc('rotate_widget_identity_secret', { p_widget_key_id: widgetKeyId });
+  if (error) return { ok: false, error: error.message };
+  const r = (data ?? {}) as { ok?: boolean; secret?: string; error?: string };
+  return { ok: !!r.ok, secret: r.secret, error: r.error };
+}
+export async function widgetIdentityConfigured(widgetKeyId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('widget_identity_configured', { p_widget_key_id: widgetKeyId });
+  if (error) return false;
+  const r = (data ?? {}) as { configured?: boolean };
+  return !!r.configured;
+}
+
 export async function fetchEndUserSessions(tenantId: string, limit = 20): Promise<EndUserSessionRow[]> {
   const { data, error } = await supabase
     .from('end_user_sessions')

@@ -18,6 +18,7 @@ export interface SupportConversation {
   de_id: string | null;
   last_message_at: string | null;
   created_at: string;
+  identity_verified: boolean | null;   // T2.3: caller proved their identity (widget HMAC)
 }
 
 export interface SupportMessage {
@@ -32,7 +33,7 @@ export interface SupportMessage {
   created_at: string;
 }
 
-const CONV_COLS = 'id, channel, status, priority, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at';
+const CONV_COLS = 'id, channel, status, priority, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified';
 
 export async function listSupportConversations(status?: SupportConversation['status'] | 'all'): Promise<SupportConversation[]> {
   const tid = await requireTenantId();

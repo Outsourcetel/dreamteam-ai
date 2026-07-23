@@ -144,6 +144,10 @@
         widget_key: cfg.key, question: q, conversation_id: conversationId || undefined,
         channel: 'widget', account_ref: cfg.accountRef || undefined,
         end_user_ref: cfg.endUserRef || undefined, display_name: cfg.displayName || undefined,
+        // Optional identity proof: the host's OWN server computes
+        // HMAC-SHA256(canonical(endUserRef,accountRef), secret) and passes it as
+        // userHash. Only then can the DE recall this person across conversations.
+        user_hash: cfg.userHash || undefined,
       }),
     }).then(function (r) { return r.json(); }).then(function (res) {
       typing.remove();
