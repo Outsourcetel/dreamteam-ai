@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../../../context/AuthContext';
-import type { CompanyId } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import { TCP_ARTICLES, PWC_ARTICLES, daysSince, isStale, ConfidenceBar } from './KnowledgeLibraryPage';
+import { ConfidenceBar } from './KnowledgeLibraryPage';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../../components';
@@ -13,64 +11,10 @@ import {
 import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject } from '../../../lib/knowledgeApi';
 
 // ============================================================
-// Quality & Coverage — coverage matrix (numbers identical to
-// the DE knowledge configs in WorkforceDEsPage), freshness
-// histogram, confidence calibration, stale queue.
+// Quality & Coverage — everything on this page is REAL: per-tag
+// coverage per Digital Employee, document freshness, and confidence
+// calibration against actual human feedback on cited answers.
 // ============================================================
-
-// Coverage matrix: rows = collections, cols = company DEs.
-// Values copied verbatim from WorkforceDEsPage knowledge configs.
-const COVERAGE: Record<CompanyId, { des: string[]; rows: { collection: string; values: (number | null)[] }[] }> = {
-  tcp: {
-    des: ['Alex', 'Casey', 'Riley'],
-    rows: [
-      { collection: 'Product Docs', values: [94, null, null] },
-      { collection: 'API Reference', values: [87, null, null] },
-      { collection: 'Troubleshooting Guides', values: [91, null, null] },
-      { collection: 'Customer History', values: [78, 82, null] },
-      { collection: 'Contract Templates', values: [null, 96, null] },
-      { collection: 'Pricing Tiers', values: [null, 100, null] },
-      { collection: 'Zuora KB', values: [null, 89, null] },
-      { collection: 'HR Policies', values: [null, null, 88] },
-      { collection: 'Benefits Handbook', values: [null, null, 94] },
-      { collection: 'Onboarding Templates', values: [null, null, 76] },
-      { collection: 'Employee Records', values: [null, null, 67] },
-    ],
-  },
-  pwc: {
-    des: ['Morgan', 'Avery'],
-    rows: [
-      { collection: 'Client Engagement Docs', values: [91, null] },
-      { collection: 'Service Methodology', values: [88, null] },
-      { collection: 'Regulatory Library', values: [84, null] },
-      { collection: 'Client History', values: [79, null] },
-      { collection: 'Tax Code Library', values: [null, 96] },
-      { collection: 'Case Law Database', values: [null, 89] },
-      { collection: 'Internal Tax Memos', values: [null, 82] },
-      { collection: 'IRS Guidance', values: [null, 98] },
-    ],
-  },
-};
-
-interface CalibrationRow { article: string; deConf: number; humanFeedback: string; delta: string }
-const CALIBRATION: Record<CompanyId, CalibrationRow[]> = {
-  tcp: [
-    { article: 'Webhook configuration guide', deConf: 74, humanFeedback: '3 corrections by L2 this month — DE was overconfident on retry section', delta: 'over' },
-    { article: 'Zuora credit memo handling', deConf: 71, humanFeedback: 'Human reviewers approved 9/9 answers — DE underrates itself', delta: 'under' },
-    { article: 'Known issue: bulk import timeouts', deConf: 68, humanFeedback: '2 escalations where the documented workaround failed', delta: 'over' },
-  ],
-  pwc: [
-    { article: 'IRS Notice 2026-14 summary — digital assets', deConf: 76, humanFeedback: 'Partner flagged an outdated threshold in 1 of 4 cited answers', delta: 'over' },
-    { article: 'Client complaint escalation matrix', deConf: 86, humanFeedback: 'All 12 escalations routed correctly — confidence can rise', delta: 'under' },
-    { article: 'Memo: state tax nexus after Wayfair', deConf: 89, humanFeedback: 'Two states changed thresholds since last verification', delta: 'over' },
-  ],
-};
-
-const heatCls = (v: number) =>
-  v >= 90 ? 'bg-emerald-500/25 text-emerald-300'
-  : v >= 80 ? 'bg-emerald-500/10 text-emerald-400'
-  : v >= 70 ? 'bg-amber-500/15 text-amber-300'
-  : 'bg-red-500/15 text-red-300';
 
 const heatClsLive = (v: number) =>
   v >= 90 ? 'bg-emerald-500/25 text-emerald-300'
