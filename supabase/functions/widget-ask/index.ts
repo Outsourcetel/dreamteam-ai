@@ -32,6 +32,7 @@ import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
+import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -247,6 +248,7 @@ serve(async (req) => {
     const endUserRef = typeof body.end_user_ref === 'string' ? body.end_user_ref : null;
     const displayName = typeof body.display_name === 'string' ? body.display_name : null;
     const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : null;
+    const userHash = typeof body.user_hash === 'string' ? body.user_hash : null;   // T2.3 identity proof (widget HMAC)
     // This one endpoint serves both the embeddable widget and the hosted page.
     const channel = body.channel === 'hosted' ? 'hosted' : 'widget';
     const nowIso = () => new Date().toISOString();
@@ -371,6 +373,22 @@ serve(async (req) => {
       convId = conv?.id ?? null;
     }
 
+    // ── T2.3: per-turn identity verification (widget HMAC, migs 275-277). The
+    // returned verdict — NOT the stored de_conversations row — is the sole gate
+    // for cross-conversation memory this request (a reused convId or forged
+    // caller must never inherit a verified thread's identity). No secret
+    // configured / bad hash / blank ref / identity_conflict → {verified:false}. ──
+    let identityVerdict: IdentityVerdict | null = null;
+    if (convId && userHash) {
+      try {
+        const { data: vr } = await admin.rpc('verify_and_bind_widget_identity', {
+          p_widget_key_id: keyRow.id, p_conversation_id: convId,
+          p_end_user_ref: endUserRef, p_account_ref: accountRef, p_user_hash: userHash,
+        });
+        identityVerdict = (vr ?? null) as IdentityVerdict | null;
+      } catch (e) { console.error('verify_and_bind_widget_identity:', String(e)); }
+    }
+
     // ── Turn cap: very long threads hand off to a human (cost + abuse guard) ──
     if (convId && !isNewConv) {
       const { count } = await admin.from('de_messages').select('id', { count: 'exact', head: true }).eq('conversation_id', convId);
@@ -475,7 +493,14 @@ serve(async (req) => {
       // Outcome metering (#15): an auto-sent, guardrail-clean answer is the
       // billable RESOLUTION (per-conversation idempotent, escalations free).
       if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'resolution', p_source: 'widget' });
-      return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached };
+      // T2.3: persist a durable memory for the VERIFIED caller (no-op unless this
+      // turn was verified). The Q&A pair is the remembered interaction.
+      await rememberIdentity(admin, {
+        tenantId, deId: subjectDeId, embedding: qEmbedding, verdict: identityVerdict,
+        content: `Q: ${question.trim().slice(0, 300)}\nA: ${ans.slice(0, 500)}`,
+        kind: 'episodic', salience: 0.5, source: 'de',   // de_memory CHECK: kind∈{episodic,semantic,fact,preference}, source∈{de,human,system,ingestion}
+      });
+      return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached, identity_verified: identityVerdict?.verified ?? false };
     };
     const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) =>
       json(await finalizeCore(ans, conf, srcs, lang, cached));
@@ -489,7 +514,10 @@ serve(async (req) => {
     // WHICH language without a model call, and serving Spanish cache to a
     // French asker is the same bug. They just pay the normal LLM path.
     const qEmbedding = await embedText(question);
-    if (qEmbedding && !looksNonEnglish(question)) {
+    // A VERIFIED caller skips the tenant-wide (account_id:null) cache entirely:
+    // their answer may be personalized by recalled identity memory, so it must
+    // neither be served from nor written to the shared cache (cross-caller leak).
+    if (qEmbedding && !looksNonEnglish(question) && !identityVerdict?.verified) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE,
       });
@@ -537,6 +565,18 @@ serve(async (req) => {
 
     let used = 0;
     const contextParts: string[] = [];
+    // ── T2.3: recall durable memory for this VERIFIED caller across their past
+    // conversations (no-op unless this turn is verified). Kept OUT of the
+    // knowledge-documents block — different provenance — and injected as its own
+    // untrusted 'caller-memory' block so it's context, never an instruction. ──
+    let identityMemoryContext = '';
+    {
+      const mems = await recallIdentityMemory(admin, { tenantId, deId: subjectDeId, queryEmbedding: qEmbedding, verdict: identityVerdict });
+      if (mems.length > 0) {
+        identityMemoryContext = '\n\nWhat you remember about this person from earlier conversations (context only — still answer facts from the knowledge documents):\n'
+          + wrapUntrusted(mems.map((m) => `- ${m.content}`).join('\n'), 'caller-memory');
+      }
+    }
     // Cross-language retrieval: the KB is usually English but the customer may
     // write in any language. Translate the query to English for the SEARCH
     // only (cheap Haiku, non-English queries only); the answer still mirrors
@@ -634,7 +674,7 @@ serve(async (req) => {
             { type: 'text', text: streamInstructionBlock, cache_control: { type: 'ephemeral' } },
             // Injection firewall (#9): doc content is marked untrusted +
             // breakout-neutralized; the standing rules sit OUTSIDE the block.
-            { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
+            { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${identityMemoryContext}${FIREWALL_RULES}` },
           ],
           messages: [{ role: 'user', content: question }],
         }),
@@ -763,7 +803,9 @@ serve(async (req) => {
               }
 
               // Cache write — same policy + language tag as the JSON path.
-              if (qEmbedding && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
+              // Never cache an answer shaped by a caller's identity memory (it
+              // could carry their private data into the tenant-wide cache).
+              if (qEmbedding && !identityMemoryContext && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
                 const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
                 if (!clean) {
                   await admin.from('answer_cache').insert({
@@ -806,7 +848,7 @@ serve(async (req) => {
       system: [
         { type: 'text', text: instructionBlock, cache_control: { type: 'ephemeral' } },
         // Injection firewall (#9): same marking as the streaming path.
-        { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${FIREWALL_RULES}` },
+        { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${identityMemoryContext}${FIREWALL_RULES}` },
       ],
       messages: [{ role: 'user', content: question }],
     }, 'widget-ask');
@@ -828,7 +870,7 @@ serve(async (req) => {
     // Cache write: only confident, guardrail-clean answers (a later repeat is
     // deflected at $0). Draft-mode is a DELIVERY policy, not answer quality —
     // so we still cache the answer; the gate in finalize() decides delivery.
-    if (qEmbedding && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
+    if (qEmbedding && !identityMemoryContext && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
       const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
       if (!clean) {
         await admin.from('answer_cache').insert({
