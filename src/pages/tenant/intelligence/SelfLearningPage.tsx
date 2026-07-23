@@ -841,6 +841,6 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveSelfLearning setPage={setPage} />;
+  return <LiveSelfLearning setPage={setPage} />;
   return <DemoSelfLearningPage setPage={setPage} />;
 }

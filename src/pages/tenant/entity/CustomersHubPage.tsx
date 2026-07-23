@@ -8,7 +8,6 @@ import CustomerRenewalPage from './CustomerRenewalPage';
 import CommercialContinuityPage from './CommercialContinuityPage';
 import CustomerOnboardingLive from './CustomerOnboardingLive';
 import CustomerOnboardingPage from './CustomerOnboardingPage';
-import { useDataMode } from '../../../lib/dataMode';
 
 // ═══════════════════════════════════════════════════════════════
 // Customers hub (founder restructure 2026-07-22): the eight journey pages
@@ -26,7 +25,6 @@ const NORMALIZE: Partial<Record<Page, Page>> = {
 
 const CustomersHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => void }) => {
   const vocab = useVocabulary();
-  const dataMode = useDataMode();
   const active = NORMALIZE[tab] ?? tab;
 
   const TABS: { key: Page; label: string }[] = [
@@ -64,7 +62,7 @@ const CustomersHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
         ) : active === 'entity_customer_sales' ? (
           <CustomerSalesPage setPage={setPage} />
         ) : active === 'entity_customer_onboarding' ? (
-          dataMode === 'live' ? <CustomerOnboardingLive setPage={setPage} /> : <CustomerOnboardingPage setPage={setPage} />
+          <CustomerOnboardingLive setPage={setPage} />
         ) : active === 'entity_customer_renewal' ? (
           <CustomerRenewalPage setPage={setPage} />
         ) : (

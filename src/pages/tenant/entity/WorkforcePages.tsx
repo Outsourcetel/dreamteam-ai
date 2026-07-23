@@ -88,7 +88,7 @@ export const WorkforceOverviewPage = ({ setPage }: { setPage: (p: Page) => void 
   const stats = HEADCOUNT_STATS[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
 
-  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Our People" setPage={setPage} />;
+  return <WorkforceNotYetAvailable title="Our People" setPage={setPage} />;
 
   return (
     <div className="p-6">
@@ -207,7 +207,7 @@ export const WorkforceTalentPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   ];
   const maxCount = funnel[0].count || 1;
 
-  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Talent — Our People" setPage={_setPage} />;
+  return <WorkforceNotYetAvailable title="Talent — Our People" setPage={_setPage} />;
 
   return (
     <div className="p-6">
@@ -293,7 +293,7 @@ export const WorkforceOnboardingPage = ({ setPage: _setPage }: { setPage?: (p: P
   const doneCount = JORDAN_TASKS.filter(t => t.done).length;
   const pct = Math.round((doneCount / JORDAN_TASKS.length) * 100);
 
-  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Onboarding — Our People" setPage={_setPage} />;
+  return <WorkforceNotYetAvailable title="Onboarding — Our People" setPage={_setPage} />;
 
   if (!isTcp) {
     return (
@@ -374,7 +374,7 @@ export const WorkforceDevelopmentPage = ({ setPage: _setPage }: { setPage?: (p: 
     ? { name: 'H2 2026 review cycle', opens: 'Jul 15', completion: 0, selfReviews: '0 of 42 submitted', note: 'Self-reviews open Jul 15; manager reviews due Aug 8.' }
     : { name: 'H2 2026 review cycle', opens: 'Aug 1', completion: 0, selfReviews: '0 of 118 submitted', note: 'Partner calibration scheduled for late August.' };
 
-  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Performance & Development — Our People" setPage={_setPage} />;
+  return <WorkforceNotYetAvailable title="Performance & Development — Our People" setPage={_setPage} />;
 
   return (
     <div className="p-6">
@@ -454,7 +454,7 @@ export const WorkforcePayrollPage = ({ setPage }: { setPage?: (p: Page) => void 
   const data = PAYROLL[activeCompanyId];
   const isTcp = activeCompanyId === 'tcp';
 
-  if (dataMode === 'live') return <WorkforceNotYetAvailable title="Payroll & Benefits — Our People" setPage={setPage} />;
+  return <WorkforceNotYetAvailable title="Payroll & Benefits — Our People" setPage={setPage} />;
 
   return (
     <div className="p-6">

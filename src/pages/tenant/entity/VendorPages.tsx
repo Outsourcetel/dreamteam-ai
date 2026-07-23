@@ -82,7 +82,7 @@ export const VendorOverviewPage = ({ setPage }: { setPage: (p: Page) => void }) 
   const stages = VENDOR_STAGES[activeCompanyId];
   const stats = VENDOR_STATS[activeCompanyId];
 
-  if (dataMode === 'live') return <VendorNotYetAvailable title="Vendors & Partners" setPage={setPage} />;
+  return <VendorNotYetAvailable title="Vendors & Partners" setPage={setPage} />;
 
   return (
     <div className="p-6">
@@ -197,7 +197,7 @@ export const VendorSourcingPage = ({ setPage: _setPage }: { setPage?: (p: Page) 
   const evals = EVALUATIONS[activeCompanyId];
   const rfps = RFPS[activeCompanyId];
 
-  if (dataMode === 'live') return <VendorNotYetAvailable title="Sourcing — Vendor entity" setPage={_setPage} />;
+  return <VendorNotYetAvailable title="Sourcing — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="p-6">
@@ -292,7 +292,7 @@ export const VendorContractsPage = ({ setPage: _setPage }: { setPage?: (p: Page)
   const expiring = contracts.filter(c => c.status === 'Expiring soon');
   const isTcp = activeCompanyId === 'tcp';
 
-  if (dataMode === 'live') return <VendorNotYetAvailable title="Contracts — Vendor entity" setPage={_setPage} />;
+  return <VendorNotYetAvailable title="Contracts — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="p-6">
@@ -399,7 +399,7 @@ export const VendorManagementPage = ({ setPage: _setPage }: { setPage?: (p: Page
   const cards = SCORECARDS[activeCompanyId];
   const reviews = REVIEWS[activeCompanyId];
 
-  if (dataMode === 'live') return <VendorNotYetAvailable title="Relationship Management — Vendor entity" setPage={_setPage} />;
+  return <VendorNotYetAvailable title="Relationship Management — Vendor entity" setPage={_setPage} />;
 
   return (
     <div className="p-6">

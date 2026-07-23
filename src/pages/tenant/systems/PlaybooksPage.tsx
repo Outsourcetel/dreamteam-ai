@@ -456,7 +456,7 @@ type ViewMode = 'published' | 'draft';
 
 export default function PlaybooksPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LivePlaybookBuilder setPage={setPage} />;
+  return <LivePlaybookBuilder setPage={setPage} />;
   return <DemoPlaybooksPage setPage={setPage} />;
 }
 

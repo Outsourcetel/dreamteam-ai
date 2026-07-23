@@ -1717,7 +1717,7 @@ type RosterSelection = { kind: 'de' | 'human'; id: string }
 
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode()
-  if (dataMode === 'live') return <LiveWorkforceDEs setPage={setPage} />
+  return <LiveWorkforceDEs setPage={setPage} />
   return <DemoWorkforceDEsPage setPage={setPage} />
 }
 

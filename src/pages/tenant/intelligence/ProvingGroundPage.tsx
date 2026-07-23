@@ -262,7 +262,7 @@ function loadPlaybookRuns(companyId: CompanyId): RunRow[] {
 
 export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveProvingGround />;
+  return <LiveProvingGround />;
   return <DemoProvingGround setPage={setPage} />;
 }
 

@@ -711,7 +711,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
 
 const CustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveCustomerRenewal setPage={setPage} />;
+  return <LiveCustomerRenewal setPage={setPage} />;
   return <DemoCustomerRenewalPage setPage={setPage} />;
 };
 

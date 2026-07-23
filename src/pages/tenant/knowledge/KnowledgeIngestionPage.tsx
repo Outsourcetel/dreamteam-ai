@@ -5,7 +5,6 @@ import { PageHeader, th, td } from '../../../components/ui';
 import { K_TYPES } from './KnowledgeLibraryPage';
 import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
 import type { Page } from '../../../types';
-import { useDataMode } from '../../../lib/dataMode';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
@@ -538,7 +537,6 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 export default function KnowledgeIngestionPage({ setPage }: { setPage?: (p: Page) => void }) {
-  const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveKnowledgeIngestion setPage={setPage ?? (() => {})} />;
+  return <LiveKnowledgeIngestion setPage={setPage ?? (() => {})} />;
   return <DemoKnowledgeIngestionPage />;
 }

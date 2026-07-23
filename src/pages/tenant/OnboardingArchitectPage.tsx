@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { PageHeader } from '../../components/ui';
-import { useDataMode } from '../../lib/dataMode';
 import type { Page } from '../../types';
 import {
   runOnboardingAssist, approveProposal,
@@ -88,7 +87,6 @@ const EXAMPLES = [
 ];
 
 export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Page) => void }) {
-  const dataMode = useDataMode();
   const [desc, setDesc] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OnboardingAssistResult | null>(null);
@@ -116,11 +114,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
         subtitle="Describe your business and Ada, your Onboarding Architect, will propose your DreamTeam setup. Nothing is created until you approve it."
       />
 
-      {dataMode !== 'live' ? (
-        <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-[13.5px] text-amber-200/90">
-          Quick Start runs in your live workspace. Sign in to your own workspace to have Ada design your setup.
-        </div>
-      ) : (
+      {(
         <>
           {/* The brief */}
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">

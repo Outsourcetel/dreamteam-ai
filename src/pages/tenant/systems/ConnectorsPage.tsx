@@ -258,7 +258,7 @@ function DEAvatar({ name }: { name: string }) {
 export default function ConnectorsPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode();
   const { activeCompanyId } = useAuth();
-  if (dataMode === 'live') return <LiveConnectorsPage />;
+  return <LiveConnectorsPage />;
   const connectors = CONNECTORS[activeCompanyId];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCatalog, setShowCatalog] = useState(false);

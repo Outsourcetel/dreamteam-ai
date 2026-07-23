@@ -916,6 +916,6 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function KnowledgeGapsPage({ setPage }: { setPage?: (p: Page) => void }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveKnowledgeGaps setPage={setPage ?? (() => {})} />;
+  return <LiveKnowledgeGaps setPage={setPage ?? (() => {})} />;
   return <DemoKnowledgeGapsPage />;
 }

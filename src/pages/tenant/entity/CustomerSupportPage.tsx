@@ -196,11 +196,7 @@ function LiveCustomerSupport() {
   );
 }
 
-const CustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
-  const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveCustomerSupport />;
-  return <DemoCustomerSupportPage setPage={setPage} />;
-};
+const CustomerSupportPage = (_props: { setPage: (p: Page) => void }) => <LiveCustomerSupport />;
 
 const DemoCustomerSupportPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const { activeCompanyId, activeCompany } = useAuth();

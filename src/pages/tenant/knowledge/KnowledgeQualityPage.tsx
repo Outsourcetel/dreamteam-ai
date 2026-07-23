@@ -550,6 +550,6 @@ function LiveKnowledgeQuality() {
 
 export default function KnowledgeQualityPage() {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveKnowledgeQuality />;
+  return <LiveKnowledgeQuality />;
   return <DemoKnowledgeQualityPage />;
 }

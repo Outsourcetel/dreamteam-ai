@@ -72,7 +72,7 @@ const stageBadge = (stage: string) => {
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <CustomerBDLive />;
+  return <CustomerBDLive />;
   return <DemoCustomerBD />;
 };
 
@@ -192,7 +192,7 @@ const oppStageBadge = (stage: string) => {
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <CustomerSalesLive />;
+  return <CustomerSalesLive />;
   return <DemoCustomerSales />;
 };
 
@@ -294,7 +294,7 @@ const trendIcon = (t: Account['trend']) => (t === 'up' ? '↑' : t === 'down' ? 
 
 export const CustomerSuccessPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <CustomerSuccessLive />;
+  return <CustomerSuccessLive />;
   return <DemoCustomerSuccess setPage={setPage} />;
 };
 

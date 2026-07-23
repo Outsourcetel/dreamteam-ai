@@ -577,7 +577,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
 
 export default function CompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode()
-  if (dataMode === 'live') return <LiveCompliancePage setPage={setPage} />
+  return <LiveCompliancePage setPage={setPage} />
   return <DemoCompliancePage setPage={setPage} />
 }
 

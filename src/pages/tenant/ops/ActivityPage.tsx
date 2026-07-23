@@ -163,7 +163,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
 
   useEffect(() => { setDeFilter('all'); setEntityFilter('all'); setTypeFilter('all'); }, [activeCompanyId]);
 
-  if (dataMode === 'live') return <ActivityLogNotYetAvailable setPage={setPage} />;
+  return <ActivityLogNotYetAvailable setPage={setPage} />;
 
   const des = Array.from(new Set(rows.map(r => r.de)));
   const entities = Array.from(new Set(rows.map(r => r.entity)));

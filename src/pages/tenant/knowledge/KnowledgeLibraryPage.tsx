@@ -125,7 +125,7 @@ const FilterSelect = ({ label, value, onChange, options }: { label: string; valu
 
 const KnowledgeLibraryPage = ({ setPage }: { setPage?: (p: import('../../../types').Page) => void }) => {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveKnowledgeLibrary setPage={setPage} />;
+  return <LiveKnowledgeLibrary setPage={setPage} />;
   return <DemoKnowledgeLibrary />;
 };
 

@@ -512,7 +512,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveHumanTasks setPage={setPage} />;
+  return <LiveHumanTasks setPage={setPage} />;
   return <DemoHumanTasksPage setPage={setPage} />;
 }
 

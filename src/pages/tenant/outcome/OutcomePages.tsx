@@ -147,7 +147,7 @@ export const OutcomeRevenuePage = ({ setPage }: { setPage: (p: Page) => void }) 
   const isTcp = activeCompanyId === 'tcp';
   const maxMrr = Math.max(...TCP_MRR.map(m => m.value));
 
-  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Revenue & Growth" subtitle="Pipeline, renewals, and expansion — outcome view" setPage={setPage} />;
+  return <OutcomeNotYetAvailable title="Revenue & Growth" subtitle="Pipeline, renewals, and expansion — outcome view" setPage={setPage} />;
 
   const kpis = isTcp
     ? [
@@ -290,7 +290,7 @@ export const OutcomeDeliveryPage = ({ setPage }: { setPage: (p: Page) => void })
   const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
 
-  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Product & Delivery" subtitle="Releases, incidents, and engagements — outcome view" setPage={setPage} />;
+  return <OutcomeNotYetAvailable title="Product & Delivery" subtitle="Releases, incidents, and engagements — outcome view" setPage={setPage} />;
 
   const kpis = isTcp
     ? [
@@ -580,7 +580,7 @@ export const OutcomeFinancialPage = ({ setPage }: { setPage: (p: Page) => void }
   const [toast, setToast] = useState('');
   const [bucketFilter, setBucketFilter] = useState<AgingBucketKey | 'all'>('all');
 
-  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Financial Health" subtitle="AR/AP, exceptions, and aging — outcome view" setPage={setPage} />;
+  return <OutcomeNotYetAvailable title="Financial Health" subtitle="AR/AP, exceptions, and aging — outcome view" setPage={setPage} />;
 
   const exceptions = EXCEPTIONS[activeCompanyId];
   const aging = AR_AGING[activeCompanyId];
@@ -930,7 +930,7 @@ export const OutcomeRiskPage = ({ setPage }: { setPage: (p: Page) => void }) => 
   const dataMode = useDataMode();
   const isTcp = activeCompanyId === 'tcp';
 
-  if (dataMode === 'live') return <OutcomeNotYetAvailable title="Risk Posture" subtitle="Compliance alerts and calendar — outcome view" setPage={setPage} />;
+  return <OutcomeNotYetAvailable title="Risk Posture" subtitle="Compliance alerts and calendar — outcome view" setPage={setPage} />;
 
   const alerts = RISK_ALERTS[activeCompanyId];
   const calendar = COMPLIANCE_CALENDAR[activeCompanyId];

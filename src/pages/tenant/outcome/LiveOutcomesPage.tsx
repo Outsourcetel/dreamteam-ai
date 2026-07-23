@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
-import { useDataMode } from '../../../lib/dataMode';
 import { supabase } from '../../../supabase';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi';
@@ -343,9 +342,8 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 /** Wrapper: live tenants get the real Outcomes rollup; demo mode never
  *  routes here (the demo nav keeps its original Outcome pages). */
 export default function OutcomesPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode();
   const { currentTenant } = useAuth();
-  if (dataMode === 'live' && currentTenant?.id) {
+  if (currentTenant?.id) {
     return <LiveOutcomes tenantId={currentTenant.id} setPage={setPage} />;
   }
   return (

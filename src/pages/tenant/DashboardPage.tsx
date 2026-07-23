@@ -590,7 +590,7 @@ export default function DashboardPage(props: {
   dbStats?: any;
 }) {
   const dataMode = useDataMode();
-  if (dataMode === 'live') return <LiveDashboard setPage={props.setPage} />;
+  return <LiveDashboard setPage={props.setPage} />;
   return <DemoDashboardPage {...props} />;
 }
 
