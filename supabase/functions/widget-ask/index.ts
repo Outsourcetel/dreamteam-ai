@@ -109,32 +109,38 @@ function matchBlockingRule(blocking: GuardrailRule[], answer: string): Guardrail
 }
 
 // deno-lint-ignore no-explicit-any
-async function loadBlockingRules(admin: any, tenantId: string, deId: string | null): Promise<GuardrailRule[]> {
+// Returns the blocking rule set, or NULL when the resolver itself failed (so
+// callers can fail CLOSED — we can't prove an answer was screened).
+async function loadBlockingRules(admin: any, tenantId: string, deId: string | null): Promise<GuardrailRule[] | null> {
   try {
     const { data: rules } = await admin.rpc('guardrail_rules_for_de', {
       p_tenant_id: tenantId, p_de_id: deId, p_rule_types: ['blocked_phrase', 'blocked_topic'],
     });
-    if (!Array.isArray(rules)) return [];
+    if (!Array.isArray(rules)) return null;   // screening didn't run → fail closed
     return (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
   } catch (e) {
-    // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
-    // is no longer SILENT — a durable incident lands on the employee's record.
-    console.error('guardrail check failed (fail-open):', e);
+    // Production-readiness audit: was fail-OPEN (returned [] → answer released).
+    // Now fail-CLOSED (null → caller withholds + escalates); incident still logged.
+    console.error('guardrail check failed (fail-closed → escalating):', e);
     try {
       await admin.from('de_incidents').insert({
         tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
-        title: 'Guardrail check FAILED — widget answered without screening (fail-open)',
+        title: 'Guardrail check FAILED — widget answer withheld and escalated (fail-closed)',
         detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'widget-ask' },
         source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
       });
     } catch { /* best-effort */ }
-    return [];
+    return null;
   }
 }
+
+// Fail-CLOSED sentinel: resolver error/unavailable → treat as blocked → escalate.
+const GUARDRAIL_RESOLVER_ERROR: GuardrailRule = { id: '__resolver_error__', rule: 'answer screening unavailable', rule_type: 'resolver_error', pattern: null, applies_to: 'answer' };
 
 // deno-lint-ignore no-explicit-any
 async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   const blocking = await loadBlockingRules(admin, tenantId, deId);
+  if (blocking === null) return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → block + escalate
   return matchBlockingRule(blocking, answer);
 }
 
@@ -657,8 +663,12 @@ serve(async (req) => {
     // fall through to the non-streaming path, which routes it to a human.
     // Streaming needs the direct Anthropic key (SSE passthrough); without it
     // the request falls through to the buffered path and the provider chain.
-    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey) {
-      const blockingRules = await loadBlockingRules(admin, tenantId, subjectDeId);
+    const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey)
+      ? await loadBlockingRules(admin, tenantId, subjectDeId) : [];
+    // If screening rules can't load, do NOT stream unscreened — fall through to the
+    // buffered path, whose checkAnswerGuardrails fails closed (blocks + escalates).
+    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && streamRules !== null) {
+      const blockingRules = streamRules;
       const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
       const META = '###META###';
 

@@ -937,7 +937,7 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
+        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="Certification status gates autonomy: a stale, expired, or failed certification automatically clamps this employee to supervised mode via the records gate (mig 258).">gates autonomy</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">expiring attestations</span>
         <button onClick={() => setShowCertify(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">

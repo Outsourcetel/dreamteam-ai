@@ -254,7 +254,11 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       const mine = om?.by_de.find(x => x.de_id === de.id);
       setResolutions(mine ? { resolutions: mine.resolutions, escalations: mine.escalations } : null);
       setOutputs(outs);
-      setLoading(false);
+    }).catch((e) => {
+      // A rejecting metric RPC must not hang the tab on "Loading…" forever.
+      if (!cancelled) console.error('performance metrics load failed', e);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
   }, [tenantId, de.id, range]);

@@ -98,6 +98,12 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
 // (blocked_phrase / blocked_topic) that match the ANSWER text block it.
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
 
+// Fail-CLOSED sentinel: if the guardrail resolver itself errors (or returns no
+// rule set) we cannot PROVE the answer was screened, so we treat it as blocked
+// and route to a human rather than release an unscreened reply during a transient
+// DB blip (production-readiness audit — the old behavior failed open).
+const GUARDRAIL_RESOLVER_ERROR: GuardrailRule = { id: '__resolver_error__', rule: 'answer screening unavailable', rule_type: 'resolver_error', pattern: null, applies_to: 'answer' };
+
 // deno-lint-ignore no-explicit-any
 async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
   try {
@@ -109,7 +115,7 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
         p_de_id: deId,
         p_rule_types: ['blocked_phrase', 'blocked_topic'],
       });
-    if (!Array.isArray(rules)) return null;
+    if (!Array.isArray(rules)) return GUARDRAIL_RESOLVER_ERROR;   // screening didn't run → fail closed
     const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
     const text = answer.toLowerCase();
     for (const r of blocking as GuardrailRule[]) {
@@ -125,16 +131,16 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
     // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
     // is no longer SILENT — a durable incident lands on the employee's record
     // so a broken guardrail resolver can't hide.
-    console.error('guardrail check failed (fail-open):', e);
+    console.error('guardrail check failed (fail-closed → escalating):', e);
     try {
       await admin.from('de_incidents').insert({
         tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
-        title: 'Guardrail check FAILED — answer released without screening (fail-open)',
+        title: 'Guardrail check FAILED — answer withheld and escalated (fail-closed)',
         detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'de-answer' },
         source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
       });
     } catch { /* best-effort */ }
-    return null;
+    return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → route to a human
   }
 }
 
@@ -415,6 +421,12 @@ serve(async (req) => {
       });
       const hit = Array.isArray(cacheRows) ? cacheRows[0] : null;
       if (hit) {
+        // Re-screen the cached answer against CURRENT guardrails + confidence floor
+        // + message escalation before serving — a rule added, floor raised, or
+        // escalation matched AFTER caching must not be silently evaded (audit). If
+        // it no longer clears the gate, skip the cache and take the full generate+gate path.
+        const cachedBlocked = await checkAnswerGuardrails(admin, tenantId, hit.answer, subjectDeId);
+        if (!cachedBlocked && Number(hit.confidence) >= confidenceFloor && !escalationRuleHit) {
         await admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: 'cache_hits', p_delta: 1 });
         // hits++ (best-effort read-modify-write; exactness not required)
         const { data: row } = await admin.from('answer_cache').select('hits').eq('id', hit.id).single();
@@ -443,6 +455,7 @@ serve(async (req) => {
           sources, needs_escalation: false, cached: true,
           de_id: subjectDeId, de_name: persona.name,
         });
+        }   // cached answer cleared the gate; otherwise fall through to full path
       }
     }
 
