@@ -86,6 +86,7 @@ import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { OAUTH_PROVIDERS } from '../_shared/oauthProviders.ts';
 import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { contentHash } from '../_shared/contentHash.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -4821,11 +4822,22 @@ serve(async (req) => {
       // Ingest one document (upsert knowledge_docs + re-chunk + embed).
       const ingestDoc = async (doc: SyncDoc): Promise<{ ok: boolean; chunks: number; embedded: number; error?: string }> => {
         if (!doc.content) return { ok: false, chunks: 0, embedded: 0, error: 'empty' };
+        const newHash = await contentHash(`${doc.title}\n\n${doc.content}`);
         const { data: docRow, error: upErr } = await admin.from('knowledge_docs').upsert({
           tenant_id: tenantId, title: doc.title, content: doc.content,
           source: 'connector', external_ref: doc.external_ref, tags: [`connector:${connector.provider}`],
-        }, { onConflict: 'tenant_id,source,external_ref' }).select('id').single();
+        }, { onConflict: 'tenant_id,source,external_ref' }).select('id, content_hash').single();
         if (upErr || !docRow) return { ok: false, chunks: 0, embedded: 0, error: upErr?.message ?? 'upsert_failed' };
+        // WS8 STEP 1 (mig 286) — THE STORM-KILLER: skip re-chunk + re-embed when
+        // the NORMALIZED content is unchanged (content_hash still matches AND the
+        // doc already has chunks). Was: every sync deleted + re-embedded every
+        // chunk of every doc, so a nightly connector re-embedded the whole corpus.
+        // (content_hash on the upserted row is the PRIOR value — it's not in the
+        // SET clause, so RETURNING gives the old hash to compare against.)
+        if (docRow.content_hash === newHash) {
+          const { count } = await admin.from('knowledge_doc_chunks').select('id', { count: 'exact', head: true }).eq('doc_id', docRow.id);
+          if ((count ?? 0) > 0) return { ok: true, chunks: count ?? 0, embedded: 0 };
+        }
         const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
         await admin.from('knowledge_doc_chunks').delete().eq('doc_id', docRow.id);
         let embedded = 0, chErr: string | undefined;
@@ -4839,6 +4851,8 @@ serve(async (req) => {
           const ins = await admin.from('knowledge_doc_chunks').insert(rows);
           if (ins.error) chErr = ins.error.message;
         }
+        // Stamp the hash so the NEXT sync of unchanged content skips (above).
+        if (!chErr) await admin.from('knowledge_docs').update({ content_hash: newHash }).eq('id', docRow.id);
         return { ok: true, chunks: chErr ? 0 : chunks.length, embedded, error: chErr };
       };
 

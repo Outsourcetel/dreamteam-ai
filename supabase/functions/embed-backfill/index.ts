@@ -41,6 +41,18 @@ serve(async (req) => {
     if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc)) {
       return json({ error: 'unauthorized' }, 401);
     }
+
+    // WS8 kill-switch (P4): a single global brake for mass embedding. Must exist
+    // BEFORE caps are lifted / a sync cron is enabled — it's the emergency stop
+    // for a runaway re-embed. Flip via: platform_config key 'knowledge.embed_paused'.
+    try {
+      const { data: pause } = await admin.from('platform_config').select('value').eq('key', 'knowledge.embed_paused').maybeSingle();
+      const v = pause?.value;
+      if (v === true || v === 'true' || v === '1' || v === 1) {
+        return json({ ok: true, paused: true, processed: 0, embedded: 0, remaining: 0, done: false });
+      }
+    } catch { /* config table/key absent → not paused */ }
+
     const body = await req.json().catch(() => ({})) as { tenant_id?: string; limit?: number };
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number(body.limit) || DEFAULT_LIMIT));
 

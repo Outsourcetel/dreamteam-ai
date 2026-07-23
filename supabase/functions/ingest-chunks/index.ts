@@ -18,6 +18,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { contentHash } from '../_shared/contentHash.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -108,7 +109,7 @@ serve(async (req) => {
     // ── Fetch the doc (must belong to the caller's tenant) ──
     const { data: doc, error: docErr } = await admin
       .from('knowledge_docs')
-      .select('id, tenant_id, account_id, title, content')
+      .select('id, tenant_id, account_id, title, content, content_hash')
       .eq('id', doc_id)
       .eq('tenant_id', tenantId)
       .single();
@@ -133,8 +134,14 @@ serve(async (req) => {
       .select('id', { count: 'exact', head: true })
       .eq('doc_id', doc.id);
 
+    // WS8 STEP 1 (mig 286): re-chunk iff the NORMALIZED content changed. This
+    // fixes BOTH failure modes at once — an unchanged re-ingest becomes a no-op
+    // (was: re-embed storm on connectors), and an EDITED doc actually re-chunks
+    // (was: `if (!existingCount)` kept stale chunks forever on any edit).
+    const newHash = await contentHash(`${doc.title}\n\n${doc.content}`);
+    const unchanged = doc.content_hash === newHash && (existingCount ?? 0) > 0;
     let totalChunks = existingCount ?? 0;
-    if (!existingCount || existingCount === 0) {
+    if (!unchanged) {
       const chunks = chunkText(`${doc.title}\n\n${doc.content}`);
       await admin.from('knowledge_doc_chunks').delete().eq('doc_id', doc.id);
       if (chunks.length > 0) {
@@ -149,6 +156,8 @@ serve(async (req) => {
         const { error: insErr } = await admin.from('knowledge_doc_chunks').insert(rows);
         if (insErr) return json({ error: insErr.message }, 500);
       }
+      // Stamp the doc hash so the next ingest of unchanged content skips.
+      await admin.from('knowledge_docs').update({ content_hash: newHash }).eq('id', doc.id);
       totalChunks = chunks.length;
     }
 
