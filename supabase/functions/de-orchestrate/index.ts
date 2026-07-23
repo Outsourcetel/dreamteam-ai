@@ -133,6 +133,11 @@ serve(async (req) => {
       if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
       const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
       if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+      // Also honor the SUPERVISOR's own per-DE budget — routing is paid AI work
+      // charged to it (audit: was tenant-only, so an over-ceiling supervisor still
+      // paid for every routing call).
+      const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: supervisor_de_id });
+      if (deBudget && deBudget.allowed === false) return json({ error: 'de_budget_exceeded' }, 429);
 
       const roster = [
         `0. ${sup.persona_name || sup.name} (the supervisor — you): ${sup.description ?? ''}`,

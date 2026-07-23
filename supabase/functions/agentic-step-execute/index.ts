@@ -559,10 +559,17 @@ serve(async (req) => {
     // consult, not only the dedicated consult_specialist playbook step.
     // Specialists are Digital Employees now (migrations 208/211); charter is
     // stored as jsonb {mission}.
-    const { data: specRows } = await admin.from('digital_employees')
-      .select('specialist_key, name, persona_name, charter').eq('tenant_id', tenantId)
-      .eq('is_specialist', true).eq('status', 'active')
-      .order('created_at', { ascending: true });
+    // Only specialists this DE has an ACTIVE consultation grant to (mirrors de-work's
+    // allowlist — audit: the smart step offered ALL specialists, bypassing the grant gate).
+    const { data: grantRows } = await admin.from('de_consultation_grants')
+      .select('target_de_id').eq('tenant_id', tenantId).eq('requester_de_id', deRow.id).eq('active', true);
+    const grantedIds = [...new Set(((grantRows ?? []) as Array<{ target_de_id: string }>).map((g) => g.target_de_id).filter(Boolean))];
+    const { data: specRows } = grantedIds.length > 0
+      ? await admin.from('digital_employees')
+          .select('specialist_key, name, persona_name, charter').eq('tenant_id', tenantId)
+          .in('id', grantedIds).eq('is_specialist', true).eq('status', 'active').not('specialist_key', 'is', null)
+          .order('created_at', { ascending: true })
+      : { data: [] as Array<{ specialist_key: string; name: string; persona_name: string; charter: unknown }> };
     const specialists = (specRows ?? []).map((r) => ({
       key: r.specialist_key as string,
       name: (r.persona_name || r.name) as string,

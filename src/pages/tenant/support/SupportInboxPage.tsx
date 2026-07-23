@@ -235,6 +235,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                 </div>
                 <p className="text-[11px] text-dt-muted mt-1">
                   {[sel.end_user_name, sel.account_external_ref ? `account ${sel.account_external_ref}` : null, sel.channel].filter(Boolean).join(' · ')}
+                  {sel.identity_verified && <span className="ml-2 inline-flex items-center gap-1 text-emerald-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />identity verified</span>}
                 </p>
                 {sel.handoff_summary && <p className="text-[11px] text-amber-300/80 mt-1.5 bg-amber-500/5 border border-amber-500/20 rounded-lg px-2.5 py-1.5">Handoff: {sel.handoff_summary}</p>}
                 {notice && <p className="text-[11px] text-amber-300 mt-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">{notice}</p>}

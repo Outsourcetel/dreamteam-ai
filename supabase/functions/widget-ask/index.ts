@@ -728,6 +728,9 @@ serve(async (req) => {
               }
               await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${rule.rule}" mid-stream. Partial draft: ${partial}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
               await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${rule.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: rule.id, rule: rule.rule, question: truncatedQ, channel });
+              // Count the streamed block as an escalation outcome (audit: mid-stream
+              // blocks were missing from the resolution-rate denominator).
+              if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
               emit('blocked', { conversation_id: convId, blocked: true, rule: rule.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: null });
             };
 
@@ -804,13 +807,9 @@ serve(async (req) => {
                 } catch { /* keep defaults */ }
               }
 
-              // Metering — same RPC as the JSON path; usage from SSE events.
-              if (subjectDeId) {
-                admin.rpc('record_de_token_usage', {
-                  p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
-                  p_input_tokens: usageIn, p_output_tokens: usageOut,
-                }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
-              }
+              // Metering moved to the finally below so it records on EVERY exit
+              // path (clean, mid-stream block, or stream error) — audit: spend up to
+              // a mid-stream block or error was previously never charged.
 
               // Cache write — same policy + language tag as the JSON path.
               // Never cache an answer shaped by a caller's identity memory (it
@@ -837,6 +836,15 @@ serve(async (req) => {
               try { await upstream.cancel(); } catch { /* noop */ }
               emit('error', { error: 'stream_failed', conversation_id: convId });
               try { controller.close(); } catch { /* already closed */ }
+            } finally {
+              // Charge token usage on EVERY exit path — clean, mid-stream block, or
+              // error — so real LLM spend always counts against the budget (audit).
+              if (subjectDeId && (usageIn > 0 || usageOut > 0)) {
+                admin.rpc('record_de_token_usage', {
+                  p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
+                  p_input_tokens: usageIn, p_output_tokens: usageOut,
+                }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
+              }
             }
           })();
         },

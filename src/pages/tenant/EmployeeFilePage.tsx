@@ -661,7 +661,8 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
   useEffect(() => {
     let cancelled = false;
-    listDigitalEmployees().then(d => { if (!cancelled) setDes(d); }).catch(() => { if (!cancelled) setDes([]); });
+    // Include retired/archived so their file links (from timelines, records, etc.) still open.
+    listDigitalEmployees(true).then(d => { if (!cancelled) setDes(d); }).catch(() => { if (!cancelled) setDes([]); });
     return () => { cancelled = true; };
   }, []);
 
