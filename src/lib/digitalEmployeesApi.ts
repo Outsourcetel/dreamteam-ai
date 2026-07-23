@@ -291,3 +291,42 @@ export async function setDeConsultationGrantActive(grantId: string, active: bool
   const { error } = await supabase.from('de_consultation_grants').update({ active }).eq('id', grantId);
   if (error) raise('setDeConsultationGrantActive', error);
 }
+
+// ── Cross-DE task delegation (T1.2, mig 234/269) ──
+export interface DETaskRequest {
+  id: string; tenant_id: string; from_de_id: string | null; to_de_id: string;
+  title: string; context: string | null; expected_output: string | null;
+  urgency: string; due_date: string | null; status: string; result: string | null;
+  objective_id: string | null; created_by: string | null; created_at: string;
+  responded_at: string | null; completed_at: string | null;
+}
+
+/** Tasks assigned TO this DE (inbound) and tasks it assigned to others
+ *  (outbound). Plain RLS-scoped read. */
+export async function listDeTaskRequests(deId: string): Promise<{ inbound: DETaskRequest[]; outbound: DETaskRequest[] }> {
+  const { data, error } = await supabase
+    .from('de_task_requests')
+    .select('*')
+    .or(`to_de_id.eq.${deId},from_de_id.eq.${deId}`)
+    .order('created_at', { ascending: false });
+  if (error) raise('listDeTaskRequests', error);
+  const rows = (data ?? []) as DETaskRequest[];
+  return { inbound: rows.filter(r => r.to_de_id === deId), outbound: rows.filter(r => r.from_de_id === deId) };
+}
+
+/** A human assigns a task to a DE (from_de_id null). Owner/admin only —
+ *  enforced in request_de_task (mig 269). Returns the RPC envelope so the
+ *  caller can surface {ok:false, detail} rather than throw. */
+export async function assignTaskToDe(toDeId: string, title: string, context?: string, expectedOutput?: string, urgency: string = 'normal'): Promise<{ ok: boolean; error?: string; detail?: string; request_id?: string }> {
+  const { data, error } = await supabase.rpc('request_de_task', {
+    p_from_de_id: null, p_to_de_id: toDeId, p_title: title,
+    p_context: context ?? null, p_expected_output: expectedOutput ?? null, p_urgency: urgency,
+  });
+  if (error) raise('assignTaskToDe', error);
+  return (data ?? { ok: false, error: 'no_response' }) as { ok: boolean; error?: string; detail?: string; request_id?: string };
+}
+
+export async function respondDeTask(requestId: string, status: string, result?: string): Promise<void> {
+  const { error } = await supabase.rpc('respond_de_task', { p_request_id: requestId, p_status: status, p_result: result ?? null });
+  if (error) raise('respondDeTask', error);
+}

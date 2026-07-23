@@ -44,10 +44,11 @@ import {
   transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
   listDeProfileFields, addDeProfileField, setDeAttributes, setExternalReplyMode,
+  listDeTaskRequests, assignTaskToDe, respondDeTask,
 } from '../../lib/digitalEmployeesApi';
 import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
-  DeProfileField,
+  DeProfileField, DETaskRequest,
 } from '../../lib/digitalEmployeesApi';
 import { useUsers } from '../../lib/useUsers';
 import Modal from '../../components/Modal';
@@ -1322,6 +1323,110 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
 // ── Consultations — bounded DE-to-DE delegation (Wave 3, migration
 // 111). NOT full Composition: single-hop, governance-gated by an
 // explicit allow-list this panel manages. ──────────────────────────
+const TASK_STATUS_STYLE: Record<string, string> = {
+  requested: 'bg-amber-500/15 text-amber-300',
+  accepted: 'bg-indigo-500/15 text-indigo-300',
+  in_progress: 'bg-indigo-500/15 text-indigo-300',
+  completed: 'bg-emerald-500/15 text-emerald-300',
+  failed: 'bg-red-500/15 text-red-300',
+  declined: 'bg-slate-600/50 text-dt-support',
+};
+
+// T1.2: human view of cross-DE delegation — tasks assigned to / by this DE,
+// plus an owner/admin "assign a task" control (the RPC rejects non-admins).
+function DelegationPanel({ de }: { de: DigitalEmployee }) {
+  const [inbound, setInbound] = useState<DETaskRequest[] | null>(null);
+  const [outbound, setOutbound] = useState<DETaskRequest[] | null>(null);
+  const [roster, setRoster] = useState<DigitalEmployee[]>([]);
+  const [nameById, setNameById] = useState<Record<string, string>>({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [toId, setToId] = useState('');
+  const [title, setTitle] = useState('');
+  const [context, setContext] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [tasks, des] = await Promise.all([listDeTaskRequests(de.id), listDigitalEmployees()]);
+      setInbound(tasks.inbound); setOutbound(tasks.outbound);
+      setRoster(des.filter(d => d.id !== de.id && d.status !== 'retired'));
+      setNameById(Object.fromEntries(des.map(d => [d.id, d.persona_name || d.name])));
+    } catch (e) { setErr(String(e)); }
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const assign = async () => {
+    if (!toId || !title.trim() || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await assignTaskToDe(toId, title.trim(), context.trim() || undefined);
+      if (!r.ok) { setErr(r.detail || r.error || 'Could not assign the task.'); return; }
+      setShowAdd(false); setTitle(''); setContext(''); setToId('');
+      await load();
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  };
+  const respond = async (id: string, status: string) => {
+    setBusy(true); setErr(null);
+    try { await respondDeTask(id, status); await load(); }
+    catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  };
+
+  const badge = (s: string) => <span className={`text-[10px] px-1.5 py-0.5 rounded ${TASK_STATUS_STYLE[s] || 'bg-slate-600/50 text-dt-support'}`}>{s.replace('_', ' ')}</span>;
+  const who = (id: string | null) => id ? (nameById[id] || 'a colleague') : 'You';
+
+  return (
+    <div className="mt-4 pt-4 border-t border-dt-border">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-xs font-semibold text-dt-title">Delegated tasks</h4>
+        <button onClick={() => setShowAdd(s => !s)} className="text-[11px] text-indigo-400 hover:text-indigo-300">{showAdd ? 'Cancel' : '+ Assign a task'}</button>
+      </div>
+      {err && <p className="text-[11px] text-red-300 mb-2">{err}</p>}
+      {showAdd && (
+        <div className="bg-dt-card border border-dt-border rounded-lg p-2.5 mb-2 space-y-2">
+          <select value={toId} onChange={e => setToId(e.target.value)} className="w-full bg-dt-panel border border-dt-border rounded px-2 py-1 text-xs text-dt-body">
+            <option value="">Choose a colleague…</option>
+            {roster.map(d => <option key={d.id} value={d.id}>{d.persona_name || d.name}</option>)}
+          </select>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" className="w-full bg-dt-panel border border-dt-border rounded px-2 py-1 text-xs text-dt-body" />
+          <textarea value={context} onChange={e => setContext(e.target.value)} placeholder="Context (optional)" rows={2} className="w-full bg-dt-panel border border-dt-border rounded px-2 py-1 text-xs text-dt-body" />
+          <button onClick={() => void assign()} disabled={busy || !toId || !title.trim()} className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 text-white disabled:opacity-50">Assign</button>
+          <p className="text-[10px] text-dt-faint">Only workspace owners/admins can assign. The colleague picks it up as their own tracked task under their own governance.</p>
+        </div>
+      )}
+      <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1">Assigned to {de.persona_name || de.name}</p>
+      {inbound && inbound.length === 0 && <p className="text-[11px] text-dt-muted mb-2">Nothing assigned.</p>}
+      <div className="space-y-1 mb-3">
+        {(inbound ?? []).map(t => (
+          <div key={t.id} className="flex items-center gap-2 text-xs text-dt-support">
+            <span className="flex-1 truncate">{t.title} <span className="text-dt-faint">· from {who(t.from_de_id)}</span></span>
+            {badge(t.status)}
+            {['requested', 'accepted', 'in_progress'].includes(t.status) && (
+              <>
+                <button onClick={() => void respond(t.id, 'completed')} disabled={busy} className="text-[10px] text-emerald-400 hover:text-emerald-200">done</button>
+                <button onClick={() => void respond(t.id, 'declined')} disabled={busy} className="text-[10px] text-dt-muted hover:text-dt-support">decline</button>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      {(outbound ?? []).length > 0 && (
+        <>
+          <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1">Assigned by {de.persona_name || de.name}</p>
+          <div className="space-y-1">
+            {(outbound ?? []).map(t => (
+              <div key={t.id} className="flex items-center gap-2 text-xs text-dt-support">
+                <span className="flex-1 truncate">{t.title} <span className="text-dt-faint">· to {who(t.to_de_id)}</span></span>
+                {badge(t.status)}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
   const [asRequester, setAsRequester] = useState<DEConsultationGrant[] | null>(null);
   const [asTarget, setAsTarget] = useState<DEConsultationGrant[] | null>(null);
@@ -1514,6 +1619,7 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
         )
       )}
 
+      {!retired && <DelegationPanel de={de} />}
       {!retired && <ConsultationsPanel de={de} />}
 
       {modal === 'edit' && <EditDEModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
