@@ -33,8 +33,8 @@ import BrandingCard from '../../design/BrandingCard';
 const STEPS = ['Industry', 'First hires', 'Guardrails', 'Review & create'];
 
 export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => void }) {
-  const { currentTenant, dataMode } = useAuth();
-  const isLive = dataMode === 'live';
+  const { currentTenant } = useAuth();
+  const isLive = true;   // legacy demo mode decommissioned
 
   const [step, setStep] = useState(0);
   const [industryName, setIndustryName] = useState<string>(currentTenant?.industry ?? '');

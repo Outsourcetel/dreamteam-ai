@@ -48,7 +48,7 @@ const PlatformConsolePage = ({
   dbTenants?: DBTenant[];
   dbTenantsLoaded?: boolean;
 }) => {
-  const { enterRemoteAccess, setActiveCompanyId, setViewingDemo, isLiveTenant } = useAuth();
+  const { enterRemoteAccess, setActiveCompanyId, isLiveTenant } = useAuth();
   // Local mirror of the prop, so a provision/suspend action can refresh the
   // list immediately without waiting on the parent's own resync cycle.
   const [localDbTenants, setLocalDbTenants] = useState<DBTenant[]>(dbTenants || []);

@@ -4,7 +4,6 @@ import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
 import { TCP_DES, PWC_DES } from '../WorkforceDEsPage'
-import { useDataMode } from '../../../lib/dataMode'
 import { CustomerApiError } from '../../../lib/customerApi'
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
@@ -576,7 +575,6 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
 // ── Page ───────────────────────────────────────────────────────
 
 export default function CompliancePage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode()
   return <LiveCompliancePage setPage={setPage} />
   return <DemoCompliancePage setPage={setPage} />
 }

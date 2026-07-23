@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import type { Page } from '../../types'
 import { getPeople, ROSTER_SELECT_KEY, type Person } from '../../data/people'
-import { useDataMode } from '../../lib/dataMode'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
 import { AmendmentWizard } from '../../components/AmendmentWizard'
 import { DEAuthorityPanel } from '../../components/DEAuthorityPanel'
@@ -1716,7 +1715,6 @@ const TABS = ['Profile', 'Training', 'Knowledge', 'SOPs', 'Playbooks', 'Systems'
 type RosterSelection = { kind: 'de' | 'human'; id: string }
 
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
-  const dataMode = useDataMode()
   return <LiveWorkforceDEs setPage={setPage} />
   return <DemoWorkforceDEsPage setPage={setPage} />
 }

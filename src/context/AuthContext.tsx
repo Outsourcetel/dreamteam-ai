@@ -40,7 +40,6 @@ export type { CompanyProfile, CompanyId } from '../data/companies';
 export const DEMO_TENANT_ID = 'a0000000-0000-0000-0000-000000000001';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type DataMode = 'demo' | 'live';
 
 interface AuthContextValue {
   authedUser: AuthUser | null;
@@ -61,11 +60,6 @@ interface AuthContextValue {
   activeCompany: CompanyProfile;
   /** true when the logged-in user's tenant is a real (non-demo) tenant */
   isLiveTenant: boolean;
-  /** live tenants can still explore the TCP/PWC demo story */
-  viewingDemo: boolean;
-  setViewingDemo: (v: boolean) => void;
-  /** 'live' → Customer-section pages read real Supabase data; 'demo' → seed data */
-  dataMode: DataMode;
   liveTenantName: string | null;
   /**
    * true when a genuinely authenticated, confirmed user's profile has no
@@ -137,7 +131,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [godModeSession, setGodModeSession] = useState<GodModeSession | null>(null);
   const [activeCompanyId, setActiveCompanyId] = useState<CompanyId>('tcp');
-  const [viewingDemo, setViewingDemo] = useState(false);
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbTenantsLoaded, setDbTenantsLoaded] = useState(false);
@@ -423,8 +416,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       UUID_RE.test(userTenantId) &&
       userTenantId.toLowerCase() !== DEMO_TENANT_ID)
   );
-  // Legacy TCP/PWC demo surface decommissioned — the app is always live now.
-  const dataMode: DataMode = 'live';
   const liveTenantName = isLiveTenant ? (dbCurrentTenant?.name ?? authedUser?.name ?? null) : null;
 
   // ── Needs org setup (post-signup recovery) ───────────────────────
@@ -624,7 +615,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear the customerApi tenant cache so the next login re-resolves it.
     try { (await import('../lib/customerApi')).clearTenantCache(); } catch { /* noop */ }
     await supabase.auth.signOut();
-    setViewingDemo(false);
     setAuthedUser(null as any);
     setCurrentPage('dashboard');
     setDbTenants([]);
@@ -651,9 +641,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActiveCompanyId,
       activeCompany,
       isLiveTenant,
-      viewingDemo,
-      setViewingDemo,
-      dataMode,
       liveTenantName,
       needsOrgSetup,
       completeOrgSetup,

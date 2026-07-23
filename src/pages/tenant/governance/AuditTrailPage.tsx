@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import type { Page } from '../../../types'
 import { PageHeader } from '../../../components/ui'
-import { useDataMode } from '../../../lib/dataMode'
 import { CustomerApiError } from '../../../lib/customerApi'
 import { listAuditEvents, verifyAuditChain } from '../../../lib/guardrailApi'
 import type { AuditEvent as LiveAuditEvent, AuditCategory, ChainVerification } from '../../../lib/guardrailApi'
@@ -596,7 +595,6 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 }
 
 export default function AuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
-  const dataMode = useDataMode()
   return <LiveAuditTrail setPage={setPage} />
   return <DemoAuditTrailPage setPage={setPage} />
 }
