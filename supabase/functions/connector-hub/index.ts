@@ -5036,11 +5036,30 @@ serve(async (req) => {
         // the per-employee cascade — a DE subject's own dial override
         // applies to registered actions, not just triage (the Wave 1.1
         // completion this sibling never received).
+        // Resolve the transaction amount so the money gates — approval threshold
+        // (require_approval_over_cents), per-DE spend caps (spend_cap_daily_cents),
+        // and the trust dollar-ceiling — actually fire. Convention: a param named
+        // 'amount_cents' (already in cents; the only money param in the registry).
+        // Passing null here is what silently disabled all three (audit critical).
+        const amtRaw = (validated.values as Record<string, unknown>)['amount_cents'];
+        const hasAmountParam = def.param_schema.some((p) => p.name === 'amount_cents');
+        let amountCents: number | null = null;
+        if (typeof amtRaw === 'number' && Number.isFinite(amtRaw)) amountCents = Math.round(amtRaw);
+        else if (typeof amtRaw === 'string' && /^\d+$/.test(amtRaw.trim())) amountCents = parseInt(amtRaw.trim(), 10);
+
         const { data: decisionRaw } = await admin.rpc('decide_action_execution', {
           p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
           p_de_id: subjectKind === 'de' ? subjectId : null,
+          p_amount_cents: amountCents, p_action_type: def.action_key,
         });
-        const decision = decisionRaw as { decision: string; guardrail_rule_id: string | null; guardrail_rule: string | null; trust_level: number | null; reasoning: string };
+        let decision = decisionRaw as { decision: string; guardrail_rule_id: string | null; guardrail_rule: string | null; trust_level: number | null; reasoning: string };
+
+        // Fail closed: a money action whose amount we could NOT read must never
+        // auto-execute an unbounded value — route it to a human instead.
+        if (hasAmountParam && amountCents === null && decision.decision === 'auto_executed') {
+          decision = { ...decision, decision: 'human_gated_trust',
+            reasoning: 'The amount for this monetary action could not be determined, so it was routed to a human for approval rather than auto-executed.' };
+        }
 
         if (decision.decision !== 'auto_executed') {
           // Gated — create the human_task, do NOT call the external system.

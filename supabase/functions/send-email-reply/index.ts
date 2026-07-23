@@ -91,7 +91,7 @@ serve(async (req) => {
       text: `Replied by email to ${recipient} ("${subject.slice(0, 80)}")`,
     });
 
-    return json({ ok: true, sent: true, message_id: msg?.id ?? null, provider_message_id: (rBody as { id?: string })?.id ?? null });
+    return json({ ok: true, sent: true, message_id: msg?.id ?? null, provider_message_id: sent.messageId ?? null });
   } catch (err) {
     console.error('send-email-reply error:', String(err));
     return json({ error: String(err) }, 500);
