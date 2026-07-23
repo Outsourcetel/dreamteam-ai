@@ -46,24 +46,17 @@ import CustomersHubPage from './pages/tenant/entity/CustomersHubPage';
 import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
-import CustomerOnboardingPage from './pages/tenant/entity/CustomerOnboardingPage';
 import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
 import { EmbedPage } from './pages/EmbedPage';
-import { useDataMode } from './lib/dataMode';
 import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
 import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
 import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
-import { OutcomeRevenuePage, OutcomeDeliveryPage, OutcomeFinancialPage, OutcomeRiskPage } from './pages/tenant/outcome/OutcomePages';
 import OutcomesPage from './pages/tenant/outcome/LiveOutcomesPage';
 import type { Page, PlatformPage } from './types';
 
 // Live tenants get the real onboarding workspace (migration 022);
 // demo companies keep the co-pilot design preview.
-const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) => {
-  const dataMode = useDataMode();
-  if (dataMode === 'live') return <CustomerOnboardingLive setPage={setPage} />;
-  return <CustomerOnboardingPage setPage={setPage} />;
-};
+const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) => <CustomerOnboardingLive setPage={setPage} />;
 
 // ── URL ↔ Page mapping ──────────────────────────────────────────
 // Record<Page, string> (not Record<string, string>) so adding a new Page
@@ -291,7 +284,6 @@ function AppShell() {
     completePasswordRecovery,
   } = useAuth();
   const location = useLocation();
-  const dataMode = useDataMode();
 
   // Platform-invite redemption: a small, self-contained entry point that
   // must work whether or not the visitor is logged in yet (the redeem
@@ -437,17 +429,15 @@ function AppShell() {
       // Outcomes reborn as the workforce VALUE statement inside the
       // Workforce hub (founder rework 2026-07-22); demo keeps the old page.
       case 'outcomes':
-        return dataMode === 'live'
-          ? <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />
-          : <OutcomesPage setPage={handleSetPage} />;
+        return <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'outcome_revenue':
-        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeRevenuePage setPage={handleSetPage} />;
+        return <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_delivery':
-        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeDeliveryPage setPage={handleSetPage} />;
+        return <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_financial':
-        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeFinancialPage setPage={handleSetPage} />;
+        return <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_risk':
-        return dataMode === 'live' ? <OutcomesPage setPage={handleSetPage} /> : <OutcomeRiskPage setPage={handleSetPage} />;
+        return <OutcomesPage setPage={handleSetPage} />;
       // ── Specialist pages ──────────────────────────────────────
       case 'specialist_technical':
         return <SpecialistsPage domain="technical" setPage={handleSetPage} />;
