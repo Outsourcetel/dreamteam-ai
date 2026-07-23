@@ -4,7 +4,6 @@ import { useVocabulary } from '../lib/vocabulary';
 import type { Vocabulary } from '../lib/vocabulary';
 import { canAccessPage } from '../lib/navAccess';
 import { useAuth } from '../context/AuthContext';
-import { COMPANIES, COMPANY_SUMMARY } from '../data/companies';
 import type { CompanyId } from '../data/companies';
 import { countPendingChatEscalations } from '../lib/chatEscalations';
 import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnowledgeGapCount } from '../lib/customerApi';
@@ -56,46 +55,6 @@ interface NavCounts {
   renewalsDue: number;
 }
 
-// DEMO MODE ONLY. Live badge counts: read the same localStorage state the
-// demo pages persist, falling back to the static companies.ts seed values
-// when nothing is stored. Live tenants never call this — see
-// fetchLiveNavCounts below, which reads real per-tenant data instead.
-export function computeLiveCounts(companyId: CompanyId): NavCounts {
-  // COMPANY_SUMMARY has been EMPTY since the demo-company purge (69605ea) —
-  // dereferencing the missing row crashed every tenant login into the error
-  // boundary (2026-07-20 outage). All-zero fallback keeps the sidebar alive.
-  const s = COMPANY_SUMMARY[companyId] ?? {
-    desActive: 0, desTotal: 0, humanTasks: 0, aiResolution: 0, kbGaps: 0, alerts: 0,
-  };
-  let humanTasks = s.humanTasks;
-  let kbGaps = s.kbGaps;
-  try {
-    const stored = localStorage.getItem(`dt_ops_tasks_${companyId}`);
-    if (stored) {
-      // Stored shape: Record<taskId, decidedStatus> — one entry per seed-pending task decided.
-      humanTasks = Math.max(0, s.humanTasks - Object.keys(JSON.parse(stored)).length);
-    }
-  } catch { /* fall back to static */ }
-  // Escalations raised from the DE chat dock count as pending human tasks too.
-  humanTasks += countPendingChatEscalations(companyId);
-  try {
-    const stored = localStorage.getItem(`dt_kb_gaps_${companyId}`);
-    if (stored) {
-      // Stored shape: Record<gapId, GapStatus> overrides; approved/retrained close a gap.
-      const overrides = JSON.parse(stored) as Record<string, string>;
-      const closed = Object.values(overrides).filter(v => v === 'approved' || v === 'retrained').length;
-      kbGaps = Math.max(0, s.kbGaps - closed);
-    }
-  } catch { /* fall back to static */ }
-  return {
-    humanTasks, kbGaps,
-    salesPipeline: s.salesPipeline ?? 0,
-    onboardingActive: s.onboardingActive ?? 0,
-    supportTickets: s.supportTickets ?? 0,
-    atRiskAccounts: s.atRiskAccounts ?? 0,
-    renewalsDue: s.renewalsDue ?? 0,
-  };
-}
 
 // LIVE MODE ONLY. Real per-tenant counts, mirroring the exact same
 // semantics LiveDashboard (DashboardPage.tsx) already uses for its own KPI
@@ -124,11 +83,6 @@ export async function fetchLiveNavCounts(): Promise<NavCounts> {
 }
 
 function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vocab: Vocabulary): NavSection[] {
-  // CompanyId keys DEMO content only (Wave 1.3): live tenants get one
-  // neutral label set and never see demo-company badges or branching.
-  const isTCP = companyId === 'tcp';
-  const s = COMPANY_SUMMARY[companyId];
-
   // DE-CENTERED STRUCTURE (founder-approved 2026-07-11, mockup artifact
   // f43050e7): 8 sections, the Digital Employee at the center. A system
   // of record organizes around the data; DreamTeam organizes around the
@@ -162,32 +116,10 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           label: 'Workforce',
           icon: '⚡',
           page: 'workforce_des',
-          // Demo-only badge: NavCounts has no real DE/human headcount, so
-          // live tenants get NO badge here rather than a demo company's.
-          badge: isLiveMode ? undefined : { text: isTCP ? '3 DEs · 8 humans' : '2 DEs · 4 humans', color: '#22c55e' },
         },
         // One destination — Inbox/Overview/Rules are tabs inside the Support hub.
         { id: 'support', label: 'Support', icon: '🎧', page: 'support_inbox' },
         { id: 'browser_operator', label: 'Browser Operator', icon: '🌐', page: 'browser_operator' },
-        // Wave 3: live tenants get the single consolidated Outcomes page
-        // (real economics/delivery/risk rollup). Demo keeps the 4-page
-        // preview group. The alerts badge was demo-seeded (s.alerts) —
-        // demo-only now, never shown to live tenants.
-        // Founder rework 2026-07-22: live Outcomes became the Workforce
-        // hub's "Value" statement — no standalone nav item for live tenants
-        // (spread-empty, the same pattern the vendor group uses).
-        ...(isLiveMode ? [] : [{
-              id: 'outcomes',
-              label: 'Outcomes',
-              icon: '↑',
-              badge: s.alerts > 0 ? { text: `${s.alerts} alerts`, color: '#ef4444' } : undefined,
-              children: [
-                { id: 'outcome_revenue' as Page, label: 'Revenue & Growth' },
-                { id: 'outcome_delivery' as Page, label: 'Delivery' },
-                { id: 'outcome_financial' as Page, label: 'Financial Health' },
-                { id: 'outcome_risk' as Page, label: 'Risk Posture' },
-              ],
-            }]),
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
         // (sources, media, consult, scribe, evidence) are the "Specialist
@@ -302,17 +234,15 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-  const [liveCounts, setLiveCounts] = useState<NavCounts>(() => computeLiveCounts(activeCompany.id));
+  const [liveCounts, setLiveCounts] = useState<NavCounts>({
+    humanTasks: 0, kbGaps: 0, salesPipeline: 0, onboardingActive: 0, supportTickets: 0, atRiskAccounts: 0, renewalsDue: 0,
+  });
 
   const refreshCounts = useCallback(() => {
-    if (true) {
-      let cancelled = false;
-      fetchLiveNavCounts().then((counts) => { if (!cancelled) setLiveCounts(counts); });
-      return () => { cancelled = true; };
-    }
-    setLiveCounts(computeLiveCounts(activeCompanyId));
-    return undefined;
-  }, [activeCompanyId]);
+    let cancelled = false;
+    fetchLiveNavCounts().then((counts) => { if (!cancelled) setLiveCounts(counts); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const cleanup = refreshCounts();
@@ -489,22 +419,6 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                 <span className="text-xs text-dt-support">Back to Platform Console</span>
               </button>
             )}
-            {showDemoCompanies && COMPANIES.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => { setActiveCompanyId(c.id); setShowCompanyPicker(false); }}
-                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${c.id === activeCompanyId && (!isLiveTenant || false) ? 'bg-dt-panel' : ''}`}
-              >
-                <div className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c.badgeColor }}>
-                  {c.badge}
-                </div>
-                <div>
-                  <div className="text-xs font-medium text-dt-body">{c.name}</div>
-                  <div className="text-[10px] text-dt-muted">{c.activeDEs} DEs active</div>
-                </div>
-                {c.id === activeCompanyId && (!isLiveTenant || false) && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
-              </button>
-            ))}
             <button
               onClick={() => { setPage('company_setup'); setShowCompanyPicker(false); }}
               className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel border-t border-dt-border-strong"

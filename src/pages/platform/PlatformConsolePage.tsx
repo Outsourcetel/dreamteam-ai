@@ -12,7 +12,6 @@ import {
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformTeamPage from './PlatformTeamPage';
-import { COMPANIES } from '../../data/companies';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
   id: t.id,

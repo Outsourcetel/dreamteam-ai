@@ -10,7 +10,6 @@ import {
 import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy, checkMyIpAllowed } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/navAccess';
-import { COMPANIES_LOOKUP } from '../data/companies';
 import type { CompanyProfile, CompanyId } from '../data/companies';
 import { setGodModeTenantIdOverride } from '../lib/customerApi';
 
@@ -388,7 +387,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 2026-07-20 production outage). Live tenants get a profile built from
   // their real tenant record; anything else gets a neutral placeholder.
   const liveName = godModeSession?.tenant?.name ?? dbCurrentTenant?.name ?? null;
-  const activeCompany: CompanyProfile = COMPANIES_LOOKUP[activeCompanyId] ?? {
+  const activeCompany: CompanyProfile = {
     id: activeCompanyId,
     name: liveName ?? 'Workspace',
     industry: godModeSession?.tenant?.industry ?? dbCurrentTenant?.industry ?? '',
