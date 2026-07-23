@@ -295,7 +295,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, viewingDemo, setViewingDemo, liveTenantName, dataMode } = useAuth();
+  const { activeCompanyId, setActiveCompanyId, activeCompany, isLiveTenant, liveTenantName } = useAuth();
   // No groups open by default — Company Data (the demoted entity
   // section) in particular starts collapsed per the DE-centered IA.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -305,14 +305,14 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   const [liveCounts, setLiveCounts] = useState<NavCounts>(() => computeLiveCounts(activeCompany.id));
 
   const refreshCounts = useCallback(() => {
-    if (dataMode === 'live') {
+    if (true) {
       let cancelled = false;
       fetchLiveNavCounts().then((counts) => { if (!cancelled) setLiveCounts(counts); });
       return () => { cancelled = true; };
     }
     setLiveCounts(computeLiveCounts(activeCompanyId));
     return undefined;
-  }, [activeCompanyId, dataMode]);
+  }, [activeCompanyId]);
 
   useEffect(() => {
     const cleanup = refreshCounts();
@@ -338,7 +338,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   // Show the demo-company switcher only to demo/dev logins or platform
   // operators — never inside a paying customer's live workspace.
   const showDemoCompanies = !isLiveTenant || isDtUser;
-  const nav = buildNav(activeCompany.id, liveCounts, dataMode === 'live', vocab)
+  const nav = buildNav(activeCompany.id, liveCounts, true, vocab)
     .map(section => ({
       ...section,
       groups: section.groups
@@ -430,7 +430,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           onClick={() => setShowCompanyPicker(!showCompanyPicker)}
           className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-dt-panel transition-colors group"
         >
-          {isLiveTenant && !viewingDemo ? (
+          {isLiveTenant && !false ? (
             <>
               <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-indigo-600">
                 {(liveTenantName || 'C')[0].toUpperCase()}
@@ -459,8 +459,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             {isLiveTenant && (
               <>
                 <button
-                  onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
-                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${!viewingDemo ? 'bg-dt-panel' : ''}`}
+                  onClick={() => { setShowCompanyPicker(false); }}
+                  className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${!false ? 'bg-dt-panel' : ''}`}
                 >
                   <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center text-[10px] font-bold text-white">
                     {(liveTenantName || 'C')[0].toUpperCase()}
@@ -469,7 +469,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                     <div className="text-xs font-medium text-dt-body">{liveTenantName || 'Your company'}</div>
                     <div className="text-[10px] text-emerald-400">Live workspace</div>
                   </div>
-                  {!viewingDemo && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
+                  {!false && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
                 </button>
                 {showDemoCompanies && (
                   <div className="px-2 pt-2 pb-1 text-[9px] font-bold tracking-widest text-dt-faint uppercase border-t border-dt-border-strong">
@@ -479,10 +479,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
               </>
             )}
             {/* Platform operator inside a demo: the way back to the console
-                (mirrors the App-level viewingDemo escape). */}
-            {isDtUser && viewingDemo && (
+                (mirrors the App-level false escape). */}
+            {isDtUser && false && (
               <button
-                onClick={() => { setViewingDemo(false); setShowCompanyPicker(false); }}
+                onClick={() => { setShowCompanyPicker(false); }}
                 className="w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors border-b border-dt-border-strong"
               >
                 <span className="w-7 h-7 rounded-md flex items-center justify-center text-xs bg-dt-panel text-dt-support flex-shrink-0">←</span>
@@ -492,8 +492,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             {showDemoCompanies && COMPANIES.map((c) => (
               <button
                 key={c.id}
-                onClick={() => { setActiveCompanyId(c.id); if (isLiveTenant) setViewingDemo(true); setShowCompanyPicker(false); }}
-                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${c.id === activeCompanyId && (!isLiveTenant || viewingDemo) ? 'bg-dt-panel' : ''}`}
+                onClick={() => { setActiveCompanyId(c.id); setShowCompanyPicker(false); }}
+                className={`w-full flex items-center gap-2 p-2 text-left hover:bg-dt-panel transition-colors ${c.id === activeCompanyId && (!isLiveTenant || false) ? 'bg-dt-panel' : ''}`}
               >
                 <div className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold text-white" style={{ background: c.badgeColor }}>
                   {c.badge}
@@ -502,7 +502,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                   <div className="text-xs font-medium text-dt-body">{c.name}</div>
                   <div className="text-[10px] text-dt-muted">{c.activeDEs} DEs active</div>
                 </div>
-                {c.id === activeCompanyId && (!isLiveTenant || viewingDemo) && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
+                {c.id === activeCompanyId && (!isLiveTenant || false) && <span className="ml-auto text-indigo-400 text-xs">✓</span>}
               </button>
             ))}
             <button

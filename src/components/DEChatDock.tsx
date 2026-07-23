@@ -395,8 +395,8 @@ const prefersReducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function DEChatDock() {
-  const { currentPage, activeCompanyId, handleSetPage, dataMode } = useAuth();
-  const isLive = dataMode === 'live';
+  const { currentPage, activeCompanyId, handleSetPage } = useAuth();
+  const isLive = true;   // legacy demo mode decommissioned — always live
   const threadId = isLive ? 'live' : activeCompanyId;
   const [open, setOpen] = useState(false);
   // Ask (question -> DE) vs Do (describe a change -> workspace assistant).
