@@ -71,7 +71,6 @@ const stageBadge = (stage: string) => {
 
 export const CustomerBDPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   return <CustomerBDLive />;
-  return <DemoCustomerBD />;
 };
 
 const DemoCustomerBD = () => {
@@ -190,7 +189,6 @@ const oppStageBadge = (stage: string) => {
 
 export const CustomerSalesPage = ({ setPage: _setPage }: { setPage?: (p: Page) => void }) => {
   return <CustomerSalesLive />;
-  return <DemoCustomerSales />;
 };
 
 const DemoCustomerSales = () => {
@@ -291,7 +289,6 @@ const trendIcon = (t: Account['trend']) => (t === 'up' ? '↑' : t === 'down' ? 
 
 export const CustomerSuccessPage = ({ setPage }: { setPage?: (p: Page) => void }) => {
   return <CustomerSuccessLive />;
-  return <DemoCustomerSuccess setPage={setPage} />;
 };
 
 const DemoCustomerSuccess = ({ setPage }: { setPage?: (p: Page) => void }) => {

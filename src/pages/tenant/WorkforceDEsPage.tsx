@@ -1716,7 +1716,6 @@ type RosterSelection = { kind: 'de' | 'human'; id: string }
 
 export default function WorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
   return <LiveWorkforceDEs setPage={setPage} />
-  return <DemoWorkforceDEsPage setPage={setPage} />
 }
 
 function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {

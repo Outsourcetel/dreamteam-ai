@@ -840,5 +840,4 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function SelfLearningPage({ setPage }: { setPage: (p: Page) => void }) {
   return <LiveSelfLearning setPage={setPage} />;
-  return <DemoSelfLearningPage setPage={setPage} />;
 }

@@ -261,7 +261,6 @@ function loadPlaybookRuns(companyId: CompanyId): RunRow[] {
 
 export default function ProvingGroundPage({ setPage }: { setPage: (p: Page) => void }) {
   return <LiveProvingGround />;
-  return <DemoProvingGround setPage={setPage} />;
 }
 
 function DemoProvingGround({ setPage }: { setPage: (p: Page) => void }) {

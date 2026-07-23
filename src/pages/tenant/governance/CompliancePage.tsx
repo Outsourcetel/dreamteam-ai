@@ -576,7 +576,6 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
 
 export default function CompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   return <LiveCompliancePage setPage={setPage} />
-  return <DemoCompliancePage setPage={setPage} />
 }
 
 function DemoCompliancePage({ setPage }: { setPage: (p: Page) => void }) {

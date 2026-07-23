@@ -124,7 +124,6 @@ const FilterSelect = ({ label, value, onChange, options }: { label: string; valu
 
 const KnowledgeLibraryPage = ({ setPage }: { setPage?: (p: import('../../../types').Page) => void }) => {
   return <LiveKnowledgeLibrary setPage={setPage} />;
-  return <DemoKnowledgeLibrary />;
 };
 
 const DemoKnowledgeLibrary = () => {

@@ -710,7 +710,6 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
 
 const CustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   return <LiveCustomerRenewal setPage={setPage} />;
-  return <DemoCustomerRenewalPage setPage={setPage} />;
 };
 
 const DemoCustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {

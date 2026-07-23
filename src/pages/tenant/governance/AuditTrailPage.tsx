@@ -596,7 +596,6 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
 export default function AuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {
   return <LiveAuditTrail setPage={setPage} />
-  return <DemoAuditTrailPage setPage={setPage} />
 }
 
 function DemoAuditTrailPage({ setPage }: { setPage?: (p: Page) => void }) {

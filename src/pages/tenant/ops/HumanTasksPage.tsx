@@ -511,7 +511,6 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function HumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {
   return <LiveHumanTasks setPage={setPage} />;
-  return <DemoHumanTasksPage setPage={setPage} />;
 }
 
 function DemoHumanTasksPage({ setPage }: { setPage: (p: Page) => void }) {

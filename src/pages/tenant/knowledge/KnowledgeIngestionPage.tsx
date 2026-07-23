@@ -538,5 +538,4 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
 
 export default function KnowledgeIngestionPage({ setPage }: { setPage?: (p: Page) => void }) {
   return <LiveKnowledgeIngestion setPage={setPage ?? (() => {})} />;
-  return <DemoKnowledgeIngestionPage />;
 }

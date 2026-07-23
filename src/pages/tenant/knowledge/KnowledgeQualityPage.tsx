@@ -549,5 +549,4 @@ function LiveKnowledgeQuality() {
 
 export default function KnowledgeQualityPage() {
   return <LiveKnowledgeQuality />;
-  return <DemoKnowledgeQualityPage />;
 }
