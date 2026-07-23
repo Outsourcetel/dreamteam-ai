@@ -272,7 +272,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </div>
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-dt-muted">Risk overlay</p>
-                  <p className="text-xs text-dt-support mt-0.5">Workspace guardrails and mandatory compliance packs apply from the first answer — {persona} cannot switch them off.</p>
+                  <p className="text-xs text-dt-support mt-0.5">Workspace guardrails apply from the first answer, plus any compliance packs this role or your workspace requires — {persona} cannot switch them off.</p>
                 </div>
               </div>
 

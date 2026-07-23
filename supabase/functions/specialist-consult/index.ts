@@ -1670,7 +1670,10 @@ Answer ONLY from the source excerpts below. Every claim must trace to a cited so
 Source excerpts:
 ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- Reference material supplied by the requesting playbook ---\n${wrapUntrusted(runDocuments, 'playbook-documents')}` : ''}${FIREWALL_RULES}`;
 
-    const res = await llmMessages(admin, { model: MODEL, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(question, 'consult-question') }] }, 'specialist-consult');
+    // Honor the specialist's OWN configured model (the evidence path already
+    // does; the standalone consult path was pinned to a constant — T0.3).
+    const consultModel = await resolveDeModel(admin, tenantId, prof.id);
+    const res = await llmMessages(admin, { model: consultModel, max_tokens: 1024, system, messages: [{ role: 'user', content: wrapUntrusted(question, 'consult-question') }] }, 'specialist-consult');
     if (!res.ok) {
       const detail = await res.text();
       console.error('Anthropic error', res.status, detail);
@@ -1687,7 +1690,7 @@ ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- R
     // The specialist IS a Digital Employee now (migrations 208/211), so its
     // consult cost is attributed to it like any other DE.
     admin.rpc('record_de_token_usage', {
-      p_tenant_id: tenantId, p_de_id: prof.id, p_model_id: MODEL,
+      p_tenant_id: tenantId, p_de_id: prof.id, p_model_id: consultModel,
       p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
     }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
 
