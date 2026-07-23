@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
-  KnowledgeDoc, listKnowledgeDocs, createKnowledgeDoc,
+  KnowledgeDoc, createKnowledgeDoc,
   updateKnowledgeDoc, deleteKnowledgeDoc,
-  DocChunkStatus, listChunkStatus, ingestDocChunks,
+  ingestDocChunks,
+  SearchDocRow, searchKnowledgeDocs, getKnowledgeDoc,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
   extractPdf, extractUrl, listDocVersions,
@@ -33,20 +34,27 @@ interface EditorState {
 const emptyEditor: EditorState = { id: null, title: '', content: '', tags: '' };
 
 const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
-  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [rows, setRows] = useState<SearchDocRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [missingTables, setMissingTables] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<KnowledgeDoc | null>(null);
-  const [chunkStatus, setChunkStatus] = useState<Record<string, DocChunkStatus>>({});
+  const [removeTarget, setRemoveTarget] = useState<SearchDocRow | null>(null);
   const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
+  // Phase-1 server-side search + facets + pagination (mig 279) — the corpus
+  // never loads into the browser; every query hits search_knowledge_docs.
+  const PAGE_SIZE = 50;
+  const [query, setQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [visFilter, setVisFilter] = useState('');
+  const [pageIdx, setPageIdx] = useState(0);
   // Per-DE knowledge scopes (migration 030)
   const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
   const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
-  const [scopeDoc, setScopeDoc] = useState<KnowledgeDoc | null>(null); // doc whose scope modal is open
+  const [scopeDoc, setScopeDoc] = useState<SearchDocRow | null>(null); // doc whose scope modal is open
   const [scopeSel, setScopeSel] = useState<Set<string>>(new Set());   // "kind:id" keys
   const [scopeSaving, setScopeSaving] = useState(false);
   // Eval gate (R3): when the tenant's latest finished eval run FAILED,
@@ -54,7 +62,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // gate v1 — the server-side hard gate is the hardening step.
   const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
   // Ledger-3: version-history viewer over the stored previous_version_id chain.
-  const [versionsFor, setVersionsFor] = useState<KnowledgeDoc | null>(null);
+  const [versionsFor, setVersionsFor] = useState<SearchDocRow | null>(null);
   const [versions, setVersions] = useState<KnowledgeDoc[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // PDF/URL ingestion (removes the text-only wall).
@@ -68,6 +76,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [decidingRevisionId, setDecidingRevisionId] = useState<string | null>(null);
   const [expandedRevisionId, setExpandedRevisionId] = useState<string | null>(null);
+  // The source doc's full content for the currently-expanded revision diff —
+  // fetched on demand since the list rows carry only a preview.
+  const [expandedRevisionDoc, setExpandedRevisionDoc] = useState<string | null>(null);
 
   /** Runs `publish` directly when the gate is clear; otherwise opens the
    *  override dialog. `docTitle` is used for the audit entry on override. */
@@ -94,8 +105,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     setLoading(true);
     setError(null);
     try {
-      setDocs(await listKnowledgeDocs());
-      setChunkStatus(await listChunkStatus());
+      // Server-side, paginated, faceted — never fetches the whole corpus or
+      // aggregates chunks (mig 279). Retrieval status comes from the row's
+      // denormalized embedded_count, so no per-load chunk scan.
+      const { rows: r, total: t } = await searchKnowledgeDocs({
+        query, source: sourceFilter || null, visibility: visFilter || null,
+        limit: PAGE_SIZE, offset: pageIdx * PAGE_SIZE,
+      });
+      setRows(r); setTotal(t);
       setDocScopes(await listDocScopes());
       try { setSubjects(await listScopeSubjects()); } catch { /* non-fatal — scoping UI disabled */ }
     } catch (err) {
@@ -113,7 +130,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     finally { setRevisionsLoading(false); }
   };
 
-  useEffect(() => { void load(); void loadRevisions(); }, []);
+  useEffect(() => { void loadRevisions(); }, []);
+  // Re-search on query/facet/page change (short debounce on typing).
+  useEffect(() => {
+    const t = setTimeout(() => { void load(); }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, sourceFilter, visFilter, pageIdx]);
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
     setDecidingRevisionId(r.id);
@@ -136,7 +159,8 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const index = (docId: string) => {
     setIndexingIds(prev => new Set(prev).add(docId));
     ingestDocChunks(docId)
-      .then(status => setChunkStatus(prev => ({ ...prev, [docId]: status })))
+      // The chunk trigger (mig 279) updates embedded_count; re-search reflects it.
+      .then(() => load())
       .catch(err => console.error('ingestDocChunks:', err))
       .finally(() => setIndexingIds(prev => {
         const next = new Set(prev);
@@ -145,13 +169,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       }));
   };
 
-  const IndexBadge = ({ docId }: { docId: string }) => {
-    const s = chunkStatus[docId];
+  const IndexBadge = ({ docId, chunks, embedded }: { docId: string; chunks: number; embedded: number }) => {
     if (indexingIds.has(docId)) {
       return <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">Indexing…</span>;
     }
-    if (s && s.embedded > 0) {
-      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {s.chunks} chunk{s.chunks === 1 ? '' : 's'}</span>;
+    if (embedded > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {chunks} chunk{chunks === 1 ? '' : 's'}</span>;
     }
     return <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">Keyword only</span>;
   };
@@ -159,7 +182,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // ── Scope modal (Who can use this) ──
   const skey = (s: { kind: string; id: string }) => `${s.kind}:${s.id}`;
 
-  const openScope = (doc: KnowledgeDoc) => {
+  const openScope = (doc: SearchDocRow) => {
     setScopeDoc(doc);
     setScopeSel(new Set((docScopes[doc.id] ?? []).map(skey)));
   };
@@ -180,7 +203,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     }
   };
 
-  const ScopeBadge = ({ doc }: { doc: KnowledgeDoc }) => {
+  const ScopeBadge = ({ doc }: { doc: SearchDocRow }) => {
     const n = (docScopes[doc.id] ?? []).length;
     const scoped = doc.visibility === 'scoped' && n > 0;
     const roleShared = doc.visibility === 'role';
@@ -242,7 +265,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     setError(null);
     try {
       await deleteKnowledgeDoc(id);
-      setDocs(prev => prev.filter(d => d.id !== id));
+      await load();  // re-search so the list + total reflect the removal
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -341,7 +364,29 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </button>
         <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" className="hidden" onChange={onFile} />
         {busyMsg && <span className="text-xs text-indigo-300">{busyMsg}</span>}
-        <span className="text-xs text-dt-muted ml-auto">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
+        <span className="text-xs text-dt-muted ml-auto">{total} document{total === 1 ? '' : 's'}</span>
+      </div>
+
+      {/* Phase-1 (mig 279): server-side search + facets — the corpus never
+          loads into the browser; every keystroke hits search_knowledge_docs. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input value={query} onChange={e => { setPageIdx(0); setQuery(e.target.value); }}
+          placeholder="Search the knowledge base…"
+          className="flex-1 min-w-[14rem] bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+        <select value={sourceFilter} onChange={e => { setPageIdx(0); setSourceFilter(e.target.value); }}
+          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
+          <option value="">All sources</option>
+          <option value="paste">Paste</option>
+          <option value="upload">Upload</option>
+          <option value="connector">Connector</option>
+        </select>
+        <select value={visFilter} onChange={e => { setPageIdx(0); setVisFilter(e.target.value); }}
+          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
+          <option value="">All access</option>
+          <option value="tenant">All employees</option>
+          <option value="role">Role-shared</option>
+          <option value="scoped">Scoped</option>
+        </select>
       </div>
 
       {/* W4-E slice 1 (docs/16): the ✨ spine reaches the page where users
@@ -372,14 +417,24 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {/* Table / empty state */}
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
-      ) : docs.length === 0 ? (
-        <LiveEmptyState
-          icon="◎"
-          title="Add your first document"
-          body="Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support."
-          primaryLabel="+ Add your first document"
-          onPrimary={() => setEditor({ ...emptyEditor })}
-        />
+      ) : rows.length === 0 ? (
+        (query || sourceFilter || visFilter) ? (
+          <LiveEmptyState
+            icon="🔍"
+            title="No documents match"
+            body="Try a different search, or clear the filters to see the whole library."
+            primaryLabel="Clear filters"
+            onPrimary={() => { setQuery(''); setSourceFilter(''); setVisFilter(''); setPageIdx(0); }}
+          />
+        ) : (
+          <LiveEmptyState
+            icon="◎"
+            title="Add your first document"
+            body="Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support."
+            primaryLabel="+ Add your first document"
+            onPrimary={() => setEditor({ ...emptyEditor })}
+          />
+        )
       ) : (
         <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
           <table className="w-full text-sm text-dt-support">
@@ -396,11 +451,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </tr>
             </thead>
             <tbody>
-              {docs.map(d => (
+              {rows.map(d => (
                 <tr key={d.id} className="border-b border-dt-border hover:bg-dt-panel transition-colors">
                   <td className={`${td} text-white font-medium`}>{d.title}</td>
                   <td className={`${td} text-xs text-dt-support max-w-xs`}>
-                    <span className="line-clamp-2">{d.content.slice(0, 140)}{d.content.length > 140 ? '…' : ''}</span>
+                    <span className="line-clamp-2">{d.preview}</span>
                   </td>
                   <td className={td}>
                     <div className="flex flex-wrap gap-1">
@@ -415,13 +470,17 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                       {d.source}
                     </span>
                   </td>
-                  <td className={td}><IndexBadge docId={d.id} /></td>
+                  <td className={td}><IndexBadge docId={d.id} chunks={d.chunk_count} embedded={d.embedded_count} /></td>
                   <td className={td}><ScopeBadge doc={d} /></td>
                   <td className={`${td} text-xs text-dt-support`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>
                     <div className="flex gap-2 justify-end">
                       <button
-                        onClick={() => setEditor({ id: d.id, title: d.title, content: d.content, tags: d.tags.join(', ') })}
+                        onClick={async () => {
+                          // Load full content on open — the row carries only a preview.
+                          const full = await getKnowledgeDoc(d.id);
+                          if (full) setEditor({ id: full.id, title: full.title, content: full.content, tags: (full.tags ?? []).join(', ') });
+                        }}
                         className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                       >
                         Edit
@@ -448,6 +507,19 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </div>
       )}
 
+      {/* Pagination — the corpus is served a page at a time, never all at once. */}
+      {!loading && total > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-3 text-xs text-dt-muted">
+          <span>Showing {pageIdx * PAGE_SIZE + 1}–{Math.min((pageIdx + 1) * PAGE_SIZE, total)} of {total}</span>
+          <div className="flex gap-2">
+            <button disabled={pageIdx === 0} onClick={() => setPageIdx(p => Math.max(0, p - 1))}
+              className="px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support disabled:opacity-40 hover:border-indigo-500 transition-colors">Previous</button>
+            <button disabled={(pageIdx + 1) * PAGE_SIZE >= total} onClick={() => setPageIdx(p => p + 1)}
+              className="px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support disabled:opacity-40 hover:border-indigo-500 transition-colors">Next</button>
+          </div>
+        </div>
+      )}
+
       {/* Knowledge Revisions — human-gated updates drafted from evidence
           feedback (migration 032). Diff-like view: current doc content
           vs. the server-assembled proposed content, plus the evidence
@@ -464,13 +536,17 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           ) : (
             <div className="space-y-2">
               {revisions.map((r) => {
-                const currentDoc = docs.find(d => d.id === r.source_doc_id);
                 const expanded = expandedRevisionId === r.id;
                 return (
                   <div key={r.id} className="rounded-xl border border-dt-border bg-dt-inset">
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
-                      onClick={() => setExpandedRevisionId(expanded ? null : r.id)}
+                      onClick={() => {
+                        const next = expanded ? null : r.id;
+                        setExpandedRevisionId(next);
+                        setExpandedRevisionDoc(null);
+                        if (next && r.source_doc_id) void getKnowledgeDoc(r.source_doc_id).then(d => setExpandedRevisionDoc(d?.content ?? ''));
+                      }}
                     >
                       <span className="text-xs text-white font-medium flex-1 truncate">{r.proposed_title}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-indigo-500/20 text-indigo-300' : 'bg-teal-500/20 text-teal-300'}`}>
@@ -484,7 +560,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                           <div className="rounded-lg border border-dt-border bg-dt-card/60 p-3">
                             <p className="text-[10px] font-medium text-dt-muted uppercase tracking-wider mb-1">Current</p>
                             <p className="text-xs text-dt-support whitespace-pre-wrap max-h-48 overflow-y-auto">
-                              {currentDoc ? currentDoc.content : '(no existing document — this proposes a brand-new one)'}
+                              {r.source_doc_id ? (expandedRevisionDoc ?? 'Loading…') : '(no existing document — this proposes a brand-new one)'}
                             </p>
                           </div>
                           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
