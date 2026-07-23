@@ -137,7 +137,11 @@ serve(async (req) => {
     } else {
       const { data: run, error: runErr } = await admin
         .from('eval_runs')
-        .insert({ tenant_id: tenantId, trigger, status: 'running', total: qas.length })
+        // Persist the certification target so the server-side driver
+        // (migration 264) can resume this run to completion even if the
+        // client that started it goes away — de_id is forwarded to
+        // de-answer on resume and required by certify_de_from_eval.
+        .insert({ tenant_id: tenantId, trigger, status: 'running', total: qas.length, de_id: targetDeId, archetype_key: targetArchetype })
         .select('id').single();
       if (runErr || !run) return json({ error: runErr?.message ?? 'run_insert_failed' }, 500);
       runId = run.id;
