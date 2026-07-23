@@ -15,11 +15,15 @@ export interface KnowledgeDoc {
   source: 'upload' | 'paste' | 'connector';
   external_ref: string | null;
   tags: string[];
-  /** Per-DE knowledge scopes (migration 030): 'tenant' = every DE and
-   *  specialist answers from this doc; 'scoped' = only the subjects in
-   *  knowledge_doc_scopes retrieve it (enforced server-side in the
-   *  retrieval RPCs, not here). */
-  visibility: 'tenant' | 'scoped';
+  /** Per-DE knowledge scopes: 'tenant' = every DE and specialist answers from
+   *  this doc; 'scoped' (mig 030) = only the subjects in knowledge_doc_scopes
+   *  retrieve it; 'role' (mig 271) = only DEs whose archetype matches
+   *  share_archetype_key (role-shared learning). All enforced server-side in
+   *  the retrieval RPCs, not here. */
+  visibility: 'tenant' | 'scoped' | 'role';
+  /** For visibility='role' (mig 271): the archetype whose DEs can retrieve
+   *  this doc. Null for tenant/scoped docs. */
+  share_archetype_key: string | null;
   /** Simple version chain (migration 032): a revision APPLY inserts a new
    *  row pointing back at the doc it superseded — history is preserved,
    *  never destructively overwritten. */

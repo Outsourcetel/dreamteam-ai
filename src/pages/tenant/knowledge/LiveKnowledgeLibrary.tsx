@@ -183,17 +183,26 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const ScopeBadge = ({ doc }: { doc: KnowledgeDoc }) => {
     const n = (docScopes[doc.id] ?? []).length;
     const scoped = doc.visibility === 'scoped' && n > 0;
+    const roleShared = doc.visibility === 'role';
+    const roleLabel = (doc.share_archetype_key ?? '').replace(/_/g, ' ');
+    const label = roleShared ? `Role · ${roleLabel || 'shared'}` : scoped ? `Scoped · ${n}` : 'All digital employees';
+    const title = roleShared
+      ? `Only ${roleLabel || 'same-role'} employees retrieve this document (role-shared learning) — click to change`
+      : scoped
+        ? 'Only the selected team members use this document when answering — click to change'
+        : 'All digital employees and specialists use this document — click to limit it';
+    const tone = roleShared
+      ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25'
+      : scoped
+        ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+        : 'bg-dt-panel text-dt-support hover:bg-dt-panel';
     return (
       <button
         onClick={() => openScope(doc)}
-        title={scoped
-          ? 'Only the selected team members use this document when answering — click to change'
-          : 'All digital employees and specialists use this document — click to limit it'}
-        className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${scoped
-          ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
-          : 'bg-dt-panel text-dt-support hover:bg-dt-panel'}`}
+        title={title}
+        className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${tone}`}
       >
-        {scoped ? `Scoped · ${n}` : 'All digital employees'}
+        {label}
       </button>
     );
   };
