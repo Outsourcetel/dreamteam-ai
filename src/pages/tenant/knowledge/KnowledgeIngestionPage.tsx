@@ -1,9 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../../../context/AuthContext';
-import type { CompanyId } from '../../../data/companies';
+import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
-import { K_TYPES } from './KnowledgeLibraryPage';
-import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
 import type { Page } from '../../../types';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -11,7 +7,7 @@ import {
   listConnectors, connectorHealth, hubSync, PROVIDERS,
 } from '../../../lib/connectorApi';
 import type { Connector } from '../../../lib/connectorApi';
-import { listKnowledgeDocs, listChunkStatus, createKnowledgeDoc, ingestDocChunks } from '../../../lib/knowledgeApi';
+import { listKnowledgeDocs, listChunkStatus, createKnowledgeDoc, ingestDocChunks, extractPdf, extractUrl } from '../../../lib/knowledgeApi';
 import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 
 // ============================================================
@@ -20,82 +16,6 @@ import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 // access lists (Confluence/Zendesk for TCP, SharePoint/Thomson
 // Reuters for PWC).
 // ============================================================
-
-interface Source {
-  name: string;
-  kind: string;
-  status: 'connected' | 'error' | 'disconnected';
-  docs: number;
-  lastSync: string;
-  note?: string;
-}
-
-const SOURCES: Record<CompanyId, Source[]> = {
-  tcp: [
-    { name: 'Confluence', kind: 'Wiki', status: 'connected', docs: 2340, lastSync: '15 min ago' },
-    { name: 'Zendesk macros', kind: 'Support', status: 'connected', docs: 156, lastSync: '32 min ago' },
-    { name: 'Google Drive', kind: 'Files', status: 'error', docs: 89, lastSync: '2 days ago', note: 'Pending re-authorization — OAuth token expired' },
-    { name: 'Notion', kind: 'Wiki', status: 'disconnected', docs: 0, lastSync: '—', note: 'Not connected' },
-  ],
-  pwc: [
-    { name: 'SharePoint', kind: 'Document Mgmt', status: 'connected', docs: 4120, lastSync: '20 min ago' },
-    { name: 'Thomson Reuters feed', kind: 'Tax Research', status: 'connected', docs: 1875, lastSync: '1 hr ago' },
-    { name: 'Internal memo archive', kind: 'Files', status: 'connected', docs: 640, lastSync: '3 hrs ago' },
-  ],
-};
-
-interface ReviewItem {
-  id: string;
-  title: string;
-  source: string;
-  entity: KEntity;
-  audience: KAudience;
-  type: KType;
-  confidence: number;
-}
-
-const REVIEW_SEED: Record<CompanyId, ReviewItem[]> = {
-  tcp: [
-    { id: 'r1', title: 'SAML assertion troubleshooting notes', source: 'Confluence', entity: 'Customer', audience: 'Customer DEs', type: 'Procedural', confidence: 81 },
-    { id: 'r2', title: 'Q2 release notes — reporting module', source: 'Confluence', entity: 'Customer', audience: 'All DEs', type: 'Reference', confidence: 92 },
-    { id: 'r3', title: 'Macro: refund request first response', source: 'Zendesk macros', entity: 'Customer', audience: 'Customer DEs', type: 'Training', confidence: 76 },
-    { id: 'r4', title: 'Remote work equipment policy', source: 'Google Drive', entity: 'Workforce', audience: 'Specialist DEs', type: 'Regulatory', confidence: 68 },
-    { id: 'r5', title: 'Competitor feature comparison — Q2', source: 'Google Drive', entity: 'Customer', audience: 'Humans only', type: 'Competitive', confidence: 73 },
-  ],
-  pwc: [
-    { id: 'r1', title: 'Rev. Proc. 2026-23 summary', source: 'Thomson Reuters feed', entity: 'Customer', audience: 'Specialist DEs', type: 'Regulatory', confidence: 88 },
-    { id: 'r2', title: 'Engagement risk scoring worksheet', source: 'SharePoint', entity: 'Customer', audience: 'Customer DEs', type: 'Institutional', confidence: 79 },
-    { id: 'r3', title: 'Memo: transfer pricing documentation', source: 'Internal memo archive', entity: 'Customer', audience: 'Specialist DEs', type: 'Institutional', confidence: 84 },
-    { id: 'r4', title: 'Client data handling addendum', source: 'SharePoint', entity: 'Customer', audience: 'Humans only', type: 'Customer (PII)', confidence: 71 },
-  ],
-};
-
-const PIPELINE_BASE: Record<CompanyId, { stage: string; desc: string; count: number }[]> = {
-  tcp: [
-    { stage: 'Ingest', desc: 'Pulled from sources', count: 38 },
-    { stage: 'Chunk', desc: 'Split & embedded', count: 22 },
-    { stage: 'Classify', desc: 'Auto-tag Entity × Audience × Type', count: 14 },
-    { stage: 'Confidence', desc: 'Scoring vs. corpus', count: 9 },
-    { stage: 'Review', desc: 'Awaiting human review', count: 5 },
-    { stage: 'Live', desc: 'Published this week', count: 12 },
-  ],
-  pwc: [
-    { stage: 'Ingest', desc: 'Pulled from sources', count: 51 },
-    { stage: 'Chunk', desc: 'Split & embedded', count: 30 },
-    { stage: 'Classify', desc: 'Auto-tag Entity × Audience × Type', count: 11 },
-    { stage: 'Confidence', desc: 'Scoring vs. corpus', count: 7 },
-    { stage: 'Review', desc: 'Awaiting human review', count: 4 },
-    { stage: 'Live', desc: 'Published this week', count: 9 },
-  ],
-};
-
-const statusStyle: Record<Source['status'], { dot: string; label: string; text: string }> = {
-  connected: { dot: 'bg-emerald-400', label: 'Connected', text: 'text-emerald-400' },
-  error: { dot: 'bg-red-400', label: 'Error', text: 'text-red-400' },
-  disconnected: { dot: 'bg-slate-600', label: 'Disconnected', text: 'text-dt-muted' },
-};
-
-type ReviewState = Record<string, { decision?: 'approved' | 'rejected'; entity: KEntity; audience: KAudience; type: KType }>;
 
 const HEALTH_META: Record<string, { label: string; dot: string; text: string }> = {
   healthy: { label: 'Healthy', dot: 'bg-emerald-400', text: 'text-emerald-400' },
@@ -116,6 +36,11 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addTitle, setAddTitle] = useState('');
   const [addContent, setAddContent] = useState('');
+  // WS8: the tab named "Ingestion" can finally ingest PDF/URL/dropped files
+  // (reusing extract-document), not just pasted text.
+  const [urlInput, setUrlInput] = useState('');
+  const [busyMsg, setBusyMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
 
   const refresh = async () => {
@@ -158,6 +83,31 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
     } finally {
       setSyncingId(null);
     }
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) e.target.value = '';
+    if (!file) return;
+    setAddOpen(true); setBusyMsg(`Reading ${file.name}…`);
+    try {
+      const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+      const res = isPdf ? await extractPdf(file) : { title: file.name.replace(/\.[^.]+$/, ''), text: await file.text(), chars: 0 };
+      setAddTitle(prev => prev || res.title || file.name);
+      setAddContent(res.text);
+    } catch (err) { setToast(`Couldn't read the file: ${(err as Error)?.message ?? 'unknown error'}`); }
+    finally { setBusyMsg(null); }
+  };
+  const importUrl = async () => {
+    if (!urlInput.trim()) return;
+    setAddOpen(true); setBusyMsg('Fetching the page…');
+    try {
+      const res = await extractUrl(urlInput.trim());
+      setAddTitle(prev => prev || res.title || urlInput.trim());
+      setAddContent(res.text);
+      setUrlInput('');
+    } catch (err) { setToast(`Couldn't import the URL: ${(err as Error)?.message ?? 'unknown error'}`); }
+    finally { setBusyMsg(null); }
   };
 
   const addDoc = async () => {
@@ -295,16 +245,38 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
 
             {/* Quick-add a document */}
             <div className="space-y-4">
+              <input ref={fileRef} type="file" accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown" className="hidden"
+                onChange={e => void onFile(e)}
+                onDragOver={e => e.preventDefault()} />
               {!addOpen ? (
-                <button
-                  onClick={() => setAddOpen(true)}
-                  className="w-full rounded-2xl border-2 border-dashed border-dt-border-strong hover:border-indigo-500/50 bg-dt-panel p-8 text-center transition-colors group">
-                  <div className="w-10 h-10 mx-auto rounded-xl bg-dt-panel group-hover:bg-indigo-500/20 flex items-center justify-center text-lg mb-3 transition-colors">↑</div>
+                <div
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f && fileRef.current) { const dt = new DataTransfer(); dt.items.add(f); fileRef.current.files = dt.files; void onFile({ target: fileRef.current } as unknown as React.ChangeEvent<HTMLInputElement>); } }}
+                  className="w-full rounded-2xl border-2 border-dashed border-dt-border-strong hover:border-indigo-500/50 bg-dt-panel p-8 text-center transition-colors">
+                  <div className="w-10 h-10 mx-auto rounded-xl bg-dt-panel flex items-center justify-center text-lg mb-3">↑</div>
                   <p className="text-sm font-medium text-dt-body">Add a document</p>
-                  <p className="text-xs text-dt-muted mt-1">Paste text directly — it's chunked and indexed immediately</p>
-                </button>
+                  <p className="text-xs text-dt-muted mt-1">Drop a PDF / text file here, or:</p>
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                    <button onClick={() => fileRef.current?.click()} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500">Upload file</button>
+                    <button onClick={() => setAddOpen(true)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500">Paste text</button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3 max-w-md mx-auto">
+                    <input value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }}
+                      placeholder="…or paste a help-center URL" onClick={e => e.stopPropagation()}
+                      className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
+                    <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">Import</button>
+                  </div>
+                  {busyMsg && <p className="text-xs text-indigo-300 mt-2">{busyMsg}</p>}
+                </div>
               ) : (
                 <div className="rounded-2xl border border-dt-border bg-dt-card p-4 space-y-2">
+                  <div className="flex gap-2">
+                    <button onClick={() => fileRef.current?.click()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500">Upload file</button>
+                    <input value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }}
+                      placeholder="…or import a URL" className="flex-1 bg-dt-page border border-dt-border rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
+                    <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Import</button>
+                  </div>
+                  {busyMsg && <p className="text-xs text-indigo-300">{busyMsg}</p>}
                   <input
                     value={addTitle}
                     onChange={e => setAddTitle(e.target.value)}
