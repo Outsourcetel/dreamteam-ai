@@ -31,7 +31,7 @@ import AISessionPanel from '../../components/AISessionPanel';
 import SpecialistLive from './SpecialistLive';
 import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
-  listKpiMetrics, getKpiMetricsForDe, createKpiMetric, recordKpiReading, slugifyKey,
+  getKpiMetricsForDe, createKpiMetric, recordKpiReading, slugifyKey,
   listSkillCategories, createTenantSkill, listCertificationTypes,
   getCustomEscalationRules, saveCustomEscalationRules, getEscalationSignals, OPERATORS_BY_TYPE,
 } from '../../lib/roleConfigApi';
@@ -2631,7 +2631,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
 // Guardrails always outrank these; the confidence floor lives on the
 // trust dial and is deliberately not duplicated here.
 type EscalationRow = { de_id: string | null; frustration_threshold: number | null; always_escalate_topics: string[] };
-function DeEscalationPanel({ deId }: { deId: string }) {
+export function DeEscalationPanel({ deId }: { deId: string }) {
   const [deRow, setDeRow] = useState<EscalationRow | null>(null);
   const [tenantRow, setTenantRow] = useState<EscalationRow | null>(null);
   const [threshold, setThreshold] = useState('');

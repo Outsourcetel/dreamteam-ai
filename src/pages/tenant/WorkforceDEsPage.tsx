@@ -6,7 +6,7 @@ import { useDataMode } from '../../lib/dataMode'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
 import { AmendmentWizard } from '../../components/AmendmentWizard'
 import { DEAuthorityPanel } from '../../components/DEAuthorityPanel'
-import { SophieEscalationRules } from '../../components/SophieEscalationRules'
+import { DeEscalationPanel } from './LiveWorkforceDEs'
 import { DEKnowledgeScopePanel } from '../../components/DEKnowledgeScopePanel'
 import { DEPreApprovalRulesPanel } from '../../components/DEPreApprovalRulesPanel'
 import { SophieConfigurationSummary } from '../../components/SophieConfigurationSummary'
@@ -1769,7 +1769,7 @@ function DemoWorkforceDEsPage({ setPage }: { setPage: (p: Page) => void }) {
       // DEProfile only overlaps it, so the cast bridges the two until the
       // demo page is retired in favor of LiveWorkforceDEs.
       case 10: return <DEAuthorityPanel de={selectedDE as any} />
-      case 11: return <SophieEscalationRules de={selectedDE as any} />
+      case 11: return <DeEscalationPanel deId={(selectedDE as any).id} />
       case 12: return <DEKnowledgeScopePanel de={selectedDE as any} />
       case 13: return <DEPreApprovalRulesPanel de={selectedDE as any} />
       case 14: return <DEConfigurationTab de={selectedDE as any} tenant_id={activeCompanyId} />
