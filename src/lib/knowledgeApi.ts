@@ -238,6 +238,27 @@ export async function getKnowledgeOverview(): Promise<KnowledgeOverview | null> 
   return o?.ok ? o : null;
 }
 
+// Phase-5 WS10: coverage-vs-demand. Joins DEMAND (open gap clusters) against
+// COVERAGE (denormalized citation_count + usage rollup). The per-gap coverage
+// verdict is opt-in (probe_enabled=false → gaps show coverage_state 'unknown').
+export interface CoverageDemand {
+  ok: boolean;
+  probe_enabled: boolean;
+  top_gaps: { id: string; category: string | null; severity_score: number | null; member_count: number | null;
+              reviewer_summary: string | null; status: string; nearest_cited_dist: number | null;
+              coverage_state: 'covered' | 'weak' | 'none' | 'unknown' }[];
+  never_cited: { id: string; title: string; updated_at: string; last_verified_at: string | null }[];
+  most_cited: { id: string; title: string; citation_count: number; last_cited_at: string | null }[];
+  trend: { usage_date: string; citations: number; docs_cited: number }[];
+}
+export async function getKnowledgeCoverageDemand(days = 30, gapLimit = 20, listLimit = 10): Promise<CoverageDemand | null> {
+  // Non-fatal: the panel simply omits itself if the RPC isn't deployed yet.
+  const { data, error } = await supabase.rpc('get_knowledge_coverage_demand', { p_days: days, p_gap_limit: gapLimit, p_list_limit: listLimit });
+  if (error) return null;
+  const c = data as CoverageDemand;
+  return c?.ok ? c : null;
+}
+
 // Fetch ONE doc with full content — the search rows carry only a preview, so the
 // editor loads the real content on open (no truncation-on-save data loss).
 export async function getKnowledgeDoc(id: string): Promise<KnowledgeDoc | null> {

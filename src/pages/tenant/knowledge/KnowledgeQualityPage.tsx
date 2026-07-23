@@ -6,9 +6,9 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 import { ConfirmDeleteModal } from '../../../components';
 import {
   listKnowledgeDocs, getKnowledgeDocCitationStats, markKnowledgeDocVerified, deleteKnowledgeDoc,
-  listDocScopes, listScopeSubjects,
+  listDocScopes, listScopeSubjects, getKnowledgeCoverageDemand, getKnowledgeOverview,
 } from '../../../lib/knowledgeApi';
-import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject } from '../../../lib/knowledgeApi';
+import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDemand } from '../../../lib/knowledgeApi';
 
 // ============================================================
 // Quality & Coverage — everything on this page is REAL: per-tag
@@ -27,6 +27,25 @@ function freshnessDays(doc: KnowledgeDoc): number {
   return Math.floor((Date.now() - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// WS10 coverage-vs-demand helpers.
+const fmtAgo = (iso: string) => {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days < 1) return 'today';
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+};
+const COVERAGE_BADGE: Record<string, { cls: string; label: string }> = {
+  covered: { cls: 'bg-emerald-500/20 text-emerald-300', label: 'Covered' },
+  weak: { cls: 'bg-amber-500/20 text-amber-300', label: 'Thin' },
+  none: { cls: 'bg-red-500/20 text-red-300', label: 'No coverage' },
+  unknown: { cls: 'bg-dt-page text-dt-faint border border-dt-border', label: '—' },
+};
+const CoverageBadge = ({ state }: { state: CoverageDemand['top_gaps'][number]['coverage_state'] }) => {
+  const b = COVERAGE_BADGE[state] ?? COVERAGE_BADGE.unknown;
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${b.cls}`}>{b.label}</span>;
+};
+
 function LiveKnowledgeQuality() {
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [citationStats, setCitationStats] = useState<Record<string, KnowledgeDocCitationStats>>({});
@@ -38,18 +57,25 @@ function LiveKnowledgeQuality() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<KnowledgeDoc | null>(null);
+  // WS10: coverage-vs-demand (never-cited total sourced from the overview, since
+  // the RPC returns only the LIST to avoid an O(corpus) count each load).
+  const [coverage, setCoverage] = useState<CoverageDemand | null>(null);
+  const [neverCitedTotal, setNeverCitedTotal] = useState<number | null>(null);
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [d, cs, sc, subj] = await Promise.all([
+      const [d, cs, sc, subj, cov, ovr] = await Promise.all([
         listKnowledgeDocs(), getKnowledgeDocCitationStats(), listDocScopes(), listScopeSubjects(),
+        getKnowledgeCoverageDemand(), getKnowledgeOverview(),
       ]);
       setDocs(d);
       setCitationStats(cs);
       setScopes(sc);
       setSubjects(subj);
+      setCoverage(cov);
+      setNeverCitedTotal(ovr?.never_cited ?? null);
       setMissingTables(false);
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -190,6 +216,86 @@ function LiveKnowledgeQuality() {
               </table>
             )}
           </div>
+
+          {/* WS10: Coverage vs demand — what employees couldn't answer, against
+              what knowledge actually gets used. Omitted if the RPC isn't live. */}
+          {coverage && (
+            <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
+              <div className="px-4 py-3 border-b border-dt-border flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Coverage vs demand</h3>
+                  <p className="text-xs text-dt-muted mt-0.5">What your employees needed but couldn’t answer, set against what your knowledge actually gets cited for.</p>
+                </div>
+                {coverage.trend.length > 0 && (
+                  <span className="text-[11px] text-dt-muted whitespace-nowrap">
+                    {coverage.trend.reduce((s, t) => s + t.citations, 0)} citations · last 30d
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 divide-y xl:divide-y-0 xl:divide-x divide-dt-border">
+                {/* High-demand topics + coverage verdict */}
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-semibold text-dt-support uppercase tracking-wide">High-demand topics</h4>
+                    {!coverage.probe_enabled && <span className="text-[10px] text-dt-faint" title="Enable the coverage probe to compute live covered/thin/none verdicts per gap.">coverage probe off</span>}
+                  </div>
+                  {coverage.top_gaps.length === 0 ? (
+                    <p className="text-xs text-dt-muted">No open knowledge gaps — employees are finding the answers they need.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {coverage.top_gaps.slice(0, 8).map(g => (
+                        <div key={g.id} className="flex items-start justify-between gap-2 bg-dt-page rounded-lg p-2.5 border border-dt-border">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-white truncate">{g.category || g.reviewer_summary || 'Unlabeled gap'}</p>
+                            <p className="text-[11px] text-dt-muted mt-0.5">
+                              {g.member_count ?? 0} occurrence{g.member_count === 1 ? '' : 's'}{g.severity_score != null ? ` · severity ${Math.round(g.severity_score)}` : ''}
+                            </p>
+                          </div>
+                          <CoverageBadge state={g.coverage_state} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Coverage leaders + not-yet-cited */}
+                <div className="p-4 space-y-4">
+                  <div>
+                    <h4 className="text-xs font-semibold text-dt-support uppercase tracking-wide mb-2">Coverage leaders</h4>
+                    {coverage.most_cited.length === 0 ? (
+                      <p className="text-xs text-dt-muted">No documents have been cited in answers yet.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {coverage.most_cited.slice(0, 5).map(d => (
+                          <div key={d.id} className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-dt-body truncate">{d.title}</span>
+                            <span className="text-[11px] text-emerald-300 flex-shrink-0">{d.citation_count}×</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-semibold text-dt-support uppercase tracking-wide">Not yet cited</h4>
+                      {neverCitedTotal != null && <span className="text-[10px] text-dt-faint">{neverCitedTotal} total</span>}
+                    </div>
+                    {coverage.never_cited.length === 0 ? (
+                      <p className="text-xs text-dt-muted">Every established document has been cited at least once.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {coverage.never_cited.slice(0, 5).map(d => (
+                          <div key={d.id} className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-dt-body truncate">{d.title}</span>
+                            <span className="text-[11px] text-dt-faint flex-shrink-0" title={`Added ${new Date(d.updated_at).toLocaleDateString()}`}>{fmtAgo(d.updated_at)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
             {/* Freshness histogram */}
