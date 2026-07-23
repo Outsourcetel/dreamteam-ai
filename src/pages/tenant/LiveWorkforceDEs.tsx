@@ -31,7 +31,7 @@ import AISessionPanel from '../../components/AISessionPanel';
 import SpecialistLive from './SpecialistLive';
 import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
-  listKpiMetrics, createKpiMetric, recordKpiReading, slugifyKey,
+  listKpiMetrics, getKpiMetricsForDe, createKpiMetric, recordKpiReading, slugifyKey,
   listSkillCategories, createTenantSkill, listCertificationTypes,
   getCustomEscalationRules, saveCustomEscalationRules, getEscalationSignals, OPERATORS_BY_TYPE,
 } from '../../lib/roleConfigApi';
@@ -2126,11 +2126,13 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
 
   const loadMetrics = useCallback(async () => {
     try {
-      const list = await listKpiMetrics();
+      // Role-aware: metrics that suit this employee's domain come first (mig 263).
+      const list = await getKpiMetricsForDe(de.id);
       setMetrics(list);
-      setMetricKey(prev => (prev && list.some(m => m.metric_key === prev)) ? prev : (list[0]?.metric_key ?? ''));
+      const firstApplicable = list.find(m => m.applicable !== false) ?? list[0];
+      setMetricKey(prev => (prev && list.some(m => m.metric_key === prev)) ? prev : (firstApplicable?.metric_key ?? ''));
     } catch (e) { setError((e as Error).message); }
-  }, []);
+  }, [de.id]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadMetrics(); }, [loadMetrics]);
@@ -2245,11 +2247,18 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
       <div className="flex items-center gap-2">
         <select value={metricKey} disabled={busy || metrics.length === 0} onChange={e => setMetricKey(e.target.value)}
           className="flex-1 bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
-          {metrics.map(m => (
-            <option key={m.metric_key} value={m.metric_key}>
-              {m.label}{m.unit ? ` (${m.unit})` : ''}{m.source === 'manual' ? ' — you record this' : ''}
-            </option>
-          ))}
+          {(() => {
+            const label = (m: KpiMetric) => `${m.label}${m.unit ? ` (${m.unit})` : ''}${m.source === 'manual' ? ' — you record this' : m.source === 'action' ? ' — auto from actions' : ''}`;
+            const opt = (m: KpiMetric) => <option key={m.metric_key} value={m.metric_key}>{label(m)}</option>;
+            const suited = metrics.filter(m => m.applicable !== false);
+            const other = metrics.filter(m => m.applicable === false);
+            // Only split into groups when role-awareness actually distinguishes them.
+            if (other.length === 0) return metrics.map(opt);
+            return [
+              <optgroup key="suited" label="Suited to this role">{suited.map(opt)}</optgroup>,
+              <optgroup key="other" label="Other metrics">{other.map(opt)}</optgroup>,
+            ];
+          })()}
         </select>
         <input type="number" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} placeholder="Target"
           className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />

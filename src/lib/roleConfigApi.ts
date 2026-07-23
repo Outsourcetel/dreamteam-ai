@@ -16,9 +16,20 @@ export interface KpiMetric {
   description: string | null;
   direction: 'higher' | 'lower';
   unit: string | null;
-  source: 'computed' | 'manual';
+  source: 'computed' | 'manual' | 'action';   // action = auto-tracked from what the DE did (mig 263)
+  source_config?: Record<string, unknown>;
+  domains?: string[] | null;                   // system categories it suits; null = any
+  applicable?: boolean;                        // only from getKpiMetricsForDe — suits this DE's role
   sort_order: number;
   is_custom: boolean;
+}
+
+/** Catalog metrics ordered for one employee — the ones that suit its role
+ *  (by the system categories it operates) first. mig 263. */
+export async function getKpiMetricsForDe(deId: string): Promise<KpiMetric[]> {
+  const { data, error } = await supabase.rpc('get_kpi_metrics_for_de', { p_de_id: deId });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as KpiMetric[];
 }
 
 export interface SkillCategory {
