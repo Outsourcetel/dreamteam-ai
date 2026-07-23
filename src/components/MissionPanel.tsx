@@ -23,7 +23,7 @@ const STATUS_CHIP: Record<string, { label: string; tone: Tone; pulse?: boolean }
   failed: { label: 'Needs attention', tone: 'danger' },
 };
 
-function PlanDrawer({ mission, onClose, onApproved }: {
+export function PlanDrawer({ mission, onClose, onApproved }: {
   mission: MissionRow; onClose: () => void; onApproved: () => void;
 }) {
   const plan = mission.compiled_plan;
@@ -82,6 +82,36 @@ function PlanDrawer({ mission, onClose, onApproved }: {
             <p className="text-dt-body">{plan.subject}</p>
           </div>
         )}
+        {plan.shape === 'standing' && plan.standing && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">
+              Recurring — {plan.standing.cadence_words}
+            </p>
+            <div className="rounded-lg border border-dt-border divide-y divide-dt-border">
+              {plan.standing.watchers.map((w, i) => (
+                <div key={i} className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Chip tone="info">{w.kind.replace(/_/g, ' ')}</Chip>
+                    <span className="text-dt-body font-medium">{w.label}</span>
+                  </div>
+                  {w.description && <p className="text-xs text-dt-support mt-0.5">{w.description}</p>}
+                  <p className="text-xs text-dt-muted mt-0.5">
+                    {w.in_scope_count >= 0 ? `About ${w.in_scope_count} match this right now.` : 'Fires on its own schedule.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-dt-muted mt-1">This installs standing watchers — they keep opening cases on their own until you pause or cancel the mission.</p>
+          </div>
+        )}
+        {plan.team && plan.routing_preview && (
+          <div className="rounded-lg bg-dt-inset px-3 py-2">
+            <p className="text-dt-body">
+              Team mission — cases fan out across <span className="font-medium">{plan.routing_preview.candidate_count}</span> employee(s)
+              {plan.routing_preview.candidate_count === 0 ? ' — none are eligible yet, so nothing will start.' : ', each working under their own guardrails.'}
+            </p>
+          </div>
+        )}
         <div>
           <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Procedure</p>
           <p className="text-dt-support leading-relaxed">{plan.procedure_summary}</p>
@@ -107,7 +137,10 @@ function PlanDrawer({ mission, onClose, onApproved }: {
         {error && <Banner tone="danger">{error}</Banner>}
         <div className="flex gap-2 pt-1">
           <Button kind="primary" disabled={busy} onClick={() => void approve()}>
-            {busy ? 'Fanning out…' : `Approve — start ${plan.shape === 'project' ? 'the project' : `${Math.max(count - excluded.size - (plan.dedup?.count ?? 0), 0)} case(s)`}`}
+            {busy ? 'Starting…'
+              : plan.shape === 'standing' ? `Approve — install ${plan.standing?.watchers.length ?? 0} watcher(s)`
+              : plan.shape === 'project' ? 'Approve — start the project'
+              : `Approve — start ${Math.max(count - excluded.size - (plan.dedup?.count ?? 0), 0)} case(s)`}
           </Button>
           <Button kind="ghost" onClick={onClose}>Not yet</Button>
         </div>
@@ -116,7 +149,7 @@ function PlanDrawer({ mission, onClose, onApproved }: {
   );
 }
 
-function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: () => void; onReview: (m: MissionRow) => void }) {
+export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: () => void; onReview: (m: MissionRow) => void }) {
   const [progress, setProgress] = useState<MissionProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +199,12 @@ function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: 
             {progress.achieved}/{progress.total} done · {progress.active} in motion{progress.blocked > 0 ? ` · ${progress.blocked} blocked` : ''}
           </span>
         </div>
+      )}
+      {m.report && (m.report.per_de || m.report.unrouted) && (Object.keys(m.report.per_de ?? {}).length > 0 || (m.report.unrouted?.length ?? 0) > 0) && (
+        <p className="text-xs text-dt-muted mt-1 pl-1">
+          {Object.keys(m.report.per_de ?? {}).length > 0 && `Fanned across ${Object.keys(m.report.per_de ?? {}).length} employee(s).`}
+          {(m.report.unrouted?.length ?? 0) > 0 && ` ${m.report.unrouted!.length} left unrouted (no eligible employee).`}
+        </p>
       )}
       {m.error && <p className="text-xs text-dt-danger mt-1 pl-1">{m.error}</p>}
       {error && <p className="text-xs text-dt-danger mt-1 pl-1">{error}</p>}

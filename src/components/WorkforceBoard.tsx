@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getWorkforceBoard, type WorkforceBoardRow } from '../lib/missionApi';
 import { useOpenEmployeeFile } from '../lib/employeeFileRoute';
+import TeamMissionPanel from './TeamMissionPanel';
 import { Banner, Chip, PanelCard, type Tone } from '../design/primitives';
 import type { Page } from '../types';
 
@@ -66,6 +67,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
       : { n: 1, label: 'Phase 1 · Assisted', hint: 'Employees answer when spoken to. Install a role kit or add watchers to reach Phase 2.' };
 
   return (
+    <div className="space-y-4">
     <PanelCard
       title="The board — whole workforce"
       badge={
@@ -129,5 +131,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
         </table>
       </div>
     </PanelCard>
+    <TeamMissionPanel />
+    </div>
   );
 }
