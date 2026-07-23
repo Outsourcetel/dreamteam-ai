@@ -21,7 +21,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { sendEmail } from '../_shared/sendEmail.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
@@ -57,28 +57,26 @@ serve(async (req) => {
     const recipient = String(conv.end_user_ref ?? '');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipient)) return json({ error: 'bad_recipient', detail: 'This conversation has no valid customer email address.' }, 400);
 
-    const apiKey = await getAIKey(admin, 'RESEND_API_KEY');
     const { data: comms } = await admin.from('tenant_comms_settings').select('from_email, from_name').eq('tenant_id', tenantId).maybeSingle();
-    if (!apiKey || !comms?.from_email) {
+    if (!comms?.from_email) {
       return json({
         error: 'delivery_not_configured', blocked: true,
-        detail: !apiKey
-          ? 'Email sending is not connected — add a RESEND_API_KEY in Settings. Your reply was NOT sent.'
-          : 'No verified from-address is set for this workspace — set one in Settings → Communications. Your reply was NOT sent.',
+        detail: 'No from-address is set for this workspace — set one in Settings → Communications. Your reply was NOT sent.',
       }, 409);
     }
 
     // ── Deliver FIRST; the thread only records what really happened. ──
     const subject = conv.subject && /^re:/i.test(conv.subject) ? conv.subject : `Re: ${conv.subject || 'your email'}`;
     const from = comms.from_name ? `${comms.from_name} <${comms.from_email}>` : comms.from_email;
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [recipient], subject: subject.slice(0, 200), text: content }),
-    });
-    const rBody = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return json({ error: 'send_failed', detail: (rBody as { message?: string })?.message ?? `resend_http_${res.status}` }, 502);
+    const sent = await sendEmail(admin, { from, to: recipient, subject: subject.slice(0, 200), text: content });
+    if (sent.reason === 'no_provider') {
+      return json({
+        error: 'delivery_not_configured', blocked: true,
+        detail: 'Email sending is not connected — add Gmail SMTP or a RESEND_API_KEY. Your reply was NOT sent.',
+      }, 409);
+    }
+    if (!sent.ok) {
+      return json({ error: 'send_failed', detail: sent.error ?? 'send_failed' }, 502);
     }
 
     const { data: msg } = await admin.from('de_messages').insert({

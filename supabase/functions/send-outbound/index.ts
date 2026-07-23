@@ -17,7 +17,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from '../_shared/aiKeys.ts';
+import { sendEmail } from '../_shared/sendEmail.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
@@ -59,16 +59,13 @@ serve(async (req) => {
       if (!task || task.status !== 'approved') return json({ error: 'not_approved', detail: 'This draft has not been approved — it will not be sent.' }, 403);
     }
 
-    // ── Provider + from-address. Dormant-honest when either is missing. ──
-    const apiKey = await getAIKey(admin, 'RESEND_API_KEY');
+    // ── From-address. Dormant-honest when it's missing. ──
     const { data: comms } = await admin.from('tenant_comms_settings').select('from_email, from_name').eq('tenant_id', tenantId).maybeSingle();
-    if (!apiKey || !comms?.from_email) {
-      await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'blocked_no_provider', p_error: !apiKey ? 'no RESEND_API_KEY' : 'no verified from-address' });
+    if (!comms?.from_email) {
+      await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'blocked_no_provider', p_error: 'no verified from-address' });
       return json({
         ok: false, blocked: true,
-        detail: !apiKey
-          ? 'Approved, but email sending is not connected yet — add a RESEND_API_KEY in Settings → AI/Comms. The draft is saved.'
-          : 'Approved, but no verified from-address is set for this workspace — set one in Settings → Communications. The draft is saved.',
+        detail: 'Approved, but no from-address is set for this workspace — set one in Settings → Communications. The draft is saved.',
       });
     }
     if (!draft.recipient_ref || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.recipient_ref)) {
@@ -76,27 +73,28 @@ serve(async (req) => {
       return json({ ok: false, error: 'bad_recipient', detail: 'The draft recipient is not a valid email address.' });
     }
 
-    // ── Send via Resend. ──
+    // ── Send (Gmail SMTP if configured, else Resend). ──
     await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'sending' });
     const from = comms.from_name ? `${comms.from_name} <${comms.from_email}>` : comms.from_email;
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from, to: [draft.recipient_ref],
-        subject: draft.subject || '(no subject)',
-        text: draft.body,
-      }),
+    const sent = await sendEmail(admin, {
+      from,
+      to: draft.recipient_ref,
+      subject: draft.subject || '(no subject)',
+      text: draft.body,
     });
-    const rBody = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const err = (rBody as { message?: string })?.message ?? `resend_http_${res.status}`;
-      await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'failed', p_error: String(err).slice(0, 300) });
-      return json({ ok: false, error: 'send_failed', detail: err }, 502);
+    if (sent.reason === 'no_provider') {
+      await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'blocked_no_provider', p_error: 'no email provider configured' });
+      return json({
+        ok: false, blocked: true,
+        detail: 'Approved, but email sending is not connected yet — add Gmail SMTP or a RESEND_API_KEY. The draft is saved.',
+      });
     }
-    const messageId = (rBody as { id?: string })?.id ?? null;
-    await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'sent', p_provider_message_id: messageId });
-    return json({ ok: true, sent: true, provider_message_id: messageId });
+    if (!sent.ok) {
+      await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'failed', p_error: String(sent.error ?? 'send_failed').slice(0, 300) });
+      return json({ ok: false, error: 'send_failed', detail: sent.error }, 502);
+    }
+    await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'sent', p_provider_message_id: sent.messageId ?? null });
+    return json({ ok: true, sent: true, provider: sent.provider, provider_message_id: sent.messageId ?? null });
   } catch (err) {
     console.error('send-outbound error:', String(err));
     return json({ error: String(err) }, 500);
