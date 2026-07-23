@@ -189,6 +189,19 @@ export async function unassignDocCollection(docId: string, collectionId: string)
   if (error) raise('unassignDocCollection', error);
 }
 
+// ── Phase-4 WS7: bulk maintenance (Class-A, no re-embed) ─────────────────────
+async function bulkRpc(fn: string, args: Record<string, unknown>, verb: string): Promise<number> {
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  const r = data as { ok?: boolean; error?: string; [k: string]: unknown };
+  if (!r?.ok) throw new Error(r?.error === 'too_many' ? `Too many documents selected (max ${r.cap ?? 1000}).` : (r?.error ?? `Bulk ${verb} failed.`));
+  return Number(r.updated ?? r.added ?? r.verified ?? r.deleted ?? 0);
+}
+export const bulkAddTag = (docIds: string[], tag: string) => bulkRpc('bulk_add_doc_tag', { p_doc_ids: docIds, p_tag: tag }, 'tag');
+export const bulkAssignCollection = (docIds: string[], collectionId: string) => bulkRpc('bulk_assign_collection', { p_doc_ids: docIds, p_collection_id: collectionId }, 'assign');
+export const bulkMarkVerified = (docIds: string[]) => bulkRpc('bulk_mark_verified', { p_doc_ids: docIds }, 'verify');
+export const bulkDeleteDocs = (docIds: string[]) => bulkRpc('bulk_delete_docs', { p_doc_ids: docIds }, 'delete');
+
 // Phase-2 WS4: corpus-level "state of your knowledge" for the Hub overview,
 // in one call over the Phase-1 denormalized signals + gaps + review queue.
 export interface KnowledgeOverview {

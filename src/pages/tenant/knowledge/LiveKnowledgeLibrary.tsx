@@ -9,6 +9,7 @@ import {
   KnowledgeCollection, listKnowledgeCollections, createKnowledgeCollection, deleteKnowledgeCollection,
   listDocCollectionIds, assignDocCollection, unassignDocCollection,
   markDocVerified, setDocLifecycle, getMyUserId,
+  bulkAddTag, bulkAssignCollection, bulkMarkVerified, bulkDeleteDocs,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
   extractPdf, extractUrl, listDocVersions,
@@ -63,6 +64,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [governDoc, setGovernDoc] = useState<KnowledgeDoc | null>(null);
   const [govForm, setGovForm] = useState({ reviewDays: '', authority: '', expires: '' });
   const [govSaving, setGovSaving] = useState(false);
+  // Phase-4 WS7: multi-select + bulk maintenance (select-on-page).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   // Per-DE knowledge scopes (migration 030)
   const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
   const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
@@ -207,6 +211,21 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     catch (e) { setError((e as Error).message); }
     setGovSaving(false);
   };
+
+  // ── Bulk maintenance (WS7) ──
+  const toggleSel = (id: string) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allOnPageSelected = rows.length > 0 && rows.every(r => selected.has(r.id));
+  const toggleSelAll = () => setSelected(allOnPageSelected ? new Set() : new Set(rows.map(r => r.id)));
+  const runBulk = async (fn: () => Promise<number>) => {
+    setBulkBusy(true); setError(null);
+    try { await fn(); setSelected(new Set()); await load(); }
+    catch (e) { setError((e as Error).message); }
+    setBulkBusy(false);
+  };
+  const bulkTag = async () => { const t = window.prompt('Tag to add to the selected documents:'); if (t?.trim()) await runBulk(() => bulkAddTag([...selected], t.trim())); };
+  const bulkVerify = () => runBulk(() => bulkMarkVerified([...selected]));
+  const bulkDelete = async () => { if (window.confirm(`Delete ${selected.size} document(s)? This can’t be undone.`)) await runBulk(() => bulkDeleteDocs([...selected])); };
+  const bulkCollection = async (collectionId: string) => { if (collectionId) await runBulk(() => bulkAssignCollection([...selected], collectionId)); };
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
     setDecidingRevisionId(r.id);
@@ -491,6 +510,25 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </div>
       )}
 
+      {/* Bulk action bar (WS7) — appears when documents are selected */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2">
+          <span className="text-xs text-dt-body font-medium">{selected.size} selected</span>
+          <button disabled={bulkBusy} onClick={() => void bulkTag()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Add tag</button>
+          {collections.length > 0 && (
+            <select disabled={bulkBusy} value="" onChange={e => { void bulkCollection(e.target.value); e.target.value = ''; }}
+              className="text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1 text-dt-support disabled:opacity-50">
+              <option value="">Add to collection…</option>
+              {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <button disabled={bulkBusy} onClick={() => void bulkVerify()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-emerald-500 disabled:opacity-50">Mark verified</button>
+          <button disabled={bulkBusy} onClick={() => void bulkDelete()} className="text-xs px-2.5 py-1 rounded-lg border border-red-500/40 text-red-300 hover:border-red-400 disabled:opacity-50">Delete</button>
+          <button disabled={bulkBusy} onClick={() => setSelected(new Set())} className="text-xs px-2 py-1 text-dt-muted hover:text-dt-support ml-auto">Clear</button>
+          {bulkBusy && <span className="text-xs text-indigo-300">Working…</span>}
+        </div>
+      )}
+
       {/* Table / empty state */}
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -517,6 +555,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           <table className="w-full text-sm text-dt-support">
             <thead className="bg-dt-card border-b border-dt-border">
               <tr>
+                <th className={`${th} w-8`}>
+                  <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelAll} title="Select all on this page" />
+                </th>
                 <th className={th}>Title</th>
                 <th className={th}>Preview</th>
                 <th className={th}>Tags</th>
@@ -529,7 +570,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </thead>
             <tbody>
               {rows.map(d => (
-                <tr key={d.id} className="border-b border-dt-border hover:bg-dt-panel transition-colors">
+                <tr key={d.id} className={`border-b border-dt-border transition-colors ${selected.has(d.id) ? 'bg-indigo-500/10' : 'hover:bg-dt-panel'}`}>
+                  <td className={td}>
+                    <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSel(d.id)} />
+                  </td>
                   <td className={`${td} text-white font-medium`}>{d.title}</td>
                   <td className={`${td} text-xs text-dt-support max-w-xs`}>
                     <span className="line-clamp-2">{d.preview}</span>
