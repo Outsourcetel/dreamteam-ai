@@ -712,30 +712,4 @@ const CustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   return <LiveCustomerRenewal setPage={setPage} />;
 };
 
-const DemoCustomerRenewalPage = ({ setPage }: { setPage: (p: Page) => void }) => {
-  const { activeCompanyId, activeCompany } = useAuth();
-  const isTcp = activeCompanyId === 'tcp';
-
-  return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Renewal &amp; Expansion — Customer Lifecycle</h1>
-        <p className="text-dt-support text-sm mt-1">
-          {isTcp
-            ? 'Casey manages the full renewal lifecycle — invoices via Zuora, cadences via Gainsight, and expansion signals'
-            : `Morgan manages engagement renewals for ${activeCompany.name} — proposals, reminders, and partner approvals`}
-        </p>
-      </div>
-      {isTcp ? (
-        <>
-          <RenewalsPipeline setPage={setPage} />
-          <ExpansionOpportunities />
-        </>
-      ) : (
-        <PwcRenewals />
-      )}
-    </div>
-  );
-};
-
 export default CustomerRenewalPage;
