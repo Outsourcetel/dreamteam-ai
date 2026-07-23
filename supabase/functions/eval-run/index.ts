@@ -104,12 +104,29 @@ serve(async (req) => {
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
 
+    // ── Resolve the DE's archetype so a cert exam is scoped to its role.
+    // A targeted run (targetDeId set) sits the UNIVERSAL questions
+    // (archetype_key IS NULL) PLUS its own archetype's questions — never
+    // another role's. A generic run with no target keeps the full tenant
+    // suite unchanged (backward compat with the Proving Ground button). ──
+    let deArchetype: string | null = targetArchetype;
+    if (targetDeId) {
+      const { data: arch } = await admin.rpc('resolve_de_archetype', { p_de_id: targetDeId });
+      if (typeof arch === 'string' && arch) deArchetype = arch;
+    }
+
     // ── Load the suite (active questions, capped) ──
-    const { data: qas, error: qaErr } = await admin
+    let qaQuery = admin
       .from('golden_qa')
       .select('id, question, expected_fragments, min_confidence, category')
       .eq('tenant_id', tenantId)
-      .eq('active', true)
+      .eq('active', true);
+    if (targetDeId) {
+      qaQuery = deArchetype
+        ? qaQuery.or(`archetype_key.is.null,archetype_key.eq.${deArchetype}`)
+        : qaQuery.is('archetype_key', null);
+    }
+    const { data: qas, error: qaErr } = await qaQuery
       .order('created_at', { ascending: true })
       .limit(MAX_QUESTIONS);
     if (qaErr) return json({ error: qaErr.message }, 500);
@@ -252,7 +269,7 @@ serve(async (req) => {
     if (targetDeId) {
       try {
         const { data: cert, error: certErr } = await admin.rpc('certify_de_from_eval', {
-          p_de_id: targetDeId, p_archetype_key: targetArchetype, p_eval_run_id: runId, p_threshold_pct: 80,
+          p_de_id: targetDeId, p_archetype_key: deArchetype, p_eval_run_id: runId, p_threshold_pct: 80,
         });
         if (certErr) console.error('certify_de_from_eval:', certErr.message);
         else certification = cert as Record<string, unknown>;
