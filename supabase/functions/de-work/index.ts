@@ -77,13 +77,18 @@ async function anthropicWithRetry(admin: SupabaseClient, body: Record<string, un
 // Injected into the planner and the worker so an attached playbook + guardrails
 // actually steer the autonomous loop (they were invisible to it before, EXEC-2).
 // This is trusted tenant config (like the persona), not untrusted task content.
-async function deBriefing(admin: SupabaseClient, deId: string): Promise<string> {
+async function deBriefing(admin: SupabaseClient, deId: string, objectiveText?: string): Promise<string> {
   try {
-    const { data } = await admin.rpc('get_de_briefing', { p_de_id: deId });
+    // T1.4: when we know the objective, surface the ONE best-matching SOP with
+    // its full structure (decisions, gates, actions) — not all-4 flattened to
+    // bullet text. No objective ⇒ the plain all-4 briefing (get_de_briefing).
+    const { data } = objectiveText
+      ? await admin.rpc('get_de_briefing_for_objective', { p_de_id: deId, p_objective: objectiveText.slice(0, 2000) })
+      : await admin.rpc('get_de_briefing', { p_de_id: deId });
     const sop = (data as { sop?: string; guardrails?: string } | null)?.sop?.trim();
     const guard = (data as { sop?: string; guardrails?: string } | null)?.guardrails?.trim();
     let out = '';
-    if (sop) out += `\n\nYour standard operating procedure — follow it:\n${sop}`;
+    if (sop) out += `\n\nYour standard operating procedure for this task — follow its structure, including its decision points and approval gates:\n${sop}`;
     if (guard) out += `\n\nYour hard guardrails — never violate these:\n${guard}`;
     return out;
   } catch { return ''; }
@@ -106,7 +111,7 @@ async function operableSystemsBriefing(admin: SupabaseClient, deId: string): Pro
 async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
   // The employee's SOP + guardrails (operator config) shape the plan — without
   // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
-  const brief = await deBriefing(admin, obj.de_id);
+  const brief = await deBriefing(admin, obj.de_id, `${obj.title}\n${obj.description ?? ''}`);
   const system = 'You break a business objective into 2-5 concrete, ordered work steps an AI employee can execute (research, compute, check, follow-up, escalate). Return ONLY JSON: {"steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}. Steps must be self-contained and verifiable.' + brief + FIREWALL_RULES;
   // max_tokens headroom (8192): on Claude-5 the model's adaptive thinking shares
   // the output budget, so a tight cap intermittently truncated the JSON before
@@ -552,8 +557,10 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let accountRef: string | null = null;
   let oppRef: string | null = null;
   let accountContext = '';
+  let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
   if (objectiveId) {
-    const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref').eq('id', objectiveId).maybeSingle();
+    const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description').eq('id', objectiveId).maybeSingle();
+    objectiveBriefText = `${obj?.title ?? ''}\n${obj?.description ?? ''}`.trim() || undefined;
     if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) {
       accountRef = String(obj.entity_ref);
       // The DE's DESK: hand it the account record it's working, so step 1
@@ -594,7 +601,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     + `Rules: Use your tools — never guess a number (use compute), never invent facts (use search_knowledge and cite), recall what you already know first. `
     + `Stay strictly within your guardrails. If you cannot proceed safely or the task needs a human decision, call escalate_to_human. `
     + `When the task is genuinely done (or you've determined it can't be), call mark_done with a short summary. That is the ONLY way to finish.`
-    + await deBriefing(admin, deId)
+    + await deBriefing(admin, deId, objectiveBriefText)
     + await operableSystemsBriefing(admin, deId)
     + FIREWALL_RULES;
   // Per-DE registry actions (grants-aware) join the tool set; execution is
