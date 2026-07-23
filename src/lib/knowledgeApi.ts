@@ -87,6 +87,53 @@ export async function listKnowledgeDocs(): Promise<KnowledgeDoc[]> {
   return data ?? [];
 }
 
+// Phase-1 scale keystone (mig 279): server-side faceted, paginated search that
+// returns a preview + the denormalized chunk counts + a window total — never the
+// full corpus, never a per-load chunk aggregate. Replaces listKnowledgeDocs +
+// listChunkStatus in the Library so a 100k-doc corpus doesn't load into the tab.
+export interface SearchDocRow {
+  id: string;
+  title: string;
+  preview: string;
+  tags: string[];
+  source: 'upload' | 'paste' | 'connector';
+  visibility: 'tenant' | 'scoped' | 'role';
+  share_archetype_key: string | null;
+  authority: number | null;
+  last_verified_at: string | null;
+  is_current: boolean;
+  chunk_count: number;
+  embedded_count: number;
+  updated_at: string;
+  total_count: number;
+}
+export interface SearchDocsParams {
+  query?: string; tags?: string[]; source?: string | null; visibility?: string | null;
+  currentOnly?: boolean; limit?: number; offset?: number;
+}
+export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ rows: SearchDocRow[]; total: number }> {
+  const { data, error } = await supabase.rpc('search_knowledge_docs', {
+    p_query: p.query?.trim() || null,
+    p_tags: p.tags && p.tags.length ? p.tags : null,
+    p_source: p.source ?? null,
+    p_visibility: p.visibility ?? null,
+    p_current_only: p.currentOnly ?? true,
+    p_limit: p.limit ?? 50,
+    p_offset: p.offset ?? 0,
+  });
+  if (error) raise('searchKnowledgeDocs', error);
+  const rows = (data ?? []) as SearchDocRow[];
+  return { rows, total: rows.length ? Number(rows[0].total_count) : 0 };
+}
+
+// Fetch ONE doc with full content — the search rows carry only a preview, so the
+// editor loads the real content on open (no truncation-on-save data loss).
+export async function getKnowledgeDoc(id: string): Promise<KnowledgeDoc | null> {
+  const { data, error } = await supabase.from('knowledge_docs').select('*').eq('id', id).maybeSingle();
+  if (error) raise('getKnowledgeDoc', error);
+  return (data as KnowledgeDoc) ?? null;
+}
+
 export async function createKnowledgeDoc(
   d: { title: string; content: string; source: 'upload' | 'paste'; tags: string[] }
 ): Promise<KnowledgeDoc> {
