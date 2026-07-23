@@ -33,8 +33,36 @@ export interface KnowledgeDoc {
    *  a human explicitly re-verifies; distinct from updated_at, which
    *  only reflects the last content edit. */
   last_verified_at: string | null;
+  /** Lifecycle governance (mig 285): steward, review cadence, and hard expiry. */
+  owner_user_id: string | null;
+  review_interval_days: number | null;
+  expires_at: string | null;
+  /** Retrieval weight / trust (mig 236). */
+  authority: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export async function getMyUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id ?? null;
+}
+export async function markDocVerified(docId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('mark_doc_verified', { p_doc_id: docId });
+  if (error) raise('markDocVerified', error);
+  if (!(data as { ok?: boolean })?.ok) throw new Error('Could not mark verified.');
+}
+export interface DocLifecycle { ownerUserId?: string | null; reviewIntervalDays?: number | null; authority?: number | null; expiresAt?: string | null }
+export async function setDocLifecycle(docId: string, l: DocLifecycle): Promise<void> {
+  const { data, error } = await supabase.rpc('set_doc_lifecycle', {
+    p_doc_id: docId,
+    p_owner_user_id: l.ownerUserId ?? null,
+    p_review_interval_days: l.reviewIntervalDays ?? null,
+    p_authority: l.authority ?? null,
+    p_expires_at: l.expiresAt ?? null,
+  });
+  if (error) raise('setDocLifecycle', error);
+  if (!(data as { ok?: boolean })?.ok) throw new Error('Could not save lifecycle settings.');
 }
 
 import { raise, requireTenantId } from './liveShared';

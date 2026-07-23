@@ -8,6 +8,7 @@ import {
   SearchDocRow, searchKnowledgeDocs, getKnowledgeDoc,
   KnowledgeCollection, listKnowledgeCollections, createKnowledgeCollection, deleteKnowledgeCollection,
   listDocCollectionIds, assignDocCollection, unassignDocCollection,
+  markDocVerified, setDocLifecycle, getMyUserId,
   ScopeSubject, listScopeSubjects, listDocScopes, setDocScope,
   KnowledgeRevisionRequest, listKnowledgeRevisionRequests, resolveKnowledgeRevision,
   extractPdf, extractUrl, listDocVersions,
@@ -58,6 +59,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [collectionFilter, setCollectionFilter] = useState('');
   const [collectionDoc, setCollectionDoc] = useState<SearchDocRow | null>(null); // doc whose collections modal is open
   const [docCollIds, setDocCollIds] = useState<Set<string>>(new Set());
+  // Phase-3 WS6: lifecycle governance modal (owner / review cadence / authority / expiry).
+  const [governDoc, setGovernDoc] = useState<KnowledgeDoc | null>(null);
+  const [govForm, setGovForm] = useState({ reviewDays: '', authority: '', expires: '' });
+  const [govSaving, setGovSaving] = useState(false);
   // Per-DE knowledge scopes (migration 030)
   const [subjects, setSubjects] = useState<ScopeSubject[]>([]);
   const [docScopes, setDocScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
@@ -167,6 +172,40 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       setDocCollIds(prev => { const n = new Set(prev); if (has) n.delete(collectionId); else n.add(collectionId); return n; });
       void load();
     } catch (e) { setError((e as Error).message); }
+  };
+
+  // ── Lifecycle governance (WS6) ──
+  const openGovern = async (d: SearchDocRow) => {
+    const full = await getKnowledgeDoc(d.id);
+    if (!full) return;
+    setGovernDoc(full);
+    setGovForm({
+      reviewDays: full.review_interval_days != null ? String(full.review_interval_days) : '',
+      authority: full.authority != null ? String(full.authority) : '',
+      expires: full.expires_at ? full.expires_at.slice(0, 10) : '',
+    });
+  };
+  const govFields = () => ({
+    reviewIntervalDays: govForm.reviewDays ? parseInt(govForm.reviewDays, 10) : null,
+    authority: govForm.authority ? parseInt(govForm.authority, 10) : null,
+    expiresAt: govForm.expires ? new Date(govForm.expires).toISOString() : null,
+  });
+  const verifyDoc = async () => {
+    if (!governDoc) return;
+    try { await markDocVerified(governDoc.id); const f = await getKnowledgeDoc(governDoc.id); if (f) setGovernDoc(f); void load(); }
+    catch (e) { setError((e as Error).message); }
+  };
+  const setOwner = async (owner: string | null) => {
+    if (!governDoc) return;
+    try { await setDocLifecycle(governDoc.id, { ownerUserId: owner, ...govFields() }); const f = await getKnowledgeDoc(governDoc.id); if (f) setGovernDoc(f); void load(); }
+    catch (e) { setError((e as Error).message); }
+  };
+  const saveGovern = async () => {
+    if (!governDoc) return;
+    setGovSaving(true);
+    try { await setDocLifecycle(governDoc.id, { ownerUserId: governDoc.owner_user_id, ...govFields() }); setGovernDoc(null); void load(); }
+    catch (e) { setError((e as Error).message); }
+    setGovSaving(false);
   };
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
@@ -539,6 +578,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         Collections
                       </button>
                       <button
+                        onClick={() => void openGovern(d)}
+                        className="text-xs text-dt-support hover:text-dt-body transition-colors"
+                      >
+                        Govern
+                      </button>
+                      <button
                         onClick={() => setRemoveTarget(d)}
                         disabled={deletingId === d.id}
                         className="text-xs text-red-400/80 hover:text-red-300 disabled:opacity-40 transition-colors"
@@ -687,6 +732,61 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Governance modal — lifecycle: verify, owner, review cadence, authority, expiry (WS6) */}
+      {governDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm" onClick={() => setGovernDoc(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-dt-border bg-dt-card p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white truncate pr-2">Govern — “{governDoc.title}”</h3>
+              <button onClick={() => setGovernDoc(null)} className="text-dt-support hover:text-white text-sm shrink-0">✕</button>
+            </div>
+
+            <div className="rounded-lg bg-dt-inset px-3 py-2 flex items-center justify-between gap-2">
+              <div className="text-xs text-dt-support">
+                {governDoc.last_verified_at
+                  ? <>Last confirmed accurate <span className="text-dt-body">{fmtDate(governDoc.last_verified_at)}</span></>
+                  : <span className="text-amber-300">Never confirmed accurate</span>}
+              </div>
+              <button onClick={() => void verifyDoc()} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white shrink-0">Mark verified now</button>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-dt-support">
+                Owner: <span className="text-dt-body">{governDoc.owner_user_id ? 'assigned' : 'unowned'}</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={async () => setOwner(await getMyUserId())} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500">Assign to me</button>
+                {governDoc.owner_user_id && <button onClick={() => void setOwner(null)} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/60">Clear</button>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide text-dt-muted">Review every (days)</span>
+                <input type="number" min={1} value={govForm.reviewDays} onChange={e => setGovForm(f => ({ ...f, reviewDays: e.target.value }))}
+                  placeholder="e.g. 90" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide text-dt-muted">Authority (0–100)</span>
+                <input type="number" min={0} max={100} value={govForm.authority} onChange={e => setGovForm(f => ({ ...f, authority: e.target.value }))}
+                  placeholder="50" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide text-dt-muted">Expires on</span>
+                <input type="date" value={govForm.expires} onChange={e => setGovForm(f => ({ ...f, expires: e.target.value }))}
+                  className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
+              </label>
+            </div>
+            <p className="text-[11px] text-dt-muted">Authority weights this doc in retrieval; a review cadence flags it stale after that many days; expiry marks it for removal. All optional.</p>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setGovernDoc(null)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>
+              <button onClick={() => void saveGovern()} disabled={govSaving} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">{govSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>
