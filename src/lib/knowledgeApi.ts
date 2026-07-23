@@ -128,6 +128,24 @@ export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ r
   return { rows, total: rows.length ? Number(rows[0].total_count) : 0 };
 }
 
+// Phase-2 WS4: corpus-level "state of your knowledge" for the Hub overview,
+// in one call over the Phase-1 denormalized signals + gaps + review queue.
+export interface KnowledgeOverview {
+  ok: boolean;
+  total_docs: number; indexed_docs: number; keyword_only: number; stale_docs: number;
+  role_shared: number; scoped: number; total_citations: number; cited_docs: number; never_cited: number;
+  last_updated_at: string | null; open_gaps: number; pending_reviews: number;
+  top_cited: { id: string; title: string; citation_count: number }[];
+  recent: { id: string; title: string; updated_at: string; indexed: boolean }[];
+}
+export async function getKnowledgeOverview(): Promise<KnowledgeOverview | null> {
+  // Non-fatal: the Hub simply omits the overview if the RPC isn't there yet.
+  const { data, error } = await supabase.rpc('get_knowledge_overview');
+  if (error) return null;
+  const o = data as KnowledgeOverview;
+  return o?.ok ? o : null;
+}
+
 // Fetch ONE doc with full content — the search rows carry only a preview, so the
 // editor loads the real content on open (no truncation-on-save data loss).
 export async function getKnowledgeDoc(id: string): Promise<KnowledgeDoc | null> {
