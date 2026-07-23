@@ -18,7 +18,7 @@
  * The DE never edits its own knowledge silently: the ONLY write path is the
  * approval-gated RPC. This function stops at "review opened".
  *
- * POST { tenant_id, de_id?, judgment_id? }
+ * POST { tenant_id, de_id?, judgment_id?, gap_cluster_id? }
  *   -> { improvement_id, status: 'review_pending'|'failed_replay', replay, human_task_id? }
  * Auth: dispatch secret or tenant-member JWT. Budget-gated.
  */
@@ -66,19 +66,53 @@ serve(async (req) => {
     // explained — exactly what a knowledge patch fixes. (Live-proof
     // finding: a DE whose answers improved from fail to partial fell out
     // of the loop entirely under the old fail-only filter.)
-    let jq = admin.from('eval_judgments')
-      .select('id, de_id, question, answer, rationale, score, reference, verdict')
-      .eq('tenant_id', tenant_id).in('verdict', ['fail', 'partial']).lt('score', 70)
-      .order('created_at', { ascending: false }).limit(10);
-    if (body.judgment_id) jq = jq.eq('id', body.judgment_id);
-    else if (body.de_id) jq = jq.eq('de_id', body.de_id);
-    const { data: fails } = await jq;
-    // one improvement per judgment (don't re-propose what's already in flight)
-    const { data: seen } = await admin.from('de_improvements').select('judgment_id').eq('tenant_id', tenant_id).not('judgment_id', 'is', null);
-    const seenIds = new Set((seen ?? []).map((r: { judgment_id: string }) => r.judgment_id));
-    const fail = (fails ?? []).find((f: { id: string; de_id: string | null }) => f.de_id && !seenIds.has(f.id));
-    if (!fail) return json({ error: 'no_unhandled_failed_judgment' }, 404);
-    const deId = fail.de_id as string;
+    // The signal is EITHER a below-standard judgment (the original path) OR a
+    // high-severity knowledge-gap cluster (Phase-2 WS3 closed loop). Both reduce
+    // to the same `fail` shape so the draft→replay→review flow below is shared.
+    let fail: { id: string; de_id: string; question: string; answer: string; rationale: string; reference: string | null };
+    let isGap = false; let clusterId: string | null = null;
+
+    if (body.gap_cluster_id) {
+      isGap = true; clusterId = String(body.gap_cluster_id);
+      const { data: cluster } = await admin.from('knowledge_gap_clusters')
+        .select('id, category, root_cause_category, reviewer_summary, member_count, representative_run_id, de_improvement_id')
+        .eq('id', clusterId).eq('tenant_id', tenant_id).maybeSingle();
+      if (!cluster) return json({ error: 'gap_cluster_not_found' }, 404);
+      // Idempotency (adversary #2): never re-draft a cluster already in flight.
+      if (cluster.de_improvement_id) return json({ error: 'gap_cluster_already_in_flight' }, 409);
+      const { data: dup } = await admin.from('de_improvements').select('id').eq('gap_cluster_id', clusterId).maybeSingle();
+      if (dup) return json({ error: 'gap_cluster_already_in_flight' }, 409);
+      const { data: rep } = await admin.from('evidence_runs').select('inquiry, answer, de_id')
+        .eq('id', cluster.representative_run_id).eq('tenant_id', tenant_id).maybeSingle();
+      if (!rep?.de_id || !rep.inquiry) return json({ error: 'gap_cluster_no_representative' }, 422);
+      const { data: members } = await admin.from('knowledge_gap_cluster_members')
+        .select('evidence_run_id').eq('cluster_id', clusterId).limit(6);
+      const memberIds = (members ?? []).map((m: { evidence_run_id: string }) => m.evidence_run_id).filter(Boolean);
+      const { data: memberRuns } = memberIds.length
+        ? await admin.from('evidence_runs').select('inquiry').in('id', memberIds)
+        : { data: [] as { inquiry: string }[] };
+      const qs = (memberRuns ?? []).map((r: { inquiry: string }) => r.inquiry).filter(Boolean).slice(0, 6);
+      fail = {
+        id: clusterId, de_id: String(rep.de_id), question: String(rep.inquiry), answer: String(rep.answer ?? ''),
+        rationale: `${cluster.reviewer_summary ?? ''} (gap category: ${cluster.category ?? 'general'}; root cause: ${cluster.root_cause_category ?? 'unknown'}; ${cluster.member_count ?? 1} similar unanswered questions).${qs.length ? ' Similar questions asked: ' + qs.join(' | ') : ''}`.slice(0, 4000),
+        reference: null,
+      };
+    } else {
+      let jq = admin.from('eval_judgments')
+        .select('id, de_id, question, answer, rationale, score, reference, verdict')
+        .eq('tenant_id', tenant_id).in('verdict', ['fail', 'partial']).lt('score', 70)
+        .order('created_at', { ascending: false }).limit(10);
+      if (body.judgment_id) jq = jq.eq('id', body.judgment_id);
+      else if (body.de_id) jq = jq.eq('de_id', body.de_id);
+      const { data: fails } = await jq;
+      // one improvement per judgment (don't re-propose what's already in flight)
+      const { data: seen } = await admin.from('de_improvements').select('judgment_id').eq('tenant_id', tenant_id).not('judgment_id', 'is', null);
+      const seenIds = new Set((seen ?? []).map((r: { judgment_id: string }) => r.judgment_id));
+      const f = (fails ?? []).find((x: { id: string; de_id: string | null }) => x.de_id && !seenIds.has(x.id));
+      if (!f) return json({ error: 'no_unhandled_failed_judgment' }, 404);
+      fail = { id: String(f.id), de_id: String(f.de_id), question: String(f.question), answer: String(f.answer ?? ''), rationale: String(f.rationale ?? ''), reference: (f as { reference?: string | null }).reference ?? null };
+    }
+    const deId = fail.de_id;
 
     // ── 2) propose a patch, grounded in the rationale + current KB ──
     const { data: kb } = await admin.rpc('hybrid_match_knowledge', {
@@ -99,12 +133,19 @@ serve(async (req) => {
     if (!patch.title || !patch.content) return json({ error: 'proposal_parse_failed' }, 502);
 
     const { data: impRow, error: impErr } = await admin.from('de_improvements').insert({
-      tenant_id, de_id: deId, judgment_id: fail.id,
+      tenant_id, de_id: deId,
+      judgment_id: isGap ? null : fail.id,
+      gap_cluster_id: isGap ? clusterId : null,
       failure_question: fail.question, failure_answer: fail.answer ?? '', failure_rationale: fail.rationale ?? '',
       proposed_title: String(patch.title).slice(0, 200), proposed_content: String(patch.content).slice(0, 8000),
     }).select('id').single();
     if (impErr || !impRow) return json({ error: `improvement_insert_failed: ${impErr?.message ?? 'no row'}` }, 500);
     const impId = impRow.id;
+    // Link the cluster to this improvement — idempotency (next driver tick skips
+    // it) + loop-closure anchor for recurrence measurement.
+    if (isGap && clusterId) {
+      await admin.from('knowledge_gap_clusters').update({ de_improvement_id: impId }).eq('id', clusterId).eq('tenant_id', tenant_id);
+    }
 
     // ── 3) replay: the failing question WITH the patch, re-judged ──
     const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
