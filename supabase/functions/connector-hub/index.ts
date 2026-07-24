@@ -1308,6 +1308,117 @@ function plainLanguagePreview(def: ActionDefRow, values: Record<string, string>)
   return `This will run "${def.label}"${parts ? ` with ${parts}` : ''}.`;
 }
 
+// ════════════════════════════════════════════════════════════════
+// §3 BREADTH — learned_http: actions AUTO-GENERATED from a third-party
+// OpenAPI spec (tool-learn, mig 158). The spec is UNTRUSTED input, so this
+// executor carries its own envelope on top of the normal action gate:
+//   • kill switch (platform_config 'learned_http.enabled', absent = OFF)
+//   • method allowlist; path_template must be relative
+//   • unknown ⇒ destructive: recompute risk from the method and REFUSE if the
+//     stored row understates it (a row flipped to destructive:false would
+//     otherwise skip the platform safety floor at the gate)
+//   • path params reject separators/traversal — a refusal, never an escape
+//   • header/cookie params are NEVER honoured (a model-supplied Authorization
+//     would override the connector's own credential)
+//   • FINAL rendered URL is SSRF-checked, and must be the SAME ORIGIN as the
+//     connector's base_url, so the credential can never leave that host
+//   • no redirect-follow (credentials must not ride a 3xx off-host) + timeout
+// ════════════════════════════════════════════════════════════════
+async function learnedHttpEnabled(admin: SupabaseClient): Promise<boolean> {
+  try {
+    const { data } = await admin.from('platform_config').select('value').eq('key', 'learned_http.enabled').maybeSingle();
+    return String((data as { value?: string } | null)?.value ?? '') === 'true';
+  } catch { return false; }
+}
+
+interface LearnedRender { ok: boolean; method?: string; url?: string; body?: Record<string, unknown>; error?: string; detail?: string }
+
+function renderLearnedHttp(def: ActionDefRow, ctx: Ctx, values: Record<string, string>): LearnedRender {
+  const ex = (def.execution ?? {}) as { method?: string; path_template?: string; params?: Array<{ name: string; in: string }> };
+  const rawMethod = String(ex.method ?? '').toUpperCase();
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(rawMethod)) {
+    return { ok: false, error: 'invalid_execution_recipe', detail: 'This learned action has no usable HTTP method.' };
+  }
+  // unknown ⇒ destructive.
+  if (rawMethod !== 'GET' && def.risk?.destructive !== true) {
+    return { ok: false, error: 'risk_metadata_inconsistent',
+      detail: 'This action writes to an external system but is not marked as requiring approval. Refusing to run it.' };
+  }
+  const pathTemplate = String(ex.path_template ?? '');
+  if (!pathTemplate.startsWith('/')) {
+    return { ok: false, error: 'invalid_execution_recipe', detail: 'The learned path is not a relative path.' };
+  }
+  const declared = new Map((def.param_schema ?? []).map((p) => [p.name, p]));
+  const byIn = (kind: string) => (ex.params ?? []).filter((p) => p.in === kind).map((p) => p.name);
+
+  let path = pathTemplate;
+  for (const name of byIn('path')) {
+    const v = values[name];
+    if (v === undefined) return { ok: false, error: 'params_missing', detail: `Missing path parameter "${name}".` };
+    if (/[/\\?#]/.test(v) || v.includes('..')) {
+      return { ok: false, error: 'unsafe_param', detail: `Parameter "${name}" contains characters that are not allowed in a URL path.` };
+    }
+    path = path.split(`{${name}}`).join(encodeURIComponent(v));
+  }
+  if (/\{[^}]+\}/.test(path)) {
+    return { ok: false, error: 'params_missing', detail: `Unfilled placeholders remain in the path: ${path}.` };
+  }
+
+  const qs = new URLSearchParams();
+  for (const name of byIn('query')) if (values[name] !== undefined) qs.set(name, values[name]);
+
+  // Body params re-coerced from param_schema.type — validateActionParams
+  // stringifies every value and many APIs 400 on "100" where 100 is required.
+  let body: Record<string, unknown> | undefined;
+  const bodyNames = byIn('body');
+  if (bodyNames.length) {
+    body = {};
+    for (const name of bodyNames) {
+      const raw = values[name];
+      if (raw === undefined) continue;
+      const t = String((declared.get(name) as { type?: string } | undefined)?.type ?? 'string');
+      body[name] = (t === 'number' || t === 'integer') && /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw)
+        : t === 'boolean' && (raw === 'true' || raw === 'false') ? raw === 'true'
+          : raw;
+    }
+  }
+  // header/cookie params are deliberately ignored — see the envelope note above.
+  return { ok: true, method: rawMethod, url: `${ctx.baseUrl}${path}${qs.toString() ? `?${qs}` : ''}`, body };
+}
+
+/** The rendered URL must be public AND on the connector's own origin. Origin
+ *  equality, not prefix: "https://api.example.com.evil.io/" fails this. */
+function learnedUrlAllowed(url: string, baseUrl: string): { ok: true } | { ok: false; error: string; detail: string } {
+  if (!isSafeExternalUrl(url)) {
+    return { ok: false, error: 'blocked_url', detail: 'The address this action would call is not a public address. Nothing was sent.' };
+  }
+  let sameOrigin = false;
+  try { sameOrigin = new URL(url).origin === new URL(baseUrl).origin; } catch { sameOrigin = false; }
+  if (!sameOrigin) {
+    return { ok: false, error: 'off_host_call', detail: 'This action would call a different system than the connector it belongs to. Nothing was sent.' };
+  }
+  return { ok: true };
+}
+
+/** Auth for a learned action — the CONNECTOR's own stored credential only;
+ *  never anything the spec or the model supplied. */
+function learnedAuthHeaders(ctx: Ctx): Record<string, string> {
+  const h: Record<string, string> = { Accept: 'application/json' };
+  const banned = /^(authorization|cookie|proxy-)/i;
+  if (ctx.secret.header_name && ctx.secret.header_value) {
+    h[ctx.secret.header_name] = ctx.secret.header_value;          // generic_rest vocabulary
+  } else if (ctx.secret.access_token) {
+    h.Authorization = `Bearer ${ctx.secret.access_token}`;
+  } else if (ctx.secret.api_key) {
+    h.Authorization = `Bearer ${ctx.secret.api_key}`;
+  }
+  const extra = (ctx.config?.learned_extra_headers ?? {}) as Record<string, string>;
+  for (const [k, v] of Object.entries(extra)) {
+    if (!banned.test(k) && typeof v === 'string') h[k] = v;        // operator-set, credential headers excluded
+  }
+  return h;
+}
+
 interface ActionRenderOutcome { ok: boolean; method?: string; url?: string; body?: unknown; error?: string; detail?: string }
 
 /** Render (never call out) — shared by preview_action AND the first
@@ -1325,6 +1436,16 @@ async function renderRegisteredAction(
     const rendered = renderAction(adef!.base_url_template, binding, vars, values);
     if (!rendered.ok) return { ok: false, error: rendered.error ?? 'var_missing', detail: `Missing variable(s): ${(rendered.missing ?? []).join(', ')}` };
     return { ok: true, method: rendered.method, url: rendered.url, body: rendered.body ? JSON.parse(rendered.body) : undefined };
+  }
+  if (def.provider === 'learned_http') {
+    if (!(await learnedHttpEnabled(admin))) {
+      return { ok: false, error: 'learned_http_disabled', detail: 'Running actions learned from an API spec is not enabled on this platform.' };
+    }
+    const r = renderLearnedHttp(def, ctx, values);
+    if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+    const allowed = learnedUrlAllowed(r.url!, ctx.baseUrl);
+    if (!allowed.ok) return { ok: false, error: allowed.error, detail: allowed.detail };
+    return { ok: true, method: r.method, url: r.url, body: r.body };
   }
   // Native provider — execution.execution_key names a NativeAction.
   const executionKey = String(def.execution?.execution_key ?? '');
@@ -1357,6 +1478,31 @@ async function runRegisteredAction(
       ok: true, status: res.status, raw: res.body, url: rendered.url,
       receipt: `${def.label} succeeded (HTTP ${res.status}) against ${rendered.url}.`,
     };
+  }
+  if (def.provider === 'learned_http') {
+    if (!(await learnedHttpEnabled(admin))) {
+      return { ok: false, error: 'learned_http_disabled', detail: 'Running actions learned from an API spec is not enabled on this platform.' };
+    }
+    const r = renderLearnedHttp(def, ctx, values);
+    if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+    const allowed = learnedUrlAllowed(r.url!, ctx.baseUrl);
+    if (!allowed.ok) return { ok: false, error: allowed.error, detail: allowed.detail };
+    const headers = { ...learnedAuthHeaders(ctx), ...(r.body ? { 'Content-Type': 'application/json' } : {}) };
+    const res = await httpJson(r.url!, {
+      method: r.method, headers,
+      body: r.body ? JSON.stringify(r.body) : undefined,
+      // The credential must never ride a redirect off this host, and a hung
+      // third-party API must not hold the executor open.
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.status >= 300 && res.status < 400) {
+      return { ok: false, status: res.status, error: 'redirect_not_followed',
+        detail: 'The system responded with a redirect. Credentials are never forwarded to a redirect target, so nothing further was sent.', url: r.url };
+    }
+    if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body, url: r.url };
+    return { ok: true, status: res.status, raw: res.body, url: r.url,
+      receipt: `${def.label} succeeded (HTTP ${res.status}) against ${r.url}.` };
   }
   const executionKey = String(def.execution?.execution_key ?? '');
   const native = NATIVE_ACTIONS[executionKey];
