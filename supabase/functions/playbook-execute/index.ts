@@ -95,6 +95,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 // DE answer uses; read_reference URL fetches pass the shared SSRF guard.
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1147,6 +1148,29 @@ async function executeDefinitionSteps(
               gateDecision = d.decision;
             }
           } catch { /* fail-safe default above */ }
+
+          // GI-8: semantic guardrail second-pass on a would-auto-SEND invoice (this is
+          // a monetary action outside connector-hub). Only when it would auto-send and
+          // the tenant flag is on. Shadow → null (observe-only); enforce → hit flips to
+          // awaiting_approval. FAIL CLOSED: unreadable rules or judge error → hold.
+          try {
+            const semGate = await semanticGate(admin, tenantId);
+            if (!gated && semGate.enabled) {
+              const rules = await loadBlockingRulesForJudge(admin, tenantId, invoiceRunDeId);
+              const hit = rules === null
+                ? GUARDRAIL_JUDGE_ERROR
+                : await semanticGuardrailScreen(admin, {
+                    tenantId, deId: invoiceRunDeId, surface: 'action',
+                    content: `Generate and send a renewal invoice for ${amount} cents to account ${ctx.account_id ?? 'unknown'}`,
+                    blockingRules: rules, mode: semGate.mode! });
+              if (hit) {
+                gated = true; gateDecision = 'human_gated_trust';
+                gateReasoning = hit.rule_type === 'judge_error'
+                  ? 'Semantic compliance screening was unavailable — invoice held for human approval.'
+                  : `A semantic compliance rule ("${hit.rule}") flagged this invoice — held for human approval.`;
+              }
+            }
+          } catch { /* fail-safe: a screen error leaves gated at its decide_action value */ }
 
           const { data: invoice, error: invErr } = await admin
             .from('renewal_invoices')

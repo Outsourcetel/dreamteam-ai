@@ -87,6 +87,7 @@ import { OAUTH_PROVIDERS } from '../_shared/oauthProviders.ts';
 import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { contentHash } from '../_shared/contentHash.ts';
+import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -5065,6 +5066,31 @@ serve(async (req) => {
         if (hasAmountParam && amountCents === null && decision.decision === 'auto_executed') {
           decision = { ...decision, decision: 'human_gated_trust',
             reasoning: 'The amount for this monetary action could not be determined, so it was routed to a human for approval rather than auto-executed.' };
+        }
+
+        // GI-8: semantic guardrail second-pass on the ACTION payload (rendered summary
+        // + params), only on a would-auto-execute action, only when the tenant has the
+        // flag on. Shadow mode returns null (observe-only); enforce mode returns a hit
+        // → flip to human, mirroring the amount fail-closed above. FAIL CLOSED: an
+        // unreadable ruleset or a judge error/timeout gates to a human, never executes.
+        const semGate = await semanticGate(admin, tenantId);
+        if (semGate.enabled && decision.decision === 'auto_executed') {
+          const sDeId = subjectKind === 'de' ? subjectId : null;
+          const rules = await loadBlockingRulesForJudge(admin, tenantId, sDeId);
+          const hit = rules === null
+            ? GUARDRAIL_JUDGE_ERROR
+            : await semanticGuardrailScreen(admin, {
+                tenantId, deId: sDeId, surface: 'action',
+                content: `${summary}\n\nParameters: ${JSON.stringify(validated.values)}`,
+                blockingRules: rules, mode: semGate.mode! });
+          if (hit) {
+            decision = { ...decision, decision: 'human_gated_trust',
+              guardrail_rule_id: hit.id.startsWith('__') ? null : hit.id,
+              guardrail_rule: hit.rule_type === 'judge_error' ? null : hit.rule,
+              reasoning: hit.rule_type === 'judge_error'
+                ? 'Semantic compliance screening was unavailable, so this action was routed to a human rather than auto-executed.'
+                : `A semantic compliance rule ("${hit.rule}") flagged this action, so it was routed to a human for approval.` };
+          }
         }
 
         if (decision.decision !== 'auto_executed') {

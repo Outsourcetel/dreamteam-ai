@@ -22,6 +22,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveDePersona, type DePersonaOverrides } from '../_shared/dePersona.ts';
+import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen } from '../_shared/guardrailJudge.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -163,6 +164,20 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
     } catch { /* best-effort */ }
     return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → route to a human
   }
+}
+
+// GI-8: the full answer screen = deterministic regex FIRST (cheap, always runs),
+// then the semantic judge (augments, never replaces) only when regex is clean and
+// the tenant has the flag on. Fail-closed: a rules-fetch failure routes to a human.
+// deno-lint-ignore no-explicit-any
+async function screenAnswer(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
+  const regexHit = await checkAnswerGuardrails(admin, tenantId, answer, deId);
+  if (regexHit) return regexHit;
+  const gate = await semanticGate(admin, tenantId);
+  if (!gate.enabled) return null;
+  const rules = await loadBlockingRulesForJudge(admin, tenantId, deId);
+  if (rules === null) return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → fail closed
+  return (await semanticGuardrailScreen(admin, { tenantId, deId, surface: 'answer', content: answer, blockingRules: rules, mode: gate.mode! })) as GuardrailRule | null;
 }
 
 const GUARDRAIL_BLOCK_MESSAGE =
@@ -457,7 +472,7 @@ serve(async (req) => {
         // + message escalation before serving — a rule added, floor raised, or
         // escalation matched AFTER caching must not be silently evaded (audit). If
         // it no longer clears the gate, skip the cache and take the full generate+gate path.
-        const cachedBlocked = await checkAnswerGuardrails(admin, tenantId, hit.answer, subjectDeId);
+        const cachedBlocked = await screenAnswer(admin, tenantId, hit.answer, subjectDeId);
         if (!cachedBlocked && Number(hit.confidence) >= confidenceFloor && !escalationRuleHit) {
         await admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: 'cache_hits', p_delta: 1 });
         // hits++ (best-effort read-modify-write; exactness not required)
@@ -650,7 +665,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // replay must honestly report that the answer would have been blocked.
     // The PERSISTENCE (message, human task, activity, audit, metering) is
     // real-traffic-only: a dry run must never open a real escalation.
-    const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
+    const blockedBy = await screenAnswer(admin, tenantId, parsed.answer, subjectDeId);
     if (blockedBy) {
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       if (!replayMode) {

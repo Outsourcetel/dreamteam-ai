@@ -31,6 +31,7 @@ import { resolveDePersona } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen } from '../_shared/guardrailJudge.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
 
@@ -425,9 +426,23 @@ serve(async (req) => {
     // finalizeCore returns the response PAYLOAD (not a Response) so the
     // streaming path can run the identical pipeline and emit it as an SSE
     // `final`/`blocked` event; finalize() wraps it for the JSON path.
+    // GI-8: resolve the semantic gate ONCE — used by finalizeCore's screen AND to
+    // force a semantic-enabled tenant off the token-stream (the judge cannot run
+    // per-token, so it must clear before the first byte → buffer instead).
+    const semGate = await semanticGate(admin, tenantId);
+    // deno-lint-ignore no-explicit-any
+    const screenAnswer = async (ans: string, deId: string | null): Promise<GuardrailRule | null> => {
+      const regexHit = await checkAnswerGuardrails(admin, tenantId, ans, deId);
+      if (regexHit) return regexHit;
+      if (!semGate.enabled) return null;
+      const rules = await loadBlockingRulesForJudge(admin, tenantId, deId);
+      if (rules === null) return GUARDRAIL_RESOLVER_ERROR;   // fail closed
+      return (await semanticGuardrailScreen(admin, { tenantId, deId, surface: 'answer', content: ans, blockingRules: rules, mode: semGate.mode! })) as GuardrailRule | null;
+    };
     const finalizeCore = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean): Promise<Record<string, unknown>> => {
-      // Guardrail — the DE's rules always win, even on cached answers.
-      const blockedBy = await checkAnswerGuardrails(admin, tenantId, ans, subjectDeId);
+      // Guardrail — regex first-pass then the semantic judge; the DE's rules always
+      // win, even on cached answers. Fail-closed.
+      const blockedBy = await screenAnswer(ans, subjectDeId);
       if (blockedBy) {
         if (convId) {
           await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true, delivery: 'blocked', lang });
@@ -663,11 +678,14 @@ serve(async (req) => {
     // fall through to the non-streaming path, which routes it to a human.
     // Streaming needs the direct Anthropic key (SSE passthrough); without it
     // the request falls through to the buffered path and the provider chain.
-    const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey)
+    // GI-8: a semantic-enabled tenant (shadow OR enforce) must NOT token-stream — the
+    // judge has to clear BEFORE the first byte, which only the buffered finalizeCore
+    // path can guarantee. !semGate.enabled forces those tenants to buffer.
+    const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled)
       ? await loadBlockingRules(admin, tenantId, subjectDeId) : [];
     // If screening rules can't load, do NOT stream unscreened — fall through to the
     // buffered path, whose checkAnswerGuardrails fails closed (blocks + escalates).
-    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && streamRules !== null) {
+    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && streamRules !== null) {
       const blockingRules = streamRules;
       const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
       const META = '###META###';
