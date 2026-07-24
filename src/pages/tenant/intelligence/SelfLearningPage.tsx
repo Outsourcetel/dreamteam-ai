@@ -217,7 +217,13 @@ function LearningDigestPanel() {
         {learning.recurring_issues_fixed > 0 && (
           <span className={chip}>🔁 {learning.recurring_issues_fixed} recurring issue{learning.recurring_issues_fixed === 1 ? '' : 's'} fixed{durability != null ? ` · fixes hold ${durability}%` : ''}</span>
         )}
-        <span className={chip}>✍ {amendments.adopted} amendment{amendments.adopted === 1 ? '' : 's'} adopted{amendments.fitness_samples >= 3 && amendments.fitness_avg_delta != null ? ` · fitness ${amendments.fitness_avg_delta > 0 ? '+' : ''}${amendments.fitness_avg_delta}` : ''}</span>
+        <span className={chip}>✍ {amendments.adopted} amendment{amendments.adopted === 1 ? '' : 's'} adopted</span>
+        {/* GI-6b: fitness is its OWN chip with an explicit unit + denominator (the
+            golden pass-count delta from a current-vs-proposed persona back-to-back
+            replay), gated on real measured samples so it never shows a bare number. */}
+        {amendments.fitness_samples >= 3 && amendments.fitness_avg_delta != null && (
+          <span className={chip}>🧪 fitness {amendments.fitness_avg_delta > 0 ? '+' : ''}{amendments.fitness_avg_delta} golden-pass Δ · {amendments.fitness_samples} measured</span>
+        )}
         <span className={chip}>🎓 {certifications.passed}/{certifications.runs} certification{certifications.runs === 1 ? '' : 's'} passed</span>
         <span className={chip}>✋ {volume.escalations} escalation{volume.escalations === 1 ? '' : 's'} to a human</span>
       </div>
