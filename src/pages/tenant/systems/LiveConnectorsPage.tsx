@@ -21,6 +21,7 @@ import {
   MAPPABLE_FIELDS, MAPPABLE_FIELD_HELP, HEALTH_LABELS, ConnectorHealth,
 } from '../../../lib/categoryContracts';
 import { listAdapterTemplates } from '../../../lib/connectorApi';
+import { learnToolFromSpec, listLearnedActions, setLearnedActionStatus, type LearnedAction } from '../../../lib/connectorApi';
 import type { AdapterTemplate } from '../../../lib/adapterTemplates';
 import { TemplateBuilderModal, ConnectFromTemplateModal, TemplateLibrary } from './TemplateBuilder';
 
@@ -629,6 +630,104 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
 
 // ── Page ──────────────────────────────────────────────────────────
 
+/** §3 BREADTH — teach a tool from an OpenAPI spec, then review + publish the
+ *  drafts. Nothing generated here is usable by an employee until an admin
+ *  publishes it, and every published write still passes the approval gate. */
+function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<LearnedAction[]>([]);
+  const [name, setName] = useState('');
+  const [specText, setSpecText] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try { setRows(await listLearnedActions()); } catch { setRows([]); }
+  }, []);
+  useEffect(() => { if (open) void load(); }, [open, load]);
+
+  const learn = async () => {
+    setErr(null);
+    let spec: unknown;
+    try { spec = JSON.parse(specText); } catch { setErr('That does not look like valid JSON.'); return; }
+    setBusy(true);
+    try {
+      const r = await learnToolFromSpec(name.trim() || 'Learned tool', spec, { base_url: baseUrl.trim() || undefined });
+      onToast(`Learned ${r.operation_count} action(s) as drafts — publish the ones you want your employees to use.`);
+      setSpecText(''); setName(''); setBaseUrl('');
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+
+  const flip = async (id: string, status: 'active' | 'draft') => {
+    setBusy(true); setErr(null);
+    try {
+      await setLearnedActionStatus(id, status);
+      await load();
+      onToast(status === 'active' ? 'Action published — your employees can now propose it.' : 'Action unpublished.');
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+
+  const drafts = rows.filter(r => r.status === 'draft').length;
+
+  return (
+    <div className="rounded-xl border border-dt-border bg-dt-card p-4">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-white w-full text-left">
+        <span>{open ? '▾' : '▸'}</span> Teach a tool from an API spec
+        <span className="text-[11px] font-normal text-dt-muted">
+          — paste an OpenAPI document to generate actions{rows.length > 0 ? ` · ${rows.length} learned${drafts ? `, ${drafts} awaiting review` : ''}` : ''}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-4">
+          <p className="text-[11px] text-dt-muted">
+            Generated actions arrive as <span className="text-dt-support">drafts</span>: no employee can use one until you publish it, and every
+            published write still goes through the same approval gate, guardrails and spend caps as any other action. Calls only ever go to the
+            connector's own system.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Tool name (e.g. Billing API)"
+              className="px-3 py-2 rounded-lg bg-dt-panel border border-dt-border text-xs text-dt-body placeholder:text-dt-muted" />
+            <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="Base URL (optional)"
+              className="px-3 py-2 rounded-lg bg-dt-panel border border-dt-border text-xs text-dt-body placeholder:text-dt-muted" />
+          </div>
+          <textarea value={specText} onChange={e => setSpecText(e.target.value)} rows={5} placeholder="Paste the OpenAPI (v2/v3) JSON here"
+            className="w-full px-3 py-2 rounded-lg bg-dt-panel border border-dt-border text-xs font-mono text-dt-body placeholder:text-dt-muted" />
+          {err && <div className="text-[11px] text-rose-300">{err}</div>}
+          <button disabled={busy || !specText.trim()} onClick={() => void learn()}
+            className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+            {busy ? 'Working…' : 'Learn actions from this spec'}
+          </button>
+
+          {rows.length > 0 && (
+            <div className="divide-y divide-dt-border border-t border-dt-border pt-1">
+              {rows.map(a => {
+                const destructive = a.risk?.destructive === true;
+                return (
+                  <div key={a.id} className="flex items-center gap-2 py-2 flex-wrap">
+                    <span className="text-sm text-dt-body">{a.label}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">{a.execution?.method ?? '—'}</span>
+                    {a.status === 'active'
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">published</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft — not usable yet</span>}
+                    {destructive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">writes — always human-gated</span>}
+                    <button disabled={busy} onClick={() => void flip(a.id, a.status === 'active' ? 'draft' : 'active')}
+                      className="ml-auto px-2.5 py-1 rounded-lg text-[11px] bg-slate-600 hover:bg-dt-panel text-white disabled:opacity-50 transition-colors">
+                      {a.status === 'active' ? 'Unpublish' : 'Publish'}
+                    </button>
+                    {a.description && <span className="text-[11px] text-dt-muted basis-full">{a.description}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LiveConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   // W4-R: grants + DE names for the per-card access line (read-only view of
@@ -907,6 +1006,7 @@ export default function LiveConnectorsPage() {
               )}
             </div>
           )}
+          <LearnedToolsPanel onToast={showToast} />
           {connectors.map(c => {
             const objs = objects[c.id] ?? [];
             const acts = actions[c.id] ?? [];
