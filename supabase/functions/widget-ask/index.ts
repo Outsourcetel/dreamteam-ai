@@ -32,6 +32,7 @@ import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen } from '../_shared/guardrailJudge.ts';
+import { groundedConfidence } from '../_shared/groundedConfidence.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
 
@@ -430,6 +431,27 @@ serve(async (req) => {
     // force a semantic-enabled tenant off the token-stream (the judge cannot run
     // per-token, so it must clear before the first byte → buffer instead).
     const semGate = await semanticGate(admin, tenantId);
+    // §5 grounded confidence — resolve gating ONCE (master read short-circuits when
+    // off). Used to blend min(self, grounded) into the answer's confidence, and to
+    // force a participating tenant off the token-stream: in enforce the grounded
+    // value must clear BEFORE any bytes reach the customer, which only the buffered
+    // path can guarantee (same reasoning as the semantic guardrail above).
+    let gcActive = false, gcEnforce = false, gcMode = 'shadow';
+    try {
+      const { data: gcMasterRow } = await admin.from('platform_config').select('value').eq('key', 'grounded_confidence.enabled').maybeSingle();
+      if (String((gcMasterRow as { value?: string } | null)?.value ?? '') === 'true') {
+        const [gcModeRow, gcFlag, gcVal] = await Promise.all([
+          admin.from('platform_config').select('value').eq('key', 'grounded_confidence.mode').maybeSingle(),
+          admin.rpc('is_feature_enabled_internal', { p_tenant_id: tenantId, p_feature_key: 'grounded_confidence' }),
+          admin.from('grounded_confidence_validation').select('tenant_id').eq('tenant_id', tenantId).maybeSingle(),
+        ]);
+        if (gcFlag.data === true) {
+          gcActive = true;
+          gcMode = String((gcModeRow.data as { value?: string } | null)?.value ?? '') || 'shadow';
+          gcEnforce = (gcMode === 'blended' || gcMode === 'grounded') && !!gcVal.data;
+        }
+      }
+    } catch (e) { console.error('grounded confidence gate:', e); }   // fail-open to self-report
     // deno-lint-ignore no-explicit-any
     const screenAnswer = async (ans: string, deId: string | null): Promise<GuardrailRule | null> => {
       const regexHit = await checkAnswerGuardrails(admin, tenantId, ans, deId);
@@ -681,11 +703,11 @@ serve(async (req) => {
     // GI-8: a semantic-enabled tenant (shadow OR enforce) must NOT token-stream — the
     // judge has to clear BEFORE the first byte, which only the buffered finalizeCore
     // path can guarantee. !semGate.enabled forces those tenants to buffer.
-    const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled)
+    const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && !gcActive)
       ? await loadBlockingRules(admin, tenantId, subjectDeId) : [];
     // If screening rules can't load, do NOT stream unscreened — fall through to the
     // buffered path, whose checkAnswerGuardrails fails closed (blocks + escalates).
-    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && streamRules !== null) {
+    if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && !gcActive && streamRules !== null) {
       const blockingRules = streamRules;
       const HOLD_BACK = Math.max(120, ...blockingRules.map((r) => (r.pattern ?? '').length));
       const META = '###META###';
@@ -896,6 +918,36 @@ serve(async (req) => {
     const data = await res.json();
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
+
+    // §5 GROUNDED CONFIDENCE on the PUBLIC channel. Same contract as de-answer:
+    // shadow-log grounded-vs-self, and blend only as min(self, grounded) under
+    // master+flag+mode+validation-row. A participating tenant is already forced off
+    // the token-stream above, so in enforce this clears before any byte is sent.
+    // One mutation upstream of the floor/escalation/cache gates. Fail-open on error.
+    if (gcActive) {
+      try {
+        const gc = groundedConfidence(Array.isArray(chunks) ? (chunks as Array<Record<string, number | null>>) : [], {
+          embeddingAvailable: retrievalEmbedding !== null && !matchErr,
+          sourcesCited: parsed.sources.length,
+        });
+        const self = parsed.confidence;
+        const groundedVal = gc.value;
+        const willBlend = gcEnforce && gc.expected && groundedVal !== null;
+        const effective = willBlend ? Math.min(self, groundedVal) : self;
+        admin.from('grounded_confidence_shadow_log').insert({
+          tenant_id: tenantId, de_id: subjectDeId, conversation_id: convId ?? null,
+          resolved_mode: gcEnforce ? gcMode : 'shadow', is_synthetic: false, source: 'widget',
+          self_confidence: self, grounded_confidence: groundedVal, effective_confidence: effective,
+          confidence_floor: confidenceFloor,
+          self_would_escalate: self < confidenceFloor,
+          grounded_would_escalate: groundedVal !== null && groundedVal < confidenceFloor,
+          effective_escalated: effective < confidenceFloor,
+          retrieval: gc.inputs ? { ...gc.inputs, reason: gc.reason } : { reason: gc.reason },
+          question_preview: String(question ?? '').slice(0, 160),
+        }).then(({ error }: { error: { message: string } | null }) => { if (error) console.error('gc shadow log:', error.message); });
+        if (willBlend) parsed.confidence = effective;
+      } catch (e) { console.error('grounded confidence:', e); }
+    }
     if (subjectDeId) {
       admin.rpc('record_de_token_usage', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
