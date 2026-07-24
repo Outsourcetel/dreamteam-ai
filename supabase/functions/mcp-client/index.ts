@@ -274,6 +274,20 @@ serve(async (req) => {
 
     // ════════ call_tool — fetch-only: returned + audited, never persisted ════════
     if (action === 'call_tool') {
+      // SECURITY (§3): this path invokes a third-party MCP tool with caller-supplied
+      // arguments and sends the vault-decrypted bearer — a real side effect — but it
+      // NEVER passed decide_action_execution (no destructive floor, guardrails, trust
+      // dial, spend cap, approval, or exactly-once). It is authenticated by tenant
+      // membership alone, so any member could drive an ungoverned external write.
+      // It has ZERO callers in the app, so closing it costs nothing today. MCP writes
+      // are re-enabled by REGISTERING each tool as an action_definition (provider
+      // 'mcp'), which inherits the whole gate rather than bypassing it — the §3 MCP
+      // increment. Opt-in escape hatch for that governed executor only.
+      const governed = req.headers.get('x-mcp-governed-call') === (Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? ' ');
+      if (!governed) {
+        return json({ ok: false, error: 'mcp_writes_not_governed',
+          detail: 'Calling an MCP tool directly is disabled: it would bypass the action gate (approval, guardrails, trust dial, spend caps). Register the tool as a governed action instead.' }, 403);
+      }
       const tool = String(body.tool ?? '').trim();
       if (!tool) return json({ error: 'tool_required' }, 400);
       const args = (body.args ?? {}) as Record<string, unknown>;
