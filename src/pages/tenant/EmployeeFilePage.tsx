@@ -734,6 +734,9 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
                 · {r === 'stale_certification' ? 'Certification is stale — the configuration changed after the last exam. Re-run the certification exam to refresh it.'
                   : r === 'failed_certification' ? 'The last certification exam was failed. A passing exam restores autonomy.'
                   : r === 'expired_certification' ? 'A governance certification has expired. Re-issue or re-certify to restore autonomy.'
+                  : r === 'open_critical_incident' ? 'An open critical incident is on this employee’s record. Review and close it (Record → Incidents) to restore autonomy.'
+                  : r === 'degraded_metrics' ? 'Recent run error rate is elevated (over the last 56 days). Autonomy restores automatically as new runs succeed.'
+                  : r === 'metrics_check_unavailable' ? 'The performance check could not run; autonomy is paused conservatively until it recovers.'
                   : r}
               </li>
             ))}
