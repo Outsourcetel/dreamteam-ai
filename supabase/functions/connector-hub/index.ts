@@ -5129,19 +5129,40 @@ serve(async (req) => {
       let claimRowId: string | null = null;
       if (approvedExecutionId) {
         const { data: gatedRow } = await admin.from('action_executions')
-          .select('task_id').eq('id', approvedExecutionId).eq('tenant_id', tenantId).maybeSingle();
-        const gatedTaskId = (gatedRow as { task_id?: string | null })?.task_id ?? null;
-        if (gatedTaskId) {
-          const { data: claim } = await admin.rpc('claim_gated_action_execution', {
-            p_tenant_id: tenantId, p_task_id: gatedTaskId, p_execution_id: approvedExecutionId,
-          });
-          const c = claim as { claimed?: boolean; claim_row_id?: string; existing_id?: string; receipt?: string | null } | null;
-          if (c?.claimed !== true) {
-            return json({ ok: true, gated: false, already_executed: true,
-              execution_id: c?.existing_id ?? approvedExecutionId, receipt: c?.receipt ?? null });
-          }
-          claimRowId = c.claim_row_id ?? null;
+          .select('task_id, action_definition_id, connector_id')
+          .eq('id', approvedExecutionId).eq('tenant_id', tenantId).maybeSingle();
+        const g = gatedRow as { task_id?: string | null; action_definition_id?: string; connector_id?: string } | null;
+        const gatedTaskId = g?.task_id ?? null;
+        // SECURITY (forged-approval bypass): claiming "already approved" SKIPS the entire
+        // gate above (destructive-floor, guardrails, semantic screen, amount, spend caps,
+        // trust). So the claim is MANDATORY — an id that does not resolve to a real gated
+        // row with a pending/approved task is a forged approval. Refuse; never fall through
+        // to the external call. (A 'preview' row has task_id NULL and must not qualify.)
+        if (!g || !gatedTaskId) {
+          return json({ ok: false, error: 'approval_not_found',
+            detail: 'This action was submitted as already-approved, but no approved request matches it. Nothing was sent.' }, 200);
         }
+        // Bind the approval to THIS action + connector — an approval for action A must
+        // never be replayed to execute action B (or the same action on another system).
+        if (g.action_definition_id !== def.id || g.connector_id !== connectorId) {
+          return json({ ok: false, error: 'approval_mismatch',
+            detail: 'The approval referenced does not belong to this action. Nothing was sent.' }, 200);
+        }
+        const { data: claim } = await admin.rpc('claim_gated_action_execution', {
+          p_tenant_id: tenantId, p_task_id: gatedTaskId, p_execution_id: approvedExecutionId,
+        });
+        const c = claim as { claimed?: boolean; claim_row_id?: string; existing_id?: string; receipt?: string | null; reason?: string } | null;
+        if (c?.claimed !== true) {
+          // Not approved yet / rejected → the RPC refuses (task_not_approved). Already
+          // executed → return the recorded receipt. Either way: no external call.
+          if (c?.reason) {
+            return json({ ok: false, error: 'approval_not_valid',
+              detail: 'That request has not been approved by a human, so nothing was sent.' }, 200);
+          }
+          return json({ ok: true, gated: false, already_executed: true,
+            execution_id: c?.existing_id ?? approvedExecutionId, receipt: c?.receipt ?? null });
+        }
+        claimRowId = c.claim_row_id ?? null;
       }
       const outcome = await runRegisteredAction(admin, def, ctx, validated.values);
       const finalDecision = approvedExecutionId ? 'executed_after_approval' : 'auto_executed';
