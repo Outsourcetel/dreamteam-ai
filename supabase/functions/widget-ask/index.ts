@@ -263,9 +263,13 @@ serve(async (req) => {
 
     // ── Resolve tenant from publishable key ──
     const keyHash = await sha256Hex(widgetKey.trim());
-    const { data: keyRow } = await admin.from('widget_keys').select('id, tenant_id').eq('key_hash', keyHash).eq('active', true).maybeSingle();
+    const { data: keyRow } = await admin.from('widget_keys').select('id, tenant_id, de_id').eq('key_hash', keyHash).eq('active', true).maybeSingle();
     if (!keyRow) return json({ error: 'invalid_widget_key' }, 401);
     const tenantId: string = keyRow.tenant_id;
+    // mig 323: this key may name the employee that answers it. Without it the
+    // front-DE heuristic below picks the OLDEST eligible DE, which is how a
+    // customer chat ends up with an arbitrary employee instead of the intended one.
+    const keyBoundDeId: string | null = (keyRow as { de_id?: string | null }).de_id ?? null;
 
     // In-memory check = free first line; the durable DB counter is the
     // authoritative limit (survives isolate recycling + deploys) with a
@@ -317,7 +321,12 @@ serve(async (req) => {
       .select('id, external_reply_mode, lifecycle_status, created_at').eq('tenant_id', tenantId)
       .not('lifecycle_status', 'in', '(paused,retired,archived,designed)')
       .order('created_at', { ascending: true }).limit(20);
-    const firstDe = (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null;
+    // mig 323: an explicit key→employee binding WINS. It is only honoured when
+    // that employee is still eligible (not paused/retired/archived/designed), so a
+    // retired DE can never keep fronting customer chat; otherwise fall back to the
+    // old heuristic, which keeps every pre-existing key behaving exactly as before.
+    const boundDe = keyBoundDeId ? (frontDes ?? []).find((d) => d.id === keyBoundDeId) ?? null : null;
+    const firstDe = boundDe ?? (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null;
     const subjectDeId: string | null = firstDe?.id ?? null;
     // Per-DE send mode — DE config, the channel just reads it.
     const replyMode: 'draft' | 'auto' = firstDe?.external_reply_mode === 'auto' ? 'auto' : 'draft';
@@ -713,7 +722,7 @@ serve(async (req) => {
       const META = '###META###';
 
       // Prose-first protocol: plain-text answer, then META marker + JSON tail.
-      const streamInstructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and report low confidence in the metadata. Detect the language of the user's message and write your ENTIRE answer in that same language. Write the answer as plain text — NOT as JSON. Then, on a new final line, output exactly ${META} immediately followed by a JSON object: {"confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
+      const streamInstructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and report low confidence in the metadata. Detect the language of the user's message and write your ENTIRE answer in that same language. Write the answer as plain text — NOT as JSON. Then, on a new final line, output exactly ${META} immediately followed by a JSON object: {"confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.`;
 
       const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -899,7 +908,7 @@ serve(async (req) => {
     }
 
     // The persona + fixed instructions are stable across turns → prompt-cached.
-    const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts.`;
+    const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.`;
 
     const res = await llmMessages(admin, {
       model, max_tokens: 1024,

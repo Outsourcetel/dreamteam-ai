@@ -627,7 +627,7 @@ serve(async (req) => {
     // Injection firewall (#9): document/memory content is tenant- or
     // web-sourced — marked untrusted, breakout-neutralized, and covered by
     // the standing FIREWALL_RULES the payload can never edit.
-    const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts.
+    const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.
 
 Knowledge documents:
 ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES}`;
