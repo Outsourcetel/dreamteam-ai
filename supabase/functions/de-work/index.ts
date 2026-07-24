@@ -211,7 +211,17 @@ async function reviewObjective(
       enqueued++;
     }
   } else {
-    await admin.rpc('conclude_objective_wake', { p_objective_id: obj.id, p_assessment: assessment, p_note: note });
+    // §3 def-of-done (W3): don't conclude an objective 'achieved' over a pending
+    // objective-scoped write-back. Shadow logs; enforce withholds → 'continue' so the
+    // objective stays open and re-reviews on its next wake once the evidence lands.
+    // (Pending work-item actions/drafts are already caught at the item level, W2.)
+    let concludeAssessment = assessment;
+    if (assessment === 'achieved') {
+      const ddGate = await defOfDoneGate(admin, obj.tenant_id);
+      const { withhold } = await assessAndLog(admin, obj.tenant_id, 'objective', 'objective', obj.id, obj.id, ddGate);
+      if (withhold) concludeAssessment = 'continue';
+    }
+    await admin.rpc('conclude_objective_wake', { p_objective_id: obj.id, p_assessment: concludeAssessment, p_note: note });
     if (assessment === 'blocked') {
       await admin.from('human_tasks').insert({
         tenant_id: obj.tenant_id, de_id: obj.de_id, type: 'escalation', source: 'de',

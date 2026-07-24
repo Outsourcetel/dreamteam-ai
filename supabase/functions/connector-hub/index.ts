@@ -5161,6 +5161,37 @@ serve(async (req) => {
           }).eq('id', claimRowId);
         }
         rec2 = { id: claimRowId };
+        // §3 def-of-done RECONCILE (Increment 2): the deferred action executed for real,
+        // so its origin run/objective can now honestly reach its terminal. Inert until
+        // enforce (awaiting_verification / withheld-waiting_human states don't occur in
+        // shadow). Only flips WITHHELD states toward their honest terminal on verified
+        // evidence — never touches a running/other-status run.
+        if (outcome.ok) {
+          try {
+            const { data: originRow } = await admin.from('action_executions').select('origin_kind, origin_id').eq('id', claimRowId).maybeSingle();
+            const oKind = (originRow as { origin_kind?: string | null } | null)?.origin_kind ?? null;
+            const oId = (originRow as { origin_id?: string | null } | null)?.origin_id ?? null;
+            if (oKind === 'agentic_run' && oId) {
+              const { data: verdict } = await admin.rpc('assess_definition_of_done', { p_tenant_id: tenantId, p_scope: 'agentic_run', p_scope_id: oId, p_objective_id: null });
+              if ((verdict as { verified?: boolean } | null)?.verified === true) {
+                await admin.from('agentic_step_runs').update({ status: 'completed', updated_at: new Date().toISOString() })
+                  .eq('id', oId).eq('tenant_id', tenantId).eq('status', 'awaiting_verification');
+              }
+            } else if ((oKind === 'de_work_item' || oKind === 'objective') && oId) {
+              const objId = oKind === 'objective' ? oId
+                : ((await admin.from('de_work_items').select('objective_id').eq('id', oId).maybeSingle()).data as { objective_id?: string } | null)?.objective_id ?? null;
+              if (objId) {
+                await admin.from('de_objectives').update({ next_wake_at: new Date().toISOString() })
+                  .eq('id', objId).eq('tenant_id', tenantId).eq('status', 'in_progress');
+              }
+              if (oKind === 'de_work_item') {
+                // A work item withheld to 'waiting_human' is unblocked now its action ran.
+                await admin.from('de_work_items').update({ status: 'done' })
+                  .eq('id', oId).eq('tenant_id', tenantId).eq('status', 'waiting_human');
+              }
+            }
+          } catch (e) { console.error('def-of-done reconcile:', e); }
+        }
       } else {
         const { data } = await admin.rpc('record_action_execution', {
           p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
