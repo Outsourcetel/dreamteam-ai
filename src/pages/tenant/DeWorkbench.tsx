@@ -375,7 +375,12 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                         <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
                         <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
                           className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
-                        {o.status === 'active' && (
+                        {/* An objective's real statuses are open | in_progress | blocked |
+                            achieved | abandoned (de_objectives CHECK). This was gated on
+                            'active', which is not one of them — so the only way to stop a
+                            running objective never rendered, and objectives kept waking
+                            forever (Riley's two had woken 48 times each). */}
+                        {(o.status === 'open' || o.status === 'in_progress' || o.status === 'blocked') && (
                           <button onClick={() => void handleCloseObjective(o)}
                             className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
                         )}
