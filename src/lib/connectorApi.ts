@@ -1659,3 +1659,71 @@ export async function connectFromTemplate(input: {
 export function templateSecretFields(def: AdapterDefinition): { key: string; label: string }[] {
   return AUTH_META[def.auth.type]?.secretFields ?? [];
 }
+
+// ── §3 BREADTH: teach a tool from an OpenAPI spec ────────────────────
+// Owner/admin only (enforced in tool-learn + the publish RPC). Generated
+// actions land as DRAFTS — invisible to every digital employee until an
+// admin publishes them — and even once published, execution needs the
+// platform kill switch AND still passes the full action gate.
+
+export interface LearnedAction {
+  id: string; category: string; action_key: string; label: string; description: string;
+  status: 'draft' | 'active' | 'disabled';
+  risk: { destructive?: boolean; idempotent?: boolean } | null;
+  execution: { method?: string; path_template?: string } | null;
+  learned_from_spec_id: string | null; created_at: string;
+}
+
+/** Parse an OpenAPI v2/v3 document into draft actions for a connector's category. */
+export async function learnToolFromSpec(
+  name: string, spec: unknown, opts: { base_url?: string; category?: string; max_ops?: number } = {},
+): Promise<{ spec_id: string; slug: string; operation_count: number; status: string; note?: string;
+             actions: { action_key: string; label: string; method: string; path: string }[] }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
+  const tid = await getSessionTenantId();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tool-learn`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ tenant_id: tid, name, spec, ...opts }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.error) {
+    throw new CustomerApiError(
+      data.error === 'admin_required'
+        ? 'Only a workspace owner or admin can teach a new tool from an API spec.'
+        : (data.detail ?? data.error), false);
+  }
+  if (!res.ok) throw new CustomerApiError(`HTTP ${res.status}`, false);
+  return data;
+}
+
+/** Every action learned from a spec, drafts included (for the review list). */
+export async function listLearnedActions(): Promise<LearnedAction[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('list_learned_actions', { p_tenant_id: tid });
+  if (error) raise('listLearnedActions', error);
+  return (data ?? []) as LearnedAction[];
+}
+
+/** Publish (or unpublish) a learned action. Owner/admin only, server-enforced. */
+export async function setLearnedActionStatus(
+  actionId: string, status: 'active' | 'draft' | 'disabled',
+): Promise<void> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('set_learned_action_status', {
+    p_tenant_id: tid, p_action_id: actionId, p_status: status,
+  });
+  if (error) raise('setLearnedActionStatus', error);
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (!r?.ok) {
+    throw new CustomerApiError(
+      r?.error === 'not_authorized'
+        ? 'Only a workspace owner or admin can publish a learned action.'
+        : (r?.error ?? 'Could not update that action.'), false);
+  }
+}
