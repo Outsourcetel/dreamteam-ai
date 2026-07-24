@@ -147,6 +147,7 @@ interface LearningDigest {
   period: { days: number; since: string };
   volume: { work_done: number; conversations: number; escalations: number };
   knowledge: { docs_added: number; docs_by_source: Record<string, number>; gaps_detected: number; gaps_resolved: number };
+  learning: { recurring_issues_fixed: number; fixes_held: number; fixes_reopened: number };
   quality: { evals: number; avg_score: number; prev_evals: number; prev_avg_score: number; delta: number | null; drift: boolean };
   amendments: { proposed: number; adopted: number; fitness_avg_delta: number | null; fitness_samples: number };
   certifications: { runs: number; passed: number };
@@ -169,7 +170,12 @@ function LearningDigestPanel() {
   }, [days]);
 
   if (hidden || digest === null) return null;
-  const { volume, knowledge, quality, amendments, certifications, ramp } = digest;
+  const { volume, knowledge, learning, quality, amendments, certifications, ramp } = digest;
+  // GI-6a: the closed loop on recurring problems — a real, honest "it gets
+  // measurably better" signal (amendment "fitness" is deferred to GI-6b until it
+  // can be measured without noise). Durability shown only with real sample.
+  const fixesTotal = learning.fixes_held + learning.fixes_reopened;
+  const durability = fixesTotal >= 5 ? Math.round((learning.fixes_held / fixesTotal) * 100) : null;
   const selfAuthored = Object.entries(knowledge.docs_by_source)
     .filter(([s]) => s !== 'manual' && s !== 'upload').reduce((n, [, v]) => n + v, 0);
   const trend = quality.delta == null ? 'holding steady (building signal)'
@@ -208,10 +214,19 @@ function LearningDigestPanel() {
 
       <div className="flex flex-wrap gap-1.5 mt-3">
         <span className={chip}>🕳 {knowledge.gaps_detected} gap{knowledge.gaps_detected === 1 ? '' : 's'} detected · {knowledge.gaps_resolved} resolved</span>
-        <span className={chip}>✍ {amendments.adopted} amendment{amendments.adopted === 1 ? '' : 's'} adopted{amendments.fitness_samples > 0 && amendments.fitness_avg_delta != null ? ` · fitness ${amendments.fitness_avg_delta > 0 ? '+' : ''}${amendments.fitness_avg_delta}` : ''}</span>
+        {learning.recurring_issues_fixed > 0 && (
+          <span className={chip}>🔁 {learning.recurring_issues_fixed} recurring issue{learning.recurring_issues_fixed === 1 ? '' : 's'} fixed{durability != null ? ` · fixes hold ${durability}%` : ''}</span>
+        )}
+        <span className={chip}>✍ {amendments.adopted} amendment{amendments.adopted === 1 ? '' : 's'} adopted{amendments.fitness_samples >= 3 && amendments.fitness_avg_delta != null ? ` · fitness ${amendments.fitness_avg_delta > 0 ? '+' : ''}${amendments.fitness_avg_delta}` : ''}</span>
         <span className={chip}>🎓 {certifications.passed}/{certifications.runs} certification{certifications.runs === 1 ? '' : 's'} passed</span>
         <span className={chip}>✋ {volume.escalations} escalation{volume.escalations === 1 ? '' : 's'} to a human</span>
       </div>
+      {durability != null && (
+        <p className="mt-2 text-xs text-dt-support">
+          Closed-loop durability: of {fixesTotal} fixes the workforce has applied to recurring gaps,{' '}
+          <span className="font-medium text-dt-body">{durability}% held</span> (did not recur){learning.fixes_reopened > 0 ? ` — ${learning.fixes_reopened} came back and were re-opened` : ''}.
+        </p>
+      )}
 
       {ramp.some(r => r.days_to_first_cert != null) && (
         <div className="mt-4">
