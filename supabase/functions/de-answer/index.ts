@@ -23,6 +23,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveDePersona, type DePersonaOverrides } from '../_shared/dePersona.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen } from '../_shared/guardrailJudge.ts';
+import { groundedConfidence } from '../_shared/groundedConfidence.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -652,6 +653,52 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // take the first block that is actually text (see widget-ask, DE-A2).
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
+
+    // §5: GROUNDED CONFIDENCE. Compute confidence from real retrieval support
+    // (distance/coverage/corroboration — already retrieved, free) and shadow-log it
+    // next to the model self-report. Only when a tenant has explicitly enforced AND
+    // been validated do we BLEND it as min(self, grounded) so a confidently-wrong
+    // answer can't skip escalation. Master switch absent => self_reported => ZERO
+    // change. Generate path only; fail-open (any error leaves parsed untouched).
+    if (!replayMode) {
+      try {
+        const { data: gcMasterRow } = await admin.from('platform_config').select('value').eq('key', 'grounded_confidence.enabled').maybeSingle();
+        if (String(gcMasterRow?.value ?? '') === 'true') {
+          const [gcModeRow, gcFlag, gcVal] = await Promise.all([
+            admin.from('platform_config').select('value').eq('key', 'grounded_confidence.mode').maybeSingle(),
+            admin.rpc('is_feature_enabled_internal', { p_tenant_id: tenantId, p_feature_key: 'grounded_confidence' }),
+            admin.from('grounded_confidence_validation').select('tenant_id').eq('tenant_id', tenantId).maybeSingle(),
+          ]);
+          if (gcFlag.data === true) {
+            const isSynthetic = isServiceRole || isDispatchCron;
+            const gcMode = String(gcModeRow.data?.value ?? '') || 'shadow';
+            // blended/grounded require a validation row (shadow-first, unskippable)
+            // AND exclude synthetic (cert/eval) traffic so cert floors stay calibrated.
+            const gcEnforce = (gcMode === 'blended' || gcMode === 'grounded') && !!gcVal.data && !isSynthetic;
+            const gc = groundedConfidence(Array.isArray(chunks) ? (chunks as Array<Record<string, number | null>>) : [], {
+              embeddingAvailable: qEmbedding !== null && !matchErr,
+              sourcesCited: parsed.sources.length,
+            });
+            const self = parsed.confidence;
+            const groundedVal = gc.value;
+            const willBlend = gcEnforce && gc.expected && groundedVal !== null;
+            const effective = willBlend ? Math.min(self, groundedVal) : self;
+            admin.from('grounded_confidence_shadow_log').insert({
+              tenant_id: tenantId, de_id: subjectDeId, conversation_id: convId ?? null,
+              resolved_mode: gcEnforce ? gcMode : 'shadow', is_synthetic: isSynthetic, source: 'generate',
+              self_confidence: self, grounded_confidence: groundedVal, effective_confidence: effective,
+              confidence_floor: confidenceFloor,
+              self_would_escalate: self < confidenceFloor,
+              grounded_would_escalate: groundedVal !== null && groundedVal < confidenceFloor,
+              effective_escalated: effective < confidenceFloor,
+              retrieval: gc.inputs ? { ...gc.inputs, reason: gc.reason } : { reason: gc.reason },
+              question_preview: String(question ?? '').slice(0, 160),
+            }).then(({ error }: { error: { message: string } | null }) => { if (error) console.error('gc shadow log:', error.message); });
+            if (willBlend) parsed.confidence = effective;   // the ONLY behavioral write — enforce + validated + non-synthetic
+          }
+        }
+      } catch (e) { console.error('grounded confidence:', e); }   // fail-open to self-report
+    }
     await bump('llm_calls');
     if (subjectDeId) {
       admin.rpc('record_de_token_usage', {
