@@ -28,6 +28,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
+import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -351,7 +352,8 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
-        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, params: input }),
+        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, params: input,
+          origin_kind: workItemId ? 'de_work_item' : null, origin_id: workItemId ?? null }),
       });
       const out = await res.json().catch(() => ({ error: 'bad_response' }));
       return { result: out };
@@ -807,6 +809,15 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     messages.push({ role: 'user', content: toolResults });
   }
   if (!done) { finalStatus = 'failed'; summary = 'max turns reached without completion'; }
+
+  // §3 def-of-done (W2): don't mark a work item 'done' over a required action that is
+  // still pending approval. Shadow logs; enforce withholds to 'waiting_human' (already a
+  // valid work-item status, used on escalation) until the action executes for real.
+  if (finalStatus === 'done') {
+    const ddGate = await defOfDoneGate(admin, tenantId);
+    const { withhold } = await assessAndLog(admin, tenantId, 'de_work_item', 'de_work_item', item.id, objectiveId, ddGate);
+    if (withhold) finalStatus = 'waiting_human';
+  }
 
   await admin.rpc('complete_de_work_item', { p_id: item.id, p_status: finalStatus, p_result: { summary, turns: turn }, p_error: finalStatus === 'failed' ? summary : null });
   // OTel GenAI span (#13, mig 177) — one span per autonomous task, best-effort.
