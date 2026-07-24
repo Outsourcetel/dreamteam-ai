@@ -56,6 +56,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -179,6 +180,7 @@ async function callAnthropic(
 
 async function callExecuteAction(
   tenantId: string, deId: string, connectorId: string, actionKey: string, params: Record<string, unknown>,
+  runId: string,   // §3: origin so def-of-done can correlate this run's gated actions
 ): Promise<Record<string, unknown>> {
   try {
     const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
@@ -191,6 +193,7 @@ async function callExecuteAction(
       body: JSON.stringify({
         action: 'execute_action', connector_id: connectorId, tenant_id: tenantId,
         subject_kind: 'de', subject_id: deId, action_key: actionKey, params,
+        origin_kind: 'agentic_run', origin_id: runId,
       }),
     });
     return await res.json().catch(() => ({ error: 'bad_response' }));
@@ -400,6 +403,17 @@ async function runLoop(
     for (const tu of toolUses) {
       if (tu.name === 'mark_goal_complete') {
         const summary = String(tu.input?.summary ?? 'Goal reached.');
+        // §3 def-of-done (W1): the model declaring "done" is not evidence a required
+        // gated action actually executed. Assess the run's side-effects; in enforce,
+        // withhold the terminal to the honest non-terminal 'awaiting_verification'
+        // (Increment 2's reconcile flips it to 'completed' once approval executes for
+        // real). Shadow just logs. Never blocks a genuinely-verified run.
+        const ddGate = await defOfDoneGate(admin, tenantId);
+        const { withhold, verdict } = await assessAndLog(admin, tenantId, 'agentic_run', 'agentic_run', runId, null, ddGate);
+        if (withhold) {
+          await markTerminal(admin, runId, 'awaiting_verification', { summary, def_of_done: verdict });
+          return { status: 'awaiting_verification', agentic_step_run_id: runId, summary, reason: 'required actions not yet verified' };
+        }
         await markTerminal(admin, runId, 'completed', { summary });
         return { status: 'completed', agentic_step_run_id: runId, summary };
       }
@@ -434,7 +448,7 @@ async function runLoop(
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Unknown tool "${tu.name}".`, is_error: true });
         continue;
       }
-      const execRes = await callExecuteAction(tenantId, deId, toolDef.connector_id, toolDef.action_key, tu.input);
+      const execRes = await callExecuteAction(tenantId, deId, toolDef.connector_id, toolDef.action_key, tu.input, runId);
       if (execRes.error === 'access_denied') {
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Access denied: ${execRes.detail ?? 'no permission'}`, is_error: true });
       } else if (execRes.ok && execRes.gated) {

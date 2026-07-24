@@ -4982,6 +4982,10 @@ serve(async (req) => {
       const actionKey = String(payload.action_key ?? '').trim();
       if (!actionKey) return json({ error: 'action_key_required' }, 400);
       const category = String(connector.category ?? 'other');
+      // §3 def-of-done: correlate this action back to the run/item that requested it
+      // so assess_definition_of_done can tell a "done" over a pending action.
+      const originKind = typeof payload.origin_kind === 'string' ? payload.origin_kind : null;
+      const originId = typeof payload.origin_id === 'string' ? payload.origin_id : null;
 
       const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
@@ -5104,6 +5108,7 @@ serve(async (req) => {
             p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
             p_request_summary: summary, p_receipt: null, p_result: null,
             p_task_title: taskTitle, p_task_detail: taskDetail,
+            p_origin_kind: originKind, p_origin_id: originId,
           });
           await audit('approval',
             `Action GATED — ${def.label} on ${connector.display_name || connector.provider}: ${decision.reasoning}`,
@@ -5166,6 +5171,7 @@ serve(async (req) => {
           p_request_summary: summary, p_receipt: outcome.receipt ?? null,
           p_result: { ok: outcome.ok, status: outcome.status ?? null, error: outcome.error ?? null },
           p_task_title: null, p_task_detail: null,
+          p_origin_kind: originKind, p_origin_id: originId,
         });
         rec2 = data as { id?: string };
       }
