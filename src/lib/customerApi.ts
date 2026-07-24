@@ -549,9 +549,21 @@ export async function decideHumanTask(
     })
     .eq('id', task.id)
     .eq('tenant_id', tid)
+    .eq('status', 'pending')          // idempotency: ONLY a still-pending task transitions
     .select()
-    .single();
+    .maybeSingle();
   if (error) raise('decideHumanTask', error);
+  // Double-approval / double-click guard (money & comms safety). If the task was
+  // already decided, the UPDATE matched no row (status != 'pending'). Re-running ANY
+  // of the side-effecting hooks below — invoice send, gated-action EXECUTE (a real
+  // external charge), email delivery, account/opportunity/continuity write-backs,
+  // playbook resume — would double-charge / double-send. So return early WITHOUT
+  // running a single hook. (The gated-action path re-returned the original gated row
+  // and re-called runRegisteredAction on a second approval — a real double-execute.)
+  if (!data) {
+    const { data: current } = await supabase.from('human_tasks').select('*').eq('id', task.id).eq('tenant_id', tid).maybeSingle();
+    return (current ?? task) as DBHumanTask;
+  }
 
   if (
     decision === 'approved' &&
