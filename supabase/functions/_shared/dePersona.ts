@@ -56,8 +56,21 @@ async function styleDirective(admin: SupabaseClient, tenantId: string): Promise<
   }
 }
 
+// GI-6b: a candidate persona for DRY-RUN measurement only. These are exactly the
+// intersection of resolveDePersona-visible fields ∩ 'de'-amendment-editable
+// fields (apply_entity_amendment, mig 211) — so a proposed-persona replay
+// measures only what the apply path could actually change. display_title /
+// department / responsibilities are NOT amendment-editable, so they are never
+// overridden (overriding them would measure a phantom delta).
+export interface DePersonaOverrides {
+  persona_name?: string | null;
+  description?: string | null;
+  purpose_statement?: string | null;
+}
+
 export async function resolveDePersona(
   admin: SupabaseClient, tenantId: string, deId: string | null, tenantName: string,
+  overrides?: DePersonaOverrides | null,
 ): Promise<DePersona> {
   const style = await styleDirective(admin, tenantId);
   if (!deId) {
@@ -76,7 +89,12 @@ export async function resolveDePersona(
       preamble: `You are a Digital Employee for ${tenantName}.${style}`,
     };
   }
-  const name = de.persona_name || de.name || FALLBACK_NAME;
+  // GI-6b: candidate overrides win when present (dry-run measurement); otherwise
+  // the live row is used verbatim — a normal call (overrides undefined) is byte-identical.
+  const oPersonaName = overrides?.persona_name ?? de.persona_name;
+  const oDescription = overrides?.description ?? de.description;
+  const oPurpose = overrides?.purpose_statement ?? de.purpose_statement;
+  const name = oPersonaName || de.name || FALLBACK_NAME;
   // Structured identity (DE-C4, migration 130): the founder-authored
   // display_title/purpose_statement lead when present; department is
   // the fallback role line.
@@ -85,11 +103,11 @@ export async function resolveDePersona(
     : de.department
       ? `the ${de.department} Digital Employee for ${tenantName}`
       : `a Digital Employee for ${tenantName}`;
-  const purpose = de.purpose_statement ? ` ${de.purpose_statement}` : '';
+  const purpose = oPurpose ? ` ${oPurpose}` : '';
   const responsibilities = Array.isArray(de.responsibilities) && de.responsibilities.length > 0
     ? ` You are responsible for: ${de.responsibilities.slice(0, 8).join('; ')}.`
     : '';
-  const description = de.description ? ` ${de.description}` : '';
+  const description = oDescription ? ` ${oDescription}` : '';
   return {
     name,
     preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description}${style}`,

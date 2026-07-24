@@ -21,7 +21,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
-import { resolveDePersona } from '../_shared/dePersona.ts';
+import { resolveDePersona, type DePersonaOverrides } from '../_shared/dePersona.ts';
 import { resolveDeModel, DEFAULT_MODEL } from '../_shared/deModel.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -32,6 +32,27 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// GI-6b: a proposed persona for DRY-RUN measurement only. Whitelists exactly the
+// three fields that are both resolveDePersona-visible AND 'de'-amendment-editable
+// (mig 211). Drops non-strings, empties, and unknown keys; clamps length to match
+// entity-amend's field cap. Returns null when nothing usable remains — and a null
+// override is byte-identical to a normal answer. Presence forces replay mode
+// (below), so a candidate persona can NEVER touch a real customer-facing answer.
+function sanitizeCandidatePersona(v: unknown): DePersonaOverrides | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const src = v as Record<string, unknown>;
+  const out: DePersonaOverrides = {};
+  let any = false;
+  for (const k of ['persona_name', 'description', 'purpose_statement'] as const) {
+    const raw = src[k];
+    if (typeof raw === 'string') {
+      const s = raw.trim().slice(0, 2000);
+      if (s) { out[k] = s; any = true; }
+    }
+  }
+  return any ? out : null;
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -260,7 +281,7 @@ serve(async (req) => {
 
   try {
     const reqBody = await req.json();
-    const { question, conversation_id, de_id, tenant_id, candidate_knowledge } = reqBody;
+    const { question, conversation_id, de_id, tenant_id, candidate_knowledge, candidate_persona } = reqBody;
     if (!question || typeof question !== 'string') {
       return json({ error: 'question required' }, 400);
     }
@@ -272,9 +293,14 @@ serve(async (req) => {
     // replays would be an unmetered-spend hole. Each replay also writes one
     // audit event so dry runs are visible in the audit trail, never silent.
     const candidateKnowledge = typeof candidate_knowledge === 'string' ? candidate_knowledge.trim() : '';
+    // GI-6b: a proposed-persona counterfactual (amendment fitness measurement).
+    // Its PRESENCE forces replay mode below, so every business side effect is
+    // suppressed — the candidate persona only shapes this dry-run's preamble and
+    // can never leak into a real customer answer.
+    const candidatePersona = sanitizeCandidatePersona(candidate_persona);
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
-    const replayMode = candidateKnowledge.length > 0 || reqBody.replay === true;
+    const replayMode = candidateKnowledge.length > 0 || candidatePersona !== null || reqBody.replay === true;
     const spanStart = new Date().toISOString();   // OTel (#13)
 
     // ── Auth: service/dispatch caller with an explicit tenant (what
@@ -341,7 +367,7 @@ serve(async (req) => {
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       subjectDeId = firstDe?.id ?? null;
     }
-    const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName);
+    const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName, candidatePersona);
 
     // Wave-1 activation (truth audit 2026-07-22, docs/15): the founder-set
     // trust-dial floor (answer_dock) and escalation rules now govern this
