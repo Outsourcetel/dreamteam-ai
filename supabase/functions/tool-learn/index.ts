@@ -9,11 +9,18 @@
  * connector-hub still enforces isSafeExternalUrl + destructive/trust/
  * guardrail gates. This just makes an arbitrary API authorable.
  *
- * Auth: signed-in tenant member (JWT) or service role. verify_jwt=false;
- * we resolve + check tenant membership here.
+ * Auth: workspace OWNER/ADMIN (JWT) or service role. verify_jwt=false; we resolve
+ * tenant + require the admin role here — minting write-actions against a
+ * third-party system is a workspace decision, not any member's.
+ *
+ * Generated actions are born status='draft': get_agentic_tools_for_de only emits
+ * 'active', so nothing is agent-reachable until an admin publishes it via
+ * set_learned_action_status (mig 322). Execution additionally requires the
+ * platform kill switch 'learned_http.enabled' AND still passes the full action
+ * gate (destructive floor, guardrails, trust dial, spend caps, approval).
  *
  * POST { tenant_id, name, spec (object|json-string), base_url?, category?, max_ops? }
- *   -> { spec_id, slug, operation_count, actions:[{action_key,label,method,path}] }
+ *   -> { spec_id, slug, operation_count, status:'draft', actions:[{action_key,label,method,path}] }
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -89,9 +96,14 @@ serve(async (req) => {
       const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
       const { data: u } = await admin.auth.getUser(jwt);
       if (!u?.user) return json({ error: 'unauthorized' }, 401);
-      const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
+      const { data: prof } = await admin.from('profiles').select('tenant_id, layer, role').eq('user_id', u.user.id).maybeSingle();
       const resolvedTenant = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, tenant_id);
       if (resolvedTenant !== tenant_id) return json({ error: 'forbidden' }, 403);
+      // Learning a spec mints write-actions against a third-party system for the
+      // whole workspace — an owner/admin decision, not any member's. (Even as
+      // drafts: a member could otherwise flood the registry with hundreds of rows.)
+      const isAdmin = prof?.layer === 'platform' || prof?.role === 'tenant_owner' || prof?.role === 'tenant_admin';
+      if (!isAdmin) return json({ error: 'admin_required', detail: 'Only a workspace owner or admin can teach a new tool from an API spec.' }, 403);
     }
 
     let spec = body.spec;
@@ -134,7 +146,10 @@ serve(async (req) => {
         path_template: o.path,
         params: o.param_schema.map(p => ({ name: p.name, in: p.in })),
       },
-      status: 'active',
+      // Born INACTIVE. get_agentic_tools_for_de only emits 'active', so a freshly
+      // learned write-action is NOT agent-reachable until an owner/admin reviews it
+      // and publishes via set_learned_action_status (mig 322).
+      status: 'draft',
       learned_from_spec_id: spec_id,
     }));
     const { error: insErr } = await admin.from('action_definitions')
@@ -143,6 +158,8 @@ serve(async (req) => {
 
     return json({
       spec_id, slug, operation_count: capped.length,
+      status: 'draft',
+      note: 'These actions are DRAFTS — no digital employee can use them until an owner or admin publishes them, and even then every write still passes the approval gate.',
       actions: capped.map(o => ({ action_key: o.action_key, label: o.label, method: o.method, path: o.path })),
     });
   } catch (err) {
