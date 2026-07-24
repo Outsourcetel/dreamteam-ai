@@ -6,7 +6,7 @@ import { supabase } from '../supabase';
 
 export interface MemoryRow { id: string; content: string; kind: string; subject_kind: string; subject_ref: string | null; salience: number; created_at: string }
 export interface ObjectiveRow { id: string; title: string; status: string; priority: number; due_at: string | null; created_at: string }
-export interface WorkItemRow { id: string; title: string; kind: string; status: string; scheduled_for: string; attempts: number; last_error: string | null; result: Record<string, unknown> | null; created_at: string }
+export interface WorkItemRow { id: string; title: string; kind: string; status: string; scheduled_for: string; attempts: number; last_error: string | null; result: Record<string, unknown> | null; created_at: string; depends_on: string | null }
 export interface TraceRow { id: string; run_ref: string | null; run_kind: string; seq: number; thought: string | null; tool: string | null; inputs: Record<string, unknown> | null; outputs: Record<string, unknown> | null; created_at: string }
 export interface ExceptionRow { id: string; situation: string; proposed_action: string; justification: string; status: string; outcome: string | null; learned: boolean; created_at: string }
 export interface CertRow { id: string; archetype_key: string | null; score_pct: number; threshold_pct: number; status: string; evaluated_at: string | null; created_at: string }
@@ -48,7 +48,7 @@ export const getActiveWorkAcrossDes = async (): Promise<ActiveWorkRow[]> => {
 
 export const getDeWorkItems = async (deId: string): Promise<WorkItemRow[]> => {
   const { data, error } = await supabase.from('de_work_items')
-    .select('id, title, kind, status, scheduled_for, attempts, last_error, result, created_at')
+    .select('id, title, kind, status, scheduled_for, attempts, last_error, result, created_at, depends_on')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(50);
   if (error) throw error;
   // Execution order, not insertion order (operating-model audit Q2): live

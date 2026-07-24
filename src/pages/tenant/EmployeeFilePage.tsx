@@ -108,9 +108,34 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
   const recent = work.filter(w => !['running', 'queued', 'waiting_human'].includes(w.status)).slice(0, 5);
   const name = de.persona_name ?? de.name;
 
+  // "0 completed" is not the same as "nothing happened". Work is chained: an item
+  // that needs a person parks at waiting_human and everything depending on it stays
+  // queued — correctly, but invisibly. Riley sat like this for 2.2 days showing only
+  // a zero. Say plainly that the employee is blocked ON YOU, and for how long.
+  const awaitingYou = work.filter(w => w.status === 'waiting_human');
+  const blockedIds = new Set(awaitingYou.map(w => w.id));
+  const blockedBehind = work.filter(w => w.status === 'queued' && w.depends_on && blockedIds.has(w.depends_on));
+  const oldestWaitMs = awaitingYou.length
+    ? Date.now() - Math.min(...awaitingYou.map(w => new Date(w.created_at).getTime()))
+    : 0;
+  const waitDays = Math.floor(oldestWaitMs / 86_400_000);
+  const waitHours = Math.floor(oldestWaitMs / 3_600_000);
+  const waitedFor = waitDays >= 1 ? `${waitDays} day${waitDays === 1 ? '' : 's'}`
+    : waitHours >= 1 ? `${waitHours} hour${waitHours === 1 ? '' : 's'}` : 'under an hour';
+
   return (
     <div className="space-y-5">
       {error && <Banner tone="danger">{error}</Banner>}
+
+      {awaitingYou.length > 0 && (
+        <Banner tone="warn">
+          <span className="font-semibold">{name} is waiting on you.</span>{' '}
+          {awaitingYou.length} task{awaitingYou.length === 1 ? '' : 's'} need{awaitingYou.length === 1 ? 's' : ''} a person
+          {blockedBehind.length > 0 && <> — and {blockedBehind.length} more {blockedBehind.length === 1 ? 'is' : 'are'} queued behind {blockedBehind.length === 1 ? 'it' : 'them'}</>}
+          . Longest wait: {waitedFor}.{' '}
+          <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-white">Review approvals →</button>
+        </Banner>
+      )}
 
       <MissionPanel de={de} />
 
