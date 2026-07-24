@@ -40,7 +40,10 @@ const PASS_THRESHOLD = 80;
 
 async function scenarioQuestions(admin: SupabaseClient, tenantId: string, deId: string, mode: string, count: number): Promise<Array<{ question: string; reference: string | null }>> {
   if (mode === 'golden') {
-    const { data } = await admin.from('golden_qa').select('question, expected_fragments').eq('tenant_id', tenantId).eq('active', true).limit(count);
+    // GI-6b: deterministic ORDER so a before/after fitness pair replays the SAME
+    // questions (heap order can otherwise differ between the two calls). Stable
+    // for every golden run; only matters when count < total, harmless otherwise.
+    const { data } = await admin.from('golden_qa').select('question, expected_fragments').eq('tenant_id', tenantId).eq('active', true).order('id', { ascending: true }).limit(count);
     return (data ?? []).map((g: { question: string; expected_fragments: string[] }) => ({ question: g.question, reference: Array.isArray(g.expected_fragments) && g.expected_fragments.length ? `Key facts the answer should contain: ${g.expected_fragments.join('; ')}` : null }));
   }
   if (mode === 'historical') {
@@ -88,9 +91,17 @@ serve(async (req) => {
     // is answered WITH the proposed knowledge injected (de-answer replay mode),
     // so a regression check can compare golden pass-rate with vs without it.
     const candidateKnowledge = typeof body.candidate_knowledge === 'string' ? body.candidate_knowledge.trim() : '';
+    // GI-6b: a proposed persona to replay (amendment fitness) + measure mode.
+    // In measure mode every answer + judge runs at T=0 (deterministic pass-count
+    // delta) and the judge does NOT persist (else 2×N source='simulation' rows
+    // would pollute the workforce quality/drift aggregate). de-answer sees
+    // candidate_persona (or replay:true for the baseline) → dry-run, no live writes.
+    const candidatePersona = (body.candidate_persona && typeof body.candidate_persona === 'object' && !Array.isArray(body.candidate_persona))
+      ? body.candidate_persona as Record<string, unknown> : null;
+    const measureMode = body.measure === true;
     // candidate=true marks a dry-run (patch replay or its baseline comparison):
     // certify_de_from_sim (mig 172) refuses candidate runs as cert evidence.
-    const isCandidate = candidateKnowledge.length > 0 || body.candidate === true;
+    const isCandidate = candidateKnowledge.length > 0 || candidatePersona !== null || measureMode || body.candidate === true;
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
@@ -132,7 +143,10 @@ serve(async (req) => {
       try {
         const ar = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '', 'x-dispatch-secret': secret, Authorization: `Bearer ${Deno.env.get('SUPABASE_ANON_KEY') ?? ''}` },
-          body: JSON.stringify({ question: sc.question, tenant_id, de_id, ...(candidateKnowledge ? { candidate_knowledge: candidateKnowledge } : {}) }),
+          body: JSON.stringify({ question: sc.question, tenant_id, de_id,
+            ...(candidateKnowledge ? { candidate_knowledge: candidateKnowledge } : {}),
+            ...(candidatePersona ? { candidate_persona: candidatePersona } : {}),
+            ...(measureMode ? { replay: true, temperature: 0 } : {}) }),
         });
         const aj = await ar.json().catch(() => ({}));
         if (aj.error === 'llm_not_configured') { blockedLlm = true; }
@@ -146,7 +160,7 @@ serve(async (req) => {
         try {
           const jr = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/eval-judge`, {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'x-dispatch-secret': secret, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
-            body: JSON.stringify({ tenant_id, de_id, question: sc.question, answer, reference: sc.reference, source: 'simulation', persist: true }),
+            body: JSON.stringify({ tenant_id, de_id, question: sc.question, answer, reference: sc.reference, source: 'simulation', persist: !measureMode, ...(measureMode ? { temperature: 0 } : {}) }),
           });
           const jj = await jr.json().catch(() => ({}));
           if (!jj.error) { verdict = jj.verdict; score = jj.score; dimensions = jj.dimensions; rationale = jj.rationale; }

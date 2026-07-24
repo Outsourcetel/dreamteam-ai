@@ -301,6 +301,11 @@ serve(async (req) => {
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
     const replayMode = candidateKnowledge.length > 0 || candidatePersona !== null || reqBody.replay === true;
+    // GI-6b: a caller may pin temperature ONLY on the dry-run/measurement path
+    // (fitness replay needs T=0 for a stable pass-count delta). A live customer
+    // answer can NEVER be temperature-overridden — the replayMode gate guarantees it.
+    const replayTemperature = replayMode && typeof reqBody.temperature === 'number' && Number.isFinite(reqBody.temperature)
+      ? Math.max(0, Math.min(1, reqBody.temperature)) : undefined;
     const spanStart = new Date().toISOString();   // OTel (#13)
 
     // ── Auth: service/dispatch caller with an explicit tenant (what
@@ -618,6 +623,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       // parse leak); parseModelJson now salvages truncation too, but not
       // truncating in the first place is the real fix.
       max_tokens: 1536,
+      ...(replayTemperature !== undefined ? { temperature: replayTemperature } : {}),
       system,
       messages: [{ role: 'user', content: question }],
     }, 'de-answer');

@@ -42,6 +42,10 @@ serve(async (req) => {
     const question = typeof body.question === 'string' ? body.question : '';
     const answer = typeof body.answer === 'string' ? body.answer : '';
     if (!tenant_id || !question || !answer) return json({ error: 'tenant_id, question and answer required' }, 400);
+    // GI-6b: the fitness-measurement path pins the judge to T=0 for a stable,
+    // reproducible verdict (default unset = today's behavior, byte-identical).
+    const judgeTemperature = typeof body.temperature === 'number' && Number.isFinite(body.temperature)
+      ? Math.max(0, Math.min(1, body.temperature)) : undefined;
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -91,7 +95,7 @@ serve(async (req) => {
       + `${reference ? `REFERENCE (key facts the answer should be faithful to — may be partial):\n${wrapUntrusted(reference.slice(0, 4000), 'eval-reference')}` : 'REFERENCE: none provided.'}\n\n`
       + `${kbContext ? `KNOWLEDGE BASE CONTEXT (the DE's actual sources — facts here are grounded, not invention):\n${wrapUntrusted(kbContext, 'tenant-kb')}` : 'KNOWLEDGE BASE CONTEXT: none retrieved — judge plausibility and appropriate hedging.'}`;
 
-    const res = await llmMessages(admin, { model: JUDGE_MODEL, max_tokens: 512, system, messages: [{ role: 'user', content: user }] }, 'eval-judge');
+    const res = await llmMessages(admin, { model: JUDGE_MODEL, max_tokens: 512, ...(judgeTemperature !== undefined ? { temperature: judgeTemperature } : {}), system, messages: [{ role: 'user', content: user }] }, 'eval-judge');
     if (!res.ok) return json({ error: `judge_error_${res.status}` }, 502);
     const d = await res.json();
     // Meter the judge's own spend.
