@@ -234,21 +234,54 @@ serve(async (req) => {
         } else {
           const answer = String(data.answer ?? '');
           const confidence = Math.max(0, Math.min(100, Number(data.confidence) || 0));
-          const answerLc = answer.toLowerCase();
-          const missing = (qa.expected_fragments ?? [])
-            .filter((f) => f && !answerLc.includes(f.toLowerCase()));
-          const fragsOk = missing.length === 0;
+          // GI-9: grade SEMANTICALLY via eval-judge (retires the case-insensitive
+          // substring fragment-match — a correct paraphrase that omitted a keyword
+          // was failing, and a wrong answer that contained one was passing). Mirrors
+          // de-simulate's judge call; the confidence floor stays as an ADDITIONAL gate.
+          const frags = (qa.expected_fragments ?? []).filter(Boolean);
+          const reference = frags.length ? `Key facts the answer should contain: ${frags.join('; ')}` : null;
+          let judge: Record<string, unknown> = {};
+          let judgeFailed: string | null = null;
+          try {
+            const jr = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/eval-judge`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json', 'x-dispatch-secret': dispatchSecret,
+                apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({ tenant_id: tenantId, de_id: targetDeId, question: qa.question, answer, reference, source: 'golden', golden_id: qa.id, persist: false }),
+            });
+            judge = await jr.json().catch(() => ({}));
+            if (!jr.ok || judge?.error || typeof judge?.verdict !== 'string') judgeFailed = String(judge?.error ?? `HTTP ${jr.status}`);
+          } catch (jerr) {
+            judgeFailed = String(jerr).slice(0, 120);
+          }
+          // R1 (fail-closed on INFRA, not on quality): a judge outage (budget / 5xx /
+          // unparseable) must NEVER count as a failed question or mint a 'failed'
+          // certification that would then gate a live DE. End the run honestly; the
+          // prior cert stays intact and it re-runs when the brain/budget returns.
+          if (judgeFailed !== null) {
+            finalStatus = 'blocked_llm';
+            results.push({
+              qa_id: qa.id, question: qa.question, passed: false,
+              reason: `cert exam could not be graded (judge unavailable: ${judgeFailed}) — no certification written; it re-runs when the brain/budget is available.`,
+            });
+            await saveProgress(true);
+            await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
+            return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed });
+          }
+          const verdict = String(judge.verdict);
           const confOk = confidence >= qa.min_confidence;
-          const pass = fragsOk && confOk;
+          const pass = verdict === 'pass' && confOk;   // pass verdict AND confidence floor
           if (pass) passed += 1; else failed += 1;
           const reasons: string[] = [];
-          if (!fragsOk) reasons.push(`missing fragment(s): ${missing.map((m) => `"${m}"`).join(', ')}`);
+          if (verdict !== 'pass') reasons.push(`judge verdict "${verdict}"${judge.rationale ? ` — ${String(judge.rationale).slice(0, 200)}` : ''}`);
           if (!confOk) reasons.push(`confidence ${confidence} below floor ${qa.min_confidence}`);
           results.push({
             qa_id: qa.id, question: qa.question,
             answer: answer.slice(0, 500), confidence,
             passed: pass,
-            reason: pass ? 'all fragments present, confidence at or above floor' : reasons.join('; '),
+            reason: pass ? 'judge verdict pass, confidence at or above floor' : reasons.join('; '),
           });
         }
       } catch (err) {
