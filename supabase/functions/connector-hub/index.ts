@@ -5118,18 +5118,57 @@ serve(async (req) => {
       }
 
       // ── 3. Auto-execute (or human-approved re-entry) — actually call. ──
+      // §3 EXACTLY-ONCE: on an approved re-entry, CLAIM the task at the DB (partial
+      // unique index) BEFORE the external call. A losing/racing/retry claim means the
+      // action already executed → return the recorded receipt, never call out twice.
+      let claimRowId: string | null = null;
+      if (approvedExecutionId) {
+        const { data: gatedRow } = await admin.from('action_executions')
+          .select('task_id').eq('id', approvedExecutionId).eq('tenant_id', tenantId).maybeSingle();
+        const gatedTaskId = (gatedRow as { task_id?: string | null })?.task_id ?? null;
+        if (gatedTaskId) {
+          const { data: claim } = await admin.rpc('claim_gated_action_execution', {
+            p_tenant_id: tenantId, p_task_id: gatedTaskId, p_execution_id: approvedExecutionId,
+          });
+          const c = claim as { claimed?: boolean; claim_row_id?: string; existing_id?: string; receipt?: string | null } | null;
+          if (c?.claimed !== true) {
+            return json({ ok: true, gated: false, already_executed: true,
+              execution_id: c?.existing_id ?? approvedExecutionId, receipt: c?.receipt ?? null });
+          }
+          claimRowId = c.claim_row_id ?? null;
+        }
+      }
       const outcome = await runRegisteredAction(admin, def, ctx, validated.values);
       const finalDecision = approvedExecutionId ? 'executed_after_approval' : 'auto_executed';
-      const { data: rec2 } = await admin.rpc('record_action_execution', {
-        p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
-        p_subject_kind: subjectKind, p_subject_id: subjectId,
-        p_mode: 'execute', p_params: validated.values,
-        p_decision: outcome.ok ? finalDecision : 'failed',
-        p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
-        p_request_summary: summary, p_receipt: outcome.receipt ?? null,
-        p_result: { ok: outcome.ok, status: outcome.status ?? null, error: outcome.error ?? null },
-        p_task_title: null, p_task_detail: null,
-      });
+      let rec2: { id?: string } | null = null;
+      if (claimRowId) {
+        // Approved re-entry — UPDATE the claim row (never a second insert). A failure
+        // clears resolves_task_id so a genuine retry can re-claim.
+        if (outcome.ok) {
+          await admin.from('action_executions').update({
+            receipt: outcome.receipt ?? null,
+            result: { ok: true, status: outcome.status ?? null, error: outcome.error ?? null },
+          }).eq('id', claimRowId);
+        } else {
+          await admin.from('action_executions').update({
+            decision: 'failed', resolves_task_id: null,
+            result: { ok: false, status: outcome.status ?? null, error: outcome.error ?? null },
+          }).eq('id', claimRowId);
+        }
+        rec2 = { id: claimRowId };
+      } else {
+        const { data } = await admin.rpc('record_action_execution', {
+          p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
+          p_subject_kind: subjectKind, p_subject_id: subjectId,
+          p_mode: 'execute', p_params: validated.values,
+          p_decision: outcome.ok ? finalDecision : 'failed',
+          p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
+          p_request_summary: summary, p_receipt: outcome.receipt ?? null,
+          p_result: { ok: outcome.ok, status: outcome.status ?? null, error: outcome.error ?? null },
+          p_task_title: null, p_task_detail: null,
+        });
+        rec2 = data as { id?: string };
+      }
 
       // GI-1 — record REAL spend so the per-DE spend ledger accumulates and the
       // cumulative daily/monthly caps in decide_action_execution actually bite
