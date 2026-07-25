@@ -96,6 +96,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
+import { matchPattern } from '../_shared/guardrailMatch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1024,11 +1025,11 @@ async function executeDefinitionSteps(
         { pattern?: string; on_violation?: string } | undefined;
       if (prevRule?.pattern && !(prev.output?.rule_checked) && ['done', 'skipped'].includes(prev.status)) {
         const hay = `${prev.detail} ${JSON.stringify(prev.output ?? {})}`;
-        let hit = false; let hitFrag = '';
-        for (const frag of String(prevRule.pattern).split('|').map((p) => p.trim()).filter(Boolean)) {
-          try { hit = new RegExp(frag, 'i').test(hay); } catch { hit = hay.toLowerCase().includes(frag.toLowerCase()); }
-          if (hit) { hitFrag = frag; break; }
-        }
+        // Shared matcher (_shared/guardrailMatch.ts) — same grouping fix as
+        // the answer paths, so a step rule means what its author wrote.
+        const stepMatch = matchPattern(String(prevRule.pattern), hay);
+        const hit = stepMatch !== null;
+        const hitFrag = stepMatch ?? '';
         prev.output = { ...(prev.output ?? {}), rule_checked: true, rule_violated: hit };
         if (hit) {
           const behavior = String(prevRule.on_violation ?? 'escalate');

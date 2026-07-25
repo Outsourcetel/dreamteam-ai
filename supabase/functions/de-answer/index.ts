@@ -30,6 +30,7 @@ import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } from '../_shared/conversation.ts';
+import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -141,16 +142,11 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
       });
     if (!Array.isArray(rules)) return GUARDRAIL_RESOLVER_ERROR;   // screening didn't run → fail closed
     const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
-    const text = answer.toLowerCase();
-    for (const r of blocking as GuardrailRule[]) {
-      if (!r.pattern) continue;
-      for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
-        let hit = false;
-        try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
-        if (hit) return r;
-      }
-    }
-    return null;
+    // Shared matcher (_shared/guardrailMatch.ts): the WHOLE pattern is one
+    // regex, so a rule author's grouping survives. The old per-'|'-fragment
+    // loop shredded `what is your (pin|cvv|ssn)` into bare `ssn` and blocked
+    // any answer that merely mentioned one.
+    return findBlockingMatch(blocking as GuardrailRule[], answer)?.rule ?? null;
   } catch (e) {
     // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
     // is no longer SILENT — a durable incident lands on the employee's record

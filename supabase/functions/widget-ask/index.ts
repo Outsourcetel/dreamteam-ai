@@ -36,6 +36,7 @@ import { groundedConfidence } from '../_shared/groundedConfidence.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type CustomerState, type Turn } from '../_shared/conversation.ts';
+import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -99,16 +100,9 @@ interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: 
 // Pure matcher — shared by the JSON path, the streaming flush loop, and the
 // final re-check so all three apply IDENTICAL blocking logic.
 function matchBlockingRule(blocking: GuardrailRule[], answer: string): GuardrailRule | null {
-  const text = answer.toLowerCase();
-  for (const r of blocking) {
-    if (!r.pattern) continue;
-    for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
-      let hit = false;
-      try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
-      if (hit) return r;
-    }
-  }
-  return null;
+  // Shared matcher (_shared/guardrailMatch.ts) — see the note there on why the
+  // per-'|'-fragment loop this replaces enforced broader rules than were written.
+  return findBlockingMatch(blocking, answer)?.rule ?? null;
 }
 
 // deno-lint-ignore no-explicit-any

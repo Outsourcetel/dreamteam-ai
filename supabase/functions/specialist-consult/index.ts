@@ -57,6 +57,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { resolveDeModel } from '../_shared/deModel.ts';
+import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -116,16 +117,9 @@ async function checkAnswerGuardrails(admin: SupabaseClient, tenantId: string, an
       });
     if (!Array.isArray(rules)) return null;
     const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
-    const text = answer.toLowerCase();
-    for (const r of blocking as GuardrailRule[]) {
-      if (!r.pattern) continue;
-      for (const frag of r.pattern.split('|').map((p) => p.trim().toLowerCase()).filter(Boolean)) {
-        let hit = false;
-        try { hit = new RegExp(frag, 'i').test(answer); } catch { hit = text.includes(frag); }
-        if (hit) return r;
-      }
-    }
-    return null;
+    // Shared matcher (_shared/guardrailMatch.ts) — identical blocking contract
+    // to de-answer, now including the grouping fix.
+    return findBlockingMatch(blocking as GuardrailRule[], answer)?.rule ?? null;
   } catch { return null; }
 }
 
