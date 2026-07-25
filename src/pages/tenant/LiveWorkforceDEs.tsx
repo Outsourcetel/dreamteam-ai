@@ -1798,6 +1798,66 @@ function DeSpecialistsPanel({ deId }: { deId: string }) {
   );
 }
 
+// ── Voice & Conversation panel (migration 325/327). The employee's MANNER,
+// kept deliberately separate from Identity & Purpose: identity says who it is,
+// this says how it sounds. Facts are untouched either way — every factual claim
+// still comes from the knowledge documents, which is what certification grades.
+function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const [voice, setVoice] = useState((de as { voice?: string | null }).voice ?? '');
+  const [turns, setTurns] = useState(String((de as { context_turns?: number }).context_turns ?? 8));
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    const n = parseInt(turns, 10);
+    const { data, error: err } = await supabase.rpc('set_de_voice', {
+      p_de_id: de.id,
+      p_voice: voice.trim(),
+      p_context_turns: Number.isFinite(n) ? Math.max(0, Math.min(30, n)) : 8,
+    });
+    if (err) setError(err.message);
+    else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
+    setBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Voice &amp; Conversation</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">feeds every answer</span>
+        {!voice.trim() && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-page text-dt-muted border border-dt-border">using house voice</span>}
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        How this employee should <em>sound</em> — tone, warmth, how long its replies run. Leave it blank
+        and it uses the house voice: reads the room, matches the person's register, skips the padding.
+        This never loosens the facts; every factual claim still comes from the knowledge documents.
+      </p>
+      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      <div className="space-y-2">
+        <textarea value={voice} disabled={busy} onChange={e => setVoice(e.target.value)} rows={3}
+          placeholder={'Voice — e.g. Calm and precise. Never more than three sentences unless asked for detail. Plain English, no jargon, no exclamation marks.'}
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+        <label className="flex items-center gap-2 text-[11px] text-dt-muted">
+          <span className="whitespace-nowrap">Remembers the last</span>
+          <input type="number" min={0} max={30} value={turns} disabled={busy}
+            onChange={e => setTurns(e.target.value)}
+            className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          <span>messages of a conversation. 0 answers each message in isolation; higher costs more per reply.</span>
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button onClick={() => void save()} disabled={busy}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save voice'}
+        </button>
+        {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
+      </div>
+    </div>
+  );
+}
+
 // ── Identity & Purpose panel (DE-C4, migration 130). These fields
 // are consumed for real: display_title + purpose_statement feed the
 // system prompt of every answer this employee gives (dePersona), and
@@ -3655,6 +3715,7 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
             review card. */}
         <DeAmendmentBlock de={de} />
         <DeIdentityPanel de={de} onUpdated={onUpdated} />
+        <DeVoicePanel de={de} onUpdated={onUpdated} />
         <DeProfileFieldsPanel de={de} onUpdated={onUpdated} />
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
       </div>
