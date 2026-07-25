@@ -19,12 +19,14 @@
 -- into the bare fragments 'cvv', 'password', 'ssn', so it fired on ANY mention.
 --
 -- MEASURED, not assumed. Replayed all 17 historical guardrail blocks whose
--- draft text survives in human_tasks. 5 of the 14 that still reproduce under
--- today's patterns were caused purely by this shredding -- including a credit
--- union employee telling a customer "do NOT share your SSN with anyone who
--- contacts you", blocked five separate times by the rule that exists to stop it
--- ASKING for an SSN. The rule punished the exact behaviour it was written to
--- produce.
+-- draft text survives in human_tasks, in BOTH the JS engine and POSIX -- both
+-- agree exactly: 17/17 blocked before, 9/17 after, 8 cleared, ZERO newly
+-- blocked. Among the cleared: a credit-union employee telling a customer "do
+-- NOT share your SSN with anyone who contacts you", blocked five separate times
+-- by the rule that exists to stop it ASKING for an SSN. The rule punished the
+-- exact behaviour it was written to produce. The one genuine catch in the set
+-- (an insurance employee saying a hit-and-run "is covered", against "Never
+-- guarantee that a loss is covered") stays blocked.
 --
 -- This is a governance-integrity defect, not merely a quality one: the rule
 -- ENFORCED was broader than the rule DISPLAYED in the UI and agreed to by the
@@ -36,6 +38,13 @@
 -- compile it whole -- so this is a no-op for them and restores authored intent
 -- on the one. Un-compilable patterns still fall back to LITERAL fragment
 -- matching (never regex), so a malformed pattern cannot silently stop blocking.
+--
+-- NOT a fix for meaning. Verified: this does NOT recover the certification-exam
+-- answer that said a grant "doesn't skip approvals" -- that phrase contains the
+-- forbidden phrase. No pattern can separate doing from describing; that is what
+-- GI-10 adjudication is for. Word boundaries were tested and rejected: they
+-- would silently disable the live clinical rule (\bdiagnos\b stops matching
+-- "diagnoses", "diagnosis" AND "diagnose").
 --
 -- Reproduced verbatim from the live definition (pg_get_functiondef); the ONLY
 -- change is the matching block. GLOBAL, no flag: a rule should mean what it says.
@@ -75,28 +84,28 @@ begin
   loop
     if v_rule.pattern is null then continue; end if;
     -- mig 328: match the WHOLE pattern as ONE case-insensitive regex. The old
-    -- loop split on '|' first and then matched each fragment, which shredded any
-    -- grouping the rule author wrote -- turning
+    -- code split on '|' FIRST and then matched each fragment as its own regex,
+    -- which shredded any grouping the rule author wrote -- turning
     --   what is your (pin|cvv|password|ssn|social security)|tell me your (...)
-    -- into the bare fragments 'cvv', 'password', 'ssn'. Verified against 17 real
-    -- historical blocks: that shredding, not the rule, caused the false positives.
-    -- POSIX ~* understands | and () exactly as the rule author intended.
+    -- into the bare fragments 'cvv', 'password', 'ssn', so the rule fired on ANY
+    -- mention of them. POSIX ~* understands | and () as the author intended.
     begin
       v_hit := v_text ~* v_rule.pattern;
     exception when others then
       -- Not a valid regex -> the author meant literal phrases split by '|'.
+      -- Literal only, never regex: a fragment that failed to compile as part of
+      -- a whole is not meaningful as a regex on its own.
       v_hit := false;
       foreach v_frag in array string_to_array(v_rule.pattern, '|') loop
         v_frag := trim(both from lower(v_frag));
         if v_frag <> '' and position(v_frag in v_text) > 0 then v_hit := true; exit; end if;
       end loop;
     end;
-      if v_hit then
-        return jsonb_build_object('decision', 'guardrail_blocked',
-          'guardrail_rule_id', v_rule.id, 'guardrail_rule', v_rule.rule, 'trust_level', null,
-          'reasoning', format('Blocked: guardrail rule "%s" matched this action — routed to a human regardless of trust. Guardrails always win over the trust dial.', v_rule.rule));
-      end if;
-    end loop;
+    if v_hit then
+      return jsonb_build_object('decision', 'guardrail_blocked',
+        'guardrail_rule_id', v_rule.id, 'guardrail_rule', v_rule.rule, 'trust_level', null,
+        'reasoning', format('Blocked: guardrail rule "%s" matched this action — routed to a human regardless of trust. Guardrails always win over the trust dial.', v_rule.rule));
+    end if;
   end loop;
 
   -- 1.5) Amount guardrail (require_approval_over_cents).
