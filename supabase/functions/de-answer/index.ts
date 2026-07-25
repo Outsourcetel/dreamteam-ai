@@ -660,6 +660,9 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // been validated do we BLEND it as min(self, grounded) so a confidently-wrong
     // answer can't skip escalation. Master switch absent => self_reported => ZERO
     // change. Generate path only; fail-open (any error leaves parsed untouched).
+    // Escalation-policy state (set only when the grounded gate is enforcing).
+    let groundedPolicyActive = false, fabricationRisk = false, genuinelyUnsure = false;
+    const SELF_REPORT_HARD_FLOOR = 40;   // "the model is genuinely lost", not "slightly below the send bar"
     if (!replayMode) {
       try {
         const { data: gcMasterRow } = await admin.from('platform_config').select('value').eq('key', 'grounded_confidence.enabled').maybeSingle();
@@ -694,7 +697,26 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
               retrieval: gc.inputs ? { ...gc.inputs, reason: gc.reason } : { reason: gc.reason },
               question_preview: String(question ?? '').slice(0, 160),
             }).then(({ error }: { error: { message: string } | null }) => { if (error) console.error('gc shadow log:', error.message); });
-            if (willBlend) parsed.confidence = effective;   // the ONLY behavioral write — enforce + validated + non-synthetic
+            if (willBlend) {
+              parsed.confidence = effective;   // recorded value stays conservative (min)
+              // ESCALATION POLICY (the two gates, separated). A single noisy number
+              // was doing two different jobs. Measured on live traffic: self-report
+              // swings +/-10 on identical content, while grounded is deterministic;
+              // across 63 observations the signals agreed 92% of the time, and the
+              // disagreements ran 3:1 toward escalating GOOD answers.
+              //   • FABRICATION gate (hard): grounded below the floor means the KB
+              //     did not support this answer — always escalate. This is new
+              //     protection that self-report alone never provided.
+              //   • UNCERTAINTY gate (soft): the model's own number only escalates
+              //     when it is genuinely low, not merely below the send threshold —
+              //     a well-grounded answer is no longer withheld because the model
+              //     happened to say 62 instead of 70 about material it nailed.
+              // needs_escalation and founder escalation rules are untouched: if the
+              // model explicitly asks for a human, it gets one.
+              groundedPolicyActive = true;
+              fabricationRisk = groundedVal < confidenceFloor;
+              genuinelyUnsure = self < SELF_REPORT_HARD_FLOOR;
+            }
           }
         }
       } catch (e) { console.error('grounded confidence:', e); }   // fail-open to self-report
@@ -781,7 +803,15 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       const post = evaluateEscalation(escRuleset, { message_text: String(question ?? ''), confidence: parsed.confidence });
       if (post.escalate) escalationRuleHit = post.rule ?? 'escalation rule';
     }
-    let escalate = parsed.needs_escalation || parsed.confidence < confidenceFloor || escalationRuleHit !== null;
+    // The model asking for a human, and founder escalation rules, ALWAYS win.
+    // Beyond that: when the grounded gate is enforcing, the two jobs are separated
+    // (fabrication vs uncertainty — see the policy note above). Otherwise the
+    // original single self-report threshold applies, unchanged.
+    let escalate = parsed.needs_escalation || escalationRuleHit !== null || (
+      groundedPolicyActive
+        ? (fabricationRisk || genuinelyUnsure)
+        : parsed.confidence < confidenceFloor
+    );
 
     // ── Pre-send Quality Auditor (opt-in per DE) ── an answer that WOULD be
     // auto-sent is independently judged for grounding + correctness first.

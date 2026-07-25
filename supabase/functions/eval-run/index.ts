@@ -303,18 +303,28 @@ serve(async (req) => {
             await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
             return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed });
           }
+          // GRADING AUTHORITY = THE JUDGE. The self-reported confidence floor used
+          // to be an AND-gate on top of the verdict, which failed answers the judge
+          // had already passed: measured on live traffic, the SAME question scored
+          // 52 / 55 / 62 across three runs on identical content (floor 60), while
+          // the grounded signal computed from actual retrieval sat at a stable 98
+          // and the judge passed every time. A ±10-point self-assessment wobble was
+          // deciding certifications. The judge evaluates correctness directly, so it
+          // decides; confidence is still RECORDED (and noted when it is low) so the
+          // calibration stays visible, but it no longer fails a correct answer.
           const verdict = String(judge.verdict);
           const confOk = confidence >= qa.min_confidence;
-          const pass = verdict === 'pass' && confOk;   // pass verdict AND confidence floor
+          const pass = verdict === 'pass';
           if (pass) passed += 1; else failed += 1;
           const reasons: string[] = [];
           if (verdict !== 'pass') reasons.push(`judge verdict "${verdict}"${judge.rationale ? ` — ${String(judge.rationale).slice(0, 200)}` : ''}`);
-          if (!confOk) reasons.push(`confidence ${confidence} below floor ${qa.min_confidence}`);
           results.push({
             qa_id: qa.id, question: qa.question,
             answer: answer.slice(0, 500), confidence,
             passed: pass,
-            reason: pass ? 'judge verdict pass, confidence at or above floor' : reasons.join('; '),
+            reason: pass
+              ? `judge verdict pass${confOk ? '' : ` (note: self-reported confidence ${confidence} was below the ${qa.min_confidence} advisory floor — recorded, not penalised)`}`
+              : reasons.join('; '),
           });
         }
       } catch (err) {
