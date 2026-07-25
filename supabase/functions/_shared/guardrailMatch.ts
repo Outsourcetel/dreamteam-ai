@@ -105,3 +105,23 @@ export function legacyFragmentMatch(pattern: string | null | undefined, text: st
   }
   return null;
 }
+
+/**
+ * Blank out the FIRST occurrence of `matched`, preserving every offset.
+ *
+ * This is what makes clearing safe. Clearing keyed on a rule ID would mean a
+ * benign match of one phrase releases a genuine match of another phrase in the
+ * SAME rule — an adversarial reviewer built a case where "we never disclose PHI
+ * without authorization … I've attached the patient record without the signed
+ * auth" gets released because the first clause adjudicates as descriptive.
+ * Masking the cleared phrase and re-running the WHOLE matcher over ALL rules
+ * means anything still matching keeps the block.
+ *
+ * U+FFFD appears in no authored pattern.
+ */
+export function maskFirst(text: string, matched: string): string {
+  if (!matched) return text;
+  const i = text.toLowerCase().indexOf(matched.toLowerCase());
+  if (i < 0) return text;
+  return text.slice(0, i) + '�'.repeat(matched.length) + text.slice(i + matched.length);
+}

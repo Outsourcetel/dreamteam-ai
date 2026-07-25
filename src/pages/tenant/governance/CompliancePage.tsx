@@ -14,6 +14,7 @@ import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 import { ConfirmDeleteModal } from '../../../components'
 import GovernanceAIPanel from '../../../components/GovernanceAIPanel'
+import GuardrailAdjudicationPanel from '../../../components/GuardrailAdjudicationPanel'
 import { listPendingProposals, approveProposal, dismissProposal, type GovernanceProposal } from '../../../lib/governanceAiApi'
 
 // ═══════════════════════════════════════════════════════════════
@@ -196,6 +197,9 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               </div>
             ))}
           </div>
+
+          {/* GI-10: the human grant + the receipt, next to the rules they govern. */}
+          <GuardrailAdjudicationPanel rules={rules} />
 
           <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
             <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">

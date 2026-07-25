@@ -147,6 +147,10 @@ const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }
   connector_action: { label: 'Connector action', style: 'bg-cyan-500/15 text-cyan-300' },
   evidence_step: { label: 'Evidence step', style: 'bg-teal-500/15 text-teal-300' },
   access_control: { label: 'Data access', style: 'bg-rose-500/15 text-rose-300' },
+  // GI-10. Deliberately its own label and colour: an overturn is NOT a block,
+  // and counting it as one would hide the single event type a regulator most
+  // needs to find — a machine releasing content a control had stopped.
+  guardrail_adjudication: { label: 'Guardrail OVERTURNED', style: 'bg-amber-500/20 text-amber-200 font-semibold' },
 }
 
 // ─────────────────────────────────────────────────────────────────

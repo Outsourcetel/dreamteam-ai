@@ -49,7 +49,8 @@ export interface GuardrailRule {
 export type AuditCategory =
   | 'resolved' | 'escalated' | 'approval' | 'guardrail_check'
   | 'guardrail_block' | 'config_change' | 'playbook_step' | 'invoice'
-  | 'connector_sync' | 'connector_action' | 'evidence_step' | 'access_control';
+  | 'connector_sync' | 'connector_action' | 'evidence_step' | 'access_control'
+  | 'guardrail_adjudication';   // GI-10: a machine overturned a deterministic block
 
 export interface AuditEvent {
   id: string;
@@ -249,4 +250,76 @@ export async function verifyAuditChain(): Promise<ChainVerification> {
   if (error) raise('verifyAuditChain', error);
   const d = data as { intact?: boolean; checked?: number; broken_at?: string | null };
   return { intact: !!d?.intact, checked: Number(d?.checked ?? 0), broken_at: d?.broken_at ?? null };
+}
+
+// ── GI-10: guardrail adjudication ───────────────────────────────────────────
+// A machine may clear a deterministic guardrail match ONLY on a rule a human
+// has explicitly opted in, with a written justification. These are the read and
+// write surfaces for that decision; the write is an RPC, never a table update —
+// guardrail_rule_adjudicable revokes INSERT/UPDATE/DELETE from authenticated
+// precisely so the permission cannot be granted without the audit record.
+
+export interface AdjudicableGrant {
+  rule_id: string;
+  granted_at: string;
+  justification: string;
+}
+
+export interface Adjudication {
+  id: string;
+  de_id: string | null;
+  conversation_id: string | null;
+  rule_id: string | null;
+  rule_text: string | null;
+  matched_text: string | null;
+  assessment: 'describes' | 'enacts' | 'unclear' | 'error' | null;
+  confidence: number | null;
+  rationale: string | null;
+  model: string | null;
+  provider: string | null;
+  mode: 'shadow' | 'enforce' | null;
+  would_clear: boolean;
+  applied: boolean;
+  reason: string | null;
+  cache_hit: boolean | null;
+  duration_ms: number | null;
+  content_preview: string | null;
+  question_preview: string | null;
+  created_at: string;
+}
+
+/** Which rules a human has made machine-clearable in this workspace. */
+export async function listAdjudicableRules(): Promise<AdjudicableGrant[]> {
+  const { data, error } = await supabase
+    .from('guardrail_rule_adjudicable')
+    .select('rule_id, granted_at, justification');
+  if (error) throw error;
+  return (data ?? []) as AdjudicableGrant[];
+}
+
+/**
+ * Grant or revoke "a machine may clear a false match on this rule".
+ * Owner/admin only, 40-character justification required, and compliance-pack
+ * rules additionally need the owner override — all enforced server-side.
+ */
+export async function setRuleAdjudicable(ruleId: string, on: boolean, justification: string) {
+  const { data, error } = await supabase.rpc('set_rule_adjudicable', {
+    p_rule_id: ruleId, p_on: on, p_justification: justification,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** The decision log — every adjudication, both shadow and enforce. */
+export async function listAdjudications(days = 30, limit = 200): Promise<Adjudication[]> {
+  let q = supabase.from('guardrail_adjudications')
+    .select('id, de_id, conversation_id, rule_id, rule_text, matched_text, assessment, confidence, rationale, model, provider, mode, would_clear, applied, reason, cache_hit, duration_ms, content_preview, question_preview, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (days !== null) {
+    q = q.gte('created_at', new Date(Date.now() - days * 86400_000).toISOString());
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as Adjudication[];
 }

@@ -31,6 +31,7 @@ import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } from '../_shared/conversation.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
+import { adjudicateRegexHit, type AdjHit } from '../_shared/guardrailAdjudicator.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -146,7 +147,11 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
     // regex, so a rule author's grouping survives. The old per-'|'-fragment
     // loop shredded `what is your (pin|cvv|ssn)` into bare `ssn` and blocked
     // any answer that merely mentioned one.
-    return findBlockingMatch(blocking as GuardrailRule[], answer)?.rule ?? null;
+    // Carry the matched TEXT alongside the rule: the adjudicator cannot judge
+    // a hit it cannot see, and the audit record needs the exact trigger. A
+    // widened copy — every downstream consumer reads only .id/.rule/.rule_type.
+    const m = findBlockingMatch(blocking as GuardrailRule[], answer);
+    return m ? { ...m.rule, matched_text: m.matched } : null;
   } catch (e) {
     // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
     // is no longer SILENT — a durable incident lands on the employee's record
@@ -168,9 +173,29 @@ async function checkAnswerGuardrails(admin: any, tenantId: string, answer: strin
 // then the semantic judge (augments, never replaces) only when regex is clean and
 // the tenant has the flag on. Fail-closed: a rules-fetch failure routes to a human.
 // deno-lint-ignore no-explicit-any
-async function screenAnswer(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
+async function screenAnswer(
+  admin: any, tenantId: string, answer: string, deId: string | null,
+  // onClear is request-scoped ON PURPOSE. A module-scope flag would leak
+  // across requests in a warm isolate and suppress caching for later,
+  // unrelated answers.
+  ctx: { question: string; actor: string; conversationId: string | null; replay: boolean; onClear?: () => void },
+): Promise<GuardrailRule | null> {
   const regexHit = await checkAnswerGuardrails(admin, tenantId, answer, deId);
-  if (regexHit) return regexHit;
+  if (regexHit) {
+    // GI-10: the deterministic filter has recall but no precision. Ask whether
+    // this answer ENACTS the prohibited act or DESCRIBES the control against
+    // it. Inert unless five independent things are true (see the adjudicator);
+    // every failure path returns the block unchanged.
+    const adj = await adjudicateRegexHit(admin, {
+      tenantId, deId, conversationId: ctx.conversationId, actor: ctx.actor,
+      question: ctx.question, content: answer, hit: regexHit as AdjHit, replay: ctx.replay,
+    });
+    if (adj.outcome === 'blocked') return adj.hit as GuardrailRule;
+    ctx.onClear?.();
+    // CLEARED → fall through. Deliberately NOT `return null`: a cleared answer
+    // still gets the full GI-8 clean-branch screen, so tripping a regex can
+    // never leave an answer LESS screened than never tripping one.
+  }
   const gate = await semanticGate(admin, tenantId);
   if (!gate.enabled) return null;
   const rules = await loadBlockingRulesForJudge(admin, tenantId, deId);
@@ -464,6 +489,13 @@ serve(async (req) => {
 
     if (!replayMode) await bump('inquiries');
 
+    // GI-10: set when an adjudication cleared a block during THIS request. A
+    // cleared answer is DELIVERED but never written to the tenant-wide cache —
+    // the relaxation stays bound to the request it was judged for, so flipping
+    // the kill switch can never produce a block storm from cached content.
+    let adjudicatedClear = false;
+    const noteClear = () => { adjudicatedClear = true; };
+
     // ── Semantic answer cache (checked BEFORE any LLM call) ──
     // Cold opens ONLY. A follow-up's meaning lives in the thread, not in its
     // own words: "how much is that?" or "the other one" or "thanks, that
@@ -486,7 +518,8 @@ serve(async (req) => {
         // + message escalation before serving — a rule added, floor raised, or
         // escalation matched AFTER caching must not be silently evaded (audit). If
         // it no longer clears the gate, skip the cache and take the full generate+gate path.
-        const cachedBlocked = await screenAnswer(admin, tenantId, hit.answer, subjectDeId);
+        const cachedBlocked = await screenAnswer(admin, tenantId, hit.answer, subjectDeId,
+          { question, actor: persona.name, conversationId: convId, replay: replayMode, onClear: noteClear });
         if (!cachedBlocked && Number(hit.confidence) >= confidenceFloor && !escalationRuleHit) {
         await admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: 'cache_hits', p_delta: 1 });
         // hits++ (best-effort read-modify-write; exactness not required)
@@ -751,7 +784,8 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // replay must honestly report that the answer would have been blocked.
     // The PERSISTENCE (message, human task, activity, audit, metering) is
     // real-traffic-only: a dry run must never open a real escalation.
-    const blockedBy = await screenAnswer(admin, tenantId, parsed.answer, subjectDeId);
+    const blockedBy = await screenAnswer(admin, tenantId, parsed.answer, subjectDeId,
+      { question, actor: persona.name, conversationId: convId, replay: replayMode, onClear: noteClear });
     if (blockedBy) {
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       if (!replayMode) {
@@ -870,7 +904,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // ── Semantic cache write (only good, non-escalated answers; never
     // answers built from scoped docs — the cache is tenant-wide; never a
     // follow-up, whose answer was shaped by turns the next asker won't have) ──
-    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode && !isFollowUp) {
+    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode && !isFollowUp && !adjudicatedClear) {
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,
