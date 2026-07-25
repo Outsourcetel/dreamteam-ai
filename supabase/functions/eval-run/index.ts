@@ -160,6 +160,17 @@ serve(async (req) => {
       if (existing.status !== 'running') return json({ error: 'run_already_finished', status: existing.status }, 400);
       runId = existing.id;
       results = Array.isArray(existing.results) ? existing.results as QuestionResult[] : [];
+      // An infrastructure halt (GI-9 R1 above) records a placeholder row so the
+      // operator can see WHY the exam stopped. On resume that row must be dropped:
+      // it is not a wrong answer, and leaving it in scores a perfect run as a
+      // failure (observed: 15-for-15 graded as 93.8% because one halt row from a
+      // transient judge 502 stayed in the tally). Its question is simply re-asked.
+      const beforeHalt = results.length;
+      results = results.filter((r) => !String(r.reason ?? '').startsWith('exam halted —')
+        && !String(r.reason ?? '').includes('could not be graded'));
+      if (results.length !== beforeHalt) {
+        console.log(`eval-run resume: dropped ${beforeHalt - results.length} infrastructure-halt row(s); those questions will be re-asked`);
+      }
     } else {
       const { data: run, error: runErr } = await admin
         .from('eval_runs')
