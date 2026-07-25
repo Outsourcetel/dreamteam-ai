@@ -35,6 +35,7 @@ import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen } from
 import { groundedConfidence } from '../_shared/groundedConfidence.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
+import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type CustomerState, type Turn } from '../_shared/conversation.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -156,7 +157,7 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
   if (error) console.error('append_audit_event:', error.message);
 }
 
-interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; language: string | null }
+interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; language: string | null; customer_state?: unknown }
 function parseModelJson(raw: string): DEAnswer {
   let text = raw.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -171,6 +172,8 @@ function parseModelJson(raw: string): DEAnswer {
         sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
         needs_escalation: !!p.needs_escalation,
         language: typeof p.language === 'string' && p.language.trim() ? p.language.trim() : null,
+        // Passed through raw; validated + clamped by parseCustomerState.
+        customer_state: p.customer_state,
       };
     } catch { /* fall through */ }
   }
@@ -426,6 +429,14 @@ serve(async (req) => {
       await admin.from('de_conversations').update({ last_message_at: nowIso() }).eq('id', convId).eq('tenant_id', tenantId);
     }
 
+    // ── The thread this turn belongs to (mig 325) ──────────────────────
+    // de_messages was written on every turn and never read back, so every turn
+    // was a cold open — the employee could not resolve "that one", could not
+    // tell a first complaint from a fourth, and re-explained itself forever.
+    // Always ends with the current question; length 1 = first turn.
+    const turns: Turn[] = await buildTurns(admin, tenantId, convId, question, persona.contextTurns);
+    const isFollowUp = turns.length > 1;
+
     // ══════════════════════════════════════════════════════════════
     // finalize(): guardrail → per-DE send gate → persist → payload.
     // Shared by the cache-hit path and the freshly-generated path, so
@@ -470,7 +481,7 @@ serve(async (req) => {
       if (rules === null) return GUARDRAIL_RESOLVER_ERROR;   // fail closed
       return (await semanticGuardrailScreen(admin, { tenantId, deId, surface: 'answer', content: ans, blockingRules: rules, mode: semGate.mode! })) as GuardrailRule | null;
     };
-    const finalizeCore = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean): Promise<Record<string, unknown>> => {
+    const finalizeCore = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean, state: CustomerState = { mood: null, intensity: null }): Promise<Record<string, unknown>> => {
       // Guardrail — regex first-pass then the semantic judge; the DE's rules always
       // win, even on cached answers. Fail-closed.
       const blockedBy = await screenAnswer(ans, subjectDeId);
@@ -490,7 +501,7 @@ serve(async (req) => {
       // Post-answer: re-evaluate with confidence known so conditions on
       // confidence (not just text) can fire.
       if (!escalationRuleHit) {
-        const post = evaluateEscalation(escRuleset, { message_text: String(question ?? ''), confidence: conf });
+        const post = evaluateEscalation(escRuleset, { message_text: String(question ?? ''), confidence: conf, ...stateSignals(state) });
         if (post.escalate) escalationRuleHit = post.rule ?? 'escalation rule';
       }
       // A human is needed when the DE isn't confident (escalation), when a
@@ -501,7 +512,7 @@ serve(async (req) => {
         const handoffSummary = `Customer${accountName ? ` at ${accountName}` : ''} asked: ${truncatedQ}.${ruleNote} ${persona.name}'s draft (conf ${conf}%): ${ans.slice(0, 240)}`;
         if (convId) {
           // Store the real draft (NOT delivered to the customer) for the human to approve/edit.
-          await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: true, delivery: 'draft_pending', lang });
+          await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: true, delivery: 'draft_pending', lang, confidence_dimensions: (state.mood || state.intensity !== null) ? { customer_state: state } : null });
           await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: handoffSummary, detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
         }
         await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de', title: `${(lowConf || escalationRuleHit) ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
@@ -536,7 +547,7 @@ serve(async (req) => {
       // Auto-send: confident, guardrail-clean, DE trusted to reply on its own.
       let messageId: string | null = null;
       if (convId) {
-        const { data: ins } = await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: false, delivery: 'sent', lang }).select('id').single();
+        const { data: ins } = await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: false, delivery: 'sent', lang, confidence_dimensions: (state.mood || state.intensity !== null) ? { customer_state: state } : null }).select('id').single();
         messageId = ins?.id ?? null;
         await admin.from('de_conversations').update({ status: 'ai_handling', detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
       }
@@ -554,8 +565,8 @@ serve(async (req) => {
       });
       return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached, identity_verified: identityVerdict?.verified ?? false };
     };
-    const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean) =>
-      json(await finalizeCore(ans, conf, srcs, lang, cached));
+    const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean, state?: CustomerState) =>
+      json(await finalizeCore(ans, conf, srcs, lang, cached, state));
 
     // ── Cost governor #1: semantic answer cache (BEFORE any LLM call) ──
     // Language guard (bug found live 2026-07-17): gte-small embeddings are
@@ -569,7 +580,12 @@ serve(async (req) => {
     // A VERIFIED caller skips the tenant-wide (account_id:null) cache entirely:
     // their answer may be personalized by recalled identity memory, so it must
     // neither be served from nor written to the shared cache (cross-caller leak).
-    if (qEmbedding && !looksNonEnglish(question) && !identityVerdict?.verified) {
+    // Cold opens ONLY (see de-answer for the full reasoning): a follow-up's
+    // meaning lives in the thread, not in its own words — "how much is that?"
+    // or "thanks, that helped" embed to whatever they superficially resemble,
+    // and serving a stored FAQ answer to them is a correctness bug. Most
+    // conversations are one question, so the dedup economics survive.
+    if (qEmbedding && !isFollowUp && !looksNonEnglish(question) && !identityVerdict?.verified) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId, p_account_id: null, p_query_embedding: qEmbedding, p_max_distance: CACHE_MAX_DISTANCE, p_de_id: subjectDeId,
       });
@@ -722,7 +738,11 @@ serve(async (req) => {
       const META = '###META###';
 
       // Prose-first protocol: plain-text answer, then META marker + JSON tail.
-      const streamInstructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and report low confidence in the metadata. Detect the language of the user's message and write your ENTIRE answer in that same language. Write the answer as plain text — NOT as JSON. Then, on a new final line, output exactly ${META} immediately followed by a JSON object: {"confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.`;
+      const streamInstructionBlock = `${persona.preamble} ${audience}
+
+Every factual claim you make comes ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and report low confidence in the metadata. Never invent facts. That constraint is on FACTS, not on how you talk: not every message is a factual question. A greeting, a thank-you, a joke, an apology, small talk, venting, or a one-word follow-up is a conversational turn — answer it as yourself from the thread you are in, with no document needed; set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. You are given the recent conversation: use it. Resolve "it", "that one", "the other thing" against what was already said instead of asking them to repeat it, and don't re-explain something you have already explained in this thread. Detect the language of the user's message and write your ENTIRE answer in that same language.
+
+Write the answer as plain text — NOT as JSON; prior assistant turns are shown to you as plain text too. Then, on a new final line, output exactly ${META} immediately followed by a JSON object: {"confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string, ${CUSTOMER_STATE_SPEC}}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Decide needs_escalation on whether a human is genuinely needed (someone blocked, going in circles, or angry usually is), never on whether documents happened to match.`;
 
       const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -735,7 +755,7 @@ serve(async (req) => {
             // breakout-neutralized; the standing rules sit OUTSIDE the block.
             { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${identityMemoryContext}${FIREWALL_RULES}` },
           ],
-          messages: [{ role: 'user', content: question }],
+          messages: turns,
         }),
       });
       if (!llmRes.ok || !llmRes.body) {
@@ -842,6 +862,7 @@ serve(async (req) => {
               const metaIdx = acc.indexOf(META);
               const answerText = (metaIdx >= 0 ? acc.slice(0, metaIdx) : acc).trim();
               let conf = 50; let srcs: string[] = []; let needsEsc = false; let lang: string | null = null;
+              let state: CustomerState = { mood: null, intensity: null };
               if (metaIdx >= 0) {
                 try {
                   const tail = acc.slice(metaIdx + META.length);
@@ -852,6 +873,7 @@ serve(async (req) => {
                     srcs = Array.isArray(meta.sources) ? meta.sources.map(String) : [];
                     needsEsc = !!meta.needs_escalation;
                     lang = typeof meta.language === 'string' && meta.language.trim() ? meta.language.trim() : null;
+                    state = parseCustomerState(meta.customer_state);
                   }
                 } catch { /* keep defaults */ }
               }
@@ -863,7 +885,7 @@ serve(async (req) => {
               // Cache write — same policy + language tag as the JSON path.
               // Never cache an answer shaped by a caller's identity memory (it
               // could carry their private data into the tenant-wide cache).
-              if (qEmbedding && !identityMemoryContext && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
+              if (qEmbedding && !isFollowUp && !identityMemoryContext && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
                 const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
                 if (!clean) {
                   await admin.from('answer_cache').insert({
@@ -877,7 +899,7 @@ serve(async (req) => {
               // Full post-answer pipeline (final guardrail re-check catches
               // anything that arrived after the last flush check, escalation
               // threshold, persist, activity/audit) — IDENTICAL to JSON path.
-              const payload = await finalizeCore(answerText, conf, srcs, lang, false);
+              const payload = await finalizeCore(answerText, conf, srcs, lang, false, state);
               emit(payload.blocked ? 'blocked' : 'final', payload);
               controller.close();
             } catch (err) {
@@ -908,7 +930,11 @@ serve(async (req) => {
     }
 
     // The persona + fixed instructions are stable across turns → prompt-cached.
-    const instructionBlock = `${persona.preamble} ${audience} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Detect the language of the user's message and write your ENTIRE answer in that same language. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string}. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.`;
+    const instructionBlock = `${persona.preamble} ${audience}
+
+Every factual claim you make comes ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Never invent facts. That constraint is on FACTS, not on how you talk: not every message is a factual question. A greeting, a thank-you, a joke, an apology, small talk, venting, or a one-word follow-up is a conversational turn — answer it as yourself from the thread you are in, with no document needed; set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. You are given the recent conversation: use it. Resolve "it", "that one", "the other thing" against what was already said instead of asking them to repeat it, and don't re-explain something you have already explained in this thread. Detect the language of the user's message and write your ENTIRE answer in that same language.
+
+Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, "language": string, ${CUSTOMER_STATE_SPEC}}. Prior assistant turns are shown to you as plain text; your reply is still the JSON envelope, and "answer" holds exactly what the person should read — no JSON, no preamble, no labels. "language" is the language you wrote the answer in (e.g. "English", "Spanish"). Confidence reflects how well the documents support the answer. Decide needs_escalation on whether a human is genuinely needed (someone blocked, going in circles, or angry usually is), never on whether documents happened to match.`;
 
     const res = await llmMessages(admin, {
       model, max_tokens: 1024,
@@ -917,7 +943,7 @@ serve(async (req) => {
         // Injection firewall (#9): same marking as the streaming path.
         { type: 'text', text: `Knowledge documents:\n${wrapUntrusted(context, 'knowledge-documents')}${identityMemoryContext}${FIREWALL_RULES}` },
       ],
-      messages: [{ role: 'user', content: question }],
+      messages: turns,
     }, 'widget-ask');
     if (!res.ok) {
       const detail = await res.text();
@@ -927,6 +953,7 @@ serve(async (req) => {
     const data = await res.json();
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
+    const customerState = parseCustomerState(parsed.customer_state);
 
     // §5 GROUNDED CONFIDENCE on the PUBLIC channel. Same contract as de-answer:
     // shadow-log grounded-vs-self, and blend only as min(self, grounded) under
@@ -967,7 +994,9 @@ serve(async (req) => {
     // Cache write: only confident, guardrail-clean answers (a later repeat is
     // deflected at $0). Draft-mode is a DELIVERY policy, not answer quality —
     // so we still cache the answer; the gate in finalize() decides delivery.
-    if (qEmbedding && !identityMemoryContext && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
+    // Never cache a follow-up: its answer was shaped by turns the next asker
+    // will not have (same reasoning as the cache read above).
+    if (qEmbedding && !isFollowUp && !identityMemoryContext && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
       const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
       if (!clean) {
         await admin.from('answer_cache').insert({
@@ -980,7 +1009,7 @@ serve(async (req) => {
       }
     }
 
-    return await finalize(parsed.answer, parsed.confidence, parsed.sources, parsed.language, false);
+    return await finalize(parsed.answer, parsed.confidence, parsed.sources, parsed.language, false, customerState);
   } catch (err) {
     console.error('widget-ask error:', err);
     return json({ error: String(err) }, 500);

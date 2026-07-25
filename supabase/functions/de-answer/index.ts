@@ -29,6 +29,7 @@ import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.t
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
+import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } from '../_shared/conversation.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -223,7 +224,7 @@ async function preSendAudit(admin: any, tenantId: string, deId: string | null, q
 }
 
 // ── Robust JSON parse of model output ──
-interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean }
+interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; customer_state?: unknown }
 
 // Salvage the "answer" string field from MALFORMED or TRUNCATED JSON —
 // manual scan with escape handling, tolerating a missing closing quote
@@ -273,6 +274,9 @@ function parseModelJson(raw: string, depth = 0): DEAnswer {
         confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
         sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
         needs_escalation: !!p.needs_escalation,
+        // Passed through raw; validated + clamped by parseCustomerState. A
+        // model that omits it yields nulls, and null signals never match.
+        customer_state: p.customer_state,
       };
     } catch { /* fall through to salvage */ }
   }
@@ -451,6 +455,13 @@ serve(async (req) => {
       }
     }
 
+    // ── The thread this turn belongs to (mig 325) ──────────────────────────
+    // de_messages was written on every turn and never read back, so every turn
+    // was a cold open. Always ends with the current question; length 1 means
+    // "first message of the conversation" (or history disabled).
+    const turns = await buildTurns(admin, tenantId, convId, question, persona.contextTurns);
+    const isFollowUp = turns.length > 1;
+
     const bump = (metric: string, delta = 1) =>
       admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: metric, p_delta: delta })
         .then(({ error }) => { if (error) console.error('increment_metric_tenant:', error.message); });
@@ -458,8 +469,14 @@ serve(async (req) => {
     if (!replayMode) await bump('inquiries');
 
     // ── Semantic answer cache (checked BEFORE any LLM call) ──
+    // Cold opens ONLY. A follow-up's meaning lives in the thread, not in its
+    // own words: "how much is that?" or "the other one" or "thanks, that
+    // helped" embed to whatever they superficially resemble, and serving a
+    // stored FAQ answer to them is a correctness bug, not just a tone one.
+    // Most conversations are single-question, so the FAQ dedup economics —
+    // the reason the cache exists — are essentially preserved.
     const qEmbedding = await embedText(question);
-    if (qEmbedding && !replayMode) {
+    if (qEmbedding && !replayMode && !isFollowUp) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId,
         p_account_id: null,
@@ -627,7 +644,11 @@ serve(async (req) => {
     // Injection firewall (#9): document/memory content is tenant- or
     // web-sourced — marked untrusted, breakout-neutralized, and covered by
     // the standing FIREWALL_RULES the payload can never edit.
-    const system = `${persona.preamble} Answer ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean}. Confidence reflects how well the documents support the answer. Never invent facts. If the message is conversational rather than a question — a greeting, thanks, an apology, small talk, or an expression of frustration — reply naturally and briefly in your own voice without needing a document: set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. Decide needs_escalation on whether a human is genuinely needed (an upset or blocked customer usually is), never on whether documents happened to match.
+    const system = `${persona.preamble}
+
+Every factual claim you make comes ONLY from the provided knowledge documents. If the documents don't contain the answer, say so plainly and set confidence low. Never invent facts. That constraint is on FACTS, not on how you talk: not every message is a factual question. A greeting, a thank-you, a joke, an apology, small talk, venting, or a one-word follow-up is a conversational turn — answer it as yourself from the thread you are in, with no document needed; set sources to [] and confidence to 100, because a pleasantry is not a knowledge gap. You are given the recent conversation: use it. Resolve "it", "that one", "the other thing" against what was already said instead of asking them to repeat it, and don't re-explain something you have already explained in this thread.
+
+Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titles used], "needs_escalation": boolean, ${CUSTOMER_STATE_SPEC}}. Prior assistant turns are shown to you as plain text; your reply is still the JSON envelope, and "answer" holds exactly what the person should read — no JSON, no preamble, no labels. Confidence reflects how well the documents support the answer. Decide needs_escalation on whether a human is genuinely needed (someone blocked, going in circles, or angry usually is), never on whether documents happened to match.
 
 Knowledge documents:
 ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES}`;
@@ -641,7 +662,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       max_tokens: 1536,
       ...(replayTemperature !== undefined ? { temperature: replayTemperature } : {}),
       system,
-      messages: [{ role: 'user', content: question }],
+      messages: turns,
     }, 'de-answer');
     if (!res.ok) {
       const detail = await res.text();
@@ -797,10 +818,15 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       });
     }
 
-    // Post-answer: re-evaluate now that confidence is known, so conditions on
-    // confidence/sentiment (not just text) can fire.
+    // Post-answer: re-evaluate now that confidence AND the employee's read of
+    // the person are known, so conditions on confidence/sentiment (not just
+    // text) can finally fire. `sentiment`/`sentiment_label` were catalogued
+    // signals that no caller had ever supplied until now.
+    const customerState = parseCustomerState((parsed as { customer_state?: unknown }).customer_state);
     if (!escalationRuleHit) {
-      const post = evaluateEscalation(escRuleset, { message_text: String(question ?? ''), confidence: parsed.confidence });
+      const post = evaluateEscalation(escRuleset, {
+        message_text: String(question ?? ''), confidence: parsed.confidence, ...stateSignals(customerState),
+      });
       if (post.escalate) escalationRuleHit = post.rule ?? 'escalation rule';
     }
     // The model asking for a human, and founder escalation rules, ALWAYS win.
@@ -846,8 +872,9 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     }
 
     // ── Semantic cache write (only good, non-escalated answers; never
-    // answers built from scoped docs — the cache is tenant-wide) ──
-    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode) {
+    // answers built from scoped docs — the cache is tenant-wide; never a
+    // follow-up, whose answer was shaped by turns the next asker won't have) ──
+    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode && !isFollowUp) {
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,
@@ -861,10 +888,15 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     }
 
     // ── Persist assistant message ──
+    // confidence_dimensions carries the employee's read of the person on the
+    // turn it applied to, so the transcript a human reviews shows WHY a reply
+    // was shaped (or escalated) the way it was — the same read governance saw.
     if (convId) {
       await admin.from('de_messages').insert({
         tenant_id: tenantId, conversation_id: convId, role: 'assistant',
         content: parsed.answer, confidence: parsed.confidence, escalated: escalate,
+        confidence_dimensions: (customerState.mood || customerState.intensity !== null)
+          ? { customer_state: customerState } : null,
       });
     }
 
@@ -905,6 +937,9 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           'gen_ai.usage.output_tokens': data.usage?.output_tokens ?? 0,
           'dreamteam.de_id': subjectDeId, 'dreamteam.confidence': parsed.confidence,
           'dreamteam.escalated': escalate, 'dreamteam.conversation_id': convId,
+          'dreamteam.turns_in_context': turns.length,
+          'dreamteam.customer_mood': customerState.mood,
+          'dreamteam.customer_intensity': customerState.intensity,
         },
       });
     }

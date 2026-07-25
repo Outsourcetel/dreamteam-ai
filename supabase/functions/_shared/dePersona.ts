@@ -32,9 +32,46 @@ export interface DePersona {
    *  "You are Jordan, the Billing Specialist Digital Employee for
    *  Acme Telecom, responsible for invoicing and payment disputes." */
   preamble: string;
+  /** How many prior turns of the thread this employee should see
+   *  (digital_employees.context_turns, default 8; 0 = single-turn). */
+  contextTurns: number;
 }
 
 const FALLBACK_NAME = 'your Digital Employee';
+
+/**
+ * HOUSE VOICE — the manner every Digital Employee inherits unless a human
+ * writes it one (digital_employees.voice).
+ *
+ * Founder, after using the live chat: pleasantries "are handled poorly with no
+ * sensible conversation". Two of the three causes were structural (no thread
+ * history; a sentiment dial wired to nothing). The third is this: the persona
+ * told the model WHO it was and never WHO IT SOUNDS LIKE, so it defaulted to
+ * support-macro register — restate the question, apologise, offer further
+ * assistance, repeat.
+ *
+ * Written as behaviour to imitate rather than adjectives to satisfy ("be warm
+ * and friendly" produces stock warmth). Every clause here governs MANNER only;
+ * the grounding rules follow it in the prompt and are unconditional.
+ */
+export const HOUSE_VOICE = [
+  'Write like a capable colleague, not a support macro.',
+  'Match the person: brief when they are brief, thorough when they are working something out.',
+  'Read what is underneath the words — confusion, frustration, relief, a joke — and let it change how you reply,',
+  'in the reply itself. Never announce that you detected a feeling, never narrate their emotional state back to them,',
+  'and never open with a stock apology.',
+  'Skip the padding: no "Great question!", no restating what they just asked, no "I understand that you...",',
+  'no closing offer of further assistance unless it is genuinely the next step.',
+  'Vary how you open; do not start consecutive replies the same way.',
+  'If they are joking, you are allowed to be light. If they are angry, get shorter and more concrete and drop the pleasantries.',
+  'If they thank you, take it gracefully in a few words and stop — do not re-explain what you already said.',
+  'You are in a conversation, not a queue of unrelated tickets: refer back to what was already said instead of restarting.',
+  'None of this loosens the facts. Manner is yours; every factual claim still comes only from the knowledge documents.',
+].join(' ');
+
+/** Mirrors digital_employees.context_turns DEFAULT (mig 325). Used only when
+ *  no DE row is resolved — a resolved row always carries its own value. */
+const DEFAULT_CONTEXT_TURNS = 8;
 
 /** Wave 5 — the tenant's configured reply language/tone (stored on
  *  tenants.vocabulary as ai_language / ai_tone; both optional). English
@@ -76,17 +113,19 @@ export async function resolveDePersona(
   if (!deId) {
     return {
       name: FALLBACK_NAME,
-      preamble: `You are a Digital Employee for ${tenantName}.${style}`,
+      preamble: `You are a Digital Employee for ${tenantName}. ${HOUSE_VOICE}${style}`,
+      contextTurns: DEFAULT_CONTEXT_TURNS,
     };
   }
   const { data: de } = await admin
     .from('digital_employees')
-    .select('name, persona_name, description, department, responsibilities, display_title, purpose_statement')
+    .select('name, persona_name, description, department, responsibilities, display_title, purpose_statement, voice, context_turns')
     .eq('id', deId).eq('tenant_id', tenantId).maybeSingle();
   if (!de) {
     return {
       name: FALLBACK_NAME,
-      preamble: `You are a Digital Employee for ${tenantName}.${style}`,
+      preamble: `You are a Digital Employee for ${tenantName}. ${HOUSE_VOICE}${style}`,
+      contextTurns: DEFAULT_CONTEXT_TURNS,
     };
   }
   // GI-6b: candidate overrides win when present (dry-run measurement); otherwise
@@ -108,8 +147,14 @@ export async function resolveDePersona(
     ? ` You are responsible for: ${de.responsibilities.slice(0, 8).join('; ')}.`
     : '';
   const description = oDescription ? ` ${oDescription}` : '';
+  // Voice: the employee's own if a human wrote one, otherwise the house voice.
+  // Placed after identity and before the tenant's language/tone directive, so
+  // an explicit ai_tone still has the last word on register.
+  const voice = typeof de.voice === 'string' && de.voice.trim() ? de.voice.trim() : HOUSE_VOICE;
+  const ct = Number(de.context_turns);
   return {
     name,
-    preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description}${style}`,
+    preamble: `You are ${name}, ${roleLine}.${purpose}${responsibilities}${description} ${voice}${style}`,
+    contextTurns: Number.isFinite(ct) && ct >= 0 ? Math.min(30, Math.floor(ct)) : DEFAULT_CONTEXT_TURNS,
   };
 }

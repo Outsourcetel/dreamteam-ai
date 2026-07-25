@@ -105,6 +105,20 @@ export function evaluateEscalation(ruleset: EscRuleset, ctx: EscContext): EscRes
     const hit = topics.find((t) => txt(msg).includes(txt(t)));
     if (hit) return { escalate: true, rule: `always-escalate topic "${hit}"`, reason: `the message mentions "${hit}"` };
   }
+  // The frustration dial. It was loaded here from day one and never tested
+  // against anything, because nothing on the answer path computed a sentiment
+  // value — a control visible in the UI that governed nothing. The answer
+  // paths now supply `sentiment` from the employee's own read of the thread
+  // (see _shared/conversation.ts), so the dial finally means what it says.
+  // Absent sentiment (action path, or a model that omitted it) => inert.
+  const thr = ruleset.frustration_threshold;
+  if (thr != null && ctx.sentiment != null && Number.isFinite(num(ctx.sentiment)) && num(ctx.sentiment) >= num(thr)) {
+    return {
+      escalate: true,
+      rule: `frustration threshold (${thr})`,
+      reason: `the person reads as needing a human (${num(ctx.sentiment)} vs threshold ${thr})`,
+    };
+  }
   // Composable rules — the DE's own first, then tenant defaults.
   const rules = [...(ruleset.de_rules ?? []), ...(ruleset.tenant_rules ?? [])].filter((r) => r && r.enabled !== false);
   for (const r of rules) {
