@@ -225,6 +225,28 @@ serve(async (req) => {
           await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
           return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed });
         }
+        // GI-9 R1 — an INFRASTRUCTURE failure is not a wrong answer. Counting one
+        // as a failed question mints a status='failed' certification out of pure
+        // operational conditions, and de_records_gate then clamps a competent
+        // employee's autonomy. Observed live 2026-07-25: a mid-exam budget
+        // exhaustion produced 13 null answers, a 12.5% "failed" certification, and
+        // a gate escalation from stale_certification to failed_certification — for
+        // a DE whose genuine last score was 81.3%. Abort the run instead: no
+        // certification is written, so the prior record stands until a real exam
+        // completes. Only a genuine graded verdict may fail a question.
+        const infraError = String(data?.error ?? '');
+        const isInfra = ['ai_budget_exceeded', 'llm_not_configured', 'blocked_llm', 'rate_limited'].includes(infraError)
+          || res.status === 429 || res.status >= 500;
+        if (isInfra) {
+          finalStatus = 'blocked_llm';
+          results.push({
+            qa_id: qa.id, question: qa.question, passed: false,
+            reason: `exam halted — ${infraError || `HTTP ${res.status}`} (infrastructure, not the employee). No certification was recorded; re-run when available.`,
+          });
+          await saveProgress(true);
+          await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
+          return json({ run_id: runId, status: finalStatus, total: qas.length, passed, failed, halted_reason: infraError || `http_${res.status}` });
+        }
         if (!res.ok || data?.error) {
           failed += 1;
           results.push({
