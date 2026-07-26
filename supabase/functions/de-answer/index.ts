@@ -365,6 +365,10 @@ serve(async (req) => {
     const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
 
     let tenantId: string | null = null;
+    // 345: the human this answer is FOR. Retrieval narrows to what they are
+    // permitted to see, so a person cannot read a locked Space by asking an
+    // employee to read it to them. Stays null for service/cron callers.
+    let actingUserId: string | null = null;
     if (isServiceRole || isDispatchCron) {
       const asserted = (typeof tenant_id === 'string' && /^[0-9a-f-]{36}$/i.test(tenant_id)) ? tenant_id : null;
       if (!asserted) return json({ error: 'tenant_id required for service calls' }, 400);
@@ -372,6 +376,8 @@ serve(async (req) => {
     } else {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
+
+      actingUserId = userData.user.id;
 
       const { data: profile } = await admin
         .from('profiles')
@@ -609,8 +615,23 @@ serve(async (req) => {
       p_match_count: 5,
       p_subject_kind: subjectDeId ? 'de' : null,
       p_subject_id: subjectDeId,
+      p_acting_user: actingUserId,
     });
     if (matchErr) console.error('hybrid_match_knowledge:', matchErr.message);
+    // 345 / docs-27 §7a. Filter-before-rank is right for security and corrosive
+    // for intelligence on its own: a narrowed corpus is invisible to the model,
+    // so it answers thinly AND sounds certain. The retrieval RPC reports how
+    // much it held back; the employee is told, and tells the person.
+    const withheldCount = Number(
+      (Array.isArray(chunks) && chunks.length > 0 ? chunks[0]?.withheld_count : 0) ?? 0);
+    if (withheldCount > 0) {
+      const note = `[Retrieval note] ${withheldCount} document${withheldCount === 1 ? '' : 's'} that matched this question ` +
+        `were withheld because this person is not permitted to see them. Answer from what you have, and say plainly ` +
+        `that there may be material here you are not permitted to show them. Do not guess at the contents, and do not ` +
+        `imply your answer is complete.`;
+      contextParts.push(note);
+      used += note.length;
+    }
     // WS2 (mig 280): record which docs this answer consulted, as an incremental
     // rollup — "is my knowledge working" analytics without a read-time scan.
     const citedDocIds = new Set<string>();
