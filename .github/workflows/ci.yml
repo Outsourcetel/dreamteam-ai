@@ -10,9 +10,22 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# ============================================================
+# CI MUST NOT BE GREEN WHEN IT DID NOT RUN.
+#
+# The previous version of this file self-skipped the integration tests with
+# `exit 0` when secrets were missing, so the tenant-isolation suite — the only
+# automated cross-tenant safety net in the project — reported a green tick
+# whether or not a single test executed. That is worse than having no CI: it
+# manufactures confidence. An independent audit flagged it, correctly, as
+# "a skipped integration job reported as a passing security test".
+#
+# Every job below either runs its checks or FAILS. There is no third state.
+# ============================================================
+
 jobs:
   build:
-    name: Typecheck & build
+    name: Typecheck, build & unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +37,11 @@ jobs:
       # `npm run build` is `tsc --noEmit && vite build` — the typecheck is
       # the real gate and needs no secrets (VITE_* only affect runtime).
       - run: npm run build
+      # Pure unit tests: no database, no secrets, no excuse to skip them.
+      - run: npm run test:unit
 
-  test:
-    name: Tenant-isolation tests
+  isolation:
+    name: Tenant-isolation tests (live, dev project)
     runs-on: ubuntu-latest
     needs: build
     env:
@@ -39,15 +54,36 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm install
-      # These are live integration tests against the isolated dev/schema-
-      # clone Supabase project. Until the two repo secrets are set they
-      # self-skip (green), so CI is useful immediately without them.
-      # To enable: add VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY
-      # under Settings → Secrets and variables → Actions.
-      - name: Run tests (skips if secrets unset)
+      - name: Require secrets
         run: |
           if [ -z "$VITE_TEST_SUPABASE_URL" ] || [ -z "$VITE_TEST_SUPABASE_ANON_KEY" ]; then
-            echo "::notice::Test secrets not configured — skipping integration tests. Add VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY as Actions secrets to enable."
-            exit 0
+            echo "::error::Tenant-isolation tests cannot run — VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY are not set."
+            echo "::error::This job FAILS rather than passing silently: these are the only automated proof that one tenant cannot read another's data."
+            echo "::error::Add them under Settings -> Secrets and variables -> Actions. Values are in .env.test locally."
+            exit 1
           fi
-          npm test
+      - run: npm run test:isolation
+
+  invariants:
+    name: Knowledge ACL invariants (live catalog, read-only)
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - name: Require token
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::ACL invariant tests cannot run — SUPABASE_ACCESS_TOKEN is not set."
+            echo "::error::This suite asserts the SHAPE of the live security layer (no FOR ALL policies, escalation guards present, nothing anon-reachable). It found a real hole on its first run."
+            echo "::error::The queries are read-only by construction — helpers/adminQuery.ts refuses anything that is not a lone SELECT/WITH."
+            echo "::error::Add SUPABASE_ACCESS_TOKEN under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+      - run: npm run test:invariants

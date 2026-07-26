@@ -29,6 +29,12 @@ export function adminTokenAvailable(): boolean {
 
 function readAccessToken(): string {
   if (cachedToken) return cachedToken;
+
+  // CI has no .env.local — it injects the token as an Actions secret. Env var
+  // wins so the same suite runs unchanged locally and in CI.
+  const fromEnv = process.env.SUPABASE_ACCESS_TOKEN?.trim();
+  if (fromEnv) { cachedToken = fromEnv; return cachedToken; }
+
   const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
   const line = env.split(/\r?\n/).find((l) => l.startsWith('SUPABASE_ACCESS_TOKEN='));
   if (!line) throw new Error('SUPABASE_ACCESS_TOKEN not found in .env.local');
