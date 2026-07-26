@@ -533,7 +533,10 @@ export default function DEChatDock() {
   const sendLive = async (text: string) => {
     setTyping(true);
     try {
-      const res = await askDE(text, conversationIdRef.current, currentTenant?.id ?? null);
+      // Ask the employee we are actually SHOWING in the header. liveDe is set
+      // from the Workforce Assistant just above; not passing it is what made the
+      // header say "Workspace Assistant" while a different employee answered.
+      const res = await askDE(text, conversationIdRef.current, currentTenant?.id ?? null, liveDe?.id ?? null);
       if (res.conversation_id) conversationIdRef.current = res.conversation_id;
       // de-answer is the source of truth for who actually answered —
       // overwrite the on-mount guess (or confirm it) every reply.

@@ -564,6 +564,7 @@ export async function askDE(
   question: string,
   conversationId?: string | null,
   tenantId?: string | null,
+  deId?: string | null,
 ): Promise<DEAnswerResult> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new DEAnswerError('server', 'Not signed in.');
@@ -582,7 +583,11 @@ export async function askDE(
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined, ...(tenantId ? { tenant_id: tenantId } : {}) }),
+      // deId matters more than it looks: omit it and the server falls back to
+      // "the oldest employee in this workspace", which is never the Workforce
+      // Assistant (assistants were backfilled, so they are the NEWEST). The
+      // dock displayed the Assistant and silently asked someone else.
+      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined, ...(tenantId ? { tenant_id: tenantId } : {}), ...(deId ? { de_id: deId } : {}) }),
     });
   } catch (err) {
     throw new DEAnswerError('network', String(err));

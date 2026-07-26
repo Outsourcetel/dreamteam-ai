@@ -413,6 +413,16 @@ serve(async (req) => {
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       subjectDeId = firstDe?.id ?? null;
     }
+    // Resolved once, used twice: the no-docs deflection below must not fire for
+    // an employee that can answer from the platform product guide, and the shelf
+    // fan-in further down needs the same fact.
+    let isWorkforceAssistant = false;
+    if (subjectDeId) {
+      const { data: waRow } = await admin.from('digital_employees')
+        .select('is_workforce_assistant').eq('id', subjectDeId).eq('tenant_id', tenantId).maybeSingle();
+      isWorkforceAssistant = waRow?.is_workforce_assistant === true;
+    }
+
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName, candidatePersona);
 
     // Wave-1 activation (truth audit 2026-07-22, docs/15): the founder-set
@@ -560,7 +570,12 @@ serve(async (req) => {
       p_subject_id: subjectDeId,
     });
 
-    if (!docs || docs.length === 0) {
+    // A brand-new workspace has no documents of its own — and that is EXACTLY
+    // the customer the Workforce Assistant exists to help. This deflection used
+    // to fire before the platform-shelf fan-in 50 lines below, so the product
+    // expert told a new customer to go upload documentation about the product.
+    // The Assistant now falls through and answers from the shelf.
+    if ((!docs || docs.length === 0) && !isWorkforceAssistant) {
       const answer = "I don't have any knowledge documents yet — upload some in Knowledge → Library and I'll answer from them.";
       if (convId) {
         await admin.from('de_messages').insert({
@@ -626,9 +641,7 @@ serve(async (req) => {
     const platformDocIds = new Set<string>();
     if (subjectDeId && !replayMode) {
       try {
-        const { data: waRow } = await admin.from('digital_employees')
-          .select('is_workforce_assistant').eq('id', subjectDeId).eq('tenant_id', tenantId).maybeSingle();
-        if (waRow?.is_workforce_assistant === true) {
+        if (isWorkforceAssistant) {
           const { data: shelf, error: shelfErr } = await admin.rpc('platform_match_knowledge', {
             p_query_text: question,
             p_query_embedding: qEmbedding,
