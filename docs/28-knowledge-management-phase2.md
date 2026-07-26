@@ -98,6 +98,45 @@ Failures are **classified** `retryable` vs `terminal`. A queue that retries a co
 
 **349 — I left the publisher gate bypassable.** 346's `set_knowledge_lifecycle()` required publisher to publish. But `lifecycle_status` is an ordinary column, and the UPDATE policy admits **editor**, with a `WITH CHECK` that verifies only the workspace. So any editor could `PATCH /knowledge_docs {"lifecycle_status":"published"}` and skip the gate entirely — no publisher check, no audit event. Found by adversarial review of my own design, verified against the live policy, closed with a BEFORE UPDATE trigger that gates the **transition** (needs `OLD` vs `NEW`, which a `WITH CHECK` cannot see) on every path.
 
+---
+
+## Increments 8–12 (migs 354–360) — the UIs, and what attacking them found
+
+| Mig | What |
+|---|---|
+| **354** | Ingestion drill-down + retry (retryable failures only; reports the terminal count) |
+| **355** | **Regression fix** — `is_current` carries two meanings; a re-published playbook's knowledge was permanently invisible |
+| **356** | ACL write API + `preview_space_access` (level **and reason** per person) |
+| **357** | `knowledge_collections` FOR ALL → 4 policies; restricted spaces never answer an unidentified asker |
+| **358** | Group management, with the group-level ceiling |
+| **359** | **Restricting a space was a one-way door**; two unguarded filing RPCs |
+| **360** | Closure/junction enumeration closed without policy recursion |
+
+### The one that would have bricked a customer
+
+`knowledge_space_level_for` correctly stops counting workspace grants once a space is restricted — that is what a locked room means, and the mig-356 test asserted it as a win. But 356 then used that same number to authorise **administration**, so locking the room destroyed the authority over it. Measured across the live database: all 16 spaces × every real admin in all 16 workspaces went **level 6 → level 0**, with zero collection-scoped grants anywhere to survive it.
+
+The rule now, and it is load-bearing:
+
+> **`knowledge_my_admin_level` ignores `is_restricted`. `knowledge_space_level_for` honours it.**
+> Being locked out of a room's *contents* must not lock you out of its *controls*.
+
+An admin still cannot **read** a restricted space without granting themselves access — which writes an audit event. Full access can always get in; it can never get in silently.
+
+### Enumeration, and why the obvious fix was wrong
+
+The ancestry closure and filing junction were readable tenant-wide, leaking the *shape* of a locked room — that it exists, how many documents are in it, which ids. The natural policy (`you may see a path row if you may see its document`) **recurses**: `knowledge_docs_acl_select` contains an `EXISTS` over the closure, so reading a document consults the closure and reading the closure would consult the document. Postgres raises 42P17.
+
+360 asks the only question that is actually secret — *is this room locked, and am I allowed in it* — reading only `knowledge_collections` and `knowledge_access_grants`, neither of which references the closure. The cycle cannot form structurally, and the migration proves it by running real queries under the `authenticated` role.
+
+**Measured cost:** ~0.33 ms per *distinct* collection; the planner materialises it rather than calling per output row. It only ever runs on bounded sets — the client reads one document's rows, and the docs policy probes a bound `doc_id`+`collection_id` pair. If the closure is ever scanned in bulk, this needs revisiting.
+
+### Pattern worth naming
+
+An RPC gate is worthless if the underlying **table** is client-writable. This appeared **four times**: `knowledge_docs` (344), `lifecycle_status` (349), `knowledge_collections` (357), and the filing RPCs (359). Check `pg_policy` *and* `has_table_privilege` for every table an RPC claims to guard.
+
+And: when a security rule removes access, ask **who keeps the key**. A correct-looking `level = 0` in a test can be a lockout rather than a win.
+
 ## Open / next
 
 1. **Enable `knowledge_acl_retrieval`** per workspace when you want employees to respect human permissions. Off everywhere today.
