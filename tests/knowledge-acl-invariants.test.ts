@@ -263,7 +263,7 @@ describe('authenticated perimeter', () => {
          and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
     select proname from w
      where def ~* '(insert into|update [a-z_"]+ set|delete from|truncate )'
-       and def !~* 'auth_tenant_id|auth_has_tenant_role|is_platform_admin|resolve_platform_capability|_assert_|current_tenant|auth\\.uid\\(\\)'
+       and def !~* 'auth_tenant_id|auth_has_tenant_role|can_admin_tenant_internal|is_platform_admin|resolve_platform_capability|_assert_|current_tenant|auth\\.uid\\(\\)'
        and rettype <> 'trigger'`;
 
   it('no NEW unguarded SECURITY DEFINER writer becomes reachable', async () => {
@@ -281,7 +281,12 @@ describe('authenticated perimeter', () => {
     // catches the opposite drift: rows accumulating to keep the test quiet.
     const [{ n }] = await runQuery<{ n: number }>(q(
       `select count(*)::int as n from public.unguarded_secdef_writers`));
-    expect(n, 'the known-open list grew — new debt was recorded instead of fixed').toBeLessThanOrEqual(12);
+    // 12 -> 2 in mig 367. Four of the original twelve were never unguarded (the
+    // detection vocabulary missed can_admin_tenant_internal); six were real and
+    // are now guarded. The two that remain are correct by design: verify_embed_token
+    // and submit_csat serve the ANONYMOUS embed widget, so requiring a session
+    // would break them. This ceiling ratchets down and must never be raised.
+    expect(n, 'the known-open list grew — new debt was recorded instead of fixed').toBeLessThanOrEqual(2);
   });
 
   it('the 25 revoked functions stay revoked', async () => {
