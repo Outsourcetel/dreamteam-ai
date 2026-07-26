@@ -11,6 +11,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { secureEqual } from "../_shared/secureCompare.ts";
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 serve(async (req: Request) => {
   if (req.method !== "POST") {
@@ -95,6 +96,7 @@ serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("provision-workforce-assistants error:", error instanceof Error ? error.message : "error");
+    await reportEdgeError('provision-workforce-assistants', error, {});
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Internal server error" }),
       { status: 500, headers: { "Content-Type": "application/json" } },

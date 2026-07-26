@@ -58,6 +58,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { resolveDeModel } from '../_shared/deModel.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1744,6 +1745,7 @@ ${wrapUntrusted(groundedContext, 'grounded-sources')}${runDocuments ? `\n\n--- R
     });
   } catch (err) {
     console.error('specialist-consult error:', err);
+    await reportEdgeError('specialist-consult', err, {});
     return json({ error: String(err) }, 500);
   }
 });

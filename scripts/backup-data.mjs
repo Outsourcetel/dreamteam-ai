@@ -29,6 +29,9 @@ import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 const SKIP_VECTORS = args.includes('--skip-vectors');
+// Password hashes are OFF by default. See the auth section near the bottom for
+// why that default is the way round it is.
+const WITH_HASHES = args.includes('--include-password-hashes');
 const outIdx = args.indexOf('--out');
 const PROJECT_REF = 'rfsvmhcqeiyrxivbmpel';
 const ENDPOINT = `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`;
@@ -107,6 +110,45 @@ for (const { tbl, vector_cols } of tables) {
   if (rows) console.log(`  ${tbl.padEnd(44)} ${String(rows).padStart(7)} rows`);
 }
 
+// ── auth.users: the difference between "restored" and "usable" ─────────────
+// Without this, a full restore gives every tenant their records back with NOBODY
+// ABLE TO LOG IN — and worse, every profiles.user_id and every audit row points
+// at a UUID that no longer exists. The UUIDs are the load-bearing part.
+//
+// encrypted_password is EXCLUDED BY DEFAULT and needs --include-password-hashes.
+// That default is deliberate. Customer data leaking is bad; bcrypt hashes leaking
+// is worse in kind, because they can be cracked offline and tried against the
+// users' other accounts. Without hashes a restore still works — every user goes
+// through password reset once. With them, nobody notices the restore happened.
+// Pick per situation; do not make it the silent default.
+const authCols = [
+  'id', 'email', 'phone', 'created_at', 'updated_at', 'email_confirmed_at',
+  'phone_confirmed_at', 'last_sign_in_at', 'raw_app_meta_data',
+  'raw_user_meta_data', 'is_super_admin', 'role', 'is_sso_user', 'banned_until',
+  ...(WITH_HASHES ? ['encrypted_password'] : []),
+].map((c) => `"${c}"`).join(', ');
+
+const authUsers = await q(
+  `select coalesce(json_agg(t), '[]'::json) as d
+     from (select ${authCols} from auth.users order by created_at) t`);
+writeFileSync(join(OUT, '_auth_users.jsonl'),
+  authUsers[0].d.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+// Identity rows carry the OAuth/SSO linkage. Currently every user is email-based,
+// so this is usually empty — captured anyway so adding SSO later does not
+// silently create a new backup gap nobody notices until a restore.
+const authIdentities = await q(
+  `select coalesce(json_agg(t), '[]'::json) as d
+     from (select id, user_id, provider, provider_id, identity_data, created_at,
+                  last_sign_in_at
+             from auth.identities order by created_at) t`);
+writeFileSync(join(OUT, '_auth_identities.jsonl'),
+  authIdentities[0].d.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+console.log(`\n  auth.users${' '.repeat(36)}${String(authUsers[0].d.length).padStart(7)} rows` +
+            (WITH_HASHES ? '  (WITH password hashes)' : '  (no password hashes — users must reset)'));
+console.log(`  auth.identities${' '.repeat(31)}${String(authIdentities[0].d.length).padStart(7)} rows`);
+
 writeFileSync(join(OUT, '_manifest.json'), JSON.stringify({
   project: PROJECT_REF,
   exported_at: new Date().toISOString(),
@@ -114,8 +156,10 @@ writeFileSync(join(OUT, '_manifest.json'), JSON.stringify({
   total_rows: grandTotal,
   // Recorded so a restore knows what it is NOT getting back. Silence here would
   // let someone believe this file is a complete disaster-recovery artifact.
+  auth_users_included: true,
+  password_hashes_included: WITH_HASHES,
   not_included: [
-    'auth.users — user accounts and credentials live in the auth schema',
+    ...(WITH_HASHES ? [] : ['auth.users password hashes — every user must reset their password after a restore (re-run with --include-password-hashes to capture them)']),
     'storage objects',
     'vault secrets (connector credentials are encrypted at rest and not exported)',
     'edge function source (that is in the repo)',

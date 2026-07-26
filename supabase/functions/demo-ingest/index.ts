@@ -18,6 +18,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
 import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -120,6 +121,7 @@ serve(async (req) => {
     return json({ ok: true, tenant_id: tenantId, total: results.length, ingested, failed: results.length - ingested, results });
   } catch (err) {
     console.error('demo-ingest error:', String(err));
+    await reportEdgeError('demo-ingest', err, {});
     return json({ error: String(err) }, 500);
   }
 });

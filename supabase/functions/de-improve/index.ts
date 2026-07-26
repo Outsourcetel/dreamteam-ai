@@ -27,6 +27,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -220,6 +221,7 @@ serve(async (req) => {
     return json({ improvement_id: impId, status: 'review_pending', human_task_id: taskId, replay });
   } catch (err) {
     console.error('de-improve error:', err);
+    await reportEdgeError('de-improve', err, {});
     return json({ error: String(err) }, 500);
   }
 });

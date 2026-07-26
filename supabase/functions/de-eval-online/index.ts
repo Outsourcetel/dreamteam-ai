@@ -14,6 +14,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -80,6 +81,7 @@ serve(async (req) => {
     return json({ judged, flagged, sampled: rows.length });
   } catch (err) {
     console.error('de-eval-online error:', err);
+    await reportEdgeError('de-eval-online', err, {});
     return json({ error: String(err) }, 500);
   }
 });

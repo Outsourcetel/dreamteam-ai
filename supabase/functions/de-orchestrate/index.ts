@@ -31,6 +31,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -202,6 +203,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('de-orchestrate error:', err);
+    await reportEdgeError('de-orchestrate', err, {});
     return json({ error: String(err) }, 500);
   }
 });

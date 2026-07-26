@@ -19,6 +19,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/sendEmail.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -97,6 +98,7 @@ serve(async (req) => {
     return json({ ok: true, sent: true, provider: sent.provider, provider_message_id: sent.messageId ?? null });
   } catch (err) {
     console.error('send-outbound error:', String(err));
+    await reportEdgeError('send-outbound', err, {});
     return json({ error: String(err) }, 500);
   }
 });

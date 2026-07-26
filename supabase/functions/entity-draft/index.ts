@@ -22,6 +22,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -153,6 +154,7 @@ serve(async (req) => {
     return json({ entity_id: entityId, entity_kind: kind, config: cfg, study, usage: { input_tokens: totalIn, output_tokens: totalOut } });
   } catch (err) {
     console.error('entity-draft error:', String(err));
+    await reportEdgeError('entity-draft', err, {});
     return json({ error: String(err) }, 500);
   }
 });

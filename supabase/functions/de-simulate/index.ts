@@ -24,6 +24,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -181,6 +182,7 @@ serve(async (req) => {
     return json({ sim_run_id: simRunId, status, mode, passed, failed, total: results.length, avg_score: avg });
   } catch (err) {
     console.error('de-simulate error:', err);
+    await reportEdgeError('de-simulate', err, {});
     return json({ error: String(err) }, 500);
   }
 });

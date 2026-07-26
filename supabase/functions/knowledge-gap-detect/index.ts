@@ -18,6 +18,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -93,6 +94,7 @@ serve(async (req) => {
     return json({ ok: true, tenants_scanned: (tenants ?? []).length, embedded, clusters: clusterResults });
   } catch (e) {
     console.error('knowledge-gap-detect error:', e);
+    await reportEdgeError('knowledge-gap-detect', e, {});
     return json({ error: 'internal_error', detail: String(e) }, 500);
   }
 });

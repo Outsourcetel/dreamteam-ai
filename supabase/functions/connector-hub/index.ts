@@ -88,6 +88,7 @@ import { extractText, getDocumentProxy } from 'https://esm.sh/unpdf@0.12.1';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { contentHash } from '../_shared/contentHash.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -5401,6 +5402,7 @@ serve(async (req) => {
     return json({ error: 'unknown_action' }, 400);
   } catch (err) {
     console.error('connector-hub error:', err);
+    await reportEdgeError('connector-hub', err, {});
     return json({ error: String(err) }, 500);
   }
 });

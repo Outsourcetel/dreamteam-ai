@@ -13,6 +13,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -78,6 +79,7 @@ serve(async (req) => {
     return json(body);
   } catch (err) {
     console.error('proof-stats error:', String(err));
+    await reportEdgeError('proof-stats', err, {});
     return json({ ok: false, error: 'internal' }, 500);
   }
 });

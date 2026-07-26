@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -88,6 +89,7 @@ serve(async (req) => {
     return json({ exported: rows.length });
   } catch (err) {
     console.error('otel-export error:', err);
+    await reportEdgeError('otel-export', err, {});
     return json({ error: String(err) }, 500);
   }
 });

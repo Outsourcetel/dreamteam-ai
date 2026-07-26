@@ -18,6 +18,7 @@ import { hasLLMProvider, llmMessages } from "../_shared/llm.ts";
 import { resolveTenantWithRemoteAccess } from "../_shared/resolveTenant.ts";
 import { wrapUntrusted, FIREWALL_RULES } from "../_shared/injectionSafety.ts";
 import { resolveDeModel } from "../_shared/deModel.ts";
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -176,6 +177,7 @@ ${FIREWALL_RULES}`;
     return json({ conversation_id: convId, message: assistantMessage, topic: conversationTopic });
   } catch (error) {
     console.error("workforce-chat error:", error instanceof Error ? error.message : "error");
+    await reportEdgeError('workforce-chat', error, {});
     return json({ error: error instanceof Error ? error.message : "Internal server error" }, 500);
   }
 });

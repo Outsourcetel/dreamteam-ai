@@ -25,6 +25,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { llmMessages } from '../_shared/llm.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -191,6 +192,7 @@ serve(async (req) => {
     return json({ ok: true, processed, findings, llm_calls: llmCalls, remaining: remaining ?? 0, done: (remaining ?? 0) === 0 });
   } catch (err) {
     console.error('conflict-probe-drain error:', String(err));
+    await reportEdgeError('conflict-probe-drain', err, {});
     return json({ error: String(err) }, 500);
   }
 });

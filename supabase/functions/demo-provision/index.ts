@@ -14,6 +14,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -152,6 +153,7 @@ serve(async (req) => {
     return json({ ok: true, ...report });
   } catch (err) {
     console.error('demo-provision error:', String(err));
+    await reportEdgeError('demo-provision', err, {});
     return json({ error: String(err) }, 500);
   }
 });

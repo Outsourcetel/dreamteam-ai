@@ -23,6 +23,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -126,6 +127,7 @@ serve(async (req) => {
     return json({ verdict, score, dimensions, rationale, judgment_id });
   } catch (err) {
     console.error('eval-judge error:', err);
+    await reportEdgeError('eval-judge', err, {});
     return json({ error: String(err) }, 500);
   }
 });

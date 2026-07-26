@@ -12,6 +12,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted } from '../_shared/injectionSafety.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -504,6 +505,7 @@ serve(async (req) => {
     return json({ error: `unknown action ${action}` }, 400);
   } catch (e) {
     console.error('de-mission:', e);
+    await reportEdgeError('de-mission', e, {});
     return json({ error: String((e as Error).message ?? e).slice(0, 400) }, 500);
   }
 });

@@ -35,6 +35,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
 import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -294,6 +295,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('knowledge-ingest-drain error:', String(err));
+    await reportEdgeError('knowledge-ingest-drain', err, {});
     return json({ error: String(err) }, 500);
   }
 });

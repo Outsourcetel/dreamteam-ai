@@ -18,6 +18,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -125,6 +126,7 @@ serve(async (req) => {
     return json({ amendment_id: am.id, entity_kind: kind, entity_id: entityId, task_id: task?.id ?? null, rationale: draft.rationale, redline: draft.redline, proposed_config: proposed });
   } catch (err) {
     console.error('entity-amend error:', String(err));
+    await reportEdgeError('entity-amend', err, {});
     return json({ error: String(err) }, 500);
   }
 });

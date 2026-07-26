@@ -38,6 +38,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -242,6 +243,7 @@ serve(async (req) => {
     return json(result);
   } catch (err) {
     console.error('onboarding-verify error:', err);
+    await reportEdgeError('onboarding-verify', err, {});
     return json({ error: String(err) }, 500);
   }
 });

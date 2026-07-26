@@ -32,6 +32,7 @@ import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } from '../_shared/conversation.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { adjudicateRegexHit, type AdjHit } from '../_shared/guardrailAdjudicator.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1161,6 +1162,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     });
   } catch (err) {
     console.error('de-answer error:', err);
+    await reportEdgeError('de-answer', err, {});
     return json({ error: String(err) }, 500);
   }
 });

@@ -33,6 +33,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getAIKey } from '../_shared/aiKeys.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -240,6 +241,7 @@ serve(async (req) => {
     return json({ ok: true, conversation_id: convId, disposition, draft_id: draftId });
   } catch (err) {
     console.error('email-inbound error:', String(err));
+    await reportEdgeError('email-inbound', err, {});
     return json({ error: String(err) }, 500);
   }
 });

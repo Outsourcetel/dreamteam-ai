@@ -97,6 +97,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 import { matchPattern } from '../_shared/guardrailMatch.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -2974,6 +2975,7 @@ serve(async (req) => {
     return json({ cancelled: true, run_id: runId });
   } catch (err) {
     console.error('playbook-execute error:', err);
+    await reportEdgeError('playbook-execute', err, {});
     return json({ error: String(err) }, 500);
   }
 });

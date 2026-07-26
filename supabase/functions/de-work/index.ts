@@ -29,6 +29,7 @@ import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
 import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1001,6 +1002,7 @@ serve(async (req) => {
     return json({ worked: results.length, results, planned, woken });
   } catch (err) {
     console.error('de-work error:', err);
+    await reportEdgeError('de-work', err, {});
     return json({ error: String(err) }, 500);
   }
 });

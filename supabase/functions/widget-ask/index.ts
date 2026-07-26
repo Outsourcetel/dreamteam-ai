@@ -37,6 +37,7 @@ import { evaluateEscalation, type EscRuleset } from '../_shared/escalation.ts';
 import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '../_shared/identityMemory.ts';
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type CustomerState, type Turn } from '../_shared/conversation.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1006,6 +1007,7 @@ Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titl
     return await finalize(parsed.answer, parsed.confidence, parsed.sources, parsed.language, false, customerState);
   } catch (err) {
     console.error('widget-ask error:', err);
+    await reportEdgeError('widget-ask', err, {});
     return json({ error: String(err) }, 500);
   }
 });
