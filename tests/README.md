@@ -97,3 +97,33 @@ self-lockout guards (platform team management, guardrail approval),
 AI budget enforcement, and the Self-Learning/Knowledge Gap clustering
 pipelines — each would need its underlying tables added to dev first
 per the gap above.
+
+## Two kinds of test, both needed
+
+**`tenant-isolation.test.ts` — behavioural.** Signs real users into the isolated
+dev project and asserts a signed-in user gets the right rows. Requires
+`.env.test`.
+
+**`knowledge-acl-invariants.test.ts` — invariant.** Asserts on the *shape* of the
+live security layer: which policies exist, which functions carry which guards,
+who holds EXECUTE. Read-only catalog queries via the Management API (see
+`helpers/adminQuery.ts`), using the `SUPABASE_ACCESS_TOKEN` in `.env.local` —
+the same token `scripts/db-query.mjs` uses. `runQuery()` refuses anything that
+isn't a lone SELECT/WITH, so a test file cannot become a migration runner.
+
+Why both: in-migration `DO $assert$` blocks proved each fix at apply time, but
+they run **once**. Nothing stopped a later migration from undoing them. Every
+assertion in the invariant suite corresponds to a defect that was actually
+shipped and then found — the recurring one being *an RPC gate is worthless if
+the underlying table is client-writable*, which appeared four separate times.
+
+The invariant suite found a real hole on its first run: 36 knowledge functions
+were executable by `anon`, four of them SECURITY DEFINER writers. Fixed in
+migration 361.
+
+### Known gap
+
+The behavioural suite cannot yet cover the knowledge ACL: the dev project is a
+schema clone and is missing `knowledge_collections` (mig 284) and everything
+from 294 onward, including the entire ACL surface. Behavioural ACL tests need
+that project resynced first.
