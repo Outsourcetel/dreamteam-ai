@@ -5,6 +5,7 @@ import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalation
 import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
+import OpsAlertsBanner from '../../components/OpsAlertsBanner';
 import { StatTile, PanelCard, Chip, Button, EmptyState } from '../../design/primitives';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
@@ -375,6 +376,12 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
 
   return (
     <div className="p-6 flex flex-col gap-6 text-dt-body">
+
+        {/* Operational alerts. Renders nothing when there are none — this is
+            above the fold precisely because the alert it exists to show
+            ("digital employees have stopped answering") went unread for four
+            days while sitting in a table no screen displayed. */}
+        <OpsAlertsBanner />
 
         {/* Top bar */}
         <div className="flex items-center justify-between">

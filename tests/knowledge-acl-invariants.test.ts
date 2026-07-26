@@ -289,6 +289,30 @@ describe('authenticated perimeter', () => {
     expect(n, 'the known-open list grew — new debt was recorded instead of fixed').toBeLessThanOrEqual(2);
   });
 
+  it('no anon-reachable function skips its check when auth.uid() is null', async () => {
+    // The bug class migration 369 fixed, and the one my own text-matching missed:
+    // `if auth.uid() is not null and not exists (...) then raise` only runs the
+    // check for a LOGGED-IN caller. anon has a null auth.uid(), so an anonymous
+    // caller falls straight through. The body CONTAINS auth.uid(), so a scan for
+    // "does it mention auth.uid()" counts it as guarded. It is not.
+    //
+    // 32 functions use this shape. In 31 the bypass is deliberate — it is how a
+    // service-role edge function passes a check meant for humans — and those are
+    // not anon-executable, so the internet cannot reach the open path. It is the
+    // COMBINATION that is the vulnerability, which is exactly what this asserts.
+    const rows = await runQuery<{ proname: string }>(q(`
+      select p.proname
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.prokind in ('f','p') and p.prosecdef
+         and has_function_privilege('anon', p.oid, 'EXECUTE')
+         and regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
+             ~* '(auth\\.uid\\(\\) is not null and|if auth\\.uid\\(\\) is null then (return|null))'`));
+    expect(
+      rows.map(r => r.proname),
+      'anonymous callers reach this function AND its authorization check does not run for them — an unauthenticated write path',
+    ).toEqual([]);
+  });
+
   it('the 25 revoked functions stay revoked', async () => {
     // Re-running CREATE OR REPLACE FUNCTION on any of these RESETS its grants
     // back to the PUBLIC default. That is the realistic way this regresses: a
