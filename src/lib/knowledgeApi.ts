@@ -135,6 +135,10 @@ export interface SearchDocRow {
   updated_at: string;
   citation_count: number;
   last_cited_at: string | null;
+  /** mig 346 editorial state; mig 362 exposes it so the Library can show drafts. */
+  lifecycle_status: 'draft' | 'in_review' | 'published' | 'archived';
+  /** Derived: published, or needs_verification when review is overdue. */
+  verification_state: string;
   total_count: number;
 }
 export interface SearchDocsParams {
@@ -1160,4 +1164,73 @@ export async function addGroupMember(groupId: string, userId: string): Promise<v
 export async function removeGroupMember(groupId: string, userId: string): Promise<void> {
   const { error } = await supabase.rpc('remove_group_member', { p_group_id: groupId, p_user_id: userId });
   if (error) throw error;
+}
+
+// ============================================================
+// Knowledge tree (mig 362) — the Library's left panel.
+//
+// Also the fix for a regression: mig 341 added a CHECK that a collection is
+// either a root Space (no parent) or a child (with one). The old direct-insert
+// path set neither, so creating a collection from the product failed with a
+// constraint violation from 341 until 362. Creation now goes through RPCs that
+// know the difference and enforce the knowledge_manager gate.
+// ============================================================
+
+export interface KnowledgeTreeNode {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  description: string | null;
+  is_space: boolean;
+  is_restricted: boolean;
+  archived: boolean;
+  depth: number;
+  /** Documents anywhere BENEATH this node, straight off the ancestry closure. */
+  doc_count: number;
+  /** What the caller may do here — the tree hides actions the server would refuse. */
+  my_level: number;
+}
+
+export async function listKnowledgeTree(includeArchived = false): Promise<KnowledgeTreeNode[]> {
+  const { data, error } = await supabase.rpc('list_knowledge_tree', { p_include_archived: includeArchived });
+  if (error) throw error;
+  return (data ?? []) as KnowledgeTreeNode[];
+}
+
+export async function createKnowledgeSpace(name: string, description?: string | null): Promise<string> {
+  const { data, error } = await supabase.rpc('create_knowledge_space', {
+    p_name: name, p_description: description ?? null, p_icon: 'folder',
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function createChildCollection(parentId: string, name: string, description?: string | null): Promise<string> {
+  const { data, error } = await supabase.rpc('create_knowledge_collection', {
+    p_parent_id: parentId, p_name: name, p_description: description ?? null,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function renameKnowledgeCollection(id: string, name: string, description?: string | null): Promise<void> {
+  const { error } = await supabase.rpc('rename_knowledge_collection', {
+    p_id: id, p_name: name, p_description: description ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function moveKnowledgeCollection(id: string, newParentId: string): Promise<void> {
+  const { error } = await supabase.rpc('move_knowledge_collection', { p_id: id, p_new_parent_id: newParentId });
+  if (error) throw error;
+}
+
+/** Archives rather than deletes — a DELETE cascades and silently unfiles documents. */
+export async function archiveKnowledgeCollection(id: string, archived = true):
+  Promise<{ ok: boolean; documents_kept: number; child_collections: number }> {
+  const { data, error } = await supabase.rpc('archive_knowledge_collection', {
+    p_id: id, p_archived: archived,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; documents_kept: number; child_collections: number };
 }

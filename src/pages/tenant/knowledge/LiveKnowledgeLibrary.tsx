@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
+import KnowledgeTreePanel, { LifecycleChip } from '../../../components/KnowledgeTreePanel';
 import {
   KnowledgeDoc, createKnowledgeDoc,
   updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -446,8 +447,20 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
       )}
 
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(200px,260px)_1fr] gap-5 items-start">
+        {/* LEFT — hierarchy */}
+        <div className="lg:sticky lg:top-4">
+          <KnowledgeTreePanel
+            selectedId={collectionFilter || null}
+            onSelect={(id) => { setPageIdx(0); setCollectionFilter(id ?? ''); }}
+            refreshKey={total}
+          />
+        </div>
+
+        {/* RIGHT — documents */}
+        <div className="min-w-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button
           onClick={() => setEditor({ ...emptyEditor })}
           className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
@@ -497,13 +510,6 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           <option value="role">Role-shared</option>
           <option value="scoped">Scoped</option>
         </select>
-        <select value={collectionFilter} onChange={e => { setPageIdx(0); setCollectionFilter(e.target.value); }}
-          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
-          <option value="">All collections</option>
-          {collections.map(c => <option key={c.id} value={c.id}>{c.name} ({c.doc_count})</option>)}
-        </select>
-        <button onClick={() => void newCollection()} title="Create a collection"
-          className="text-sm px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 transition-colors">＋ Collection</button>
         {reembed.enabled && reembed.pending > 0 && (
           <span title="Search embeddings are being recomputed in the background. Search keeps working the whole time."
             className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 text-indigo-300">
@@ -605,7 +611,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   <td className={td}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSel(d.id)} />
                   </td>
-                  <td className={`${td} text-white font-medium`}>{d.title}</td>
+                  <td className={`${td} text-white font-medium`}>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{d.title}</span>
+                      {(d.lifecycle_status !== 'published' || d.verification_state === 'needs_verification') && (
+                        <LifecycleChip status={d.lifecycle_status} verification={d.verification_state} />
+                      )}
+                    </div>
+                  </td>
                   <td className={`${td} text-xs text-dt-support max-w-xs`}>
                     <span className="line-clamp-2">{d.preview}</span>
                   </td>
@@ -769,6 +782,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           )}
         </div>
       )}
+
+        </div>{/* end RIGHT column */}
+      </div>{/* end two-column shell */}
 
       {/* Editor modal */}
       {editor && (
