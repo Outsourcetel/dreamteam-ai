@@ -234,3 +234,79 @@ describe('knowledge ACL invariants', () => {
     expect(rows, 'granting yourself access must not be one PostgREST call away').toEqual([]);
   });
 });
+
+// ── The `authenticated` perimeter (migration 365) ─────────────────────────
+// Self-serve signup is live, so `authenticated` is one email address away from
+// anyone on the internet. A SECURITY DEFINER function runs as the table owner
+// and bypasses RLS, so every such function that WRITES and does not check the
+// caller's tenant is an internet-reachable way to write another tenant's data.
+//
+// Migration 365 revoked the 25 that no browser code calls. The 12 that the UI
+// genuinely does call are recorded in public.unguarded_secdef_writers as known
+// debt. These tests exist so that number can only ever go DOWN.
+describe('authenticated perimeter', () => {
+  // Trigger functions are excluded: PostgREST does not expose a function
+  // returning `trigger` as an RPC, so it is not reachable by a client even
+  // when the EXECUTE grant is present.
+  // NOTE: no `--` comments inside these query strings. q() collapses newlines
+  // into spaces, so a line comment would swallow the rest of the statement and
+  // Postgres would receive an empty query. (It did, the first time.)
+  //
+  // The regexp_replace normalises whitespace before matching: 'insert\n  into'
+  // is still an insert, and a naive single-space pattern under-reports it.
+  const REACHABLE_UNGUARDED_WRITERS = `
+    with w as (
+      select p.proname, p.prorettype::regtype::text as rettype,
+             regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g') as def
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.prosecdef
+         and has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+    select proname from w
+     where def ~* '(insert into|update [a-z_"]+ set|delete from|truncate )'
+       and def !~* 'auth_tenant_id|auth_has_tenant_role|is_platform_admin|resolve_platform_capability|_assert_|current_tenant|auth\\.uid\\(\\)'
+       and rettype <> 'trigger'`;
+
+  it('no NEW unguarded SECURITY DEFINER writer becomes reachable', async () => {
+    const rows = await runQuery<{ proname: string }>(q(`
+      ${REACHABLE_UNGUARDED_WRITERS}
+        and proname not in (select function_name from public.unguarded_secdef_writers)`));
+    expect(
+      rows.map(r => r.proname),
+      'a new SECURITY DEFINER function writes without checking the caller tenant and is callable by any signed-up user. Add a guard, or revoke EXECUTE from PUBLIC, anon and authenticated.',
+    ).toEqual([]);
+  });
+
+  it('the tracked debt list only shrinks', async () => {
+    // If a guard gets added, the row should be DELETED from the table. This
+    // catches the opposite drift: rows accumulating to keep the test quiet.
+    const [{ n }] = await runQuery<{ n: number }>(q(
+      `select count(*)::int as n from public.unguarded_secdef_writers`));
+    expect(n, 'the known-open list grew — new debt was recorded instead of fixed').toBeLessThanOrEqual(12);
+  });
+
+  it('the 25 revoked functions stay revoked', async () => {
+    // Re-running CREATE OR REPLACE FUNCTION on any of these RESETS its grants
+    // back to the PUBLIC default. That is the realistic way this regresses: a
+    // later migration edits the body and silently re-opens the door.
+    const rows = await runQuery<{ proname: string }>(q(`
+      select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public'
+         and p.proname in (
+           'apply_account_writeback_internal','apply_continuity_writeback_internal',
+           'apply_entity_amendment','apply_invoice_writeback_internal',
+           'apply_opportunity_writeback_internal','assign_training_for_de',
+           'create_improvement_review','dispatch_de_improve_internal',
+           'install_standing_watchers','mark_outbound_delivery','mark_training_progress',
+           'reap_stale_computer_use_runtimes','record_de_spend','record_improvement_replay',
+           'record_knowledge_citations','redact_old_adjudications','reject_draft',
+           'reject_entity_amendment','resolve_case_await','resolve_invoice_writeback',
+           'run_case_timeline','run_work_watchers','submit_draft_for_review',
+           'verify_and_bind_widget_identity','verify_de_system')
+         and (has_function_privilege('anon', p.oid, 'EXECUTE')
+           or has_function_privilege('authenticated', p.oid, 'EXECUTE'))`));
+    expect(
+      rows.map(r => r.proname),
+      'CREATE OR REPLACE resets grants to the PUBLIC default — re-add the REVOKE after the function body',
+    ).toEqual([]);
+  });
+});
