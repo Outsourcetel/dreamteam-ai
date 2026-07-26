@@ -85,8 +85,38 @@ if (extra.length) {
   console.log(`  ${extra.slice(0, 12).map(key).join(', ')}${extra.length > 12 ? ` … +${extra.length - 12}` : ''}`);
 }
 
+// ── CHECK constraints ───────────────────────────────────────────────────────
+// Columns were only half the problem, and the other half is worse because it
+// fails at RUNTIME rather than at sync time. Creating a workspace on dev died
+// with:
+//   new row for relation "guardrail_rules" violates check constraint
+//   "guardrail_rules_rule_type_check"
+// Dev's constraint allowed 4 rule_type values; production allows 9, and
+// complete_signup inserts one of the newer five. So signup — the single most
+// important path in the product — was broken on dev while every table and
+// column looked correct. Measured across the whole schema: 12 constraints with
+// a DIFFERENT definition and 12 missing entirely.
+const CHECKS = `
+  select c.relname as tbl, con.conname as name, pg_get_constraintdef(con.oid) as def
+    from pg_constraint con
+    join pg_class c on c.oid = con.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and con.contype = 'c' and c.relkind = 'r'
+   order by 1, 2`;
+
+const [prodChk, devChk] = await Promise.all([q(PROD, CHECKS), q(DEV, CHECKS)]);
+const devChkMap = new Map(devChk.map((r) => [`${r.tbl}.${r.name}`, r.def]));
+const chkKey = (r) => `${r.tbl}.${r.name}`;
+
+const chkDiffer = prodChk.filter((r) => devTables.has(r.tbl)
+  && devChkMap.has(chkKey(r)) && devChkMap.get(chkKey(r)) !== r.def);
+const chkMissing = prodChk.filter((r) => devTables.has(r.tbl) && !devChkMap.has(chkKey(r)));
+
+console.log(`\n${chkDiffer.length} CHECK constraint(s) differ, ${chkMissing.length} missing — on tables dev already has`);
+for (const r of [...chkDiffer, ...chkMissing].slice(0, 10)) console.log(`  ${chkKey(r)}`);
+
 if (!APPLY) { console.log('\n(report only — pass --apply to run the ALTERs)'); process.exit(0); }
-if (!missing.length) { console.log('\nnothing to do'); process.exit(0); }
+if (!missing.length && !chkDiffer.length && !chkMissing.length) { console.log('\nnothing to do'); process.exit(0); }
 
 // Nullable and no default: this is a dev clone being reshaped, not a migration.
 // A NOT NULL column added to a table with rows needs a default and a backfill
@@ -96,5 +126,44 @@ const sql = Object.entries(byTable)
     `ALTER TABLE public.${JSON.stringify(tbl).replace(/"/g, '"')} ADD COLUMN IF NOT EXISTS "${c.col}" ${c.type};`).join('\n'))
   .join('\n');
 
-await q(DEV, sql);
-console.log(`\napplied ${missing.length} ADD COLUMN statement(s) to dev`);
+if (missing.length) {
+  await q(DEV, sql);
+  console.log(`\napplied ${missing.length} ADD COLUMN statement(s) to dev`);
+}
+
+// Constraints go one at a time, deliberately. A batch dies on the first table
+// whose EXISTING rows violate the production rule and rolls back the other 23 —
+// and that violation is information worth having, not a reason to abandon the
+// sync.
+let ok = 0; const notValid = []; const failed = [];
+for (const r of [...chkDiffer, ...chkMissing]) {
+  const drop = `ALTER TABLE public.${JSON.stringify(r.tbl).replace(/"/g, '"')} DROP CONSTRAINT IF EXISTS "${r.name}"`;
+  const add = (suffix) =>
+    `ALTER TABLE public.${JSON.stringify(r.tbl).replace(/"/g, '"')} ADD CONSTRAINT "${r.name}" ${r.def}${suffix}`;
+  try {
+    await q(DEV, `${drop}; ${add('')};`);
+    ok += 1;
+  } catch (e) {
+    // Existing dev rows break the production rule. NOT VALID applies it to
+    // future writes — which is what makes signup work — while leaving the
+    // legacy rows alone and SAYING SO. Silently skipping would leave dev
+    // diverged in a way nothing reports; silently deleting the rows would be
+    // worse.
+    try {
+      await q(DEV, `${drop}; ${add(' NOT VALID')};`);
+      notValid.push(`${chkKey(r)} — ${String(e.message).slice(0, 90)}`);
+    } catch (e2) {
+      failed.push(`${chkKey(r)} — ${String(e2.message).slice(0, 90)}`);
+    }
+  }
+}
+
+console.log(`\nCHECK constraints: ${ok} applied clean, ${notValid.length} NOT VALID, ${failed.length} failed`);
+if (notValid.length) {
+  console.log('\nNOT VALID (enforced for new rows; existing dev rows already violate them):');
+  notValid.forEach((m) => console.log(`  ${m}`));
+}
+if (failed.length) {
+  console.log('\nFAILED — dev still diverges here:');
+  failed.forEach((m) => console.log(`  ${m}`));
+}
