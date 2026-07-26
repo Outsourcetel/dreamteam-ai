@@ -7,8 +7,10 @@ import {
   listKnowledgeSpacesAdmin, listResourceAccess, previewSpaceAccess, myKnowledgeAdminLevel,
   listWorkspacePeople, grantKnowledgeAccess, revokeKnowledgeAccess, setSpaceRestricted,
   PERMISSION_LEVELS,
-  type KnowledgeSpaceAdmin, type ResourceGrant, type EffectiveAccess,
+  listPrincipalGroups,
+  type KnowledgeSpaceAdmin, type ResourceGrant, type EffectiveAccess, type PrincipalGroup,
 } from '../../../lib/knowledgeApi';
+import KnowledgeGroupsPanel from '../../../components/KnowledgeGroupsPanel';
 
 // ============================================================
 // Who can see what — knowledge permissions, presets first.
@@ -117,6 +119,8 @@ export default function KnowledgePermissionsPage() {
           </div>
         )}
       </PanelCard>
+
+      <KnowledgeGroupsPanel canManage={canManage} />
 
       {open && (
         <SpaceAccessDrawer
@@ -335,7 +339,10 @@ function AddGrantForm({ spaceId, onAdded, onError }: {
   spaceId: string; onAdded: () => Promise<void>; onError: (m: string | null) => void;
 }) {
   const [people, setPeople] = useState<Array<{ user_id: string; full_name: string; role: string }>>([]);
+  const [groups, setGroups] = useState<PrincipalGroup[]>([]);
+  const [kind, setKind] = useState<'user' | 'group'>('user');
   const [userId, setUserId] = useState('');
+  const [groupId, setGroupId] = useState('');
   const [permission, setPermission] = useState('viewer');
   const [saving, setSaving] = useState(false);
   // Starts at 0 and FAILS CLOSED. If the level lookup errors, this offers
@@ -348,8 +355,12 @@ function AddGrantForm({ spaceId, onAdded, onError }: {
   useEffect(() => {
     void (async () => {
       try {
-        const [p, lvl] = await Promise.all([listWorkspacePeople(), myKnowledgeAdminLevel(spaceId)]);
-        setPeople(p); setUserId(p[0]?.user_id ?? ''); setMyLevel(lvl);
+        const [p, gs, lvl] = await Promise.all([
+          listWorkspacePeople(), listPrincipalGroups(), myKnowledgeAdminLevel(spaceId),
+        ]);
+        setPeople(p); setUserId(p[0]?.user_id ?? '');
+        setGroups(gs); setGroupId(gs[0]?.id ?? '');
+        setMyLevel(lvl);
       } catch { /* the form simply stays empty */ }
     })();
   }, [spaceId]);
@@ -359,12 +370,13 @@ function AddGrantForm({ spaceId, onAdded, onError }: {
   const offerable = PERMISSION_LEVELS.filter((_, i) => i + 1 <= myLevel);
 
   const submit = async () => {
-    if (!userId) return;
+    const principalId = kind === 'user' ? userId : groupId;
+    if (!principalId) return;
     setSaving(true); onError(null);
     try {
       await grantKnowledgeAccess({
         resourceType: 'collection', resourceId: spaceId,
-        principalType: 'user', principalId: userId, permission,
+        principalType: kind, principalId, permission,
       });
       await onAdded();
     } catch (e) {
@@ -372,18 +384,34 @@ function AddGrantForm({ spaceId, onAdded, onError }: {
     } finally { setSaving(false); }
   };
 
-  if (people.length === 0) {
+  if (people.length === 0 && groups.length === 0) {
     return <p className="text-xs text-dt-muted">Nobody else is in this workspace yet.</p>;
   }
 
   return (
     <div className="rounded-xl border border-dt-border bg-dt-inset px-4 py-3 space-y-3">
-      <p className="text-[10px] uppercase tracking-wide text-dt-muted">Give someone access</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Person">
-          <select value={userId} onChange={e => setUserId(e.target.value)} className={INPUT_CLS}>
-            {people.map(p => <option key={p.user_id} value={p.user_id}>{p.full_name}</option>)}
+      <p className="text-[10px] uppercase tracking-wide text-dt-muted">Give access</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Field label="Give it to">
+          <select value={kind} onChange={e => setKind(e.target.value as 'user' | 'group')} className={INPUT_CLS}>
+            <option value="user">A person</option>
+            <option value="group" disabled={groups.length === 0}>
+              {groups.length === 0 ? 'A group (none yet)' : 'A group'}
+            </option>
           </select>
+        </Field>
+        <Field label={kind === 'user' ? 'Person' : 'Group'}>
+          {kind === 'user' ? (
+            <select value={userId} onChange={e => setUserId(e.target.value)} className={INPUT_CLS}>
+              {people.map(p => <option key={p.user_id} value={p.user_id}>{p.full_name}</option>)}
+            </select>
+          ) : (
+            <select value={groupId} onChange={e => setGroupId(e.target.value)} className={INPUT_CLS}>
+              {groups.map(g => (
+                <option key={g.id} value={g.id}>{g.name} ({g.member_count})</option>
+              ))}
+            </select>
+          )}
         </Field>
         <Field label="Can" hint={PERMISSION_LEVELS.find(l => l.value === permission)?.blurb}>
           <select value={permission} onChange={e => setPermission(e.target.value)} className={INPUT_CLS}>
@@ -391,8 +419,15 @@ function AddGrantForm({ spaceId, onAdded, onError }: {
           </select>
         </Field>
       </div>
+      {kind === 'group' && groupId && (
+        <p className="text-xs text-dt-support">
+          Everyone in this group gets it, including anyone added to the group later.
+        </p>
+      )}
       <div className="flex justify-end">
-        <Button kind="primary" size="sm" disabled={saving || !userId} onClick={() => void submit()}>
+        <Button kind="primary" size="sm"
+          disabled={saving || (kind === 'user' ? !userId : !groupId)}
+          onClick={() => void submit()}>
           {saving ? 'Saving…' : 'Give access'}
         </Button>
       </div>

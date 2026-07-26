@@ -1091,3 +1091,73 @@ export async function setSpaceRestricted(spaceId: string, restricted: boolean):
   if (error) throw error;
   return data as { ok: boolean; restricted: boolean; explicit_grants: number };
 }
+
+// ============================================================
+// Human groups (migs 343/358). A group is not an address book — it is a
+// permission-bearing principal, so membership is exactly as sensitive as a
+// direct grant. The RPCs refuse to let anyone add or remove people from a group
+// that holds more access than they do; otherwise group membership would launder
+// straight around the escalation guard on grants.
+// ============================================================
+
+export interface PrincipalGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  member_count: number;
+  grant_count: number;
+  max_level: number;
+  created_at: string;
+}
+
+export interface GroupMember {
+  user_id: string;
+  full_name: string;
+  role: string;
+  added_at: string;
+}
+
+export async function listPrincipalGroups(): Promise<PrincipalGroup[]> {
+  const { data, error } = await supabase.rpc('list_principal_groups');
+  if (error) throw error;
+  return (data ?? []) as PrincipalGroup[];
+}
+
+export async function listGroupMembers(groupId: string): Promise<GroupMember[]> {
+  const { data, error } = await supabase.rpc('list_group_members', { p_group_id: groupId });
+  if (error) throw error;
+  return (data ?? []) as GroupMember[];
+}
+
+export async function createPrincipalGroup(name: string, description?: string | null): Promise<string> {
+  const { data, error } = await supabase.rpc('create_principal_group', {
+    p_name: name, p_description: description ?? null,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function renamePrincipalGroup(groupId: string, name: string, description?: string | null): Promise<void> {
+  const { error } = await supabase.rpc('rename_principal_group', {
+    p_group_id: groupId, p_name: name, p_description: description ?? null,
+  });
+  if (error) throw error;
+}
+
+/** Returns what the deletion actually cost, so the screen can say so. */
+export async function deletePrincipalGroup(groupId: string):
+  Promise<{ ok: boolean; grants_removed: number; members_affected: number }> {
+  const { data, error } = await supabase.rpc('delete_principal_group', { p_group_id: groupId });
+  if (error) throw error;
+  return data as { ok: boolean; grants_removed: number; members_affected: number };
+}
+
+export async function addGroupMember(groupId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc('add_group_member', { p_group_id: groupId, p_user_id: userId });
+  if (error) throw error;
+}
+
+export async function removeGroupMember(groupId: string, userId: string): Promise<void> {
+  const { error } = await supabase.rpc('remove_group_member', { p_group_id: groupId, p_user_id: userId });
+  if (error) throw error;
+}
