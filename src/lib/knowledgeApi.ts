@@ -450,8 +450,13 @@ export async function listDocScopes(): Promise<Record<string, { kind: 'de' | 'sp
  *  Empty list = back to tenant-wide. Returns the resulting visibility. */
 export async function setDocScope(
   docId: string,
-  subjects: { kind: 'de' | 'specialist'; id: string }[]
-): Promise<'tenant' | 'scoped'> {
+  // mig 363: 'de_team' gives a document to every employee on a team, and keeps
+  // giving it to whoever joins later — membership IS the grant, nothing is
+  // copied per employee. Archetype sharing is deliberately NOT here: it lives
+  // on visibility='role' + share_archetype_key, and a second route to the same
+  // fact would drift.
+  subjects: { kind: 'de' | 'specialist' | 'de_team'; id: string }[]
+): Promise<'tenant' | 'scoped' | 'role'> {
   const { data, error } = await supabase.rpc('set_doc_scope', {
     p_doc_id: docId,
     p_subjects: subjects,
@@ -459,7 +464,7 @@ export async function setDocScope(
   if (error) raise('setDocScope', error);
   const res = data as { ok: boolean; error?: string; detail?: string; visibility?: string };
   if (!res?.ok) throw new CustomerApiError(res?.detail ?? res?.error ?? 'scope change rejected', false);
-  return (res.visibility as 'tenant' | 'scoped') ?? 'tenant';
+  return (res.visibility as 'tenant' | 'scoped' | 'role') ?? 'tenant';
 }
 
 // ── Chunking / embedding (ingest-chunks edge function) ────────────
