@@ -4760,8 +4760,26 @@ serve(async (req) => {
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
     // The 'dreamteam' self-connector has no read adapter — it is write-only,
     // serving the platform-builder actions via NATIVE_ACTIONS at execute time.
-    // execute_action never dereferences `adapter`, so it may run without one.
-    if (!adapter && connector.provider !== 'dreamteam') return json({ error: 'unsupported_provider' }, 400);
+    //
+    // The exemption below used to apply to EVERY action, on the stated grounds
+    // that "execute_action never dereferences `adapter`". That is true of
+    // execute_action and false of seven other actions, so `dreamteam` +
+    // list_recent reached line ~4911 with `adapter` undefined and died with
+    // "Cannot read properties of undefined (reading 'listRecent')" — a 500 with
+    // an opaque message where a clean 400 belonged.
+    //
+    // Found by the ops_alerts reporting added the same day, within minutes of it
+    // going live, which is the entire argument for having it.
+    //
+    // Verified by reading each action's block: these four never touch `adapter`;
+    // discover, fetch_record, health_check, list_recent, search, sync and test
+    // all do.
+    const ADAPTERLESS_ACTIONS = new Set([
+      'category_op', 'execute_action', 'preview_action', 'template_dry_run',
+    ]);
+    if (!adapter && !(connector.provider === 'dreamteam' && ADAPTERLESS_ACTIONS.has(action))) {
+      return json({ error: 'unsupported_provider', action, provider: connector.provider }, 400);
+    }
 
     const audit = (category: string, actionText: string, detail: Record<string, unknown>) =>
       admin.rpc('append_audit_event', {
