@@ -22,7 +22,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
       </div>
 
       <h1 className="text-2xl font-bold text-white mb-2">Terms of Service</h1>
-      <p className="text-sm text-dt-muted mb-8">Last updated: [date] · Effective: [date]</p>
+      <p className="text-sm text-dt-muted mb-8">Last updated: 22 July 2026 · Effective: 22 July 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed">
         <section>
