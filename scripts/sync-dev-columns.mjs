@@ -115,8 +115,40 @@ const chkMissing = prodChk.filter((r) => devTables.has(r.tbl) && !devChkMap.has(
 console.log(`\n${chkDiffer.length} CHECK constraint(s) differ, ${chkMissing.length} missing — on tables dev already has`);
 for (const r of [...chkDiffer, ...chkMissing].slice(0, 10)) console.log(`  ${chkKey(r)}`);
 
+// ── RLS policies ────────────────────────────────────────────────────────────
+// full_schema.sql already reconciles policies for the tables it touches — its
+// POLICY section DROPs and recreates each one, which is why 0 differ and 0 are
+// missing. What it CANNOT do is remove a policy production has since deleted.
+// Those leftovers are the dangerous direction, because POSTGRES ORS PERMISSIVE
+// POLICIES: one surviving permissive FOR ALL defeats every command-scoped
+// policy beside it.
+//
+// Measured on dev: 13 such leftovers, including
+//   knowledge_docs.knowledge_docs_tenant_isolation  (PERMISSIVE, FOR ALL,
+//                                                    tenant_id = auth_tenant_id())
+// That is the exact policy migration 344 DROPPED in production and 357 hardened
+// against. While it exists, the six-level Knowledge ACL is fully bypassed on
+// dev — any tenant member reads every document regardless of grants — and the
+// invariant test that guards this runs against PRODUCTION, so it never saw it.
+// A cross-tenant test passing on dev would have meant nothing.
+const POLICIES = `
+  select c.relname as tbl, p.polname as name
+    from pg_policy p
+    join pg_class c on c.oid = p.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' order by 1, 2`;
+
+const [prodPol, devPol] = await Promise.all([q(PROD, POLICIES), q(DEV, POLICIES)]);
+const prodPolSet = new Set(prodPol.map((r) => `${r.tbl}.${r.name}`));
+const polExtra = devPol.filter((r) => !prodPolSet.has(`${r.tbl}.${r.name}`));
+
+console.log(`\n${polExtra.length} RLS policy(ies) on dev that production does NOT have`);
+for (const r of polExtra) console.log(`  ${r.tbl}.${r.name}`);
+
 if (!APPLY) { console.log('\n(report only — pass --apply to run the ALTERs)'); process.exit(0); }
-if (!missing.length && !chkDiffer.length && !chkMissing.length) { console.log('\nnothing to do'); process.exit(0); }
+if (!missing.length && !chkDiffer.length && !chkMissing.length && !polExtra.length) {
+  console.log('\nnothing to do'); process.exit(0);
+}
 
 // Nullable and no default: this is a dev clone being reshaped, not a migration.
 // A NOT NULL column added to a table with rows needs a default and a backfill
@@ -166,4 +198,20 @@ if (notValid.length) {
 if (failed.length) {
   console.log('\nFAILED — dev still diverges here:');
   failed.forEach((m) => console.log(`  ${m}`));
+}
+
+// Drop the leftovers LAST, after columns and constraints are in place, so a
+// half-synced dev never spends time with its access rules removed.
+let dropped = 0; const polFailed = [];
+for (const r of polExtra) {
+  try {
+    await q(DEV, `DROP POLICY IF EXISTS "${r.name}" ON public.${JSON.stringify(r.tbl).replace(/"/g, '"')};`);
+    dropped += 1;
+  } catch (e) {
+    polFailed.push(`${r.tbl}.${r.name} — ${String(e.message).slice(0, 90)}`);
+  }
+}
+if (polExtra.length) {
+  console.log(`\nRLS policies: ${dropped} dropped, ${polFailed.length} failed`);
+  polFailed.forEach((m) => console.log(`  ${m}`));
 }
