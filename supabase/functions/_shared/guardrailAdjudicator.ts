@@ -345,6 +345,25 @@ async function logAdjudication(
   } catch { return null; }
 }
 
+/** Record a decline: the adjudicator did not judge, and here is why.
+ *  assessment is deliberately NULL — no judgment was made, so a decline can
+ *  never be miscounted as a verdict. Best-effort: a logging failure must never
+ *  change the outcome, which is already "keep the block". */
+async function logDecline(
+  admin: Admin, p: AdjParams, mode: 'shadow' | 'enforce', reason: string,
+): Promise<void> {
+  try {
+    await admin.from('guardrail_adjudications').insert({
+      tenant_id: p.tenantId, de_id: p.deId, conversation_id: p.conversationId,
+      surface: 'answer_internal', rule_id: p.hit.id.startsWith('__') ? null : p.hit.id,
+      rule_text: p.hit.rule, matched_text: p.hit.matched_text ?? null, pattern: p.hit.pattern,
+      assessment: null, mode, would_clear: false, applied: false, reason,
+      content_preview: String(p.content ?? '').slice(0, 300),
+      question_preview: String(p.question ?? '').slice(0, 300),
+    });
+  } catch { /* best effort */ }
+}
+
 /**
  * Adjudicate a deterministic guardrail hit.
  *
@@ -355,31 +374,42 @@ async function logAdjudication(
 export async function adjudicateRegexHit(admin: Admin, p: AdjParams): Promise<AdjResult> {
   const blocked = (reason: string, hit: AdjHit = p.hit): AdjResult => ({ outcome: 'blocked', hit, reason });
   try {
-    // ── A. Deterministic exclusions, before any I/O ──
-    // A dry run must report today's behaviour and write nothing.
+    // ── A. Replay is absolutely first: a dry run must report today's behaviour
+    //    and write NOTHING, not even a decline row.
     if (p.replay) return blocked('replay');
+
+    // ── B. The flag. This is the byte-identity boundary: with it off we return
+    //    before any write, exactly as before GI-10 existed. It is checked BEFORE
+    //    the deterministic exclusions specifically so that, when the feature IS
+    //    on, every decline can be recorded — "the adjudicator declined, and here
+    //    is why" was previously invisible and indistinguishable from "nothing
+    //    happened". The only cost is one memoized platform_config read.
+    const gate = await adjudicationGate(admin, p.tenantId);
+    if (!gate.enabled) return blocked('flag_off');
+    const mode = gate.mode ?? 'shadow';
+    const declined = async (reason: string): Promise<AdjResult> => {
+      await logDecline(admin, p, mode, reason);
+      return blocked(reason);
+    };
+
+    // ── C. Deterministic exclusions. Each one now leaves a record. ──
     // Force a real per-DE cache scope; no '*' collapse as a reuse vector.
-    if (!p.deId) return blocked('no_de_scope');
-    if (!ADJUDICABLE_TYPES.has(p.hit.rule_type)) return blocked('rule_type_not_adjudicable');
+    if (!p.deId) return declined('no_de_scope');
+    if (!ADJUDICABLE_TYPES.has(p.hit.rule_type)) return declined('rule_type_not_adjudicable');
     // Second, independent guard on __resolver_error__ / __judge_error__.
-    if (p.hit.id.startsWith('__')) return blocked('sentinel');
+    if (p.hit.id.startsWith('__')) return declined('sentinel');
     // A hit from an uninstrumented path degrades to today's behaviour, never to
     // a blind adjudication.
-    if (!p.hit.matched_text) return blocked('no_evidence');
+    if (!p.hit.matched_text) return declined('no_evidence');
     // PROVENANCE: a genuine false positive originates in the employee's own
     // prose. If the asker supplied the trigger phrase, that is a steering
     // attempt, not a false positive.
     const norm = (s: string) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-    if (norm(p.question).includes(norm(p.hit.matched_text))) return blocked('matched_text_in_question');
+    if (norm(p.question).includes(norm(p.hit.matched_text))) return declined('matched_text_in_question');
 
-    // ── B. The flag. This is the byte-identity boundary. ──
-    const gate = await adjudicationGate(admin, p.tenantId);
-    if (!gate.enabled) return blocked('flag_off');
-    const mode = gate.mode ?? 'shadow';
-
-    // ── C/D. Rate limit + circuit breaker ──
-    if (await durableRateLimited(admin, `gi10:${p.tenantId}`, ADJ_MAX_PER_MIN)) return blocked('rate_limited');
-    if (breakerOpen(p.tenantId)) return blocked('breaker_open');
+    // ── D. Rate limit + circuit breaker ──
+    if (await durableRateLimited(admin, `gi10:${p.tenantId}`, ADJ_MAX_PER_MIN)) return declined('rate_limited');
+    if (breakerOpen(p.tenantId)) return declined('breaker_open');
 
     // ── E. Adjudicate, mask, re-screen. ──
     let current: AdjHit = p.hit;
@@ -387,26 +417,29 @@ export async function adjudicateRegexHit(admin: Admin, p: AdjParams): Promise<Ad
     const deadline = Date.now() + ADJ_TOTAL_BUDGET_MS;
 
     for (let round = 0; round < MAX_ADJUDICATIONS; round++) {
-      if (Date.now() > deadline) return blocked('deadline', current);
+      if (Date.now() > deadline) { await logDecline(admin, p, mode, 'deadline'); return blocked('deadline', current); }
 
       // Same RPC, same rule types, same severity filter as the regex pass.
       const rules = await loadBlockingRulesForJudge(admin, p.tenantId, p.deId);
-      if (rules === null) return blocked('rules_fetch_failed', current);
+      if (rules === null) { await logDecline(admin, p, mode, 'rules_fetch_failed'); return blocked('rules_fetch_failed', current); }
       // deno-lint-ignore no-explicit-any
       const rule = (rules as any[]).find((r) => r.id === current.id);
-      if (!rule) return blocked('rule_not_in_set', current);
+      if (!rule) { await logDecline(admin, p, mode, 'rule_not_in_set'); return blocked('rule_not_in_set', current); }
 
       // PER-RULE OPT-IN. A positive row is REQUIRED. Absence = not adjudicable,
       // which also means this fails closed if the code ships before mig 329.
       const { data: optIn, error: optErr } = await admin.from('guardrail_rule_adjudicable')
         .select('rule_id').eq('tenant_id', p.tenantId).eq('rule_id', rule.id).maybeSingle();
-      if (optErr || !optIn) return blocked('rule_not_opted_in', current);
+      // The common one: the tenant has the feature on but has not made THIS
+      // rule clearable. Logging it is what turns the panel into "here is what
+      // you would gain by opting this rule in".
+      if (optErr || !optIn) { await logDecline(admin, p, mode, 'rule_not_opted_in'); return blocked('rule_not_opted_in', current); }
 
       // Match-centred window: the judge must never see a slice that might not
       // contain the trigger it is being asked about.
       const matched = current.matched_text!;
       const idx = working.toLowerCase().indexOf(matched.toLowerCase());
-      if (idx < 0) return blocked('match_not_locatable', current);
+      if (idx < 0) { await logDecline(admin, p, mode, 'match_not_locatable'); return blocked('match_not_locatable', current); }
       const from = Math.max(0, idx - ADJ_WINDOW_BEFORE);
       const end = idx + matched.length + ADJ_WINDOW_AFTER;
       const excerpt = working.slice(from, idx) + '»' + working.slice(idx, idx + matched.length) + '«'

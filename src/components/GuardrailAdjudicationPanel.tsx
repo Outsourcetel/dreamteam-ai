@@ -21,7 +21,33 @@ import {
 
 const MIN_JUSTIFICATION = 40
 
-function Assessment({ a, wouldClear }: { a: Adjudication['assessment']; wouldClear: boolean }) {
+/** Plain-English reasons the adjudicator declined to judge at all. A decline is
+ *  NOT a verdict — assessment is null — so it must never render as one. */
+const DECLINE_REASON: Record<string, string> = {
+  matched_text_in_question: 'the asker used that phrase themselves',
+  rule_not_opted_in: 'this rule is not machine-clearable',
+  rule_type_not_adjudicable: 'rule type cannot be adjudicated',
+  no_evidence: 'no matched text captured',
+  no_de_scope: 'no employee in scope',
+  sentinel: 'screening was unavailable',
+  rate_limited: 'rate limit reached',
+  breaker_open: 'paused after repeated failures',
+  deadline: 'took too long',
+  rules_fetch_failed: 'rules could not be loaded',
+  rule_not_in_set: 'rule no longer in scope',
+  match_not_locatable: 'match could not be located',
+}
+
+function Assessment({ a, wouldClear, reason }: { a: Adjudication['assessment']; wouldClear: boolean; reason: string | null }) {
+  if (!a) {
+    // Declined: no judgment was made. Shown neutrally so it is never counted
+    // as either a clear or a block-with-reasoning.
+    return (
+      <span className="text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap bg-dt-page text-dt-muted">
+        not judged{reason && DECLINE_REASON[reason] ? ` — ${DECLINE_REASON[reason]}` : ''}
+      </span>
+    )
+  }
   const map: Record<string, string> = {
     describes: 'bg-amber-500/20 text-amber-200',
     enacts: 'bg-emerald-500/15 text-emerald-300',
@@ -32,7 +58,7 @@ function Assessment({ a, wouldClear }: { a: Adjudication['assessment']; wouldCle
     : a === 'enacts' ? 'enacts → upheld'
     : a === 'unclear' ? 'unclear → upheld'
     : 'error → upheld'
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${map[a ?? 'error']}`}>{label}</span>
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${map[a]}`}>{label}</span>
 }
 
 export default function GuardrailAdjudicationPanel({ rules }: { rules: GuardrailRule[] }) {
@@ -77,7 +103,10 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
 
   const cleared = log.filter(a => a.applied).length
   const wouldHave = log.filter(a => a.would_clear && !a.applied).length
-  const upheld = log.filter(a => !a.would_clear).length
+  // Counts must separate JUDGED outcomes from declines, or a rule nobody
+  // opted in would look like the AI kept deciding to block.
+  const upheld = log.filter(a => a.assessment && !a.would_clear).length
+  const notJudged = log.filter(a => !a.assessment).length
 
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
@@ -112,7 +141,7 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
               </div>
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="text-lg font-semibold text-white">{upheld}</div>
-                <div className="text-[10px] text-dt-muted">block kept</div>
+                <div className="text-[10px] text-dt-muted">block kept{notJudged>0?` · ${notJudged} not judged`:''}</div>
               </div>
             </div>
           )}
@@ -194,7 +223,7 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
               {log.map(a => (
                 <div key={a.id} className="rounded-lg border border-dt-border bg-dt-page p-2.5">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <Assessment a={a.assessment} wouldClear={a.would_clear} />
+                    <Assessment a={a.assessment} wouldClear={a.would_clear} reason={a.reason} />
                     {a.applied && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200">RELEASED</span>}
                     {a.mode === 'shadow' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-card text-dt-muted">observing only</span>}
                     {a.confidence != null && <span className="text-[10px] text-dt-muted">{a.confidence}% sure</span>}
