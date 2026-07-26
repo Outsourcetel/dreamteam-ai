@@ -872,3 +872,108 @@ export async function getPlatformShelfStatus(): Promise<ShelfStatus | null> {
   if (error) throw error;
   return (data ?? null) as ShelfStatus | null;
 }
+
+// ============================================================
+// Ingestion queue (migs 347/350/354). Imports that are slow or flaky —
+// fetching URLs, re-importing a connector folder — run as a background job so a
+// failure is a retry rather than a lost afternoon. The drain worker
+// (knowledge-ingest-drain, every 2 minutes) does the work; these are the reads
+// and the two human decisions: give up, or try again.
+// ============================================================
+
+export interface IngestionJob {
+  id: string;
+  label: string;
+  source_kind: 'upload' | 'url' | 'paste' | 'connector' | 'reingest';
+  status: 'queued' | 'running' | 'completed' | 'completed_with_errors' | 'failed' | 'cancelled';
+  total_items: number;
+  succeeded_items: number;
+  failed_items: number;
+  skipped_items: number;
+  target_collection: string | null;
+  created_at: string;
+  finished_at: string | null;
+  first_error: string | null;
+}
+
+export interface IngestionItem {
+  id: string;
+  source_ref: string;
+  title: string | null;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped_duplicate' | 'cancelled';
+  attempts: number;
+  max_attempts: number;
+  error_kind: 'retryable' | 'terminal' | null;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  doc_id: string | null;
+  updated_at: string;
+}
+
+export async function listIngestionJobs(limit = 20): Promise<IngestionJob[]> {
+  const { data, error } = await supabase.rpc('list_ingestion_jobs', { p_limit: limit });
+  if (error) throw error;
+  return (data ?? []) as IngestionJob[];
+}
+
+/** The per-item detail behind a job's failure count — failures ordered first. */
+export async function listIngestionItems(jobId: string): Promise<IngestionItem[]> {
+  const { data, error } = await supabase.rpc('list_ingestion_items', { p_job_id: jobId });
+  if (error) throw error;
+  return (data ?? []) as IngestionItem[];
+}
+
+/**
+ * Queue an import. `items` carry either a URL to fetch or content already in
+ * hand. publishMode 'draft' lands everything for review instead of straight
+ * into every employee's answers — which is what a contributor gets, since
+ * publishing on import needs the publisher grant.
+ */
+export async function createIngestionJob(opts: {
+  label: string;
+  sourceKind: IngestionJob['source_kind'];
+  items: Array<{ source_ref?: string; url?: string; filename?: string; title?: string; content?: string; mime_type?: string; byte_size?: number }>;
+  targetCollectionId?: string | null;
+  publishMode?: 'published' | 'draft';
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('create_ingestion_job', {
+    p_label: opts.label,
+    p_source_kind: opts.sourceKind,
+    p_items: opts.items,
+    p_target_collection_id: opts.targetCollectionId ?? null,
+    p_source_ref: null,
+    p_connector_id: null,
+    p_publish_mode: opts.publishMode ?? 'published',
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function cancelIngestionJob(jobId: string): Promise<{ ok: boolean; cancelled_items: number }> {
+  const { data, error } = await supabase.rpc('cancel_ingestion_job', { p_job_id: jobId });
+  if (error) throw error;
+  return data as { ok: boolean; cancelled_items: number };
+}
+
+/**
+ * Re-queue the failures that could plausibly succeed. Terminal failures (an
+ * unreadable PDF, a URL that does not exist) are deliberately left alone and
+ * reported back as `not_retryable`, so the UI can say so instead of spinning.
+ */
+export async function retryIngestionJob(jobId: string): Promise<{ ok: boolean; retried: number; not_retryable: number }> {
+  const { data, error } = await supabase.rpc('retry_ingestion_job', { p_job_id: jobId });
+  if (error) throw error;
+  return data as { ok: boolean; retried: number; not_retryable: number };
+}
+
+/** Spaces a job can file its results into (mig 341). */
+export async function listKnowledgeSpaces(): Promise<Array<{ id: string; name: string }>> {
+  const { data, error } = await supabase
+    .from('knowledge_collections')
+    .select('id, name')
+    .eq('is_space', true)
+    .is('archived_at', null)
+    .order('name');
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; name: string }>;
+}

@@ -9,6 +9,7 @@ import {
 import type { Connector } from '../../../lib/connectorApi';
 import { listKnowledgeDocs, listChunkStatus, createKnowledgeDoc, ingestDocChunks, extractPdf, extractUrl } from '../../../lib/knowledgeApi';
 import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
+import IngestionQueuePanel from '../../../components/IngestionQueuePanel';
 
 // ============================================================
 // Ingestion & Sources — connected sources, processing pipeline,
@@ -159,6 +160,14 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
       <PageHeader title="Ingestion & Sources" subtitle="Real connector syncs pull external content into the knowledge base — chunked and indexed automatically." />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {/* Deliberately ABOVE the connector gate below: importing pages from the
+          web needs no connector, so a workspace with none must still be able to
+          do it. Inside that gate this panel would be invisible to exactly the
+          new customer who most needs a way to get knowledge in. */}
+      <div className="mb-6">
+        <IngestionQueuePanel />
+      </div>
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />

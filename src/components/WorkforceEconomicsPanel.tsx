@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { StatTile } from '../design/primitives';
 import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } from '../lib/employeeRecordApi';
 
 // Whole-workforce economics (Tier-1 surfacing) — get_workforce_economics
@@ -9,16 +10,6 @@ import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } f
 // depends on is actually set (never an invented ROI).
 
 const money = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(n < 10 ? 2 : 0)}`;
-
-function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <div>
-      <p className="text-xl font-semibold text-dt-title tabular-nums">{value}</p>
-      <p className="text-[11px] text-dt-support mt-0.5">{label}</p>
-      {hint && <p className="text-[10px] text-dt-muted">{hint}</p>}
-    </div>
-  );
-}
 
 export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string }) {
   const [econ, setEcon] = useState<WorkforceEconomics | null>(null);
@@ -56,13 +47,13 @@ export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Stat label="Digital employees" value={econ.digital_employees} />
-        <Stat label="Tasks run" value={econ.playbook_runs} hint={`${econ.playbook_completed} completed`} />
-        <Stat label="AI spend (this period)" value={money(econ.ai_cost_usd)} hint="hard-capped by your budget" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile label="Digital employees" value={econ.digital_employees} />
+        <StatTile label="Tasks run" value={econ.playbook_runs} sub={`${econ.playbook_completed} completed`} />
+        <StatTile label="AI spend (this period)" value={money(econ.ai_cost_usd)} sub="hard-capped by your budget" />
         {econ.baseline_configured
-          ? <Stat label="Est. value of time saved" value={econ.est_value_usd != null ? money(econ.est_value_usd) : '—'} hint={`≈ ${hours} human-hour${hours === 1 ? '' : 's'}`} />
-          : <Stat label="Est. value of time saved" value={<span className="text-dt-muted text-base">set baseline →</span>} />}
+          ? <StatTile label="Est. value of time saved" value={econ.est_value_usd != null ? money(econ.est_value_usd) : '—'} sub={`≈ ${hours} human-hour${hours === 1 ? '' : 's'}`} />
+          : <StatTile label="Est. value of time saved" value={<span className="text-dt-muted text-base">set baseline →</span>} />}
       </div>
 
       {/* Honest gate: no invented ROI — the dollar figure needs a real input. */}
