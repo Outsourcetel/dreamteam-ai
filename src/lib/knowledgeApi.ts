@@ -977,3 +977,117 @@ export async function listKnowledgeSpaces(): Promise<Array<{ id: string; name: s
   if (error) throw error;
   return (data ?? []) as Array<{ id: string; name: string }>;
 }
+
+// ============================================================
+// Knowledge permissions (migs 343/356). Grants are read-only to the client and
+// every change goes through an RPC, because "grant yourself full access" must
+// not be one PostgREST call away. The RPCs enforce: you cannot grant or revoke
+// above your own level, principals must be in your workspace, and the last
+// full-access grant cannot be removed.
+// ============================================================
+
+export interface KnowledgeSpaceAdmin {
+  id: string;
+  name: string;
+  description: string | null;
+  is_restricted: boolean;
+  doc_count: number;
+  grant_count: number;
+}
+
+export interface ResourceGrant {
+  id: string;
+  principal_type: 'everyone' | 'role' | 'group' | 'user' | 'guest';
+  principal_label: string;
+  permission: string;
+  scope: string;
+  note: string | null;
+  created_at: string;
+}
+
+/** One row per real person: what they can do here, and WHY. */
+export interface EffectiveAccess {
+  user_id: string;
+  full_name: string;
+  role: string;
+  level: number;
+  level_name: string;
+  reason: string;
+}
+
+export const PERMISSION_LEVELS: Array<{ value: string; label: string; blurb: string }> = [
+  { value: 'viewer', label: 'Viewer', blurb: 'Read published documents' },
+  { value: 'contributor', label: 'Contributor', blurb: 'Read, and write drafts' },
+  { value: 'editor', label: 'Editor', blurb: 'Edit and organise documents' },
+  { value: 'publisher', label: 'Publisher', blurb: 'Approve and publish' },
+  { value: 'knowledge_manager', label: 'Knowledge manager', blurb: 'Manage spaces and permissions' },
+  { value: 'workspace_admin', label: 'Full access', blurb: 'Everything, including deleting' },
+];
+
+export async function listKnowledgeSpacesAdmin(): Promise<KnowledgeSpaceAdmin[]> {
+  const { data, error } = await supabase.rpc('list_knowledge_spaces_admin');
+  if (error) throw error;
+  return (data ?? []) as KnowledgeSpaceAdmin[];
+}
+
+export async function listResourceAccess(resourceType: 'collection' | 'document', resourceId: string): Promise<ResourceGrant[]> {
+  const { data, error } = await supabase.rpc('list_resource_access', {
+    p_resource_type: resourceType, p_resource_id: resourceId,
+  });
+  if (error) throw error;
+  return (data ?? []) as ResourceGrant[];
+}
+
+export async function previewSpaceAccess(spaceId: string): Promise<EffectiveAccess[]> {
+  const { data, error } = await supabase.rpc('preview_space_access', { p_space_id: spaceId });
+  if (error) throw error;
+  return (data ?? []) as EffectiveAccess[];
+}
+
+export async function myKnowledgeAdminLevel(spaceId?: string | null): Promise<number> {
+  const { data, error } = await supabase.rpc('knowledge_my_admin_level', { p_space_id: spaceId ?? null });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+export async function listWorkspacePeople(): Promise<Array<{ user_id: string; full_name: string; role: string }>> {
+  const { data, error } = await supabase.rpc('list_workspace_people');
+  if (error) throw error;
+  return (data ?? []) as Array<{ user_id: string; full_name: string; role: string }>;
+}
+
+export async function grantKnowledgeAccess(opts: {
+  resourceType: 'workspace' | 'collection' | 'document';
+  resourceId?: string | null;
+  principalType: 'everyone' | 'role' | 'group' | 'user' | 'guest';
+  principalId?: string | null;
+  principalRole?: string | null;
+  permission: string;
+  note?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('grant_knowledge_access', {
+    p_resource_type: opts.resourceType,
+    p_resource_id: opts.resourceId ?? null,
+    p_principal_type: opts.principalType,
+    p_principal_id: opts.principalId ?? null,
+    p_principal_role: opts.principalRole ?? null,
+    p_permission: opts.permission,
+    p_note: opts.note ?? null,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function revokeKnowledgeAccess(grantId: string): Promise<void> {
+  const { error } = await supabase.rpc('revoke_knowledge_access', { p_grant_id: grantId });
+  if (error) throw error;
+}
+
+export async function setSpaceRestricted(spaceId: string, restricted: boolean):
+  Promise<{ ok: boolean; restricted: boolean; explicit_grants: number }> {
+  const { data, error } = await supabase.rpc('set_space_restricted', {
+    p_space_id: spaceId, p_restricted: restricted,
+  });
+  if (error) throw error;
+  return data as { ok: boolean; restricted: boolean; explicit_grants: number };
+}

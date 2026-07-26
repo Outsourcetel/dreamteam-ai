@@ -59,6 +59,7 @@ export type TenantPage =
   | 'knowledge_ingestion'       // Ingest sources
   | 'knowledge_gaps'            // Gap detection & resolution
   | 'knowledge_quality'         // Freshness, coverage, confidence
+  | 'knowledge_permissions'     // Who can see what — spaces, presets, effective access
 
   // ── Systems ───────────────────────────────────────
   | 'systems_connectors'        // All integrations

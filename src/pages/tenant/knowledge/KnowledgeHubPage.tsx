@@ -5,6 +5,7 @@ import KnowledgeLibraryPage from './KnowledgeLibraryPage';
 import KnowledgeIngestionPage from './KnowledgeIngestionPage';
 import KnowledgeGapsPage from './KnowledgeGapsPage';
 import KnowledgeQualityPage from './KnowledgeQualityPage';
+import KnowledgePermissionsPage from './KnowledgePermissionsPage';
 import { getKnowledgeOverview, type KnowledgeOverview } from '../../../lib/knowledgeApi';
 
 // Knowledge hub — the four knowledge surfaces as tabs of ONE nav destination
@@ -18,6 +19,7 @@ const TABS: { page: Page; label: string }[] = [
   { page: 'knowledge_ingestion', label: 'Sources & Ingestion' },
   { page: 'knowledge_gaps', label: 'Gap Detection' },
   { page: 'knowledge_quality', label: 'Quality & Coverage' },
+  { page: 'knowledge_permissions', label: 'Who can see what' },
 ];
 
 function OverviewStrip({ ov, setPage }: { ov: KnowledgeOverview; setPage: (p: Page) => void }) {
@@ -74,6 +76,7 @@ const KnowledgeHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
         {tab === 'knowledge_ingestion' && <KnowledgeIngestionPage setPage={setPage} />}
         {tab === 'knowledge_gaps' && <KnowledgeGapsPage setPage={setPage} />}
         {tab === 'knowledge_quality' && <KnowledgeQualityPage />}
+        {tab === 'knowledge_permissions' && <KnowledgePermissionsPage />}
       </InHubContext.Provider>
     </div>
   );

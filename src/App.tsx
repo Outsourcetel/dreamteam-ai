@@ -111,6 +111,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   knowledge_ingestion: '/knowledge/ingestion',
   knowledge_gaps:      '/knowledge/gaps',
   knowledge_quality:   '/knowledge/quality',
+  knowledge_permissions: '/knowledge/permissions',
   // Systems
   systems_connectors: '/systems/connectors',
   systems_playbooks:  '/systems/playbooks',
@@ -460,6 +461,7 @@ function AppShell() {
       case 'knowledge_ingestion':
       case 'knowledge_gaps':
       case 'knowledge_quality':
+      case 'knowledge_permissions':
         return <KnowledgeHubPage tab={currentPage} setPage={handleSetPage} />;
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
