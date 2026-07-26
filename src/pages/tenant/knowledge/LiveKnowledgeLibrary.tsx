@@ -19,6 +19,7 @@ import { getEvalGate, auditEvalGateOverride, EvalGate } from '../../../lib/evalA
 import type { Page } from '../../../types';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import AISessionPanel from '../../../components/AISessionPanel';
+import PlatformShelfPanel from '../../../components/PlatformShelfPanel';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -685,6 +686,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           </div>
         </div>
       )}
+
+      {/* The platform knowledge shelf — collapsed, read-only, and deliberately
+          BELOW the customer's own library rather than inside it. None of these
+          rows live in knowledge_docs, so nothing here can move a count, a
+          quality score, a gap or a freshness number on this page. */}
+      <PlatformShelfPanel tenantQuery={query} />
 
       {/* Knowledge Revisions — human-gated updates drafted from evidence
           feedback (migration 032). Diff-like view: current doc content

@@ -816,3 +816,54 @@ export async function getKnowledgeGapClusterDetail(cluster: KnowledgeGapCluster)
   }
   return { members: (members ?? []) as KnowledgeGapClusterMember[], inquiries };
 }
+
+// ── The platform knowledge shelf (migs 334/336/337) ─────────────────────────
+// DreamTeam's own product documentation, stored ONCE outside every tenant and
+// read by the Workforce Assistant. Deliberately a separate API surface from the
+// tenant library: none of these rows belong to the workspace, none of them
+// count toward its metrics, and none of them can be edited here.
+
+export interface ShelfDoc {
+  id: string;
+  title: string;
+  topic: string | null;
+  tags: string[];
+  source_doc_path: string | null;
+  source_migration: string | null;
+  last_verified_at: string | null;
+  updated_at: string;
+  cited_30d: number;
+}
+
+export interface ShelfStatus {
+  paused: boolean;
+  docs_published: number;
+  chunks_embedded: number;
+  citations_30d: number;
+}
+
+/** Browse or search the shelf. No tenant argument — there is one shelf and it
+ *  is identical for every workspace, so there is nothing to scope. */
+export async function listPlatformShelf(query?: string, limit = 200): Promise<ShelfDoc[]> {
+  const { data, error } = await supabase.rpc('list_platform_shelf', {
+    p_query: query && query.trim() ? query.trim() : null,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as ShelfDoc[];
+}
+
+/** Full text of one shelf document — where a citation link lands. */
+export async function getPlatformShelfDoc(docId: string) {
+  const { data, error } = await supabase.rpc('get_platform_shelf_doc', { p_doc_id: docId });
+  if (error) throw error;
+  return data as ({ id: string; title: string; content: string; topic: string | null;
+                    tags: string[]; source_doc_path: string | null; source_migration: string | null;
+                    last_verified_at: string | null; updated_at: string; version: number } | null);
+}
+
+export async function getPlatformShelfStatus(): Promise<ShelfStatus | null> {
+  const { data, error } = await supabase.rpc('get_platform_shelf_status');
+  if (error) throw error;
+  return (data ?? null) as ShelfStatus | null;
+}
