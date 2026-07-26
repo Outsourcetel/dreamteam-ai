@@ -285,6 +285,19 @@ CREATE TRIGGER tenant_domains_touch BEFORE UPDATE ON tenant_domains
 
 ALTER TABLE tenant_domains ENABLE ROW LEVEL SECURITY;
 
+-- RLS alone is not the whole story. pg_default_acl for this owner grants
+-- {anon,authenticated}=arwdDxtm on every new table, and TRUNCATE is NOT filtered
+-- by RLS — a policy cannot stop it. PostgREST never issues TRUNCATE, so this is
+-- defence in depth rather than a live hole, but this file's own claim is that
+-- there is NO client-writable path to the domain table, and that claim should
+-- not rest on a single layer. The closest live analogue agrees: platform_invites
+-- is postgres/service_role only, with anon and authenticated fully stripped.
+--
+-- Domain rows decide which workspace a future signup joins. Writes go through
+-- the claim/verify RPCs, which is where the ownership proof lives.
+REVOKE ALL ON TABLE public.tenant_domains FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.tenant_domains TO authenticated;
+
 -- READ is admin-only, not member-wide: the row carries the verification token,
 -- and the token is the one piece of data that (combined with DNS control)
 -- decides who owns the domain. Least exposure.

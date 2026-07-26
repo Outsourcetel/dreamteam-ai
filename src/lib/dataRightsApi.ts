@@ -24,6 +24,7 @@
 // human-readable warning rather than quietly normalised away.
 // ============================================================================
 import { supabase } from '../supabase';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env';
 import { requireTenantId } from './liveShared';
 
 /* ── The two backend entry points, named in exactly one place each ────────── */
@@ -381,12 +382,29 @@ function normaliseExclusions(rawNotIncluded: unknown, rawNotExportable: unknown,
  * quietly excludes things. It stays in the signature so a caller with a real
  * reason (a re-export of one table from the manifest) can pass it.
  */
-export async function requestTenantExport(opts: { format?: ExportFormat; tables?: string[] } = {}): Promise<ExportResult> {
+export async function requestTenantExport(opts: { tables?: string[] } = {}): Promise<ExportResult> {
   const body: Record<string, unknown> = {};
-  if (opts.format) body.format = opts.format;
   if (opts.tables?.length) body.tables = opts.tables;
 
-  const { data, error } = await supabase.functions.invoke(EXPORT_FUNCTION, { body });
+  // ⚠ TWO CALLS, AND THE SPLIT IS NOT COSMETIC.
+  //
+  // The archive is streamed as `application/x-ndjson`. supabase-js does NOT
+  // special-case that content type — FunctionsClient.js special-cases only
+  // application/json, application/octet-stream, application/pdf,
+  // text/event-stream and multipart/form-data, and everything else falls to
+  // `data = await response.text()`. So invoking the archive endpoint returned a
+  // STRING, failed this function's own object check, and reported "no file was
+  // produced" — after the server had already streamed every row and written an
+  // audit entry recording a successful export. It also buffered the entire
+  // archive into a JS string and then discarded it, defeating the pull-based
+  // backpressure the edge function was built around.
+  //
+  // So: the MANIFEST comes back as application/json, which supabase-js parses
+  // correctly and which carries the auth/permission failures worth surfacing.
+  // The ARCHIVE is fetched directly so the response body stays a stream.
+  const { data, error } = await supabase.functions.invoke(EXPORT_FUNCTION, {
+    body: { ...body, manifest_only: true },
+  });
   if (error) throw await invokeFailure(EXPORT_FUNCTION, error);
 
   const warnings: string[] = [];
@@ -457,12 +475,67 @@ export async function requestTenantExport(opts: { format?: ExportFormat; tables?
     tables,
     exclusions,
     generated_at: typeof m.generated_at === 'string' ? m.generated_at : null,
-    format: typeof m.format === 'string' ? m.format : opts.format ?? null,
+    // The exporter emits NDJSON and takes no format argument — the old
+    // `opts.format` fallback here is what let the result header print "CSV"
+    // over an NDJSON file. Report only what the server actually said.
+    format: typeof m.format === 'string' ? m.format : 'ndjson',
     total_rows: typeof counts.total_rows === 'number' ? counts.total_rows : summed,
     coverage,
   };
 
-  return { manifest, download: normaliseDownload(payload.download, warnings), warnings, raw: data };
+  // ── The archive itself ────────────────────────────────────────────────────
+  // Fetched directly rather than through functions.invoke, for the content-type
+  // reason documented at the top of this function. Failure here is NOT fatal:
+  // the manifest is already a real, useful answer about what the workspace
+  // holds, and reporting "no file" alongside a valid manifest is honest.
+  // Silently returning a manifest with no download and no warning would not be.
+  let download: ExportDownload | null = null;
+  try {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess.session?.access_token;
+    if (!token) {
+      warnings.push('Your session expired before the file could be downloaded. The manifest below is still accurate; run the export again to get the file.');
+    } else {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/${EXPORT_FUNCTION}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        warnings.push(`The manifest was produced but the file could not be downloaded (HTTP ${res.status}). Nothing was deleted or changed.`);
+      } else {
+        // Blob, not text: the archive can be tens of MB and the browser should
+        // stream it to disk rather than hold it as a JS string.
+        const blob = await res.blob();
+        download = {
+          url: URL.createObjectURL(blob),
+          filename: `dreamteam-export-${new Date().toISOString().slice(0, 10)}.ndjson`,
+          size_bytes: blob.size,
+          expires_at: null,
+          // A stream that ends without the trailing summary line was cut short
+          // — a deadline, or a platform-side kill. The exporter emits that line
+          // last precisely so truncation is detectable.
+        };
+        // A stream that ends without the trailing summary line was cut short —
+        // a deadline, or a platform-side kill. The exporter emits that line last
+        // precisely so truncation is detectable from the client.
+        const tail = await blob.slice(Math.max(0, blob.size - 4096)).text();
+        const truncated = !tail.includes('"summary"');
+        if (truncated) {
+          warnings.push('The download ended without the exporter’s completion marker, so it is INCOMPLETE. Do not treat it as a full copy — run the export again.');
+        }
+      }
+    }
+  } catch (err) {
+    console.error('requestTenantExport: archive fetch failed', err);
+    warnings.push('The manifest was produced but the file could not be downloaded. Nothing was deleted or changed.');
+  }
+
+  return { manifest, download, warnings, raw: data };
 }
 
 /* ── Deletion ─────────────────────────────────────────────────────────────── */

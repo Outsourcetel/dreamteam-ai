@@ -621,10 +621,35 @@ BEGIN
       'detail', 'this email is already in use by an account outside this workspace');
   END IF;
 
+  -- ⚠ PLATFORM STAFF ARE NOT PROVISIONABLE. EVER. NO FLAG.
+  -- `layer` was referenced nowhere in this file except a comment and an INSERT
+  -- column list — it was never CHECKED. Both platform_super_admin profiles have
+  -- layer='platform' and tenant_id IS NULL, so they fell into the "unassigned
+  -- account" branch below. The full path, with no exotic steps:
+  --   a tenant admin ticks allow_account_adoption (a self-service checkbox)
+  --   -> POST /Users with a platform admin's email
+  --   -> mode 'link' -> tenant_id is set, layer stays 'platform', role preserved
+  --   -> DELETE /Users/{id} sets is_active=false
+  --   -> is_platform_admin() is layer='platform' AND is_active, so it now
+  --      returns false, plus GoTrue gets a 100-year ban
+  -- Two emails and one checkbox removes every platform administrator. The
+  -- last-admin guard does not help: it counts only tenant_owner/tenant_admin.
+  IF v_profile.id IS NOT NULL AND coalesce(v_profile.layer, 'tenant') <> 'tenant' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'conflict',
+      'detail', 'this email belongs to a platform account and cannot be managed by workspace provisioning');
+  END IF;
+
   IF v_profile.id IS NULL OR v_profile.tenant_id IS NULL THEN
     -- Claiming an unassigned account. Allowed only with service-role-written
     -- provenance, or with the token's explicit opt-in.
-    IF NOT (v_meta_tenant = v_tenant::text OR v_adopt) THEN
+    --
+    -- ⚠ coalesce is load-bearing, and this is the migration-369 shape again.
+    -- v_meta_tenant is NULL for every organically-signed-up account, so
+    -- `NULL = v_tenant::text OR false` evaluates to NULL, `NOT NULL` is NULL,
+    -- and the IF never fires — the refusal was skipped for exactly the accounts
+    -- it was written to protect. Verified on production:
+    --   select (NOT (null::text = 'x' OR false)) is null  ->  true
+    IF NOT (coalesce(v_meta_tenant, '') = v_tenant::text OR v_adopt) THEN
       RETURN jsonb_build_object('ok', false, 'error', 'conflict',
         'detail', 'an account with this email exists but is not a member of this workspace');
     END IF;
@@ -643,11 +668,19 @@ BEGIN
     UPDATE public.profiles
        SET tenant_id  = v_tenant,
            full_name  = coalesce(v_full, full_name),
-           -- Role is NEVER set from SCIM input. On a first claim the row still
-           -- carries handle_new_user's 'agent'; on an existing member it is
-           -- left exactly as the workspace's admins set it, so an IdP push can
-           -- neither grant nor strip tenant_admin.
-           role       = role,
+           -- Role is NEVER set from SCIM input, so an IdP push can neither grant
+           -- nor strip tenant_admin.
+           --
+           -- ⚠ But "keep the existing role" is only safe for an EXISTING MEMBER.
+           -- The comment here used to claim a first claim "still carries
+           -- handle_new_user's 'agent'" — measured on production, that is false:
+           -- there is a profile with layer='tenant', role='tenant_owner',
+           -- tenant_id IS NULL, is_active=true. Adopting that row would have made
+           -- the adopting workspace hand a stranger tenant_owner — able to mint
+           -- further SCIM tokens and read everything.
+           -- So: adopting an unassigned account starts at the floor; only a row
+           -- that was ALREADY a member of this tenant keeps its role.
+           role       = CASE WHEN profiles.tenant_id IS NULL THEN 'agent' ELSE profiles.role END,
            is_active  = coalesce(p_active, true),
            invited_by = coalesce(invited_by, 'SCIM: ' || coalesce(v_token_name, 'provisioning')),
            updated_at = now()

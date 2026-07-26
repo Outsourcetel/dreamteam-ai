@@ -234,8 +234,11 @@ CREATE TRIGGER sso_attribute_role_map_updated_at
 ALTER TABLE public.tenant_sso_policy      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sso_attribute_role_map ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.tenant_sso_policy      FROM PUBLIC, anon;
-REVOKE ALL ON TABLE public.sso_attribute_role_map FROM PUBLIC, anon;
+-- Revoking from "authenticated" is NOT optional: pg_default_acl for this owner grants
+-- {anon,authenticated}=arwdDxtm on every new table, and the D is TRUNCATE, which
+-- RLS does not filter. The GRANT below restores exactly the four DML rights.
+REVOKE ALL ON TABLE public.tenant_sso_policy      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.sso_attribute_role_map FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_sso_policy      TO authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.sso_attribute_role_map TO authenticated, service_role;
 
