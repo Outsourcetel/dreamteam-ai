@@ -63,18 +63,63 @@ interface Job {
   target_collection_id: string | null; source_kind: string; status: string;
 }
 
-function stripHtml(raw: string): string {
-  return raw
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
+/** Entity decode. The old list handled six entities and left the rest as
+ *  literal "&mdash;" in the stored document — visible in every title. */
+function decodeEntities(s: string): string {
+  return s
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–').replace(/&hellip;/g, '…')
+    .replace(/&rsquo;/g, '’').replace(/&lsquo;/g, '‘')
+    .replace(/&ldquo;/g, '“').replace(/&rdquo;/g, '”')
+    .replace(/&[a-z]+;/gi, ' ');
+}
+
+function tagsToText(s: string): string {
+  return decodeEntities(
+    s.replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, '\n').replace(/<[^>]+>/g, ' '),
+  ).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * HTML -> the text we actually want to embed.
+ *
+ * MEASURED, not assumed. Running the real pipeline against real help centres
+ * showed every document carrying the site's navigation and cookie banner:
+ *
+ *   ghost.org/help/seo   "Ghost Logo Open menu Product For Creators YouTubers,
+ *                         bloggers, podcasters…"  before a word of the article
+ *   basecamp.com/help    "We'd like to use cookies to help understand if our
+ *                         ads are working or not. No, thanks Yes, that's fine"
+ *
+ * That is not cosmetic. The same boilerplate in every page means every chunk
+ * shares a large common prefix, so documents look alike to retrieval and the
+ * embedding budget is spent on the menu. Stripping chrome first removes 51-70%
+ * of the text on real pages and makes the article the FIRST thing in the doc.
+ *
+ * ⚠ THE FALLBACK IS LOAD-BEARING. Chrome detection is a heuristic and it is
+ * wrong sometimes: on basecamp.com/help the first version of this returned an
+ * EMPTY document. Losing boilerplate is a win; losing the answer is exactly the
+ * failure this whole feature exists to fix. So if stripping leaves too little,
+ * we keep the full text and accept the noise.
+ */
+function stripHtml(raw: string): string {
+  const base = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+
+  const full = tagsToText(base);
+
+  let inner = base
+    .replace(/<(nav|header|footer|aside|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<div[^>]*(?:cookie|consent|gdpr)[^>]*>[\s\S]*?<\/div>/gi, ' ');
+  // Prefer the semantic content root when the page has one and it is substantial.
+  const main = inner.match(/<(main|article)\b[^>]*>([\s\S]*?)<\/\1>/i);
+  if (main && main[2].length > 400) inner = main[2];
+
+  const trimmed = tagsToText(inner);
+  return (trimmed.length >= 200 && trimmed.length >= full.length * 0.15) ? trimmed : full;
 }
 
 /** Map browserFetch's reason onto retry policy. Its vocabulary, not a new one. */
