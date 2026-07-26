@@ -611,6 +611,51 @@ serve(async (req) => {
         if (c.doc_id) citedDocIds.add(String(c.doc_id));
       }
     }
+    // ── 335: the platform knowledge shelf ────────────────────────────────
+    // A SECOND, separate retrieval against tenant-less tables. The tenant call
+    // above is completely untouched — same RPC, same arguments, same ranking —
+    // which is why no tenant metric or coverage number moves.
+    //
+    // Only the platform-provided Workforce Assistant reads it, and the gate is
+    // a property of the EMPLOYEE (is_workforce_assistant), never a caller
+    // argument: platform_match_knowledge takes no tenant, subject or filter
+    // parameter at all, so there is nothing to pass that could name a corpus.
+    //
+    // One-directional by construction: platform knowledge can reach a tenant's
+    // answer, and nothing here can ever write tenant content into the shelf.
+    const platformDocIds = new Set<string>();
+    if (subjectDeId && !replayMode) {
+      try {
+        const { data: waRow } = await admin.from('digital_employees')
+          .select('is_workforce_assistant').eq('id', subjectDeId).eq('tenant_id', tenantId).maybeSingle();
+        if (waRow?.is_workforce_assistant === true) {
+          const { data: shelf, error: shelfErr } = await admin.rpc('platform_match_knowledge', {
+            p_query_text: question,
+            p_query_embedding: qEmbedding,
+            p_match_count: 3,
+          });
+          // Fail SOFT: the shelf is additive. If it is paused, empty or errors,
+          // the employee simply answers from the tenant's own knowledge.
+          if (shelfErr) console.error('platform_match_knowledge:', shelfErr.message);
+          if (Array.isArray(shelf)) {
+            for (const c of shelf) {
+              const budget = MAX_CONTEXT_CHARS - used;
+              if (budget <= 0) break;
+              const body = String(c.content ?? '').slice(0, budget);
+              const title = c.doc_title ?? 'DreamTeam product guide';
+              // Labelled distinctly so the model can tell the customer's own
+              // material from the platform's, and attribute correctly.
+              contextParts.push(`[DreamTeam product guide: ${title}]\n${body}`);
+              used += body.length + title.length;
+              if (c.doc_id) platformDocIds.add(String(c.doc_id));
+            }
+          }
+        }
+      } catch (e) {
+        console.error('platform shelf (answering without it):', String(e));
+      }
+    }
+
     // Last-resort fallback: hybrid RPC failed outright (e.g. transient
     // error) rather than legitimately finding nothing — keyword overlap
     // over the full visible doc set so a real question is never dropped
@@ -630,6 +675,16 @@ serve(async (req) => {
     // Fire-and-forget: bump the WS2 usage counters for the docs consulted (skip
     // the replay dry-run, whose "citations" would be a candidate patch, not the
     // live corpus). Non-fatal — analytics must never block an answer.
+    // Shelf citations go to their OWN recorder. record_knowledge_citations
+    // gates both its writes on d.tenant_id = p_tenant_id, so a shelf id passed
+    // there matches nothing and is dropped WITHOUT an error — the tenant docs in
+    // the same answer would still count and nothing would look broken.
+    if (!candidateKnowledge && platformDocIds.size > 0) {
+      admin.rpc('record_platform_knowledge_citations', { p_doc_ids: [...platformDocIds] })
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) console.error('record_platform_knowledge_citations:', error.message);
+        });
+    }
     if (!candidateKnowledge && citedDocIds.size > 0) {
       admin.rpc('record_knowledge_citations', { p_tenant_id: tenantId, p_doc_ids: [...citedDocIds] })
         .then(({ error }: { error: unknown }) => { if (error) console.error('record_knowledge_citations:', error); });
