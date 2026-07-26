@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { Page } from '../types';
 import { supabase } from '../supabase';
+import ImportSiteModal from './ImportSiteModal';
 
 /**
  * Getting Started — ONE sequential first-run path (P0 structural bet #1).
@@ -57,11 +58,25 @@ export default function GettingStartedGuide({
     try { return localStorage.getItem(key) === '1'; } catch { return false; }
   });
   const [state, setState] = useState<StepState | null>(null);
+  // Step 2 runs the website import HERE instead of sending the user to the
+  // Knowledge Library to find it. loadStepState below is untouched — it still
+  // computes `taught` from the real knowledge_docs count, so importing flips
+  // the step for the same reason it always did.
+  const [siteImport, setSiteImport] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     loadStepState(tenantId).then(s => { if (!cancelled) setState(s); }).catch(() => { if (!cancelled) setState({ hired: false, taught: false, tested: false, launched: false }); });
     return () => { cancelled = true; };
+  }, [tenantId]);
+
+  // Re-read real workspace state after the import dialog closes — deliberately
+  // on CLOSE, not on success: `allDone` early-returns a different tree, which
+  // would unmount the dialog before the user has read its summary.
+  const refresh = useCallback(() => {
+    loadStepState(tenantId)
+      .then(setState)
+      .catch(() => { /* keep the last known state rather than blanking the guide */ });
   }, [tenantId]);
 
   const hide = () => { try { localStorage.setItem(key, '1'); } catch { /* ignore */ } setHidden(true); };
@@ -76,33 +91,41 @@ export default function GettingStartedGuide({
     );
   }
 
-  type Step = {
-    done: boolean; title: string; body: string;
-    primary: { label: string; page: Page; beforeNav?: () => void };
-    secondary?: { label: string; page: Page };
-  };
+  // A step action is now any function, not only "navigate to a page" — step 2
+  // has to be able to DO the thing instead of pointing at the room it's in.
+  type StepAction = { label: string; run: () => void };
+  type Step = { done: boolean; title: string; body: string; primary: StepAction; secondary?: StepAction };
+  const go = (page: Page, beforeNav?: () => void): (() => void) => () => { beforeNav?.(); setPage(page); };
+
   const steps: Step[] = state ? [
     {
       done: state.hired, title: 'Hire your first Digital Employee',
       body: 'Tell Ada about your business in a sentence — she proposes the team; you approve. Or pick roles yourself with the wizard.',
-      primary: { label: 'Hire with Ada →', page: 'onboarding_architect' as Page },
-      secondary: { label: 'Use the setup wizard', page: 'company_setup' as Page },
+      primary: { label: 'Hire with Ada →', run: go('onboarding_architect' as Page) },
+      secondary: { label: 'Use the setup wizard', run: go('company_setup' as Page) },
     },
     {
+      // This step used to hand the user off to the Knowledge Library, whose
+      // primary action opened a blank editor — a page-change and a dead end
+      // between them and a working employee. It now opens the importer here.
       done: state.taught, title: 'Teach it your business',
-      body: 'Upload documents or add pages from your website — your employee answers only from what you give it.',
-      primary: { label: 'Add knowledge →', page: 'knowledge_library' as Page },
+      body: 'Give us your website address and we’ll read your public pages into your knowledge base — your employee answers only from what’s in there.',
+      primary: { label: 'Import your website →', run: () => setSiteImport(true) },
+      secondary: { label: 'Add documents by hand', run: go('knowledge_library' as Page) },
     },
     {
       done: state.tested, title: 'Ask it a question',
       body: 'Try it yourself before customers do. Ask something your documents cover and check the answer and its sources.',
-      primary: { label: 'Meet your employees →', page: 'workforce_des' as Page },
+      primary: { label: 'Meet your employees →', run: go('workforce_des' as Page) },
     },
     {
       done: state.launched, title: 'Put it on your website',
       body: 'Create a widget key and drop one line of code into your site — or share the hosted chat link.',
       // One-shot hint so Settings opens on the Widget tab, not General.
-      primary: { label: 'Get your widget key →', page: 'settings' as Page, beforeNav: () => { try { localStorage.setItem('dt_settings_tab', 'widget'); } catch { /* ignore */ } } },
+      primary: {
+        label: 'Get your widget key →',
+        run: go('settings' as Page, () => { try { localStorage.setItem('dt_settings_tab', 'widget'); } catch { /* ignore */ } }),
+      },
     },
   ] : [];
 
@@ -163,12 +186,12 @@ export default function GettingStartedGuide({
                     <>
                       <p className="text-dt-support text-[13px] mt-1 leading-relaxed">{s.body}</p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                        <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
+                        <button onClick={s.primary.run}
                           className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500 transition-colors">
                           {s.primary.label}
                         </button>
                         {s.secondary && (
-                          <button onClick={() => setPage(s.secondary.page)}
+                          <button onClick={s.secondary.run}
                             className="rounded-lg border border-dt-border-strong px-3 py-1.5 text-xs text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                             {s.secondary.label}
                           </button>
@@ -178,7 +201,7 @@ export default function GettingStartedGuide({
                   )}
                 </div>
                 {!s.done && !isCurrent && (
-                  <button onClick={() => { s.primary.beforeNav?.(); setPage(s.primary.page); }}
+                  <button onClick={s.primary.run}
                     className="flex-none text-[11px] text-dt-muted hover:text-indigo-300 transition-colors mt-1">
                     Jump ahead →
                   </button>
@@ -188,6 +211,10 @@ export default function GettingStartedGuide({
           );
         })}
       </ol>
+
+      {siteImport && (
+        <ImportSiteModal onClose={() => { setSiteImport(false); refresh(); }} />
+      )}
     </div>
   );
 }

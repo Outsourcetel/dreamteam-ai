@@ -543,6 +543,18 @@ export interface DEAnswerResult {
   sources: string[];
   needs_escalation: boolean;
   no_docs?: boolean;
+  /**
+   * Set by de-answer when the employee has nothing to answer from, so the UI can
+   * offer the fix IN PLACE instead of naming a location.
+   *
+   * This field is load-bearing, not decorative. The reply copy is an imperative
+   * ("paste your website address and I'll read it"). Without a control that
+   * honours it, the user answers in chat, the employee has still learned nothing,
+   * and the next reply says "nothing changes until knowledge lands" — a worse
+   * experience than the flat message this replaced. If you drop this field,
+   * change that copy in the same commit.
+   */
+  recovery?: { kind: 'import_site'; cta?: string; prompt?: string };
   /** answer served from the semantic answer cache (no LLM call) */
   cached?: boolean;
   /** the answer was withheld by a tenant guardrail rule (P3) */
@@ -621,6 +633,18 @@ export async function askDE(
     sources: Array.isArray(data.sources) ? (data.sources as string[]) : [],
     needs_escalation: !!data.needs_escalation,
     no_docs: !!data.no_docs,
+    // Narrowed rather than cast: this crosses an edge-function boundary, and a
+    // malformed hint should render nothing rather than an empty broken button.
+    recovery:
+      data.recovery && (data.recovery as { kind?: string }).kind === 'import_site'
+        ? {
+            kind: 'import_site',
+            cta: typeof (data.recovery as { cta?: unknown }).cta === 'string'
+              ? (data.recovery as { cta: string }).cta : undefined,
+            prompt: typeof (data.recovery as { prompt?: unknown }).prompt === 'string'
+              ? (data.recovery as { prompt: string }).prompt : undefined,
+          }
+        : undefined,
     cached: !!data.cached,
     blocked: !!data.blocked,
     blocked_rule: typeof data.rule === 'string' ? data.rule : undefined,

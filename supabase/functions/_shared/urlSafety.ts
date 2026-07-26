@@ -42,6 +42,40 @@ export function isSafeExternalUrl(url: string): boolean {
   const mapped = host.match(/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
   if (mapped) host = mapped[1];
 
+  // ...but the dotted form is only what a HUMAN types. The WHATWG URL
+  // serializer rewrites a mapped literal to HEX, and every caller here
+  // validates a string that has been through `new URL(...)` at least once
+  // (siteDiscovery resolves redirects with `new URL(loc, current).toString()`).
+  // So the regex above never saw the form that actually arrives. Reproduced:
+  //
+  //   http://[::ffff:169.254.169.254]/  ->  http://[::ffff:a9fe:a9fe]/   ALLOWED
+  //   http://[::ffff:127.0.0.1]/        ->  http://[::ffff:7f00:1]/      ALLOWED
+  //   http://[::ffff:10.1.2.3]/         ->  http://[::ffff:a01:203]/     ALLOWED
+  //   http://[::ffff:192.168.1.1]/      ->  http://[::ffff:c0a8:101]/    ALLOWED
+  //
+  // That is a straight path to AWS/GCP instance metadata. Decode the hex pair
+  // back to dotted quad so the v4 rules below judge the real address.
+  const mappedHex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    host = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+  }
+  // Any OTHER v4-mapped/compatible shape we cannot confidently decode is
+  // refused rather than waved through — an address we cannot read is not an
+  // address we can vouch for.
+  if (host.startsWith('::ffff:') || /^::\d/.test(host)) return false;
+
+  // Bare-integer and octal IPv4 (http://2130706433/ == 127.0.0.1). The URL
+  // serializer normalises these too, so a caller that validates the RAW string
+  // before normalising would otherwise let them through. Cheap to just handle.
+  if (/^\d+$/.test(host)) {
+    const n = Number(host);
+    if (!Number.isSafeInteger(n) || n > 0xffffffff) return false;
+    host = `${(n >>> 24) & 0xff}.${(n >>> 16) & 0xff}.${(n >>> 8) & 0xff}.${n & 0xff}`;
+  }
+  if (/^0[0-7]*\./.test(host)) return false; // octal-looking first octet
+
   // ── Hostname denylist (non-IP internal names) ──
   // Cloud metadata + internal-only TLDs. NOTE: the generic ".internal"
   // suffix is deliberately NOT blocked — the self-management provider

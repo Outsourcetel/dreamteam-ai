@@ -5,6 +5,7 @@ import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
 import { askDE, DEAnswerError } from '../lib/knowledgeApi';
 import { listDigitalEmployees, type DigitalEmployee } from '../lib/digitalEmployeesApi';
+import ImportSiteModal from './ImportSiteModal';
 
 // ============================================================
 // "Ask your DE" global chat dock — context-aware DE routing,
@@ -82,6 +83,14 @@ interface ChatMsg {
   blocked?: boolean;
   /** live mode: the guardrail rule text that blocked the answer */
   blockedRule?: string;
+  /**
+   * live mode: the employee has no knowledge and is offering to fix that here.
+   * The reply copy is an IMPERATIVE ("paste your website address and I'll read
+   * it"), so this must render a real control. Without one the user answers in
+   * chat, nothing is learned, and the next reply says "nothing changes until
+   * knowledge lands" — worse than the flat message it replaced.
+   */
+  recovery?: { kind: 'import_site'; cta?: string; prompt?: string };
 }
 
 // ── LIVE mode (real tenant): the dock fronts the de-answer edge
@@ -402,6 +411,8 @@ export default function DEChatDock() {
   // Ask (question -> DE) vs Do (describe a change -> workspace assistant).
   const [dockMode, setDockMode] = useState<'ask' | 'do'>('ask');
   const [messages, setMessages] = useState<ChatMsg[]>(() => loadThread(threadId));
+  // Opened from the in-chat recovery CTA when the employee has no knowledge.
+  const [showImportSite, setShowImportSite] = useState(false);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -552,6 +563,7 @@ export default function DEChatDock() {
         cached: res.cached,
         blocked: res.blocked,
         blockedRule: res.blocked_rule,
+        recovery: res.recovery,
         time: nowTime(),
       }]);
     } catch (err) {
@@ -745,6 +757,18 @@ export default function DEChatDock() {
                     {msg.cached && (
                       <div className="mt-1 text-[10px] text-teal-400/80" title="Served from the verified answer cache — no model call needed">⚡ instant</div>
                     )}
+                    {msg.recovery?.kind === 'import_site' && (
+                      // The employee just asked for a website address. This is the
+                      // control that honours it. Both real signups reached this
+                      // exact moment and left, because there was nothing here.
+                      <button
+                        type="button"
+                        onClick={() => setShowImportSite(true)}
+                        className="mt-2 w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-dt-accent"
+                      >
+                        {msg.recovery.cta || 'Read my website'}
+                      </button>
+                    )}
                     {msg.blocked && (
                       <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
                         🛡 Guardrail block{msg.blockedRule ? ` — "${msg.blockedRule}"` : ''}. The draft answer was withheld and recorded in the audit trail.
@@ -885,6 +909,26 @@ export default function DEChatDock() {
             <span className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-dt-page" />
           </button>
         </div>
+      )}
+
+      {showImportSite && (
+        <ImportSiteModal
+          onClose={() => setShowImportSite(false)}
+          onImported={(count) => {
+            setShowImportSite(false);
+            // Close the loop in the thread itself. The employee asked for the
+            // website, the user gave it, and this is the employee coming back
+            // able to work — the beat that was missing when both real signups
+            // reached this point and left.
+            setMessages(prev => [...prev, {
+              id: uid(), role: 'system',
+              text: count > 0
+                ? `Read your website — ${count} page${count === 1 ? '' : 's'} added. Ask me again and I'll answer from them.`
+                : 'Nothing could be read from that address. Try a different page, or add a document directly.',
+              time: nowTime(),
+            }]);
+          }}
+        />
       )}
     </div>
   );

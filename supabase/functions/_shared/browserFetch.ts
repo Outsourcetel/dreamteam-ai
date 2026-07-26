@@ -1,3 +1,5 @@
+import { isSafeExternalUrl } from './urlSafety.ts';
+
 // browserFetch — fetch a public URL the way the knowledge ingester needs:
 // with a full, browser-like header set and bounded retry/backoff on the
 // transient bot-mitigation responses (403 / 429 / 503).
@@ -70,6 +72,51 @@ async function tryRenderService(url: string, timeoutMs: number): Promise<FetchOu
 }
 
 /**
+ * Fetch that re-validates EVERY redirect hop.
+ *
+ * WHY THIS EXISTS: browserFetch used a plain `fetch(url, …)` with no `redirect`
+ * option, and Deno defaults to `follow`. Callers SSRF-check the URL they were
+ * given — and then the runtime silently followed it anywhere. The attack needed
+ * no encoding trick at all:
+ *
+ *   submit a site whose sitemap lists N same-origin URLs, each of which 302s to
+ *   http://169.254.169.254/latest/meta-data/iam/security-credentials/
+ *
+ * knowledge-ingest-drain would follow, strip the response, and store it as a
+ * knowledge document — which the submitter then reads in their own library.
+ * That is full-read SSRF with exfiltration, not blind.
+ *
+ * Pre-existing (extract-document and demo-ingest have the same shape), but the
+ * website importer turns one-URL-per-paste into a one-click bulk harvester, so
+ * it is fixed here, once, for all three callers.
+ */
+async function fetchNoBlindRedirect(
+  url: string, timeoutMs: number, headers: Record<string, string>, maxHops = 5,
+): Promise<Response> {
+  let current = url;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    // Re-check on EVERY hop, including hop 0: the caller validated some string,
+    // but this is the one actually being connected to.
+    if (!isSafeExternalUrl(current)) {
+      throw new Error(`blocked: ${hop === 0 ? 'unsafe URL' : 'redirect to a non-public address'}`);
+    }
+    const resp = await fetch(current, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers,
+      redirect: 'manual',
+    });
+    if (![301, 302, 303, 307, 308].includes(resp.status)) return resp;
+
+    const loc = resp.headers.get('location');
+    if (!loc) return resp;
+    // Resolved against the CURRENT url so a relative Location works, and
+    // normalised — which is exactly the form urlSafety now inspects (mig 370).
+    current = new URL(loc, current).toString();
+  }
+  throw new Error('blocked: too many redirects');
+}
+
+/**
  * Fetch with browser headers and bounded retry on transient blocks.
  * @param url         validated http(s) URL (caller must SSRF-check first)
  * @param timeoutMs   per-attempt timeout
@@ -80,7 +127,7 @@ export async function browserFetch(url: string, timeoutMs = 15000, maxAttempts =
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let resp: Response;
     try {
-      resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { ...BROWSER_HEADERS, 'Accept': attempt === 1 ? BROWSER_HEADERS.Accept : 'text/html,*/*' } });
+      resp = await fetchNoBlindRedirect(url, timeoutMs, { ...BROWSER_HEADERS, 'Accept': attempt === 1 ? BROWSER_HEADERS.Accept : 'text/html,*/*' });
     } catch (e) {
       // network/timeout — one retry may still help
       if (attempt < maxAttempts) { await sleep(400 * attempt); continue; }

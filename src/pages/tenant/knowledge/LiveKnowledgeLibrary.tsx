@@ -21,6 +21,7 @@ import type { Page } from '../../../types';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import AISessionPanel from '../../../components/AISessionPanel';
 import PlatformShelfPanel from '../../../components/PlatformShelfPanel';
+import ImportSiteModal from '../../../components/ImportSiteModal';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -90,6 +91,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [showUrl, setShowUrl] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  // Whole-site import (ImportSiteModal). The four pre-existing add paths all
+  // assume the user already holds the text; both real outside signups reached
+  // this page and left with zero documents. This is the path that starts from
+  // where their knowledge actually lives, so it leads.
+  const [showSiteImport, setShowSiteImport] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   // Knowledge Feedback Loop (migration 032): pending revision requests
   // drafted from evidence-run feedback, awaiting human approve/reject.
@@ -461,9 +467,17 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         <div className="min-w-0">
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {/* Emphasis order is the fix: the fastest route to a populated library
+            is primary, and typing a document by hand — the slowest — is not. */}
+        <button
+          onClick={() => setShowSiteImport(true)}
+          className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dt-accent"
+        >
+          Import your website
+        </button>
         <button
           onClick={() => setEditor({ ...emptyEditor })}
-          className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
         >
           + Add document
         </button>
@@ -473,11 +487,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         >
           Upload file
         </button>
+        {/* Renamed from "Import from URL": it reads ONE page, and next to a
+            whole-site import that distinction has to be legible at a glance. */}
         <button
           onClick={() => setShowUrl(v => !v)}
           className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
         >
-          Import from URL
+          Add one page
         </button>
         <button
           onClick={() => setShowAi(v => !v)}
@@ -533,6 +549,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       {showUrl && (
         <div className="flex items-center gap-2 mb-4 rounded-xl border border-dt-border bg-dt-card px-3 py-2">
           <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            aria-label="Address of a single page to add"
             placeholder="https://help.yourcompany.com/article/…"
             className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500"
             onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }} />
@@ -579,12 +596,19 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             onPrimary={() => { setQuery(''); setSourceFilter(''); setVisFilter(''); setPageIdx(0); }}
           />
         ) : (
+          /* The old primary here opened a BLANK EDITOR — it asked a brand-new
+             workspace to write its knowledge base from scratch, and both real
+             outside signups ("acs", "Harbor Peak Consulting") left this page
+             with 0 documents. The primary now starts from where their
+             knowledge already is: their website. Manual entry stays, demoted. */
           <LiveEmptyState
             icon="◎"
-            title="Add your first document"
-            body="Paste your FAQs, upload a PDF / text / markdown file, or import a help-center URL. Your Digital Employees will only answer what these documents support."
-            primaryLabel="+ Add your first document"
-            onPrimary={() => setEditor({ ...emptyEditor })}
+            title="Start with your website"
+            body="Give us your website address and we'll read your public pages into this library — usually a couple of minutes. Your digital employees answer only from what's here, so this is the step that makes them useful."
+            primaryLabel="Import your website"
+            onPrimary={() => setShowSiteImport(true)}
+            secondaryLabel="Write a document instead"
+            onSecondary={() => setEditor({ ...emptyEditor })}
           />
         )
       ) : (
@@ -785,6 +809,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
         </div>{/* end RIGHT column */}
       </div>{/* end two-column shell */}
+
+      {/* Whole-site import. Reloads on close rather than on each document so
+          the list refresh can't unmount the modal out from under its summary. */}
+      {showSiteImport && (
+        <ImportSiteModal onClose={() => { setShowSiteImport(false); void load(); }} />
+      )}
 
       {/* Editor modal */}
       {editor && (

@@ -120,6 +120,202 @@ function rankDocs(question: string, docs: KDoc[]): KDoc[] {
     .map((s) => s.d);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// THE "I HAVE NO DOCUMENTS" RECOVERY PATH
+//
+// WHY, from production rather than theory: of 16 workspaces only the founder's
+// ever reached first value, and BOTH genuine outside signups died at exactly
+// this branch with zero knowledge documents — "acs" (2026-07-24) and "Harbor
+// Peak Consulting" (2026-07-06). The acs evaluator asked four real support
+// questions in twenty seconds (de_messages 14:54:45 → 14:55:05) and got the
+// same sentence four times: "I don't have any knowledge documents yet — upload
+// some in Knowledge → Library and I'll answer from them." Then they left.
+//
+// That sentence was HONEST and it was a DEAD END: it named a location instead
+// of offering an action, it offered to do nothing, and repeating it verbatim
+// burned four separate chances to recover the user. Refusing to answer without
+// documents is the whole point of this product and does not change here. What
+// changes is that the refusal now carries a way out.
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The machine-readable half of a no-documents reply. The prose asks for a
+ * website address; this is what lets the UI put a real input right under the
+ * message instead of sending the person off to find a page.
+ *
+ * Consumer contract (frontend + de-orchestrate pass-through):
+ *   kind      Discriminant — switch on it. More kinds may be added later, so an
+ *             unrecognised kind MUST degrade to rendering `answer` alone.
+ *   prompt    One line to show above the input, in the employee's voice.
+ *   cta       Button label.
+ *   fn        Edge function to POST to, body { url, max_pages }.
+ *   max_pages Suggested crawl budget only — site-import owns the real cap and
+ *             clamps; never treat this as a promise about how much it read.
+ *   attempt   1 = first time this workspace has hit the wall in the last
+ *             NO_DOCS_WINDOW_HOURS, 2 = second, 3+ = it has been said enough
+ *             times that the UI should stop being subtle about it.
+ *   fallback  The other way in, for a business whose knowledge is not on a
+ *             website at all.
+ */
+interface RecoveryHint {
+  kind: 'import_site';
+  prompt: string;
+  cta: string;
+  fn: 'site-import';
+  max_pages: number;
+  attempt: number;
+  fallback: { kind: 'upload_document'; prompt: string };
+}
+
+/** How far back a previous "I have nothing to read" reply still counts as a
+ *  repeat. One sitting, not forever: a workspace that comes back next week and
+ *  asks its first question deserves the full offer again, not the third-strike
+ *  wording. */
+const NO_DOCS_WINDOW_HOURS = 24;
+
+/** Suggested crawl budget handed to the UI. Enough to cover a small business's
+ *  entire help/policy surface; site-import clamps to its own maximum. */
+const NO_DOCS_SUGGESTED_MAX_PAGES = 40;
+
+/**
+ * How many times this workspace has ALREADY been told there is nothing to
+ * answer from, inside the window.
+ *
+ * ⚠ SCOPE IS TENANT-WIDE, NOT CONVERSATION-SCOPED, and that is the entire
+ * point. The four identical replies that lost the acs signup landed in FOUR
+ * DIFFERENT conversations — verified live: 5dba1e03…, f0dffa05…, 157ad24d…,
+ * 787c431a…, all channel 'dock', all the same employee, all inside 20 seconds.
+ * The dock opens a fresh conversation per question whenever the caller sends no
+ * conversation_id (see the de_conversations insert below), so a
+ * per-conversation check would have caught ZERO of those repeats. It is also
+ * the right scope for the human: the person hears every employee, so a second
+ * employee re-reading them the same offer is still a repeat.
+ *
+ * Counts the marker written by this branch (confidence_dimensions->>no_docs),
+ * not the message text — the wording escalates, so matching on prose would
+ * stop recognising its own history the moment someone edits a sentence.
+ * Historical rows (including the four acs ones) carry no marker and are
+ * invisible here; this is forward-looking by construction.
+ *
+ * Fails to 0 — a counting hiccup should hand out the friendly first-time offer,
+ * never accuse someone of asking repeatedly.
+ */
+// deno-lint-ignore no-explicit-any
+async function countPriorNoDocsReplies(admin: any, tenantId: string): Promise<number> {
+  try {
+    const since = new Date(Date.now() - NO_DOCS_WINDOW_HOURS * 3600_000).toISOString();
+    const { count, error } = await admin
+      .from('de_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)                          // de_messages_tenant_idx
+      .eq('role', 'assistant')
+      .eq('confidence_dimensions->>no_docs', 'true')
+      .gte('created_at', since);
+    if (error) { console.error('countPriorNoDocsReplies:', error.message); return 0; }
+    return Number(count) || 0;
+  } catch (e) {
+    console.error('countPriorNoDocsReplies:', String(e));
+    return 0;
+  }
+}
+
+/** Longest echo of the person's own question we will quote back. Long enough to
+ *  prove we read it, short enough that it cannot become a payload. */
+const ECHO_MAX_CHARS = 96;
+
+/**
+ * A short, NON-FABRICATING reflection of what was actually asked — their words,
+ * never a paraphrase, because a paraphrase of a question we cannot answer is
+ * already a small invention.
+ *
+ * ⚠ The stripped characters are not cosmetic. This string is stored as an
+ * ASSISTANT message, and buildTurns (_shared/conversation.ts) replays assistant
+ * messages back into a LATER turn's prompt — so a verbatim echo is a route for
+ * attacker-supplied text to arrive wearing the employee's own voice. Brackets,
+ * angle brackets, braces and backticks are what a forged turn or a fake system
+ * block is built out of; the double quote is what would break out of the quotes
+ * we wrap this in. Stripped, flattened to one line and capped at
+ * ECHO_MAX_CHARS, there is nothing left to forge with. (Same threat model as
+ * _shared/injectionSafety.ts, which wraps untrusted DOCUMENT text before it
+ * reaches a model.) Apostrophes are deliberately kept — "don't" must not become
+ * "dont", or the echo reads like a bug.
+ */
+function echoQuestion(raw: string): string {
+  const flat = String(raw ?? '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/["\[\]<>{}`\\]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (flat.length < 12) return '';            // "hi" / "test" — nothing worth reflecting
+  if (flat.length <= ECHO_MAX_CHARS) return flat;
+  const cut = flat.slice(0, ECHO_MAX_CHARS);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > 40 ? cut.slice(0, sp) : cut).replace(/[,;:.\-–—]+$/, '') + '…';
+}
+
+/** The employee's own framing of who it is, so the refusal reads as a new
+ *  colleague who has not been briefed rather than a 404. display_title is an
+ *  EMPTY STRING on most rows (verified live: 116/116 non-null, nearly all ''),
+ *  so it is tested for content, not for null; department is the real fallback
+ *  and is sometimes snake_case ('customer_support'), which reads badly quoted
+ *  verbatim. */
+function briefingClause(displayTitle: string | null, department: string | null): string {
+  const title = String(displayTitle ?? '').trim();
+  if (title) return `I'm the ${title} here, but nobody has briefed me`;
+  const dept = String(department ?? '').trim().replace(/[_-]+/g, ' ');
+  if (dept) return `I'm here for ${dept}, but nobody has briefed me`;
+  return `Nobody has briefed me yet`;
+}
+
+/**
+ * What the employee says when it has nothing to answer from.
+ *
+ * Escalates by attempt, because saying the identical thing four times is what
+ * actually lost the acs signup. First time: acknowledge the question, explain
+ * the real problem, offer the import. Second: name the repetition and be blunt
+ * that this does not fix itself. Third and beyond: stop re-explaining — short,
+ * not chirpy, not apologetic-in-a-loop.
+ */
+function noDocsAnswer(attempt: number, echo: string, briefing: string): string {
+  const about = echo ? ` about "${echo}"` : '';
+  if (attempt <= 1) {
+    return [
+      `I can't answer that yet — and I'd rather say so than guess at it.`,
+      ``,
+      `${briefing}: this workspace has no knowledge documents at all, so anything I told you${about} would be something I made up.`,
+      ``,
+      `Give me your website address and I'll read it — help pages, policies, FAQs, whatever is there — and come back able to answer this properly. It takes a couple of minutes. If what I need lives in a document instead of on your site, send me that.`,
+    ].join('\n');
+  }
+  if (attempt === 2) {
+    return [
+      `Same wall as your last question. I still have nothing to read, so I can't answer this one${about} either.`,
+      ``,
+      `This doesn't sort itself out — I only know what I'm given. Your website address is the fastest fix: I'll read the site and come back useful. A single document works too.`,
+    ].join('\n');
+  }
+  return [
+    `Still nothing to answer from — that's ${attempt} questions I've had to turn down, including this one${about}.`,
+    ``,
+    `Nothing changes until knowledge lands. Your website address, or one document. Either one, and I can actually do this job.`,
+  ].join('\n');
+}
+
+/** The offer, in the same voice as the prose above it, escalating with it. */
+function noDocsRecovery(attempt: number): RecoveryHint {
+  return {
+    kind: 'import_site',
+    prompt: attempt <= 1
+      ? `Paste your website address and I'll read it now.`
+      : `Still the fastest fix — paste your website address and I'll read it.`,
+    cta: attempt <= 1 ? 'Read my website' : 'Read my website now',
+    fn: 'site-import',
+    max_pages: NO_DOCS_SUGGESTED_MAX_PAGES,
+    attempt,
+    fallback: { kind: 'upload_document', prompt: 'Or send me a document instead' },
+  };
+}
+
 // ── Guardrail check (P3, honest v1: case-insensitive pattern match) ──
 // Patterns are '|'-separated substrings/regex fragments. Blocking rules
 // (blocked_phrase / blocked_topic) that match the ANSWER text block it.
@@ -424,10 +620,17 @@ serve(async (req) => {
     // an employee that can answer from the platform product guide, and the shelf
     // fan-in further down needs the same fact.
     let isWorkforceAssistant = false;
+    // display_title/department ride along on a query that already runs — the
+    // no-documents reply below introduces itself by role, and paying a second
+    // round trip for two columns on the same row would be silly.
+    let deDisplayTitle: string | null = null;
+    let deDepartment: string | null = null;
     if (subjectDeId) {
       const { data: waRow } = await admin.from('digital_employees')
-        .select('is_workforce_assistant').eq('id', subjectDeId).eq('tenant_id', tenantId).maybeSingle();
+        .select('is_workforce_assistant, display_title, department').eq('id', subjectDeId).eq('tenant_id', tenantId).maybeSingle();
       isWorkforceAssistant = waRow?.is_workforce_assistant === true;
+      deDisplayTitle = waRow?.display_title ?? null;
+      deDepartment = waRow?.department ?? null;
     }
 
     const persona = await resolveDePersona(admin, tenantId, subjectDeId, tenantName, candidatePersona);
@@ -583,16 +786,35 @@ serve(async (req) => {
     // expert told a new customer to go upload documentation about the product.
     // The Assistant now falls through and answers from the shelf.
     if ((!docs || docs.length === 0) && !isWorkforceAssistant) {
-      const answer = "I don't have any knowledge documents yet — upload some in Knowledge → Library and I'll answer from them.";
+      // See the recovery-path block at the top of this file for the production
+      // evidence. The refusal to answer is unchanged and unconditional — no
+      // documents still means no facts, and no answer is invented here. What is
+      // new: the employee acknowledges what was asked, says why it cannot help
+      // YET, offers the one action that fixes it, and does not say the same
+      // thing twice in a row.
+      const attempt = (await countPriorNoDocsReplies(admin, tenantId)) + 1;
+      const answer = noDocsAnswer(attempt, echoQuestion(question),
+        briefingClause(deDisplayTitle, deDepartment));
+      const recovery = noDocsRecovery(attempt);
       if (convId) {
         await admin.from('de_messages').insert({
           tenant_id: tenantId, conversation_id: convId, role: 'assistant',
           content: answer, confidence: 0, escalated: false,
+          // The marker countPriorNoDocsReplies reads back. confidence_dimensions
+          // is already used as a free-form per-message bag on this path (it
+          // carries customer_state further down, and in widget-ask), and it has
+          // no frontend reader — so this adds a queryable fact without moving
+          // anything else. REPLAY never reaches here: convId is null in a dry
+          // run, so a replay can neither write the marker nor inflate `attempt`
+          // for a real customer.
+          confidence_dimensions: { no_docs: true, attempt },
         });
       }
       return json({
         conversation_id: convId, answer, confidence: 0, sources: [],
-        needs_escalation: false, no_docs: true,
+        // no_docs is KEPT verbatim — src/lib/knowledgeApi.ts:623 and
+        // widgetChatApi.ts already read it. `recovery` is purely additive.
+        needs_escalation: false, no_docs: true, recovery,
         de_id: subjectDeId, de_name: persona.name,
       });
     }
