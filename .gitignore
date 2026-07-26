@@ -19,3 +19,7 @@ qa-output/
 
 # Supabase CLI local temp
 supabase/.temp/
+
+# Local database exports from scripts/backup-data.mjs — REAL CUSTOMER DATA.
+# Never commit these.
+backups/

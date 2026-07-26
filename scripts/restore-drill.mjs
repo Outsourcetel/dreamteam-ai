@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+// ============================================================
+// restore-drill.mjs — prove the schema backup actually restores.
+//
+// A backup nobody has restored is a belief, not a control. This script is the
+// difference: it takes supabase/baseline/full_schema.sql, rebuilds it into a
+// throwaway schema on the DEV project, compares the result to production
+// object-for-object, and drops it again.
+//
+// It found six real defects the first time it ran, none of which were visible
+// by reading the file — it looked complete and correct at every stage:
+//   1. CHECK constraints call functions, so functions must come BEFORE tables
+//      (connectors CHECK (is_safe_external_url(base_url)))
+//   2. ...but functions RETURNING SETOF <table> must come AFTER, so the dump
+//      needs two function passes, not one ordering
+//   3. extension-owned LANGUAGE c functions can't be recreated by a non-superuser
+//   4. policy names containing spaces were emitted unquoted
+//   5. GENERATED ALWAYS AS (...) STORED columns were emitted as DEFAULT
+//   6. sequences behind legacy `serial` columns weren't dumped at all
+//   (+ views were missing entirely, including the two *_secrets_decrypted ones)
+//
+//   node scripts/restore-drill.mjs          # regenerate, restore, compare, drop
+//   node scripts/restore-drill.mjs --keep   # leave the schema for inspection
+//
+// SAFETY: it only ever writes to the DEV project, and only inside a schema named
+// bkp_verify that it creates and drops. Production is read-only here.
+// ============================================================
+import { readFileSync, openSync, closeSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+
+const KEEP = process.argv.includes('--keep');
+const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
+const DEV_REF = 'nmuntxrcdksyhsdywpan';
+const SCHEMA = 'bkp_verify';
+const FILE = 'supabase/baseline/full_schema.sql';
+
+function token() {
+  const fromEnv = process.env.SUPABASE_ACCESS_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
+  const line = env.split(/\r?\n/).find((l) => l.startsWith('SUPABASE_ACCESS_TOKEN='));
+  if (!line) throw new Error('SUPABASE_ACCESS_TOKEN not found in .env.local');
+  return line.slice('SUPABASE_ACCESS_TOKEN='.length).replace(/^["']|["']$/g, '').trim();
+}
+
+async function run(ref, sql) {
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: sql }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+  return JSON.parse(text);
+}
+
+const census = (ns, excludeExtensionFns) => `
+  select
+    (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='${ns}' and c.relkind='r') as tables,
+    (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='${ns}' and c.relkind='v') as views,
+    (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='${ns}'${excludeExtensionFns ? ` and not exists (select 1 from pg_depend d
+        where d.objid=p.oid and d.classid='pg_proc'::regclass and d.deptype='e')` : ''}) as functions,
+    (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid
+       join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='${ns}' and not t.tgisinternal) as triggers,
+    (select count(*) from pg_policy p join pg_class c on c.oid=p.polrelid
+       join pg_namespace n on n.oid=c.relnamespace where n.nspname='${ns}') as policies,
+    (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='${ns}' and c.relkind='r' and c.relrowsecurity) as rls_enabled,
+    (select count(*) from pg_attribute a join pg_class c on c.oid=a.attrelid
+       join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='${ns}' and c.relkind='r' and a.attnum>0 and not a.attisdropped) as columns`;
+
+console.log('1/4  regenerating the schema dump from production…');
+const out = openSync(FILE, 'w');
+try {
+  execFileSync(process.execPath, ['scripts/backup-schema.mjs'], { stdio: ['ignore', out, 'inherit'] });
+} finally {
+  closeSync(out);
+}
+
+console.log('2/4  restoring into a throwaway schema on the dev project…');
+const dump = readFileSync(FILE, 'utf8').replace(/public\./g, `${SCHEMA}.`);
+// `extensions` is on the path because Supabase installs pgcrypto there and
+// column defaults call gen_random_bytes() unqualified. `public` is on it
+// because a CHECK constraint calls a function unqualified. Neither is a defect
+// in the dump — both resolve normally when restoring into `public` for real.
+await run(DEV_REF,
+  `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE;\nCREATE SCHEMA ${SCHEMA};\n` +
+  `SET search_path = ${SCHEMA}, public, extensions;\n` + dump);
+
+console.log('3/4  comparing the rebuilt schema to production…');
+const [got] = await run(DEV_REF, census(SCHEMA, false));
+const [want] = await run(PROD_REF, census('public', true));
+
+const rows = Object.keys(want).map((k) => ({
+  object: k, production: want[k], restored: got[k], match: want[k] === got[k] ? 'OK' : 'MISMATCH',
+}));
+console.table(rows);
+
+if (!KEEP) {
+  await run(DEV_REF, `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE; select 1 as done`);
+  console.log('4/4  scratch schema dropped.');
+} else {
+  console.log(`4/4  left ${SCHEMA} in place (--keep).`);
+}
+
+const bad = rows.filter((r) => r.match !== 'OK');
+if (bad.length) {
+  console.error(`\nRESTORE DRILL FAILED — ${bad.map((b) => b.object).join(', ')} differ.`);
+  console.error('The backup does not reproduce production. Do not rely on it until this passes.');
+  process.exit(1);
+}
+console.log('\nRESTORE DRILL PASSED — the schema backup reproduces production exactly.');

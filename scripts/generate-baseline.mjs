@@ -118,7 +118,7 @@ const rls = await q(`
    where n.nspname='public' and c.relname in (${list})`);
 
 const pol = await q(`
-  select c.relname as tbl, p.polname as name,
+  select c.relname as tbl, quote_ident(p.polname) as name,
          case p.polcmd when 'r' then 'SELECT' when 'a' then 'INSERT'
                        when 'w' then 'UPDATE' when 'd' then 'DELETE' else 'ALL' end as cmd,
          pg_get_expr(p.polqual, p.polrelid) as using_expr,
