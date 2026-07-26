@@ -9,7 +9,8 @@
 -- 'references tenants(id)'. So the repository could not rebuild its own database:
 -- a replay onto an empty project failed on the first file.
 --
--- Numbered 000 so it sorts before everything and the foreign-key chain resolves.
+-- Lives in supabase/baseline/, NOT supabase/migrations/: it is not a migration and
+-- must never be recorded in the migration ledger as applied.
 --
 -- THIS IS A REBUILD ARTIFACT, NOT A MIGRATION TO RUN AGAINST PRODUCTION.
 -- The table, index and foreign-key sections ARE idempotent. The POLICY section is

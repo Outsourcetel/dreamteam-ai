@@ -19,7 +19,9 @@
     "provision:all": "node scripts/provision.mjs",
     "test:unit": "vitest run tests/continuity-format.test.ts",
     "test:isolation": "vitest run tests/tenant-isolation.test.ts",
-    "test:invariants": "vitest run tests/knowledge-acl-invariants.test.ts"
+    "test:invariants": "vitest run tests/knowledge-acl-invariants.test.ts",
+    "migrate:status": "node scripts/migration-status.mjs",
+    "baseline:generate": "node scripts/generate-baseline.mjs > supabase/baseline/000_baseline_core.sql"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",

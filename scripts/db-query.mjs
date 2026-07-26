@@ -48,3 +48,42 @@ if (!res.ok) {
   process.exit(1);
 }
 console.log(text);
+
+// ── Record it in the ledger (mig 364) ──────────────────────────────────────
+// Only for a real migration FILE, and only AFTER it succeeded — a failed
+// migration must never leave a row claiming it was applied. This is what turns
+// the ledger from a one-off snapshot into something that stays true: before
+// this, "which migrations are applied" lived in one person's memory.
+const file = process.argv.slice(2).find((a) => !a.startsWith('--'));
+if (file && /supabase[\\/]migrations[\\/]/.test(file)) {
+  try {
+    const { createHash } = await import('node:crypto');
+    const name = file.split(/[\\/]/).pop();
+    // CRLF-normalised: this repo has a CRLF working tree, and a file differing
+    // only by line ending is not a changed migration.
+    const sum = createHash('sha256')
+      .update(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+    const rec = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `select public.record_migration_applied(
+                  ${JSON.stringify(name).replace(/"/g, "'")}, '${sum}', 'db-query.mjs') as r`,
+      }),
+    });
+    if (rec.ok) {
+      const r = JSON.parse(await rec.text())[0]?.r;
+      if (r?.content_changed_since_last_apply) {
+        console.error(`⚠  ${name} was applied before with DIFFERENT content — the database may not match this file.`);
+      } else if (r?.reapplied) {
+        console.error(`ledger: ${name} re-applied`);
+      } else {
+        console.error(`ledger: ${name} recorded`);
+      }
+    }
+  } catch {
+    // Never fail a successful migration because the bookkeeping call failed —
+    // but say so, so the ledger silently drifting is visible.
+    console.error('⚠  migration applied, but the ledger could not be updated');
+  }
+}

@@ -15,7 +15,7 @@
 // This reads the live catalog and emits ordered, idempotent DDL. It is
 // STRICTLY READ-ONLY against production — it only ever SELECTs.
 //
-//   node scripts/generate-baseline.mjs > supabase/migrations/000_baseline_core.sql
+//   node scripts/generate-baseline.mjs > supabase/baseline/000_baseline_core.sql
 //
 // WHAT IT DOES NOT DO (deliberately, and stated so nobody assumes otherwise):
 //   · does not emit data — structure only
@@ -54,7 +54,7 @@ const { readdirSync } = await import('node:fs');
 const { join } = await import('node:path');
 const MIG_DIR = 'supabase/migrations';
 let allSql = '';
-for (const f of readdirSync(MIG_DIR).filter((f) => f.endsWith('.sql') && f !== '000_baseline_core.sql')) {
+for (const f of readdirSync(MIG_DIR).filter((f) => f.endsWith('.sql') && true /* baseline lives outside this dir */)) {
   allSql += readFileSync(join(MIG_DIR, f), 'utf8') + '\n';
 }
 const creatable = new Set();
@@ -168,7 +168,8 @@ out.push(`-- are legacy, "do not re-apply"), yet migration 001 line 23 already d
 out.push(`-- 'references tenants(id)'. So the repository could not rebuild its own database:`);
 out.push(`-- a replay onto an empty project failed on the first file.`);
 out.push(`--`);
-out.push(`-- Numbered 000 so it sorts before everything and the foreign-key chain resolves.`);
+out.push(`-- Lives in supabase/baseline/, NOT supabase/migrations/: it is not a migration and`);
+out.push(`-- must never be recorded in the migration ledger as applied.`);
 out.push(`--`);
 out.push(`-- THIS IS A REBUILD ARTIFACT, NOT A MIGRATION TO RUN AGAINST PRODUCTION.`);
 out.push(`-- The table, index and foreign-key sections ARE idempotent. The POLICY section is`);
