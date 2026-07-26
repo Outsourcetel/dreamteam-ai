@@ -1,3 +1,8 @@
+import DataExportPanel from '../../components/DataExportPanel';
+import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
+import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
+import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
+import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
 import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { PageTabs, ADMIN_TABS } from '../../components';
@@ -30,14 +35,14 @@ const SettingsPage = ({
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
   const { refreshTenant, isDTUser } = useAuth();
   const accentColor = tenant?.primaryColor || '#6366f1';
-  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security'>(() => {
+  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security' | 'identity' | 'data'>(() => {
     // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
     // lands on the Widget tab instead of the org-name form). Consumed once.
     try {
       const hint = localStorage.getItem('dt_settings_tab');
       if (hint) {
         localStorage.removeItem('dt_settings_tab');
-        if (['general', 'ai_engine', 'usage', 'widget', 'billing', 'security'].includes(hint)) return hint as 'widget';
+        if (['general', 'ai_engine', 'usage', 'widget', 'billing', 'security', 'identity', 'data'].includes(hint)) return hint as 'widget';
       }
     } catch { /* ignore */ }
     return 'general';
@@ -239,8 +244,8 @@ const SettingsPage = ({
 </script>`;
 
   const tabList = ((true
-    ? ['general', 'ai_engine', 'usage', 'widget', 'billing', 'security']
-    : ['general', 'ai_engine', 'usage', 'billing', 'security']) as Array<typeof activeTab>)
+    ? ['general', 'ai_engine', 'usage', 'widget', 'identity', 'data', 'billing', 'security']
+    : ['general', 'ai_engine', 'usage', 'identity', 'data', 'billing', 'security']) as Array<typeof activeTab>)
     .filter(t => t !== 'ai_engine' || isDTUser);
 
   return (
@@ -777,6 +782,28 @@ const userHash = crypto
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Identity — domain ownership, SSO policy, SCIM provisioning.
+          Order matters: a domain must be VERIFIED before the SSO policy or JIT
+          can route anyone by it, so the claim panel leads. */}
+      {activeTab === 'identity' && (
+        <div className="max-w-3xl space-y-6">
+          <DomainClaimPanel />
+          <SsoPolicyPanel />
+          <ScimTokensPanel />
+        </div>
+      )}
+
+      {/* Data rights — export before delete, deliberately in that order.
+          Someone who arrives intending to delete should pass the export on the
+          way, because the deletion is irreversible and there are no automated
+          backups behind it. */}
+      {activeTab === 'data' && (
+        <div className="max-w-3xl space-y-6">
+          <DataExportPanel />
+          <DeleteWorkspacePanel />
         </div>
       )}
 

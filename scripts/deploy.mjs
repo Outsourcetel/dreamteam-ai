@@ -92,13 +92,36 @@ async function applyMigrations() {
   console.log(`  ✓ applied ${pending.length} migration(s)`);
 }
 
+// ── Functions that authenticate themselves and must NOT sit behind the
+// platform's JWT gate ───────────────────────────────────────────────────────
+// The gate rejects a request BEFORE the function body runs, so a caller
+// presenting anything other than a Supabase JWT gets an opaque 401 with no
+// diagnostics. SCIM is exactly that case: Okta/Entra send
+// `Authorization: Bearer dtscim_…`, which the function itself verifies against
+// a hashed token in scim_tokens (mig 375).
+//
+// ⚠ WHY THIS IS A LIST HERE AND NOT A supabase/config.toml.
+// 48 of the 61 deployed functions already have verify_jwt=false, set
+// individually over time. There is no config.toml, and `supabase functions
+// deploy` with no flag PRESERVES whatever the function already has — verified
+// empirically today by redeploying 51 functions and re-reading the API, all of
+// which kept their setting. Introducing a config.toml would make IT the source
+// of truth and silently flip every function it does not mention back to
+// verify_jwt=true, which would break the anonymous widget (widget-ask), the
+// inbound email hook, the OAuth callback and 45 others. A targeted flag is the
+// smaller, safer instrument.
+const NO_VERIFY_JWT = new Set([
+  'scim', // IdP presents its own bearer token; verified in-function (mig 375)
+]);
+
 function deployFunctions() {
   if (!ACCESS) die('SUPABASE_ACCESS_TOKEN missing — add it to .env.local (supabase.com/dashboard/account/tokens)');
   for (const fn of FUNCTIONS) {
     const dir = path.join(process.cwd(), 'supabase', 'functions', fn);
     if (!fs.existsSync(dir)) die(`function not found: supabase/functions/${fn}`);
-    console.log(`\nDeploying function: ${fn}`);
-    execSync(`npx supabase functions deploy ${fn} --project-ref ${REF}`, {
+    const noJwt = NO_VERIFY_JWT.has(fn);
+    console.log(`\nDeploying function: ${fn}${noJwt ? '  (--no-verify-jwt: authenticates itself)' : ''}`);
+    execSync(`npx supabase functions deploy ${fn} --project-ref ${REF}${noJwt ? ' --no-verify-jwt' : ''}`, {
       stdio: 'inherit',
       env: { ...process.env, SUPABASE_ACCESS_TOKEN: ACCESS },
     });
