@@ -7,9 +7,10 @@
       "runtimeArgs": [
         "node_modules/vite/bin/vite.js",
         "--port",
-        "5173"
+        "5180",
+        "--strictPort"
       ],
-      "port": 5173
+      "port": 5180
     },
     {
       "name": "dreamteam-worktree",
