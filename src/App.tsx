@@ -9,6 +9,7 @@ import ProofPage from './pages/ProofPage';
 import ResetPasswordScreen from './pages/ResetPasswordScreen';
 import HostedChatPage from './pages/chat/HostedChatPage';
 import OrgSetupScreen from './pages/OrgSetupScreen';
+import SetPasswordScreen, { arrivedByInviteLink } from './pages/SetPasswordScreen';
 import PlatformInviteRedeemPage from './pages/PlatformInviteRedeemPage';
 import TermsOfServicePage from './pages/legal/TermsOfServicePage';
 import PrivacyPolicyPage from './pages/legal/PrivacyPolicyPage';
@@ -334,6 +335,17 @@ function AppShell() {
   // silently fall through to the demo dashboard. See AuthContext's
   // needsOrgSetup and OrgSetupScreen for the full reasoning.
   if (needsOrgSetup) return <OrgSetupScreen />;
+
+  // An invited person arrives with a session but NO PASSWORD — inviteUserByEmail
+  // creates the auth user without one. Before this, they landed straight in the
+  // app and could never sign in again once the one-time link was spent.
+  //
+  // Placed AFTER needsOrgSetup so a brand-new owner still finishes creating
+  // their workspace first; a password screen in front of an org that does not
+  // exist yet would be a stranger interruption than the bug it fixes.
+  if (arrivedByInviteLink()) {
+    return <SetPasswordScreen onDone={() => window.location.replace('/')} />;
+  }
 
   // Real enforcement of the tenant's own session policy (migration 091,
   // Security & Access page): if the workspace requires MFA and this real
