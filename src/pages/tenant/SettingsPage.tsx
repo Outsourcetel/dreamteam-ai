@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { canAccessSettingsTab, type SettingsTab } from '../../lib/navAccess';
 import {
   generateWidgetKey, fetchWidgetKeys, revokeWidgetKey, fetchEndUserSessions,
   rotateWidgetIdentitySecret, widgetIdentityConfigured,
@@ -33,6 +34,9 @@ const SettingsPage = ({
   setPage,
 }: { user?: AuthUser; tenant?: Tenant; page?: Page; setPage?: (p: Page) => void } = {}) => {
   const { refreshTenant, isDTUser } = useAuth();
+  // Least privilege on an unknown role: read_only, never a default that can see
+  // billing. isDTUser stays in use below for platform-only content.
+  const role = (user?.role ?? 'read_only') as Parameters<typeof canAccessSettingsTab>[0];
   const accentColor = tenant?.primaryColor || '#6366f1';
   const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security' | 'identity' | 'data'>(() => {
     // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
@@ -92,8 +96,19 @@ const SettingsPage = ({
   const [budgetError, setBudgetError] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (activeTab === 'ai_engine' && !isDTUser) setActiveTab('general');
-  }, [activeTab, isDTUser]);
+    // Was: ai_engine only. Now any inaccessible tab — the 'dt_settings_tab'
+    // deep-link hint and a role change can each strand someone on a tab they
+    // may not open, which would render an empty panel rather than redirect.
+    if (!canAccessSettingsTab(role, activeTab as SettingsTab, user?.layer)) {
+      // Resolved inline rather than from tabList, which is declared further
+      // down the component — 'general' is only the last resort, so a role that
+      // somehow cannot open it still lands somewhere real instead of on a blank
+      // panel.
+      const firstAllowed = (['general', 'usage', 'widget', 'identity', 'data', 'security', 'billing', 'ai_engine'] as SettingsTab[])
+        .find(t => canAccessSettingsTab(role, t, user?.layer));
+      setActiveTab((firstAllowed ?? 'general') as typeof activeTab);
+    }
+  }, [activeTab, role, user?.layer]);
 
   useEffect(() => {
     setOrgName(tenant?.name || '');
@@ -242,10 +257,24 @@ const SettingsPage = ({
   });
 </script>`;
 
-  const tabList = ((true
-    ? ['general', 'ai_engine', 'usage', 'widget', 'identity', 'data', 'billing', 'security']
-    : ['general', 'ai_engine', 'usage', 'identity', 'data', 'billing', 'security']) as Array<typeof activeTab>)
-    .filter(t => t !== 'ai_engine' || isDTUser);
+  // ── Per-tab access (docs/29 decisions 2 and 3) ───────────────────────────
+  // Settings is one page holding very different things: workspace vocabulary
+  // sits beside billing, SSO, data export and workspace deletion. One tier for
+  // the whole page would either lock managers out of settings they own, or hand
+  // them billing. So each tab is gated on its own.
+  //
+  // Replaces a `true ? [...] : [...]` whose false branch was unreachable, and a
+  // hand-rolled ai_engine check — both now expressed in one place that the
+  // Sidebar and this page read from.
+  //
+  // Hiding a tab is PRESENTATION. Billing changes and workspace deletion are
+  // enforced in the database; a role that reached this page by another route
+  // still cannot perform them.
+  const ALL_SETTINGS_TABS: SettingsTab[] =
+    ['general', 'ai_engine', 'usage', 'widget', 'identity', 'data', 'billing', 'security'];
+  const tabList = ALL_SETTINGS_TABS
+    .filter(t => canAccessSettingsTab(role, t, user?.layer))
+    .map(t => t as typeof activeTab);
 
   // ── Switching tabs starts at the top of the new tab ──────────────────────
   // It used to keep the scroll offset, so choosing "Data" from halfway down
