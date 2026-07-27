@@ -1147,6 +1147,29 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
             'dreamteam.conversation_id': convId,
           },
         });
+        // Evidence decision for the block (docs/31 #4, mig 442) — feeds
+        // blocked_guardrail_count in get_de_performance_metrics.
+        try {
+          const { data: er } = await admin.from('evidence_runs').insert({
+            tenant_id: tenantId, de_id: subjectDeId, inquiry: question.slice(0, 2000),
+            account_ref: convId ? `conversation:${convId}` : null,
+            status: 'complete', steps: [], answer_status: 'blocked',
+            confidence_inputs: { knowledge_hits: 0 },
+          }).select('id').single();
+          if (er?.id) {
+            await admin.rpc('record_inquiry_decision', {
+              p_tenant_id: tenantId, p_evidence_run_id: er.id, p_connector_id: null,
+              p_external_ref: convId ? `conversation:${convId}` : null,
+              p_source: 'live_channel', p_decision: 'blocked_guardrail',
+              p_confidence: parsed.confidence, p_guardrail_rule_id: blockedBy.id,
+              p_trust_level: null,
+              p_reasoning: `Chat answer blocked by guardrail "${blockedBy.rule}" and withheld; escalated to human.`,
+              p_inquiry_title: question.slice(0, 120),
+              p_source_category: 'support', p_frustration_score: null,
+              p_existing_human_task_id: null,
+            });
+          }
+        } catch (e) { console.error('evidence decision (chat block):', e); }
       }
       return json({
         conversation_id: convId,
@@ -1288,6 +1311,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
 
     // ── Escalation + activity ── (business writes skipped in replay; one
     // audit line keeps dry runs visible in the trail, never silent)
+    let escTaskId: string | null = null;
     if (replayMode) {
       await auditEvent(admin, tenantId, persona.name, 'de',
         `REPLAY (dry run) — answered "${question.length > 60 ? question.slice(0, 60) + '…' : question}" with zero business side effects${candidateKnowledge ? ' (candidate knowledge injected)' : ''}`,
@@ -1295,7 +1319,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     } else if (escalate) {
       await bump('escalations');
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
-      await admin.from('human_tasks').insert({
+      const { data: escTask } = await admin.from('human_tasks').insert({
         tenant_id: tenantId,
         de_id: subjectDeId,
         type: 'escalation',
@@ -1304,31 +1328,17 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         detail: `${escalationRuleHit ? `Matched ${escalationRuleHit}. ` : ''}${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
-      });
+      }).select('id').single();
+      escTaskId = escTask?.id ?? null;
       await admin.from('activity_events').insert({
         tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
         text: `Chat question escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
-      // W4-D (docs/16, mig 252): a live-channel miss with no knowledge
-      // grounding now feeds the self-healing loop — a minimal evidence row
-      // makes this question clusterable by the gap detector, which was
-      // previously blind to chat entirely.
-      if (parsed.sources.length === 0) {
-        try {
-          const { data: er } = await admin.from('evidence_runs').insert({
-            tenant_id: tenantId, de_id: subjectDeId, inquiry: question.slice(0, 2000),
-            status: 'complete', steps: [], answer_status: 'answered',
-            confidence_inputs: { knowledge_hits: 0 },
-          }).select('id').single();
-          if (er?.id) {
-            await admin.from('evidence_run_decisions').insert({
-              tenant_id: tenantId, evidence_run_id: er.id, source: 'live_channel',
-              decision: 'needs_review', confidence: parsed.confidence, source_category: 'support',
-            });
-          }
-        } catch (e) { console.error('gap bridge (chat):', e); }
-      }
+      // (The mig-252 "gap bridge" that lived here never once succeeded — its
+      // direct insert violated the source_category FK and the catch swallowed
+      // it. Superseded by the unconditional recorder below, which routes
+      // through record_inquiry_decision — mig 442.)
       await auditEvent(admin, tenantId, persona.name, 'de',
         `Chat question escalated to human review — "${truncated}"`,
         'escalated', { confidence: parsed.confidence, conversation_id: convId });
@@ -1371,6 +1381,37 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       } catch (e) {
         console.error('reply-mode draft submission failed (continue with normal flow):', e);
       }
+    }
+
+    // ── Evidence decision (docs/31 pre-start #4, mig 442): EVERY live answer
+    // records a decision via record_inquiry_decision — the single writer that
+    // also opens the Experience ledger and feeds get_de_performance_metrics +
+    // the development detector. Awaited (floating promises are dropped at
+    // isolate teardown — see the memory-write note above). Never in replay.
+    if (!replayMode) {
+      try {
+        const { data: er } = await admin.from('evidence_runs').insert({
+          tenant_id: tenantId, de_id: subjectDeId, inquiry: question.slice(0, 2000),
+          account_ref: convId ? `conversation:${convId}` : null,
+          status: 'complete', steps: [], answer_status: 'answered',
+          answer: parsed.answer.slice(0, 4000),
+          confidence_inputs: { knowledge_hits: parsed.sources.length },
+        }).select('id').single();
+        if (er?.id) {
+          await admin.rpc('record_inquiry_decision', {
+            p_tenant_id: tenantId, p_evidence_run_id: er.id, p_connector_id: null,
+            p_external_ref: convId ? `conversation:${convId}` : null,
+            p_source: 'live_channel',
+            p_decision: escalate ? 'needs_review' : (draftId ? 'would_auto_send' : 'acted'),
+            p_confidence: parsed.confidence, p_guardrail_rule_id: null, p_trust_level: null,
+            p_reasoning: `Chat answer ${escalate ? `escalated to human review${escalationRuleHit ? ` (${escalationRuleHit})` : ''}` : draftId ? 'submitted as a draft for human approval' : 'sent'} at ${parsed.confidence}% confidence with ${parsed.sources.length} knowledge source(s).`,
+            p_inquiry_title: question.slice(0, 120),
+            p_source_category: 'support',
+            p_frustration_score: customerState.intensity,
+            p_existing_human_task_id: escTaskId,
+          });
+        }
+      } catch (e) { console.error('evidence decision (chat):', e); }
     }
 
     return json({

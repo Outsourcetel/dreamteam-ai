@@ -182,6 +182,7 @@ async function callAnthropic(
 async function callExecuteAction(
   tenantId: string, deId: string, connectorId: string, actionKey: string, params: Record<string, unknown>,
   runId: string,   // §3: origin so def-of-done can correlate this run's gated actions
+  entityRef: string | null,   // Experience door b (docs/31 Q1): ledger-only entity name
 ): Promise<Record<string, unknown>> {
   try {
     const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
@@ -195,6 +196,7 @@ async function callExecuteAction(
         action: 'execute_action', connector_id: connectorId, tenant_id: tenantId,
         subject_kind: 'de', subject_id: deId, action_key: actionKey, params,
         origin_kind: 'agentic_run', origin_id: runId,
+        entity_ref: entityRef,
       }),
     });
     return await res.json().catch(() => ({ error: 'bad_response' }));
@@ -295,6 +297,7 @@ async function runLoop(
   tools: AnthropicTool[], policy: Policy, deId: string,
   contextDocuments = '', charter = '', playbookRunId = '',
   onGate: 'continue' | 'pause' = 'continue', stepIndex = -1,
+  entityRef: string | null = null,   // Experience door b: threaded to callExecuteAction
 ): Promise<Record<string, unknown>> {
   const system = `You are ${deName}, a digital employee. Your goal for this task: ${goal}\n\n`
     // The DE's configured purpose/charter — this is what makes it "trained":
@@ -449,7 +452,7 @@ async function runLoop(
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Unknown tool "${tu.name}".`, is_error: true });
         continue;
       }
-      const execRes = await callExecuteAction(tenantId, deId, toolDef.connector_id, toolDef.action_key, tu.input, runId);
+      const execRes = await callExecuteAction(tenantId, deId, toolDef.connector_id, toolDef.action_key, tu.input, runId, entityRef);
       if (execRes.error === 'access_denied') {
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Access denied: ${execRes.detail ?? 'no permission'}`, is_error: true });
       } else if (execRes.ok && execRes.gated) {
@@ -528,6 +531,8 @@ serve(async (req) => {
     // acting (optional; empty for legacy callers). Capped defensively.
     const contextDocuments = typeof body.context_documents === 'string'
       ? body.context_documents.slice(0, 24000) : '';
+    // Experience door b (docs/31 Q1): the entity this step's actions are about.
+    const entityRef = typeof body.entity_ref === 'string' && body.entity_ref.trim() ? body.entity_ref.trim().slice(0, 200) : null;
     if (!deId || !playbookRunId || stepIndex < 0 || !goal) {
       return json({ error: 'de_id, playbook_run_id, step_index, goal are all required' }, 400);
     }
@@ -615,7 +620,7 @@ serve(async (req) => {
       deRow.model_id || DEFAULT_MODEL, deRow.escalation_model_id || deRow.model_id || DEFAULT_MODEL,
       typeof deRow.escalation_threshold === 'number' ? deRow.escalation_threshold : null,
       tools, policy, deId, contextDocuments, charter, playbookRunId,
-      onGate, stepIndex,
+      onGate, stepIndex, entityRef,
     );
 
     await audit(admin, tenantId!, deRow.name ?? 'Digital Employee',

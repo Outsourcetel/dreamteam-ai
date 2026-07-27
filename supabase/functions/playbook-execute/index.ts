@@ -905,6 +905,8 @@ async function executeDefinitionSteps(
           action: 'execute_action', connector_id: actConn.id, tenant_id: tenantId,
           action_key: actionKey, params: actionParams,
           ...(runDeId ? { subject_kind: 'de', subject_id: runDeId } : {}),
+          // Experience door b (docs/31 Q1): ledger-only account name.
+          entity_ref: typeof ctx.account_name === 'string' && ctx.account_name ? ctx.account_name : null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1994,6 +1996,8 @@ async function executeDefinitionSteps(
                 // PB2.0: instructions + knowledge checks + references the
                 // run accumulated — the DE reads them before acting.
                 context_documents: collectRunContextDocs(ctx) || null,
+                // Experience door b (docs/31 Q1): the account this run is about.
+                entity_ref: typeof ctx.account_name === 'string' && ctx.account_name ? ctx.account_name : null,
               }),
             });
             agenticRes = await r.json().catch(() => null);

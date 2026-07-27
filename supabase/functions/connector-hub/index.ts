@@ -5151,6 +5151,10 @@ serve(async (req) => {
       // so assess_definition_of_done can tell a "done" over a pending action.
       const originKind = typeof payload.origin_kind === 'string' ? payload.origin_kind : null;
       const originId = typeof payload.origin_id === 'string' ? payload.origin_id : null;
+      // Experience door b (docs/31 Q1): what this action was ABOUT — a
+      // caller-supplied side channel that reaches ONLY the recorded ledger
+      // params, never the rendered/executed external request.
+      const entityRef = typeof payload.entity_ref === 'string' && payload.entity_ref.trim() ? payload.entity_ref.trim().slice(0, 200) : null;
 
       const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
@@ -5162,6 +5166,12 @@ serve(async (req) => {
       const params = (payload.params ?? {}) as Record<string, unknown>;
       const validated = validateActionParams(def, params);
       if (!validated.ok) return json({ ok: false, error: validated.error, detail: validated.detail }, 200);
+      // Ledger-only param set: lets record_action_execution's experience hook
+      // fire when the schema declares no ref param. renderRegisteredAction /
+      // runRegisteredAction still receive validated.values untouched, and
+      // dedupeKey below keeps using validated.values (unchanged idempotency).
+      const paramsForLedger = entityRef && !validated.values.external_ref && !validated.values.account_name && !validated.values.account_ref
+        ? { ...validated.values, account_ref: entityRef } : validated.values;
 
       // ── 1. Data access grants: write_back is necessary, never sufficient. ──
       if (subjectKind && subjectId) {
@@ -5269,7 +5279,7 @@ serve(async (req) => {
           const { data: rec } = await admin.rpc('record_action_execution', {
             p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
             p_subject_kind: subjectKind, p_subject_id: subjectId,
-            p_mode: 'execute', p_params: validated.values, p_decision: decision.decision,
+            p_mode: 'execute', p_params: paramsForLedger, p_decision: decision.decision,
             p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
             p_request_summary: summary, p_receipt: null, p_result: null,
             p_task_title: taskTitle, p_task_detail: taskDetail,
@@ -5382,7 +5392,7 @@ serve(async (req) => {
         const { data } = await admin.rpc('record_action_execution', {
           p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
           p_subject_kind: subjectKind, p_subject_id: subjectId,
-          p_mode: 'execute', p_params: validated.values,
+          p_mode: 'execute', p_params: paramsForLedger,
           p_decision: outcome.ok ? finalDecision : 'failed',
           p_destructive: def.risk.destructive, p_idempotent: def.risk.idempotent, p_dedupe_key: dedupeKey,
           p_request_summary: summary, p_receipt: outcome.receipt ?? null,

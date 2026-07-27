@@ -331,7 +331,7 @@ async function callConsultSpecialist(
   }
 }
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>, entityName?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -364,7 +364,11 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
         body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, params: input,
-          origin_kind: workItemId ? 'de_work_item' : null, origin_id: workItemId ?? null }),
+          origin_kind: workItemId ? 'de_work_item' : null, origin_id: workItemId ?? null,
+          // Experience door b (docs/31 Q1): what this action is ABOUT — ledger
+          // only; connector-hub never puts it in the external request. A
+          // model-supplied schema ref still wins (the merge is a fallback).
+          entity_ref: (input.external_ref as string) ?? subjectRef ?? entityName ?? null }),
       });
       const out = await res.json().catch(() => ({ error: 'bad_response' }));
       return { result: out };
@@ -588,6 +592,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   const objectiveId = (wi?.objective_id as string) ?? null;
   let accountRef: string | null = null;
   let oppRef: string | null = null;
+  let entityName: string | null = null;   // human-readable NAME — the Experience ledger keys on names, not UUIDs
   let accountContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
   let objectiveKind: string | undefined;        // T1.2: single-hop delegation pre-filter
@@ -606,6 +611,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         .eq('id', accountRef).maybeSingle();
       if (acct) {
         const a = acct as { name?: string; health_score?: number; arr_cents?: number; status?: string; renewal_date?: string; tier?: string; attributes?: { next_step?: string; next_step_date?: string } };
+        entityName = a.name ?? null;
         const arr = a.arr_cents != null ? `$${Math.round(a.arr_cents / 100).toLocaleString('en-US')}` : 'n/a';
         accountContext = `\n\nAccount record on file — ${a.name ?? 'account'}: health score ${a.health_score ?? 'n/a'}, ARR ${arr}, status ${a.status ?? 'n/a'}, renews ${a.renewal_date ?? 'n/a'}, tier ${a.tier ?? 'n/a'}`
           + `${a.attributes?.next_step ? `, current next step: ${a.attributes.next_step}` : ''}.`
@@ -619,6 +625,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         .eq('id', oppRef).maybeSingle();
       if (opp) {
         const o = opp as { name?: string; company_name?: string; stage?: string; amount_cents?: number; close_date?: string; owner?: string; source?: string };
+        entityName = o.name ?? o.company_name ?? null;
         const amt = o.amount_cents != null ? `$${Math.round(o.amount_cents / 100).toLocaleString('en-US')}` : 'n/a';
         accountContext = `\n\nOpportunity record on file — ${o.name ?? o.company_name ?? 'opportunity'}: stage ${o.stage ?? 'n/a'}, amount ${amt}, closes ${o.close_date ?? 'n/a'}, owner ${o.owner ?? 'n/a'}, source ${o.source ?? 'n/a'}.`
           + ` These are the real facts for this opportunity — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
@@ -808,7 +815,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets, entityName);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as

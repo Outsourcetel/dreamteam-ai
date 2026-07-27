@@ -477,6 +477,36 @@ serve(async (req) => {
       return (await semanticGuardrailScreen(admin, { tenantId, deId, surface: 'answer', content: ans, blockingRules: rules, mode: semGate.mode! })) as GuardrailRule | null;
     };
     const finalizeCore = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean, state: CustomerState = { mood: null, intensity: null }): Promise<Record<string, unknown>> => {
+      // ── Evidence decision (docs/31 pre-start #4, mig 442): every widget
+      // answer records a decision via record_inquiry_decision — the single
+      // writer that also opens the Experience ledger. external_ref prefers the
+      // customer ACCOUNT the widget session carries, so widget experience
+      // attaches to the account (docs/31 Q1 "Experience door a"). widget-ask
+      // has no replay mode; if one is ever added, mirror de-answer's guard.
+      const recordDecision = async (opts: { decision: string; conf: number; srcs: string[]; blocked?: boolean; guardrailRuleId?: string | null; taskId?: string | null; note: string }) => {
+        try {
+          const { data: er } = await admin.from('evidence_runs').insert({
+            tenant_id: tenantId, de_id: subjectDeId, inquiry: String(question ?? '').slice(0, 2000),
+            account_ref: accountRef ?? (convId ? `conversation:${convId}` : null),
+            status: 'complete', steps: [], answer_status: opts.blocked ? 'blocked' : 'answered',
+            answer: ans.slice(0, 4000),
+            confidence_inputs: { knowledge_hits: opts.srcs.length },
+          }).select('id').single();
+          if (er?.id) {
+            await admin.rpc('record_inquiry_decision', {
+              p_tenant_id: tenantId, p_evidence_run_id: er.id, p_connector_id: null,
+              p_external_ref: accountRef ?? endUserRef ?? (convId ? `conversation:${convId}` : null),
+              p_source: 'live_channel', p_decision: opts.decision,
+              p_confidence: opts.conf, p_guardrail_rule_id: opts.guardrailRuleId ?? null,
+              p_trust_level: null, p_reasoning: opts.note,
+              p_inquiry_title: String(question ?? '').slice(0, 120),
+              p_source_category: 'support',
+              p_frustration_score: state.intensity,
+              p_existing_human_task_id: opts.taskId ?? null,
+            });
+          }
+        } catch (e) { console.error('evidence decision (widget):', e); }
+      };
       // Guardrail — regex first-pass then the semantic judge; the DE's rules always
       // win, even on cached answers. Fail-closed.
       const blockedBy = await screenAnswer(ans, subjectDeId);
@@ -489,6 +519,7 @@ serve(async (req) => {
         await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${blockedBy.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: blockedBy.id, rule: blockedBy.rule, question: truncatedQ, channel });
         // Outcome metering (#15): a guardrail block hands off to a human — FREE.
         if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
+        await recordDecision({ decision: 'blocked_guardrail', conf, srcs: [], blocked: true, guardrailRuleId: blockedBy.id, note: `Answer blocked by guardrail "${blockedBy.rule}" and withheld; escalated to human.` });
         return { conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang };
       }
 
@@ -510,28 +541,19 @@ serve(async (req) => {
           await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: ans, confidence: conf, escalated: true, delivery: 'draft_pending', lang, confidence_dimensions: (state.mood || state.intensity !== null) ? { customer_state: state } : null });
           await admin.from('de_conversations').update({ status: 'needs_human', handoff_summary: handoffSummary, detected_language: lang, last_message_at: nowIso() }).eq('id', convId);
         }
-        await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de', title: `${(lowConf || escalationRuleHit) ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId });
+        const { data: escTask } = await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de', title: `${(lowConf || escalationRuleHit) ? 'Escalation' : 'Reply to approve'} (${channel} · ${who}) — ${truncatedQ}`, detail: handoffSummary, related_table: convId ? 'de_conversations' : null, related_id: convId }).select('id').single();
         await admin.from('activity_events').insert({ tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated', text: `${channel} question from ${who} → ${(lowConf || escalationRuleHit) ? 'escalated' : 'draft awaiting approval'} — "${truncatedQ}"`, confidence: conf });
         await auditEvent(admin, tenantId, persona.name, 'de', `${channel} question from ${who} → ${escalationRuleHit ? `escalated (${escalationRuleHit})` : lowConf ? 'escalated (low confidence)' : 'draft awaiting human approval'}`, 'escalated', { confidence: conf, conversation_id: convId, channel, mode: replyMode });
-        // W4-D (docs/16, mig 252): a widget miss with no knowledge grounding
-        // now feeds the self-healing gap loop (previously blind to this channel).
-        if (lowConf && srcs.length === 0) {
-          try {
-            const { data: er } = await admin.from('evidence_runs').insert({
-              tenant_id: tenantId, de_id: subjectDeId, inquiry: String(question ?? '').slice(0, 2000),
-              status: 'complete', steps: [], answer_status: 'answered',
-              confidence_inputs: { knowledge_hits: 0 },
-            }).select('id').single();
-            if (er?.id) {
-              await admin.from('evidence_run_decisions').insert({
-                tenant_id: tenantId, evidence_run_id: er.id, source: 'live_channel',
-                decision: 'needs_review', confidence: conf, source_category: 'support',
-              });
-            }
-          } catch (e) { console.error('gap bridge (widget):', e); }
-        }
+        // (The mig-252 "gap bridge" that lived here never once succeeded — FK
+        // violation on source_category, swallowed. Superseded by recordDecision
+        // via record_inquiry_decision — mig 442.)
         // Outcome metering (#15): human takes over — FREE.
         if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
+        await recordDecision({
+          decision: (lowConf || escalationRuleHit) ? 'needs_review' : 'would_auto_send',
+          conf, srcs, taskId: escTask?.id ?? null,
+          note: `${channel} answer ${(lowConf || escalationRuleHit) ? `escalated${escalationRuleHit ? ` (${escalationRuleHit})` : ' (low confidence)'}` : 'held as a draft for human approval'} at ${conf}% confidence with ${srcs.length} knowledge source(s).`,
+        });
         // The customer sees a holding message — never the un-approved draft.
         const holding = lowConf
           ? "Thanks for your patience — I'm bringing a teammate in to make sure you get this right."
@@ -558,6 +580,7 @@ serve(async (req) => {
         content: `Q: ${question.trim().slice(0, 300)}\nA: ${ans.slice(0, 500)}`,
         kind: 'episodic', salience: 0.5, source: 'de',   // de_memory CHECK: kind∈{episodic,semantic,fact,preference}, source∈{de,human,system,ingestion}
       });
+      await recordDecision({ decision: 'acted', conf, srcs, note: `${channel} answer auto-sent at ${conf}% confidence with ${srcs.length} knowledge source(s)${cached ? ' (from cache)' : ''}.` });
       return { conversation_id: convId, message_id: messageId, answer: ans, confidence: conf, sources: srcs, needs_escalation: false, status: 'ai_handling', delivery: 'sent', language: lang, cached, identity_verified: identityVerdict?.verified ?? false };
     };
     const finalize = async (ans: string, conf: number, srcs: string[], lang: string | null, cached: boolean, state?: CustomerState) =>

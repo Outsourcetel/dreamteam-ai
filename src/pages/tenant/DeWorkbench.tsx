@@ -81,6 +81,7 @@ const statusPill: Record<string, string> = {
   passed: 'bg-emerald-500/20 text-emerald-300', proposed: 'bg-amber-500/20 text-amber-300',
   approved: 'bg-emerald-500/20 text-emerald-300', denied: 'bg-rose-500/20 text-rose-300',
   completed: 'bg-emerald-500/20 text-emerald-300', assigned: 'bg-slate-600 text-dt-body',
+  auto_resolved: 'bg-emerald-500/20 text-emerald-300',
 };
 const Pill = ({ s }: { s: string }) => (
   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusPill[s] ?? 'bg-dt-panel text-dt-support'}`}>{s.replace(/_/g, ' ')}</span>
@@ -220,6 +221,9 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
         learned: !!excLearn[exceptionId],
       });
       setExceptions(await getDeExceptions(deId));
+      // Deciding an exception moves the paused work item (mig 443) — refresh
+      // the Work view so the requeue/cancel is visible immediately.
+      setWorkItems(await getDeWorkItems(deId));
     } catch (err) { setWriteError((err as Error).message); }
     setDeciding(null);
   };
@@ -442,9 +446,10 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                   {e.proposed_action && <p className="text-xs text-dt-support mt-1">Proposed: {e.proposed_action}</p>}
                   {e.justification && <p className="text-xs text-dt-muted mt-0.5 italic">"{e.justification}"</p>}
                   {e.outcome && <p className="text-xs text-emerald-400/80 mt-1">Outcome: {e.outcome}</p>}
-                  {/* An exception is the employee asking a question. Until now
-                      there was no way to answer it, so it sat pending forever. */}
-                  {e.status === 'pending' && (
+                  {/* An exception is the employee asking a question. Deciding
+                      it also moves the paused work item: approve re-queues it
+                      with the ruling; deny cancels it (mig 443). */}
+                  {e.status === 'proposed' && (
                     <div className="mt-2 pt-2 border-t border-dt-border flex items-center gap-2 flex-wrap">
                       <input value={excOutcome[e.id] ?? ''} onChange={ev => setExcOutcome(s => ({ ...s, [e.id]: ev.target.value }))}
                         placeholder="What should happen? (optional note)"

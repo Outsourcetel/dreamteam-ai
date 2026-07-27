@@ -995,6 +995,9 @@ async function handlePollDeWorkSources(
                 action: 'execute_action', connector_id: t.connector_id, tenant_id: t.tenant_id,
                 subject_kind: t.subject_kind, subject_id: t.subject_id,
                 action_key: chosenDef.action_key, params,
+                // Experience door b (docs/31 Q1): ticket ref even when the
+                // chosen action's schema lacks an external_ref param.
+                entity_ref: item.ref ?? null,
               }),
             });
             const execData = await execRes.json().catch(() => ({}));
