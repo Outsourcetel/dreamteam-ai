@@ -126,7 +126,7 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**IN PROGRESS — 13 of 24 guarded (migs 403–415), but see the honesty note: 11
+**IN PROGRESS — 17 of 24 guarded (migs 403–419), but see the honesty note: 15
 closed a real gap and 2 are defence in depth.** A guard here is not a filter:
 it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
@@ -158,6 +158,50 @@ before skipping.
 | `propose_continuity_writeback` | 413 | `p_de_id` param | no — same |
 | `create_browser_operation` | 414 | `p_de_id` param | n/a — defence in depth |
 | `propose_browser_task` | 415 | `p_de_id` param | n/a — defence in depth |
+| `approve_learned_behavior` | 416 | `de_learned_behavior_clusters` (NOT NULL) | no |
+| `reject_learned_behavior` | 417 | same table | no |
+| `apply_improvement` | 418 | `de_improvements` (NOT NULL) | no |
+| `request_trust_promotion` | 419 | `trust_policies` (**NULLABLE**) | **yes** |
+
+### Learning & trust: what these change is what an employee *becomes*
+
+Everything before this sub-group changes what an employee *did once*. These
+change what it knows or what it is allowed to do without asking, and the change
+persists into every future task.
+
+`request_trust_promotion` is the sharpest: it does not grant the promotion — a
+human still approves the task — but an unscoped caller could put an employee
+they have no relationship with in front of an approver, evidence pre-assembled,
+their own name on the request. That is how a rubber-stamp happens.
+
+**Four functions, two guard shapes, decided per column — not copied.** Three
+have a `NOT NULL` `de_id` and take the plain form. `trust_policies.de_id` is
+**nullable**, and 8 of the 38 live policies are workspace-level, so 419 uses the
+null-tolerant form. The sibling functions would have suggested the plain form;
+checking the column beat inferring from the neighbours.
+
+### ⚠ Two reach findings — the guard bounds the approver, not the blast radius
+
+Both are design questions, not scoping bugs, so they are recorded rather than
+changed. Changing either would alter what the feature does, which is not this
+wave's business.
+
+1. **`approve_learned_behavior` creates a WORKSPACE-WIDE guardrail rule.**
+   Measured: `guardrail_rules.scope` is `NOT NULL DEFAULT 'workspace'` and the
+   INSERT does not set it. So a behaviour learned from *one* employee becomes a
+   rule binding *every* employee. The other branch is sharper — given no
+   override it runs `update guardrail_rules set active = false`, and **155 of
+   the 171 live rules are workspace-scoped**, so approving a "too strict"
+   verdict can switch off a guardrail protecting the whole workforce. After 416
+   the caller must be responsible for the employee the cluster came from; the
+   rule they create or disable still reaches everyone. *Open question: should a
+   learned behaviour publish at `scope = 'employee'` by default? The column
+   already supports it and 16 rules use it.*
+2. **`apply_improvement` can publish at ROLE scope.** With
+   `publish_scope = 'role'` the doc goes to every employee of that archetype —
+   the activity event says "shared with all &lt;archetype&gt; employees". Unlike (1)
+   this is a deliberate human-chosen field (T2.2), not an unset default, so it
+   is noted rather than flagged.
 
 ### ⚠ "Refuse, never filter" — the mechanism is per contract, not always RAISE
 
@@ -250,7 +294,7 @@ case the function has excluded.
    case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
    State the *failure* condition directly and never use that shape.
 
-### Remaining (11)
+### Remaining (7)
 
 | group | functions |
 |---|---|
@@ -258,7 +302,7 @@ case the function has excluded.
 | ~~Support flow~~ | ✅ all done (407–409) |
 | Missions & work | `create_de_mission`, `create_de_team_mission`, `set_de_mission_state`, `enqueue_de_work_item` |
 | ~~Write-back proposals~~ | ✅ all done (410–413) |
-| Learning & trust | `approve_learned_behavior`, `reject_learned_behavior`, `apply_improvement`, `request_trust_promotion` |
+| ~~Learning & trust~~ | ✅ all done (416–419) |
 | Onboarding & evidence | `resolve_onboarding_signoff`, `update_onboarding_item`, `submit_evidence_feedback` |
 | ~~Browser operator~~ | ✅ all done (414–415) — both defence in depth, see note above |
 
