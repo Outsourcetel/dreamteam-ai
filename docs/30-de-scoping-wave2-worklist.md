@@ -126,16 +126,60 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**NOT STARTED — all 25 confirmed still unguarded as of 2026-07-27**, verified by
-reading live definitions after group A landed. A guard here is not a filter: it
-is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
+**IN PROGRESS — 7 of 24 guarded (migs 403–409).** A guard here is not a filter:
+it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
-this" into "nothing happened", which is worse than either.
+this" into "nothing happened", which is worse than either. Every guard raises
+the same greppable error, `not_responsible_for_de`.
+
+### ⚠ It is 24, not 25 — `sync_outbound_draft_status` was misclassified
+
+It is `RETURNS trigger` and attached to exactly 1 trigger. PostgREST does not
+expose trigger functions as RPCs, so it is not user-callable and has no caller
+context to check. **It belongs in group C, not group B.** This is the reverse of
+the risk the group-C section warns about: verify before *guarding*, as well as
+before skipping.
+
+### Done (migs 403–409)
+
+| function | migration | resolves de via | null-tolerant? |
+|---|---|---|---|
+| `approve_draft` | 403 | `draft_responses.de_id` (NOT NULL) | no — null means no such draft |
+| `approve_draft_reply` | 404 | `de_conversations` (de_messages has no `de_id`) | yes |
+| `edit_outbound_draft` | 405 | extends the existing `outbound_drafts` lookup | no — `de_id` is NOT NULL |
+| `send_human_reply` | 406 | `de_conversations` | yes |
+| `claim_support_conversation` | 407 | `de_conversations` | yes |
+| `set_support_conversation_state` | 408 | `de_conversations` | yes |
+| `handoff_back_to_de` | 409 | already resolved `v_de` | no — body rejects a null `v_de` first |
+
+**Null-tolerance is per-function, decided by the column, not copied.** Where the
+`de_id` is nullable the guard is `IF v_de IS NOT NULL AND NOT can_access_de(...)`
+— the exact negation of the migration-386 policy `(de_id IS NULL OR
+can_access_de(de_id))`, so an actor is never stricter than the reader beside it.
+Where the column is `NOT NULL`, or the body has already rejected a null, the
+plain form is used; adding null-tolerance there would be dead code implying a
+case the function has excluded.
+
+### ⚠ Two mechanical traps, both hit and both worth inheriting
+
+1. **Line endings are mixed in this database.** `pg_get_functiondef` returns each
+   body as it was created, and the migrations that created these did not agree.
+   `approve_draft` is CRLF; the group-A bodies were LF. A multi-line anchor
+   written with plain `\n` matched **zero** times and the migration correctly
+   refused rather than guessing. Every multi-line anchor from 403 on is composed
+   against the EOL actually found in the body. Single-line anchors are immune,
+   which is why group A never hit it.
+2. **Position assertions are easy to write inverted.** Two migrations (406, 409)
+   failed their own order check because the pass case was written as the raise
+   case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
+   State the *failure* condition directly and never use that shape.
+
+### Remaining (17)
 
 | group | functions |
 |---|---|
-| Drafts & replies | `approve_draft`, `approve_draft_reply`, `edit_outbound_draft`, `sync_outbound_draft_status`, `send_human_reply` |
-| Support flow | `claim_support_conversation`, `set_support_conversation_state`, `handoff_back_to_de` |
+| ~~Drafts & replies~~ | ✅ all done (403–406); `sync_outbound_draft_status` reclassified to C |
+| ~~Support flow~~ | ✅ all done (407–409) |
 | Missions & work | `create_de_mission`, `create_de_team_mission`, `set_de_mission_state`, `enqueue_de_work_item` |
 | Write-back proposals | `propose_account_writeback`, `propose_invoice_writeback`, `propose_opportunity_writeback`, `propose_continuity_writeback` |
 | Learning & trust | `approve_learned_behavior`, `reject_learned_behavior`, `apply_improvement`, `request_trust_promotion` |
