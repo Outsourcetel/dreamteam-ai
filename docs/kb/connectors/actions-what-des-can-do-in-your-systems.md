@@ -10,10 +10,10 @@ tags: [actions, write-back, destructive, preview, execute, approval, guardrails,
 # Actions — what a DE can do in your systems
 
 ## What it is
-Beyond reading, a connector can let a Digital Employee **act** in a system — for example **add an internal note** to a ticket, **update a ticket's status**, **post a reply**, **add tags**, or **post a message**. Each action writes back into your system of record, and each one is governed before it runs.
+Beyond reading, a connector can let a Digital Employee **act** in a system — for example **add an internal note** to a ticket, **update a ticket's status**, **post a reply**, **add tags**, or **post a message**. Each action writes back into your system of record, and each one is governed before it runs: an action that needs a person's sign-off waits as an **approval task** in Approvals & Drafts, destructive actions **always** require human approval, and the trust dial decides which safe actions may run on their own.
 
 ## Why it matters
-Reading answers questions; acting closes the loop. But writing into a live system is where trust matters most. DreamTeam makes actions **explicit, previewable, and governed**: you choose which actions are enabled, risky ones always require a human, and every execution leaves a plain-language receipt in the audit trail.
+Reading answers questions; acting closes the loop. But writing into a live system is where trust matters most. DreamTeam makes actions **explicit, previewable, and governed**: you choose which actions are enabled, risky ones always require a human approval, and every execution leaves a plain-language receipt in the audit trail.
 
 ## How actions are governed
 When a DE tries to run an action, DreamTeam applies three checks in order:
