@@ -126,8 +126,8 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**IN PROGRESS — 17 of 24 guarded (migs 403–419), but see the honesty note: 15
-closed a real gap and 2 are defence in depth.** A guard here is not a filter:
+**IN PROGRESS — 21 of 24 guarded (migs 403–423). The honest split: 16 closed a
+real gap, 5 are defence in depth.** A guard here is not a filter:
 it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
 this" into "nothing happened", which is worse than either. Every guard raises
@@ -162,6 +162,55 @@ before skipping.
 | `reject_learned_behavior` | 417 | same table | no |
 | `apply_improvement` | 418 | `de_improvements` (NOT NULL) | no |
 | `request_trust_promotion` | 419 | `trust_policies` (**NULLABLE**) | **yes** |
+| `enqueue_de_work_item` | 420 | `p_de_id` param | n/a — mirrors the null-uid bypass |
+| `create_de_mission` | 421 | `p_de_id` param | n/a — defence in depth |
+| `create_de_team_mission` | 422 | `target_spec` ×3 modes | n/a — defence in depth |
+| `set_de_mission_state` | 423 | `de_missions` (**NULLABLE**) | **yes** — defence in depth |
+
+### Missions & work: one real gap, three defence in depth
+
+`create_de_mission`, `create_de_team_mission` and `set_de_mission_state` are all
+gated to manager+, so 421–423 change nothing (same standing as 399/414/415).
+
+**`enqueue_de_work_item` (420) was the real one.** Its only check was workspace
+membership — *no role gate at all* — so any authenticated member could queue
+work for any employee. That is the function that puts work into an employee's
+queue.
+
+**Its guard deliberately copies the `auth.uid() IS NOT NULL` bypass**, the shape
+the perimeter work flags as dangerous. Justified and verified, not assumed:
+`de-work` calls this through a service-role client whose JWT has no `sub`, so
+`auth.uid()` is NULL on that path and a bare guard would raise inside the worker
+and stop the autonomy loop; **no database function calls it** (checked across
+every plpgsql body), so the edge function is the only machine caller; and **anon
+does not hold EXECUTE**, so the banned combination (anon-executable AND
+fail-open on a null uid) does not arise. Migration 420 **fails if anon ever
+holds EXECUTE**, so the premise is checked rather than trusted, and its smoke
+test proves the guard is bypassed for a NULL-uid caller — i.e. that `de-work`
+still works.
+
+`create_de_team_mission` needed **three** guards, one per targeting mode
+(explicit id list / supervisor / archetype), asserted individually by name so a
+missing branch is named rather than merely counted.
+
+### ⚠ KNOWN GAP left open in 423 — team missions are not scoped
+
+`de_missions.de_id` is NULL for every **team** mission (targeting lives in
+`target_spec`), so 423's guard is null-tolerant and **passes on team missions
+without walking `target_spec`**. A scoped user could therefore cancel a team
+mission targeting employees they do not own — and cancel is the broadest
+destructive act in group B: it deletes the mission's watchers, cancels every
+queued work item under its objectives, and abandons the objectives.
+
+Not closed here because doing it properly means resolving all three targeting
+modes inside a live cancel path — one of them late-bound — which is a bigger
+change than a scoping wave should make. **Inert today:** manager+ only, and
+`de_missions` has 0 rows in production. Recorded as the follow-up.
+
+Related, from 422: an **archetype** mission is checked against the set as it
+stands *at creation*; the set is re-resolved at dispatch, so an employee hired
+into that archetype afterwards is included without ever having been checked.
+That is a limitation of scoping a late-bound target, not a fixable predicate.
 
 ### Learning & trust: what these change is what an employee *becomes*
 
@@ -294,13 +343,13 @@ case the function has excluded.
    case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
    State the *failure* condition directly and never use that shape.
 
-### Remaining (7)
+### Remaining (3)
 
 | group | functions |
 |---|---|
 | ~~Drafts & replies~~ | ✅ all done (403–406); `sync_outbound_draft_status` reclassified to C |
 | ~~Support flow~~ | ✅ all done (407–409) |
-| Missions & work | `create_de_mission`, `create_de_team_mission`, `set_de_mission_state`, `enqueue_de_work_item` |
+| ~~Missions & work~~ | ✅ all done (420–423) — 1 real gap, 3 defence in depth |
 | ~~Write-back proposals~~ | ✅ all done (410–413) |
 | ~~Learning & trust~~ | ✅ all done (416–419) |
 | Onboarding & evidence | `resolve_onboarding_signoff`, `update_onboarding_item`, `submit_evidence_feedback` |
