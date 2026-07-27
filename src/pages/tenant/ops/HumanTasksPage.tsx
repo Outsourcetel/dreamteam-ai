@@ -6,7 +6,7 @@ import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
 import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, DECISION_REASON_CODES } from '../../../lib/customerApi';
-import type { DecisionReasonCode } from '../../../lib/customerApi';
+import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
@@ -249,6 +249,16 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [proposal, setProposal] = useState<{ title: string; content: string } | null>(null);
   const [editText, setEditText] = useState('');
   const [editing, setEditing] = useState(false);
+  // The gated-action twin of the same request (built in the branch stream):
+  // an action_approval's draft (params.body/note) is the exact text the
+  // approved re-entry executes, so editing it corrects BOTH what gets sent
+  // and the learning pair. Separate state from the improvement editor above
+  // — that one commits through the main Approve button; this one brings its
+  // own approve control and hides the main row while open.
+  const [draftEditing, setDraftEditing] = useState(false);
+  const [draftEditText, setDraftEditText] = useState('');
+  const [draftReasonCode, setDraftReasonCode] = useState<DecisionReasonCode | ''>('');
+  const [draftNote, setDraftNote] = useState('');
 
   const refresh = async () => {
     setLoading(true);
@@ -289,7 +299,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // "wrong tone" on one task and then clicking another leaves the code armed
   // against a task it was never about — a wrong reason is worse than none,
   // because it aggregates.
-  useEffect(() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }, [selectedId]);
+  useEffect(() => {
+    setRejecting(false); setReasonCode(''); setReasonNote('');
+    setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
+  }, [selectedId]);
 
   // The proposed article behind a self-improvement review, so approving with a
   // correction publishes the CORRECTION. Same reset discipline as the reason
@@ -318,7 +331,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
-  const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected') => {
+  const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected', capture?: DecisionCapture) => {
     setDeciding(true);
     try {
       // Set the publish scope BEFORE approval (apply_improvement reads it).
@@ -328,21 +341,37 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // An approval carries an edit only when the text ACTUALLY changed.
       // Sending an identical pair would violate the database's
       // actually_changed check and, worse, log a correction that was never
-      // made — inflating the training set with noise.
+      // made — inflating the training set with noise. An explicit `capture`
+      // (the gated-draft editor below) takes precedence; the proposal
+      // fallback serves the improvement editor, which commits through this
+      // main path.
       const corrected = proposal !== null && editText.trim() !== proposal.content.trim();
-      await decideHumanTask(task, decision, decision === 'rejected'
+      await decideHumanTask(task, decision, capture ?? (decision === 'rejected'
         ? { reasonCode: reasonCode as DecisionReasonCode, note: reasonNote.trim() || undefined }
         : corrected
           ? { edit: { before: proposal!.content, after: editText } }
-          : undefined);
+          : undefined));
       setRejecting(false); setReasonCode(''); setReasonNote('');
       setEditing(false);
+      setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
       await refresh();
     } catch (err) {
       setError((err as Error)?.message || 'Failed to record decision.');
     } finally {
       setDeciding(false);
     }
+  };
+
+  // An "edit" that changed nothing is a plain approval — a pair with equal
+  // halves is noise, the same judgment the corpus makes at the database
+  // (de_learning_edits_actually_changed_check).
+  const approveDraftWithEdits = (task: DBHumanTask, draftText: string) => {
+    if (draftEditText.trim() === draftText.trim()) return decide(task, 'approved');
+    return decide(task, 'approved', {
+      reasonCode: draftReasonCode || undefined,
+      note: draftNote.trim() || undefined,
+      edit: { before: draftText, after: draftEditText },
+    });
   };
 
   const toggleItem = async (task: DBHumanTask, idx: number, done: boolean) => {
@@ -362,6 +391,9 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const visible = tasks.filter(t => (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
   const selected = tasks.find(t => t.id === selectedId) ?? null;
   const selectedStale = selected ? staleness.get(selected.id) ?? null : null;
+  // Same precedence as the Full-draft display below — the text the approver
+  // sees is exactly the text their edit replaces.
+  const gatedDraft = gatedExec ? (gatedExec.params.body || gatedExec.params.note || '') : '';
 
   return (
     <div className="p-6">
@@ -516,6 +548,38 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   )}
                 </div>
 
+                {/* The decision capture, read back (docs/34). A reason or an edit
+                    that is written but never shown anywhere is the written-never-
+                    read failure this project has shipped once already — this
+                    panel is the capture's first reader. */}
+                {selected.status !== 'pending' && (selected.decision_reason_code || selected.decision_note || selected.decision_edit) && (
+                  <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
+                    <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">
+                      {selected.status === 'rejected' ? 'Why it was rejected' : 'Approved with corrections'}
+                    </p>
+                    {selected.decision_reason_code && (
+                      <span className="inline-block rounded-md border border-dt-border bg-dt-card px-2 py-0.5 text-[11px] text-dt-support">
+                        {DECISION_REASON_CODES.find(rc => rc.code === selected.decision_reason_code)?.label ?? selected.decision_reason_code}
+                      </span>
+                    )}
+                    {selected.decision_note && (
+                      <p className="mt-1.5 text-xs text-dt-support whitespace-pre-wrap">{selected.decision_note}</p>
+                    )}
+                    {selected.decision_edit && typeof selected.decision_edit.before === 'string' && typeof selected.decision_edit.after === 'string' && (
+                      <div className="mt-2 space-y-2 text-xs">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-dt-muted mb-0.5">The employee&apos;s original</p>
+                          <p className="whitespace-pre-wrap text-dt-muted">{selected.decision_edit.before}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wide text-dt-muted mb-0.5">The approver&apos;s version — what went out</p>
+                          <p className="whitespace-pre-wrap text-dt-support">{selected.decision_edit.after}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {selected.type === 'action_approval' && gatedExec && (
                   <div className="mt-4">
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">
@@ -524,13 +588,80 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     <div className="bg-dt-page border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-support">
                       <p className="font-medium text-dt-body mb-1">{gatedExec.action_label}</p>
                       {gatedExec.request_summary && <p className="text-dt-support mb-2">{gatedExec.request_summary}</p>}
-                      {(gatedExec.params.body || gatedExec.params.note) && (
+                      {gatedDraft && (
                         <div className="border-t border-dt-border pt-2 mt-1">
-                          <p className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">Full draft</p>
-                          <p className="whitespace-pre-wrap text-dt-support">{gatedExec.params.body || gatedExec.params.note}</p>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] uppercase tracking-wide text-dt-muted">Full draft</p>
+                            {selected.status === 'pending' && !draftEditing && (
+                              <button
+                                onClick={() => { setDraftEditing(true); setDraftEditText(gatedDraft); setRejecting(false); setReasonCode(''); setReasonNote(''); }}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">
+                                ✎ Edit before approving
+                              </button>
+                            )}
+                          </div>
+                          {draftEditing ? (
+                            <textarea
+                              value={draftEditText} onChange={e => setDraftEditText(e.target.value)}
+                              rows={Math.min(12, Math.max(4, gatedDraft.split('\n').length + 1))}
+                              className="w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text focus:outline-none focus:border-indigo-500"
+                            />
+                          ) : (
+                            <p className="whitespace-pre-wrap text-dt-support">{gatedDraft}</p>
+                          )}
                         </div>
                       )}
                     </div>
+                    {/* docs/34 approve-WITH-EDITS — mirror of the reject form below,
+                        sharing its closed reason vocabulary so edits and rejections
+                        aggregate together. The code is OPTIONAL here: the (before,
+                        after) pair is already the signal, and forcing a code on
+                        every correction would slow the queue for noise. The edited
+                        text is what actually gets sent AND what lands in
+                        decision_edit — never one without the other. */}
+                    {draftEditing && selected.status === 'pending' && (
+                      <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
+                        <p className="text-xs font-medium text-dt-text mb-2">
+                          What was wrong with it? <span className="text-dt-muted font-normal">(optional — it&apos;s what the employee learns from)</span>
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {DECISION_REASON_CODES.map(rc => (
+                            <button key={rc.code} onClick={() => setDraftReasonCode(c => c === rc.code ? '' : rc.code)}
+                              className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                                draftReasonCode === rc.code
+                                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
+                                  : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                              {rc.label}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          value={draftNote} onChange={e => setDraftNote(e.target.value)}
+                          rows={2}
+                          placeholder={draftReasonCode === 'other'
+                            ? 'Required — what was wrong?'
+                            : 'Optional: anything that would help this employee next time'}
+                          className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                        />
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            onClick={() => void approveDraftWithEdits(selected, gatedDraft)}
+                            disabled={deciding || !draftEditText.trim() || (draftReasonCode === 'other' && !draftNote.trim())}
+                            title={!draftEditText.trim() ? 'The draft cannot be empty'
+                              : draftReasonCode === 'other' && !draftNote.trim() ? 'Other needs a note' : undefined}
+                            className="rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-1.5 transition-colors">
+                            {deciding ? '…'
+                              : draftEditText.trim() === gatedDraft.trim() ? (gatedExec.destructive ? 'Approve & send' : 'Approve & execute')
+                              : (gatedExec.destructive ? 'Approve edited & send' : 'Approve edited & execute')}
+                          </button>
+                          <button onClick={() => { setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote(''); }}
+                            disabled={deciding}
+                            className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -592,7 +723,12 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     )}
                   </div>
                 )}
-                {selected.status === 'pending' && (
+                {/* Hidden while the gated-draft edit form is open — that form's
+                    own approve button is the only one there, so a typed
+                    correction can never be lost to a reflex click on the plain
+                    Approve. (The improvement editor above is the opposite: it
+                    commits THROUGH this row, whose label says so.) */}
+                {selected.status === 'pending' && !draftEditing && (
                   <div className="flex gap-2 mt-4">
                     <button
                       onClick={() => void decide(selected, 'approved')}
