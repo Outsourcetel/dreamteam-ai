@@ -396,7 +396,7 @@ lot, using the mig-365 criterion (no `src/` call site ⇒ safe, because edge
 functions use the service-role key which bypasses GRANTs). Not done here —
 revoking is a separate decision from scoping and deserves its own migration.
 
-### What is left outside these two groups
+### What is left outside these groups
 
 37 `SECURITY DEFINER` functions still read a Wave-1 table without a guard. That
 number sounds worse than it is; broken down:
@@ -404,17 +404,14 @@ number sounds worse than it is; broken down:
 - **3** are `RETURNS trigger` — not RPC-reachable.
 - **27** are neither triggers nor `authenticated`-executable — service-role and
   internal paths only.
-- **7** are client-reachable, and **all seven are already accounted for**:
-  five are group C (`_assert_conv_member`, `assess_definition_of_done`,
-  `dispatch_de_work_internal`, `resolve_action_execution_for_task`,
-  `submit_csat`) and two are the reclassified onboarding pair.
+- **7** were client-reachable, and **all seven were already accounted for**:
+  five in group C and two in the reclassified onboarding pair. Group C has now
+  been worked through (425–428), so of those seven only `_assert_conv_member`
+  (fails closed), `submit_csat` (tracked debt) and the onboarding pair (no DE
+  exists) remain untouched — each for a stated reason.
 
 So there is no undiscovered surface hiding behind the 46 this document started
-from. The next real work is group C.
-
-⚠ Two group-C members — `_assert_conv_member` and `dispatch_de_work_internal` —
-are **`anon`-executable**. That is precisely what "verify before skipping"
-was written for.
+from. **Wave 2 is complete: groups A, B and C.**
 
 ### Remaining (0 — group B complete)
 
@@ -428,20 +425,114 @@ was written for.
 | ~~Onboarding & evidence~~ | ✅ `submit_evidence_feedback` done (424); the two onboarding fns **reclassified — no `de_id` exists**, see above |
 | ~~Browser operator~~ | ✅ all done (414–415) — both defence in depth, see note above |
 
-### C. Internal — reached by triggers or the service role, not by users
+### C. "Internal" — reached by triggers or the service role, not by users
 
-Left alone deliberately. Adding a caller check to something the service role
-invokes would break the workers: `can_access_de()` returns true for
-`service_role`, but these have no user context to check in the first place.
+⚠ **That heading was an assumption, and it was wrong for 5 of the 8.** Kept
+here as originally written, with the verified result below it, because the
+mistake is the useful part: the original reasoning — "adding a caller check to
+something the service role invokes would break the workers" — is sound for the
+four that really are triggers and misleading for the rest. Two of the five
+turned out to be holes that were **not DE-scoping issues at all**: one
+cross-tenant read, one machine entrypoint exposed to `anon`.
 
-`_assert_conv_member`, `trg_support_sentiment`,
-`trg_triage_support_conversation`, `dispatch_de_work_internal`,
-`guard_computer_use_transition`, `resolve_action_execution_for_task`,
-`assess_definition_of_done`, `submit_csat`
+**✅ VERIFIED 2026-07-27 (migs 425–428). The assumption was WRONG for 5 of the
+8, and two of those were holes that had nothing to do with DE scoping.**
 
-**Verify before skipping.** "Internal" is an assumption about how each is
-called; anything in this group that turns out to be user-callable belongs in A
-or B.
+"Verify before skipping" was the right instinct and it paid for itself. The
+reachability test is not the name or the intent — it is `RETURNS trigger` (a
+trigger function is never exposed by PostgREST) and `has_function_privilege`.
+
+| function | verdict | action |
+|---|---|---|
+| `guard_computer_use_transition` | genuine trigger fn, 1 trigger | none |
+| `sync_outbound_draft_status` | genuine trigger fn, 1 trigger | none |
+| `trg_support_sentiment` | genuine trigger fn, 1 trigger | none |
+| `trg_triage_support_conversation` | genuine trigger fn, 1 trigger | none |
+| `_assert_conv_member` | **callable** by anon + authenticated, but raises on a null `auth.uid()` → fails closed | none needed |
+| `assess_definition_of_done` | **callable, and a CROSS-TENANT HOLE** | **mig 425** |
+| `dispatch_de_work_internal` | **callable by `anon`, no check at all** | **mig 426** |
+| `resolve_action_execution_for_task` | **callable, browser calls it directly**, tenant-safe but not DE-scoped | **mig 427** |
+| `submit_csat` | callable; founder-tracked debt, marked by-design | left alone |
+
+The four trigger functions do carry `anon`/`authenticated` EXECUTE, inherited
+from the PUBLIC default — but those grants are **inert**: PostgREST does not
+expose a trigger function as an RPC, so there is no path to call them. Noise,
+not exposure.
+
+### mig 425 — `assess_definition_of_done` was a cross-tenant hole
+
+`SECURITY DEFINER`, `authenticated`-executable, takes `p_tenant_id` as a
+**parameter**, and had **no caller check of any kind** — the same shape as
+`analytics_de_workload` before 398. Any signed-up user could ask any tenant how
+many gated actions were pending, how many account and opportunity write-backs
+awaited approval, how many outbound drafts sat unapproved. A live read of
+another company's approval backlog.
+
+**Not a DE-scoping fix.** Nothing here is per-employee; the missing axis was
+workspace membership, so that is what was added. The `auth.uid() IS NOT NULL`
+prefix is load-bearing — `connector-hub` and `_shared/defOfDone.ts` call this
+with the service role (null `sub`), and it is composed into
+`conclude_objective_verified`.
+
+### mig 426 — anyone on the internet could fire the work engine
+
+`dispatch_de_work_internal()` is the pg_cron tick for the autonomy loop (job 22,
+every 5 min, as `postgres`). Not a trigger function, **`anon` and
+`authenticated` both held EXECUTE**, and it had no check. It does not return the
+Vault secret it reads — the one mercy — but a stranger could:
+
+- force execution of queued work across **every** tenant, on demand;
+- run up unbounded LLM spend, as fast as HTTP allows;
+- learn from `"idle — nothing due"` vs `"dispatched"` whether *any* workspace has
+  work pending;
+- raise an ops alert at will.
+
+**The fix is REVOKE, not a guard** — there is no `de_id` and no tenant argument;
+it is a scheduler tick, and the defect is that clients could reach a machine
+entrypoint. Safe because the cron job runs as `postgres`, which **owns** the
+function and therefore keeps EXECUTE regardless; no `src/`, edge-function, or
+database caller exists. The migration asserts cron job 22 is still **active and
+still able to execute it** — breaking the autonomy loop silently would be far
+worse than the hole being closed.
+
+### mig 427 — the one genuine DE-scoping gap in group C
+
+`resolve_action_execution_for_task` returns the action behind an approval task.
+The browser calls it directly (`src/lib/connectorApi.ts:1403`). It was already
+tenant-safe, but any workspace member with a task id could read any employee's
+pending action.
+
+It is a **reader**, so it filters — returns `NULL`, exactly as it already does
+for an unknown task — rather than raising, which would break the caller and
+confirm the row exists. Scoped on the **action's** `subject_id` (with
+`subject_kind = 'de'` pinned), not on `human_tasks.de_id`, which is NULL on 82%
+of rows.
+
+### mig 428 — repairing a measurement I broke in 425
+
+425's comment said *"…so `can_access_de` is the wrong tool and is not used"* —
+true, and it made the function match `like '%can_access_de%'` while containing
+no guard. That silently (a) made it read as DE-scoped in any census, and (b)
+**excluded it from the "still unguarded" count**, where a genuinely unguarded
+reader could then hide behind a comment.
+
+The invariant *token occurrences == real guard calls* is what every independent
+check in this wave depends on, so the wording was fixed rather than the counter
+loosened — the same call made in 414. **This is the second time the same trap
+was hit; treat the token as reserved in injected comments.**
+
+### Not changed: `submit_csat`
+
+Founder-tracked debt in `unguarded_secdef_writers`, explicitly marked *by
+design* for the embed widget, with the invariant suite enforcing its ceiling.
+Takes a caller-supplied `p_tenant_id` and has no caller check, but abuse needs
+both the conversation **and** tenant UUIDs. Touching a customer-facing CSAT path
+for a theoretical gain is not a scoping wave's call.
+
+⚠ Worth a look separately: the invariant test's comment says `submit_csat`
+serves the **anonymous** embed widget "so requiring a session would break
+them" — but `anon` holds **no** EXECUTE on it today. Either the rationale is
+stale or the widget now reaches it another way.
 
 ---
 
