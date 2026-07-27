@@ -51,9 +51,22 @@ import { resolveActionExecution } from './connectorApi';
  *  and mark its approval task resolved. Mirrors decideHumanTask's action-approval
  *  path without needing the full task object. */
 export async function approveProposal(taskId: string): Promise<void> {
+  // ⚠ ORDER REVERSED, DELIBERATELY. This used to execute the gated build FIRST
+  // and mark the task approved afterwards, with no pending-only clause on
+  // either step — so a double-click or a retry ran the build twice and created
+  // the DE/playbook twice. That is the exact shape docs/24 records as a live
+  // double-charge on the gated-action path.
+  //
+  // Now the task is CLAIMED first, atomically, through decide_human_task
+  // (migration 455). Its UPDATE carries `AND status = 'pending'`, so exactly
+  // one caller can win. A null return means somebody else already decided it —
+  // and the build must NOT run again, which is the same contract
+  // decideHumanTask has always relied on for its own hooks.
+  const { data, error } = await supabase.rpc('decide_human_task', {
+    p_task_id: taskId, p_decision: 'approved',
+    p_reason_code: null, p_note: null, p_edit: null,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) return;                    // already decided — do not re-execute
   await resolveActionExecution(taskId, 'approved');
-  const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from('human_tasks')
-    .update({ status: 'approved', decided_by: user?.id ?? null, decided_at: new Date().toISOString() })
-    .eq('id', taskId);
 }

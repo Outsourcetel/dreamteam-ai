@@ -5,6 +5,7 @@
 // propose/approve writes go through the audited RPCs + human_tasks.
 import { supabase } from '../supabase';
 import { requireTenantId } from './liveShared';
+import type { DecisionReasonCode } from './customerApi';
 
 export type BrowserEngine = 'browser_dom' | 'browser_vision' | 'desktop';
 export type CredentialPolicy = 'none' | 'vault_injected' | 'human_login';
@@ -110,13 +111,33 @@ export async function proposeBrowserTask(input: ProposeBrowserTaskInput): Promis
   return data as string;
 }
 
-/** Approve/reject the task's human_task gate; the DB trigger syncs the task. */
-export async function decideBrowserTask(humanTaskId: string, decision: 'approved' | 'rejected'): Promise<void> {
-  const tid = await requireTenantId();
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase.from('human_tasks')
-    .update({ status: decision, decided_by: user?.id ?? null, decided_at: new Date().toISOString() })
-    .eq('id', humanTaskId).eq('tenant_id', tid);
+/** Approve/reject the task's human_task gate; the DB trigger syncs the task.
+ *
+ *  Routed through decide_human_task (migration 455) rather than a direct
+ *  UPDATE. The direct write had NO pending-only clause, so a double-click or a
+ *  retry could transition an already-decided task — the shape that produced the
+ *  double-charge docs/24 records. The RPC carries that clause, the DE guard and
+ *  the server-side audit, so this path no longer has to remember any of them.
+ *
+ *  ⚠ reason is optional here only because the Browser Operator UI does not yet
+ *  collect one; the server requires a code on rejection, so an uncollected
+ *  rejection is recorded as 'other' with a note saying so rather than a
+ *  plausible-looking guess. Wiring a picker into BrowserOperatorPage is the
+ *  follow-up — a real reason is worth more than an inferred one. */
+export async function decideBrowserTask(
+  humanTaskId: string,
+  decision: 'approved' | 'rejected',
+  reason?: { code: DecisionReasonCode; note?: string },
+): Promise<void> {
+  const { error } = await supabase.rpc('decide_human_task', {
+    p_task_id: humanTaskId,
+    p_decision: decision,
+    p_reason_code: decision === 'rejected' ? (reason?.code ?? 'other') : (reason?.code ?? null),
+    p_note: decision === 'rejected'
+      ? (reason?.note ?? 'Declined from the Browser Operator queue (no reason collected).')
+      : (reason?.note ?? null),
+    p_edit: null,
+  });
   if (error) throw new Error(error.message);
 }
 

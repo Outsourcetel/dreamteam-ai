@@ -848,10 +848,23 @@ export async function decidePlaybookAmendment(amendmentId: string, approve: bool
     const { error } = await supabase.rpc(rpc, { p_id: amendmentId });
     return error ? { ok: false, error: error.message } : { ok: true };
   }
-  const { error } = await supabase
-    .from('human_tasks')
-    .update({ status: approve ? 'approved' : 'rejected', decided_at: new Date().toISOString() })
-    .eq('id', task.id);
+  // Routed through decide_human_task (migration 455). The direct UPDATE had no
+  // pending-only clause and no tenant filter — a retry could re-transition an
+  // already-decided amendment, and the safety was entirely RLS's with nothing
+  // in the code saying so. The RPC carries the pending clause, the DE guard and
+  // the audit event.
+  //
+  // ⚠ 'other' on rejection because this card does not collect a reason yet. The
+  // server requires a code, and a truthful note beats a plausible-looking guess
+  // that would pollute the aggregate. Wiring a picker into the review card is
+  // the follow-up.
+  const { error } = await supabase.rpc('decide_human_task', {
+    p_task_id: task.id,
+    p_decision: approve ? 'approved' : 'rejected',
+    p_reason_code: approve ? null : 'other',
+    p_note: approve ? null : 'Rejected from the playbook amendment review card (no reason collected).',
+    p_edit: null,
+  });
   notify();
   return error ? { ok: false, error: error.message } : { ok: true };
 }
