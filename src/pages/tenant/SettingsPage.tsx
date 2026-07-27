@@ -419,13 +419,23 @@ const SettingsPage = ({
 
           <CommsSettingsCard accentColor={accentColor} />
 
-          <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Danger Zone</h2>
-            <p className="text-xs text-dt-muted mb-4">Irreversible actions — proceed with care.</p>
-            <button className="px-4 py-2 text-xs font-medium text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-all">
-              Delete Workspace
-            </button>
-          </div>
+          {/* The Danger Zone card that used to sit here is gone. It was a
+              SECOND door to an irreversible action, and much the weaker of
+              the two:
+
+                · it had NO onClick — the button did nothing at all, so anyone
+                  who found it learned the wrong thing about whether deleting
+                  a workspace was possible
+                · it carried none of the real flow's protections: no
+                  export-your-data-first prompt, no list of what gets
+                  destroyed, no retype-to-confirm, and no explanation that
+                  deletion is a request a platform admin performs after the
+                  workspace has been suspended
+
+              DeleteWorkspacePanel on the Data tab is the real one. Two
+              entrances to the same destructive act, where one skips every
+              safeguard, is how a workspace gets destroyed by the path that
+              never warned anybody. */}
         </div>
       )}
 
