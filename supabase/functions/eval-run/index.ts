@@ -228,7 +228,22 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
       for (const r of ((prevRun?.results ?? []) as QuestionResult[])) {
-        if (r?.verdict === 'partial' && r.qa_id) prevPartial.add(r.qa_id);
+        if (!r?.qa_id) continue;
+        // Prefer the field. Fall back to the marker in `reason` ONLY when the
+        // field is absent — every run recorded before this change stored
+        // passed+reason and no verdict, so without this the persistence rule
+        // would sit inert for one full run and the first run after deploy
+        // would gate on nothing but hard fails.
+        //
+        // ⚠ The fallback is guarded on `verdict === undefined`, not on a
+        // truthiness test. A NEW-format result that verdict='pass' must never
+        // fall through to string-matching its own rationale, which can quote
+        // the word partial while describing why the answer was fine.
+        const wasPartial = r.verdict === 'partial'
+          || (r.verdict === undefined
+              && typeof r.reason === 'string'
+              && r.reason.includes('judge verdict "partial"'));
+        if (wasPartial) prevPartial.add(r.qa_id);
       }
     }
 
