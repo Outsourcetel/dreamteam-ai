@@ -6,6 +6,7 @@ import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealt
 import { getDeWorkItems, getDeObjectives, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
 import { getWorkforceBoard, type WorkforceBoardRow } from '../../lib/missionApi';
 import { fmtWhen } from '../../components/WorkforceBoard';
+import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
@@ -577,6 +578,12 @@ function RecordTab({ de }: { de: DigitalEmployee }) {
     <div className="space-y-5">
       {/* Skills, KPIs and development live on the Development tab (the canonical
           list_de_skills surface) — the Record tab is the evidence of work done. */}
+
+      {/* Who answers for this employee (migration 385, docs/29 §5). Placed
+          FIRST because the first question about a record is whose record it is
+          — and because an unassigned digital employee is a governance gap that
+          should be visible before the evidence of what it has been doing. */}
+      <ResponsiblePeoplePanel deId={de.id} deName={name} />
 
       {/* Autonomous runs — watch it reason through a multi-step task */}
       {agentic !== null && agentic.length > 0 && (
