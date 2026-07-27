@@ -1,7 +1,13 @@
 # 30 — DE Scoping Wave 2: the SECURITY DEFINER bypass
 
-**Status:** verified worklist, 2026-07-27. Nothing here is fixed yet.
+**Status:** **Group A COMPLETE (13/13), migrations 387–402, applied and verified
+against live definitions 2026-07-27. Group B (25 actors) NOT STARTED.**
 **Follows:** `29-permissions-and-de-reporting-line.md` §7, migration 386 (Wave 1).
+
+> **Group A is code, not behaviour.** Every claim below is a claim about what
+> the function bodies now contain, verified by re-reading `pg_get_functiondef`
+> after each migration. None of it has been observed from a scoped user's
+> session, because no such user exists — see "How to know it worked".
 
 ---
 
@@ -40,24 +46,76 @@ assigned to one DE sees every DE's data.
 **Fix:** add `AND can_access_de(de_id)` to the query, or `WHERE
 can_access_de(...)` on the returned set.
 
-| function | reads |
-|---|---|
-| `get_workforce_board` | human_tasks + de_work_items |
-| `get_workforce_learning_digest` | human_tasks + de_conversations + de_work_items |
-| `get_de_operating_model` | human_tasks + de_work_items |
-| `analytics_de_workload` | de_work_items |
-| `get_de_work_product` | de_conversations |
-| `get_de_economics` | de_conversations |
-| `get_de_csat_metrics` | de_conversations |
-| `get_de_kpi_status` | de_conversations |
-| `get_benchmark_report` | de_conversations |
-| `get_pending_draft` | draft_responses |
-| `get_pending_drafts_for_de` | draft_responses |
-| `list_browser_operator` | human_tasks |
-| `check_de_retirement_readiness` | human_tasks + de_conversations |
+| function | reads | migration | guards | note |
+|---|---|---|---|---|
+| `get_workforce_board` | human_tasks + de_work_items | 387 | 1 | gate on the outer employee filter |
+| `get_de_csat_metrics` | de_conversations | 388 | 1 | per-employee list; wired to `api.ts:1100` |
+| `get_workforce_learning_digest` | human_tasks + de_conversations + de_work_items | 389, **400** | 4 | incl. the `ramp` roster |
+| `get_benchmark_report` | de_conversations | 390, **401** | 5 | one per source read |
+| `get_de_economics` | de_conversations | 391, **402** | 4 | ROI numbers narrow with scope |
+| `get_de_operating_model` | human_tasks + de_work_items | 392 | 1 | denial reports as `not_found` |
+| `get_de_work_product` | de_conversations | 393 | 1 | denial reports as `de_not_found` |
+| `get_de_kpi_status` | de_conversations | 394 | 1 | membership check kept alongside |
+| `get_pending_draft` | draft_responses | 395 | 1 | ⚠ see follow-ups |
+| `get_pending_drafts_for_de` | draft_responses | 396 | 1 | ⚠ see follow-ups |
+| `list_browser_operator` | human_tasks | 397 | 1 | runtimes left workspace-wide |
+| `analytics_de_workload` | de_work_items | 398 | 2 | ⚠ also closed a cross-tenant hole |
+| `check_de_retirement_readiness` | human_tasks + de_conversations | 399 | 1 | **no behavioural change** — see below |
 
-⚠ `get_workforce_board` is the highest priority: it is the roster everybody
-lands on, and it aggregates across every DE by design.
+**24 guards across 13 functions.** One function per migration, each asserting
+its own guard count landed or raising. A failed assertion rolls the patch back:
+the management-API path runs each migration in one implicit transaction, proven
+when 397's first attempt failed its own position check and left the function
+unmodified.
+
+### What the group-A pass changed that was NOT DE scoping
+
+1. **`analytics_de_workload` had a cross-tenant hole** (closed in 398). It is
+   `SECURITY DEFINER`, granted to `authenticated`, takes `p_tenant_id` as a
+   PARAMETER and never compared it to the caller's workspace — no auth check of
+   any kind. Any signed-in user could read any tenant's objective and work-item
+   counts. **`can_access_de` alone would not have closed it:** owner/admin/
+   manager pass `can_access_de` for *any* uuid, because they pass on role before
+   the assignment lookup. The tenant pin had to go in too. It has **zero
+   callers** — recommend dropping it outright.
+2. **`check_de_retirement_readiness` was never actually exposed.** It is already
+   gated to `tenant_owner`/`tenant_admin`, both of whom pass `can_access_de`
+   unconditionally. 399 adds the guard as defence in depth and changes no
+   behaviour. Counted as guarded, not as a hole closed.
+
+### The null-`de_id` question — answered consistently, NOT settled
+
+Migration 386's seven policies all read `(de_id IS NULL) OR can_access_de(de_id)`
+— an unattributed row is workspace-visible. Migrations 389/390/391 first shipped
+a bare `can_access_de(de_id)`, which is **false** for a scoped user on a null
+`de_id`. That made the RPC path stricter than the table's own policy: the same
+"one predicate in two places" failure `29` names as the reason `can_access_de`
+exists. Migrations **400–402** align the RPCs to the policy.
+
+This matters at production scale, not in theory: **`human_tasks.de_id` is NULL
+on 760 of 924 rows (82%)**. `de_conversations` has 14 such rows;
+`de_work_items`, `draft_responses` and `computer_use_tasks` have none
+(`NOT NULL`).
+
+⚠ **Open founder question:** *should* an unattributed row be workspace-visible?
+Wave 1 says yes and everything now agrees with Wave 1, which is the prerequisite
+for changing the answer in one place. Nobody is affected today — every live user
+is owner, admin or manager.
+
+### Follow-ups found in passing, deliberately NOT bundled in
+
+Neither is a DE-scoping bug; both are on functions group A touched, and both are
+recorded rather than fixed so a scoping migration stays a scoping migration.
+
+- **`anon` holds EXECUTE on `get_pending_draft` and `get_pending_drafts_for_de`.**
+  Signup is live, so `anon` is the internet. They fail closed twice over — the
+  only other guard is `current_setting('app.current_tenant_id')`, which *raises*
+  when unset, and `can_access_de` is false for `anon` on every branch — so this
+  is not urgent. It is still the class migration 330 closed. Both have zero
+  callers.
+- **Neither function sets `search_path`**, on a `SECURITY DEFINER` body. Every
+  comparable function in this codebase pins it. The guards added in 395/396 are
+  schema-qualified for exactly this reason, and both migrations assert it.
 
 ### B. Actors — they change one identified row
 
@@ -67,6 +125,12 @@ send a reply for somebody else's employee.
 
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
+
+**NOT STARTED — all 25 confirmed still unguarded as of 2026-07-27**, verified by
+reading live definitions after group A landed. A guard here is not a filter: it
+is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
+row and *before* mutating it. Filtering an actor silently turns "you may not do
+this" into "nothing happened", which is worse than either.
 
 | group | functions |
 |---|---|
@@ -121,3 +185,21 @@ and every function in group B refuses a row belonging to another DE.
 
 Until that user exists, every claim in this area is a claim about code, not
 about behaviour.
+
+**That user still does not exist.** Group A's 24 guards were verified by
+re-reading `pg_get_functiondef` from production after each migration and
+counting them — which proves the text is in the deployed bodies and proves
+nothing about what anybody sees. The migrations run as `postgres`, which is a
+member of no workspace, so their runtime smoke tests could only check that each
+function still answers in contract (the correct answer for `postgres` being an
+empty board, a `not_permitted`, or the function's own auth gate firing).
+
+What would settle it, in order:
+1. Invite a `tenant_user`, assign them `primary` on exactly one DE.
+2. Sign in as them and read the roster, the Employee File and the approvals
+   queue. Expect one employee.
+3. Check the null-`de_id` consequence deliberately — with 82% of `human_tasks`
+   unattributed, the approvals queue is the place the answer to the open
+   question above will first be visible.
+4. Only then is any part of this "scoping works" rather than "scoping is
+   written down".
