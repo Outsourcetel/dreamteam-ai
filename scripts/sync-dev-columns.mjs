@@ -182,9 +182,52 @@ if (trgExtra.length) {
   for (const r of trgExtra) console.log(`  ${trgKey(r)}`);
 }
 
+// ── DEFAULT and NOT NULL on shared columns ─────────────────────────────────
+// Partly self-inflicted: the column pass above adds missing columns NULLABLE
+// with no default, on purpose — a NOT NULL column added to a table with rows
+// needs a backfill decision that belongs in a real migration. That leaves the
+// shape right and the semantics wrong, which is the kind of gap that looks like
+// a data bug later rather than a schema one.
+//
+// Measured: 42 differing defaults, 45 differing NOT NULL.
+//
+// ⚠ GENERATED COLUMNS ARE EXCLUDED. pg_attrdef holds the GENERATION expression
+// for a STORED generated column, not a default — de_conversations.end_user_key
+// is one. Re-issuing it as SET DEFAULT is invalid ("cannot use column reference
+// in DEFAULT expression"). Same trap that broke backup-schema.mjs.
+const DEFAULTS = `
+  select c.relname as tbl, a.attname as col,
+         coalesce(pg_get_expr(d.adbin, d.adrelid), '') as def,
+         a.attnotnull as notnull, a.attgenerated as generated
+    from pg_attribute a
+    join pg_class c on c.oid = a.attrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+   where n.nspname = 'public' and c.relkind = 'r'
+     and a.attnum > 0 and not a.attisdropped
+   order by 1, 2`;
+
+const [prodDef, devDef] = await Promise.all([q(PROD, DEFAULTS), q(DEV, DEFAULTS)]);
+const devDefMap = new Map(devDef.map((r) => [`${r.tbl}.${r.col}`, r]));
+const dKey = (r) => `${r.tbl}.${r.col}`;
+const sharedCols = prodDef.filter((r) => devTables.has(r.tbl) && devDefMap.has(dKey(r))
+  && !r.generated && !devDefMap.get(dKey(r)).generated);
+
+const defDiffer = sharedCols.filter((r) => devDefMap.get(dKey(r)).def !== r.def);
+// Split by direction: relaxing (dropping NOT NULL) is always safe; tightening
+// needs every existing row to already hold a value.
+const nnTighten = sharedCols.filter((r) => r.notnull && !devDefMap.get(dKey(r)).notnull);
+const nnRelax = sharedCols.filter((r) => !r.notnull && devDefMap.get(dKey(r)).notnull);
+
+console.log(`\n${defDiffer.length} DEFAULT(s) differ · ${nnTighten.length} need NOT NULL · ${nnRelax.length} need NOT NULL dropped`);
+for (const r of defDiffer.slice(0, 8)) {
+  console.log(`  ${dKey(r).padEnd(46)} -> ${(r.def || 'DROP DEFAULT').slice(0, 46)}`);
+}
+
 if (!APPLY) { console.log('\n(report only — pass --apply to run the ALTERs)'); process.exit(0); }
 if (!missing.length && !chkDiffer.length && !chkMissing.length && !polExtra.length
-    && !trgDiffer.length && !trgMissing.length) {
+    && !trgDiffer.length && !trgMissing.length
+    && !defDiffer.length && !nnTighten.length && !nnRelax.length) {
   console.log('\nnothing to do'); process.exit(0);
 }
 
@@ -271,3 +314,54 @@ if (trgDiffer.length || trgMissing.length) {
   console.log(`\nTriggers: ${trgOk} recreated, ${trgFailed.length} failed`);
   trgFailed.forEach((m) => console.log(`  ${m}`));
 }
+
+// ── Defaults, then NOT NULL, in that order ─────────────────────────────────
+// The order is the whole trick: SET DEFAULT first so the backfill below has a
+// value to use, then fill existing NULLs, then tighten. Reversed, every
+// tightening on a populated table fails.
+const T = (t) => `public.${JSON.stringify(t).replace(/"/g, '"')}`;
+let defOk = 0; const defFailed = [];
+for (const r of defDiffer) {
+  const stmt = r.def
+    ? `ALTER TABLE ${T(r.tbl)} ALTER COLUMN "${r.col}" SET DEFAULT ${r.def}`
+    : `ALTER TABLE ${T(r.tbl)} ALTER COLUMN "${r.col}" DROP DEFAULT`;
+  try { await q(DEV, stmt + ';'); defOk += 1; }
+  catch (e) { defFailed.push(`${dKey(r)} — ${String(e.message).slice(0, 90)}`); }
+}
+
+// Relaxing first, and unconditionally: a dev column that is NOT NULL where
+// production is not will reject a write production accepts, which makes dev
+// fail on input the product handles fine — a false alarm is still a wrong test.
+let nnOk = 0; const nnSkipped = []; const nnFailed = [];
+for (const r of nnRelax) {
+  try { await q(DEV, `ALTER TABLE ${T(r.tbl)} ALTER COLUMN "${r.col}" DROP NOT NULL;`); nnOk += 1; }
+  catch (e) { nnFailed.push(`${dKey(r)} (relax) — ${String(e.message).slice(0, 80)}`); }
+}
+
+for (const r of nnTighten) {
+  try {
+    // Backfill from the production default. Without one there is no
+    // defensible value to invent, so the column is REPORTED and skipped —
+    // guessing would put fabricated data in a database used to validate
+    // behaviour.
+    if (r.def) {
+      await q(DEV, `UPDATE ${T(r.tbl)} SET "${r.col}" = ${r.def} WHERE "${r.col}" IS NULL;`);
+    } else {
+      const [{ n }] = await q(DEV, `select count(*)::int as n from ${T(r.tbl)} where "${r.col}" is null`);
+      if (n > 0) { nnSkipped.push(`${dKey(r)} — ${n} NULL row(s) and no default to backfill from`); continue; }
+    }
+    await q(DEV, `ALTER TABLE ${T(r.tbl)} ALTER COLUMN "${r.col}" SET NOT NULL;`);
+    nnOk += 1;
+  } catch (e) {
+    nnFailed.push(`${dKey(r)} — ${String(e.message).slice(0, 80)}`);
+  }
+}
+
+console.log(`\nDefaults: ${defOk} set, ${defFailed.length} failed`);
+defFailed.forEach((m) => console.log(`  ${m}`));
+console.log(`NOT NULL: ${nnOk} aligned, ${nnSkipped.length} skipped, ${nnFailed.length} failed`);
+if (nnSkipped.length) {
+  console.log('  skipped (dev still permits NULL where production does not):');
+  nnSkipped.forEach((m) => console.log(`    ${m}`));
+}
+nnFailed.forEach((m) => console.log(`  ${m}`));
