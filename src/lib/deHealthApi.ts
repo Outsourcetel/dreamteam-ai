@@ -12,8 +12,12 @@
 import { supabase } from '../supabase';
 import { raise, requireTenantId } from './liveShared';
 
-export type DevelopmentItemType = 'confidence_gap' | 'escalation_spike' | 'error_rate' | 'guardrail_pattern' | 'manual';
-export type DevelopmentItemStatus = 'proposed' | 'in_progress' | 'completed' | 'dismissed';
+// Synced with the LIVE check constraints (docs/31 Q10): the DB also holds
+// 'skill_gap' (consolidated skills flag) and 'pip' (opened by a below-verdict
+// review), and a 'failed' status a missed PIP lands in — the UI must render
+// all of them, not filter them out of existence.
+export type DevelopmentItemType = 'confidence_gap' | 'escalation_spike' | 'error_rate' | 'guardrail_pattern' | 'skill_gap' | 'pip' | 'manual';
+export type DevelopmentItemStatus = 'proposed' | 'in_progress' | 'completed' | 'dismissed' | 'failed';
 
 export interface DEDevelopmentItem {
   id: string;
@@ -29,6 +33,8 @@ export interface DEDevelopmentItem {
   status: DevelopmentItemStatus;
   assigned_to: string | null;
   due_date: string | null;
+  /** The written consequence a PIP carries (live column; was stored but never displayed). */
+  consequence: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

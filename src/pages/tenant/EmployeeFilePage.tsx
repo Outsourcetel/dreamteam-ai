@@ -6,7 +6,6 @@ import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealt
 import { getDeWorkItems, getDeObjectives, saveObjective, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
 import { getWorkforceBoard, listMissions, type WorkforceBoardRow } from '../../lib/missionApi';
 import { fmtWhen } from '../../components/WorkforceBoard';
-import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
@@ -27,7 +26,11 @@ import CaseTimelinePanel from '../../components/CaseTimelinePanel';
 import DeliverablesPanel from '../../components/DeliverablesPanel';
 import MissionPanel from '../../components/MissionPanel';
 import OperatingModelPanel from '../../components/OperatingModelPanel';
-import { DeProfileSections, DeIncidentsPanel, type DeProfileSectionKey } from './LiveWorkforceDEs';
+import {
+  DeProfileSections, DeIncidentsPanel,
+  DeKpisPanel, DeEconomicsPanel, DeDevelopmentPanel, DeReviewsPanel, DeSkillsPanel,
+  type DeProfileSectionKey,
+} from './LiveWorkforceDEs';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, type Tone,
 } from '../../design/primitives';
@@ -67,20 +70,23 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // queue IS the work — and the old Work tab (the lifetime ledger) moved to the
 // top of Record. 'today' stays the internal key so nothing that ever pointed
 // here breaks; the label is what the founder sees.
+// docs/31 steps 7-8: 'capabilities' merged into 'profile' (one setup tab) and
+// 'development' dissolved into 'performance' (targets beside actuals). The
+// old keys survive only as ?tab= aliases below — never as tabs.
 type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
-  | 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
+  | 'profile' | 'trust' | 'governance' | 'specialist';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Work' },
   { key: 'operating', label: 'How I operate' },
   { key: 'record', label: 'Record' },
   { key: 'performance', label: 'Performance' },
   { key: 'workbench', label: 'Workbench' },
-  { key: 'profile', label: 'Profile' },
-  { key: 'capabilities', label: 'Capabilities' },
+  { key: 'profile', label: 'Profile & Capabilities' },
   { key: 'trust', label: 'Trust & Autonomy' },
-  { key: 'development', label: 'Development' },
   { key: 'governance', label: 'Governance' },
 ];
+// Stale deep links keep landing somewhere sensible — aliases, not errors.
+const TAB_ALIASES: Record<string, FileTab> = { capabilities: 'profile', development: 'performance' };
 
 // ── Work — what this employee is doing right now ──────────────────
 // (was "Today" — renamed in the docs/31 merge; the internal key stays 'today'.)
@@ -390,18 +396,16 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
 
   const nothing = !perf && !inquiry && !cost && !csat && !actions && !resolutions
     && !(outputs && (outputs.items_done > 0 || outputs.deliverables > 0));
-  if (nothing) {
-    return (
-      <EmptyState icon="📊" headline="No performance history in this window yet">
-        Numbers appear after {de.persona_name ?? de.name} handles real inquiries and actions — try "All time", or come back once work has flowed through.
-      </EmptyState>
-    );
-  }
 
   const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${Math.round(v)}%`);
 
   return (
     <div className="space-y-5">
+      {/* docs/31 Q9 + step 8: expectation and result finally share a screen —
+          targets (Goals & KPIs, once marooned on the Development tab) render
+          ABOVE the actuals they are targets for. */}
+      <DeKpisPanel de={de} />
+
       <div className="flex items-center gap-1">
         <span className="text-[11px] uppercase tracking-wide text-dt-muted mr-2">Time window</span>
         {RANGES.map(r => (
@@ -412,6 +416,12 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
         ))}
       </div>
 
+      {nothing ? (
+        <EmptyState icon="📊" headline="No performance history in this window yet">
+          Numbers appear after {de.persona_name ?? de.name} handles real inquiries and actions — try "All time", or come back once work has flowed through.
+        </EmptyState>
+      ) : (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatTile label="Resolutions delivered" value={String(resolutions?.resolutions ?? 0)}
           sub={resolutions ? `${resolutions.escalations} handed to your team` : undefined} tone="ok" />
@@ -437,6 +447,26 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
           <p className="text-2xl font-semibold text-dt-title">{perf?.blocked_guardrail_count ?? 0}</p>
           <p className="text-xs text-dt-support mt-1">guardrail blocks all-time · error rate {pct(perf?.error_rate)} · {perf?.high_frustration_count ?? 0} high-frustration conversations.</p>
         </PanelCard>
+      </div>
+      </>
+      )}
+
+      {/* Economics — what this output actually cost, and what it saved
+          against baselines the workspace typed in (never invented). */}
+      <DeEconomicsPanel de={de} />
+
+      {/* Growth — the dissolved Development tab (docs/31 step 8). The
+          development-plan card leads: it was the tab's only actionable card
+          and it led from the back for weeks. Then reviews, then skills.
+          (Exam-based certification lives on Trust & Autonomy — it is what
+          mechanically gates autonomy.) */}
+      <div className="pt-1">
+        <h2 className="text-sm font-semibold text-dt-title mb-3">Growth</h2>
+        <div className="space-y-5">
+          <DeDevelopmentPanel de={de} />
+          <DeReviewsPanel de={de} />
+          <DeSkillsPanel de={de} />
+        </div>
       </div>
     </div>
   );
@@ -660,16 +690,31 @@ function AgenticRunRow({ run }: { run: AgenticRun }) {
   );
 }
 
-function RecordTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+function RecordTab({ de, setPage, openTab }: { de: DigitalEmployee; setPage: (p: Page) => void; openTab: (t: FileTab) => void }) {
   const [runs, setRuns] = useState<DeRun[] | null>(null);
   const [exp, setExp] = useState<DeExperience[] | null>(null);
   const [agentic, setAgentic] = useState<AgenticRun[] | null>(null);
+  // Minimal read for the "Answers to" chip — the full Responsible people
+  // panel moved to Governance (docs/31 step 9); the record keeps only the
+  // one-line answer to "who do I ask about this one?".
+  const [primaryName, setPrimaryName] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     getDeExecutionLog(de.id, 25).then(r => !cancelled && setRuns(r)).catch(() => !cancelled && setRuns([]));
     getDeExperience(de.id, 40).then(e => !cancelled && setExp(e)).catch(() => !cancelled && setExp([]));
     getDeAgenticRuns(de.id, 15).then(a => !cancelled && setAgentic(a)).catch(() => !cancelled && setAgentic([]));
+    import('../../supabase').then(({ supabase }) =>
+      supabase.rpc('list_de_assignments', { p_de_id: de.id }).then(({ data, error }) => {
+        if (cancelled) return;
+        // An error must not render as "Nobody assigned" — that is a claim,
+        // not a fallback. On error the chip simply does not appear.
+        if (error) return;
+        const rows = (data ?? []) as Array<{ relation: string; full_name: string | null; email: string | null }>;
+        const p = rows.find(r => r.relation === 'primary');
+        setPrimaryName(p ? (p.full_name || p.email || 'Unnamed person') : null);
+      })
+    ).catch(() => { /* chip stays hidden on failure */ });
     return () => { cancelled = true; };
   }, [de.id]);
 
@@ -677,17 +722,25 @@ function RecordTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) =>
 
   return (
     <div className="space-y-5">
-      {/* Skills, KPIs and development live on the Development tab (the canonical
-          list_de_skills surface) — the Record tab is the evidence of work done. */}
+      {/* Skills, KPIs and development live on the Performance tab — the
+          Record tab is the evidence of work done. */}
+
+      {/* Who answers for this employee — compact chip; managed on Governance. */}
+      {primaryName !== undefined && (
+        <button onClick={() => openTab('governance')}
+          className="inline-flex items-center gap-2 rounded-full border border-dt-border bg-dt-card px-3 py-1.5 text-xs hover:border-dt-border-strong transition-colors"
+          title="Responsible people are managed on the Governance tab">
+          <span className="text-dt-muted">Answers to:</span>
+          {primaryName
+            ? <span className="text-dt-body font-medium">{primaryName}</span>
+            : <span className="text-amber-300">Nobody assigned</span>}
+          <span className="text-dt-faint">→ Governance</span>
+        </button>
+      )}
 
       {/* The lifetime output ledger opens the record: who this employee is by
           role, and everything it has produced (the old "Work" tab, rehomed). */}
       <LifetimeLedger de={de} setPage={setPage} />
-
-      {/* Who answers for this employee (migration 385, docs/29 §5) — the other
-          half of the record's identity: an unassigned digital employee is a
-          governance gap that should be visible next to what it has produced. */}
-      <ResponsiblePeoplePanel deId={de.id} deName={name} />
 
       {/* Autonomous runs — watch it reason through a multi-step task. Always
           rendered: vanishing at zero runs hid that the capability exists. */}
@@ -805,7 +858,8 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
   // whitelisted against the tab set — never trust the URL to open a section.
   // An unknown or denied key falls back to the default (Work).
   const [tab, setTab] = useState<FileTab>(() => {
-    const t = new URLSearchParams(location.search).get('tab');
+    const raw = new URLSearchParams(location.search).get('tab');
+    const t = raw ? (TAB_ALIASES[raw] ?? raw) : null;
     return t && (FILE_TABS.some(x => x.key === t) || t === 'specialist') ? (t as FileTab) : 'today';
   });
   // Tab clicks mirror into ?tab= with replace (no back-button tab history).
@@ -913,12 +967,12 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
       {activeTab === 'today' && <WorkTab de={de} setPage={setPage} />}
       {activeTab === 'operating' && <OperatingModelPanel de={de} setPage={setPage} />}
-      {activeTab === 'record' && <RecordTab de={de} setPage={setPage} />}
+      {activeTab === 'record' && <RecordTab de={de} setPage={setPage} openTab={selectTab} />}
       {activeTab === 'performance' && (currentTenant?.id
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
       {activeTab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
-      {['profile', 'capabilities', 'trust', 'development', 'governance', 'specialist'].includes(activeTab) && (
+      {['profile', 'trust', 'governance', 'specialist'].includes(activeTab) && (
         <DeProfileSections de={de} section={activeTab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
       )}
     </div>

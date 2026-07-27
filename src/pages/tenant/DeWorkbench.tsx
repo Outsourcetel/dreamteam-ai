@@ -27,7 +27,11 @@ const PACK_REGULATIONS: Record<string, string> = {
 // missing. Empty states are honest — a fresh DE genuinely has none.
 // (The old Work subtab dissolved in the docs/31 merge: the queue +
 // objectives editor + deliverables live on the file's Work tab, and
-// the watcher manager lives on How I operate.)
+// the watcher manager lives on How I operate. Certification moved to
+// Trust & Autonomy — it is what mechanically gates autonomy, mig 258 —
+// and Compliance moved to Governance: attaching a regulatory posture
+// is governance configuration. The Workbench is the pure inspection
+// lab: Memory, Reasoning, Exceptions, Replay.)
 // ═══════════════════════════════════════════════════════════════
 
 const SECTIONS = [
@@ -35,8 +39,6 @@ const SECTIONS = [
   { key: 'reasoning', label: 'Reasoning' },
   { key: 'exceptions', label: 'Exceptions' },
   { key: 'replay', label: 'Replay Lab' },
-  { key: 'certification', label: 'Certification' },
-  { key: 'compliance', label: 'Compliance' },
 ] as const;
 type Section = typeof SECTIONS[number]['key'];
 
@@ -85,30 +87,22 @@ const Pill = ({ s }: { s: string }) => (
   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusPill[s] ?? 'bg-dt-panel text-dt-support'}`}>{s.replace(/_/g, ' ')}</span>
 );
 
-export default function DeWorkbenchPanel({ deId }: { deId: string }) {
-  const [section, setSection] = useState<Section>('memory');
-  const [loading, setLoading] = useState(true);
-  const [memory, setMemory] = useState<MemoryRow[]>([]);
-  const [trace, setTrace] = useState<TraceRow[]>([]);
-  const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
-  const [certs, setCerts] = useState<CertRow[]>([]);
+// ── Certification — MOVED OUT of the Workbench to Trust & Autonomy
+// (docs/31 step 8): a passed exam is what mechanically gates autonomy
+// (mig 258 records gate), so it renders beside the trust machinery,
+// not in the inspection lab. Same RPCs, same real role_certifications.
+export function DeCertificationPanel({ deId }: { deId: string }) {
+  const [certs, setCerts] = useState<CertRow[] | null>(null);
   const [certStatus, setCertStatus] = useState<CertStatus | null>(null);
   const [certRun, setCertRun] = useState<{ busy: boolean; note: string | null }>({ busy: false, note: null });
-  const [allPacks, setAllPacks] = useState<{ pack_key: string; name: string; domain: string | null }[]>([]);
-  const [packPick, setPackPick] = useState('');
-  const [packBusy, setPackBusy] = useState(false);
-  const [packError, setPackError] = useState<string | null>(null);
 
-  useEffect(() => { void listAllCompliancePacks().then(setAllPacks).catch(() => setAllPacks([])); }, []);
-  const attachPack = async () => {
-    setPackBusy(true); setPackError(null);
-    try {
-      await attachCompliancePack(packPick);
-      setPackPick('');
-      setPacks(await getTenantCompliancePacks());
-    } catch (e) { setPackError((e as Error).message); }
-    setPackBusy(false);
-  };
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getDeCertifications(deId), getDeCertStatus(deId)])
+      .then(([c, cs]) => { if (!cancelled) { setCerts(c); setCertStatus(cs); } })
+      .catch(() => { if (!cancelled) setCerts([]); });
+    return () => { cancelled = true; };
+  }, [deId]);
 
   const runCertExam = async () => {
     setCertRun({ busy: true, note: null });
@@ -122,6 +116,138 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
       setCertRun({ busy: false, note: (e as Error).message });
     }
   };
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Certification</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">gates autonomy</span>
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        A failed or stale certification clamps this employee's autonomy through the records gate —
+        every answer and action routes to a human until it passes again.
+      </p>
+      <div className="flex items-center gap-3 mb-3">
+        <button onClick={() => void runCertExam()} disabled={certRun.busy}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {certRun.busy ? 'Running exam…' : 'Run certification exam'}
+        </button>
+        <span className="text-[11px] text-dt-muted flex-1">
+          This employee answers the workspace's golden exam through the real pipeline — a pass at 80%+ writes a certification.
+        </span>
+      </div>
+      {certRun.note && <p className="text-xs text-dt-support mb-3">{certRun.note}</p>}
+      {certs === null ? <Loading /> : certs.length === 0 ? (
+        <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — run the exam above; the record shows here." />
+      ) : (
+        <div className="space-y-2">
+          {certStatus?.state === 'stale' && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">⚠ Certification is stale</div>
+              <p className="text-[12px] text-amber-200/80 mt-1">This employee's configuration changed since it last passed. The certification below no longer vouches for its current setup — re-run its evaluation or simulation and re-certify before promoting it. Its go-live gate will block promotion until then.</p>
+            </div>
+          )}
+          {certStatus?.state === 'certified' && (
+            <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-2.5 text-[12px] text-emerald-300">✓ Certified for its current configuration — the passing evaluation below still applies.</div>
+          )}
+          {certs.map(c => (
+            <div key={c.id} className="bg-dt-inset rounded-lg px-4 py-3 flex items-center gap-3">
+              <Pill s={c.status} />
+              <span className="text-sm text-dt-body flex-1">{c.archetype_key ?? 'Role'} certification</span>
+              <span className={`text-sm font-semibold ${c.status === 'passed' ? 'text-emerald-300' : 'text-rose-300'}`}>{Math.round(c.score_pct)}%</span>
+              <span className="text-[11px] text-dt-faint">need {c.threshold_pct}% · {fmt(c.evaluated_at ?? c.created_at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Compliance packs — MOVED OUT of the Workbench to the Governance
+// section (docs/31 step 8): attaching a regulatory posture is governance
+// configuration, not inspection. Packs are workspace-wide and un-toggleable.
+export function DeCompliancePanel() {
+  const [packs, setPacks] = useState<CompliancePackRow[] | null>(null);
+  const [allPacks, setAllPacks] = useState<{ pack_key: string; name: string; domain: string | null }[]>([]);
+  const [packPick, setPackPick] = useState('');
+  const [packBusy, setPackBusy] = useState(false);
+  const [packError, setPackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getTenantCompliancePacks().then(p => { if (!cancelled) setPacks(p); }).catch(() => { if (!cancelled) setPacks([]); });
+    listAllCompliancePacks().then(a => { if (!cancelled) setAllPacks(a); }).catch(() => { if (!cancelled) setAllPacks([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const attachPack = async () => {
+    setPackBusy(true); setPackError(null);
+    try {
+      await attachCompliancePack(packPick);
+      setPackPick('');
+      setPacks(await getTenantCompliancePacks());
+    } catch (e) { setPackError((e as Error).message); }
+    setPackBusy(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Compliance packs</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">workspace-wide · un-toggleable</span>
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        A pack enforces un-toggleable guardrails on every employee in this workspace — attaching one
+        here applies it to all of them, and it cannot be switched off.
+      </p>
+      <div className="flex items-center gap-2 mb-3">
+        <select value={packPick} onChange={e => setPackPick(e.target.value)}
+          className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body">
+          <option value="">Attach a compliance pack to this workspace…</option>
+          {allPacks.filter(p => !(packs ?? []).some(a => a.pack_key === p.pack_key)).map(p => (
+            <option key={p.pack_key} value={p.pack_key}>{p.name}{p.domain ? ` · ${p.domain}` : ''}</option>
+          ))}
+        </select>
+        <button disabled={packBusy || !packPick} onClick={() => void attachPack()}
+          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {packBusy ? 'Attaching…' : 'Attach'}
+        </button>
+      </div>
+      {packError && <p className="text-xs text-rose-300 mb-3">{packError}</p>}
+      {packs === null ? <Loading /> : packs.length === 0 ? (
+        <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE — attach one above; it applies workspace-wide and cannot be switched off." />
+      ) : (
+        <div className="space-y-2">{packs.map(p => (
+          <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">un-toggleable</span>
+              <span className="text-sm text-dt-body flex-1">{p.name ?? p.pack_key}{p.domain ? ` · ${p.domain}` : ''}</span>
+              <span className="text-[11px] text-dt-faint">attached {fmt(p.attached_at)}</span>
+            </div>
+            {PACK_REGULATIONS[p.pack_key] && (
+              <p className="text-[11px] text-dt-faint mt-1.5">Designed to support obligations under: {PACK_REGULATIONS[p.pack_key]}.</p>
+            )}
+          </div>
+        ))}
+        <p className="text-[11px] text-dt-faint pt-1">
+          Across every pack: consequential actions pass human approval gates and the earned-trust dial — the
+          human-oversight posture frameworks like the EU AI Act (Art. 14) and GDPR Art. 22 expect for automated
+          decisions. This describes how the product is designed, not a certification.
+        </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function DeWorkbenchPanel({ deId }: { deId: string }) {
+  const [section, setSection] = useState<Section>('memory');
+  const [loading, setLoading] = useState(true);
+  const [memory, setMemory] = useState<MemoryRow[]>([]);
+  const [trace, setTrace] = useState<TraceRow[]>([]);
+  const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
+
   // Replay Lab
   const [replaySources, setReplaySources] = useState<ReplaySource[]>([]);
   const [replaySel, setReplaySel] = useState<ReplaySource | null>(null);
@@ -130,7 +256,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [replayRunning, setReplayRunning] = useState(false);
   const [replayResult, setReplayResult] = useState<ReplayResult | null>(null);
   const [replayError, setReplayError] = useState<string | null>(null);
-  const [packs, setPacks] = useState<CompliancePackRow[]>([]);
 
   const [loadError, setLoadError] = useState(false);
 
@@ -152,14 +277,14 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, t, e, c, cs, p, rs, mg] = await Promise.all([
+        const [m, t, e, rs, mg] = await Promise.all([
           getDeMemory(deId), getDeTrace(deId),
-          getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getTenantCompliancePacks(),
+          getDeExceptions(deId),
           getReplaySources(deId), getDeMemoryGrouped(deId),
         ]);
         if (cancelled) return;
         setMemory(m); setTrace(t);
-        setExceptions(e); setCerts(c); setCertStatus(cs); setPacks(p);
+        setExceptions(e);
         setReplaySources(rs); setMemoryGroups(mg);
       } catch {
         // A failed load must NOT masquerade as an honest empty state.
@@ -237,7 +362,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     <div className={`${card} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-dt-border">
         <p className="text-sm font-semibold text-white">Workbench</p>
-        <p className="text-xs text-dt-muted mt-0.5">What this employee remembers, decides, and has been certified to do — all live.</p>
+        <p className="text-xs text-dt-muted mt-0.5">The inspection lab — what this employee remembers, how it reasons, the exceptions it raises, and the replay bench. All live.</p>
       </div>
       <div className="flex flex-wrap gap-1 px-3 pt-3">
         {SECTIONS.map(s => (
@@ -465,82 +590,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                 )}
               </div>
             )}
-
-            {section === 'certification' && (
-              <div className="flex items-center gap-3 mb-3">
-                <button onClick={() => void runCertExam()} disabled={certRun.busy}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
-                  {certRun.busy ? 'Running exam…' : 'Run certification exam'}
-                </button>
-                <span className="text-[11px] text-dt-muted flex-1">
-                  This employee answers the workspace's golden exam through the real pipeline — a pass at 80%+ writes a certification.
-                </span>
-              </div>
-            )}
-            {section === 'certification' && certRun.note && (
-              <p className="text-xs text-dt-support mb-3">{certRun.note}</p>
-            )}
-            {section === 'certification' && (certs.length === 0 ? (
-              <LiveEmptyState icon="◎" title="Not certified yet" body="A DE must pass its role's evaluation before it can go customer-facing — run the exam above; the record shows here." />
-            ) : (
-              <div className="space-y-2">
-                {certStatus?.state === 'stale' && (
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">⚠ Certification is stale</div>
-                    <p className="text-[12px] text-amber-200/80 mt-1">This employee's configuration changed since it last passed. The certification below no longer vouches for its current setup — re-run its evaluation or simulation and re-certify before promoting it. Its go-live gate will block promotion until then.</p>
-                  </div>
-                )}
-                {certStatus?.state === 'certified' && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-2.5 text-[12px] text-emerald-300">✓ Certified for its current configuration — the passing evaluation below still applies.</div>
-                )}
-                {certs.map(c => (
-                <div key={c.id} className="bg-dt-inset rounded-lg px-4 py-3 flex items-center gap-3">
-                  <Pill s={c.status} />
-                  <span className="text-sm text-dt-body flex-1">{c.archetype_key ?? 'Role'} certification</span>
-                  <span className={`text-sm font-semibold ${c.status === 'passed' ? 'text-emerald-300' : 'text-rose-300'}`}>{Math.round(c.score_pct)}%</span>
-                  <span className="text-[11px] text-dt-faint">need {c.threshold_pct}% · {fmt(c.evaluated_at ?? c.created_at)}</span>
-                </div>
-              ))}</div>
-            ))}
-
-            {section === 'compliance' && (
-              <div className="flex items-center gap-2 mb-3">
-                <select value={packPick} onChange={e => setPackPick(e.target.value)}
-                  className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-sm text-dt-body">
-                  <option value="">Attach a compliance pack to this workspace…</option>
-                  {allPacks.filter(p => !packs.some(a => a.pack_key === p.pack_key)).map(p => (
-                    <option key={p.pack_key} value={p.pack_key}>{p.name}{p.domain ? ` · ${p.domain}` : ''}</option>
-                  ))}
-                </select>
-                <button disabled={packBusy || !packPick} onClick={() => void attachPack()}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
-                  {packBusy ? 'Attaching…' : 'Attach'}
-                </button>
-              </div>
-            )}
-            {section === 'compliance' && packError && <p className="text-xs text-rose-300 mb-3">{packError}</p>}
-            {section === 'compliance' && (packs.length === 0 ? (
-              <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE — attach one above; it applies workspace-wide and cannot be switched off." />
-            ) : (
-              <div className="space-y-2">{packs.map(p => (
-                <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">un-toggleable</span>
-                    <span className="text-sm text-dt-body flex-1">{p.name ?? p.pack_key}{p.domain ? ` · ${p.domain}` : ''}</span>
-                    <span className="text-[11px] text-dt-faint">attached {fmt(p.attached_at)}</span>
-                  </div>
-                  {PACK_REGULATIONS[p.pack_key] && (
-                    <p className="text-[11px] text-dt-faint mt-1.5">Designed to support obligations under: {PACK_REGULATIONS[p.pack_key]}.</p>
-                  )}
-                </div>
-              ))}
-              <p className="text-[11px] text-dt-faint pt-1">
-                Across every pack: consequential actions pass human approval gates and the earned-trust dial — the
-                human-oversight posture frameworks like the EU AI Act (Art. 14) and GDPR Art. 22 expect for automated
-                decisions. This describes how the product is designed, not a certification.
-              </p>
-              </div>
-            ))}
           </>
         )}
       </div>

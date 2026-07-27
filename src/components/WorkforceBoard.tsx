@@ -31,6 +31,10 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
   const [notReady, setNotReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [missionsUsed, setMissionsUsed] = useState<boolean | null>(null);
+  // Which DEs have at least one responsible person (docs/31 step 9 nudge).
+  // One cheap RLS-scoped read of de_assignments aggregated client-side —
+  // list_de_assignments per DE would be a call per roster row.
+  const [assignedDeIds, setAssignedDeIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,10 +46,18 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
     const t = setInterval(load, 30_000);
     // Maturity phase signal (docs/17 C5): missions used = the workspace has
     // reached orchestration. Derived from real usage, never self-declared.
-    import('../supabase').then(({ supabase }) =>
+    import('../supabase').then(({ supabase }) => {
       supabase.from('de_missions').select('id', { count: 'exact', head: true })
-        .then(({ count }) => { if (!cancelled) setMissionsUsed((count ?? 0) > 0); }))
-      .catch(() => { /* chip simply doesn't render */ });
+        .then(({ count }) => { if (!cancelled) setMissionsUsed((count ?? 0) > 0); });
+      supabase.from('de_assignments').select('de_id')
+        .then(({ data, error }) => {
+          // A failed read must NOT masquerade as "nobody is assigned" — that
+          // would flag the entire board amber. Unknown stays unknown (null),
+          // and the nudge only renders on a real answer.
+          if (!cancelled) setAssignedDeIds(error ? null : new Set(((data ?? []) as Array<{ de_id: string }>).map(a => a.de_id)));
+        });
+    })
+      .catch(() => { /* chips simply don't render */ });
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
@@ -60,6 +72,11 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
 
   const totalWaiting = rows.reduce((s, r) => s + r.waiting_on_you, 0);
   const anyOperating = rows.some(r => r.done_today > 0 || r.next_up.length > 0 || r.now != null || r.listens_live);
+  // The assignment-drive nudge (docs/31 step 9): under default-DENY, a DE with
+  // nobody responsible is invisible to everyone below manager — say so where
+  // the fleet is watched, and one click opens the first gap on Governance.
+  const unassigned = assignedDeIds === null ? []
+    : rows.filter(r => !['retired', 'archived'].includes(r.lifecycle_status) && !assignedDeIds.has(r.de_id));
   const phase = missionsUsed
     ? { n: 3, label: 'Phase 3 · Orchestrated', hint: 'You give standing missions; employees plan and fan out under your gates.' }
     : anyOperating
@@ -83,6 +100,12 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
         Every employee — what it's doing now, what happens next and when, and where you're the bottleneck.
         Click a row to open the employee's file.
       </p>
+      {unassigned.length > 0 && (
+        <button onClick={() => openFile(unassigned[0].de_id, 'governance')}
+          className="w-full text-left rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-3 text-xs text-amber-200 hover:border-amber-400 transition-colors">
+          {unassigned.length} employee{unassigned.length === 1 ? ' has' : 's have'} nobody responsible — assign people →
+        </button>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

@@ -31,7 +31,8 @@ import {
   getCustomEscalationRules, saveCustomEscalationRules, getEscalationSignals, OPERATORS_BY_TYPE,
 } from '../../lib/roleConfigApi';
 import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
-import DeWorkbenchPanel from './DeWorkbench';
+import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
+import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -457,7 +458,7 @@ const SKILL_CATEGORY_LABEL: Record<string, string> = {
   analytical: 'Analytical', integration: 'Integration',
 };
 const PROFICIENCY_NAME = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert'];
-function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
+export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
   const [assessing, setAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -527,8 +528,15 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-white">Skills</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">evidence-assessed</span>
+        {/* docs/31 Q8: the add-skill flow shipped in migs 205/206 and was used
+            by nobody, ever — because its entry point was an 11px footnote
+            link. Same flow, real button, where eyes actually land. */}
+        <button onClick={() => setAdding(true)}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
+          + Add a skill your business cares about
+        </button>
         <button onClick={() => void assess()} disabled={assessing}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-50">
           {assessing ? 'Assessing…' : 'Assess now'}
         </button>
       </div>
@@ -540,7 +548,7 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
       {skills === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : skills.length === 0 ? (
-        <p className="text-xs text-dt-muted">No assessment yet — run one with “Assess now”.</p>
+        <p className="text-xs text-dt-muted">No assessment yet — run one with “Assess now”, or add a skill your business cares about and rate it yourself.</p>
       ) : (
         <div className="space-y-3">
           {skills.map(s => {
@@ -602,11 +610,7 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
         </div>
       )}
 
-      {!adding ? (
-        <button onClick={() => setAdding(true)} className="mt-3 text-[11px] text-indigo-400 hover:text-indigo-300">
-          + Add a skill your business cares about
-        </button>
-      ) : (
+      {adding && (
         <div className="mt-3 rounded-xl border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <p className="text-[11px] text-dt-support">
             Add a skill specific to your work. The platform has no way to measure it automatically,
@@ -644,17 +648,22 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
 // (de_certifications — 0 rows ever written, docs/31 cut list) is gone;
 // the real, exam-based certification flow lives in the Workbench's
 // Certification tab (role_certifications) and is untouched.
+// metrics_snapshot is written by every review and was read by nothing
+// (docs/31 Q8 "written-never-read") — its live shape is
+// { skills: [{ skill, value, proficiency }], ...metric aggregates }.
+type ReviewSkillSnap = { skill: string; value: number | null; proficiency: number | null };
 type ReviewRow = {
   id: string; period_start: string; verdict: string; summary: string; status: string; created_at: string;
+  metrics_snapshot: { skills?: ReviewSkillSnap[] } | null;
 };
-function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
+export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data: r, error: rErr } = await supabase.from('de_performance_reviews')
-      .select('id, period_start, verdict, summary, status, created_at')
+      .select('id, period_start, verdict, summary, status, created_at, metrics_snapshot')
       .eq('de_id', de.id).order('created_at', { ascending: false }).limit(3);
     if (rErr) { setError(rErr.message); return; }
     setReviews((r ?? []) as ReviewRow[]);
@@ -712,6 +721,24 @@ function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 )}
               </div>
               <p className="text-[11px] text-dt-support mt-1.5">{r.summary}</p>
+              {/* The skills snapshot each review captures — stored since the
+                  first review and rendered nowhere until docs/31 Q10. */}
+              {(() => {
+                const snaps = r.metrics_snapshot?.skills ?? [];
+                if (snaps.length === 0) return null;
+                const measured = snaps.filter(s => s.proficiency != null);
+                return measured.length === 0 ? (
+                  <p className="text-[10px] text-dt-faint mt-1.5">Skills at review time: none were measurable yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {measured.map(s => (
+                      <span key={s.skill} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-inset text-dt-support">
+                        {s.skill.replace(/_/g, ' ')} · L{s.proficiency}{PROFICIENCY_NAME[s.proficiency!] ? ` ${PROFICIENCY_NAME[s.proficiency!]}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -720,7 +747,7 @@ function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
-function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
+export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
   const [scanning, setScanning] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -757,12 +784,20 @@ function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
 
   if (items === null) return null;
   const open = items.filter(i => i.status === 'proposed' || i.status === 'in_progress');
+  // docs/31 Q10: a failed PIP used to vanish — the filters didn't know the
+  // status existed. It renders now, in red. (The incident it raised lives on
+  // the Record tab; the founder decision on relabelling — program vs flags —
+  // is open, so the card keeps its "Development plan" name.)
+  const failed = items.filter(i => i.status === 'failed');
   const resolved = items.filter(i => i.status === 'completed' || i.status === 'dismissed');
+  const typeLabel = (t: DEDevelopmentItem['item_type'], source: string) =>
+    t === 'pip' ? 'PIP' : t === 'skill_gap' ? 'skill gap' : source === 'detected' ? 'detected' : 'manual';
+  const fmtDue = (d: string | null) => d ? new Date(d + 'T00:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
 
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Development</h3>
+        <h3 className="text-base font-semibold text-white">Development plan</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">evidence-grounded</span>
       </div>
       <p className="text-xs text-dt-muted mb-4">
@@ -795,10 +830,10 @@ function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
       ) : (
         <div className="space-y-1.5 mb-3">
           {open.map(item => (
-            <div key={item.id} className="rounded-lg bg-dt-inset px-3 py-2 text-xs">
+            <div key={item.id} className={`rounded-lg px-3 py-2 text-xs ${item.item_type === 'pip' ? 'bg-amber-500/5 border border-amber-500/30' : 'bg-dt-inset'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support mr-1.5">{item.source === 'detected' ? 'detected' : 'manual'}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded mr-1.5 ${item.item_type === 'pip' ? 'bg-amber-500/15 text-amber-300' : 'bg-dt-panel text-dt-support'}`}>{typeLabel(item.item_type, item.source)}</span>
                   <span className="text-dt-support">{item.description}</span>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
@@ -809,6 +844,28 @@ function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
                   <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-muted hover:bg-dt-panel">Dismiss</button>
                 </div>
               </div>
+              {/* A PIP is a formal plan with a deadline and a written consequence
+                  — both stored since mig 129 and displayed nowhere until now. */}
+              {item.item_type === 'pip' && (item.due_date || item.consequence) && (
+                <p className="text-[11px] text-amber-200/80 mt-1.5">
+                  {item.due_date && <>Due {fmtDue(item.due_date)}.</>}
+                  {item.due_date && item.consequence && ' '}
+                  {item.consequence && <>If not met: {item.consequence}</>}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {failed.length > 0 && (
+        <div className="space-y-1.5 mb-3">
+          {failed.map(item => (
+            <div key={item.id} className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 mr-1.5">{typeLabel(item.item_type, item.source)} · failed</span>
+              <span className="text-rose-200/90">{item.description}</span>
+              {item.consequence && <p className="text-[11px] text-rose-300/80 mt-1">Written consequence: {item.consequence}</p>}
+              <p className="text-[10px] text-rose-300/60 mt-1">The deadline passed without recovery. The incident this raised is on this employee's record.</p>
             </div>
           ))}
         </div>
@@ -1050,9 +1107,24 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
-function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
+// ── Colleagues & help (docs/31 Q6) — ONE panel writing the ENFORCED table.
+// de_consultation_grants is what the runtime actually reads: de-work offers
+// the consult_specialist tool ONLY when this DE holds an active grant (a
+// grant is membership; its category is audit-only — de-work never branches
+// on it). The old Specialists panel wrote de_specialist_assignments, a table
+// no runtime path reads — it is gone. While the tenant has exactly ONE
+// specialist (every live tenant today), a single on/off toggle replaces the
+// ranked Primary/Secondary chooser; the rank UI (set_de_specialist) appears
+// only once a second specialist exists. Granting is MANUAL only — auto-grant
+// at hire is founder decision #2, still open, and is NOT implemented here.
+interface ConsultableRow { target_de_id: string; name: string; is_specialist: boolean; rank: number | null; grant_kind: string }
+
+function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
+  const [specialists, setSpecialists] = useState<Array<{ id: string; name: string; key: string; status: string }>>([]);
+  const [assigned, setAssigned] = useState<Record<number, string>>({});
+  const [consultable, setConsultable] = useState<ConsultableRow[]>([]);
   const [asRequester, setAsRequester] = useState<DEConsultationGrant[] | null>(null);
-  const [asTarget, setAsTarget] = useState<DEConsultationGrant[] | null>(null);
+  const [asTarget, setAsTarget] = useState<DEConsultationGrant[]>([]);
   const [roster, setRoster] = useState<DigitalEmployee[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [nameById, setNameById] = useState<Record<string, string>>({});
@@ -1064,25 +1136,68 @@ function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
 
   const load = useCallback(async () => {
     try {
-      const [grants, des, cats] = await Promise.all([
+      const [{ data: sps }, { data: rankRows }, { data: cons }, grants, des, cats] = await Promise.all([
+        supabase.from('digital_employees').select('id, name, key:specialist_key, status').eq('is_specialist', true).order('created_at'),
+        supabase.rpc('list_de_specialists', { p_de_id: de.id }),
+        supabase.rpc('list_consultable_for_de', { p_de_id: de.id }),
         listDeConsultationGrants(de.id),
         listDigitalEmployees(),
         supabase.from('system_categories').select('key').order('key'),
       ]);
+      setSpecialists((sps ?? []) as Array<{ id: string; name: string; key: string; status: string }>);
+      const map: Record<number, string> = {};
+      for (const r of (rankRows ?? []) as Array<{ rank: number; specialist_id: string }>) map[r.rank] = r.specialist_id;
+      setAssigned(map);
+      // supabase.rpc on a json-returning function may hand back the array
+      // directly or a JSON string depending on the client — normalise both.
+      const consList = typeof cons === 'string' ? JSON.parse(cons) : cons;
+      setConsultable((Array.isArray(consList) ? consList : []) as ConsultableRow[]);
       setAsRequester(grants.asRequester);
       setAsTarget(grants.asTarget);
       setRoster(des.filter(d => d.id !== de.id && d.lifecycle_status !== 'retired'));
       setNameById(Object.fromEntries(des.map(d => [d.id, d.persona_name || d.name])));
       setCategories(((cats.data ?? []) as Array<{ key: string }>).map(c => c.key));
-    } catch {
+    } catch (e) {
       setAsRequester([]); setAsTarget([]);
+      setErr(e instanceof Error ? e.message : 'Could not load colleagues & help.');
     }
   }, [de.id]);
 
   useEffect(() => { void load(); }, [load]);
 
+  // The one specialist, when there is exactly one — the toggle path.
+  const soleSpecialist = specialists.length === 1 && specialists[0].id !== de.id ? specialists[0] : null;
+  const soleGrant = soleSpecialist ? (asRequester ?? []).find(g => g.target_de_id === soleSpecialist.id) : undefined;
+  const soleOn = !!soleGrant?.active;
+
+  const toggleSpecialistHelp = async () => {
+    if (!soleSpecialist || busy) return;
+    setBusy(true); setErr(null);
+    try {
+      if (soleGrant) await setDeConsultationGrantActive(soleGrant.id, !soleGrant.active);
+      // Category is audit-only on this table (de-work treats a grant as
+      // membership) — 'other' is the honest catch-all for a whole-specialist grant.
+      else await createDeConsultationGrant(de.id, soleSpecialist.id, 'other');
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not update the grant.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setRank = async (rank: 1 | 2, specialistId: string) => {
+    setBusy(true); setErr(null);
+    const { error: rErr } = await supabase.rpc('set_de_specialist', {
+      p_de_id: de.id, p_rank: rank, p_specialist_id: specialistId || null,
+    });
+    if (rErr) setErr(rErr.message);
+    await load();
+    setBusy(false);
+  };
+
   const addGrant = async () => {
-    if (!targetId || !category) { setErr('Choose a target employee and a category.'); return; }
+    if (!targetId || !category) { setErr('Choose a colleague and a category.'); return; }
     setBusy(true); setErr(null);
     try {
       await createDeConsultationGrant(de.id, targetId, category);
@@ -1095,73 +1210,242 @@ function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
     }
   };
 
-  const toggle = async (grant: DEConsultationGrant) => {
+  const toggleGrant = async (grant: DEConsultationGrant) => {
     setBusy(true);
     try { await setDeConsultationGrantActive(grant.id, !grant.active); await load(); }
     finally { setBusy(false); }
   };
 
-  if (asRequester === null) return null;
+  const name = de.persona_name || de.name;
 
   return (
-    <div className="mt-5 pt-5 border-t border-dt-border">
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h4 className="text-sm font-semibold text-dt-body">Consultations</h4>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">bounded, single-hop</span>
+        <h3 className="text-base font-semibold text-white">Who can this employee ask for help?</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">governed, single-hop</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
-        A governed, one-question handoff to another employee — the answer comes from the OTHER employee's own access, never widening this one's.
-        Not full delegation: no chains, no fan-out.
+        A governed, one-question handoff to a colleague — the answer comes from the OTHER employee's own
+        access, never widening this one's. No chains, no fan-out. Nothing here happens automatically:
+        you grant help; {name} may then use it.
       </p>
       {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
-      <p className="text-xs text-dt-support mb-1">Can consult:</p>
-      {asRequester.length === 0 ? (
-        <p className="text-xs text-dt-faint mb-3">No consultation grants yet.</p>
+      {asRequester === null ? (
+        <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
-        <div className="space-y-1 mb-3">
-          {asRequester.map(g => (
-            <div key={g.id} className="flex items-center justify-between rounded-lg bg-dt-inset px-3 py-1.5 text-xs">
-              <span className="text-dt-support">{nameById[g.target_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category}</span></span>
-              <button onClick={() => toggle(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
-                {g.active ? 'active' : 'inactive'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showAdd ? (
-        <div className="rounded-lg border border-dt-border bg-dt-inset p-3 space-y-2 mb-3">
-          <select value={targetId} onChange={e => setTargetId(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
-            <option value="">Consult which employee…</option>
-            {roster.map(d => <option key={d.id} value={d.id}>{d.persona_name || d.name}</option>)}
-          </select>
-          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
-            <option value="">On which category…</option>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
-            <button onClick={addGrant} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setShowAdd(true)} className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel mb-3">
-          + Grant a consultation
-        </button>
-      )}
-
-      {asTarget !== null && asTarget.length > 0 && (
         <>
-          <p className="text-xs text-dt-support mb-1">Consulted by:</p>
-          <div className="space-y-1">
-            {asTarget.map(g => (
-              <div key={g.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-xs text-dt-support">
-                {nameById[g.requester_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category} · {g.active ? 'active' : 'inactive'}</span>
+          {/* One specialist → one switch. The ranked chooser only made sense
+              with a bench to rank; every live tenant has a bench of one. */}
+          {soleSpecialist && (
+            <label className="flex items-center gap-2.5 rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3 cursor-pointer">
+              <input type="checkbox" checked={soleOn} disabled={busy}
+                onChange={() => void toggleSpecialistHelp()} className="accent-teal-500" />
+              <span className="text-sm text-dt-body">
+                May ask {soleSpecialist.name}{soleSpecialist.status !== 'active' ? ' (paused)' : ''} for help
+              </span>
+              <span className="text-[10px] text-dt-muted ml-auto">writes the enforced grant table</span>
+            </label>
+          )}
+
+          {/* Two or more specialists → the ranked consult desks come back. */}
+          {specialists.length >= 2 && (
+            <div className="mb-3">
+              <p className="text-[11px] text-dt-muted mb-2">
+                With more than one specialist on the bench, {name} consults its primary first and falls
+                back to the secondary if the primary is paused.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {([1, 2] as const).map(rank => (
+                  <div key={rank}>
+                    <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
+                    <select
+                      value={assigned[rank] ?? ''}
+                      disabled={busy}
+                      onChange={e => void setRank(rank, e.target.value)}
+                      className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                    >
+                      <option value="">— none —</option>
+                      {specialists.map(sp => (
+                        <option key={sp.id} value={sp.id}>
+                          {sp.name}{sp.status !== 'active' ? ' (paused)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* The grants themselves — the CRUD moved here from Governance. */}
+          <p className="text-xs text-dt-support mb-1">Help granted:</p>
+          {asRequester.length === 0 ? (
+            <p className="text-xs text-dt-faint mb-3">No help granted yet — {name} works alone until you grant some.</p>
+          ) : (
+            <div className="space-y-1 mb-3">
+              {asRequester.map(g => (
+                <div key={g.id} className="flex items-center justify-between rounded-lg bg-dt-inset px-3 py-1.5 text-xs">
+                  <span className="text-dt-support">{nameById[g.target_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category}</span></span>
+                  <button onClick={() => toggleGrant(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                    {g.active ? 'active' : 'inactive'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showAdd ? (
+            <div className="rounded-lg border border-dt-border bg-dt-inset p-3 space-y-2 mb-3">
+              <select value={targetId} onChange={e => setTargetId(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
+                <option value="">Ask which colleague…</option>
+                {roster.map(d => <option key={d.id} value={d.id}>{d.persona_name || d.name}</option>)}
+              </select>
+              <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white">
+                <option value="">On which category…</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
+                <button onClick={addGrant} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowAdd(true)} className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel mb-3">
+              + Grant help from a colleague
+            </button>
+          )}
+
+          {/* Display truth — what this employee can ACTUALLY reach right now,
+              straight from list_consultable_for_de. */}
+          {consultable.length > 0 && (
+            <div className="mt-1 pt-3 border-t border-dt-border">
+              <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Can consult</p>
+              <div className="flex flex-wrap gap-1.5">
+                {consultable.map(c => (
+                  <span key={c.target_de_id}
+                    className={`text-[11px] px-2 py-1 rounded-lg border ${
+                      c.is_specialist
+                        ? 'bg-violet-500/10 border-violet-500/30 text-violet-200'
+                        : 'bg-dt-panel border-dt-border-strong text-dt-support'}`}>
+                    {c.name}
+                    <span className="text-dt-muted ml-1">
+                      {c.is_specialist ? `specialist${c.rank ? ` · ${c.rank === 1 ? 'primary' : 'backup'}` : ''}` : 'peer'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {asTarget.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs text-dt-support mb-1">Asked by:</p>
+              <div className="space-y-1">
+                {asTarget.map(g => (
+                  <div key={g.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-xs text-dt-support">
+                    {nameById[g.requester_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category} · {g.active ? 'active' : 'inactive'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Delegated tasks belong to the same "colleagues" cluster (docs/31 Q6).
+          Founder decision #4 (cut vs keep) is OPEN — moved here unchanged. */}
+      <DelegationPanel de={de} />
+    </div>
+  );
+}
+
+// ── Consultations & delegations — READ-ONLY audit view for Governance.
+// Setup lives on Profile & Capabilities (Colleagues & help); this is the
+// record of what actually happened. spec_consultations attributes the
+// requester by KIND (employee / playbook / person), not by name — shown
+// honestly rather than guessed.
+function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
+  type ConsultRow = { id: string; question: string; status: string; confidence: number | null; requested_by: string; specialist_de_id: string | null; created_at: string };
+  const [consults, setConsults] = useState<ConsultRow[] | null>(null);
+  const [tasks, setTasks] = useState<{ inbound: DETaskRequest[]; outbound: DETaskRequest[] } | null>(null);
+  const [nameById, setNameById] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let q = supabase.from('spec_consultations')
+          .select('id, question, status, confidence, requested_by, specialist_de_id, created_at')
+          .order('created_at', { ascending: false }).limit(8);
+        // A specialist's file shows the consultations IT answered; any other
+        // employee shows the workspace's recent consultations (the log does
+        // not record which DE asked — only that a DE, playbook, or person did).
+        if (de.is_specialist) q = q.eq('specialist_de_id', de.id);
+        const [{ data: cons }, t, des] = await Promise.all([
+          q, listDeTaskRequests(de.id), listDigitalEmployees(),
+        ]);
+        if (cancelled) return;
+        setConsults((cons ?? []) as ConsultRow[]);
+        setTasks(t);
+        setNameById(Object.fromEntries(des.map(d => [d.id, d.persona_name || d.name])));
+      } catch {
+        if (!cancelled) { setConsults([]); setTasks({ inbound: [], outbound: [] }); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [de.id, de.is_specialist]);
+
+  const who = (id: string | null) => id ? (nameById[id] || 'a colleague') : 'You';
+  const REQUESTER_LABEL: Record<string, string> = { de: 'an employee', playbook: 'a playbook', human: 'a person' };
+  const allTasks = [...(tasks?.inbound ?? []), ...(tasks?.outbound ?? [])]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 6);
+
+  return (
+    <div className="mt-4 pt-4 border-t border-dt-border">
+      <div className="flex items-center gap-2 mb-1">
+        <h4 className="text-xs font-semibold text-dt-title">Consultations & delegations — audit view</h4>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">read-only</span>
+      </div>
+      <p className="text-[10px] text-dt-faint mb-2">
+        Who asked for help and what came of it. Setup lives on Profile &amp; Capabilities.
+      </p>
+      {consults === null ? (
+        <p className="text-[11px] text-dt-muted">Loading…</p>
+      ) : (
+        <>
+          {consults.length === 0 ? (
+            <p className="text-[11px] text-dt-muted mb-2">
+              {de.is_specialist ? 'No consultations answered by this specialist yet.' : 'No consultations recorded in this workspace yet.'}
+            </p>
+          ) : (
+            <div className="space-y-1 mb-2">
+              {!de.is_specialist && (
+                <p className="text-[10px] text-dt-faint">Workspace-wide — the log records who asked by kind, not by name.</p>
+              )}
+              {consults.map(c => (
+                <div key={c.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-[11px] text-dt-support flex items-center gap-2">
+                  <span className="flex-1 truncate">{c.question}</span>
+                  <span className="text-dt-faint whitespace-nowrap">
+                    asked by {REQUESTER_LABEL[c.requested_by] ?? c.requested_by}
+                    {c.specialist_de_id ? ` → ${who(c.specialist_de_id)}` : ''} · {c.status}
+                    {c.confidence != null ? ` · ${c.confidence}%` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {allTasks.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-wide text-dt-faint">Delegated tasks</p>
+              {allTasks.map(t => (
+                <div key={t.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-[11px] text-dt-support flex items-center gap-2">
+                  <span className="flex-1 truncate">{t.title}</span>
+                  <span className="text-dt-faint whitespace-nowrap">{who(t.from_de_id)} → {who(t.to_de_id)} · {t.status.replace('_', ' ')}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1197,15 +1481,13 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
         {retired && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">retired — read-only</span>}
       </div>
       <p className="text-xs text-dt-muted mb-4">
-        Who's accountable for this employee, every configuration change on record, and how retirement works.
+        Every configuration change on record, who supervises routing, what help was actually used, and how retirement works.
       </p>
 
       {/* docs/31 Q11: the "Owner" column was a dead limb (0 of 116 DEs ever
-          had one; no security rule read it). The real accountability model is
-          de_assignments — primary/manager/executive — shown on the Record tab. */}
-      <p className="rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3 text-xs text-dt-support">
-        Responsible people — managed on the Record tab
-      </p>
+          had one; no security rule read it). The real accountability model —
+          de_assignments, primary/manager/executive — renders as the
+          Responsible people panel at the top of this Governance section. */}
 
       <div className="flex gap-2 mb-3">
         {!retired && (
@@ -1216,11 +1498,6 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
         <button onClick={loadHistory} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           {showHistory ? 'Hide' : 'View'} config history
         </button>
-        {!retired && (
-          <button onClick={() => setModal('retire')} className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-red-900/50 text-red-400 hover:bg-red-950/40 transition-colors">
-            Retire
-          </button>
-        )}
       </div>
 
       {showHistory && (
@@ -1252,13 +1529,24 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
           </label>
           {de.is_supervisor && (
             <p className="text-[11px] text-dt-faint mt-1">
-              Incoming in-app questions route to the teammate best matched by responsibility, using the consultation grants below. If none match, {de.persona_name || de.name} answers directly.
+              Incoming in-app questions route to the teammate best matched by responsibility, using this employee's consultation grants (Profile &amp; Capabilities → Who can this employee ask for help?). If none match, {de.persona_name || de.name} answers directly.
             </p>
           )}
         </div>
       )}
-      {!retired && <DelegationPanel de={de} />}
-      {!retired && <ConsultationsPanel de={de} />}
+
+      {/* Read-only record of consultations & delegations — setup moved to
+          Profile & Capabilities (docs/31 Q6); governance keeps the audit. */}
+      <ConsultationsAuditPanel de={de} />
+
+      {!retired && (
+        <div className="mt-4 pt-4 border-t border-dt-border">
+          <button onClick={() => setModal('retire')} className="text-xs px-3 py-1.5 rounded-lg border border-red-900/50 text-red-400 hover:bg-red-950/40 transition-colors">
+            Retire this employee
+          </button>
+          <p className="text-[10px] text-dt-faint mt-1">Retirement runs real dependency checks first — nothing is silently orphaned.</p>
+        </div>
+      )}
 
       {modal === 'edit' && <EditDEModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
       {modal === 'retire' && <RetireDEModal de={de} onClose={() => setModal(null)} onRetired={onUpdated} />}
@@ -1312,106 +1600,10 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
   );
 }
 
-// ── Specialists panel — primary & secondary consult desks ──────────
-// A DE consults its PRIMARY specialist first; if that profile is
-// paused, the SECONDARY. Playbook steps using profile_key "auto"
-// resolve through this assignment (migration 122).
-interface ConsultableRow { target_de_id: string; name: string; is_specialist: boolean; rank: number | null; grant_kind: string }
-function DeSpecialistsPanel({ deId }: { deId: string }) {
-  const [specialists, setSpecialists] = useState<Array<{ id: string; name: string; key: string; status: string }>>([]);
-  const [assigned, setAssigned] = useState<Record<number, string>>({});
-  // Wave 4: the one consult list — assigned specialists AND peer-DE grants.
-  const [consultable, setConsultable] = useState<ConsultableRow[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const [{ data: sps }, { data: rows, error: err }, { data: cons, error: consErr }] = await Promise.all([
-      supabase.from('digital_employees').select('id, name, key:specialist_key, status').eq('is_specialist', true).order('created_at'),
-      supabase.rpc('list_de_specialists', { p_de_id: deId }),
-      supabase.rpc('list_consultable_for_de', { p_de_id: deId }),
-    ]);
-    if (err) { setError(err.message); return; }
-    if (consErr) setError(consErr.message);
-    setSpecialists((sps ?? []) as typeof specialists);
-    // supabase.rpc on a json-returning function may hand back the array
-    // directly or a JSON string depending on the client — normalise both.
-    const consList = typeof cons === 'string' ? JSON.parse(cons) : cons;
-    setConsultable((Array.isArray(consList) ? consList : []) as ConsultableRow[]);
-    const map: Record<number, string> = {};
-    for (const r of (rows ?? []) as Array<{ rank: number; specialist_id: string }>) map[r.rank] = r.specialist_id;
-    setAssigned(map);
-  }, [deId]);
-  useEffect(() => { void load(); }, [load]);
-
-  const setRank = async (rank: 1 | 2, specialistId: string) => {
-    setBusy(true); setError(null);
-    const { error: err } = await supabase.rpc('set_de_specialist', {
-      p_de_id: deId, p_rank: rank, p_specialist_id: specialistId || null,
-    });
-    if (err) setError(err.message);
-    await load();
-    setBusy(false);
-  };
-
-  return (
-    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-      <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Specialists</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">consult desks</span>
-      </div>
-      <p className="text-[11px] text-dt-muted mb-3">
-        When this employee needs help beyond its own knowledge, it consults its primary specialist —
-        and falls back to the secondary if the primary is paused. Playbook “Consult specialist” steps
-        set to <span className="text-dt-support">auto</span> resolve through this assignment.
-      </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
-      <div className="grid grid-cols-2 gap-3">
-        {([1, 2] as const).map(rank => (
-          <div key={rank}>
-            <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
-            <select
-              value={assigned[rank] ?? ''}
-              disabled={busy}
-              onChange={e => void setRank(rank, e.target.value)}
-              className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-            >
-              <option value="">— none —</option>
-              {specialists.map(sp => (
-                <option key={sp.id} value={sp.id}>
-                  {sp.name}{sp.status !== 'active' ? ' (paused)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-      </div>
-
-      {/* Wave 4: the ONE consult list — assigned specialists and peer-DE
-          grants together, since a specialist is a DE now. Read-only view
-          of what this employee can actually reach (list_consultable_for_de). */}
-      {consultable.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-dt-border">
-          <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Can consult</p>
-          <div className="flex flex-wrap gap-1.5">
-            {consultable.map(c => (
-              <span key={c.target_de_id}
-                className={`text-[11px] px-2 py-1 rounded-lg border ${
-                  c.is_specialist
-                    ? 'bg-violet-500/10 border-violet-500/30 text-violet-200'
-                    : 'bg-dt-panel border-dt-border-strong text-dt-support'}`}>
-                {c.name}
-                <span className="text-dt-muted ml-1">
-                  {c.is_specialist ? `specialist${c.rank ? ` · ${c.rank === 1 ? 'primary' : 'backup'}` : ''}` : 'peer'}
-                </span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// (The old "Specialists" panel that lived here — the Primary/Secondary
+// matrix writing de_specialist_assignments, a table no runtime path
+// reads — was replaced by ColleaguesHelpPanel above, which writes the
+// ENFORCED de_consultation_grants table. docs/31 Q6.)
 
 // ── Voice & Conversation panel (migration 325/327). The employee's MANNER,
 // kept deliberately separate from Identity & Purpose: identity says who it is,
@@ -1796,7 +1988,7 @@ type KpiStatus = {
 // The KPI list used to be a constant here, which is exactly why a workspace
 // could not track anything the platform had not thought of. It now comes from
 // kpi_metric_catalog (migration 205) via list_kpi_metrics().
-function DeKpisPanel({ de }: { de: DigitalEmployee }) {
+export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   const [kpis, setKpis] = useState<KpiStatus[] | null>(null);
   // The metric list is now this workspace's catalog (built-ins + its own),
   // not a constant compiled into the page.
@@ -1893,7 +2085,16 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
         <p className="text-xs text-dt-muted mb-3">No KPIs set yet.</p>
       ) : (
         <div className="space-y-1.5 mb-3">
-          {kpis.map(k => (
+          {kpis.map(k => {
+            // docs/31 Q9 quick win: units are STORED on the metric catalog and
+            // were never rendered — "92% / target ≥ 95%", not two bare numbers.
+            // Client-side join against the already-loaded metrics list; the
+            // shared RPC (get_de_kpi_status, also read by LiveOutcomesPage)
+            // stays untouched.
+            const metric = metrics.find(m => m.metric_key === k.metric_key);
+            const u = metric?.unit ?? '';
+            const withUnit = (v: number | null) => v === null ? '—' : u === '%' ? `${v}%` : u ? `${v} ${u}` : String(v);
+            return (
             <div key={k.kpi_id} className="flex items-center gap-2 text-xs flex-wrap">
               <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                 k.met === null ? 'bg-dt-panel text-dt-muted'
@@ -1902,12 +2103,19 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
               </span>
               <span className="text-dt-support">{k.name}</span>
               <span className="text-dt-muted">
-                {k.current === null ? '—' : k.current} / target {k.direction === 'higher' ? '≥' : '≤'} {k.target}
+                {withUnit(k.current)} / target {k.direction === 'higher' ? '≥' : '≤'} {withUnit(k.target)}
                 {k.sample > 0 ? ` · ${k.sample} sampled` : ''}
               </span>
+              {/* Where the number comes from — measured by the platform, or
+                  typed in by a person (the metric catalog knows). */}
+              {metric && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-faint">
+                  {metric.source === 'manual' ? 'you record this' : metric.source === 'action' ? 'auto from actions' : 'auto-tracked'}
+                </span>
+              )}
               {/* Manual metrics need somebody to record the number — without
                   this they would sit at "—" forever and look broken. */}
-              {metrics.find(m => m.metric_key === k.metric_key)?.source === 'manual' && (
+              {metric?.source === 'manual' && (
                 <button onClick={() => { setReading({ key: k.metric_key, name: k.name }); setReadingValue(''); }}
                   disabled={busy}
                   className="text-[10px] text-indigo-400 hover:text-indigo-300">
@@ -1920,7 +2128,8 @@ function DeKpisPanel({ de }: { de: DigitalEmployee }) {
                 Remove
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -2012,7 +2221,7 @@ type Economics = {
   human_cost_equivalent_usd: number | null; monthly_saving_usd: number | null; roi_ratio: number | null;
   unconfigured: string[]; configured: boolean;
 };
-function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
+export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
   const [eco, setEco] = useState<Economics | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [fteCost, setFteCost] = useState('');
@@ -2893,6 +3102,11 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
       {/* Lifecycle — the governance gate (DE-B4) */}
       <DeLifecyclePanel de={de} onUpdated={onUpdated} />
 
+      {/* Certification — moved in from the Workbench (docs/31 step 8): a
+          failed or stale exam is what mechanically clamps autonomy through
+          the mig-258 records gate, so it lives beside the trust machinery. */}
+      <DeCertificationPanel deId={de.id} />
+
       {/* Trust dial */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
@@ -3207,13 +3421,19 @@ function DeAmendmentBlock({ de }: { de: DigitalEmployee }) {
 }
 
 /** The merged profile sections consumed by EmployeeFilePage — the single
- *  employee page. Keys mirror its tab keys. */
-export type DeProfileSectionKey = 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
+ *  employee page. Keys mirror its tab keys. (docs/31 steps 7-8: the old
+ *  'capabilities' section merged into 'profile'; 'development' dissolved
+ *  into the Performance tab, its panels exported above.) */
+export type DeProfileSectionKey = 'profile' | 'trust' | 'governance' | 'specialist';
 
 export function DeProfileSections({ de, section, setPage, onUpdated }: {
   de: DigitalEmployee; section: DeProfileSectionKey; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
 }) {
   if (section === 'profile') {
+    // ONE setup tab (docs/31 step 7): who the employee is, then how it is
+    // configured — identity first, capabilities config second, and the
+    // Colleagues & help cluster (the enforced consultation grants +
+    // delegated tasks) closing the section.
     return (
       <div className="space-y-6">
         {/* W4-E (docs/16): the golden-gated amendment flow was demo-only —
@@ -3224,38 +3444,28 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
         <DeIdentityPanel de={de} onUpdated={onUpdated} />
         <DeVoicePanel de={de} onUpdated={onUpdated} />
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
-      </div>
-    );
-  }
-  if (section === 'capabilities') {
-    return (
-      <div className="space-y-6">
         <DeModelPanel de={de} onUpdated={onUpdated} />
         <DeReplyModePanel de={de} onUpdated={onUpdated} />
         <AttachedProceduresPanel deId={de.id} setPage={setPage} />
         <DeKnowledgeScopePanel deId={de.id} />
         <DeSystemAccessPanel deId={de.id} setPage={setPage} />
-        <DeSpecialistsPanel deId={de.id} />
         <DeEscalationPanel deId={de.id} />
+        {/* A retired employee asks nobody for help and delegates nothing — the
+            guard DeGovernancePanel used to hold, restored after the move. */}
+        {de.lifecycle_status !== 'retired' && <ColleaguesHelpPanel de={de} />}
       </div>
     );
   }
   if (section === 'trust') return <DeTrustAutonomySection de={de} setPage={setPage} onUpdated={onUpdated} />;
-  if (section === 'development') {
-    return (
-      <div className="space-y-6">
-        <DeSkillsPanel de={de} />
-        <DeKpisPanel de={de} />
-        <DeEconomicsPanel de={de} />
-        <DeReviewsPanel de={de} />
-        <DeDevelopmentPanel de={de} />
-      </div>
-    );
-  }
   if (section === 'governance') {
+    // docs/31 step 9 order: Responsible people (the real accountability
+    // model, moved from Record), guardrails, compliance packs (from the
+    // Workbench), then config/supervisor/audit/retirement.
     return (
       <div className="space-y-6">
+        <ResponsiblePeoplePanel deId={de.id} deName={de.persona_name || de.name} />
         <ScopedGuardrails scope="employee" scopeRef={de.id} entityLabel={de.persona_name || de.name} />
+        <DeCompliancePanel />
         <DeGovernancePanel de={de} onUpdated={onUpdated} />
         {/* Incidents moved to the Record tab — they are the record. */}
       </div>
