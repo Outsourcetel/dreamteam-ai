@@ -610,7 +610,24 @@ export async function decideHumanTask(
   // playbook resume — would double-charge / double-send. So return early WITHOUT
   // running a single hook. (The gated-action path re-returned the original gated row
   // and re-called runRegisteredAction on a second approval — a real double-execute.)
-  if (!data) {
+  // ⚠ TEST THE PRIMARY KEY, NOT THE OBJECT. decide_human_task RETURNS
+  // human_tasks — a COMPOSITE — and PostgREST serializes a NULL composite as a
+  // row of ALL-NULL COLUMNS, not JSON null. So `data` is a truthy object even
+  // when the function returned NULL, and this guard was DEAD from the moment
+  // mig 455 swapped the direct UPDATE for the RPC. Migration 455's claim that
+  // the contract was "byte-compatible with .maybeSingle()" was wrong.
+  //
+  // Confirmed in production, not reasoned about: activity_events holds
+  // "Approved — Guardrail block — What should a DE do if a customer threatens
+  // legal action…" logged THREE TIMES between 16:28:34 and 16:29:11 on
+  // 2026-07-27 — one human, three clicks, three runs of every hook below.
+  // That task was an escalation and had no applier, so nothing was
+  // double-sent; the same three clicks on an action_approval or a
+  // renewal_invoice would have been three external charges.
+  //
+  // Found by the audit stream's approval-capture test; verified here against
+  // live rows before changing anything.
+  if (!data || (data as { id?: string | null }).id == null) {
     const { data: current } = await supabase.from('human_tasks').select('*').eq('id', task.id).eq('tenant_id', tid).maybeSingle();
     return (current ?? task) as DBHumanTask;
   }
