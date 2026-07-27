@@ -215,6 +215,12 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // offered inside Company Setup, and its route stays valid for the
         // Getting Started guide's deep link.
         { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
+        // People was UNREACHABLE: UserManagementPage exists and App.tsx routes
+        // to it, but no nav entry pointed at 'users' — so a workspace owner
+        // could not invite anybody. Same defect Settings had, found the same
+        // way: by someone trying to do the thing and finding no door.
+        // ADMIN tier already, via navAccess ADMIN_PAGES.
+        { id: 'users', label: 'People & Access', icon: '◎', page: 'users' },
         { id: 'settings', label: 'Settings', icon: '◈', page: 'settings' },
       ],
     },
