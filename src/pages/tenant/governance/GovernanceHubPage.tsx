@@ -13,13 +13,16 @@ import TrustArchitecturePage from './TrustArchitecturePage';
 // what the rules are, what happened, who can get in, what data is reachable,
 // which identities exist, and how the architecture earns trust. Tabs stay real
 // Page keys so old /governance/* URLs deep-link via URLSync.
+// Security & Access left for Settings: it is administration, not oversight,
+// and it duplicated the Settings Security tab.
+// Trust & Architecture left for the DreamTeam console: an internal
+// architecture document, never a customer feature. It was already
+// platform-staff-only in navAccess, so this changes IA, not access.
 const TABS: { page: Page; label: string }[] = [
   { page: 'gov_compliance', label: 'Compliance & Guardrails' },
   { page: 'gov_audit', label: 'Audit Trail' },
-  { page: 'gov_security', label: 'Security & Access' },
   { page: 'gov_data_access', label: 'Data Access' },
   { page: 'gov_identity_inventory', label: 'Identity & Credentials' },
-  { page: 'gov_trust', label: 'Trust & Architecture' },
 ];
 
 const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => void }) => {

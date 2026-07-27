@@ -1,4 +1,5 @@
 import DataExportPanel from '../../components/DataExportPanel';
+import SecurityAccessPage from './governance/SecurityAccessPage';
 import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
 import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
 import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
@@ -874,7 +875,15 @@ const userHash = crypto
         </div>
       )}
 
-      {(activeTab === 'billing' || activeTab === 'security') && (
+      {/* Security & Access moved here from the Governance hub (founder call).
+          It was the ONE governance surface that is pure administration — API
+          keys, MFA, sessions, IP allowlist — sitting at ADMIN tier inside a
+          MANAGE-tier module, and it DUPLICATED this tab, which was only ever a
+          "coming soon" placeholder. Nothing was lost in the merge: the real
+          screen replaces a stub. */}
+      {activeTab === 'security' && <SecurityAccessPage />}
+
+      {activeTab === 'billing' && (
         <div className="max-w-2xl">
           <div className="bg-dt-card border border-dt-border rounded-xl p-8 text-center">
             <div className="text-4xl mb-3">*</div>
