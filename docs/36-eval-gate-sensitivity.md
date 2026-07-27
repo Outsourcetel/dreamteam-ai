@@ -218,8 +218,33 @@ still turn the gate red. Simulating the new rule over all nine graded runs:
 Seven runs that were red on outages and one-off partials would now be green.
 The guardrail refusal still closes the gate on its first appearance.
 
-**The gate does not turn green on deploy, and that is correct.** The most
-recent run stays red because *"Can a Digital Employee take actions in my
-systems?"* came back partial on both 25 and 27 July. That is the rule working:
-a completeness gap that survives two draws is real. The difference is that
-there is now one specific, stable target to fix instead of a coin flip.
+### ⚠ Correction — the simulation and the code disagree on the first run
+
+The table above was produced in SQL by parsing the `judge verdict "partial"`
+marker out of each result's reason text. **The shipped code does not do that.**
+It reads the new `verdict` field, which no historical result has, because this
+change is what introduced it.
+
+So on the FIRST run after deploy, every partial looks like a first occurrence
+and none of them gate. The row reading "07-27 → RED on a repeated partial" is
+what the rule will do *once two runs have stored verdicts* — it is not what
+happens on the next run.
+
+What survives unchanged: **a hard `fail` still gates on its first appearance**,
+which was the condition set for shipping. What does not survive: the claim that
+the persistence rule is active immediately. It is one run late, and
+self-correcting from the first new-format run.
+
+Caught by the audit-stream session from a different angle, without seeing this
+code. Two fixes are possible — parse the marker as a one-time bootstrap, or
+accept the one-run delay. Being tracked there alongside the `eval_gate` view
+change.
+
+### One more hole, not closed by this change
+
+`eval_gate` is `DISTINCT ON (tenant_id) … WHERE finished_at IS NOT NULL ORDER BY
+finished_at DESC` — so a finished *halted* run becomes the tenant's gate row.
+It will not block publishing (the trigger tests `= 'failed'`), but it
+**overwrites a real failure**: a genuine red followed by an outage silently
+opens the gate. Being fixed separately by filtering the view to quality
+statuses.
