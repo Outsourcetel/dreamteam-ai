@@ -219,92 +219,195 @@ Naming stays trademark-compliant: "DreamTeam SMB Suite — managed ERP powered b
 | D4 | Pursue Frappe partner tier (2 certifications — who?) | Yes, after first 5 bundle customers |
 | D5 | Green-light Phase 1a+1b now (serves BYO-ERP customers regardless of bundle) | Yes |
 
-## 7. Detailed roadmap (added 2026-07-28 on founder request — still nothing built)
+## 7. Program roadmap v2 — full depth (2026-07-28; supersedes the §3 estimates)
 
-Seven milestones. Each is independently shippable, has a machine-checkable exit proof,
-and names what (if anything) becomes sellable at that point. Sessions = one focused
-build session incl. verification.
+§3's phases were the *connector spine*. This section is the full program for running
+real customers' back offices: seven parallel workstreams, four stage gates, and the
+work the thin version skipped — books migration, lifecycle parity, drift
+reconciliation, money-action governance, support operations, disaster drills.
+**Nothing here is started; D1–D5 still gate everything.**
 
-### M0 — Prerequisites (0.5 session, blocked on D1–D5)
-- Founder answers D1–D5 (§6). D2 (landing zone) gates M3; D3 (price) gates M5 go-live.
-- Spin up a dev ERPNext trial site on Frappe Cloud (manual, ~15 min) as build target.
-- Re-verify the two research-debt items: Frappe Cloud API team-token auth mechanics,
-  current partner terms.
-- Exit: decisions recorded in this doc; dev site reachable.
+### 7.0 Operating principles (the "not a shell" clause)
 
-### M1 — "It connects" (1 session)
-Internal proof on the pure-data path (zero new TS, the mig 037/043 pattern):
-- One `adapter_templates` row: ERPNext token auth (`Authorization: token key:secret`),
-  `base_url` = dev site, ops `search_invoices`/`get_invoice` → `/api/resource/Sales
-  Invoice`, `test_op`, plus ONE template action binding to prove the write path.
-- Connector row via existing wizard; secret via existing `set_connector_secret` (Vault).
-- Exit proof: `hubTest` green; `category_op` returns real Sales Invoice rows; one gated
-  action approved in the approvals inbox lands a visible record in ERPNext.
-- Sellable: nothing yet (proof rig). Risk retired: auth, API shape, action round-trip.
+1. **Deep operator integration, never embedding.** No ERPNext iframes in our UI. DEs
+   act *in* the ERP through the governed action gate; our surfaces are first-class
+   DreamTeam pages over mirrored data. The bundle is "an AI back-office team that
+   comes with its own ERP," not a skinned ERP.
+2. **One direction of truth.** The ERP is the system of record; our tables are a
+   governed mirror. Every write path goes through `decide_action_execution`
+   (destructive floor → guardrails → trust). Mirror drift is *detected and alarmed*,
+   never silently corrected.
+3. **Event-driven, not poll-only.** ERPNext webhooks feed our trigger layer; the
+   5-minute polls become the fallback, not the mechanism.
+4. **Lifecycle parity.** Suspend, delete, export, and restore cover the bundled ERP
+   too — a suspended bundle tenant's ERP site is deactivated alongside our dormancy
+   guards (mig 430), and offboarding hands the customer a standard, restorable ERPNext.
+5. **Staffed, not empty.** The bundle ships with a hired back-office team (DEs with
+   role kits, playbooks, KPIs, trust progression starting at draft-for-approval), not
+   bare software.
 
-### M2 — First-class `erpnext` provider, live for ALL tenants (2–3 sessions)
-- Migration: widen `connectors_provider_check` + platform-scope `action_definitions`
-  for the dunning trio (mig 217 `WHERE NOT EXISTS` shape — today they exist only
-  tenant-scoped for one tenant).
-- connector-hub: native adapter (test/search/fetchRecord/listRecent),
-  `PROVIDER_OP_TRANSLATORS.erpnext` for `erp_financials` (+ `crm`: Customer →
-  `search_accounts`/`get_account` if in scope), `NATIVE_ACTIONS` executors. Exact
-  ERPNext DocType mapping for each action (reminder → Communication/Email, final notice
-  → ditto with template, flag_for_collections → ToDo/tag) is a build-time design note.
-- Frontend: `PROVIDERS.erpnext` + icon + wizard fields (site URL, api key, api secret).
-- Deploys: connector-hub + frontend (founder-run or approved, same as today's process).
-- Exit proof: a fresh tenant connects a real ERPNext through the wizard; DE tools appear
-  automatically (mig 074); approved action executes in ERPNext with plain-language receipt.
-- **Sellable: "bring your ERPNext" for every existing + new tenant** (always-live rule).
+### 7.1 Stage gates
 
-### M3 — Real books drive the existing workforce (1–2 sessions, needs D2)
-- Small migration: external-ref column(s) on the landing tables for idempotent upserts
-  (`renewal_invoices` has no external reference today).
-- Sync path in connector-hub for erpnext: Customer → `customer_accounts`,
-  Sales Invoice → `renewal_invoices` (status + due-date mapping, amount→cents,
-  currency guard). Reuses scheduled-sync columns (migs 287/288).
-- Optional freshness: ERPNext Webhook → our existing `emit-event` fn (tenant api key).
-- Exit proof (the money shot): a genuinely overdue invoice in dev ERPNext →
-  `invoice_overdue` trigger fires Sasha's existing dunning playbook → approval task with
-  the REAL invoice reference → approval executes the reminder into ERPNext → staleness
-  watchdog tracks it to paid.
-- Sellable: same as M2, but now honest end-to-end ("our DEs run your AR ledger").
+| Gate | Meaning | Entry | Exit proof (machine-checkable where possible) |
+|---|---|---|---|
+| **G0 — Foundations** | decisions + legal + dev rig | this doc | D1–D5 recorded; Frappe Cloud token-auth + partner terms re-verified; dev ERPNext site live; naming cleared against trademark policy |
+| **G1 — Spine proven** | tech risk retired | G0 | scripted E2E: real overdue invoice in dev ERP → existing dunning playbook fires → approval task with real ref → approved action lands in ERP → drift check passes |
+| **G2 — Private beta** | 2–3 design partners on real books | G1 | each partner: books migrated with sign-off, ≥30 days live, ≥1 DE promoted past draft-only on evidence, zero sev-1, support flow exercised |
+| **G3 — GA bundle** | sellable at D3 price | G2 | provisioning <30 min signup→live (timed), restore drill PASSED on a real partner backup, runbooks + SLAs published, billing line-item live |
 
-### M4 — Inline AR workbench (1–2 sessions)
-- New tenant page: aging buckets, dunning queue with DE activity
-  (`get_de_work_product` already groups it), invoice drill-in + deep link into ERPNext,
-  approval shortcuts. dt-tokens design law; nav gated on the role/module axis.
-- Exit proof: drift detector clean; screenshot review; data matches ERPNext to the cent.
-- **Sellable: the "single platform" demo** — ERP data + governed workforce in one screen.
+### 7.2 Workstreams and work packages
 
-### M5 — The bundle: auto-provisioned ERP (2–3 sessions, needs D3)
-- Vault `platform_config` key for the Frappe Cloud team token + platform-admin-only
-  setter RPC (mirrors `set_oauth_app`, mig 141).
-- `provision-erp` edge fn (`demo-provision` shape, idempotent): `press.api.site.new`
-  (apps=[erpnext]) → poll jobs to readiness → mint api key/secret in the new site →
-  connector row + secret → onboarding items with `verify` blocks (machine-confirmed
-  go-live, mig 076). Half-created-site cleanup + `ops_alert` on failure.
-- Bundle-plan flag (feature_registry) gating the trigger from the signup path
-  (mig 118 contract amended deliberately for this one connector).
-- Support rail: ingest ERPNext docs into the Support DE's KB (existing URL-ingestion
-  pipeline) + escalation note to Frappe support.
-- Exit proof: brand-new test tenant on the bundle plan reaches "live ERP + connected
-  connector + verified onboarding" with zero human touch, timed.
-- **Sellable: DreamTeam SMB Suite at the D3 price.** Billing = manual line item first;
-  automated billing is out of scope here.
+Estimates are focused build sessions including verification. Parallelism noted per track.
 
-### M6 — Feels-like-one login (1 session)
-- Mirror team invites into ERPNext users via REST; deep links from our surfaces;
-  optional shared Google/Microsoft social login configured on both sides.
-- Exit proof: an invited user reaches the ERP from DreamTeam without creating a second
-  password.
-- Deferred hard: true OIDC IdP (4b), Odoo connector, `invoices`-table unification,
-  partner certifications (D4 timing).
+**Track A — Connector & action platform (6–8 sessions)** — starts at G0 exit
+- A1 Provider foundation (1.5): native `erpnext` adapter (test/search/fetch/listRecent),
+  token auth, health, SSRF-safe; `connectors_provider_check` widening; `PROVIDERS` UI.
+- A2 Read surface beyond invoices (1.5): Customer/Payment Entry/Sales Order ops —
+  requires extending `CATEGORY_OPS` in BOTH contract files + the template validator
+  (mig 107 rule: the list is data, the contract is reviewed code). Aging computation.
+- A3 Action catalog v1 (1.5): platform-scope `action_definitions` (mig 217 shape) for
+  the dunning trio + `record_payment_promise`, `add_comment`, `create_todo`; explicit
+  destructive/idempotent risk classification per action; plain-language previews.
+- A4 Event plane (1): ERPNext Webhook → `emit-event` (tenant api key auth, exists) →
+  trigger-layer mapping (`invoice_overdue` realtime, `payment_received` clears dunning).
+- A5 Knowledge sync (0.5–1): customer's ERP item/policy docs into the DE KB
+  (`KNOWLEDGE_CAPABLE` + existing ingestion).
+- A6 Odoo parity: assessment only, separate program — recorded so it is a decision,
+  not a drift.
 
-### Dependency spine + running total
-M0 → M1 → M2 → M3 → M4; M5 needs M2 (+M3 for real value); M6 after M5.
-Totals: M0 0.5 · M1 1 · M2 2–3 · M3 1–2 · M4 1–2 · M5 2–3 · M6 1 → **8.5–12.5 sessions**.
-First sellable value at M2; bundle sellable at M5.
+**Track B — Data plane & reconciliation (4–6 sessions)** — parallel after A1
+- B1 Canonical mapping (1): external-ref columns migration; amount→cents; currency
+  guard (reject non-tenant-currency until multi-currency is scoped); multi-company =
+  out of scope v1, detected and refused loudly at connect time.
+- B2 Sync engine (1.5): webhook-driven + scheduled upserts, idempotent by external ref;
+  conflict policy = ERP wins, local edits to mirrored fields are blocked at the RPC.
+- B3 Drift sentinel (1): nightly count/sum reconciliation ERP↔mirror per tenant →
+  `ops_alerts` + tenant-visible health chip (the invariant-suite pattern from the
+  verification-discipline memory — asserts that would catch OUR bugs, not just theirs).
+- B4 Money-table unification (0.5–1.5): execute D2 — `renewal_invoices` canonical,
+  `invoices` (AR role kit) either fed from the same sync or formally deprecated;
+  the parallel-truth state ends at this package, not later.
+- B5 Historical backfill (1): full AR ledger initial import with progress + resumability.
+
+**Track C — Workforce staffing (4–6 sessions)** — parallel after A3
+- C1 Role kits (2): AR clerk (extend existing Billing/AR kit), AP clerk (new),
+  Bookkeeper-drafts (new; journal entries ALWAYS human-gated). Team mission template
+  "month-end close" wiring the three.
+- C2 Playbook packs + escalation (1.5): per-role playbooks bound to real actions;
+  escalation conditions on the generic {signal,op,value} engine (mig 262); KPI
+  definitions per role (DSO, collection rate, close latency) on the KPI machinery.
+- C3 Trust progression (0.5): every bundle DE starts draft-for-approval; promotion only
+  via existing evidence-based `trust_policies`; demotion wired to the records gate.
+- C4 Certification (1): golden QA set for ERP workflows; cert exam via the existing
+  eval driver so the Employee File shows a real certification, not a badge.
+
+**Track D — Provisioning & lifecycle (5–7 sessions)** — parallel after A1
+- D1 Frappe Cloud client (1.5): Vault-held platform token + admin-only setter
+  (mirrors `set_oauth_app`); `press.api.site.new` → poll jobs → mint site api
+  key/secret → connector row via existing RPCs. Idempotent, forward-only.
+- D2 Signup integration (1): bundle plan flag in `feature_registry`; amend mig 118's
+  "everything except connectors" contract for exactly this connector; onboarding items
+  with `verify` blocks so go-live is machine-confirmed (mig 076).
+- D3 **Books migration workbench (2)** — the package the thin roadmap missed entirely:
+  chart-of-accounts template per country pack, customer/supplier/open-invoice CSV
+  import (ERPNext data-import API) driven by the onboarding DE with per-step human
+  sign-off, trial-balance check before the workforce activates. Bad books in = bad
+  automation forever; this package is why design partners succeed.
+- D4 Lifecycle parity (1.5): suspension → deactivate site + connector pause (extends
+  mig 430's dormancy semantics to the bundled ERP); deletion → export bundle
+  (site backup via `get_backup_link` + our tenant export) then teardown; weekly backup
+  pull; **one real restore drill is a G3 exit criterion** (data-restore has never been
+  drilled platform-wide — the bundle does not inherit that gap).
+- D5 Failure containment (1): half-created-site cleanup, retry budget, `ops_alerts`,
+  and a provisioning status surface the customer can see.
+
+**Track E — Governance & compliance (3–4 sessions)** — parallel after A3
+- E1 Money guardrail pack (1): `require_approval_over_cents` defaults per action,
+  legal-threat blocked phrases, per-category autonomy defaults; destructive floor
+  verified per action in a test, not assumed.
+- E2 Access model (0.5): per-DE `data_access_grants` to the ERP connector, default
+  deny (docs/29 axes); reporting-line visibility honored.
+- E3 Audit continuity (0.5): every ERP write carries the ERP doc reference in
+  `audit_events` + `action_executions.receipt`; evidence linkage so the Employee File
+  shows ERP work truthfully.
+- E4 Compliance pack (1): GPL policy = config-only, NO forked Frappe apps (if a custom
+  app ever becomes necessary it is published open-source — decision, not accident);
+  trademark naming checklist; country tax pack selection at provisioning; data-ownership
+  language for the contract ("your instance, exportable any day") aligned with what D4
+  actually delivers.
+
+**Track F — Experience (4–5 sessions)** — parallel after B2
+- F1 Back-office workbench (2): AR first — aging, dunning queue with DE activity,
+  invoice drill-in, deep link to the ERP record, inline approvals. dt-tokens law;
+  drift baselines updated.
+- F2 Bundle onboarding wizard (1): connect-or-provision choice (BYO ERPNext uses the
+  same rails — the bundle is a superset, not a fork).
+- F3 One-login phase 1 (1): user mirroring on team invite + deep links + optional
+  shared Google/Microsoft social login on both sides. Phase 2 (real OIDC IdP) stays
+  deferred and is listed on the Trust page as Roadmap — no quiet scope creep.
+- F4 Vocabulary + design QA (0.5): tenant vocabulary keys for ERP nouns; drift
+  detector clean.
+
+**Track G — Commercial & support ops (2–3 sessions + human tasks)** — before G3
+- G1 Billing (0.5): plan gating + manual line-item first; automated billing explicitly
+  out of scope here.
+- G2 Support model (1): Support DE trained on ERPNext KB (existing ingestion), scope
+  boundary doc (what we answer vs what escalates to Frappe), macro pack.
+- G3 Ops runbook (1): site-health monitor via press API → `ops_alerts` (with a READER
+  — the ops-visibility rule), per-tenant infra cost tracking against plan, upgrade-note
+  watch (Frappe auto-upgrades: we monitor release notes, we don't gate them).
+- G4 Partner tier (human, calendar): 2 Frappe School certifications (D4 decision on
+  who) once ≥5 bundle sites justify the discount.
+
+### 7.3 Sequencing and totals
+
+```
+G0 ─ A1 ──► A2 ─ A3 ─ A4 ─ A5          (A: connector platform)
+        └─► B1 ─ B2 ─ B3 ─ B4 ─ B5     (B: data plane, parallel)
+        └─► D1 ─ D2 ─ D3 ─ D4 ─ D5     (D: provisioning, parallel)
+             A3 ──► C1 ─ C2 ─ C3 ─ C4  (C: staffing)
+             A3 ──► E1 ─ E2 ─ E3 ─ E4  (E: governance)
+             B2 ──► F1 ─ F2 ─ F3 ─ F4  (F: experience)
+                          G1..G4 ──► G3 gate
+```
+
+- **To G1 (spine proven):** A1–A3 + B1–B2 + E1 ≈ **7–8 sessions**
+- **To G2 (private beta):** + A4, B3–B5, C1–C2, D1–D3, E2–E3, F1–F2, G2 ≈ **+13–16**
+- **To G3 (GA):** + A5, C3–C4, D4–D5, E4, F3–F4, G1, G3 ≈ **+7–9**
+- **Program total: ≈ 27–33 sessions.** With B/C/D/E running parallel to A after A1,
+  calendar shape is roughly: G1 in week 1–2, G2 entry in week 4–5, G2→G3 driven by the
+  30-day partner soak, GA around week 9–10. The §3 "8.5–12.5 sessions" figure was the
+  minimum spine only; this is the honest full-program number.
+
+### 7.4 Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Action misfire on real money | draft-first trust for every bundle DE; destructive floor tested per action (E1); journal entries never auto |
+| Bad books migrated in | D3 trial-balance check + human sign-off before workforce activation |
+| Mirror drift | B3 nightly reconciliation + alarm; ERP-wins conflict policy; no silent correction |
+| Frappe Cloud dependency | customer owns site; weekly backup pulls; restore drill at G3; open-source press = credible self-host exit |
+| Support gravity | G2 scope boundary + Support DE deflection measured; escalation to Frappe defined |
+| Per-tenant cost creep | G3 cost tracking vs plan; site-plan right-sizing alert |
+| GPL contamination | config-only policy (E4); any custom Frappe app is published open-source by decision |
+| Scope creep into ERP consulting | bundle = defined role kits + migration workbench; anything beyond is paid services, stated in the contract |
+| Suspension gap recurrence | D4 lifecycle parity extends mig 430 semantics to the ERP site — tested, not assumed |
+
+### 7.5 Program KPIs (reported per gate)
+
+- Signup → live ERP time (target < 30 min at G3)
+- % ERP actions auto vs gated over time per DE (trust progression is visible, not claimed)
+- Design-partner DSO delta over the G2 soak
+- Support deflection rate by the Support DE; escalations to Frappe per tenant per month
+- Drift-check pass rate (target 100%; any failure is an ops alert, not a statistic)
+- Per-tenant infra cost vs D3 price (unit economics stay visible from day one)
+
+### 7.6 Founder gate points (beyond D1–D5)
+
+- **G2 entry:** pick the 2–3 design partners (fresh-tenant program prospect list).
+- **G2→G3:** price confirmation (D3) after real COGS observed; partner-tier timing (D4).
+- **Any change to the §0 invariant** (customer-owned, swappable, standard connector)
+  returns to you by name — it is the moat clause.
 
 ## Sources
 - https://www.erpresearch.com/pricing/erpnext · https://frappe.io/cloud
