@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
+import type { Page } from '../types';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import { getOperatingModel, type OperatingModel } from '../lib/missionApi';
+import BookOfWorkPanel from './BookOfWorkPanel';
 import { Banner, Chip, PanelCard, type Tone } from '../design/primitives';
 
 // "How I operate" — the composed operating-model read (audit gap #1): the
-// employee's job as one legible page. No new state anywhere; this renders
-// get_de_operating_model(), the same truth the mission compiler reads.
+// employee's job as one legible page. This renders get_de_operating_model(),
+// the same truth the mission compiler reads — plus the one piece of job
+// CONFIGURATION that belongs here: the watcher manager (Book of Work), moved
+// in from the dissolved Workbench→Work (docs/31 merge). The "next up" feed
+// deliberately does NOT render here — the board feed renders once, on Work.
 
 const KIND_META: Record<string, { label: string; tone: Tone }> = {
   schedule: { label: 'on a schedule', tone: 'info' },
@@ -22,7 +27,7 @@ const KIND_META: Record<string, { label: string; tone: Tone }> = {
 const fmt = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
 
-export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
+export default function OperatingModelPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [model, setModel] = useState<OperatingModel | null>(null);
   const [notReady, setNotReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -46,7 +51,6 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
 
   const active = model.work_sources.filter(w => w.active);
   const inactive = model.work_sources.filter(w => !w.active);
-  const nextUp = model.next_up ?? [];
   const rhythm = model.rhythm;
 
   return (
@@ -60,27 +64,6 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
             {model.current_focus.due_at ? ` · due ${fmt(model.current_focus.due_at)}` : ''}
             {model.current_focus.mission_id ? ' · part of a mission you ordered' : ''}
           </p>
-        </PanelCard>
-      )}
-
-      {(nextUp.length > 0 || model.listens_live) && (
-        <PanelCard title="What happens next — in order">
-          {nextUp.length === 0 ? (
-            <p className="text-sm text-dt-muted">Nothing on the schedule.</p>
-          ) : (
-            <div className="divide-y divide-dt-border">
-              {nextUp.map((n, i) => (
-                <div key={i} className="flex items-center gap-3 py-2">
-                  <span className="text-sm">{({ work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁' } as Record<string, string>)[n.kind] ?? '•'}</span>
-                  <p className="text-sm text-dt-body flex-1 truncate">{n.title}</p>
-                  <span className="text-xs text-dt-muted whitespace-nowrap">{n.when ? fmt(n.when) : 'when its turn comes'}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {model.listens_live && (
-            <p className="text-xs text-dt-support mt-2">Plus continuous: the live support inbox, answered in real time.</p>
-          )}
         </PanelCard>
       )}
 
@@ -138,6 +121,9 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
         <PanelCard title="Waiting on you">
           <p className="text-2xl font-semibold text-dt-title">{model.waiting_on_human}</p>
           <p className="text-xs text-dt-support mt-1">item{model.waiting_on_human === 1 ? '' : 's'} at your approval desk from this employee.</p>
+          {model.waiting_on_human > 0 && (
+            <button onClick={() => setPage('ops_human_tasks')} className="text-xs text-dt-accent-text hover:underline mt-1.5">Review approvals →</button>
+          )}
         </PanelCard>
         <PanelCard title="Rhythm — last 7 days">
           <p className="text-2xl font-semibold text-dt-title">{rhythm?.done_7d ?? 0}<span className="text-sm text-dt-muted font-normal"> done</span>{typeof rhythm?.deliverables_7d === 'number' ? <span className="text-sm text-dt-muted font-normal"> · {rhythm.deliverables_7d} deliverable{rhythm.deliverables_7d === 1 ? '' : 's'}</span> : null}</p>
@@ -145,6 +131,13 @@ export default function OperatingModelPanel({ de }: { de: DigitalEmployee }) {
             {rhythm?.last_deliverable ? `latest: "${rhythm.last_deliverable.title}" ${fmt(rhythm.last_deliverable.at)}` : 'no deliverables produced yet.'}
           </p>
         </PanelCard>
+      </div>
+
+      {/* The watcher manager — the only place watchers are created/paused
+          (moved from the dissolved Workbench→Work). Job configuration lives
+          with the job description. */}
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
+        <BookOfWorkPanel deId={de.id} />
       </div>
     </div>
   );

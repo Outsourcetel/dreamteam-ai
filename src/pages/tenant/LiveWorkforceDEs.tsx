@@ -326,7 +326,9 @@ const INCIDENT_KIND_LABELS: Record<string, string> = {
   guardrail_block: 'guardrail', trust_demotion: 'trust demotion',
   eval_regression: 'eval failure', action_rejected: 'rejected action',
 };
-function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+// Exported: rendered on the Employee File's Record tab (docs/31 — incidents
+// are the disciplinary half of the employment record, not a governance rule).
+export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [incidents, setIncidents] = useState<DEIncident[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -3255,7 +3257,7 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
       <div className="space-y-6">
         <ScopedGuardrails scope="employee" scopeRef={de.id} entityLabel={de.persona_name || de.name} />
         <DeGovernancePanel de={de} onUpdated={onUpdated} />
-        <DeIncidentsPanel de={de} setPage={setPage} />
+        {/* Incidents moved to the Record tab — they are the record. */}
       </div>
     );
   }

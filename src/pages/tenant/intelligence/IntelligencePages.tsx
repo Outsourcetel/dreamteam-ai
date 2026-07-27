@@ -319,7 +319,8 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                       <p className="text-[11px] text-dt-muted">{de.persona_name ? de.name : (de.description || de.category)}</p>
                     </div>
                   </div>
-                  <button onClick={() => openFile(de.id)} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Employee File →</button>
+                  {/* A performance roster row lands on the file's Performance tab. */}
+                  <button onClick={() => openFile(de.id, 'performance')} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Employee File →</button>
                 </div>
 
                 {!hasActivity ? (
@@ -699,7 +700,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                 {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
                 If your team keeps approving these, raise {b.name}'s trust dial to clear the queue — guardrails still cap what it can do.
               </p>
-              <button onClick={() => openFile(b.de_id)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open {b.name}'s Employee File →</button>
+              <button onClick={() => openFile(b.de_id, 'trust')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open {b.name}'s Employee File →</button>
             </div>
           ))}
 

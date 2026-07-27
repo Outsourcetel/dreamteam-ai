@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
+  getDeMemory, getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getTenantCompliancePacks, runCertificationEval,
   listAllCompliancePacks, attachCompliancePack,
   getReplaySources, runReplay,
-  getDeMemoryGrouped, forgetMemory, saveObjective, decideException,
-  type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
+  getDeMemoryGrouped, forgetMemory, decideException,
+  type MemoryRow, type TraceRow, type ExceptionRow,
   type CertRow, type CertStatus, type CompliancePackRow,
   type ReplaySource, type ReplayResult, type MemoryGroup,
 } from '../../lib/deWorkbenchApi';
@@ -19,20 +19,19 @@ const PACK_REGULATIONS: Record<string, string> = {
   tcpa_dnc: 'TCPA (47 U.S.C. §227) and FTC Do-Not-Call rules — consent, registry checks, permitted hours',
   financial_controls: 'SOX-style segregation of duties and SOC 2 processing-integrity themes — no unauthorized fund movement',
 };
-import BookOfWorkPanel from '../../components/BookOfWorkPanel';
-import CaseTimelinePanel from '../../components/CaseTimelinePanel';
-import DeliverablesPanel from '../../components/DeliverablesPanel';
 
 // ═══════════════════════════════════════════════════════════════
 // DE Workbench — makes the Wave 1-3 muscles VISIBLE. Everything here
 // reads real tables (migs 155-163); nothing is mock. This is the
 // "what does my DE know / do / decide" surface the platform was
 // missing. Empty states are honest — a fresh DE genuinely has none.
+// (The old Work subtab dissolved in the docs/31 merge: the queue +
+// objectives editor + deliverables live on the file's Work tab, and
+// the watcher manager lives on How I operate.)
 // ═══════════════════════════════════════════════════════════════
 
 const SECTIONS = [
   { key: 'memory', label: 'Memory' },
-  { key: 'work', label: 'Work' },
   { key: 'reasoning', label: 'Reasoning' },
   { key: 'exceptions', label: 'Exceptions' },
   { key: 'replay', label: 'Replay Lab' },
@@ -90,8 +89,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [section, setSection] = useState<Section>('memory');
   const [loading, setLoading] = useState(true);
   const [memory, setMemory] = useState<MemoryRow[]>([]);
-  const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
-  const [workItems, setWorkItems] = useState<WorkItemRow[]>([]);
   const [trace, setTrace] = useState<TraceRow[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [certs, setCerts] = useState<CertRow[]>([]);
@@ -141,11 +138,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const [memoryGroups, setMemoryGroups] = useState<MemoryGroup[]>([]);
   const [openMemory, setOpenMemory] = useState<string | null>(null);
   const [forgetting, setForgetting] = useState<string | null>(null);
-  const [objOpen, setObjOpen] = useState(false);
-  const [objEditId, setObjEditId] = useState<string | null>(null);
-  const [objTitle, setObjTitle] = useState('');
-  const [objPriority, setObjPriority] = useState(3);
-  const [objSaving, setObjSaving] = useState(false);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [excOutcome, setExcOutcome] = useState<Record<string, string>>({});
   const [excLearn, setExcLearn] = useState<Record<string, boolean>>({});
@@ -160,13 +152,13 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, o, w, t, e, c, cs, p, rs, mg] = await Promise.all([
-          getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
+        const [m, t, e, c, cs, p, rs, mg] = await Promise.all([
+          getDeMemory(deId), getDeTrace(deId),
           getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getTenantCompliancePacks(),
           getReplaySources(deId), getDeMemoryGrouped(deId),
         ]);
         if (cancelled) return;
-        setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
+        setMemory(m); setTrace(t);
         setExceptions(e); setCerts(c); setCertStatus(cs); setPacks(p);
         setReplaySources(rs); setMemoryGroups(mg);
       } catch {
@@ -191,25 +183,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setForgetting(null);
   };
 
-  const handleSaveObjective = async () => {
-    if (!objTitle.trim()) return;
-    setObjSaving(true); setWriteError(null);
-    try {
-      await saveObjective({ deId, title: objTitle.trim(), id: objEditId ?? undefined, priority: objPriority });
-      setObjectives(await getDeObjectives(deId));
-      setObjOpen(false); setObjEditId(null); setObjTitle('');
-    } catch (err) { setWriteError((err as Error).message); }
-    setObjSaving(false);
-  };
-
-  const handleCloseObjective = async (o: ObjectiveRow) => {
-    setWriteError(null);
-    try {
-      await saveObjective({ deId, id: o.id, title: o.title, priority: o.priority, status: 'achieved' });
-      setObjectives(await getDeObjectives(deId));
-    } catch (err) { setWriteError((err as Error).message); }
-  };
-
   const handleDecide = async (exceptionId: string, decision: 'approved' | 'rejected') => {
     setDeciding(exceptionId); setWriteError(null);
     try {
@@ -219,9 +192,8 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
         learned: !!excLearn[exceptionId],
       });
       setExceptions(await getDeExceptions(deId));
-      // Deciding an exception moves the paused work item (mig 443) — refresh
-      // the Work view so the requeue/cancel is visible immediately.
-      setWorkItems(await getDeWorkItems(deId));
+      // Deciding an exception moves the paused work item (mig 443) — the
+      // requeue/cancel shows on the file's Work tab, which refetches on open.
     } catch (err) { setWriteError((err as Error).message); }
     setDeciding(null);
   };
@@ -265,7 +237,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     <div className={`${card} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-dt-border">
         <p className="text-sm font-semibold text-white">Workbench</p>
-        <p className="text-xs text-dt-muted mt-0.5">What this employee remembers, works on, decides, and has been certified to do — all live.</p>
+        <p className="text-xs text-dt-muted mt-0.5">What this employee remembers, decides, and has been certified to do — all live.</p>
       </div>
       <div className="flex flex-wrap gap-1 px-3 pt-3">
         {SECTIONS.map(s => (
@@ -337,78 +309,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                 })}
               </div>
             ))}
-
-            {section === 'work' && (
-              <div className="space-y-5">
-                <BookOfWorkPanel deId={deId} />
-                <CaseTimelinePanel deId={deId} />
-                <DeliverablesPanel deId={deId} />
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <p className="text-[11px] uppercase tracking-wide text-dt-muted">Objectives (goals)</p>
-                    <button onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}
-                      className="ml-auto text-[11px] text-indigo-400 hover:text-indigo-300">+ Set an objective</button>
-                  </div>
-                  {objOpen && (
-                    <div className="mb-2 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
-                      <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
-                        placeholder="What should this employee be working towards?"
-                        className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-dt-muted">Priority</label>
-                        <select value={objPriority} onChange={e => setObjPriority(Number(e.target.value))}
-                          className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
-                          {[1, 2, 3, 4, 5].map(p => <option key={p} value={p}>P{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}
-                        </select>
-                        <button onClick={() => void handleSaveObjective()} disabled={objSaving || !objTitle.trim()}
-                          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
-                          {objSaving ? 'Saving…' : objEditId ? 'Save changes' : 'Add objective'}
-                        </button>
-                        <button onClick={() => setObjOpen(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                  {objectives.length === 0 && !objOpen ? (
-                    <LiveEmptyState icon="◎" title="No objectives set" body="Objectives are goals the employee pursues over time." />
-                  ) : (
-                    <div className="space-y-2">{objectives.map(o => (
-                      <div key={o.id} className="bg-dt-inset rounded-lg px-4 py-2.5 flex items-center gap-3">
-                        <Pill s={o.status} /><span className="text-sm text-dt-body flex-1">{o.title}</span>
-                        <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
-                        <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
-                          className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
-                        {/* An objective's real statuses are open | in_progress | blocked |
-                            achieved | abandoned (de_objectives CHECK). This was gated on
-                            'active', which is not one of them — so the only way to stop a
-                            running objective never rendered, and objectives kept waking
-                            forever (Riley's two had woken 48 times each). */}
-                        {(o.status === 'open' || o.status === 'in_progress' || o.status === 'blocked') && (
-                          <button onClick={() => void handleCloseObjective(o)}
-                            className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
-                        )}
-                      </div>
-                    ))}</div>
-                  )}
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Work queue (tasks)</p>
-                  {workItems.length === 0 ? (
-                    <LiveEmptyState icon="◎" title="Nothing queued" body="Tasks the employee works autonomously appear here." />
-                  ) : (
-                    <div className="space-y-2">{workItems.map(w => (
-                      <div key={w.id} className="bg-dt-inset rounded-lg px-4 py-2.5">
-                        <div className="flex items-center gap-3">
-                          <Pill s={w.status} /><span className="text-sm text-dt-body flex-1">{w.title}</span>
-                          <span className="text-[11px] text-dt-faint">{w.kind}{w.attempts > 1 ? ` · ${w.attempts} tries` : ''} · {fmt(w.scheduled_for)}</span>
-                        </div>
-                        {w.result?.summary ? <p className="text-xs text-dt-support mt-1.5 pl-1">{String(w.result.summary).slice(0, 240)}</p> : null}
-                        {w.last_error ? <p className="text-xs text-rose-400/80 mt-1 pl-1">{w.last_error}</p> : null}
-                      </div>
-                    ))}</div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {section === 'reasoning' && (runs.length === 0 ? (
               <LiveEmptyState icon="◎" title="No decision traces yet" body="When this employee works a task, every step it takes and why is recorded here." />

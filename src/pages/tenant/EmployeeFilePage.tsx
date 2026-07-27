@@ -3,8 +3,8 @@ import { useAuth } from '../../context/AuthContext';
 import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
-import { getDeWorkItems, getDeObjectives, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
-import { getWorkforceBoard, type WorkforceBoardRow } from '../../lib/missionApi';
+import { getDeWorkItems, getDeObjectives, saveObjective, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
+import { getWorkforceBoard, listMissions, type WorkforceBoardRow } from '../../lib/missionApi';
 import { fmtWhen } from '../../components/WorkforceBoard';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
@@ -13,7 +13,8 @@ import {
   getOutcomeMetering,
   type DePerformanceMetrics, type DeInquiryMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
 } from '../../lib/api';
-import { useEmployeeFileDeId } from '../../lib/employeeFileRoute';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useEmployeeFileDeId, EMPLOYEE_FILE_PATH } from '../../lib/employeeFileRoute';
 import {
   getDeExecutionLog, getDeExperience, getDeAgenticRuns, getAgenticRunMessages,
   getDeRoleContext, getDeWorkProduct,
@@ -23,20 +24,22 @@ import {
 import { CATEGORY_LABELS, CATEGORY_SHORT, type SystemCategory } from '../../lib/categoryContracts';
 import DeWorkbenchPanel from './DeWorkbench';
 import CaseTimelinePanel from '../../components/CaseTimelinePanel';
+import DeliverablesPanel from '../../components/DeliverablesPanel';
 import MissionPanel from '../../components/MissionPanel';
 import OperatingModelPanel from '../../components/OperatingModelPanel';
-import { DeProfileSections, type DeProfileSectionKey } from './LiveWorkforceDEs';
+import { DeProfileSections, DeIncidentsPanel, type DeProfileSectionKey } from './LiveWorkforceDEs';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, type Tone,
 } from '../../design/primitives';
 
 // ═══════════════════════════════════════════════════════════════
 // Employee File — ONE page per Digital Employee, with a URL other
-// surfaces can link to (/workforce/employee?de=<id>). The front door
-// to "watch this employee work": Today (live work), Performance
-// (the same outcome RPCs as the Performance tab, scoped to one DE),
-// and the full Workbench (memory / reasoning / replay), which was
-// previously buried four clicks deep in the roster detail panel.
+// surfaces can link to (/workforce/employee?de=<id>&tab=<key>). The
+// front door to "watch this employee work": Work (live queue +
+// objectives + deliverables), Performance (the same outcome RPCs as
+// the Performance tab, scoped to one DE), and the full Workbench
+// (memory / reasoning / replay), which was previously buried four
+// clicks deep in the roster detail panel.
 // ═══════════════════════════════════════════════════════════════
 
 const fmt = (iso: string | null | undefined) =>
@@ -60,11 +63,14 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // One employee, ONE page (founder structural fix 2026-07-22): the old
 // in-roster profile panel merged into this file — its sections render via
 // DeProfileSections so nothing exists in two places anymore.
-type FileTab = 'today' | 'work' | 'operating' | 'record' | 'performance' | 'workbench'
+// docs/31 Q2+Q4 merge ("organize by tense"): Today was renamed Work — the live
+// queue IS the work — and the old Work tab (the lifetime ledger) moved to the
+// top of Record. 'today' stays the internal key so nothing that ever pointed
+// here breaks; the label is what the founder sees.
+type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
   | 'profile' | 'capabilities' | 'trust' | 'development' | 'governance' | 'specialist';
 const FILE_TABS: { key: FileTab; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'work', label: 'Work' },
+  { key: 'today', label: 'Work' },
   { key: 'operating', label: 'How I operate' },
   { key: 'record', label: 'Record' },
   { key: 'performance', label: 'Performance' },
@@ -76,14 +82,28 @@ const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'governance', label: 'Governance' },
 ];
 
-// ── Today — what this employee is doing right now ─────────────────
+// ── Work — what this employee is doing right now ──────────────────
+// (was "Today" — renamed in the docs/31 merge; the internal key stays 'today'.)
+// Absorbs the Workbench→Work pieces that existed nowhere else: the objectives
+// EDITOR (the Done button is the only brake on an objective waking forever)
+// and the deliverables reader. Queue rows carry result summaries and errors,
+// as the Workbench rendering did. The DE population is bimodal (queue-driven
+// vs answer-driven), so every panel collapses rather than stacks when empty.
 
-function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [work, setWork] = useState<WorkItemRow[] | null>(null);
   const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
   const [activity, setActivity] = useState<DEActivityRow[]>([]);
   const [board, setBoard] = useState<WorkforceBoardRow | null>(null);
+  const [missionCount, setMissionCount] = useState<number | null>(null);
+  const [missionOpen, setMissionOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Objectives editor state (moved here from the deleted Workbench→Work).
+  const [objOpen, setObjOpen] = useState(false);
+  const [objEditId, setObjEditId] = useState<string | null>(null);
+  const [objTitle, setObjTitle] = useState('');
+  const [objPriority, setObjPriority] = useState(3);
+  const [objSaving, setObjSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,10 +120,38 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
     getWorkforceBoard(de.id)
       .then(r => { if (!cancelled) setBoard(r.board[0] ?? null); })
       .catch(() => { /* the panel simply doesn't render */ });
+    // Missions stay folded until one exists (0 platform-wide today) — but the
+    // panel is the only creation door on this page, so it collapses to a
+    // one-line invitation instead of vanishing.
+    listMissions(de.id)
+      .then(r => { if (!cancelled) setMissionCount(r.missions.length); })
+      .catch(() => { if (!cancelled) setMissionCount(0); });
     return () => { cancelled = true; };
   }, [de.id]);
 
-  if (work === null) return <p className="text-sm text-dt-muted py-8 text-center">Loading today's work…</p>;
+  const refreshObjectives = async () =>
+    setObjectives((await getDeObjectives(de.id)).filter(x => ['open', 'in_progress', 'blocked'].includes(x.status)));
+
+  const handleSaveObjective = async () => {
+    if (!objTitle.trim()) return;
+    setObjSaving(true); setError(null);
+    try {
+      await saveObjective({ deId: de.id, title: objTitle.trim(), id: objEditId ?? undefined, priority: objPriority });
+      await refreshObjectives();
+      setObjOpen(false); setObjEditId(null); setObjTitle('');
+    } catch (err) { setError((err as Error).message); }
+    setObjSaving(false);
+  };
+
+  const handleCloseObjective = async (o: ObjectiveRow) => {
+    setError(null);
+    try {
+      await saveObjective({ deId: de.id, id: o.id, title: o.title, priority: o.priority, status: 'achieved' });
+      await refreshObjectives();
+    } catch (err) { setError((err as Error).message); }
+  };
+
+  if (work === null) return <p className="text-sm text-dt-muted py-8 text-center">Loading live work…</p>;
 
   const inMotion = work.filter(w => ['running', 'queued', 'waiting_human'].includes(w.status));
   const recent = work.filter(w => !['running', 'queued', 'waiting_human'].includes(w.status)).slice(0, 5);
@@ -138,7 +186,14 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
         </Banner>
       )}
 
-      <MissionPanel de={de} />
+      {(missionCount ?? 0) > 0 || missionOpen ? (
+        <MissionPanel de={de} />
+      ) : missionCount !== null && (
+        <button onClick={() => setMissionOpen(true)}
+          className="w-full text-left rounded-xl border border-dashed border-dt-border px-4 py-2.5 text-xs text-dt-muted hover:border-dt-border-strong hover:text-dt-support transition-colors">
+          🎯 No missions running. Give {name} a one-sentence order — it reads it back as a plan you approve before anything starts.
+        </button>
+      )}
 
       {board && (board.next_up.length > 0 || board.listens_live || board.waiting_on_you > 0) && (
         <PanelCard title="Next up — in order"
@@ -177,6 +232,7 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-dt-body truncate">{w.title}</p>
                     <p className="text-xs text-dt-muted">{w.kind.replace(/_/g, ' ')} · scheduled {fmt(w.scheduled_for)}{w.attempts > 1 ? ` · attempt ${w.attempts}` : ''}</p>
+                    {w.result?.summary ? <p className="text-xs text-dt-support mt-0.5 truncate">{String(w.result.summary).slice(0, 240)}</p> : null}
                   </div>
                   {w.last_error && <span className="text-xs text-dt-danger truncate max-w-[16rem]">{w.last_error}</span>}
                 </div>
@@ -188,18 +244,53 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
 
       <CaseTimelinePanel deId={de.id} />
 
-      {objectives.length > 0 && (
-        <PanelCard title="Open objectives">
+      {/* Objectives — the EDITOR, not a read-only list (moved from the deleted
+          Workbench→Work). The Done button is the only brake on an objective
+          waking forever, so it lives on the everyday surface. */}
+      <PanelCard title="Open objectives"
+        actions={<Button kind="ghost" size="sm" onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}>+ Set an objective</Button>}>
+        {objOpen && (
+          <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
+            <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
+              placeholder="What should this employee be working towards?"
+              className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-dt-muted">Priority</label>
+              <select value={objPriority} onChange={e => setObjPriority(Number(e.target.value))}
+                className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                {[1, 2, 3, 4, 5].map(p => <option key={p} value={p}>P{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}
+              </select>
+              <button onClick={() => void handleSaveObjective()} disabled={objSaving || !objTitle.trim()}
+                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                {objSaving ? 'Saving…' : objEditId ? 'Save changes' : 'Add objective'}
+              </button>
+              <button onClick={() => setObjOpen(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
+            </div>
+          </div>
+        )}
+        {objectives.length === 0 && !objOpen ? (
+          <p className="text-sm text-dt-muted">No objectives set — an objective is a goal {name} keeps pushing forward on a beat until you mark it Done.</p>
+        ) : (
           <div className="space-y-2">
             {objectives.map(o => (
               <div key={o.id} className="flex items-center gap-3">
                 <Chip tone={o.status === 'blocked' ? 'warn' : 'info'}>{o.status.replace(/_/g, ' ')}</Chip>
-                <span className="text-sm text-dt-body">{o.title}</span>
+                <span className="text-sm text-dt-body flex-1">{o.title}</span>
+                <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
+                <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
+                  className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
+                {/* This list is already filtered to open | in_progress | blocked
+                    (the statuses de_objectives can actually hold while live), so
+                    every row gets the Done brake. */}
+                <button onClick={() => void handleCloseObjective(o)}
+                  className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
               </div>
             ))}
           </div>
-        </PanelCard>
-      )}
+        )}
+      </PanelCard>
+
+      <DeliverablesPanel deId={de.id} />
 
       <PanelCard
         title="Recent decisions & answers"
@@ -229,10 +320,16 @@ function TodayTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => 
         <PanelCard title="Recently finished">
           <div className="divide-y divide-dt-border">
             {recent.map(w => (
-              <div key={w.id} className="flex items-center gap-3 py-2">
-                <Chip tone={(WORK_TONE[w.status] ?? { tone: 'neutral' as Tone }).tone}>{w.status.replace(/_/g, ' ')}</Chip>
-                <p className="text-sm text-dt-support truncate flex-1">{w.title}</p>
-                <span className="text-xs text-dt-muted">{fmt(w.created_at)}</span>
+              <div key={w.id} className="py-2">
+                <div className="flex items-center gap-3">
+                  <Chip tone={(WORK_TONE[w.status] ?? { tone: 'neutral' as Tone }).tone}>{w.status.replace(/_/g, ' ')}</Chip>
+                  <p className="text-sm text-dt-support truncate flex-1">{w.title}</p>
+                  <span className="text-xs text-dt-muted">{fmt(w.created_at)}</span>
+                </div>
+                {/* Richer rows (from the Workbench rendering): what came out, or
+                    what went wrong — a bare status told you neither. */}
+                {w.result?.summary ? <p className="text-xs text-dt-support mt-1 pl-1">{String(w.result.summary).slice(0, 240)}</p> : null}
+                {w.last_error ? <p className="text-xs text-rose-400/80 mt-1 pl-1">{w.last_error}</p> : null}
               </div>
             ))}
           </div>
@@ -345,16 +442,20 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   );
 }
 
-// ── Work — dedicated work-product BY ROLE (founder: never a mix-up) ─
+// ── Lifetime ledger — output BY ROLE, the head of the Record ──────
+// (was the tab called "Work" — it never showed the work queue, it showed the
+// lifetime output ledger; docs/31 moved it here, past tense with past tense.)
 // Resolves the employee's domain from the system categories it operates
 // (generic — not a hardcoded department) and shows what it has actually
 // produced, framed in that domain's language. A finance DE shows payment
 // reminders and reconciliations; a support DE shows cases. Same component,
 // zero per-vertical code — driven by the category-contract layer.
+// ⚠ The per-action auto-executed vs human-approved split rendered here is the
+// ONLY surface of that governance number anywhere — it must stay visible.
 const domainLabel = (c: string): string => CATEGORY_LABELS[c as SystemCategory] ?? c.replace(/_/g, ' ');
 const domainShort = (c: string): string => CATEGORY_SHORT[c as SystemCategory] ?? c.replace(/_/g, ' ');
 
-function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+function LifetimeLedger({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [role, setRole] = useState<RoleContext | null>(null);
   const [wp, setWp] = useState<WorkProduct | null>(null);
   const name = de.persona_name ?? de.name;
@@ -559,7 +660,7 @@ function AgenticRunRow({ run }: { run: AgenticRun }) {
   );
 }
 
-function RecordTab({ de }: { de: DigitalEmployee }) {
+function RecordTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [runs, setRuns] = useState<DeRun[] | null>(null);
   const [exp, setExp] = useState<DeExperience[] | null>(null);
   const [agentic, setAgentic] = useState<AgenticRun[] | null>(null);
@@ -579,21 +680,27 @@ function RecordTab({ de }: { de: DigitalEmployee }) {
       {/* Skills, KPIs and development live on the Development tab (the canonical
           list_de_skills surface) — the Record tab is the evidence of work done. */}
 
-      {/* Who answers for this employee (migration 385, docs/29 §5). Placed
-          FIRST because the first question about a record is whose record it is
-          — and because an unassigned digital employee is a governance gap that
-          should be visible before the evidence of what it has been doing. */}
+      {/* The lifetime output ledger opens the record: who this employee is by
+          role, and everything it has produced (the old "Work" tab, rehomed). */}
+      <LifetimeLedger de={de} setPage={setPage} />
+
+      {/* Who answers for this employee (migration 385, docs/29 §5) — the other
+          half of the record's identity: an unassigned digital employee is a
+          governance gap that should be visible next to what it has produced. */}
       <ResponsiblePeoplePanel deId={de.id} deName={name} />
 
-      {/* Autonomous runs — watch it reason through a multi-step task */}
-      {agentic !== null && agentic.length > 0 && (
-        <PanelCard title="Autonomous runs — how it reasoned through a task">
-          <p className="text-xs text-dt-muted mb-3 -mt-1">When {name} works a multi-step goal on its own, every turn of its reasoning and tool use is recorded. Expand any run to read the transcript.</p>
-          <div className="space-y-2">
-            {agentic.map(r => <AgenticRunRow key={r.id} run={r} />)}
-          </div>
-        </PanelCard>
-      )}
+      {/* Autonomous runs — watch it reason through a multi-step task. Always
+          rendered: vanishing at zero runs hid that the capability exists. */}
+      <PanelCard title="Autonomous runs — how it reasoned through a task">
+        <p className="text-xs text-dt-muted mb-3 -mt-1">When {name} works a multi-step goal on its own, every turn of its reasoning and tool use is recorded. Expand any run to read the transcript.</p>
+        {agentic === null ? <p className="text-sm text-dt-muted py-6 text-center">Loading runs…</p>
+          : agentic.length === 0 ? <p className="text-sm text-dt-muted py-6 text-center">No autonomous runs yet — they appear here the first time {name} works a multi-step goal on its own.</p>
+          : (
+            <div className="space-y-2">
+              {agentic.map(r => <AgenticRunRow key={r.id} run={r} />)}
+            </div>
+          )}
+      </PanelCard>
 
       {/* Execution log — how each run was actually served */}
       <PanelCard title="Execution log — every answer, and how it was served">
@@ -674,6 +781,11 @@ function RecordTab({ de }: { de: DigitalEmployee }) {
             </div>
           )}
       </PanelCard>
+
+      {/* Incidents — the disciplinary half of the employment record (moved in
+          from the Governance section; the records-gate banner has always
+          pointed at "Record → Incidents", and now that is true). */}
+      <DeIncidentsPanel de={de} setPage={setPage} />
     </div>
   );
 }
@@ -682,12 +794,29 @@ function RecordTab({ de }: { de: DigitalEmployee }) {
 
 export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => void }) {
   const deId = useEmployeeFileDeId();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { currentTenant } = useAuth();
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [health, setHealth] = useState<DEHealth | null>(null);
   // mig 258 records gate — why this employee's autonomy is clamped, if it is.
   const [gate, setGate] = useState<{ gated: boolean; reasons: string[] } | null>(null);
-  const [tab, setTab] = useState<FileTab>('today');
+  // ?tab= deep link (docs/32 report 03): read ONCE on mount alongside ?de=,
+  // whitelisted against the tab set — never trust the URL to open a section.
+  // An unknown or denied key falls back to the default (Work).
+  const [tab, setTab] = useState<FileTab>(() => {
+    const t = new URLSearchParams(location.search).get('tab');
+    return t && (FILE_TABS.some(x => x.key === t) || t === 'specialist') ? (t as FileTab) : 'today';
+  });
+  // Tab clicks mirror into ?tab= with replace (no back-button tab history).
+  // Same-tick navigate + URLSync's pathname-only reconciliation means the
+  // query is never stripped (the employeeFileRoute pattern).
+  const selectTab = (k: FileTab) => {
+    setTab(k);
+    const params = new URLSearchParams(location.search);
+    params.set('tab', k);
+    navigate(`${EMPLOYEE_FILE_PATH}?${params.toString()}`, { replace: true });
+  };
   const onDeUpdated = (updated: DigitalEmployee) =>
     setDes(prev => (prev ?? []).map(d => (d.id === updated.id ? updated : d)));
 
@@ -726,6 +855,8 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
   const name = de.persona_name ?? de.name;
   const healthMeta = health ? DE_HEALTH_LABELS[health.state] : null;
+  // A ?tab=specialist deep link on a non-specialist falls back to the default.
+  const activeTab: FileTab = tab === 'specialist' && !de.is_specialist ? 'today' : tab;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
@@ -766,7 +897,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
                 · {r === 'stale_certification' ? 'Certification is stale — the configuration changed after the last exam. Re-run the certification exam to refresh it.'
                   : r === 'failed_certification' ? 'The last certification exam was failed. A passing exam restores autonomy.'
                   : r === 'expired_certification' ? 'A governance certification has expired. Re-issue or re-certify to restore autonomy.'
-                  : r === 'open_critical_incident' ? 'An open critical incident is on this employee’s record. Review and close it (Governance → Incidents) to restore autonomy.'
+                  : r === 'open_critical_incident' ? 'An open critical incident is on this employee’s record. Review and close it (Record → Incidents) to restore autonomy.'
                   : r === 'degraded_metrics' ? 'Recent run error rate is elevated (over the last 56 days). Autonomy restores automatically as new runs succeed.'
                   : r === 'metrics_check_unavailable' ? 'The performance check could not run; autonomy is paused conservatively until it recovers.'
                   : r}
@@ -778,18 +909,17 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
       <TabBar
         tabs={de.is_specialist ? [...FILE_TABS, { key: 'specialist' as FileTab, label: 'Specialist Tools' }] : FILE_TABS}
-        active={tab} onSelect={(k: FileTab) => setTab(k)} />
+        active={activeTab} onSelect={selectTab} />
 
-      {tab === 'today' && <TodayTab de={de} setPage={setPage} />}
-      {tab === 'work' && <WorkTab de={de} setPage={setPage} />}
-      {tab === 'operating' && <OperatingModelPanel de={de} />}
-      {tab === 'record' && <RecordTab de={de} />}
-      {tab === 'performance' && (currentTenant?.id
+      {activeTab === 'today' && <WorkTab de={de} setPage={setPage} />}
+      {activeTab === 'operating' && <OperatingModelPanel de={de} setPage={setPage} />}
+      {activeTab === 'record' && <RecordTab de={de} setPage={setPage} />}
+      {activeTab === 'performance' && (currentTenant?.id
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
-      {tab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
-      {['profile', 'capabilities', 'trust', 'development', 'governance', 'specialist'].includes(tab) && (
-        <DeProfileSections de={de} section={tab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
+      {activeTab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
+      {['profile', 'capabilities', 'trust', 'development', 'governance', 'specialist'].includes(activeTab) && (
+        <DeProfileSections de={de} section={activeTab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
       )}
     </div>
   );

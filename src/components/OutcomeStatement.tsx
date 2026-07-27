@@ -134,7 +134,8 @@ export default function OutcomeStatement({ setPage }: { setPage: (p: Page) => vo
               </thead>
               <tbody>
                 {rows.map(r => (
-                  <tr key={r.de.id} onClick={() => openFile(r.de.id)}
+                  // An economics row semantically wants the Performance tab.
+                  <tr key={r.de.id} onClick={() => openFile(r.de.id, 'performance')}
                     className="border-b border-dt-border last:border-b-0 cursor-pointer hover:bg-dt-panel transition-colors">
                     <td className={`${TD} font-medium text-dt-title`}>{r.de.persona_name ?? r.de.name}</td>
                     <td className={`${TD} font-mono`}>{r.work}</td>
