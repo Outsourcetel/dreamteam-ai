@@ -224,10 +224,60 @@ for (const r of defDiffer.slice(0, 8)) {
   console.log(`  ${dKey(r).padEnd(46)} -> ${(r.def || 'DROP DEFAULT').slice(0, 46)}`);
 }
 
+// ── Indexes ─────────────────────────────────────────────────────────────────
+// Mostly a performance concern — a missing index makes dev SLOW, not WRONG, and
+// slow is a signal you notice rather than a lie you trust. But a UNIQUE index is
+// not a performance object: it is a constraint wearing an index's clothes, and
+// an extra one on dev REJECTS A WRITE PRODUCTION ACCEPTS. That fails a test on
+// input the product handles fine, which is the same false-alarm class as an
+// over-strict NOT NULL.
+//
+// So the three cases are treated differently:
+//   missing / differing on a shared table -> created (behaviour or speed)
+//   EXTRA and UNIQUE on a shared table    -> dropped (changes behaviour)
+//   extra and plain                       -> reported, left alone (speed only)
+//
+// Constraint-backed indexes are excluded entirely: they belong to the PK/unique
+// constraint that owns them, already reconciled above, and touching them here
+// would fight that.
+const INDEXES = `
+  select i.tablename as tbl, i.indexname as name, i.indexdef as def
+    from pg_indexes i
+   where i.schemaname = 'public'
+     and not exists (select 1 from pg_constraint con
+                       join pg_class c on c.oid = con.conrelid
+                       join pg_namespace n on n.oid = c.relnamespace
+                      where n.nspname = 'public' and con.conname = i.indexname)
+   order by 1, 2`;
+
+const [prodIdx, devIdx] = await Promise.all([q(PROD, INDEXES), q(DEV, INDEXES)]);
+const devIdxMap = new Map(devIdx.map((r) => [`${r.tbl}.${r.name}`, r.def]));
+const iKey = (r) => `${r.tbl}.${r.name}`;
+const prodIdxTables = new Set(prodIdx.map((r) => r.tbl));
+
+const idxDiffer = prodIdx.filter((r) => devTables.has(r.tbl)
+  && devIdxMap.has(iKey(r)) && devIdxMap.get(iKey(r)) !== r.def);
+const idxMissing = prodIdx.filter((r) => devTables.has(r.tbl) && !devIdxMap.has(iKey(r)));
+const idxExtraAll = devIdx.filter((r) => !prodIdx.some((x) => x.tbl === r.tbl && x.name === r.name));
+const idxExtraUnique = idxExtraAll.filter((r) => /CREATE UNIQUE/i.test(r.def) && prodIdxTables.has(r.tbl));
+const idxExtraPlain = idxExtraAll.filter((r) => !idxExtraUnique.includes(r));
+
+console.log(`\n${idxDiffer.length} index(es) differ, ${idxMissing.length} missing on shared tables`);
+for (const r of [...idxDiffer, ...idxMissing].slice(0, 8)) console.log(`  ${iKey(r)}`);
+if (idxExtraUnique.length) {
+  console.log(`${idxExtraUnique.length} EXTRA UNIQUE index(es) — dev rejects writes production accepts:`);
+  for (const r of idxExtraUnique) console.log(`  ${iKey(r)}`);
+}
+if (idxExtraPlain.length) {
+  console.log(`${idxExtraPlain.length} extra plain index(es) — reported, left alone (speed only):`);
+  for (const r of idxExtraPlain) console.log(`  ${iKey(r)}`);
+}
+
 if (!APPLY) { console.log('\n(report only — pass --apply to run the ALTERs)'); process.exit(0); }
 if (!missing.length && !chkDiffer.length && !chkMissing.length && !polExtra.length
     && !trgDiffer.length && !trgMissing.length
-    && !defDiffer.length && !nnTighten.length && !nnRelax.length) {
+    && !defDiffer.length && !nnTighten.length && !nnRelax.length
+    && !idxDiffer.length && !idxMissing.length && !idxExtraUnique.length) {
   console.log('\nnothing to do'); process.exit(0);
 }
 
@@ -355,6 +405,29 @@ for (const r of nnTighten) {
   } catch (e) {
     nnFailed.push(`${dKey(r)} — ${String(e.message).slice(0, 80)}`);
   }
+}
+
+// Indexes last of all: building one takes a lock, and every column, default and
+// constraint it might cover is settled by this point.
+let idxOk = 0; const idxFailed = [];
+for (const r of [...idxDiffer, ...idxMissing]) {
+  try {
+    await q(DEV, `DROP INDEX IF EXISTS public."${r.name}"; ${r.def};`);
+    idxOk += 1;
+  } catch (e) {
+    // A unique index fails if dev's existing rows contain duplicates — real
+    // information about dev's data, not a reason to abandon the sync.
+    idxFailed.push(`${iKey(r)} — ${String(e.message).slice(0, 90)}`);
+  }
+}
+let idxDropped = 0;
+for (const r of idxExtraUnique) {
+  try { await q(DEV, `DROP INDEX IF EXISTS public."${r.name}";`); idxDropped += 1; }
+  catch (e) { idxFailed.push(`${iKey(r)} (drop) — ${String(e.message).slice(0, 80)}`); }
+}
+if (idxDiffer.length || idxMissing.length || idxExtraUnique.length) {
+  console.log(`\nIndexes: ${idxOk} created, ${idxDropped} extra-unique dropped, ${idxFailed.length} failed`);
+  idxFailed.forEach((m) => console.log(`  ${m}`));
 }
 
 console.log(`\nDefaults: ${defOk} set, ${defFailed.length} failed`);
