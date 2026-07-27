@@ -126,7 +126,8 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**IN PROGRESS — 11 of 24 guarded (migs 403–413).** A guard here is not a filter:
+**IN PROGRESS — 13 of 24 guarded (migs 403–415), but see the honesty note: 11
+closed a real gap and 2 are defence in depth.** A guard here is not a filter:
 it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
 this" into "nothing happened", which is worse than either. Every guard raises
@@ -155,6 +156,8 @@ before skipping.
 | `propose_account_writeback` | 411 | `p_de_id` param | no — same |
 | `propose_opportunity_writeback` | 412 | `p_de_id` param | no — same |
 | `propose_continuity_writeback` | 413 | `p_de_id` param | no — same |
+| `create_browser_operation` | 414 | `p_de_id` param | n/a — defence in depth |
+| `propose_browser_task` | 415 | `p_de_id` param | n/a — defence in depth |
 
 ### ⚠ "Refuse, never filter" — the mechanism is per contract, not always RAISE
 
@@ -190,6 +193,41 @@ one of those would be a worse regression than the gap being closed.
 the body (an over-escaped apostrophe). No functional effect; left alone rather
 than churn a live security function for a typo. 411–413 avoid apostrophes.
 
+### ⚠ The browser-operator two were NOT holes — this list overstated them
+
+`create_browser_operation` (414) and `propose_browser_task` (415) were already
+gated to `tenant_owner` / `tenant_admin` / `tenant_manager`, and `can_access_de()`
+passes all three **unconditionally**, before the assignment lookup is reached.
+**Every caller who could reach them already satisfied the check being added, so
+neither migration changes any behaviour.** A scoped user could not reach either
+one. The browser-operator surface a scoped user *could* reach was the reader
+`list_browser_operator`, closed in migration 397.
+
+They were applied anyway for two reasons — not to finish the list. A task here
+carries a `credential_policy` that can be `vault_injected`, meaning the runtime
+is handed a real stored credential for a customer system; if browser operations
+are ever opened below manager, the guard must already be in place. And leaving
+the rule in the role gate alone writes it in two places, which is the mistake
+the knowledge ACL taught.
+
+Both migrations assert the **manager+ role gate survived the rewrite**. That is
+the critical assertion in each file: trading the real gate for the redundant
+guard would have *widened* access from manager+ to any assigned user, while
+reading like a security improvement in a diff.
+
+`check_de_retirement_readiness` (399, group A) has exactly the same standing.
+**Running total of genuine group-B gaps closed: 11 of 13 guarded.**
+
+### The counter that makes these claims checkable
+
+Throughout the wave, "how many guards does this body have" is measured by
+counting occurrences of `can_access_de` in the live definition. That only works
+if no injected **comment** contains the token — migration 414 first failed its
+own assertion for exactly that reason (comment + call = 2). The comments in 414
+and 415 were reworded rather than loosening the counter, because the invariant
+*occurrences == real calls* is what the independent verification depends on.
+Verified across all 13: `token_count = call_count` everywhere, no contamination.
+
 **Null-tolerance is per-function, decided by the column, not copied.** Where the
 `de_id` is nullable the guard is `IF v_de IS NOT NULL AND NOT can_access_de(...)`
 — the exact negation of the migration-386 policy `(de_id IS NULL OR
@@ -212,7 +250,7 @@ case the function has excluded.
    case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
    State the *failure* condition directly and never use that shape.
 
-### Remaining (13)
+### Remaining (11)
 
 | group | functions |
 |---|---|
@@ -222,7 +260,7 @@ case the function has excluded.
 | ~~Write-back proposals~~ | ✅ all done (410–413) |
 | Learning & trust | `approve_learned_behavior`, `reject_learned_behavior`, `apply_improvement`, `request_trust_promotion` |
 | Onboarding & evidence | `resolve_onboarding_signoff`, `update_onboarding_item`, `submit_evidence_feedback` |
-| Browser operator | `create_browser_operation`, `propose_browser_task` |
+| ~~Browser operator~~ | ✅ all done (414–415) — both defence in depth, see note above |
 
 ### C. Internal — reached by triggers or the service role, not by users
 
