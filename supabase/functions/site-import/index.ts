@@ -122,10 +122,14 @@ async function kickDrain(tenantId: string, budgetMs: number): Promise<{ ok: bool
       body: JSON.stringify({ tenant_id: tenantId, limit: 10 }),
       signal: AbortSignal.timeout(Math.max(5_000, budgetMs)),
     });
-    if (!res.ok) return { ok: false, paused: false };
+    if (!res.ok) {
+      console.error('site-import: kickDrain HTTP', res.status, (await res.text().catch(() => '')).slice(0, 200));
+      return { ok: false, paused: false };
+    }
     const out = await res.json().catch(() => ({})) as { paused?: boolean };
     return { ok: true, paused: out.paused === true };
-  } catch {
+  } catch (e) {
+    console.error('site-import: kickDrain threw', String((e as Error)?.message ?? e).slice(0, 160));
     // A timeout here does NOT mean failure — the drain invocation keeps running
     // server-side, and the cron would pick the queue up regardless.
     return { ok: false, paused: false };
@@ -168,9 +172,27 @@ serve(async (req) => {
     const maxPages = Math.min(MAX_PAGES_CEILING, Math.max(1, Number(body.max_pages) || DEFAULT_MAX_PAGES));
     const waitMs = Math.min(MAX_WAIT_MS, Math.max(0, Number(body.wait_ms ?? DEFAULT_WAIT_MS)));
 
+    // ── The CALLER's client, created early because several reads below need it ──
+    // create_ingestion_job is SECURITY DEFINER and derives the tenant from
+    // auth_tenant_id(), enforces the contributor gate, and enforces that
+    // publishing on import requires publisher (mig 350 §4). Calling it as the
+    // user means those checks run for real instead of being bypassed by the
+    // service role — and means this function does not re-implement them.
+    //
+    // It is ALSO the only client that can READ the queue: every
+    // knowledge_ingestion_* table has a single policy, tenant_id =
+    // auth_tenant_id(), and `admin` carries no user JWT.
+    const asUser = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: `Bearer ${bearer}` } },
+    });
+
     // ── Idempotency, part 1: don't start a second import of the same site while
     // one is still running. Retrying a slow import must not double the corpus. ──
-    const { data: inflight } = await admin
+    // ⚠ This guard NEVER FIRED. Read as `admin` it always came back empty, so
+    // three consecutive imports of basecamp.com each created a new job instead
+    // of the second and third being refused. Same root cause as the phantom
+    // "tenant mismatch" and the "queued: 0" report.
+    const { data: inflight } = await asUser
       .from('knowledge_ingestion_jobs')
       .select('id, created_at')
       .eq('tenant_id', tenantId).eq('source_ref', site)
@@ -248,15 +270,7 @@ serve(async (req) => {
       }, 422);
     }
 
-    // ── Enqueue, under the CALLER's JWT ──
-    // create_ingestion_job is SECURITY DEFINER and derives the tenant from
-    // auth_tenant_id(), enforces the contributor gate, and enforces that
-    // publishing on import requires publisher (mig 350 §4). Calling it as the
-    // user means those checks run for real instead of being bypassed by the
-    // service role — and means this function does not re-implement them.
-    const asUser = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { Authorization: `Bearer ${bearer}` } },
-    });
+    // ── Enqueue, under the CALLER's JWT (asUser, created above) ──
 
     const items = discovery.ranked.map((p) => ({ url: p.url, title: titleFromUrl(p.url) }));
     const label = `Website import — ${new URL(discovery.site).hostname}`;
@@ -299,7 +313,7 @@ serve(async (req) => {
     // tenant_id, and the import still failed 500 claiming the tenants
     // disagreed. An error that names the wrong cause sends the next person
     // hunting tenant resolution, which is fine here, and never at the read.
-    const { data: job, error: jobReadErr } = await admin
+    const { data: job, error: jobReadErr } = await asUser
       .from('knowledge_ingestion_jobs').select('id, tenant_id').eq('id', jobId).maybeSingle();
 
     if (job && job.tenant_id !== tenantId) {
@@ -324,10 +338,12 @@ serve(async (req) => {
     let drainPaused = false;
     let rounds = 0;
     while (waitMs > 0 && Date.now() < waitDeadline && rounds < 12) {
-      const { count: open } = await admin
+      const { count: open, error: openErr } = await asUser
         .from('knowledge_ingestion_items')
         .select('id', { count: 'exact', head: true })
         .eq('job_id', jobId).in('status', ['queued', 'running']);
+      if (openErr) console.error('site-import: open-item count failed', jobId, openErr.message, openErr.code ?? '', openErr.details ?? '');
+      console.log('site-import: round', rounds, 'open items =', open);
       if (!open) break;
       rounds++;
       const res = await kickDrain(tenantId, waitDeadline - Date.now());
@@ -337,10 +353,22 @@ serve(async (req) => {
     }
 
     // ── Report. Per item, from the queue's own rows — not from what we hoped. ──
-    const { data: rows } = await admin
+    // ⚠ READ BACK AS THE USER, NOT AS 'admin'.
+    // knowledge_ingestion_items has exactly one policy: tenant_id = auth_tenant_id().
+    // The admin client carries NO user JWT, so auth_tenant_id() is NULL and it
+    // matches ZERO rows — regardless of the service-role key, which this project's
+    // new publishable/secret key setup may not be honouring as a bypass anyway.
+    // That is why the import reported 'queued: 0' while the queue held exactly
+    // max_pages items (verified: job 740ecf73 had 2 items and reported 0), and it
+    // is the same reason the job read-back above returned null and was misreported
+    // as a tenant mismatch. asUser holds the caller's JWT, satisfies the policy,
+    // and is the correct lens besides: report what the USER can see.
+    const { data: rows, error: rowsErr } = await asUser
       .from('knowledge_ingestion_items')
       .select('id, source_ref, title, status, last_error, error_kind, doc_id')
       .eq('job_id', jobId);
+    if (rowsErr) console.error('site-import: item read-back FAILED', jobId, rowsErr.message, rowsErr.code ?? '', rowsErr.details ?? '', rowsErr.hint ?? '');
+    console.log('site-import: read back', (rows ?? []).length, 'item row(s) for job', jobId);
 
     // Report in RANK order, not the order Postgres happened to return rows in —
     // the whole point of ranking is that the top of the list is what matters.
