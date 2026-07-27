@@ -376,6 +376,15 @@ LiveWorkforceDEs.tsx.
 
 Findings beyond the 12 questions that should be locked in before any rebuild step ships.
 
+> **STATUS 2026-07-27 (end of day):** #1, #2, #5 and #6's worksheet are DONE — full
+> reports in `docs/32-pre-start-reports/`. #3 is DONE (migration 429, with a category
+> correction by the Wave-2 session — see the reports). #4 is unblocked by #1's verdict
+> (de-answer deployed = repo) and is the next build. Corrections from the reports:
+> the unassigned figure is **115 of 116** (91 of 92 active in non-suspended tenants),
+> not 113/116; and #2 found the permission surface is materially worse than the four
+> Record readers — 2 unguarded RPCs (one internet-reachable), 8 role-gate gaps on
+> writers, 21 tenant-only readers. See `02-permission-matrix.md` for the ranked list.
+
 1. **Deploy-parity pass.** Every runtime claim in this audit about edge functions
    (trust enforcement, trace writers, gate ordering) was verified against *repo* source,
    not the *deployed* functions — and this codebase has a history of deploy drift
