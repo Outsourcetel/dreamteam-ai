@@ -5,7 +5,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, DECISION_REASON_CODES } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, DECISION_REASON_CODES } from '../../../lib/customerApi';
 import type { DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -241,6 +241,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [rejecting, setRejecting] = useState(false);
   const [reasonCode, setReasonCode] = useState<DecisionReasonCode | ''>('');
   const [reasonNote, setReasonNote] = useState('');
+  // docs/34 — approve WITH EDITS. The correction is the valuable half of the
+  // learning loop: it produces an (original, corrected) pair written by the
+  // person who knows, at the moment of work. Held as the proposal actually
+  // being published (`proposal`) plus the approver's working copy (`editText`)
+  // so the before-half is exact rather than reconstructed from the task blob.
+  const [proposal, setProposal] = useState<{ title: string; content: string } | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editing, setEditing] = useState(false);
 
   const refresh = async () => {
     setLoading(true);
@@ -283,6 +291,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // because it aggregates.
   useEffect(() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }, [selectedId]);
 
+  // The proposed article behind a self-improvement review, so approving with a
+  // correction publishes the CORRECTION. Same reset discipline as the reason
+  // picker above: carrying one task's edit onto another would publish text the
+  // approver never read against work they never saw.
+  useEffect(() => {
+    setProposal(null); setEditText(''); setEditing(false);
+    const sel = tasks.find(t => t.id === selectedId);
+    if (!sel || sel.related_table !== 'de_improvements' || !sel.related_id || sel.status !== 'pending') return;
+    let cancelled = false;
+    void getImprovementProposal(sel.related_id).then(p => {
+      if (cancelled || !p) return;
+      setProposal(p); setEditText(p.content);
+    }).catch(() => { /* editor stays hidden; the task is still decidable as-is */ });
+    return () => { cancelled = true; };
+  }, [selectedId, tasks]);
+
   // T2.2: for a self-improvement review, offer publishing the verified fix to
   // the whole role (all same-archetype employees), not just this DE.
   useEffect(() => {
@@ -301,10 +325,18 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       if (task.related_table === 'de_improvements' && decision === 'approved' && impScope === 'role' && task.related_id) {
         await setImprovementPublishScope(task.related_id, 'role');
       }
+      // An approval carries an edit only when the text ACTUALLY changed.
+      // Sending an identical pair would violate the database's
+      // actually_changed check and, worse, log a correction that was never
+      // made — inflating the training set with noise.
+      const corrected = proposal !== null && editText.trim() !== proposal.content.trim();
       await decideHumanTask(task, decision, decision === 'rejected'
         ? { reasonCode: reasonCode as DecisionReasonCode, note: reasonNote.trim() || undefined }
-        : undefined);
+        : corrected
+          ? { edit: { before: proposal!.content, after: editText } }
+          : undefined);
       setRejecting(false); setReasonCode(''); setReasonNote('');
+      setEditing(false);
       await refresh();
     } catch (err) {
       setError((err as Error)?.message || 'Failed to record decision.');
@@ -530,6 +562,36 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     )}
                   </div>
                 )}
+                {/* docs/34 — approve WITH EDITS (mig 474). This is the exact
+                    text apply_improvement publishes, not the task's prose blob,
+                    so a correction here is what reaches the knowledge base and
+                    what gets stored as the (before, after) training pair. */}
+                {selected.status === 'pending' && proposal && (
+                  <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] uppercase tracking-wide text-dt-muted">Proposed article</p>
+                      {!editing && (
+                        <button onClick={() => setEditing(true)}
+                          className="text-[11px] text-dt-accent hover:underline">
+                          Correct it before approving
+                        </button>
+                      )}
+                    </div>
+                    {editing ? (
+                      <>
+                        <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={10}
+                          className="mt-2 w-full rounded-md bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-dt-text" />
+                        <p className="mt-1 text-[11px] text-dt-muted">
+                          {editText.trim() === proposal.content.trim()
+                            ? 'Unchanged — approving publishes the original.'
+                            : 'Edited — approving publishes YOUR version and records the correction so this employee learns from it.'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-1.5 text-xs text-dt-support whitespace-pre-wrap line-clamp-6">{proposal.content}</p>
+                    )}
+                  </div>
+                )}
                 {selected.status === 'pending' && (
                   <div className="flex gap-2 mt-4">
                     <button
@@ -541,6 +603,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                         : selected.type === 'checklist' ? 'Mark complete'
                         : selected.type === 'action_approval' && gatedExec?.destructive ? 'Approve & send'
                         : selected.type === 'action_approval' ? 'Approve & execute'
+                        // Say what the button will actually publish. An approver
+                        // who corrected the text should not have to trust that
+                        // the edit was picked up.
+                        : proposal && editText.trim() !== proposal.content.trim() ? 'Approve with your edit'
                         : 'Approve'}
                     </button>
                     <button onClick={() => setRejecting(true)} disabled={deciding}

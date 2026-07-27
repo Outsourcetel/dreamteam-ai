@@ -196,6 +196,21 @@ export async function getImprovementRoleInfo(improvementId: string): Promise<{ a
   return { archetype: arch, peers: count ?? 0 };
 }
 
+/** The proposed article behind a self-improvement review, for approve-with-edit.
+ *  The task's `detail` is a composed prose blob (failing question + rationale +
+ *  article + replay score), so it cannot be edited directly — the approver needs
+ *  the actual `proposed_content` that `apply_improvement` will publish, and
+ *  nothing else. Returns null when it can't be read, and the UI then hides the
+ *  editor rather than offering a box wired to nothing. */
+export async function getImprovementProposal(
+  improvementId: string,
+): Promise<{ title: string; content: string } | null> {
+  const { data } = await supabase.from('de_improvements')
+    .select('proposed_title, proposed_content').eq('id', improvementId).maybeSingle();
+  if (!data?.proposed_content) return null;
+  return { title: (data.proposed_title as string) ?? '', content: data.proposed_content as string };
+}
+
 // ── Tenant resolution (cached per module) ─────────────────────────
 
 let cachedTenantId: string | null = null;
