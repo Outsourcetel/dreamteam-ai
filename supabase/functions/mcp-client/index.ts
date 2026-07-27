@@ -159,6 +159,22 @@ async function mcpSession(endpoint: string, headers: Record<string, string>): Pr
   };
 }
 
+/**
+ * Constant-time comparison for shared secrets.
+ *
+ * Both sides must be NON-EMPTY. That is the entire point: '' === '' is true, so
+ * comparing an absent header against an unset environment variable
+ * AUTHENTICATES THE CALLER. Every secret check in this file goes through here
+ * so that trap cannot be reintroduced one call site at a time.
+ */
+function secretMatches(presented: string | null, expected: string | undefined): boolean {
+  if (!presented || !expected) return false;
+  if (presented.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < presented.length; i++) diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -174,12 +190,33 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // ── Auth: caller JWT → tenant, or service role + tenant_id ──
-    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    // ── Auth: caller JWT → tenant, or a trusted machine caller + tenant_id ──
+    //
+    // The machine path used to be "present the service-role key as the bearer
+    // token". Supabase retired the legacy service_role JWT, so that path stopped
+    // authenticating anything and this function had NO working non-human entry
+    // point — internal callers got a flat 401 with nothing in the code to say why.
+    //
+    // Fixed by adopting the house idiom rather than inventing a third one:
+    // x-dispatch-secret checked against PLAYBOOK_DISPATCH_SECRET, exactly as every
+    // pg_cron dispatcher already does (see mig 350). The legacy key comparison
+    // stays as a fallback for any caller still using it — it simply never matches
+    // once the key is gone, which is correct for a retired credential.
+    //
+    // ⚠ BOTH go through secretMatches, which refuses empty operands. The original
+    // strict-equality check was one misconfiguration away from fail-open: set
+    // SUPABASE_SERVICE_ROLE_KEY to the empty string and a request with NO
+    // Authorization header authenticates as a service call, then takes tenant_id
+    // straight from the request body — any tenant it cares to name.
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearers+/i, '');
+    const machineCaller =
+      secretMatches(req.headers.get('x-dispatch-secret'), Deno.env.get('PLAYBOOK_DISPATCH_SECRET')) ||
+      secretMatches(jwt, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+
     let tenantId: string | null = null;
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (machineCaller) {
       tenantId = body.tenant_id ?? null;
-      if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
+      if (!tenantId) return json({ error: 'tenant_id required for machine calls' }, 400);
     } else {
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       if (userErr || !userData?.user) return json({ error: 'unauthorized' }, 401);
@@ -284,7 +321,7 @@ serve(async (req) => {
       // are re-enabled by REGISTERING each tool as an action_definition (provider
       // 'mcp'), which inherits the whole gate rather than bypassing it — the §3 MCP
       // increment. Opt-in escape hatch for that governed executor only.
-      const governed = req.headers.get('x-mcp-governed-call') === (Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? ' ');
+      const governed = secretMatches(req.headers.get('x-mcp-governed-call'), Deno.env.get('PLAYBOOK_DISPATCH_SECRET'));
       if (!governed) {
         return json({ ok: false, error: 'mcp_writes_not_governed',
           detail: 'Calling an MCP tool directly is disabled: it would bypass the action gate (approval, guardrails, trust dial, spend caps). Register the tool as a governed action instead.' }, 403);
