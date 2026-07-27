@@ -2469,6 +2469,15 @@ serve(async (req) => {
       });
       if (dispErr) return json({ error: dispErr.message }, 500);
 
+      // Mig 430 companion: suspended tenants are fully dormant. The SQL
+      // guard in dispatch_due_triggers stops NEW fires; this skips anything
+      // already parked (stale pending fires, waiting runs, agentic gates)
+      // so suspension takes effect immediately. Skipped rows are left
+      // untouched — on reactivation the next tick picks them up.
+      const { data: suspendedRows } = await admin
+        .from('tenants').select('id').eq('status', 'suspended');
+      const suspendedTenants = new Set((suspendedRows ?? []).map((t) => t.id as string));
+
       // 2) Turn pending fires into real runs (includes stale fires from
       //    a previously crashed processor — the fire log is the queue).
       let firesQuery = admin.from('playbook_trigger_fires')
@@ -2478,7 +2487,7 @@ serve(async (req) => {
       const { data: fires } = await firesQuery;
 
       const processed: Array<{ fire_id: string; run_id?: string; status: string }> = [];
-      for (const fire of fires ?? []) {
+      for (const fire of (fires ?? []).filter((f) => !suspendedTenants.has(f.tenant_id))) {
         let outcome: StartDefResult;
         if (!fire.definition_id || !fire.target_account_id) {
           outcome = { status: 'error', error: 'fire missing definition or target account' };
@@ -2524,7 +2533,7 @@ serve(async (req) => {
       if (scopeTenant) waitQuery = waitQuery.eq('tenant_id', scopeTenant);
       const { data: dueWaits } = await waitQuery;
       const waitsResumed: Array<{ run_id: string; status: string }> = [];
-      for (const w of dueWaits ?? []) {
+      for (const w of (dueWaits ?? []).filter((r) => !suspendedTenants.has(r.tenant_id))) {
         const steps = w.steps as RunStep[];
         const idx = w.current_step as number;
         if (steps[idx]) {
@@ -2554,7 +2563,7 @@ serve(async (req) => {
       if (scopeTenant) gateQuery = gateQuery.eq('tenant_id', scopeTenant);
       const { data: gatedRuns } = await gateQuery;
       const gatesResumed: Array<{ run_id: string; status: string }> = [];
-      for (const g of gatedRuns ?? []) {
+      for (const g of (gatedRuns ?? []).filter((r) => !suspendedTenants.has(r.tenant_id))) {
         const { data: task } = await admin.from('human_tasks')
           .select('status, title').eq('id', g.waiting_task_id).maybeSingle();
         const decision = String(task?.status ?? 'pending');
