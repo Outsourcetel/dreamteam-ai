@@ -126,7 +126,7 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**IN PROGRESS — 7 of 24 guarded (migs 403–409).** A guard here is not a filter:
+**IN PROGRESS — 11 of 24 guarded (migs 403–413).** A guard here is not a filter:
 it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
 this" into "nothing happened", which is worse than either. Every guard raises
@@ -151,6 +151,44 @@ before skipping.
 | `claim_support_conversation` | 407 | `de_conversations` | yes |
 | `set_support_conversation_state` | 408 | `de_conversations` | yes |
 | `handoff_back_to_de` | 409 | already resolved `v_de` | no — body rejects a null `v_de` first |
+| `propose_invoice_writeback` | 410 | `p_de_id` param | no — `de_not_found` proves it resolves |
+| `propose_account_writeback` | 411 | `p_de_id` param | no — same |
+| `propose_opportunity_writeback` | 412 | `p_de_id` param | no — same |
+| `propose_continuity_writeback` | 413 | `p_de_id` param | no — same |
+
+### ⚠ "Refuse, never filter" — the mechanism is per contract, not always RAISE
+
+The first seven actors raise. The four write-backs do **not**, and that is
+deliberate. They communicate every failure through an `{ok:false, error:...}`
+envelope — `bad_op`, `de_not_found`, `not_tenant_member`,
+`invoice_not_in_tenant`. Raising there would break every caller's error handling
+for no security gain, so the guard returns `not_responsible_for_de` in the same
+envelope, sitting directly beside `not_tenant_member`.
+
+That is still an explicit refusal the caller can see and handle — the thing
+group B forbids is a *silent* filter, not the RAISE keyword specifically. The
+error **code** is identical across all of group B so it stays greppable and the
+frontend has one string to handle.
+
+### Why the write-back four are the sharpest end of group B
+
+Everything else in group B moves rows inside DreamTeam. These propose changes to
+a **customer's system of record**, and they do not always stop for a human: when
+`decide_action_execution` returns `auto_executed` the write is applied
+immediately via `apply_*_writeback_internal`. Unscoped, a person assigned to one
+employee could trigger a write into billing, a CRM account, a pipeline deal or a
+renewal case on behalf of an employee they have no relationship with — and where
+the trust dial permits auto-execution, with nobody in the loop at all.
+
+Verified per function, from live definitions: guard present exactly once, after
+the tenant check, and **before** the gate, the request insert, and the
+auto-apply. The existing anti-hallucination guarantees (closed status enums,
+configured-stage lookups) are asserted to have survived each rewrite — losing
+one of those would be a worse regression than the gap being closed.
+
+⚠ Cosmetic only: migration 410 injected `function''s` into a `--` comment inside
+the body (an over-escaped apostrophe). No functional effect; left alone rather
+than churn a live security function for a typo. 411–413 avoid apostrophes.
 
 **Null-tolerance is per-function, decided by the column, not copied.** Where the
 `de_id` is nullable the guard is `IF v_de IS NOT NULL AND NOT can_access_de(...)`
@@ -174,14 +212,14 @@ case the function has excluded.
    case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
    State the *failure* condition directly and never use that shape.
 
-### Remaining (17)
+### Remaining (13)
 
 | group | functions |
 |---|---|
 | ~~Drafts & replies~~ | ✅ all done (403–406); `sync_outbound_draft_status` reclassified to C |
 | ~~Support flow~~ | ✅ all done (407–409) |
 | Missions & work | `create_de_mission`, `create_de_team_mission`, `set_de_mission_state`, `enqueue_de_work_item` |
-| Write-back proposals | `propose_account_writeback`, `propose_invoice_writeback`, `propose_opportunity_writeback`, `propose_continuity_writeback` |
+| ~~Write-back proposals~~ | ✅ all done (410–413) |
 | Learning & trust | `approve_learned_behavior`, `reject_learned_behavior`, `apply_improvement`, `request_trust_promotion` |
 | Onboarding & evidence | `resolve_onboarding_signoff`, `update_onboarding_item`, `submit_evidence_feedback` |
 | Browser operator | `create_browser_operation`, `propose_browser_task` |
