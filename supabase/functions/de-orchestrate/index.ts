@@ -118,9 +118,15 @@ serve(async (req) => {
     type Mate = { id: string; name: string; persona_name: string | null; description: string | null; responsibilities: string[] | null; lifecycle_status: string };
     let mates: Mate[] = [];
     if (targetIds.length > 0) {
+      // SCOPE CONTAINMENT (docs/31 decision #2, 2026-07-28): the specialist
+      // auto-grant gives every DE — supervisors included — a grant to the
+      // tenant's Technical Specialist. Consult is the specialist interface;
+      // routing an incoming question TO a teammate is a work handoff, so
+      // specialists are excluded from the routable roster (is_specialist is
+      // NOT NULL, so eq(false) is exact). Same decision as de-work delegation.
       const { data: rows } = await admin.from('digital_employees')
         .select('id, name, persona_name, description, responsibilities, lifecycle_status')
-        .in('id', targetIds).eq('tenant_id', tenant_id);
+        .in('id', targetIds).eq('tenant_id', tenant_id).eq('is_specialist', false);
       mates = ((rows ?? []) as Mate[]).filter(m => !INELIGIBLE.includes(String(m.lifecycle_status)));
     }
 

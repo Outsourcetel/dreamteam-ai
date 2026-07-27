@@ -315,9 +315,16 @@ async function runResolveInquiry(
   // Specialists are Digital Employees now (migrations 208/211). Resolve the
   // specialist DE by its specialist_key; its id is the subject id used on the
   // DE rails (grants, experience, evidence).
+  // ACTIVE only (2026-07-28): retired/disabled specialist rows are terminal
+  // history — a reinstall creates a NEW row rather than reviving them, so a
+  // key can match several rows over a tenant's lifetime. Without the status
+  // filter, maybeSingle() errors on the second row and the whole resolve
+  // fails (live incident: outsourcetel-hq's retired twin). No unique index
+  // guarantees one ACTIVE row per key, so order newest-first and take one.
   const { data: prof2 } = await admin.from('digital_employees')
     .select('id, name, persona_name').eq('tenant_id', tenantId)
-    .eq('is_specialist', true).eq('specialist_key', String(opts.profileKey ?? 'technical')).maybeSingle();
+    .eq('is_specialist', true).eq('specialist_key', String(opts.profileKey ?? 'technical'))
+    .eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle();
 
   // Default subject: the Technical Specialist (unchanged behavior for
   // the human-invoked path). The proactive path overrides this with
@@ -579,8 +586,13 @@ async function runResolveInquiry(
       .select('id, target_de_id, category')
       .eq('tenant_id', tenantId).eq('requester_de_id', subjectId).eq('active', true);
     for (const g of (grants ?? []) as Array<{ id: string; target_de_id: string; category: string }>) {
+      // ACTIVE targets only (2026-07-28): a grant is membership, not a health
+      // check — a target retired/disabled after the grant was written must not
+      // keep answering consultations (retired specialist rows are terminal
+      // history). Mirrors the de-work consult gate's status filter.
       const { data: targetDe } = await admin.from('digital_employees')
-        .select('id, name, persona_name').eq('id', g.target_de_id).eq('tenant_id', tenantId).maybeSingle();
+        .select('id, name, persona_name').eq('id', g.target_de_id).eq('tenant_id', tenantId)
+        .eq('status', 'active').maybeSingle();
       if (!targetDe) continue;
       const targetName = targetDe.persona_name || targetDe.name;
       const started = Date.now();
@@ -1177,8 +1189,12 @@ serve(async (req) => {
     if (action === 'simulate_inquiry') {
       const inquiry = String(body.inquiry ?? '').trim();
       if (!inquiry) return json({ error: 'inquiry_required' }, 400);
+      // ACTIVE only + newest-first (2026-07-28): retired specialist rows are
+      // terminal history and must not break (or answer) the simulation — see
+      // the runResolveInquiry lookup comment.
       const { data: prof2 } = await admin.from('digital_employees')
-        .select('id, name, persona_name').eq('tenant_id', tenantId).eq('is_specialist', true).eq('specialist_key', 'technical').maybeSingle();
+        .select('id, name, persona_name').eq('tenant_id', tenantId).eq('is_specialist', true).eq('specialist_key', 'technical')
+        .eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle();
       try {
         const result = await runResolveInquiry(admin, tenantId!, inquiry, String(body.account_ref ?? '').trim() || null, {
           subjectKind: 'specialist', subjectId: prof2?.id ?? null,
@@ -1422,11 +1438,23 @@ serve(async (req) => {
     // specialist DE by specialist_key; `prof` keeps the old shape so the consult
     // body below reads unchanged, but every id is the DE id (grants, sources,
     // guardrails, and cost attribution are all on DE rails).
+    // ACTIVE only (2026-07-28): retired/disabled specialist rows are terminal
+    // history — reinstalling creates a NEW row, so one key can match several
+    // rows and the unfiltered maybeSingle() errored on the second (live
+    // incident: outsourcetel-hq). No unique index guarantees one ACTIVE row
+    // per key, so order newest-first and take one. A second lookup keeps the
+    // honest profile_paused answer when the ONLY rows are non-active.
     const { data: specDe } = await admin.from('digital_employees')
       .select('id, name, persona_name, status, charter').eq('tenant_id', tenantId)
-      .eq('is_specialist', true).eq('specialist_key', profileKey).maybeSingle();
-    if (!specDe) return json({ error: 'profile_not_found' }, 404);
-    if (specDe.status !== 'active') return json({ error: 'profile_paused' }, 400);
+      .eq('is_specialist', true).eq('specialist_key', profileKey)
+      .eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!specDe) {
+      const { data: pausedRow } = await admin.from('digital_employees')
+        .select('id').eq('tenant_id', tenantId)
+        .eq('is_specialist', true).eq('specialist_key', profileKey)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      return pausedRow ? json({ error: 'profile_paused' }, 400) : json({ error: 'profile_not_found' }, 404);
+    }
     const prof = {
       id: specDe.id as string,
       name: (specDe.persona_name || specDe.name) as string,

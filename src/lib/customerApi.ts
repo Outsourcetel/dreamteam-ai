@@ -211,6 +211,31 @@ export async function getImprovementProposal(
   return { title: (data.proposed_title as string) ?? '', content: data.proposed_content as string };
 }
 
+/** Entity-guard review signals (fix-pass 2026-07-28), stamped on the proposal
+ *  at creation by trg_de_improvements_entity_guard: `entityMatch` when the
+ *  proposed article names a live entity of this workspace (the self-denial
+ *  class — the KB may be MISSING documentation rather than the answer being
+ *  wrong), and `outcomeKind` distinguishing zero-knowledge-hit triggers
+ *  ('kb_missing') from judged-wrong answers ('wrong_answer'). Returns null
+ *  (banner hidden) when the row is unreadable or predates the guard — absence
+ *  means "untagged", never "safe". */
+export async function getImprovementReviewSignals(
+  improvementId: string,
+): Promise<{ entityMatch: { name: string; kind: string } | null; outcomeKind: 'kb_missing' | 'wrong_answer' | null } | null> {
+  const { data, error } = await supabase.from('de_improvements')
+    .select('detail').eq('id', improvementId).maybeSingle();
+  if (error || !data) return null;   // pre-migration workspaces: column absent → hide quietly
+  const d = ((data as { detail?: unknown }).detail ?? {}) as {
+    entity_match?: { name?: string; kind?: string }; outcome_kind?: string;
+  };
+  return {
+    entityMatch: d.entity_match?.name
+      ? { name: String(d.entity_match.name), kind: String(d.entity_match.kind ?? 'entity') }
+      : null,
+    outcomeKind: d.outcome_kind === 'kb_missing' || d.outcome_kind === 'wrong_answer' ? d.outcome_kind : null,
+  };
+}
+
 // ── Tenant resolution (cached per module) ─────────────────────────
 
 let cachedTenantId: string | null = null;

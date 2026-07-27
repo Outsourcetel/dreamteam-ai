@@ -5,7 +5,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, DECISION_REASON_CODES } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES } from '../../../lib/customerApi';
 import type { DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -235,6 +235,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
   const [impRole, setImpRole] = useState<{ archetype: string; peers: number } | null>(null);
   const [impScope, setImpScope] = useState<'de' | 'role'>('de');
+  // Entity-guard signals (fix-pass 2026-07-28): a proposal naming a live
+  // entity of this workspace may be the self-denial class — the KB missing
+  // documentation, not the answer being wrong. Loud banner + quiet chip.
+  const [impSignals, setImpSignals] = useState<{ entityMatch: { name: string; kind: string } | null; outcomeKind: 'kb_missing' | 'wrong_answer' | null } | null>(null);
   // docs/34: a rejection must say why. Held here rather than in the decide()
   // call so the picker can appear inline before the decision is committed —
   // asking after the fact is how you get "ok" and "no".
@@ -315,6 +319,17 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     if (!sel || sel.related_table !== 'de_improvements' || !sel.related_id || sel.status !== 'pending') return;
     let cancelled = false;
     void getImprovementRoleInfo(sel.related_id).then(info => { if (!cancelled) setImpRole(info); }).catch(() => { /* toggle just stays hidden */ });
+    return () => { cancelled = true; };
+  }, [selectedId, tasks]);
+
+  // Entity-guard signals for the selected proposal. Shown for PENDING and
+  // decided tasks alike — a decided task's premise can still be questioned.
+  useEffect(() => {
+    setImpSignals(null);
+    const sel = tasks.find(t => t.id === selectedId);
+    if (!sel || sel.related_table !== 'de_improvements' || !sel.related_id) return;
+    let cancelled = false;
+    void getImprovementReviewSignals(sel.related_id).then(s => { if (!cancelled) setImpSignals(s); }).catch(() => { /* signals stay hidden — absence means untagged, not safe */ });
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
@@ -546,6 +561,27 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 )}
 
+                {/* Entity-guard (fix-pass 2026-07-28): the self-denial class.
+                    LOUD on entity match — groundedness scoring rewards denial
+                    when the KB is incomplete, so the reviewer must be told the
+                    premise may be broken, not the answer. */}
+                {selected.related_table === 'de_improvements' && impSignals?.entityMatch && (
+                  <div className="mt-4 rounded-lg border-2 border-amber-500/60 bg-amber-500/10 px-3 py-2.5">
+                    <p className="text-xs font-bold text-amber-300 mb-1">⚠ Check the premise before the answer</p>
+                    <p className="text-[11px] text-amber-200/90">
+                      This proposes rules about &lsquo;{impSignals.entityMatch.name}&rsquo; — an active {impSignals.entityMatch.kind === 'digital_employee' ? 'digital employee' : impSignals.entityMatch.kind} in this workspace.
+                      The knowledge base may be MISSING documentation rather than the answer being wrong.
+                      If this article teaches an employee to deny something that actually exists, reject it and add the missing documentation instead.
+                    </p>
+                  </div>
+                )}
+                {selected.related_table === 'de_improvements' && impSignals?.outcomeKind === 'kb_missing' && (
+                  <div className="mt-2">
+                    <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-dt-panel border border-dt-border text-dt-muted" title="The question that triggered this fix found zero knowledge-base hits — the KB had nothing to say, rather than saying something wrong.">
+                      no KB coverage found
+                    </span>
+                  </div>
+                )}
                 {selected.related_table === 'de_improvements' && selected.status === 'pending' && impRole && impRole.peers > 0 && (
                   <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Who learns from this</p>

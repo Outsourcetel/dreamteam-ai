@@ -19,6 +19,22 @@ import { raise, requireTenantId } from './liveShared';
 export type DevelopmentItemType = 'confidence_gap' | 'escalation_spike' | 'error_rate' | 'guardrail_pattern' | 'skill_gap' | 'pip' | 'manual';
 export type DevelopmentItemStatus = 'proposed' | 'in_progress' | 'completed' | 'dismissed' | 'failed';
 
+/** One machine attempt recorded on a development item by the daily
+ *  development-program worker (docs/31 decision #3). Written server-side
+ *  only; the UI renders it read-only. */
+export interface DEDevelopmentAttempt {
+  at: string;
+  action: 'knowledge_gap_refresh' | 'answer_quality_improve' | 'no_candidate';
+  note?: string;
+  /** True when another open item on the same DE triggered the dispatch and
+   *  this item is covered by the same improvement draft. */
+  shared?: boolean;
+  gap_cluster_id?: string;
+  judgment_id?: string;
+  /** Consecutive no-candidate mornings collapse into one entry with a count. */
+  times?: number;
+}
+
 export interface DEDevelopmentItem {
   id: string;
   tenant_id: string;
@@ -39,6 +55,30 @@ export interface DEDevelopmentItem {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  /** Machine-attempt log — absent until the development-program migration is applied. */
+  attempts?: DEDevelopmentAttempt[] | null;
+}
+
+/** The improvement drafts the program's dispatches produced for this DE —
+ *  joined client-side to attempts via judgment_id / gap_cluster_id so the
+ *  card can say, honestly, where each attempt got to. */
+export interface DEImprovementOutcome {
+  id: string;
+  judgment_id: string | null;
+  gap_cluster_id: string | null;
+  status: 'proposed' | 'replayed' | 'failed_replay' | 'review_pending' | 'approved' | 'applied' | 'rejected';
+  proposed_title: string | null;
+}
+
+export async function listDeImprovementOutcomes(deId: string): Promise<DEImprovementOutcome[]> {
+  const { data, error } = await supabase
+    .from('de_improvements')
+    .select('id, judgment_id, gap_cluster_id, status, proposed_title')
+    .eq('de_id', deId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) raise('listDeImprovementOutcomes', error);
+  return (data ?? []) as DEImprovementOutcome[];
 }
 
 export async function listDeDevelopmentItems(deId: string): Promise<DEDevelopmentItem[]> {

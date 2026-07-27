@@ -270,7 +270,11 @@ export async function listDeConsultationGrants(deId: string): Promise<{ asReques
 /** Grants requesterDeId permission to consult targetDeId for one
  *  category — owner/admin only (enforced by RLS). The target DE's own
  *  data access grants govern what it can actually answer; this never
- *  widens the requester's own access. */
+ *  widens the requester's own access.
+ *  NOTE (docs/31 decision 2): grants to the tenant's Technical Specialist
+ *  are also created automatically at hire and on specialist activation by
+ *  DB triggers (category 'other', created_by null) — the UI may therefore
+ *  see rows no human created; toggling `active` on them works normally. */
 export async function createDeConsultationGrant(requesterDeId: string, targetDeId: string, category: string): Promise<DEConsultationGrant> {
   const tid = await requireTenantId();
   const { data, error } = await supabase

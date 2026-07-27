@@ -50,9 +50,9 @@ import type {
 import Modal from '../../components/Modal';
 import {
   listDeHealth, DE_HEALTH_LABELS, listDeDevelopmentItems, detectDeDevelopmentNeeds,
-  createDeDevelopmentItem, updateDeDevelopmentItemStatus,
+  createDeDevelopmentItem, updateDeDevelopmentItemStatus, listDeImprovementOutcomes,
 } from '../../lib/deHealthApi';
-import type { DEHealth, DEDevelopmentItem } from '../../lib/deHealthApi';
+import type { DEHealth, DEDevelopmentItem, DEDevelopmentAttempt, DEImprovementOutcome } from '../../lib/deHealthApi';
 import { listAuditEvents } from '../../lib/guardrailApi';
 import type { AuditEvent } from '../../lib/guardrailApi';
 import { listDocScopes } from '../../lib/knowledgeApi';
@@ -747,8 +747,41 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
+// The two detector kinds the daily program can honestly work (a verified,
+// human-approved knowledge fix repairs answers). Run-error and guardrail
+// patterns have NO automated fix path — the card says so instead of faking
+// coverage.
+const MACHINE_WIRED_TYPES: DEDevelopmentItem['item_type'][] = ['confidence_gap', 'escalation_spike'];
+const HUMAN_ONLY_DETECTED_TYPES: DEDevelopmentItem['item_type'][] = ['error_rate', 'guardrail_pattern'];
+
+/** Plain-language outcome of one machine attempt, resolved against the
+ *  improvement drafts that exist for this DE. */
+function attemptLine(a: DEDevelopmentAttempt, outcomes: DEImprovementOutcome[]): string {
+  const when = new Date(a.at).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (a.action === 'no_candidate') {
+    const times = a.times && a.times > 1 ? ` (checked ${a.times} mornings)` : '';
+    return `${when}: The platform looked for improvable evidence — nothing it could act on yet${times}.`;
+  }
+  const what = a.action === 'knowledge_gap_refresh'
+    ? 'refreshed knowledge on a question this employee could not answer'
+    : 'drafted a knowledge fix for a below-standard answer';
+  const match = outcomes.find(o =>
+    (a.gap_cluster_id && o.gap_cluster_id === a.gap_cluster_id) ||
+    (a.judgment_id && o.judgment_id === a.judgment_id));
+  const outcome = !match ? 'attempt dispatched, result pending'
+    : match.status === 'review_pending' ? `draft "${match.proposed_title ?? 'untitled'}" proved better in replay — waiting your review`
+    : match.status === 'approved' ? 'a human approved the draft — applying'
+    : match.status === 'applied' ? 'approved and published to this employee’s knowledge'
+    : match.status === 'rejected' ? 'a human rejected the draft'
+    : match.status === 'failed_replay' ? 'the draft did not prove better in replay — nothing was sent for review'
+    : 'drafting and verifying now';
+  const shared = a.shared ? ' One draft covers both open signals on this employee.' : '';
+  return `${when}: The platform attempted: ${what} — ${outcome}.${shared}`;
+}
+
 export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
+  const [outcomes, setOutcomes] = useState<DEImprovementOutcome[]>([]);
   const [scanning, setScanning] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [desc, setDesc] = useState('');
@@ -757,6 +790,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
 
   const load = useCallback(async () => {
     try { setItems(await listDeDevelopmentItems(de.id)); } catch { setItems([]); }
+    try { setOutcomes(await listDeImprovementOutcomes(de.id)); } catch { setOutcomes([]); }
   }, [de.id]);
 
   useEffect(() => { void load(); }, [load]);
@@ -785,9 +819,10 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   if (items === null) return null;
   const open = items.filter(i => i.status === 'proposed' || i.status === 'in_progress');
   // docs/31 Q10: a failed PIP used to vanish — the filters didn't know the
-  // status existed. It renders now, in red. (The incident it raised lives on
-  // the Record tab; the founder decision on relabelling — program vs flags —
-  // is open, so the card keeps its "Development plan" name.)
+  // status existed. It renders now, in red. (The founder decided: this is a
+  // PROGRAM — the machine works open confidence/escalation items daily and
+  // records every attempt on the item; the two kinds it can't honestly fix
+  // are labelled human-only below.)
   const failed = items.filter(i => i.status === 'failed');
   const resolved = items.filter(i => i.status === 'completed' || i.status === 'dismissed');
   const typeLabel = (t: DEDevelopmentItem['item_type'], source: string) =>
@@ -797,11 +832,14 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Development plan</h3>
+        <h3 className="text-base font-semibold text-white">Development program</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">evidence-grounded</span>
       </div>
       <p className="text-xs text-dt-muted mb-4">
-        Proposed from real 8-week performance data (escalation rate, confidence, error rate, guardrail patterns) — or added manually. While one is open, this employee shows as "Improving."
+        Proposed from real 8-week performance data (escalation rate, confidence, error rate, guardrail patterns) — or added manually.
+        The platform works open confidence and escalation items itself each morning: it drafts a knowledge fix, proves it by replay, and a human approves before anything publishes.
+        Run-error and guardrail patterns stay with you — no automated fix honestly covers them.
+        While one is open, this employee shows as "Improving."
       </p>
       {err && <div className="mb-3 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
@@ -852,6 +890,23 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
                   {item.due_date && item.consequence && ' '}
                   {item.consequence && <>If not met: {item.consequence}</>}
                 </p>
+              )}
+              {/* The machine-attempt trail (docs/31 decision #3). Wired kinds
+                  show what the program did, in plain language; the two kinds
+                  no driver honestly fixes are labelled human-only. */}
+              {item.source === 'detected' && MACHINE_WIRED_TYPES.includes(item.item_type) && (
+                (item.attempts?.length ?? 0) > 0 ? (
+                  <div className="mt-1.5 space-y-0.5">
+                    {(item.attempts ?? []).slice(-3).reverse().map((a, i) => (
+                      <p key={i} className="text-[11px] text-sky-200/80">{attemptLine(a, outcomes)}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-dt-faint mt-1.5">No machine attempts recorded yet — the program works this item on its daily cycle.</p>
+                )
+              )}
+              {item.source === 'detected' && HUMAN_ONLY_DETECTED_TYPES.includes(item.item_type) && (
+                <p className="text-[11px] text-dt-faint mt-1.5">Human-only: no automated fix path honestly covers this signal — it needs your judgment.</p>
               )}
             </div>
           ))}

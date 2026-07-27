@@ -691,6 +691,17 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // and re-checks the grant + single-hop server-side (mig 269). Not offered
   // while working a task that was itself delegated (objectiveKind==='de_task') —
   // the single-hop pre-filter, backstopped in SQL.
+  //
+  // SCOPE CONTAINMENT (docs/31 decision #2, 2026-07-28): the specialist
+  // auto-grant backfill makes every DE hold a grant to its tenant's Technical
+  // Specialist. de_consultation_grants is the shared collaboration allow-list,
+  // so without a filter those grants would silently make specialists
+  // DELEGATION targets too. Decision: consult is the specialist interface
+  // (consult_specialist above); delegation is DE-to-DE work handoff and stays
+  // as it was — specialists are excluded here as targets. This Map is also the
+  // execution gate for the delegate_to_colleague handler, so exclusion at
+  // build time covers both offer and execution. Mirrored in SQL inside
+  // request_de_task (same decision, same wording).
   const delegateTools: typeof TOOLS = [];
   let delegationTargets: Map<string, string> | undefined;   // colleague name (lower) → de_id
   if (objectiveId && objectiveKind !== 'de_task') {
@@ -700,6 +711,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     if (tIds.length > 0) {
       const { data: colRows } = await admin.from('digital_employees')
         .select('id, name, persona_name, department').in('id', tIds)
+        .eq('is_specialist', false)   // specialists are consulted, never delegated to (is_specialist is NOT NULL)
         .not('lifecycle_status', 'in', '(paused,retired,archived)');
       const cols = (colRows ?? []) as Array<{ id: string; name?: string; persona_name?: string; department?: string }>;
       if (cols.length > 0) {
