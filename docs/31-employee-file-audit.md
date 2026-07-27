@@ -372,6 +372,43 @@ LiveWorkforceDEs.tsx.
 
 ---
 
+## Before we start: six commitments the founder did not ask about
+
+Findings beyond the 12 questions that should be locked in before any rebuild step ships.
+
+1. **Deploy-parity pass.** Every runtime claim in this audit about edge functions
+   (trust enforcement, trace writers, gate ordering) was verified against *repo* source,
+   not the *deployed* functions — and this codebase has a history of deploy drift
+   (verify_jwt gotchas exist for a reason). One diff pass of deployed vs repo closes the
+   audit's largest evidentiary hole. Cheap; do it first.
+2. **Full permission matrix for the Employee File's ~60 RPCs.** The four Record readers
+   are proven-unscoped, but Workbench readers (memory, traces, exceptions, replay) and
+   the rest were never checked against docs/29 default-DENY. This is new scoping surface
+   beyond the docs/30 worklist and belongs to the Wave-2 migration stream — which makes
+   it urgent now (see #6).
+3. **Audit events on assignment changes BEFORE deleting Owner.** The dead ownership path
+   audited its transfers; the live one records nothing. Deleting Owner first would leave
+   accountability changes unrecorded in a governance product — sequence matters.
+4. **The real-tenant evidence pipeline.** `evidence_run_decisions` is 0 for
+   outsourcetel-hq despite 242 answers. This single gap is why the Performance tiles,
+   the Experience ledger, AND the development detector are all empty or inert for every
+   real DE — three "broken-looking" features share one un-wired pipe. Rebuilding the UI
+   without it ships beautiful empty tabs.
+5. **Rename/URL mechanics plan before the tab merge.** URLSync bounce is a known gotcha
+   in this codebase; deep links from the Command Centre and gate banners point at tab
+   names the merge changes; and the new tabs need a per-role visibility matrix under
+   docs/29 nav-gating. A half-day of planning prevents a class of regression the
+   design-system checklist won't catch.
+6. **The assignment drive graduated from "nice" to "urgent" mid-audit.** Wave-2 scoping
+   (migs 387–424) went live while this audit ran. The moment anyone below manager signs
+   in, they see an almost-empty workforce — because 113 of 116 DEs have nobody named.
+   The security machinery now outruns the org data feeding it.
+
+Also standing, from the same day's session: rotate the Supabase access token (it sat in
+plaintext in the permissions file for weeks before today's cleanup), and the stale-copy
+sweep — two pages currently claim live machinery is dormant ("Designed until
+activation", "Awaiting ANTHROPIC_API_KEY"), which understates the product in every demo.
+
 ## Your eight decisions
 
 1. **Missions front door.** The docs/14 keystone has never been used — 0 missions ever,
