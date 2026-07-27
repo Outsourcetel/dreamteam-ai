@@ -61,7 +61,7 @@ export interface AmendmentSuggestion {
 }
 
 /**
- * Send a message to the Workforce Assistant
+ * Send a message to the Workspace Assistant
  */
 export async function sendWorkforceMessage(
   tenantId: string,
@@ -319,7 +319,7 @@ export async function getPendingActions(tenantId: string): Promise<WorkforceActi
 }
 
 /**
- * Get all product knowledge (for Workforce Assistant context)
+ * Get all product knowledge (for Workspace Assistant context)
  */
 export async function getProductKnowledge(
   topic?: string

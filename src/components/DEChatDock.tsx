@@ -445,7 +445,7 @@ export default function DEChatDock() {
       // business DE happens to be oldest: routing every question to (say)
       // the Finance DE is why this dock used to answer as "Morgan"
       // regardless of what was asked. Every tenant is provisioned a
-      // Workforce Assistant; fall back to a published DE only if missing.
+      // Workspace Assistant; fall back to a published DE only if missing.
       const rows = des as Array<DigitalEmployee & { is_workforce_assistant?: boolean }>;
       const assistant =
         rows.find((d) => d.is_workforce_assistant) ??
@@ -545,7 +545,7 @@ export default function DEChatDock() {
     setTyping(true);
     try {
       // Ask the employee we are actually SHOWING in the header. liveDe is set
-      // from the Workforce Assistant just above; not passing it is what made the
+      // from the Workspace Assistant just above; not passing it is what made the
       // header say "Workspace Assistant" while a different employee answered.
       const res = await askDE(text, conversationIdRef.current, currentTenant?.id ?? null, liveDe?.id ?? null);
       if (res.conversation_id) conversationIdRef.current = res.conversation_id;
@@ -692,7 +692,7 @@ export default function DEChatDock() {
           {isLive && dockMode === 'do' ? (
             <div className="flex-1 min-h-0 flex flex-col">
               <p className="text-[10px] text-dt-muted px-3 pt-2">
-                Edits knowledge, playbook drafts and employee descriptions (undoable). To hire or restructure the workforce itself, use the Workforce Assistant hub.
+                Edits knowledge, playbook drafts and employee descriptions (undoable). To hire or restructure the workforce itself, use the workforce hub.
               </p>
               <div className="flex-1 min-h-0">
                 <AISessionPanel subjectKind="workspace" subjectLabel="Your workspace" />

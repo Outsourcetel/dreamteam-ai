@@ -857,7 +857,7 @@ export async function getKnowledgeGapClusterDetail(cluster: KnowledgeGapCluster)
 
 // ── The platform knowledge shelf (migs 334/336/337) ─────────────────────────
 // DreamTeam's own product documentation, stored ONCE outside every tenant and
-// read by the Workforce Assistant. Deliberately a separate API surface from the
+// read by the Workspace Assistant. Deliberately a separate API surface from the
 // tenant library: none of these rows belong to the workspace, none of them
 // count toward its metrics, and none of them can be edited here.
 

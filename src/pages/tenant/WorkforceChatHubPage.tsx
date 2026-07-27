@@ -151,7 +151,7 @@ export function WorkforceChatHubPage() {
     <div className="h-screen flex flex-col bg-dt-page">
       {/* Header */}
       <div className="border-b border-dt-border bg-dt-page px-6 py-4">
-        <h1 className="text-2xl font-bold text-dt-title">Workforce Assistant</h1>
+        <h1 className="text-2xl font-bold text-dt-title">Workspace Assistant</h1>
         <p className="text-dt-support text-sm mt-1">
           Manage your digital workforce conversationally — hire, improve, monitor, retire.
           <span className="text-dt-muted"> For editing knowledge, playbooks or settings in plain language, use the ✨ Workspace Assistant (bottom-right on any page).</span>
@@ -267,7 +267,7 @@ export function WorkforceChatHubPage() {
                 <div className="flex items-center justify-center h-full text-dt-support">
                   <div className="text-center">
                     <p className="text-lg">Start a new conversation</p>
-                    <p className="text-sm mt-2">Tell the Workforce Assistant what you need</p>
+                    <p className="text-sm mt-2">Tell the Workspace Assistant what you need</p>
                   </div>
                 </div>
               )}

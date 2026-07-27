@@ -1,8 +1,8 @@
 /**
- * PlatformShelfPanel — "What your Workforce Assistant knows".
+ * PlatformShelfPanel — "What your Workspace Assistant knows".
  *
  * DreamTeam's own product documentation is stored ONCE, outside every tenant,
- * and read by the Workforce Assistant in every workspace (migs 334/336). This
+ * and read by the Workspace Assistant in every workspace (migs 334/336). This
  * is the customer's window onto it.
  *
  * ── Two design rules, both load-bearing ─────────────────────────────────────
@@ -103,9 +103,9 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
         {open && (
           <div className="border-t border-dt-border p-4">
             <div className="mb-3">
-              <h4 className="text-sm font-semibold text-white">What your Workforce Assistant knows</h4>
+              <h4 className="text-sm font-semibold text-white">What your Workspace Assistant knows</h4>
               <p className="text-[11px] text-dt-muted mt-0.5 max-w-2xl">
-                Your Workforce Assistant is taught from these {status.docs_published} articles about how
+                Your Workspace Assistant is taught from these {status.docs_published} articles about how
                 DreamTeam works. They are not part of your knowledge base — they do not appear in your
                 library, are not counted in your document totals, and do not affect your quality or gap
                 scores. They are here so you can see exactly what your assistant was told.
