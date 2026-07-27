@@ -117,6 +117,15 @@ export interface AuthUser {
   tenantId?: string | null;
   avatar?: string;
   layer?: 'platform' | 'tenant' | 'end_user';
+  /**
+   * Relations this person holds on ANY digital employee, from de_assignments
+   * (migration 385) — the ASSIGNMENT axis of docs/29, kept separate from
+   * `role` on purpose. Used by canAccessPage to open pages the role tier
+   * alone would deny (e.g. a DE's reporting-line manager reaching its
+   * approvals queue). Undefined means "not loaded yet" and is treated as
+   * none, so nav can only widen once it arrives, never narrow.
+   */
+  deRelations?: Array<'primary' | 'manager' | 'executive'>;
 }
 
 export interface Tenant {

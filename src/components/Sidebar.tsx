@@ -261,7 +261,12 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   // navigation, this stops advertising dead links).
   const role = (user?.role ?? 'tenant_user') as Parameters<typeof canAccessPage>[0];
   const layer = user?.layer as Parameters<typeof canAccessPage>[2];
-  const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer);
+  // The DE reporting line (docs/29) can open a page the role tier alone would
+  // hide — e.g. an employee's relation-manager reaching its approvals queue.
+  // Must be passed here as well as in handleSetPage, or the page stays
+  // reachable but invisible: navigable by deep link and absent from the nav.
+  const deRelations = user?.deRelations as Parameters<typeof canAccessPage>[3];
+  const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer, deRelations);
   const nav = buildNav(activeCompany.id, liveCounts, true, vocab)
     .map(section => ({
       ...section,

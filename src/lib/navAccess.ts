@@ -153,19 +153,75 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   users: ADMIN,
 };
 
-export const canAccessPage = (role: UserRole, page: Page, layer?: 'platform' | 'tenant' | 'end_user'): boolean => {
+/**
+ * A person's relation to a digital employee, from de_assignments (migration
+ * 385). This is the ASSIGNMENT axis of docs/29 — separate from the role axis
+ * above, and deliberately not merged with it.
+ */
+export type DeRelation = 'primary' | 'manager' | 'executive';
+
+/**
+ * Pages a DE reporting-line RELATION may unlock, on top of the role tier.
+ *
+ * Why this exists. docs/29 defines the reporting line as
+ *   primary    day-to-day work on that employee, and its knowledge
+ *   manager    + approve, trust dial
+ *   executive  visibility + final approval
+ * — but PAGE_ACCESS can only see roles. So a person who is `tenant_user` by
+ * role and `manager` by relation was denied the approvals queue for the very
+ * employee they are accountable for. The two axes disagreed, and the nav only
+ * knew about one of them. Found live: Ali Subhani, relation=manager on
+ * Technical Support, role=tenant_user, could not open ops_human_tasks.
+ *
+ * Only relations that docs/29 gives approval rights to appear here. `primary`
+ * is deliberately absent: day-to-day work on an employee is not authority to
+ * approve its actions, and quietly granting it would collapse the ladder the
+ * reporting line exists to express.
+ *
+ * ⚠ This WIDENS nav, so it must never be the thing standing between a user and
+ * data. It is not: human_tasks is scoped at the database on both read
+ * (migration 386) and write (migration 452), so a relation-manager who reaches
+ * this page sees and decides only their own employee's tasks. The page opening
+ * is a convenience; the bound is in the database. If that ever stops being
+ * true, this map is the wrong place to fix it.
+ */
+const RELATION_ACCESS: Partial<Record<Page, DeRelation[]>> = {
+  ops_human_tasks: ['manager', 'executive'],
+};
+
+export const canAccessPage = (
+  role: UserRole,
+  page: Page,
+  layer?: 'platform' | 'tenant' | 'end_user',
+  /**
+   * Relations this person holds on ANY digital employee. Optional, and absent
+   * means "none" — so every existing caller keeps its exact previous behaviour
+   * and this can only ever widen, never narrow.
+   */
+  deRelations?: readonly DeRelation[],
+): boolean => {
   const isDtRole = DT_ROLES.includes(role) || layer === 'platform';
 
   const allowed = PAGE_ACCESS[page];
   // Default DENY. An unlisted page is a page nobody has decided about.
   if (!allowed) return false;
 
-  // An empty list means platform operators only.
+  // An empty list means platform operators only. The assignment axis cannot
+  // open a platform page — being responsible for an employee says nothing
+  // about operating the platform itself.
   if (allowed.length === 0) return isDtRole;
   // Platform operators see every tenant page — that is what remote access is.
   if (isDtRole) return true;
 
-  return allowed.includes(role);
+  if (allowed.includes(role)) return true;
+
+  // Assignment axis. Checked only after the role tier has declined, so this
+  // can add access and never remove it.
+  const byRelation = RELATION_ACCESS[page];
+  if (byRelation && deRelations && deRelations.length > 0) {
+    return deRelations.some((r) => byRelation.includes(r));
+  }
+  return false;
 };
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -147,6 +147,42 @@ export const fetchMyProfile = async (): Promise<DBProfile | null> => {
   return data;
 };
 
+/**
+ * The relations this person holds on ANY digital employee — the ASSIGNMENT
+ * axis of docs/29, read from de_assignments (migration 385).
+ *
+ * Used by canAccessPage to open pages the ROLE axis alone would deny: a person
+ * who is `tenant_user` by role and `manager` by relation is accountable for
+ * that employee and should reach its approvals queue. Before this, the nav
+ * only understood roles, so the two axes disagreed and the reporting line lost.
+ *
+ * Returns distinct relation names, not rows — nav asks "does this person
+ * manage ANY employee", never "which one". Which employee is a question the
+ * database answers, through can_access_de on every read and write.
+ *
+ * Failure returns [] rather than throwing. This function only ever WIDENS
+ * navigation, so a failed load degrades to the role tier alone — the previous
+ * behaviour — instead of locking someone out of pages they can legitimately
+ * use. RLS on de_assignments already limits the rows to the caller's tenant.
+ */
+export const fetchMyDeRelations = async (): Promise<Array<'primary' | 'manager' | 'executive'>> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data, error } = await supabase
+    .from('de_assignments')
+    .select('relation')
+    .eq('user_id', user.id);
+  if (error) { console.error('fetchMyDeRelations:', error.message); return []; }
+  const seen = new Set<string>();
+  for (const row of (data ?? []) as Array<{ relation: string }>) {
+    if (row?.relation) seen.add(row.relation);
+  }
+  return Array.from(seen).filter(
+    (r): r is 'primary' | 'manager' | 'executive' =>
+      r === 'primary' || r === 'manager' || r === 'executive',
+  );
+};
+
 export interface CompleteSignupResult {
   ok: boolean;
   tenant_id?: string;

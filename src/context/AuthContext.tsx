@@ -5,6 +5,7 @@ import {
   fetchTenantById,
   fetchDashboardStats,
   fetchMyProfile,
+  fetchMyDeRelations,
   DBTenant,
 } from '../lib/api';
 import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy, checkMyIpAllowed } from '../lib/api';
@@ -322,6 +323,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (profile?.layer && profile.layer !== authedUser.layer) {
           setAuthedUser(prev => (prev ? { ...prev, layer: profile.layer } : prev));
         }
+        // ASSIGNMENT AXIS (docs/29, de_assignments / migration 385). Loaded on
+        // the same resync tick as role and layer, because it is the same class
+        // of staleness: a person assigned to an employee AFTER signing in would
+        // otherwise keep the nav they had at sign-in until they signed out.
+        //
+        // Only relevant for tenant-layer users — a platform operator already
+        // sees every page, so the query would be wasted work on every tick.
+        // It only ever WIDENS nav (canAccessPage checks it after the role tier
+        // declines), so a slow or failed load degrades to today's behaviour
+        // rather than hiding pages someone can legitimately use.
+        if (profile?.layer !== 'platform') {
+          const rels = await fetchMyDeRelations();
+          if (_cleanup) return;
+          const prevRels = authedUser.deRelations ?? [];
+          const changed =
+            rels.length !== prevRels.length ||
+            rels.some(r => !prevRels.includes(r));
+          if (changed) {
+            setAuthedUser(prev => (prev ? { ...prev, deRelations: rels } : prev));
+          }
+        }
         if (profile?.layer === 'platform') {
           const t = await fetchTenants();
           if (!_cleanup) { setDbTenants(t); setDbTenantsLoaded(true); }
@@ -542,7 +564,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleSetPage = (p: Page) => {
     if (!authedUser) return;
-    if (canAccessPage(authedUser.role, p, authedUser.layer)) setCurrentPage(p);
+    // Both axes: role tier first, then the DE reporting line (docs/29). The
+    // relations are undefined until the first resync tick, which is safe —
+    // canAccessPage treats absent as none, so this can only open up once they
+    // load, never close something that was already open.
+    if (canAccessPage(authedUser.role, p, authedUser.layer, authedUser.deRelations)) setCurrentPage(p);
   };
 
   const refreshTenant = async () => {
