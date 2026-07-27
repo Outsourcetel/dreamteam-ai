@@ -1397,7 +1397,7 @@ export async function getGatedExecutionForTask(taskId: string): Promise<GatedExe
  * rejected by decideHumanTask before this hook runs.
  */
 export async function resolveActionExecution(
-  taskId: string, decision: 'approved' | 'rejected',
+  taskId: string, decision: 'approved' | 'rejected', editedDraft?: string,
 ): Promise<void> {
   if (decision === 'rejected') return; // nothing further to execute
   const { data: exec, error } = await supabase.rpc('resolve_action_execution_for_task', { p_task_id: taskId });
@@ -1405,7 +1405,16 @@ export async function resolveActionExecution(
   const row = exec as { id: string; action_definition_id: string; connector_id: string; params: Record<string, unknown> };
   const { data: def } = await supabase.from('action_definitions').select('action_key').eq('id', row.action_definition_id).maybeSingle();
   if (!def) { console.warn('resolveActionExecution: action_definition missing', row.action_definition_id); return; }
-  await executeAction(row.connector_id, def.action_key as string, row.params, { approvedExecutionId: row.id });
+  // Approve-with-edits (migration 455): the approver's corrected draft is what
+  // reaches the external system. Only the draft param the approval panel
+  // displays is overridable — body, else note, the panel's own precedence —
+  // so recipients, amounts and every other gated param stay exactly as decided.
+  let params = row.params;
+  if (editedDraft !== undefined && editedDraft.trim() !== '') {
+    if (typeof params.body === 'string' && params.body) params = { ...params, body: editedDraft };
+    else if (typeof params.note === 'string' && params.note) params = { ...params, note: editedDraft };
+  }
+  await executeAction(row.connector_id, def.action_key as string, params, { approvedExecutionId: row.id });
 }
 
 async function invokeHub<T = Record<string, unknown>>(

@@ -111,6 +111,11 @@ export interface DBHumanTask {
   updated_at: string;
   /** checklist tasks only — item ticks (migration 031). */
   checklist_state?: ChecklistItemState[];
+  /** Decision capture (migration 455): why a rejection happened, and the
+   *  (before, after) pair when the approver corrected the work first. */
+  decision_reason_code?: DecisionReasonCode | null;
+  decision_note?: string | null;
+  decision_edit?: { before: unknown; after: unknown } | null;
 }
 
 /** Toggle one checklist item's tick state. Approve stays disabled in the
@@ -617,9 +622,12 @@ export async function decideHumanTask(
   //   3. The audit event is written server-side, so it cannot be skipped by a
   //      caller that forgets — which is why the client-side appendAuditEvent
   //      below was removed (mig 456 brought its detail to parity first).
-  // The idempotency contract is IDENTICAL: the RPC returns the row on a real
-  // transition and NULL when the task was already decided, matching the
-  // .maybeSingle() semantics the guard below has always relied on.
+  // The idempotency contract: the RPC returns the row on a real transition
+  // and NULL when the task was already decided. ⚠ BUT PostgREST serializes a
+  // NULL composite as a row of ALL-NULL columns, not JSON null (measured —
+  // tests/approval-learning-capture.test.ts), so the guard below checks
+  // data.id, never truthiness of data: `if (!data)` would silently never fire
+  // and every side-effect hook would re-run on an already-decided task.
   const { data, error } = await supabase.rpc('decide_human_task', {
     p_task_id:     task.id,
     p_decision:    decision,
@@ -788,7 +796,11 @@ export async function decideHumanTask(
   if (task.type === 'action_approval') {
     try {
       const { resolveActionExecution } = await import('./connectorApi');
-      await resolveActionExecution(task.id, decision);
+      // Approve-with-edits: the corrected draft is what must actually execute
+      // — capturing the pair while sending the ORIGINAL would make the edit
+      // surface a lie the approver only discovers from the customer.
+      await resolveActionExecution(task.id, decision,
+        typeof capture?.edit?.after === 'string' ? capture.edit.after : undefined);
     } catch (err) {
       console.error('action execution hook:', err);
       throw err;
