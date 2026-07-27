@@ -43,12 +43,6 @@ export type TenantPage =
   | 'outcome_financial'         // Financial health: AP/AR, reporting, tax
   | 'outcome_risk'              // Risk & Compliance
 
-  // ── Specialist Functions (called on demand) ───────
-  | 'specialist_technical'
-  | 'specialist_legal'
-  | 'specialist_finance_deep'
-  | 'specialist_people'
-
   // ── Workforce (DE management) ─────────────────────
   | 'workforce_des'             // Digital Employees roster (incl. individual profiles)
   | 'workforce_de_file'         // Employee File — one DE's page (?de=<id> deep link)

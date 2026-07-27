@@ -284,7 +284,7 @@ function EvidenceVerdictControl({ evidenceRunId, onSubmitted }: { evidenceRunId:
   );
 }
 
-function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidenceRunId }: {
+function EvidenceTrail({ steps, confidence, answerStatus, answer, evidenceRunId }: {
   steps: EvidenceStep[];
   confidence?: EvidenceRun['confidence_inputs'];
   answerStatus?: string;
@@ -342,13 +342,12 @@ function EvidenceTrail({ steps, confidence, answerStatus, answer, note, evidence
       )}
 
       <div className="mt-3 pt-3 border-t border-dt-border">
-        <p className="text-[11px] font-medium text-dt-support mb-1">What Alex would answer from</p>
+        <p className="text-[11px] font-medium text-dt-support mb-1">Specialist answer</p>
         {answerStatus === 'answered' && answer ? (
           <p className="text-xs text-dt-body whitespace-pre-wrap">{answer}</p>
         ) : (
-          <p className="text-[11px] text-amber-300">
-            Awaiting LLM activation — the evidence above is gathered and cited today; the written answer unlocks when the brain (ANTHROPIC_API_KEY) is switched on.
-            {note ? '' : ''}
+          <p className="text-[11px] text-dt-muted">
+            No written answer was recorded for this run — the evidence above is what was gathered and cited. New consultations answer in full through the live pipeline.
           </p>
         )}
       </div>
@@ -832,7 +831,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
       {/* Consultation console */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
         <h3 className="text-sm font-semibold text-white mb-1">Consultation console</h3>
-        <p className="text-[11px] text-dt-muted mb-3">Retrieval across configured sources runs now; the answer path unlocks when the specialist brain (ANTHROPIC_API_KEY) is activated.</p>
+        <p className="text-[11px] text-dt-muted mb-3">Ask a hard question — the specialist retrieves across its configured sources and answers with confidence and citations. Every consultation is recorded below.</p>
         <div className="flex gap-2 mb-3">
           <input className={inputCls} placeholder="Ask the Technical Specialist…" value={question}
             onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void ask(); }} />
@@ -843,7 +842,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
         {lastResult && (
           <div className="rounded-xl border border-dt-border bg-dt-inset p-4 mb-4">
             {lastResult.error === 'llm_not_configured' ? (
-              <p className="text-xs text-amber-300 mb-2">Specialist brain not activated — retrieval ran and is recorded below. Configure ANTHROPIC_API_KEY to unlock answers.</p>
+              <p className="text-xs text-amber-300 mb-2">The AI model could not be reached for this consultation — retrieval still ran and is recorded below. Try again; if it keeps happening, contact support.</p>
             ) : lastResult.blocked ? (
               <p className="text-xs text-red-300 mb-2">Answer blocked by guardrail "{lastResult.rule}" — escalated to a human.</p>
             ) : lastResult.answer ? (

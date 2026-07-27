@@ -20,9 +20,10 @@ export interface DigitalEmployee {
   confidence_threshold: number;
   required_approval: boolean;
   created_at: string;
-  /** Wave 2 (migration 110) — governance triad */
+  /** Wave 2 (migration 110) — governance triad. The dead owner_id column
+   *  (docs/31 Q11) is no longer surfaced here; accountability is
+   *  de_assignments ("Responsible people" on the Record tab). */
   config_version: number;
-  owner_id: string | null;
   icon: string | null;
   model_provider: string | null;
   model_id: string | null;
@@ -201,16 +202,8 @@ export async function getDEConfigHistory(deId: string): Promise<DEConfigHistoryE
   return (data ?? []) as DEConfigHistoryEntry[];
 }
 
-/** Hands ownership of a DE to another active member of the workspace
- *  (owner/admin only). A narrative audited event, not just a column
- *  edit — docs §13.6: "Transfer is an audited event." */
-export async function transferDeOwnership(deId: string, newOwnerUserId: string, note?: string): Promise<DigitalEmployee> {
-  const { data, error } = await supabase.rpc('transfer_de_ownership', {
-    p_de_id: deId, p_new_owner_user_id: newOwnerUserId, p_note: note ?? null,
-  });
-  if (error) raise('transferDeOwnership', error);
-  return data as DigitalEmployee;
-}
+// transfer_de_ownership (DB) still exists, but its frontend wrapper is gone —
+// the Owner UI was a dead limb (docs/31 Q11: 0 owners ever, 0 transfers ever).
 
 export interface RetirementBlocker { kind: string; count: number; message: string }
 export interface RetirementReadiness {

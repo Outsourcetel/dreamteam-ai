@@ -39,7 +39,6 @@ import BrowserOperatorPage from './pages/tenant/autonomy/BrowserOperatorPage';
 import { InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import WorkforceHubPage from './pages/tenant/WorkforceHubPage';
 import EmployeeFilePage from './pages/tenant/EmployeeFilePage';
-import SpecialistsPage from './pages/tenant/SpecialistsPage';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
@@ -98,11 +97,6 @@ const PAGE_TO_URL: Record<Page, string> = {
   outcome_delivery:   '/outcomes/delivery',
   outcome_financial:  '/outcomes/financial',
   outcome_risk:       '/outcomes/risk',
-  // Specialist
-  specialist_technical:    '/specialist/technical',
-  specialist_legal:        '/specialist/legal',
-  specialist_finance_deep: '/specialist/finance',
-  specialist_people:       '/specialist/people',
   // Workforce (DEs)
   workforce_des:       '/workforce/des',
   workforce_de_file:   '/workforce/employee',
@@ -447,15 +441,6 @@ function AppShell() {
         return <OutcomesPage setPage={handleSetPage} />;
       case 'outcome_risk':
         return <OutcomesPage setPage={handleSetPage} />;
-      // ── Specialist pages ──────────────────────────────────────
-      case 'specialist_technical':
-        return <SpecialistsPage domain="technical" setPage={handleSetPage} />;
-      case 'specialist_legal':
-        return <SpecialistsPage domain="legal" setPage={handleSetPage} />;
-      case 'specialist_finance_deep':
-        return <SpecialistsPage domain="finance_deep" setPage={handleSetPage} />;
-      case 'specialist_people':
-        return <SpecialistsPage domain="people" setPage={handleSetPage} />;
       // ── Workforce (one hub: Roster / At Work / Performance / Proving
       // Ground / Self-Learning — old URLs deep-link to tabs) ──
       case 'workforce_des':

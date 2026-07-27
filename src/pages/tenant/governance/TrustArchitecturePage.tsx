@@ -124,7 +124,7 @@ AUDIT INTEGRITY — Live
 audit_events is INSERT-only: no update/delete policies plus a trigger raising on UPDATE/DELETE, verified against a direct superuser attempt. sha256 hash chain computed in append_audit_event under a per-tenant advisory lock. verify_audit_chain recomputes the chain server-side.
 
 AI SAFETY CONTROLS
-Grounded-only answering, confidence + escalation, guardrail answer checks (pattern v1): Live (pending activation). Invoice-threshold guardrails: Live and active now. Proving Ground eval suites with soft, audited publish gate: Live (pending activation). Trust dial (autonomy narrows within guardrails, never overrides them): Live in the invoice/playbook path; answer-confidence floors Designed until activation. Server-side playbook executor with immutable published definitions: Live.
+Grounded-only answering, confidence + escalation, guardrail answer checks (pattern v1): Live (pending activation). Invoice-threshold guardrails: Live and active now. Proving Ground eval suites with soft, audited publish gate: Live (pending activation). Trust dial (autonomy narrows within guardrails, never overrides them): Live in the invoice/playbook path; answer-confidence floors ENFORCED live on the answer paths (since 2026-07-22). Server-side playbook executor with immutable published definitions: Live.
 
 IDENTITY & ACCESS
 Supabase Auth seats + tenant mapping: Live. Session policy (timeout + MFA-require): LIVE + enforced. API keys: LIVE (consumed by a2a + emit-event). IP allowlist: LIVE data, app-signout enforcement only — not a network perimeter. SSO/SAML + SCIM: Roadmap. Widget keys sha256-hashed at rest, plaintext shown once: Live. Signed tenant-issued end-user JWTs: Roadmap.

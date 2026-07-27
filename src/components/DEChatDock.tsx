@@ -40,16 +40,16 @@ export function deForPage(page: Page, companyId: CompanyId): DockDE {
   const roster = DES[companyId];
   if (companyId === 'tcp') {
     const [alex, casey, riley] = roster;
-    if (page.startsWith('entity_workforce') || page === 'specialist_people' || page === 'workforce_des') return riley;
+    if (page.startsWith('entity_workforce') || page === 'workforce_des') return riley;
     if (
       page === 'entity_customer_renewal' || page === 'entity_customer_sales' ||
       page === 'entity_customer_bd' || page === 'outcome_revenue' ||
-      page === 'outcome_financial' || page === 'specialist_finance_deep'
+      page === 'outcome_financial'
     ) return casey;
     return alex; // support/customer pages + default
   }
   const [morgan, avery] = roster;
-  if (page === 'specialist_finance_deep' || page === 'outcome_delivery' || page === 'outcome_financial' || page.startsWith('knowledge')) return avery;
+  if (page === 'outcome_delivery' || page === 'outcome_financial' || page.startsWith('knowledge')) return avery;
   return morgan;
 }
 

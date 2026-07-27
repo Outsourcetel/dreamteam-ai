@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   getDeMemory, getDeObjectives, getDeWorkItems, getDeTrace, getDeExceptions,
-  getDeCertifications, getDeCertStatus, getDeTraining, getTenantCompliancePacks, runCertificationEval,
+  getDeCertifications, getDeCertStatus, getTenantCompliancePacks, runCertificationEval,
   listAllCompliancePacks, attachCompliancePack,
   getReplaySources, runReplay,
   getDeMemoryGrouped, forgetMemory, saveObjective, decideException,
   type MemoryRow, type ObjectiveRow, type WorkItemRow, type TraceRow, type ExceptionRow,
-  type CertRow, type CertStatus, type TrainingRow, type CompliancePackRow,
+  type CertRow, type CertStatus, type CompliancePackRow,
   type ReplaySource, type ReplayResult, type MemoryGroup,
 } from '../../lib/deWorkbenchApi';
 import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
@@ -37,7 +37,6 @@ const SECTIONS = [
   { key: 'exceptions', label: 'Exceptions' },
   { key: 'replay', label: 'Replay Lab' },
   { key: 'certification', label: 'Certification' },
-  { key: 'training', label: 'Training' },
   { key: 'compliance', label: 'Compliance' },
 ] as const;
 type Section = typeof SECTIONS[number]['key'];
@@ -126,7 +125,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
       setCertRun({ busy: false, note: (e as Error).message });
     }
   };
-  const [training, setTraining] = useState<TrainingRow[]>([]);
   // Replay Lab
   const [replaySources, setReplaySources] = useState<ReplaySource[]>([]);
   const [replaySel, setReplaySel] = useState<ReplaySource | null>(null);
@@ -162,14 +160,14 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, o, w, t, e, c, cs, tr, p, rs, mg] = await Promise.all([
+        const [m, o, w, t, e, c, cs, p, rs, mg] = await Promise.all([
           getDeMemory(deId), getDeObjectives(deId), getDeWorkItems(deId), getDeTrace(deId),
-          getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getDeTraining(deId), getTenantCompliancePacks(),
+          getDeExceptions(deId), getDeCertifications(deId), getDeCertStatus(deId), getTenantCompliancePacks(),
           getReplaySources(deId), getDeMemoryGrouped(deId),
         ]);
         if (cancelled) return;
         setMemory(m); setObjectives(o); setWorkItems(w); setTrace(t);
-        setExceptions(e); setCerts(c); setCertStatus(cs); setTraining(tr); setPacks(p);
+        setExceptions(e); setCerts(c); setCertStatus(cs); setPacks(p);
         setReplaySources(rs); setMemoryGroups(mg);
       } catch {
         // A failed load must NOT masquerade as an honest empty state.
@@ -267,7 +265,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     <div className={`${card} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-dt-border">
         <p className="text-sm font-semibold text-white">Workbench</p>
-        <p className="text-xs text-dt-muted mt-0.5">What this employee remembers, works on, decides, and has been certified & trained to do — all live.</p>
+        <p className="text-xs text-dt-muted mt-0.5">What this employee remembers, works on, decides, and has been certified to do — all live.</p>
       </div>
       <div className="flex flex-wrap gap-1 px-3 pt-3">
         {SECTIONS.map(s => (
@@ -601,18 +599,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                   <span className="text-sm text-dt-body flex-1">{c.archetype_key ?? 'Role'} certification</span>
                   <span className={`text-sm font-semibold ${c.status === 'passed' ? 'text-emerald-300' : 'text-rose-300'}`}>{Math.round(c.score_pct)}%</span>
                   <span className="text-[11px] text-dt-faint">need {c.threshold_pct}% · {fmt(c.evaluated_at ?? c.created_at)}</span>
-                </div>
-              ))}</div>
-            ))}
-
-            {section === 'training' && (training.length === 0 ? (
-              <LiveEmptyState icon="◎" title="No training assigned" body="A role's curriculum (SOPs, tools, policies) is tracked here." />
-            ) : (
-              <div className="space-y-2">{training.map(t => (
-                <div key={t.module_key} className="bg-dt-inset rounded-lg px-4 py-2.5 flex items-center gap-3">
-                  <Pill s={t.status} />
-                  <span className="text-sm text-dt-body flex-1">{t.module_key.replace(/_/g, ' ')}</span>
-                  {t.completed_at && <span className="text-[11px] text-dt-faint">{fmt(t.completed_at)}</span>}
                 </div>
               ))}</div>
             ))}

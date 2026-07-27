@@ -1,6 +1,6 @@
 // DE Workbench — read layer that finally surfaces the Wave 1-3 "muscles"
-// (memory, work queue, decision trace, exceptions, compliance, certification,
-// training) in the UI. Every table has an RLS SELECT policy scoping to the
+// (memory, work queue, decision trace, exceptions, compliance, certification)
+// in the UI. Every table has an RLS SELECT policy scoping to the
 // caller's tenant (migs 155-163), so a de_id filter is sufficient and safe.
 import { supabase } from '../supabase';
 
@@ -11,7 +11,6 @@ export interface TraceRow { id: string; run_ref: string | null; run_kind: string
 export interface ExceptionRow { id: string; situation: string; proposed_action: string; justification: string; status: string; outcome: string | null; learned: boolean; created_at: string }
 export interface CertRow { id: string; archetype_key: string | null; score_pct: number; threshold_pct: number; status: string; evaluated_at: string | null; created_at: string }
 export interface CertStatus { state: 'certified' | 'stale' | 'failed' | 'uncertified' | 'unknown'; fresh: boolean; latest_passed: { score_pct: number; evaluated_at: string | null; archetype_key: string | null } | null; latest_status: string | null }
-export interface TrainingRow { module_key: string; status: string; completed_at: string | null }
 export interface CompliancePackRow { pack_key: string; attached_at: string; name?: string; domain?: string }
 // Replay Lab (Frontier-20 #6): a past exchange the operator can re-run.
 export interface ReplaySource { kind: 'failed_judgment' | 'question'; question: string; original_answer: string | null; original_score: number | null; rationale: string | null; created_at: string }
@@ -258,13 +257,8 @@ export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> 
   return (data ?? null) as CertStatus | null;
 };
 
-export const getDeTraining = async (deId: string): Promise<TrainingRow[]> => {
-  const { data, error } = await supabase.from('de_training_progress')
-    .select('module_key, status, completed_at')
-    .eq('de_id', deId).order('module_key', { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as TrainingRow[];
-};
+// getDeTraining is gone with the Training subtab (docs/31 Q5: de_training_progress
+// has zero rows and NO writer anywhere in the codebase — structurally empty forever).
 
 // Compliance packs are tenant-scoped (not per-DE), but relevant on the DE
 // workbench because attached packs enforce guardrails on every DE.

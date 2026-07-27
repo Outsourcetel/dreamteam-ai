@@ -18,47 +18,38 @@ import {
 } from '../../lib/trustApi';
 import type { TrustPolicy, TrustEvidence, TrustHistoryEvent, TrustCategory } from '../../lib/trustApi';
 import { appendAuditEvent } from '../../lib/guardrailApi';
-import {
-  listDefinitions, listDEPlaybookAssignments, assignPlaybookToDE,
-  reprioritizeAssignment, setAssignmentActive, removeAssignment,
-  setDefinitionDeBinding,
-} from '../../lib/playbookBuilderApi';
-import type { PlaybookDefinition, DEPlaybookAssignment } from '../../lib/playbookBuilderApi';
+import { listDefinitions, setDefinitionDeBinding } from '../../lib/playbookBuilderApi';
+import type { PlaybookDefinition } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
-import { ConfirmDeleteModal } from '../../components';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
 import SpecialistLive from './SpecialistLive';
 import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
   getKpiMetricsForDe, createKpiMetric, recordKpiReading, slugifyKey,
-  listSkillCategories, createTenantSkill, listCertificationTypes,
+  listSkillCategories, createTenantSkill,
   getCustomEscalationRules, saveCustomEscalationRules, getEscalationSignals, OPERATORS_BY_TYPE,
 } from '../../lib/roleConfigApi';
-import type { KpiMetric, SkillCategory, CertificationType, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
+import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
 import DeWorkbenchPanel from './DeWorkbench';
-import EmployeeFileStrip from '../../components/workforce/EmployeeFileStrip';
 import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
-  transferDeOwnership, checkDeRetirementReadiness, retireDigitalEmployee,
+  checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
-  listDeProfileFields, addDeProfileField, setDeAttributes, setExternalReplyMode,
+  setExternalReplyMode,
   listDeTaskRequests, assignTaskToDe, respondDeTask, setDeSupervisor,
 } from '../../lib/digitalEmployeesApi';
 import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
-  DeProfileField, DETaskRequest,
+  DETaskRequest,
 } from '../../lib/digitalEmployeesApi';
-import { useUsers } from '../../lib/useUsers';
 import Modal from '../../components/Modal';
 import {
   listDeHealth, DE_HEALTH_LABELS, listDeDevelopmentItems, detectDeDevelopmentNeeds,
   createDeDevelopmentItem, updateDeDevelopmentItemStatus,
 } from '../../lib/deHealthApi';
 import type { DEHealth, DEDevelopmentItem } from '../../lib/deHealthApi';
-import { getDePerformanceMetrics } from '../../lib/api';
-import type { DePerformanceMetrics } from '../../lib/api';
 import { listAuditEvents } from '../../lib/guardrailApi';
 import type { AuditEvent } from '../../lib/guardrailApi';
 import { listDocScopes } from '../../lib/knowledgeApi';
@@ -86,147 +77,6 @@ function draftFrom(a: DEAutonomy | undefined): RowDraft {
     amount: a?.max_amount_cents != null ? String(Math.round(a.max_amount_cents / 100)) : '',
     confidence: a?.min_confidence != null ? String(a.min_confidence) : '',
   };
-}
-
-// ── "How this DE operates" — the operating charter panel ───────────
-// Which playbooks this DE runs, and in what priority order (lowest
-// number first) when several active playbooks match the same trigger.
-function OperatingCharterPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
-  const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
-  const [assignments, setAssignments] = useState<DEPlaybookAssignment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [pickId, setPickId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<DEPlaybookAssignment | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [d, a] = await Promise.all([listDefinitions(), listDEPlaybookAssignments(deId)]);
-      setDefs(d.filter(x => x.status === 'published'));
-      setAssignments(a);
-    } catch (err) {
-      setError((err as Error)?.message || 'Failed to load the operating charter.');
-    } finally {
-      setLoading(false);
-    }
-  }, [deId]);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  const unassigned = defs.filter(d => !assignments.some(a => a.playbook_id === d.id));
-
-  const add = async () => {
-    if (!pickId) return;
-    setBusy(true); setError(null);
-    try {
-      const nextPriority = (assignments.reduce((m, a) => Math.max(m, a.priority), 0) || 0) + 10;
-      await assignPlaybookToDE(deId, pickId, nextPriority);
-      setPickId(''); setAdding(false);
-      await refresh();
-    } catch (err) { setError((err as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  const move = async (a: DEPlaybookAssignment, dir: -1 | 1) => {
-    const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
-    const idx = sorted.findIndex(x => x.id === a.id);
-    const swapIdx = idx + dir;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const other = sorted[swapIdx];
-    setBusy(true);
-    try {
-      await Promise.all([
-        reprioritizeAssignment(a.id, other.priority),
-        reprioritizeAssignment(other.id, a.priority),
-      ]);
-      await refresh();
-    } catch (err) { setError((err as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  if (loading) return null;
-
-  const sorted = [...assignments].sort((x, y) => x.priority - y.priority);
-
-  return (
-    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-      <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">How this DE operates</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">operating charter</span>
-      </div>
-      <p className="text-xs text-dt-muted mb-4">
-        The playbooks assigned to this DE, in priority order. When more than one active playbook matches the same
-        trigger, the lowest-numbered priority runs first. Drag with the arrows to reprioritize.
-      </p>
-
-      {error && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
-
-      {sorted.length === 0 ? (
-        <p className="text-xs text-dt-muted mb-3">No playbooks assigned yet — this DE only runs playbooks it's directly assigned.</p>
-      ) : (
-        <div className="space-y-1.5 mb-3">
-          {sorted.map((a, i) => {
-            const def = defs.find(d => d.id === a.playbook_id);
-            return (
-              <div key={a.id} className={`flex items-center gap-3 text-xs rounded-lg px-3 py-2 ${a.active ? 'bg-dt-inset' : 'bg-dt-page/30 opacity-60'}`}>
-                <span className="w-6 h-6 rounded-lg bg-dt-panel text-dt-support flex items-center justify-center text-[11px] font-bold flex-shrink-0">{a.priority}</span>
-                <button onClick={() => setPage('systems_playbooks')} className="text-dt-body hover:text-indigo-300 transition-colors truncate flex-1 text-left">
-                  {def?.name ?? 'Unknown playbook'}
-                </button>
-                {!a.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">paused</span>}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => void move(a, -1)} disabled={busy || i === 0} className="text-dt-muted hover:text-dt-support disabled:opacity-30">↑</button>
-                  <button onClick={() => void move(a, 1)} disabled={busy || i === sorted.length - 1} className="text-dt-muted hover:text-dt-support disabled:opacity-30">↓</button>
-                  <button onClick={() => void (async () => { setBusy(true); try { await setAssignmentActive(a.id, !a.active); await refresh(); } finally { setBusy(false); } })()} disabled={busy}
-                    className="text-dt-muted hover:text-dt-support disabled:opacity-30 ml-1">{a.active ? 'pause' : 'resume'}</button>
-                  <button onClick={() => setRemoveTarget(a)} disabled={busy}
-                    className="text-dt-faint hover:text-rose-400 disabled:opacity-30 ml-1">remove</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {adding ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <select value={pickId} onChange={e => setPickId(e.target.value)}
-            className="bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-xs text-dt-body focus:outline-none focus:border-slate-500 !w-64">
-            <option value="">Pick a published playbook…</option>
-            {unassigned.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-          <button onClick={() => void add()} disabled={busy || !pickId}
-            className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium disabled:opacity-40 transition-colors">
-            {busy ? 'Adding…' : 'Add'}
-          </button>
-          <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
-        </div>
-      ) : (
-        <button onClick={() => setAdding(true)} disabled={unassigned.length === 0}
-          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
-          + Assign a playbook
-        </button>
-      )}
-      {unassigned.length === 0 && !adding && defs.length > 0 && (
-        <p className="mt-2 text-[11px] text-dt-faint">Every published playbook is already assigned.</p>
-      )}
-      {defs.length === 0 && (
-        <p className="mt-2 text-[11px] text-dt-faint">No published playbooks yet — build one in Playbooks first.</p>
-      )}
-      {removeTarget && (
-        <ConfirmDeleteModal
-          title="Remove playbook assignment"
-          message={`Remove "${defs.find(d => d.id === removeTarget.playbook_id)?.name ?? 'this playbook'}" from this DE? It will stop running for this DE immediately — you can re-assign it later if needed.`}
-          confirmLabel="Remove"
-          onClose={() => setRemoveTarget(null)}
-          onConfirm={async () => { await removeAssignment(removeTarget.id); setRemoveTarget(null); await refresh(); }}
-        />
-      )}
-    </div>
-  );
 }
 
 // ── Roster + "Add a Digital Employee" — the generic persona-creation
@@ -417,64 +267,6 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   );
 }
 
-// ── Performance — real per-DE metrics (migrations 093-096), filtered
-// client-side from the tenant-wide RPC to this one employee. ──────
-function DePerformancePanel({ deId }: { deId: string }) {
-  const [metrics, setMetrics] = useState<DePerformanceMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').single();
-      const tenantId = profile?.tenant_id;
-      if (!tenantId) { if (!cancelled) setLoading(false); return; }
-      const all = await getDePerformanceMetrics(tenantId);
-      if (!cancelled) {
-        setMetrics(all.find(m => m.de_id === deId) ?? null);
-        setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [deId]);
-
-  if (loading) return null;
-
-  return (
-    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-      <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Performance</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">real metrics</span>
-      </div>
-      <p className="text-xs text-dt-muted mb-5">Computed from this employee's own decisions and runs — not estimated.</p>
-
-      {!metrics || metrics.total_decisions === 0 ? (
-        <p className="text-xs text-dt-muted">No decisions recorded yet for this employee.</p>
-      ) : (
-        <div className="grid grid-cols-4 gap-3">
-          {[
-            { label: 'Resolution', value: `${metrics.resolution_rate}%` },
-            { label: 'Confidence', value: `${metrics.avg_confidence}%` },
-            { label: 'Escalation', value: `${metrics.escalation_rate}%` },
-            { label: 'Error rate', value: `${metrics.error_rate}%` },
-          ].map(t => (
-            <div key={t.label} className="rounded-xl border border-dt-border bg-dt-inset p-3">
-              <div className="text-[11px] text-dt-muted">{t.label}</div>
-              <div className="text-lg font-semibold text-dt-title mt-0.5">{t.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {metrics && metrics.total_decisions > 0 && (
-        <p className="mt-4 text-[11px] text-dt-muted">
-          {metrics.total_decisions} inquiries this period{metrics.high_frustration_count > 0 ? ` · ${metrics.high_frustration_count} auto-escalated for frustration` : ''}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Knowledge scope — real per-DE knowledge_doc_scopes count
 // (migration 030). No doc list here on purpose — the Knowledge
 // Library is where you manage scoping; this is a status summary. ──
@@ -643,31 +435,6 @@ function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: P
         </button>
       </p>
     </div>
-  );
-}
-
-// ── Health — a real, composed signal (Wave 5, migration 112). Self-
-// contained: fetches the whole tenant's health list and filters to
-// this DE, matching the other per-DE panels' pattern. ──────────────
-function DeHealthInline({ deId }: { deId: string }) {
-  const [health, setHealth] = useState<DEHealth | null | undefined>(undefined);
-  useEffect(() => {
-    let cancelled = false;
-    listDeHealth().then(all => { if (!cancelled) setHealth(all.find(h => h.de_id === deId) ?? null); })
-      .catch(() => { if (!cancelled) setHealth(null); });
-    return () => { cancelled = true; };
-  }, [deId]);
-  if (!health) return null;
-  const meta = DE_HEALTH_LABELS[health.state];
-  return (
-    <>
-      <span className={`text-xs px-2 py-0.5 rounded-full ${meta.color}`} title={JSON.stringify(health.signals)}>
-        {meta.label}
-      </span>
-      {health.cost_per_task_usd !== null && (
-        <span className="text-[11px] text-dt-muted">${health.cost_per_task_usd.toFixed(3)}/task</span>
-      )}
-    </>
   );
 }
 
@@ -867,53 +634,30 @@ function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   );
 }
 
-// ── Certifications & Reviews panel (DE-C3, migration 129). Durable,
-// expiring certifications issued by a named human; quarterly
+// ── Performance reviews panel (DE-C3, migration 129). Quarterly
 // performance reviews with honest verdicts (insufficient data is a
 // verdict, not a gap to hide). A 'below' review opens a PIP in the
 // Development panel below, with a written consequence.
-type CertRow = {
-  id: string; cert_type: string; scope: string; note: string;
-  issued_by_name: string; issued_at: string; expires_at: string; status: string;
-};
+// The human-attestation certifications UI that used to share this panel
+// (de_certifications — 0 rows ever written, docs/31 cut list) is gone;
+// the real, exam-based certification flow lives in the Workbench's
+// Certification tab (role_certifications) and is untouched.
 type ReviewRow = {
   id: string; period_start: string; verdict: string; summary: string; status: string; created_at: string;
 };
-function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
-  const [certs, setCerts] = useState<CertRow[] | null>(null);
+function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
-  const [showCertify, setShowCertify] = useState(false);
-  const [certType, setCertType] = useState('workspace');
-  const [certTypes, setCertTypes] = useState<CertificationType[]>([
-    // Built-in fallback so the selector is never empty mid-fetch.
-    { key: 'workspace', label: 'Workspace', description: null, sort_order: 10, is_custom: false },
-    { key: 'compliance', label: 'Compliance', description: null, sort_order: 20, is_custom: false },
-    { key: 'capability', label: 'Capability', description: null, sort_order: 30, is_custom: false },
-  ]);
-  const [scope, setScope] = useState('');
-  const [note, setNote] = useState('');
-  const [validDays, setValidDays] = useState('180');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [{ data: c, error: cErr }, { data: r }] = await Promise.all([
-      supabase.from('de_certifications')
-        .select('id, cert_type, scope, note, issued_by_name, issued_at, expires_at, status')
-        .eq('de_id', de.id).order('issued_at', { ascending: false }).limit(10),
-      supabase.from('de_performance_reviews')
-        .select('id, period_start, verdict, summary, status, created_at')
-        .eq('de_id', de.id).order('created_at', { ascending: false }).limit(3),
-    ]);
-    if (cErr) { setError(cErr.message); return; }
-    setCerts((c ?? []) as CertRow[]);
+    const { data: r, error: rErr } = await supabase.from('de_performance_reviews')
+      .select('id, period_start, verdict, summary, status, created_at')
+      .eq('de_id', de.id).order('created_at', { ascending: false }).limit(3);
+    if (rErr) { setError(rErr.message); return; }
     setReviews((r ?? []) as ReviewRow[]);
   }, [de.id]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    // Replace the built-in fallback with this workspace's real list.
-    void listCertificationTypes().then(t => { if (t.length) setCertTypes(t); }).catch(() => { /* keep fallback */ });
-  }, []);
 
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
@@ -923,92 +667,19 @@ function DeCertificationsPanel({ de }: { de: DigitalEmployee }) {
     setBusy(false);
   };
 
-  const certify = () => run(async () => {
-    const res = await supabase.rpc('certify_digital_employee', {
-      p_de_id: de.id, p_cert_type: certType, p_scope: scope.trim(), p_note: note.trim(),
-      p_valid_days: Math.max(1, Math.min(730, Math.round(Number(validDays) || 180))),
-    });
-    if (!res.error) { setScope(''); setNote(''); setShowCertify(false); }
-    return res;
-  });
-
-  const daysLeft = (expiresAt: string) => Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000);
-
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Certifications & Reviews</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="Certification status gates autonomy: a stale, expired, or failed certification automatically clamps this employee to supervised mode via the records gate (mig 258).">gates autonomy</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">expiring attestations</span>
-        <button onClick={() => setShowCertify(s => !s)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
-          {showCertify ? 'Cancel' : 'Certify…'}
-        </button>
+        <h3 className="text-base font-semibold text-white">Performance reviews</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">real metrics</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
-        A certification is a named person attesting this employee is fit for purpose — it expires and
-        must be renewed. Quarterly reviews record an honest verdict from real metrics; a below-threshold
+        Quarterly reviews record an honest verdict from real metrics; a below-threshold
         verdict opens an improvement plan with a written consequence.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
-      {showCertify && (
-        <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
-          <div className="flex gap-2">
-            {/* Types come from certification_types (mig 205) so a workspace
-                can add its own — e.g. an industry accreditation. */}
-            <select value={certType} onChange={e => setCertType(e.target.value)} disabled={busy}
-              title={certTypes.find(t => t.key === certType)?.description ?? undefined}
-              className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
-              {certTypes.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-            </select>
-            <input type="text" value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope — e.g. helpdesk replies"
-              className="flex-1 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-            <input type="number" min={1} max={730} value={validDays} onChange={e => setValidDays(e.target.value)}
-              title="Validity (days)"
-              className="w-20 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="What did you review? (required)"
-            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <button onClick={() => void certify()} disabled={busy || !note.trim()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
-            Issue certification
-          </button>
-        </div>
-      )}
-
-      {certs === null ? (
-        <p className="text-xs text-dt-muted">Loading…</p>
-      ) : certs.length === 0 ? (
-        <p className="text-xs text-dt-muted mb-3">No certifications yet — advancing the lifecycle to Certified issues one automatically.</p>
-      ) : (
-        <div className="space-y-1.5 mb-4">
-          {certs.map(c => {
-            const left = daysLeft(c.expires_at);
-            return (
-              <div key={c.id} className="flex items-center gap-2 text-xs flex-wrap">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                  c.status === 'active' ? (left <= 14 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')
-                  : c.status === 'expired' ? 'bg-rose-500/15 text-rose-300' : 'bg-dt-panel text-dt-muted'}`}>
-                  {c.status === 'active' ? (left <= 14 ? `expires in ${left}d` : 'active') : c.status}
-                </span>
-                <span className="text-dt-support">{certTypes.find(t => t.key === c.cert_type)?.label ?? c.cert_type}</span>
-                {c.scope && <span className="text-dt-muted">· {c.scope}</span>}
-                <span className="text-dt-faint">by {c.issued_by_name} · until {new Date(c.expires_at).toLocaleDateString()}</span>
-                {c.status === 'active' && (
-                  <button onClick={() => { const reason = window.prompt('Revocation reason (required):'); if (reason?.trim()) void run(() => supabase.rpc('revoke_de_certification', { p_cert_id: c.id, p_reason: reason.trim() })); }}
-                    disabled={busy}
-                    className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
-                    Revoke
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       <div className="flex items-center gap-2 mb-1.5">
-        <p className="text-[11px] uppercase tracking-wide text-dt-muted">Performance reviews</p>
         <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy}
           className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
           {busy ? 'Working…' : 'Run review now'}
@@ -1207,56 +878,6 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
           <button onClick={save} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function TransferOwnerModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: () => void; onSaved: (de: DigitalEmployee) => void }) {
-  const { members, loading: membersLoading } = useUsers();
-  const [target, setTarget] = useState('');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const candidates = members.filter(m => m.status === 'active' && m.userId !== de.owner_id);
-
-  const save = async () => {
-    if (!target) { setErr('Choose a new owner.'); return; }
-    setBusy(true); setErr(null);
-    try {
-      const updated = await transferDeOwnership(de.id, target, note.trim() || undefined);
-      onSaved(updated);
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not transfer ownership.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title={`Transfer ownership of ${de.persona_name || de.name}`} onClose={onClose}>
-      <div className="space-y-3">
-        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
-        {membersLoading ? (
-          <p className="text-xs text-dt-muted">Loading team…</p>
-        ) : candidates.length === 0 ? (
-          <p className="text-xs text-dt-muted">No other active team members to transfer to.</p>
-        ) : (
-          <label className="block text-xs text-dt-support">New owner
-            <select value={target} onChange={e => setTarget(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white">
-              <option value="">Select a team member…</option>
-              {candidates.map(m => <option key={m.userId} value={m.userId}>{m.fullName} ({m.role})</option>)}
-            </select>
-          </label>
-        )}
-        <label className="block text-xs text-dt-support">Note (optional)
-          <input value={note} onChange={e => setNote(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-white" placeholder="Why this transfer is happening" />
-        </label>
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
-          <button onClick={save} disabled={busy || candidates.length === 0} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Transferring…' : 'Transfer ownership'}</button>
         </div>
       </div>
     </Modal>
@@ -1546,11 +1167,9 @@ function ConsultationsPanel({ de }: { de: DigitalEmployee }) {
 }
 
 function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (de: DigitalEmployee) => void }) {
-  const { members } = useUsers();
   const [history, setHistory] = useState<DEConfigHistoryEntry[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [modal, setModal] = useState<'edit' | 'transfer' | 'retire' | null>(null);
-  const ownerName = members.find(m => m.userId === de.owner_id)?.fullName ?? (de.owner_id ? 'Unknown' : 'Unassigned');
+  const [modal, setModal] = useState<'edit' | 'retire' | null>(null);
   const retired = de.lifecycle_status === 'retired';
   const [supBusy, setSupBusy] = useState(false);
   const toggleSupervisor = async (next: boolean) => {
@@ -1579,17 +1198,12 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
         Who's accountable for this employee, every configuration change on record, and how retirement works.
       </p>
 
-      <div className="flex items-center justify-between rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3">
-        <div>
-          <p className="text-xs text-dt-muted">Owner</p>
-          <p className="text-sm text-dt-body">{ownerName}</p>
-        </div>
-        {!retired && (
-          <button onClick={() => setModal('transfer')} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
-            Transfer
-          </button>
-        )}
-      </div>
+      {/* docs/31 Q11: the "Owner" column was a dead limb (0 of 116 DEs ever
+          had one; no security rule read it). The real accountability model is
+          de_assignments — primary/manager/executive — shown on the Record tab. */}
+      <p className="rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3 text-xs text-dt-support">
+        Responsible people — managed on the Record tab
+      </p>
 
       <div className="flex gap-2 mb-3">
         {!retired && (
@@ -1645,7 +1259,6 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
       {!retired && <ConsultationsPanel de={de} />}
 
       {modal === 'edit' && <EditDEModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
-      {modal === 'transfer' && <TransferOwnerModal de={de} onClose={() => setModal(null)} onSaved={onUpdated} />}
       {modal === 'retire' && <RetireDEModal de={de} onClose={() => setModal(null)} onRetired={onUpdated} />}
     </div>
   );
@@ -1937,113 +1550,6 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
           {busy ? 'Saving…' : 'Save identity'}
         </button>
         {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
-      </div>
-    </div>
-  );
-}
-
-// ── Custom profile fields (migration 136): tenant-defined field
-// definitions (de_profile_fields) + per-DE values (attributes jsonb,
-// written via set_de_attributes → config-versioned + audited).
-function DeProfileFieldsPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
-  const [fields, setFields] = useState<DeProfileField[]>([]);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [newKey, setNewKey] = useState('');
-  const [newLabel, setNewLabel] = useState('');
-  const [newType, setNewType] = useState<'text' | 'number' | 'date'>('text');
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listDeProfileFields().then(setFields).catch(() => setFields([]));
-  }, []);
-  useEffect(() => {
-    const v: Record<string, string> = {};
-    for (const [k, val] of Object.entries(de.attributes ?? {})) v[k] = String(val);
-    setValues(v);
-  }, [de.id, de.attributes]);
-
-  const addField = async () => {
-    const key = newKey.trim();
-    if (!key) return;
-    setBusy(true); setError(null);
-    try {
-      const f = await addDeProfileField({
-        field_key: key, label: newLabel.trim() || key, field_type: newType,
-        position: fields.length + 1,
-      });
-      setFields(prev => [...prev, f]);
-      setNewKey(''); setNewLabel('');
-    } catch (e) { setError((e as Error).message); }
-    setBusy(false);
-  };
-
-  const save = async () => {
-    setBusy(true); setError(null);
-    try {
-      const payload: Record<string, string | number | null> = {};
-      for (const f of fields) {
-        const raw = (values[f.field_key] ?? '').trim();
-        payload[f.field_key] = raw === '' ? null : (f.field_type === 'number' ? Number(raw) || 0 : raw);
-      }
-      const updated = await setDeAttributes(de.id, payload);
-      onUpdated(updated);
-      setSaved(true); setTimeout(() => setSaved(false), 2500);
-    } catch (e) { setError((e as Error).message); }
-    setBusy(false);
-  };
-
-  return (
-    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-      <h3 className="text-base font-semibold text-white mb-1">Profile fields</h3>
-      <p className="text-[11px] text-dt-muted mb-3">
-        Your workspace's own employee-record fields — defined once, shown on every profile.
-        Changes are config-versioned and land in the audit history like any other profile edit.
-      </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
-      {fields.length === 0 ? (
-        <p className="text-xs text-dt-muted mb-3">No custom fields defined yet — add the first below.</p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-          {fields.map(f => (
-            <div key={f.id}>
-              <label className="text-[11px] text-dt-support block mb-1">{f.label}</label>
-              <input value={values[f.field_key] ?? ''} disabled={busy}
-                type={f.field_type === 'number' ? 'number' : f.field_type === 'date' ? 'date' : 'text'}
-                onChange={e => setValues(prev => ({ ...prev, [f.field_key]: e.target.value }))}
-                className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-3 mb-4">
-        {fields.length > 0 && (
-          <button onClick={() => void save()} disabled={busy}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
-            {busy ? 'Saving…' : 'Save fields'}
-          </button>
-        )}
-        {saved && <span className="text-xs text-emerald-400">Saved</span>}
-      </div>
-      <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
-        <p className="text-[11px] font-medium text-dt-support mb-2">Add a field (applies to every employee's profile)</p>
-        <div className="flex gap-2 flex-wrap items-end">
-          <input value={newKey} placeholder="field_key (e.g. region)" disabled={busy}
-            onChange={e => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
-            className="w-40 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <input value={newLabel} placeholder="Label (e.g. Region)" disabled={busy}
-            onChange={e => setNewLabel(e.target.value)}
-            className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <select value={newType} disabled={busy} onChange={e => setNewType(e.target.value as 'text' | 'number' | 'date')}
-            className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
-            <option value="text">Text</option><option value="number">Number</option><option value="date">Date</option>
-          </select>
-          <button onClick={() => void addField()} disabled={busy || !newKey.trim()}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-50 transition-colors">
-            Add field
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -3708,7 +3214,6 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
   if (section === 'profile') {
     return (
       <div className="space-y-6">
-        <EmployeeFileStrip de={de} />
         {/* W4-E (docs/16): the golden-gated amendment flow was demo-only —
             live DEs lost it in the live/demo split. Restored on the live
             Employee File: describe the problem → judged proposal → human
@@ -3716,7 +3221,6 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
         <DeAmendmentBlock de={de} />
         <DeIdentityPanel de={de} onUpdated={onUpdated} />
         <DeVoicePanel de={de} onUpdated={onUpdated} />
-        <DeProfileFieldsPanel de={de} onUpdated={onUpdated} />
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
       </div>
     );
@@ -3741,7 +3245,7 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
         <DeSkillsPanel de={de} />
         <DeKpisPanel de={de} />
         <DeEconomicsPanel de={de} />
-        <DeCertificationsPanel de={de} />
+        <DeReviewsPanel de={de} />
         <DeDevelopmentPanel de={de} />
       </div>
     );

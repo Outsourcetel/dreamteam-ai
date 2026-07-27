@@ -107,12 +107,6 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   outcome_financial: MANAGE,
   outcome_risk: MANAGE,
 
-  // ── Specialists — finance and people extrapolated to MANAGE ───────────────
-  specialist_technical: ALL_TENANT,
-  specialist_legal: ALL_TENANT,
-  specialist_finance_deep: MANAGE,
-  specialist_people: MANAGE,
-
   // ── Knowledge curation ────────────────────────────────────────────────────
   knowledge_ingestion: KNOWLEDGE,
   knowledge_gaps: KNOWLEDGE,
