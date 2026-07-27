@@ -63,9 +63,7 @@ interface AuthContextValue {
   /**
    * true when a genuinely authenticated, confirmed user's profile has no
    * tenant_id yet (signup's tenant-provisioning step never ran or hasn't
-   * completed). This must route to the "set up your organization" screen,
-   * NEVER silently fall through to demo mode. Always false for the
-   * dev-demo-user login path.
+   * completed). This must route to the "set up your organization" screen.
    */
   needsOrgSetup: boolean;
   /** Called by the org-setup screen once complete_signup succeeds, to
@@ -284,13 +282,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setDbTenants([]); setDbTenantsLoaded(false); setDbStats(null);
           return;
         }
-        // The dev-only demo login never touches Supabase and always carries
-        // its own synthetic tenantId — never route it through the org-setup
-        // or deactivation check.
-        if (authedUser.id === 'dev-demo-user') {
-          setProfileHasNoTenant(false);
-          return;
-        }
         // Authoritative deactivation check on every resync tick — this is
         // what force-ends an ALREADY-LOGGED-IN session promptly if the
         // account gets deactivated while the user is still using the app,
@@ -410,7 +401,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isLiveTenant = !!(
     godModeSession ||
     (authedUser &&
-      authedUser.id !== 'dev-demo-user' &&
       userTenantId &&
       UUID_RE.test(userTenantId) &&
       userTenantId.toLowerCase() !== DEMO_TENANT_ID)
@@ -419,15 +409,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ── Needs org setup (post-signup recovery) ───────────────────────
   // A real, confirmed, authenticated TENANT user whose profile genuinely
-  // has no tenant_id must see the "set up your organization" screen —
-  // never the demo dashboard. Explicitly excludes the dev-demo-user login
-  // path (never has a real profile row) AND platform-layer accounts, which
-  // are SUPPOSED to have no tenant_id by design (a platform admin operates
-  // above every tenant, not inside one) — without this exclusion, every
-  // platform account would be wrongly routed into org setup forever.
+  // has no tenant_id must see the "set up your organization" screen.
+  // Excludes platform-layer accounts, which are SUPPOSED to have no
+  // tenant_id by design (a platform admin operates above every tenant, not
+  // inside one) — without this exclusion, every platform account would be
+  // wrongly routed into org setup forever.
   const needsOrgSetup = !!(
     authedUser &&
-    authedUser.id !== 'dev-demo-user' &&
     authedUser.layer !== 'platform' &&
     profileHasNoTenant === true
   );
@@ -526,14 +514,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // user_metadata (set once at signup), which has no idea about a
     // later profiles.is_active = false toggle. Check the authoritative
     // status BEFORE ever setting authedUser — a deactivated account must
-    // never get even a flash of an authenticated session. The dev-only
-    // demo login never touches Supabase and is exempt.
-    if (u.id !== 'dev-demo-user') {
-      const status = await checkMyAccountStatus();
-      if (status && status.found && status.is_active === false) {
-        await forceSignOutDeactivated();
-        return;
-      }
+    // never get even a flash of an authenticated session.
+    //
+    // This check is now UNCONDITIONAL. It used to be skipped for the dev-only
+    // demo login, which was the single caller that could reach setAuthedUser
+    // without the database ever confirming the account was active. That login
+    // has been removed, so every sign-in is now verified.
+    const status = await checkMyAccountStatus();
+    if (status && status.found && status.is_active === false) {
+      await forceSignOutDeactivated();
+      return;
     }
     setAuthedUser(u);
     if (['dt_super_admin', 'dt_god_access', 'dt_support', 'dt_billing'].includes(u.role) || u.layer === 'platform') {

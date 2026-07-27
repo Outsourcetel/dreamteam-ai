@@ -221,6 +221,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       groups: [
         { id: 'onboarding_architect', label: 'Quick Start', icon: '✦', page: 'onboarding_architect' },
         { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
+        { id: 'settings', label: 'Settings', icon: '◈', page: 'settings' },
       ],
     },
   ];
@@ -315,7 +316,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
           { icon: '⟷', page: 'systems_connectors' as Page, label: 'Connectors' },
           { icon: '◎', page: 'entity_customer' as Page, label: 'Company Data' },
           { icon: '⚑', page: 'gov_compliance' as Page, label: 'Governance' },
-        ]).map(item => (
+          { icon: '◈', page: 'settings' as Page, label: 'Settings' },
+        ]).filter(item => allowed(item.page)).map(item => (
           <button
             key={item.page}
             title={item.label}

@@ -240,14 +240,6 @@ const LoginPage = ({
                     Create your organization
                   </button>
                 </p>
-                {import.meta.env.DEV && (
-                  <button
-                    onClick={() => onLogin({ id: 'dev-demo-user', name: 'Demo User', email: 'demo@local.dev', role: 'tenant_admin', tenantId: 'demo-tenant' })}
-                    className="mt-3 text-xs text-dt-muted hover:text-dt-support underline"
-                  >
-                    Enter demo (local dev only)
-                  </button>
-                )}
               </div>
             </>
           )}
