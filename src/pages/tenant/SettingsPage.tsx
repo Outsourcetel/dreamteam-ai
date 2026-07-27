@@ -3,7 +3,7 @@ import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
 import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
 import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
 import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -247,8 +247,38 @@ const SettingsPage = ({
     : ['general', 'ai_engine', 'usage', 'identity', 'data', 'billing', 'security']) as Array<typeof activeTab>)
     .filter(t => t !== 'ai_engine' || isDTUser);
 
+  // ── Switching tabs starts at the top of the new tab ──────────────────────
+  // It used to keep the scroll offset, so choosing "Data" from halfway down
+  // "Identity" landed you halfway down "Data" — past its heading, mid-panel,
+  // with nothing to suggest you were not at the top. On this page that is
+  // genuinely risky: the Data tab opens with the export panel and continues
+  // into workspace deletion, so an inherited offset can drop someone straight
+  // onto the destructive half of a screen they thought they were starting.
+  //
+  // Keyed off activeTab rather than the click handler so EVERY route in gets
+  // it — the tab buttons, the 'dt_settings_tab' hand-off the Getting Started
+  // guide uses to deep-link the Widget tab, and the ai_engine redirect above.
+  //
+  // The app scrolls inside <main> (App.tsx), not the window, so
+  // window.scrollTo silently does nothing here. Rather than hard-code that
+  // element and have this quietly rot if the shell changes, walk up to the
+  // first genuinely scrolling ancestor and fall back to the window.
+  const pageRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let el: HTMLElement | null = pageRef.current;
+    while (el) {
+      const oy = getComputedStyle(el).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
+        el.scrollTo({ top: 0 });
+        return;
+      }
+      el = el.parentElement;
+    }
+    window.scrollTo({ top: 0 });
+  }, [activeTab]);
+
   return (
-    <div className="p-6">
+    <div className="p-6" ref={pageRef}>
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-white">Settings</h1>
