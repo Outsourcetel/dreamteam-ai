@@ -5,7 +5,8 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, DECISION_REASON_CODES } from '../../../lib/customerApi';
+import type { DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
@@ -234,6 +235,12 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
   const [impRole, setImpRole] = useState<{ archetype: string; peers: number } | null>(null);
   const [impScope, setImpScope] = useState<'de' | 'role'>('de');
+  // docs/34: a rejection must say why. Held here rather than in the decide()
+  // call so the picker can appear inline before the decision is committed —
+  // asking after the fact is how you get "ok" and "no".
+  const [rejecting, setRejecting] = useState(false);
+  const [reasonCode, setReasonCode] = useState<DecisionReasonCode | ''>('');
+  const [reasonNote, setReasonNote] = useState('');
 
   const refresh = async () => {
     setLoading(true);
@@ -270,6 +277,12 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
+  // Close the rejection picker when the selection moves. Without this, picking
+  // "wrong tone" on one task and then clicking another leaves the code armed
+  // against a task it was never about — a wrong reason is worse than none,
+  // because it aggregates.
+  useEffect(() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }, [selectedId]);
+
   // T2.2: for a self-improvement review, offer publishing the verified fix to
   // the whole role (all same-archetype employees), not just this DE.
   useEffect(() => {
@@ -288,7 +301,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       if (task.related_table === 'de_improvements' && decision === 'approved' && impScope === 'role' && task.related_id) {
         await setImprovementPublishScope(task.related_id, 'role');
       }
-      await decideHumanTask(task, decision);
+      await decideHumanTask(task, decision, decision === 'rejected'
+        ? { reasonCode: reasonCode as DecisionReasonCode, note: reasonNote.trim() || undefined }
+        : undefined);
+      setRejecting(false); setReasonCode(''); setReasonNote('');
       await refresh();
     } catch (err) {
       setError((err as Error)?.message || 'Failed to record decision.');
@@ -520,10 +536,54 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                         : selected.type === 'action_approval' ? 'Approve & execute'
                         : 'Approve'}
                     </button>
-                    <button onClick={() => void decide(selected, 'rejected')} disabled={deciding}
+                    <button onClick={() => setRejecting(true)} disabled={deciding}
                       className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 disabled:opacity-50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">
                       Reject
                     </button>
+                  </div>
+                )}
+                {/* docs/34 — a rejection must say why. Closed codes rather than a
+                    free-text box: on a queue this size free text decays to "ok"
+                    and "no", and codes aggregate ("wrong_tone, 12 times, one
+                    employee") where sentences do not. Asked BEFORE the decision
+                    commits, because asking afterwards is how you get noise. */}
+                {selected.status === 'pending' && rejecting && (
+                  <div className="mt-3 rounded-lg border border-red-500/30 bg-red-950/20 p-3">
+                    <p className="text-xs font-medium text-dt-text mb-2">Why is this being rejected?</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DECISION_REASON_CODES.map(rc => (
+                        <button key={rc.code} onClick={() => setReasonCode(rc.code)}
+                          className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                            reasonCode === rc.code
+                              ? 'border-red-400 bg-red-500/20 text-red-200'
+                              : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                          {rc.label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea
+                      value={reasonNote} onChange={e => setReasonNote(e.target.value)}
+                      rows={2}
+                      placeholder={reasonCode === 'other'
+                        ? 'Required — what was wrong?'
+                        : 'Optional: anything that would help this employee next time'}
+                      className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => void decide(selected, 'rejected')}
+                        disabled={deciding || !reasonCode || (reasonCode === 'other' && !reasonNote.trim())}
+                        title={!reasonCode ? 'Pick a reason first'
+                          : reasonCode === 'other' && !reasonNote.trim() ? 'Other needs a note' : undefined}
+                        className="rounded-md bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-1.5 transition-colors">
+                        {deciding ? '…' : 'Confirm rejection'}
+                      </button>
+                      <button onClick={() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }}
+                        disabled={deciding}
+                        className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
                 {selected.related_table === 'renewal_invoices' && selected.status === 'pending' && (

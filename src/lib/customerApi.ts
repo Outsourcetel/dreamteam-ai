@@ -534,24 +534,59 @@ export async function createHumanTask(
  * appends an activity event, and — if the task gates an invoice approval —
  * flips the invoice to 'sent' on approve.
  */
+/** Closed reason vocabulary — mirrors human_tasks_decision_reason_code_check
+ *  (migration 455). Shared by rejections AND approve-with-edits so the two
+ *  aggregate together: "wrong_tone produced 12 edits and 5 rejections on this
+ *  employee" is actionable; two separate taxonomies could not be added up. */
+export const DECISION_REASON_CODES = [
+  { code: 'wrong_facts',       label: 'Wrong facts' },
+  { code: 'wrong_tone',        label: 'Wrong tone' },
+  { code: 'missing_context',   label: 'Missing context' },
+  { code: 'incomplete',        label: 'Incomplete' },
+  { code: 'not_permitted',     label: 'Should not have proposed this' },
+  { code: 'customer_specific', label: 'Wrong for this customer' },
+  { code: 'other',             label: 'Other (say why)' },
+] as const;
+export type DecisionReasonCode = typeof DECISION_REASON_CODES[number]['code'];
+
+export interface DecisionCapture {
+  /** Required on rejection (server enforces). Optional on approval — use it
+   *  when the approver had to CORRECT something before approving. */
+  reasonCode?: DecisionReasonCode;
+  /** Optional free text. Mandatory when reasonCode is 'other'. */
+  note?: string;
+  /** The (before, after) training pair when the approver edited the work.
+   *  BOTH halves are required by the database: approve_draft overwrites the
+   *  original with the edit, so `before` is unrecoverable afterwards. */
+  edit?: { before: unknown; after: unknown };
+}
+
 export async function decideHumanTask(
   task: DBHumanTask,
-  decision: 'approved' | 'rejected'
+  decision: 'approved' | 'rejected',
+  capture?: DecisionCapture,
 ): Promise<DBHumanTask> {
   const tid = await requireTenantId();
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from('human_tasks')
-    .update({
-      status: decision,
-      decided_by: user?.id ?? null,
-      decided_at: new Date().toISOString(),
-    })
-    .eq('id', task.id)
-    .eq('tenant_id', tid)
-    .eq('status', 'pending')          // idempotency: ONLY a still-pending task transitions
-    .select()
-    .maybeSingle();
+  // Migration 455: routed through an RPC rather than a direct UPDATE. Three
+  // reasons, in order of importance:
+  //   1. The direct UPDATE is exactly why this path escaped all 48 wave-2
+  //      function guards and needed migration 452's restrictive write policy.
+  //      The RPC carries the group-B guard (can_access_de on the task's DE).
+  //   2. Decision, reason and edit land ATOMICALLY. A client could previously
+  //      set the status and then fail before recording why.
+  //   3. The audit event is written server-side, so it cannot be skipped by a
+  //      caller that forgets — which is why the client-side appendAuditEvent
+  //      below was removed (mig 456 brought its detail to parity first).
+  // The idempotency contract is IDENTICAL: the RPC returns the row on a real
+  // transition and NULL when the task was already decided, matching the
+  // .maybeSingle() semantics the guard below has always relied on.
+  const { data, error } = await supabase.rpc('decide_human_task', {
+    p_task_id:     task.id,
+    p_decision:    decision,
+    p_reason_code: capture?.reasonCode ?? null,
+    p_note:        capture?.note ?? null,
+    p_edit:        capture?.edit ? { before: capture.edit.before, after: capture.edit.after } : null,
+  });
   if (error) raise('decideHumanTask', error);
   // Double-approval / double-click guard (money & comms safety). If the task was
   // already decided, the UPDATE matched no row (status != 'pending'). Re-running ANY
@@ -578,12 +613,13 @@ export async function decideHumanTask(
     event_type: 'approval',
     text: `${decision === 'approved' ? 'Approved' : 'Rejected'} — ${task.title}`,
   });
-  const { appendAuditEvent } = await import('./guardrailApi');
-  await appendAuditEvent({
-    actor: 'You', actor_type: 'human', category: 'approval',
-    action: `${decision === 'approved' ? 'Approved' : 'Rejected'} — ${task.title}${task.detail ? ` (${task.detail})` : ''}`,
-    detail: { task_id: task.id, task_type: task.type, decision, related_table: task.related_table, related_id: task.related_id },
-  });
+  // NOTE: the 'approval' audit event is now written SERVER-SIDE, inside
+  // decide_human_task (migration 455), atomically with the decision itself.
+  // The client-side appendAuditEvent that used to live here was removed in
+  // docs/34 increment 2 — keeping both would have logged every decision twice
+  // in the one chain a governance-first buyer's diligence actually reads.
+  // Migration 456 added related_table / related_id to the server-side detail
+  // first, so no traceability was lost in the swap.
   // If a playbook run is paused on this approval, advance or cancel it.
   try {
     const { resumeRunForTask } = await import('./playbookApi');
