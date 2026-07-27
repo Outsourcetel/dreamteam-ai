@@ -429,9 +429,16 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               })}
             </div>
 
-            {/* Detail panel */}
+            {/* Detail panel.
+                It is sticky, so page scroll moves the LIST beside it and never
+                the panel itself. With h-fit and no max height, anything taller
+                than the viewport was simply unreachable — which the reject form
+                (docs/34) made blocking rather than cosmetic: the reason codes
+                rendered half-visible and the confirm control sat below the
+                bottom edge with no way to scroll to it. The panel needs its own
+                scroll container, not just a height cap. */}
             {selected && (
-              <div className="col-span-2 bg-dt-card border border-dt-border rounded-2xl p-5 h-fit sticky top-0">
+              <div className="col-span-2 bg-dt-card border border-dt-border rounded-2xl p-5 sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
                   <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs">×</button>
