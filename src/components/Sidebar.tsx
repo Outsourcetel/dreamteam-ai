@@ -120,6 +120,23 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // One destination — Inbox/Overview/Rules are tabs inside the Support hub.
         { id: 'support', label: 'Support', icon: '🎧', page: 'support_inbox' },
         { id: 'browser_operator', label: 'Browser Operator', icon: '🌐', page: 'browser_operator' },
+        // Founder IA change 2026-07-27: KNOWLEDGE and PLAYBOOKS were whole
+        // sections holding ONE link each, and Customers sat under SYSTEMS &
+        // ACTIONS. All three describe the same workforce from different angles
+        // — what it knows, how it works, who it serves — so they read better
+        // together than as three section headers costing four lines of chrome.
+        // Net: 8 sections down to 6, same destinations, nothing hidden.
+        { id: 'kb', label: 'Knowledge', icon: '◫', page: 'knowledge_library', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
+        { id: 'playbooks', label: 'Playbook Builder', icon: '▶', page: 'systems_playbooks' },
+        {
+          id: 'customer',
+          // Served-party noun comes from the tenant's vocabulary (industry
+          // seeded, editable). At-risk count stays the badge.
+          label: vocab.section_label,
+          icon: '◎',
+          page: 'entity_customer',
+          badge: live.atRiskAccounts > 0 ? { text: `${live.atRiskAccounts} at risk`, color: '#ef4444' } : undefined,
+        },
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
         // (sources, media, consult, scribe, evidence) are the "Specialist
@@ -141,20 +158,6 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       ],
     },
     {
-      title: 'KNOWLEDGE',
-      groups: [
-        // One destination — Library/Sources/Gaps/Quality live as tabs inside
-        // the Knowledge hub (north-star IA consolidation).
-        { id: 'kb', label: 'Knowledge', icon: '◫', page: 'knowledge_library', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
-      ],
-    },
-    {
-      title: 'PLAYBOOKS',
-      groups: [
-        { id: 'playbooks', label: 'Playbook Builder', icon: '▶', page: 'systems_playbooks' },
-      ],
-    },
-    {
       // Founder brief: five must-have sections (Digital Employees,
       // Playbooks, Systems & Actions, Governance, Knowledge) plus at most
       // two more. CONNECTORS and COMPANY DATA were separate top-level
@@ -164,19 +167,6 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       title: 'SYSTEMS & ACTIONS',
       groups: [
         { id: 'connectors', label: 'Connected systems', icon: '⟷', page: 'systems_connectors' },
-        {
-          id: 'customer',
-          // Wave 4: the served-party noun and lifecycle labels come from
-          // the tenant's vocabulary (industry-seeded, editable). Demo
-          // tenants resolve to the SaaS defaults, so nothing changes there.
-          // Founder restructure 2026-07-22: ONE Customers destination (the
-          // hub carries the journey as tabs) — the 7-child mini-CRM tree
-          // read as a product-story problem. At-risk count stays the badge.
-          label: vocab.section_label,
-          icon: '◎',
-          page: 'entity_customer',
-          badge: live.atRiskAccounts > 0 ? { text: `${live.atRiskAccounts} at risk`, color: '#ef4444' } : undefined,
-        },
         // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
         // live tenants (descoped 2026-07-09) — hiding dead nav sections
         // from live workspaces instead of advertising empty pages. The
@@ -219,7 +209,11 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
     {
       title: 'SETUP',
       groups: [
-        { id: 'onboarding_architect', label: 'Quick Start', icon: '✦', page: 'onboarding_architect' },
+        // Quick Start is no longer its own nav item: it is a one-time task
+        // that held a permanent slot, and two "set up your company"
+        // destinations gave no way to tell which one you wanted. It is now
+        // offered inside Company Setup, and its route stays valid for the
+        // Getting Started guide's deep link.
         { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
         { id: 'settings', label: 'Settings', icon: '◈', page: 'settings' },
       ],

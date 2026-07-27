@@ -6,12 +6,6 @@ export const PORTAL_TABS: { id: Page; label: string }[] = [
   { id: 'eu_chat', label: 'Customer View' },
 ];
 
-export const ADMIN_TABS: { id: Page; label: string }[] = [
-  { id: 'gov_security', label: 'Security & Access' },
-  { id: 'systems_connectors', label: 'Connectors' },
-  { id: 'settings', label: 'Settings' },
-];
-
 const PageTabs = ({
   tabs,
   page,

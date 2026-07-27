@@ -5,7 +5,6 @@ import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
 import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
 import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { PageTabs, ADMIN_TABS } from '../../components';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -250,7 +249,6 @@ const SettingsPage = ({
 
   return (
     <div className="p-6">
-      <PageTabs tabs={ADMIN_TABS} page={page} setPage={setPage} accentColor={accentColor} />
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-white">Settings</h1>

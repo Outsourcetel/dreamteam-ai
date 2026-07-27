@@ -169,6 +169,21 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
         </div>
       )}
 
+      {/* Quick Start now lives here rather than in the nav. Both surfaces set
+          up the same workspace — this one by picking from lists, that one by
+          describing the business in a sentence — so they belong behind one
+          destination instead of two nav items you had to choose between. */}
+      <button
+        onClick={() => setPage('onboarding_architect')}
+        className="w-full mb-6 text-left rounded-xl border border-indigo-800/50 bg-indigo-500/10 px-4 py-3 hover:bg-indigo-500/15 transition-colors"
+      >
+        <div className="text-sm text-indigo-300 font-medium">✦ Rather just describe your business?</div>
+        <div className="text-xs text-dt-muted mt-1">
+          Quick Start asks what you do in a sentence and proposes the industry, employees and
+          guardrails for you — about 30 seconds. Everything it suggests is editable here afterwards.
+        </div>
+      </button>
+
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-8 flex-wrap">
         {STEPS.map((s, i) => (
