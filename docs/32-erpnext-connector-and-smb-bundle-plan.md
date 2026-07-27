@@ -219,6 +219,93 @@ Naming stays trademark-compliant: "DreamTeam SMB Suite — managed ERP powered b
 | D4 | Pursue Frappe partner tier (2 certifications — who?) | Yes, after first 5 bundle customers |
 | D5 | Green-light Phase 1a+1b now (serves BYO-ERP customers regardless of bundle) | Yes |
 
+## 7. Detailed roadmap (added 2026-07-28 on founder request — still nothing built)
+
+Seven milestones. Each is independently shippable, has a machine-checkable exit proof,
+and names what (if anything) becomes sellable at that point. Sessions = one focused
+build session incl. verification.
+
+### M0 — Prerequisites (0.5 session, blocked on D1–D5)
+- Founder answers D1–D5 (§6). D2 (landing zone) gates M3; D3 (price) gates M5 go-live.
+- Spin up a dev ERPNext trial site on Frappe Cloud (manual, ~15 min) as build target.
+- Re-verify the two research-debt items: Frappe Cloud API team-token auth mechanics,
+  current partner terms.
+- Exit: decisions recorded in this doc; dev site reachable.
+
+### M1 — "It connects" (1 session)
+Internal proof on the pure-data path (zero new TS, the mig 037/043 pattern):
+- One `adapter_templates` row: ERPNext token auth (`Authorization: token key:secret`),
+  `base_url` = dev site, ops `search_invoices`/`get_invoice` → `/api/resource/Sales
+  Invoice`, `test_op`, plus ONE template action binding to prove the write path.
+- Connector row via existing wizard; secret via existing `set_connector_secret` (Vault).
+- Exit proof: `hubTest` green; `category_op` returns real Sales Invoice rows; one gated
+  action approved in the approvals inbox lands a visible record in ERPNext.
+- Sellable: nothing yet (proof rig). Risk retired: auth, API shape, action round-trip.
+
+### M2 — First-class `erpnext` provider, live for ALL tenants (2–3 sessions)
+- Migration: widen `connectors_provider_check` + platform-scope `action_definitions`
+  for the dunning trio (mig 217 `WHERE NOT EXISTS` shape — today they exist only
+  tenant-scoped for one tenant).
+- connector-hub: native adapter (test/search/fetchRecord/listRecent),
+  `PROVIDER_OP_TRANSLATORS.erpnext` for `erp_financials` (+ `crm`: Customer →
+  `search_accounts`/`get_account` if in scope), `NATIVE_ACTIONS` executors. Exact
+  ERPNext DocType mapping for each action (reminder → Communication/Email, final notice
+  → ditto with template, flag_for_collections → ToDo/tag) is a build-time design note.
+- Frontend: `PROVIDERS.erpnext` + icon + wizard fields (site URL, api key, api secret).
+- Deploys: connector-hub + frontend (founder-run or approved, same as today's process).
+- Exit proof: a fresh tenant connects a real ERPNext through the wizard; DE tools appear
+  automatically (mig 074); approved action executes in ERPNext with plain-language receipt.
+- **Sellable: "bring your ERPNext" for every existing + new tenant** (always-live rule).
+
+### M3 — Real books drive the existing workforce (1–2 sessions, needs D2)
+- Small migration: external-ref column(s) on the landing tables for idempotent upserts
+  (`renewal_invoices` has no external reference today).
+- Sync path in connector-hub for erpnext: Customer → `customer_accounts`,
+  Sales Invoice → `renewal_invoices` (status + due-date mapping, amount→cents,
+  currency guard). Reuses scheduled-sync columns (migs 287/288).
+- Optional freshness: ERPNext Webhook → our existing `emit-event` fn (tenant api key).
+- Exit proof (the money shot): a genuinely overdue invoice in dev ERPNext →
+  `invoice_overdue` trigger fires Sasha's existing dunning playbook → approval task with
+  the REAL invoice reference → approval executes the reminder into ERPNext → staleness
+  watchdog tracks it to paid.
+- Sellable: same as M2, but now honest end-to-end ("our DEs run your AR ledger").
+
+### M4 — Inline AR workbench (1–2 sessions)
+- New tenant page: aging buckets, dunning queue with DE activity
+  (`get_de_work_product` already groups it), invoice drill-in + deep link into ERPNext,
+  approval shortcuts. dt-tokens design law; nav gated on the role/module axis.
+- Exit proof: drift detector clean; screenshot review; data matches ERPNext to the cent.
+- **Sellable: the "single platform" demo** — ERP data + governed workforce in one screen.
+
+### M5 — The bundle: auto-provisioned ERP (2–3 sessions, needs D3)
+- Vault `platform_config` key for the Frappe Cloud team token + platform-admin-only
+  setter RPC (mirrors `set_oauth_app`, mig 141).
+- `provision-erp` edge fn (`demo-provision` shape, idempotent): `press.api.site.new`
+  (apps=[erpnext]) → poll jobs to readiness → mint api key/secret in the new site →
+  connector row + secret → onboarding items with `verify` blocks (machine-confirmed
+  go-live, mig 076). Half-created-site cleanup + `ops_alert` on failure.
+- Bundle-plan flag (feature_registry) gating the trigger from the signup path
+  (mig 118 contract amended deliberately for this one connector).
+- Support rail: ingest ERPNext docs into the Support DE's KB (existing URL-ingestion
+  pipeline) + escalation note to Frappe support.
+- Exit proof: brand-new test tenant on the bundle plan reaches "live ERP + connected
+  connector + verified onboarding" with zero human touch, timed.
+- **Sellable: DreamTeam SMB Suite at the D3 price.** Billing = manual line item first;
+  automated billing is out of scope here.
+
+### M6 — Feels-like-one login (1 session)
+- Mirror team invites into ERPNext users via REST; deep links from our surfaces;
+  optional shared Google/Microsoft social login configured on both sides.
+- Exit proof: an invited user reaches the ERP from DreamTeam without creating a second
+  password.
+- Deferred hard: true OIDC IdP (4b), Odoo connector, `invoices`-table unification,
+  partner certifications (D4 timing).
+
+### Dependency spine + running total
+M0 → M1 → M2 → M3 → M4; M5 needs M2 (+M3 for real value); M6 after M5.
+Totals: M0 0.5 · M1 1 · M2 2–3 · M3 1–2 · M4 1–2 · M5 2–3 · M6 1 → **8.5–12.5 sessions**.
+First sellable value at M2; bundle sellable at M5.
+
 ## Sources
 - https://www.erpresearch.com/pricing/erpnext · https://frappe.io/cloud
 - https://frappe.io/partners/plans · https://frappe.io/blog/community/a-guide-to-working-with-frappe-partners
