@@ -56,6 +56,15 @@ interface QuestionResult {
   confidence?: number;
   passed: boolean;
   reason: string;
+  /** docs/36 — the judge's raw verdict, stored as a FIELD rather than left to be
+   *  parsed back out of `reason`. The next run reads this to decide whether a
+   *  partial is a repeat. Absent on infrastructure outcomes (halted questions
+   *  were never graded), which is what keeps an outage from ever looking like a
+   *  quality result to the run that follows it. */
+  verdict?: 'pass' | 'partial' | 'fail';
+  /** docs/36 — whether this result closed the gate. Distinct from `passed`:
+   *  a first-time partial is NOT passed but does NOT gate. */
+  gating?: boolean;
 }
 
 serve(async (req) => {
@@ -190,6 +199,39 @@ serve(async (req) => {
     let failed = results.length - passed;
     let finalStatus: 'passed' | 'failed' | 'blocked_llm' = 'passed';
 
+    // ── docs/36: what closes the gate ────────────────────────────────────
+    // `passed`/`failed` keep their old meaning — answer QUALITY — because
+    // certify_de_from_eval reads eval_runs.total/passed to score certifications.
+    // Changing them would silently re-grade every certification, so the gating
+    // decision is tracked separately and only ever moves eval_runs.status.
+    //
+    // The rule: a hard `fail` gates on sight. A `partial` gates only when the
+    // SAME question was partial in the previous finished run. Measured over
+    // every run in hq: 4 of 18 questions flip pass<->partial with nothing
+    // changed, and ZERO have ever failed twice — so a lone partial is a draw,
+    // while a partial that repeats is a real completeness gap. One hard `fail`
+    // exists in the whole history (a guardrail refusing an ordinary product
+    // question) and it must still gate on the first run, which it does.
+    let gateFailures = results.filter((r) => r.gating).length;
+    const prevPartial = new Set<string>();
+    {
+      // The previous FINISHED run, whatever its status. A halted run carries no
+      // verdicts, so it contributes nothing here — an outage can never make the
+      // next run's partial look like a repeat.
+      const { data: prevRun } = await admin
+        .from('eval_runs')
+        .select('results')
+        .eq('tenant_id', tenantId)
+        .not('finished_at', 'is', null)
+        .neq('id', runId)
+        .order('finished_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      for (const r of ((prevRun?.results ?? []) as QuestionResult[])) {
+        if (r?.verdict === 'partial' && r.qa_id) prevPartial.add(r.qa_id);
+      }
+    }
+
     const deAnswerUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/de-answer`;
     const saveProgress = async (done = false) => {
       const patch: Record<string, unknown> = { results, passed, failed };
@@ -313,16 +355,28 @@ serve(async (req) => {
           // deciding certifications. The judge evaluates correctness directly, so it
           // decides; confidence is still RECORDED (and noted when it is low) so the
           // calibration stays visible, but it no longer fails a correct answer.
-          const verdict = String(judge.verdict);
+          const verdict = String(judge.verdict) as 'pass' | 'partial' | 'fail';
           const confOk = confidence >= qa.min_confidence;
           const pass = verdict === 'pass';
           if (pass) passed += 1; else failed += 1;
+          // docs/36 — a hard fail gates immediately; a partial gates only on
+          // its second consecutive appearance for THIS question.
+          const repeated = verdict === 'partial' && prevPartial.has(qa.id);
+          const gating = verdict === 'fail' || repeated;
+          if (gating) gateFailures += 1;
           const reasons: string[] = [];
           if (verdict !== 'pass') reasons.push(`judge verdict "${verdict}"${judge.rationale ? ` — ${String(judge.rationale).slice(0, 200)}` : ''}`);
+          if (verdict === 'partial') {
+            reasons.push(repeated
+              ? 'REPEATED from the previous run — a completeness gap that persists is real, so this closes the gate'
+              : 'first occurrence — recorded as a warning, not gating (docs/36); it closes the gate if it repeats next run');
+          }
           results.push({
             qa_id: qa.id, question: qa.question,
             answer: answer.slice(0, 500), confidence,
             passed: pass,
+            verdict,
+            gating,
             reason: pass
               ? `judge verdict pass${confOk ? '' : ` (note: self-reported confidence ${confidence} was below the ${qa.min_confidence} advisory floor — recorded, not penalised)`}`
               : reasons.join('; '),
@@ -342,7 +396,11 @@ serve(async (req) => {
       return json({ run_id: runId, status: 'running', total: qas.length, passed, failed, remaining });
     }
 
-    finalStatus = failed === 0 ? 'passed' : 'failed';
+    // docs/36 — the GATE turns on gateFailures, not on the quality tally. A run
+    // can read "13 passed, 3 failed" and still be status 'passed' when all three
+    // were first-time partials: the completeness gaps stay visible in the
+    // results, they just no longer hold publishing shut on a single draw.
+    finalStatus = gateFailures === 0 ? 'passed' : 'failed';
     await saveProgress(true);
     await auditCompletion(admin, tenantId, runId, trigger, finalStatus, qas.length, passed, failed);
 
