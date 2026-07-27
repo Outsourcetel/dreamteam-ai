@@ -126,20 +126,34 @@ send a reply for somebody else's employee.
 **Fix:** a guard at the top — `IF NOT can_access_de(<the row's de_id>) THEN
 RAISE EXCEPTION ...` — after resolving the row, before mutating it.
 
-**IN PROGRESS — 21 of 24 guarded (migs 403–423). The honest split: 16 closed a
-real gap, 5 are defence in depth.** A guard here is not a filter:
+**✅ COMPLETE — 22 of 22 (migs 403–424), verified against live definitions.
+The honest split: 17 closed a real gap, 5 are defence in depth. And it is 22
+actors, not the 25 first listed — three were misclassified.** A guard here is
+not a filter:
 it is `IF NOT can_access_de(<the row's de_id>) THEN RAISE` *after* resolving the
 row and *before* mutating it. Filtering an actor silently turns "you may not do
 this" into "nothing happened", which is worse than either. Every guard raises
 the same greppable error, `not_responsible_for_de`.
 
-### ⚠ It is 24, not 25 — `sync_outbound_draft_status` was misclassified
+### ⚠ It is 22, not 25 — three were misclassified
 
-It is `RETURNS trigger` and attached to exactly 1 trigger. PostgREST does not
-expose trigger functions as RPCs, so it is not user-callable and has no caller
-context to check. **It belongs in group C, not group B.** This is the reverse of
-the risk the group-C section warns about: verify before *guarding*, as well as
-before skipping.
+Verified, each by reading the live definition or the schema rather than the
+list:
+
+| function | why it is not a group-B actor |
+|---|---|
+| `sync_outbound_draft_status` | `RETURNS trigger`, attached to 1 trigger. PostgREST does not expose trigger functions as RPCs, so it is not user-callable and has no caller context to check. → **group C** |
+| `resolve_onboarding_signoff` | acts on `onboarding_projects`, which has **no `de_id` and no DE-shaped column at all** — it is `account_id` → `customer_accounts`. Customer onboarding, no digital employee anywhere in the data path. The one live onboarding `human_task` has a NULL `de_id`. → **not DE-scoped** |
+| `update_onboarding_item` | same table, same reason. → **not DE-scoped** |
+
+There is nothing for `can_access_de()` to test in the onboarding pair: no
+employee is involved. Guarding them would have meant inventing a relationship
+the schema does not have. They still deserve a look — they are `SECURITY
+DEFINER` and client-reachable — but on the *workspace* axis, which they already
+check, not this one.
+
+This is the reverse of the risk the group-C section warns about: **verify before
+*guarding*, as well as before skipping.**
 
 ### Done (migs 403–409)
 
@@ -166,6 +180,23 @@ before skipping.
 | `create_de_mission` | 421 | `p_de_id` param | n/a — defence in depth |
 | `create_de_team_mission` | 422 | `target_spec` ×3 modes | n/a — defence in depth |
 | `set_de_mission_state` | 423 | `de_missions` (**NULLABLE**) | **yes** — defence in depth |
+| `submit_evidence_feedback` | 424 | `evidence_runs` (**NULLABLE**, 73% null) | **yes** |
+
+### `submit_evidence_feedback` (424) — the last actor, and the widest null case
+
+A verdict of `needs_improvement` or `inaccurate` does not just record an
+opinion: it **composes a knowledge revision** — reading the doc the run cited,
+appending the reviewer's note and the recorded evidence gaps — and raises a
+`knowledge_revision` task for approval. Same shape as learning & trust: the harm
+is not the row it writes, it is what the employee ends up knowing.
+
+**`evidence_runs.de_id` is NULL on 149 of 203 rows — 73%.** Every other
+null-tolerant guard in this wave covered an edge case; this one covers most of
+the table. The plain form would have refused feedback on nearly three quarters
+of all evidence runs for a scoped user while the readers beside it show them.
+
+`evidence_runs.specialist_de_id` is deliberately **not** guarded: the run is the
+work of `de_id`, and being consulted does not transfer ownership of the verdict.
 
 ### Missions & work: one real gap, three defence in depth
 
@@ -343,7 +374,49 @@ case the function has excluded.
    case via an `IF ... THEN NULL; ELSE RAISE` shape. Both rolled back cleanly.
    State the *failure* condition directly and never use that shape.
 
-### Remaining (3)
+### ⚠ Standing finding: 13 of the 35 guarded functions are `anon`-executable
+
+Surfaced repeatedly through the wave and consolidated here, because it is a
+different axis from DE scoping and no migration in 387–424 changed it:
+
+`approve_draft`, `approve_draft_reply`, `claim_support_conversation`,
+`create_de_mission`, `create_de_team_mission`, `get_pending_draft`,
+`get_pending_drafts_for_de`, `propose_account_writeback`,
+`propose_continuity_writeback`, `propose_opportunity_writeback`,
+`send_human_reply`, `set_de_mission_state`, `set_support_conversation_state`.
+
+**Eleven of those are actors.** Signup is live, so `anon` is the internet. They
+fail closed today — every one has a tenant or role check that `anon` cannot
+satisfy, and `knowledge-acl-invariants` (21/21) enforces that none is both
+`anon`-executable *and* fail-open on a null uid. So this is debt, not an open
+door. It is still the class migration 330 closed, on functions that mutate.
+
+Recommended follow-up: `REVOKE ALL ON ROUTINE <sig> FROM PUBLIC, anon` for the
+lot, using the mig-365 criterion (no `src/` call site ⇒ safe, because edge
+functions use the service-role key which bypasses GRANTs). Not done here —
+revoking is a separate decision from scoping and deserves its own migration.
+
+### What is left outside these two groups
+
+37 `SECURITY DEFINER` functions still read a Wave-1 table without a guard. That
+number sounds worse than it is; broken down:
+
+- **3** are `RETURNS trigger` — not RPC-reachable.
+- **27** are neither triggers nor `authenticated`-executable — service-role and
+  internal paths only.
+- **7** are client-reachable, and **all seven are already accounted for**:
+  five are group C (`_assert_conv_member`, `assess_definition_of_done`,
+  `dispatch_de_work_internal`, `resolve_action_execution_for_task`,
+  `submit_csat`) and two are the reclassified onboarding pair.
+
+So there is no undiscovered surface hiding behind the 46 this document started
+from. The next real work is group C.
+
+⚠ Two group-C members — `_assert_conv_member` and `dispatch_de_work_internal` —
+are **`anon`-executable**. That is precisely what "verify before skipping"
+was written for.
+
+### Remaining (0 — group B complete)
 
 | group | functions |
 |---|---|
@@ -352,7 +425,7 @@ case the function has excluded.
 | ~~Missions & work~~ | ✅ all done (420–423) — 1 real gap, 3 defence in depth |
 | ~~Write-back proposals~~ | ✅ all done (410–413) |
 | ~~Learning & trust~~ | ✅ all done (416–419) |
-| Onboarding & evidence | `resolve_onboarding_signoff`, `update_onboarding_item`, `submit_evidence_feedback` |
+| ~~Onboarding & evidence~~ | ✅ `submit_evidence_feedback` done (424); the two onboarding fns **reclassified — no `de_id` exists**, see above |
 | ~~Browser operator~~ | ✅ all done (414–415) — both defence in depth, see note above |
 
 ### C. Internal — reached by triggers or the service role, not by users
