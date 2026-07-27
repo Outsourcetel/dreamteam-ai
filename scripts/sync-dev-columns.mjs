@@ -145,8 +145,46 @@ const polExtra = devPol.filter((r) => !prodPolSet.has(`${r.tbl}.${r.name}`));
 console.log(`\n${polExtra.length} RLS policy(ies) on dev that production does NOT have`);
 for (const r of polExtra) console.log(`  ${r.tbl}.${r.name}`);
 
+// ── Triggers ────────────────────────────────────────────────────────────────
+// Checked but, unlike policies, extras here are NOT dropped by default.
+//
+// The asymmetry is deliberate. An extra permissive POLICY silently WIDENS
+// access, because Postgres ORs them — that is why the 13 leftovers had to go.
+// An extra TRIGGER does not widen anything; it maintains a table. Measured on
+// dev: 0 differ, 0 missing, and 3 extras — all on specialist_profiles, a legacy
+// table dev has and production does not. Dropping its updated_at and audit
+// triggers would leave the table present but no longer maintaining itself,
+// which is a worse state than the divergence.
+//
+// A trigger that DIFFERS or is MISSING on a SHARED table is the case that
+// matters — it changes behaviour silently — so those are reported loudly and
+// recreated on --apply.
+const TRIGGERS = `
+  select c.relname as tbl, t.tgname as name, pg_get_triggerdef(t.oid) as def
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and not t.tgisinternal order by 1, 2`;
+
+const [prodTrg, devTrg] = await Promise.all([q(PROD, TRIGGERS), q(DEV, TRIGGERS)]);
+const devTrgMap = new Map(devTrg.map((r) => [`${r.tbl}.${r.name}`, r.def]));
+const trgKey = (r) => `${r.tbl}.${r.name}`;
+const trgDiffer = prodTrg.filter((r) => devTables.has(r.tbl)
+  && devTrgMap.has(trgKey(r)) && devTrgMap.get(trgKey(r)) !== r.def);
+const trgMissing = prodTrg.filter((r) => devTables.has(r.tbl) && !devTrgMap.has(trgKey(r)));
+const prodTrgSet = new Set(prodTrg.map(trgKey));
+const trgExtra = devTrg.filter((r) => !prodTrgSet.has(trgKey(r)));
+
+console.log(`\n${trgDiffer.length} trigger(s) differ, ${trgMissing.length} missing on shared tables`);
+for (const r of [...trgDiffer, ...trgMissing].slice(0, 10)) console.log(`  ${trgKey(r)}`);
+if (trgExtra.length) {
+  console.log(`${trgExtra.length} extra trigger(s) on dev — REPORTED, NOT DROPPED (see comment):`);
+  for (const r of trgExtra) console.log(`  ${trgKey(r)}`);
+}
+
 if (!APPLY) { console.log('\n(report only — pass --apply to run the ALTERs)'); process.exit(0); }
-if (!missing.length && !chkDiffer.length && !chkMissing.length && !polExtra.length) {
+if (!missing.length && !chkDiffer.length && !chkMissing.length && !polExtra.length
+    && !trgDiffer.length && !trgMissing.length) {
   console.log('\nnothing to do'); process.exit(0);
 }
 
@@ -214,4 +252,22 @@ for (const r of polExtra) {
 if (polExtra.length) {
   console.log(`\nRLS policies: ${dropped} dropped, ${polFailed.length} failed`);
   polFailed.forEach((m) => console.log(`  ${m}`));
+}
+
+// Triggers last: they fire on writes, so recreating one mid-sync could act on a
+// table whose columns or constraints were still being reshaped above.
+let trgOk = 0; const trgFailed = [];
+for (const r of [...trgDiffer, ...trgMissing]) {
+  try {
+    await q(DEV, `DROP TRIGGER IF EXISTS "${r.name}" ON public.${JSON.stringify(r.tbl).replace(/"/g, '"')}; ${r.def};`);
+    trgOk += 1;
+  } catch (e) {
+    // Usually a missing trigger FUNCTION — full_schema.sql brings those, so a
+    // failure here means the dump has not been applied or is out of date.
+    trgFailed.push(`${trgKey(r)} — ${String(e.message).slice(0, 90)}`);
+  }
+}
+if (trgDiffer.length || trgMissing.length) {
+  console.log(`\nTriggers: ${trgOk} recreated, ${trgFailed.length} failed`);
+  trgFailed.forEach((m) => console.log(`  ${m}`));
 }
