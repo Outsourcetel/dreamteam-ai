@@ -13,6 +13,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { raise, requireTenantId, listTenantRows } from './liveShared';
+import { getSessionTenantId } from './customerApi';
 
 export type TrustCategory = 'invoice_auto_send' | 'answer_dock' | 'answer_widget';
 
@@ -135,6 +136,81 @@ export async function getDeGateStatus(deId: string): Promise<{ gated: boolean; r
   } catch {
     return null;
   }
+}
+
+// ── Plain-language trust-plan compiler (compile-trust-plan edge fn) ──────
+// The manager writes the plan in plain words; the edge function compiles it
+// into a DRAFT of per-capability ladders, validated against the SAME
+// validate_trust_ladder the write path enforces. NOTHING is applied by the
+// compile — applying happens here in the UI, per capability, through the
+// ordinary setTrustLadder writer.
+
+/** current/proposed snapshot per capability. `current.ladder`/`criteria` are
+ *  null when no policy row exists (display_name then falls back to the label). */
+export interface TrustPlanSide {
+  display_name: string;
+  ladder: TrustLadderLevel[] | null;
+  criteria: Record<string, number> | null;
+}
+export interface TrustPlanCapabilityDraft {
+  capability_key: string;
+  label: string;
+  current: TrustPlanSide;
+  /** proposed.ladder is never null — an invalid or empty proposal lands in
+   *  `unmapped` server-side instead of shipping as a draft. */
+  proposed: TrustPlanSide & { ladder: TrustLadderLevel[] };
+  changed: boolean;
+  explanation: string;
+}
+export interface TrustPlanGuardrailSuggestion { description: string; rationale: string }
+export interface TrustPlanUnmapped { text: string; why: string }
+export interface TrustPlanDraft {
+  capabilities: TrustPlanCapabilityDraft[];
+  /** Prohibition-shaped plan fragments. These are NOT applied by this flow —
+   *  guardrails outrank trust and are approved in their own flow. */
+  guardrail_suggestions: TrustPlanGuardrailSuggestion[];
+  /** Plan fragments that honestly could not become a valid ladder, with why. */
+  unmapped: TrustPlanUnmapped[];
+}
+
+/** Every non-200 from the edge fn is {ok:false, error, detail} with a
+ *  plain-language detail — surface that, never a bare code. */
+async function compileFailure(error: unknown, data: unknown): Promise<never> {
+  const msgOf = (b: unknown) => {
+    const body = b as { error?: string; detail?: string } | null;
+    return body?.detail || body?.error || null;
+  };
+  let msg = msgOf(data);
+  if (!msg) {
+    const ctx = (error as { context?: Response } | null)?.context;
+    if (ctx && typeof ctx.json === 'function') {
+      try { msg = msgOf(await ctx.json()); } catch { /* non-JSON body */ }
+    }
+  }
+  throw new Error(msg || (error as Error | null)?.message || 'The trust plan could not be compiled.');
+}
+
+/** POST /compile-trust-plan — plain-language plan → validated DRAFT.
+ *  User-JWT only (manager+; both permission axes re-checked server-side);
+ *  budget- and suspension-gated before any AI spend. The only server side
+ *  effect is one audit row recording that a compile happened. An LLM or
+ *  validation failure throws — it is NEVER returned as an empty draft. */
+export async function compileTrustPlan(deId: string, planText: string): Promise<TrustPlanDraft> {
+  // tenant_id is only honored for platform admins in an audited remote-access
+  // session (the entity-draft pattern) — harmless for ordinary tenant users.
+  const tid = await getSessionTenantId();
+  const { data, error } = await supabase.functions.invoke('compile-trust-plan', {
+    body: { de_id: deId, plan_text: planText, ...(tid ? { tenant_id: tid } : {}) },
+  });
+  const res = data as { ok?: boolean; draft?: TrustPlanDraft; error?: string; detail?: string } | null;
+  if (error || !res || res.ok !== true) await compileFailure(error, data);
+  const draft = res!.draft;
+  // Contract: all three arrays are always present on a 200. A malformed body
+  // is a failure — never rendered as an empty draft.
+  if (!draft || !Array.isArray(draft.capabilities) || !Array.isArray(draft.guardrail_suggestions) || !Array.isArray(draft.unmapped)) {
+    throw new Error('The compiler returned an unreadable draft — nothing was applied.');
+  }
+  return draft;
 }
 
 export interface TrustCriterion {

@@ -13,9 +13,11 @@ import {
   computeTrustEvidence, requestTrustPromotion, listTrustHistory,
   listDeTrustSurface, seedDeTrustPolicy, setTrustLadder, getDeGateStatus,
   trustLevelName, earnedLadderSettings, TRUST_LADDER_MODE_LABELS, TRUST_LEVEL_LABELS,
+  compileTrustPlan,
 } from '../../lib/trustApi';
 import type {
   TrustEvidence, TrustHistoryEvent, TrustSurfaceEntry, TrustLadderLevel, TrustLadderMode,
+  TrustPlanDraft, TrustPlanCapabilityDraft, TrustPlanSide,
 } from '../../lib/trustApi';
 import { appendAuditEvent } from '../../lib/guardrailApi';
 import { listDefinitions, setDefinitionDeBinding } from '../../lib/playbookBuilderApi';
@@ -3379,6 +3381,314 @@ function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, request
   );
 }
 
+// ════════════════════════════════════════════════════════════════════
+// "Describe how you want trust to work" — the plain-language trust-plan
+// composer (docs/31 Q7 Phase 2). The plan compiles SERVER-side against
+// this employee's real trust surface and the live validate_trust_ladder
+// (compile-trust-plan edge fn) into a DRAFT — the compile's only server
+// side effect is one audit row. Applying happens HERE, per capability,
+// through the SAME validated setTrustLadder writer the ladder drawer
+// uses — there is no other write path. Client-side the composer is
+// un-gated exactly like "Customize levels…": the compile refuses
+// non-managers server-side (403 insufficient_role) and set_trust_ladder
+// is manager-gated in the database; a refusal renders as an honest
+// error, never a silent no-op.
+// ════════════════════════════════════════════════════════════════════
+
+/** Exactly the criteria keys the evidence engine reads (mirrors the edge
+ *  fn's CRITERIA_KEYS) — display labels only, never asserted as truth. */
+const TRUST_CRITERIA_DISPLAY: Record<string, { label: string; kind: 'days' | 'rate' | 'count' }> = {
+  window_days: { label: 'evidence window', kind: 'days' },
+  min_eval_pass_rate: { label: 'min eval pass rate', kind: 'rate' },
+  min_eval_samples: { label: 'min eval samples', kind: 'count' },
+  min_human_approval_rate: { label: 'min human approval rate', kind: 'rate' },
+  min_human_samples: { label: 'min human approvals', kind: 'count' },
+  max_guardrail_blocks: { label: 'max guardrail blocks', kind: 'count' },
+};
+
+function trustCriteriaLines(criteria: Record<string, number> | null): string[] {
+  if (!criteria) return [];
+  return Object.entries(criteria).map(([k, v]) => {
+    const meta = TRUST_CRITERIA_DISPLAY[k];
+    if (!meta) return `${k}: ${v}`; // unknown key — shown raw, never hidden
+    if (meta.kind === 'rate') return `${meta.label} ${Math.round(v * 100)}%`;
+    if (meta.kind === 'days') return `${meta.label} ${v} day${v === 1 ? '' : 's'}`;
+    return `${meta.label} ${v}`;
+  });
+}
+
+function trustLadderLevelLine(l: TrustLadderLevel): string {
+  const limits: string[] = [];
+  if (l.settings?.max_amount_cents != null) limits.push(`up to ${fmtDollars(l.settings.max_amount_cents)}`);
+  if (l.settings?.min_confidence != null) limits.push(`at ${l.settings.min_confidence}%+ confidence`);
+  return `${l.name?.trim() || `Level ${l.level}`} — ${TRUST_LADDER_MODE_LABELS[l.mode] ?? l.mode}${limits.length > 0 ? ` (${limits.join(', ')})` : ''}`;
+}
+
+/** One side of the diff (current vs proposed). A null/empty ladder renders
+ *  as the engine's built-in levels — the same wording the drawer uses. */
+function TrustPlanSideCol({ heading, side, accent }: { heading: string; side: TrustPlanSide; accent?: boolean }) {
+  const criteria = trustCriteriaLines(side.criteria);
+  return (
+    <div className={`rounded-lg border p-3 ${accent ? 'border-indigo-800/50 bg-indigo-500/5' : 'border-dt-border bg-dt-card'}`}>
+      <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1.5">{heading}</p>
+      <p className="text-xs font-medium text-dt-body mb-1">{side.display_name}</p>
+      {!side.ladder || side.ladder.length === 0 ? (
+        <p className="text-[11px] text-dt-muted">Engine’s built-in levels (no custom ladder).</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {[...side.ladder].sort((a, b) => a.level - b.level).map(l => (
+            <li key={l.level} className="text-[11px] text-dt-support">
+              <span className="text-dt-muted">L{l.level}</span> · {trustLadderLevelLine(l)}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-1.5 text-[10px] text-dt-muted">
+        {criteria.length > 0 ? `Promotion evidence: ${criteria.join(' · ')}` : 'No promotion evidence criteria set here.'}
+      </p>
+    </div>
+  );
+}
+
+type TrustPlanApplyState = { status: 'applying' | 'applied' | 'error'; message?: string };
+
+function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
+  deId: string;
+  deName: string;
+  /** The section's loaded surface — apply targets each capability's policy row. */
+  surface: TrustSurfaceEntry[] | null;
+  /** The section's own load path (load(false, key)) — preserves in-progress
+   *  edits on the other cards exactly like a dial save does. */
+  onApplied: (capabilityKey: string) => Promise<void>;
+}) {
+  const [planText, setPlanText] = useState('');
+  const [compiling, setCompiling] = useState(false);
+  const [compileErr, setCompileErr] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TrustPlanDraft | null>(null);
+  const [apply, setApply] = useState<Record<string, TrustPlanApplyState>>({});
+  const [applyingAll, setApplyingAll] = useState(false);
+
+  const tooShort = planText.trim().length < 20; // the server refuses under 20 chars
+
+  const compile = async () => {
+    setCompiling(true);
+    setCompileErr(null);
+    // A fresh compile always discards the previous draft first — an AI
+    // failure below then renders as FAILURE with no draft, never as an
+    // empty draft or a stale one.
+    setDraft(null);
+    setApply({});
+    try {
+      setDraft(await compileTrustPlan(deId, planText.trim()));
+    } catch (e) {
+      setCompileErr((e as Error)?.message || 'The trust plan could not be compiled.');
+    } finally {
+      setCompiling(false);
+    }
+  };
+
+  const policyFor = (key: string) => (surface ?? []).find(e => e.capability_key === key)?.policy ?? null;
+
+  const applyOne = async (cap: TrustPlanCapabilityDraft) => {
+    const key = cap.capability_key;
+    const policy = policyFor(key);
+    if (!policy) {
+      // The surface lazy-seeds per-employee policies on load; if that seed
+      // failed there is nothing to write to — said plainly, applied nothing.
+      setApply(prev => ({ ...prev, [key]: { status: 'error', message: 'no trust policy row exists for this employee yet, so there is nothing to apply the ladder to — the note above the cards explains why seeding may have been refused.' } }));
+      return;
+    }
+    setApply(prev => ({ ...prev, [key]: { status: 'applying' } }));
+    try {
+      // The ONE write path: the same server-validated writer the drawer uses.
+      const opts: { ladder: TrustLadderLevel[]; displayName?: string; criteria?: Record<string, number> } = { ladder: cap.proposed.ladder };
+      if (cap.proposed.criteria && Object.keys(cap.proposed.criteria).length > 0) opts.criteria = cap.proposed.criteria;
+      if (cap.proposed.display_name && cap.proposed.display_name !== cap.current.display_name) opts.displayName = cap.proposed.display_name;
+      await setTrustLadder(policy.id, opts);
+      await onApplied(key);
+      setApply(prev => ({ ...prev, [key]: { status: 'applied' } }));
+    } catch (e) {
+      // A failed card stays visibly unapplied — no silent partial success.
+      setApply(prev => ({ ...prev, [key]: { status: 'error', message: (e as Error)?.message || 'the ladder was not applied.' } }));
+    }
+  };
+
+  const applyAll = async () => {
+    if (!draft) return;
+    setApplyingAll(true);
+    // Sequential on purpose: each card's outcome is surfaced individually,
+    // and one failure never blocks (or hides behind) the others.
+    for (const cap of draft.capabilities) {
+      if (!cap.changed) continue;
+      if (apply[cap.capability_key]?.status === 'applied') continue;
+      await applyOne(cap);
+    }
+    setApplyingAll(false);
+  };
+
+  const changed = draft?.capabilities.filter(c => c.changed) ?? [];
+  const unapplied = changed.filter(c => apply[c.capability_key]?.status !== 'applied');
+  const anyApplying = applyingAll || Object.values(apply).some(s => s.status === 'applying');
+  const emptyDraft = draft !== null && draft.capabilities.length === 0
+    && draft.guardrail_suggestions.length === 0 && draft.unmapped.length === 0;
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Describe how you want trust to work</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">compiles to a draft · you approve every change</span>
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        Write the plan in plain words — what {deName} may do alone, up to what limits, and what evidence
+        earns more. It compiles against {deName}'s real capabilities using the same validator that guards
+        every ladder write, and comes back as a draft below. Nothing changes until you apply a card;
+        absolute prohibitions become guardrail suggestions for the separate guardrail flow. Compiling a
+        plan requires a manager, admin or owner role.
+      </p>
+
+      <textarea
+        value={planText}
+        onChange={e => setPlanText(e.target.value)}
+        rows={4}
+        maxLength={8000}
+        placeholder={`e.g. ${deName} can send payment reminders on its own up to $500. After 50 clean sends over 30 days, raise the limit to $2,000. Anything about refunds always comes to me.`}
+        className={`${INPUT_CLS} resize-y min-h-[92px]`}
+      />
+
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <Button kind="primary" size="sm" disabled={compiling || tooShort} onClick={() => void compile()}>
+          {compiling ? 'Compiling…' : 'Compile to a draft'}
+        </Button>
+        {tooShort && planText.trim().length > 0 && (
+          <span className="text-[11px] text-dt-muted">At least a sentence (20 characters) — the compiler refuses less.</span>
+        )}
+        {draft !== null && (
+          <Button kind="ghost" size="sm" disabled={anyApplying} onClick={() => { setDraft(null); setApply({}); }}>
+            Discard draft
+          </Button>
+        )}
+      </div>
+
+      {compileErr && (
+        <div className="mt-3">
+          <Banner tone="danger">Compile failed — no draft was produced. {compileErr}</Banner>
+        </div>
+      )}
+
+      {draft !== null && (
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 className="text-sm font-semibold text-dt-body">Draft review</h4>
+            <span className="text-[11px] text-dt-muted">
+              {changed.length} proposed change{changed.length === 1 ? '' : 's'}
+              {draft.unmapped.length > 0 ? ` · ${draft.unmapped.length} unmapped` : ''}
+              {draft.guardrail_suggestions.length > 0 ? ` · ${draft.guardrail_suggestions.length} guardrail suggestion${draft.guardrail_suggestions.length === 1 ? '' : 's'}` : ''}
+            </span>
+            {unapplied.length > 1 && (
+              <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying} onClick={() => void applyAll()}>
+                {applyingAll ? 'Applying…' : `Apply all ${unapplied.length} changes`}
+              </Button>
+            )}
+          </div>
+
+          {emptyDraft && (
+            <p className="text-xs text-dt-muted">
+              The compiler returned an empty draft — no ladder proposals, no guardrail suggestions and
+              nothing unmapped. Try describing the plan differently.
+            </p>
+          )}
+
+          {draft.capabilities.map(cap => {
+            const st = apply[cap.capability_key];
+            const criteriaKept = cap.changed && st?.status !== 'applied'
+              && cap.proposed.criteria === null
+              && !!cap.current.criteria && Object.keys(cap.current.criteria).length > 0;
+            return (
+              <div key={cap.capability_key} className="rounded-xl border border-dt-border bg-dt-inset p-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-dt-body font-medium">{cap.proposed.display_name || cap.label}</span>
+                  {cap.proposed.display_name !== cap.label && (
+                    <span className="text-[11px] text-dt-muted">({cap.label})</span>
+                  )}
+                  {st?.status === 'applied' ? (
+                    <Chip tone="ok">Applied ✓</Chip>
+                  ) : cap.changed ? (
+                    <Chip tone="accent">proposed change</Chip>
+                  ) : (
+                    <Chip tone="neutral">no change</Chip>
+                  )}
+                  {cap.changed && st?.status !== 'applied' && (
+                    <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying} onClick={() => void applyOne(cap)}>
+                      {st?.status === 'applying' ? 'Applying…' : 'Apply this ladder'}
+                    </Button>
+                  )}
+                </div>
+                {cap.explanation && <p className="text-[11px] text-dt-support mt-1">{cap.explanation}</p>}
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <TrustPlanSideCol heading="Current" side={cap.current} />
+                  <TrustPlanSideCol heading="Proposed" side={cap.proposed} accent />
+                </div>
+                {criteriaKept && (
+                  <p className="mt-2 text-[10px] text-amber-400/80">
+                    The draft proposes no promotion evidence, but this capability has criteria today —
+                    applying keeps the existing criteria as they are (this flow never clears criteria).
+                  </p>
+                )}
+                {st?.status === 'error' && (
+                  <p className="mt-2 text-[11px] text-rose-300">Not applied — {st.message}</p>
+                )}
+              </div>
+            );
+          })}
+
+          {draft.unmapped.length > 0 && (
+            <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
+              <p className="text-xs font-semibold text-dt-body mb-1">Could not be mapped</p>
+              <p className="text-[11px] text-dt-muted mb-2">
+                These parts of the plan did not compile into any valid ladder — nothing was guessed for them.
+              </p>
+              <ul className="space-y-1.5">
+                {draft.unmapped.map((u, i) => (
+                  <li key={i} className="text-[11px] text-dt-support">
+                    {u.text && <span className="text-dt-body">“{u.text}”</span>}
+                    {u.text && u.why && <span className="text-dt-muted"> — </span>}
+                    {u.why && <span className="text-dt-muted">{u.why}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {draft.guardrail_suggestions.length > 0 && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+              <p className="text-xs font-semibold text-amber-300 mb-1">Guardrail suggestions — not applied here</p>
+              <p className="text-[11px] text-amber-200/90 mb-2">
+                Absolute prohibitions are guardrails, not trust levels — guardrails outrank every ladder.
+                Nothing below is applied by this page: add the ones you want on the Governance tab, where
+                guardrails get their own review.
+              </p>
+              <ul className="space-y-1.5">
+                {draft.guardrail_suggestions.map((g, i) => (
+                  <li key={i} className="text-[11px] text-amber-100/90">
+                    {g.description}
+                    {g.rationale && <span className="text-amber-200/70"> — {g.rationale}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="mt-4 text-[10px] text-dt-muted">
+        Each compile is recorded on the audit trail as draft-only. Applying a card writes through the same
+        server-validated ladder writer as “Customize levels…” — modes must not narrow and limits must widen
+        as levels rise, and the server refuses anything else.
+      </p>
+    </div>
+  );
+}
+
 export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
   de: DigitalEmployee; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
 }) {
@@ -3653,6 +3963,17 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
           </button>
         </p>
       </div>
+
+      {/* Plain-language trust plans — compiled server-side into a draft,
+          applied per capability through the SAME setTrustLadder writer as
+          the drawer. The refresh path is the section's own load(false, key)
+          so in-progress edits on other cards are never clobbered. */}
+      <TrustPlanComposerPanel
+        deId={de.id}
+        deName={name}
+        surface={surface}
+        onApplied={k => load(false, k)}
+      />
 
       {/* Promotion history */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
