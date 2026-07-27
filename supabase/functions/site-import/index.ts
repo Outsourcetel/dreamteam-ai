@@ -288,13 +288,35 @@ serve(async (req) => {
       return json({ error: msg, site: discovery.site }, denied ? 403 : 500);
     }
 
-    // The job's tenant came from auth_tenant_id() inside the SECURITY DEFINER.
-    // If that disagrees with what we resolved, something is wrong with tenant
-    // resolution and we must not report on another workspace's rows.
-    const { data: job } = await admin
-      .from('knowledge_ingestion_jobs').select('id, tenant_id').eq('id', jobId).single();
-    if (!job || job.tenant_id !== tenantId) {
-      return json({ error: 'tenant mismatch while queueing the import', job_id: jobId }, 500);
+    // The job's tenant came from auth_tenant_id() inside the SECURITY DEFINER,
+    // which is the AUTHORITATIVE boundary — this read-back is a cross-check on
+    // top of it, not the thing enforcing it.
+    //
+    // ⚠ THE TWO FAILURES BELOW ARE NOT THE SAME AND USED TO SHARE A MESSAGE.
+    // The old check was `if (!job || job.tenant_id !== tenantId)`, so a job we
+    // simply could not READ reported as "tenant mismatch". That is what a real
+    // signed-in owner hit: the job row existed with exactly the right
+    // tenant_id, and the import still failed 500 claiming the tenants
+    // disagreed. An error that names the wrong cause sends the next person
+    // hunting tenant resolution, which is fine here, and never at the read.
+    const { data: job, error: jobReadErr } = await admin
+      .from('knowledge_ingestion_jobs').select('id, tenant_id').eq('id', jobId).maybeSingle();
+
+    if (job && job.tenant_id !== tenantId) {
+      // A GENUINE mismatch. Refuse: reporting on another workspace's rows is
+      // the one outcome worth failing the whole import for.
+      return json({
+        error: 'tenant mismatch while queueing the import',
+        job_id: jobId, expected: tenantId, got: job.tenant_id,
+      }, 500);
+    }
+
+    if (!job) {
+      // Could not read back the job we just created. The job IS queued — the
+      // RPC returned its id and set its tenant from auth_tenant_id() — and the
+      // pg_cron drain will process it either way. Failing here would throw away
+      // work that is already safely enqueued, so carry on and say so.
+      console.warn('site-import: could not read back job', jobId, jobReadErr?.message ?? '(no row)');
     }
 
     // ── Run it now, bounded, instead of waiting for the 2-minute cron ──
