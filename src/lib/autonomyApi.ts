@@ -122,6 +122,41 @@ export async function upsertAutonomy(
   return row;
 }
 
+/** Generic sibling of upsertAutonomy for the unfrozen key axis (trust
+ *  program): writes a dial row for ANY capability key — the legacy three,
+ *  'action:<category>', or a raw registered-action key — via the same
+ *  set_de_autonomy RPC. The caller supplies the human label for the audit
+ *  line because free-text keys have no AUTONOMY_ACTION_META entry. */
+export async function setAutonomyDial(
+  actionKey: string,
+  label: string,
+  updates: { enabled: boolean; max_amount_cents?: number | null; min_confidence?: number | null },
+  deId: string | null = null,
+): Promise<DEAutonomy> {
+  const { data, error } = await supabase.rpc('set_de_autonomy', {
+    p_action_type: actionKey,
+    p_enabled: updates.enabled,
+    p_max_amount_cents: updates.max_amount_cents ?? null,
+    p_min_confidence: updates.min_confidence ?? null,
+    p_de_id: deId,
+    p_source_category: null,
+  });
+  if (error) raise('setAutonomyDial', error);
+  const row = data as DEAutonomy;
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Trust dial ${row.enabled ? 'set' : 'disabled'} — ${label}${deId ? ' (this employee)' : ' (workspace-wide)'}${
+      row.enabled && row.max_amount_cents !== null ? ` (≤ $${Math.round(row.max_amount_cents / 100).toLocaleString()})` : ''
+    }${row.enabled && row.min_confidence !== null ? ` (confidence ≥ ${row.min_confidence}%)` : ''}`,
+    detail: {
+      autonomy_id: row.id, action_type: actionKey, de_id: deId, enabled: row.enabled,
+      max_amount_cents: row.max_amount_cents, min_confidence: row.min_confidence,
+      composition: 'autonomy_narrows_within_guardrails',
+    },
+  });
+  return row;
+}
+
 /** The tenant-wide invoice_auto_send dial (null when unset or table
  *  missing). Explicitly the workspace-wide default row — since a
  *  per-employee override can now also exist for the same action_type

@@ -21,6 +21,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataSt
 import { INDUSTRY_NAMES as INDUSTRIES } from '../../lib/industries';
 import CommsSettingsCard from '../../components/CommsSettingsCard';
 import AISessionPanel from '../../components/AISessionPanel';
+import WorkforceTrustDefaults from '../../components/WorkforceTrustDefaults';
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -39,14 +40,14 @@ const SettingsPage = ({
   // billing. isDTUser stays in use below for platform-only content.
   const role = (user?.role ?? 'read_only') as Parameters<typeof canAccessSettingsTab>[0];
   const accentColor = tenant?.primaryColor || '#6366f1';
-  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security' | 'identity' | 'data'>(() => {
+  const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security' | 'identity' | 'data' | 'trust'>(() => {
     // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
     // lands on the Widget tab instead of the org-name form). Consumed once.
     try {
       const hint = localStorage.getItem('dt_settings_tab');
       if (hint) {
         localStorage.removeItem('dt_settings_tab');
-        if (['general', 'ai_engine', 'usage', 'widget', 'billing', 'security', 'identity', 'data'].includes(hint)) return hint as 'widget';
+        if (['general', 'ai_engine', 'usage', 'widget', 'billing', 'security', 'identity', 'data', 'trust'].includes(hint)) return hint as 'widget';
       }
     } catch { /* ignore */ }
     return 'general';
@@ -105,7 +106,7 @@ const SettingsPage = ({
       // down the component — 'general' is only the last resort, so a role that
       // somehow cannot open it still lands somewhere real instead of on a blank
       // panel.
-      const firstAllowed = (['general', 'usage', 'widget', 'identity', 'data', 'security', 'billing', 'ai_engine'] as SettingsTab[])
+      const firstAllowed = (['general', 'usage', 'trust', 'widget', 'identity', 'data', 'security', 'billing', 'ai_engine'] as SettingsTab[])
         .find(t => canAccessSettingsTab(role, t, user?.layer));
       setActiveTab((firstAllowed ?? 'general') as typeof activeTab);
     }
@@ -272,7 +273,7 @@ const SettingsPage = ({
   // enforced in the database; a role that reached this page by another route
   // still cannot perform them.
   const ALL_SETTINGS_TABS: SettingsTab[] =
-    ['general', 'ai_engine', 'usage', 'widget', 'identity', 'data', 'billing', 'security'];
+    ['general', 'ai_engine', 'usage', 'trust', 'widget', 'identity', 'data', 'billing', 'security'];
   const tabList = ALL_SETTINGS_TABS
     .filter(t => canAccessSettingsTab(role, t, user?.layer))
     .map(t => t as typeof activeTab);
@@ -340,7 +341,7 @@ const SettingsPage = ({
             }`}
             style={activeTab === t ? { backgroundColor: accentColor } : {}}
           >
-            {t === 'ai_engine' ? 'AI Engine' : t === 'usage' ? 'Usage & Budgets' : t === 'widget' ? 'Widget & API' : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'ai_engine' ? 'AI Engine' : t === 'usage' ? 'Usage & Budgets' : t === 'widget' ? 'Widget & API' : t === 'trust' ? 'Workforce Trust' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -874,6 +875,12 @@ const userHash = crypto
           <DeleteWorkspacePanel />
         </div>
       )}
+
+      {/* Workforce trust defaults (docs/31 Q7): the workspace-wide dial rows
+          and tenant-wide promotion history finally have a Settings home —
+          they used to be editable only from inside one arbitrary employee's
+          file. Per-employee trust stays on each employee's file. */}
+      {activeTab === 'trust' && <WorkforceTrustDefaults />}
 
       {/* Security & Access moved here from the Governance hub (founder call).
           It was the ONE governance surface that is pure administration — API

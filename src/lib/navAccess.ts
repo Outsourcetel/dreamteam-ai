@@ -240,7 +240,7 @@ export const canAccessPage = (
 
 export type SettingsTab =
   | 'general' | 'ai_engine' | 'usage' | 'widget'
-  | 'identity' | 'data' | 'billing' | 'security';
+  | 'identity' | 'data' | 'billing' | 'security' | 'trust';
 
 const SETTINGS_TAB_ACCESS: Record<SettingsTab, UserRole[]> = {
   // Name, industry, vocabulary, tone — the settings a manager actually owns.
@@ -257,6 +257,12 @@ const SETTINGS_TAB_ACCESS: Record<SettingsTab, UserRole[]> = {
   // Decision 3.
   billing: OWNER,
   security: ADMIN,
+  // Workforce trust defaults (docs/31 Q7): the workspace-wide dial rows and
+  // tenant-wide promotion history. Founder ask 2026-07-27 — these were
+  // editable only from inside one arbitrary employee's file; they needed a
+  // Settings home. ADMIN, matching the set_trust_ladder gate for
+  // workspace-wide (de_id null) policies: owner/admin in the database.
+  trust: ADMIN,
   // Shared platform-wide LLM keys — DreamTeam staff only, never a tenant's.
   ai_engine: [],
 };

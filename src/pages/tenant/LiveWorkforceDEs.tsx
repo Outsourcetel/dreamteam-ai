@@ -5,22 +5,22 @@ import type { Page } from '../../types';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 import { AmendmentWizard } from '../../components/AmendmentWizard';
 import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget';
-import { CustomerApiError, fmtMoneyK } from '../../lib/customerApi';
+import { fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
+import { setAutonomyDial, getApprovalEvidence } from '../../lib/autonomyApi';
+import type { ApprovalEvidence } from '../../lib/autonomyApi';
 import {
-  listAutonomy, upsertAutonomy, resolveAutonomy, getApprovalEvidence,
-  AUTONOMY_ACTION_META,
-} from '../../lib/autonomyApi';
-import type { DEAutonomy, AutonomyActionType, ApprovalEvidence } from '../../lib/autonomyApi';
-import {
-  listTrustPolicies, seedTrustPolicies, computeTrustEvidence, requestTrustPromotion,
-  listTrustHistory, trustLevelSettings, TRUST_LEVEL_LABELS,
+  computeTrustEvidence, requestTrustPromotion, listTrustHistory,
+  listDeTrustSurface, seedDeTrustPolicy, setTrustLadder, getDeGateStatus,
+  trustLevelName, earnedLadderSettings, TRUST_LADDER_MODE_LABELS, TRUST_LEVEL_LABELS,
 } from '../../lib/trustApi';
-import type { TrustPolicy, TrustEvidence, TrustHistoryEvent, TrustCategory } from '../../lib/trustApi';
+import type {
+  TrustEvidence, TrustHistoryEvent, TrustSurfaceEntry, TrustLadderLevel, TrustLadderMode,
+} from '../../lib/trustApi';
 import { appendAuditEvent } from '../../lib/guardrailApi';
 import { listDefinitions, setDefinitionDeBinding } from '../../lib/playbookBuilderApi';
 import type { PlaybookDefinition } from '../../lib/playbookBuilderApi';
-import { LiveLoadingSkeleton, MissingTablesNotice } from '../../components/LiveDataStates';
+import { LiveLoadingSkeleton } from '../../components/LiveDataStates';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
 import SpecialistLive from './SpecialistLive';
@@ -33,7 +33,7 @@ import {
 import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
 import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
-import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState } from '../../design/primitives';
+import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, INPUT_CLS } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   checkDeRetirementReadiness, retireDigitalEmployee,
@@ -68,15 +68,13 @@ import { listDocScopes } from '../../lib/knowledgeApi';
 // authorize something a guardrail forbids.
 // ============================================================
 
-const ACTION_ORDER: AutonomyActionType[] = ['invoice_auto_send', 'answer_dock', 'answer_widget'];
-
 interface RowDraft { enabled: boolean; amount: string; confidence: string }
 
-function draftFrom(a: DEAutonomy | undefined): RowDraft {
+function draftFromDial(d: { enabled: boolean; max_amount_cents: number | null; min_confidence: number | null } | null): RowDraft {
   return {
-    enabled: a?.enabled ?? false,
-    amount: a?.max_amount_cents != null ? String(Math.round(a.max_amount_cents / 100)) : '',
-    confidence: a?.min_confidence != null ? String(a.min_confidence) : '',
+    enabled: d?.enabled ?? false,
+    amount: d?.max_amount_cents != null ? String(Math.round(d.max_amount_cents / 100)) : '',
+    confidence: d?.min_confidence != null ? String(d.min_confidence) : '',
   };
 }
 
@@ -2944,143 +2942,574 @@ function TeamsPanel() {
 // that lived here are exported below as DeProfileSections and rendered by
 // EmployeeFilePage — one Workbench, one profile, one naming convention.
 
-/** Trust & Autonomy — lifecycle gate, per-action dial, earned ladder.
- *  Extracted from the old detail panel with its state intact. */
+// ════════════════════════════════════════════════════════════════════
+// Trust & Autonomy — surface-derived (trust program, docs/31 Q7,
+// Architecture B). One card per capability this employee ACTUALLY has
+// (list_de_trust_surface): its answer channels, reachable registered
+// actions, and its playbooks — replacing the old hardcoded 3-entry list.
+// Per card: the manager-named label, the earned level under the ladder's
+// own level names, a compiled plain-English meaning of the current dial,
+// server-computed evidence with the promotion request (UNCHANGED RPCs),
+// a manual dial override labeled as an override, and a ladder editor.
+// Destructive actions render read-only — the destructive gate sits ABOVE
+// the dial in every enforcement path, so no level can ever open them.
+// ════════════════════════════════════════════════════════════════════
+
+const GATE_REASON_COPY: Record<string, string> = {
+  stale_certification: 'Certification is stale — the configuration changed after the last exam. Re-run the certification exam to refresh it.',
+  failed_certification: 'The last certification exam was failed. A passing exam restores autonomy.',
+  expired_certification: 'A governance certification has expired. Re-issue or re-certify to restore autonomy.',
+  open_critical_incident: 'An open critical incident is on this employee’s record. Review and close it (Record → Incidents) to restore autonomy.',
+  degraded_metrics: 'Recent run error rate is elevated (over the last 56 days). Autonomy restores automatically as new runs succeed.',
+  metrics_check_unavailable: 'The performance check could not run; autonomy is paused conservatively until it recovers.',
+  never_certified: 'This employee has never passed its role’s certification exam, and this workspace requires certification before autonomy.',
+  certification_check_unavailable: 'The certification check could not run; autonomy is paused conservatively until it recovers.',
+};
+
+const fmtDollars = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`;
+
+/** Compiled, client-side plain-English meaning of what this capability does
+ *  at its CURRENT enforced dial (the resolver's answer, not a guess). */
+function capabilityMeaning(entry: TrustSurfaceEntry): string {
+  if (!entry.dialable) {
+    return 'The destructive gate sits above the trust dial — a person confirms every run, and no trust level can change that.';
+  }
+  const dial = entry.dial;
+  const answers = entry.enforcement.uses_confidence;
+  // Invoice wording only for the invoice playbook itself — other playbook
+  // capabilities (the key axis is unfrozen) take the generic playbook copy.
+  const isInvoice = entry.capability_key === 'invoice_auto_send';
+  if (!dial || !dial.enabled) {
+    if (answers) return 'Drafts every answer for a person to approve — nothing goes out unaided.';
+    if (isInvoice) return 'Never sends alone — every invoice waits at the human gate.';
+    return entry.kind === 'playbook'
+      ? 'Never runs alone — every run of this playbook waits at the human gate.'
+      : 'Never acts alone — every run waits for a human approval.';
+  }
+  if (answers) {
+    return dial.min_confidence != null
+      ? `Answers on its own at ${dial.min_confidence}%+ confidence — below that, it drafts for approval.`
+      : 'Answers on its own — the built-in 60% confidence floor applies; below it, answers draft for approval.';
+  }
+  if (dial.max_amount_cents != null) {
+    if (isInvoice) return `Sends automatically up to ${fmtDollars(dial.max_amount_cents)} — anything larger goes to you.`;
+    return entry.kind === 'playbook'
+      ? `Runs automatically up to ${fmtDollars(dial.max_amount_cents)} — anything larger goes to a person.`
+      : `Acts automatically up to ${fmtDollars(dial.max_amount_cents)} — anything larger goes to a person.`;
+  }
+  return 'Acts on its own with no amount cap set here — guardrails and spend caps still apply above the dial.';
+}
+
+/** Does the ENFORCED dial exceed what this employee has earned?
+ *  true → labeled as a manual override; false → within the earned level;
+ *  null → cannot be known client-side (rendered as absence, never a guess). */
+function dialExceedsEarned(entry: TrustSurfaceEntry): boolean | null {
+  const policy = entry.policy;
+  const dial = entry.dial;
+  if (!policy || !dial || !dial.enabled) return false;
+  const earned = earnedLadderSettings(policy, policy.current_level);
+  if (earned === null) return null;
+  if (!earned.enabled) return true;
+  if (earned.max_amount_cents !== null && (dial.max_amount_cents ?? Infinity) > earned.max_amount_cents) return true;
+  if (earned.min_confidence !== null && (dial.min_confidence ?? 0) < earned.min_confidence) return true;
+  return false;
+}
+
+/** The legacy built-in ladder, expressed in the new vocabulary — the drawer's
+ *  starting point when a policy has no custom ladder yet. Mirrors the
+ *  server's immutable reward tables ($1k/$5k/$10k, 90/75/60). Level 0 is
+ *  implicit (always a human-gated draft) and never stored. */
+function defaultLadderFor(entry: TrustSurfaceEntry): TrustLadderLevel[] {
+  if (entry.enforcement.uses_confidence) {
+    return [
+      { level: 1, name: TRUST_LEVEL_LABELS[1], mode: 'act_within_limits', settings: { min_confidence: 90 } },
+      { level: 2, name: TRUST_LEVEL_LABELS[2], mode: 'act_within_limits', settings: { min_confidence: 75 } },
+      { level: 3, name: TRUST_LEVEL_LABELS[3], mode: 'act_within_limits', settings: { min_confidence: 60 } },
+    ];
+  }
+  return [
+    { level: 1, name: TRUST_LEVEL_LABELS[1], mode: 'act_within_limits', settings: { max_amount_cents: 100000 } },
+    { level: 2, name: TRUST_LEVEL_LABELS[2], mode: 'act_within_limits', settings: { max_amount_cents: 500000 } },
+    { level: 3, name: TRUST_LEVEL_LABELS[3], mode: 'act_within_limits', settings: { max_amount_cents: 1000000 } },
+  ];
+}
+
+const LADDER_MODES: TrustLadderMode[] = ['draft', 'act_with_approval', 'act_within_limits', 'act'];
+
+interface LadderLevelDraft { name: string; mode: TrustLadderMode; amount: string; confidence: string }
+
+/** The ladder editor — per-level name, one of the four modes, and ONLY the
+ *  numeric field(s) this capability's enforcement actually reads. Writes
+ *  set_trust_ladder; all real validation is server-side (modes never narrow,
+ *  limits only widen with level). Level 0 is IMPLICIT — always a human-gated
+ *  draft, never stored — so the editable rows are levels 1..max_level and
+ *  each stored entry carries its explicit level (the server requires it). */
+function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
+  entry: TrustSurfaceEntry; deName: string; onClose: () => void; onSaved: () => Promise<void>;
+}) {
+  const policy = entry.policy;
+  const [displayName, setDisplayName] = useState(policy?.display_name ?? '');
+  const toDraft = (l: TrustLadderLevel): LadderLevelDraft => ({
+    name: l.name ?? '',
+    mode: l.mode,
+    amount: l.settings?.max_amount_cents != null ? String(Math.round(l.settings.max_amount_cents / 100)) : '',
+    confidence: l.settings?.min_confidence != null ? String(l.settings.min_confidence) : '',
+  });
+  // Row i edits level i+1 (contiguous — a sparse stored ladder is normalized
+  // to contiguous levels on the next save).
+  const [levels, setLevels] = useState<LadderLevelDraft[]>(() =>
+    ((policy?.ladder && policy.ladder.length > 0)
+      ? [...policy.ladder].sort((a, b) => a.level - b.level)
+      : defaultLadderFor(entry)).map(toDraft));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!policy) return null; // no policy row → nothing to customize (the card explains why)
+
+  const maxLevel = policy.max_level ?? 3;
+
+  const setLevel = (i: number, patch: Partial<LadderLevelDraft>) =>
+    setLevels(prev => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const ladder: TrustLadderLevel[] = levels.map((l, idx) => {
+        const settings: { min_confidence?: number; max_amount_cents?: number } = {};
+        // Settings only where the mode executes AND the field is one this
+        // capability's enforcement reads — the server validates the same.
+        if (l.mode === 'act_within_limits' || l.mode === 'act') {
+          if (entry.enforcement.uses_confidence && l.confidence.trim() !== '') {
+            settings.min_confidence = Math.max(0, Math.min(100, Math.round(Number(l.confidence) || 0)));
+          }
+          if (entry.enforcement.uses_amount && l.amount.trim() !== '') {
+            settings.max_amount_cents = Math.max(1, Math.round(Number(l.amount) || 0)) * 100;
+          }
+        }
+        return {
+          level: idx + 1, // stored entries are levels 1..max_level; 0 is implicit
+          name: l.name.trim(),
+          mode: l.mode,
+          ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        };
+      });
+      const opts: { ladder: TrustLadderLevel[]; displayName?: string } = { ladder };
+      const dn = displayName.trim();
+      if (dn && dn !== (policy.display_name ?? '')) opts.displayName = dn;
+      await setTrustLadder(policy.id, opts);
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setErr((e as Error)?.message || 'The ladder was not saved.');
+    } finally { setBusy(false); }
+  };
+
+  const reset = async () => {
+    setBusy(true); setErr(null);
+    try {
+      // The explicit clear flag — a null ladder would arrive as SQL NULL
+      // ("unchanged") through PostgREST and silently no-op the reset.
+      await setTrustLadder(policy.id, { clearLadder: true });
+      await onSaved();
+      onClose();
+    } catch (e) {
+      setErr((e as Error)?.message || 'The reset was not applied.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Drawer title={`Customize levels — ${policy.display_name || entry.label}`} onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-xs text-dt-support">
+          Each level is a promise about what {deName} may do alone once that level is <em>earned</em> —
+          levels are still earned from evidence and approved by a person. Changing a level here changes
+          what it means, not which level is held. Guardrails, destructive gates and spend caps sit above
+          every level and cannot be overridden by any ladder.
+        </p>
+
+        <Field label="What you call this capability" hint="Shown on the card and in promotion requests.">
+          <input value={displayName} onChange={e => setDisplayName(e.target.value)}
+            placeholder={entry.label} className={INPUT_CLS} />
+        </Field>
+
+        <div className="space-y-3">
+          {/* Level 0 — implicit, never stored, never editable. */}
+          <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-dt-body">Level 0</span>
+              {policy.current_level === 0 && <Chip tone="accent">current</Chip>}
+              <span className="text-[10px] text-dt-muted">always drafts — un-earned trust never acts</span>
+            </div>
+          </div>
+          {levels.map((l, i) => (
+            <div key={i} className="rounded-xl border border-dt-border bg-dt-inset p-4 space-y-2.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-dt-body">Level {i + 1}</span>
+                {policy.current_level === i + 1 && <Chip tone="accent">current</Chip>}
+                {i === levels.length - 1 && levels.length > 1 && (
+                  <button onClick={() => setLevels(prev => prev.slice(0, -1))}
+                    className="ml-auto text-[11px] text-dt-muted hover:text-rose-300 transition-colors">Remove</button>
+                )}
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-2 text-xs text-dt-support">
+                  Name
+                  <input value={l.name} onChange={e => setLevel(i, { name: e.target.value })}
+                    placeholder={TRUST_LEVEL_LABELS[i + 1] ?? `Level ${i + 1}`}
+                    className="w-40 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-dt-support">
+                  Mode
+                  <select value={l.mode}
+                    onChange={e => setLevel(i, { mode: e.target.value as TrustLadderMode })}
+                    className="bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60">
+                    {LADDER_MODES.map(m => <option key={m} value={m}>{TRUST_LADDER_MODE_LABELS[m]}</option>)}
+                  </select>
+                </label>
+              </div>
+              {(l.mode === 'act_within_limits' || l.mode === 'act') && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  {entry.enforcement.uses_amount && (
+                    <label className="flex items-center gap-2 text-xs text-dt-support">
+                      Max amount $
+                      <input type="number" min={1} value={l.amount} placeholder="e.g. 1000"
+                        onChange={e => setLevel(i, { amount: e.target.value })}
+                        className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                    </label>
+                  )}
+                  {entry.enforcement.uses_confidence && (
+                    <label className="flex items-center gap-2 text-xs text-dt-support">
+                      Min confidence %
+                      <input type="number" min={0} max={100} value={l.confidence} placeholder="e.g. 75"
+                        onChange={e => setLevel(i, { confidence: e.target.value })}
+                        className="w-24 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                    </label>
+                  )}
+                  {l.mode === 'act_within_limits' && (
+                    <span className="text-[10px] text-dt-muted">within-limits needs at least one limit</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {levels.length < maxLevel && (
+          <Button kind="ghost" size="sm"
+            onClick={() => setLevels(prev => [...prev, { name: `Level ${prev.length + 1}`, mode: 'act_within_limits', amount: '', confidence: '' }])}>
+            + Add level {levels.length + 1}
+          </Button>
+        )}
+
+        {err && <Banner tone="danger">{err}</Banner>}
+
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <Button kind="primary" size="sm" disabled={busy} onClick={() => void save()}>
+            {busy ? 'Saving…' : 'Save ladder'}
+          </Button>
+          {policy.ladder && policy.ladder.length > 0 && (
+            <Button kind="secondary" size="sm" disabled={busy} onClick={() => void reset()}
+              title="Back to the engine's built-in levels ($1k/$5k/$10k caps, 90/75/60 confidence floors).">
+              Reset to built-in levels
+            </Button>
+          )}
+          <Button kind="ghost" size="sm" disabled={busy} onClick={onClose}>Cancel</Button>
+        </div>
+        <p className="text-[10px] text-dt-muted">
+          Modes must not narrow as levels rise, and limits must widen — the server refuses a ladder that
+          shrinks with trust. An already-earned level is re-applied through the engine so the enforced
+          dial keeps meaning what the new ladder says.
+        </p>
+      </div>
+    </Drawer>
+  );
+}
+
+/** One surface entry as a card. Destructive entries render read-only. */
+function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, requested, canOverride, approvalNote, onDraft, onSaveDial, onRequestPromotion, onOpenLadder }: {
+  entry: TrustSurfaceEntry;
+  ev: TrustEvidence | undefined;
+  draft: RowDraft;
+  saving: boolean; saved: boolean;
+  requesting: boolean; requested: boolean;
+  /** set_de_autonomy is owner/admin-gated in the database — below that the
+   *  override controls are shown read-only instead of refusing on save. */
+  canOverride: boolean;
+  /** Human-approval evidence line (invoice card only); null = not loaded. */
+  approvalNote: string | null;
+  onDraft: (d: RowDraft) => void;
+  onSaveDial: () => void;
+  onRequestPromotion: () => void;
+  onOpenLadder: () => void;
+}) {
+  if (!entry.dialable) {
+    return (
+      <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-dt-body font-medium">{entry.label}</span>
+          <Chip tone="warn">always requires approval</Chip>
+        </div>
+        <p className="text-[11px] text-dt-muted mt-1">{capabilityMeaning(entry)}</p>
+      </div>
+    );
+  }
+
+  const policy = entry.policy;
+  const exceeds = dialExceedsEarned(entry);
+  return (
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-dt-body font-medium">{policy?.display_name || entry.label}</span>
+            {policy && <Chip tone="accent">{trustLevelName(policy, policy.current_level)}</Chip>}
+            {policy && (policy.de_id === null ? (
+              <span title="No policy for this employee specifically yet — this capability follows the workspace-wide default.">
+                <Chip tone="neutral">Workspace default</Chip>
+              </span>
+            ) : (
+              <span title="This policy is set for this employee specifically.">
+                <Chip tone="neutral">This employee</Chip>
+              </span>
+            ))}
+            {ev?.eligible && <Chip tone="ok">Eligible for promotion</Chip>}
+            {policy?.pending_task_id && <Chip tone="warn">Awaiting approval</Chip>}
+            {exceeds === true && (
+              <span title="The dial is set above the level this employee has earned from evidence. Still capped by guardrails.">
+                <Chip tone="warn">Manual override</Chip>
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-dt-support mt-1">{capabilityMeaning(entry)}</p>
+          {entry.capability_key === 'invoice_auto_send' && approvalNote && (
+            <p className="text-[11px] text-dt-muted mt-1">Evidence: {approvalNote}</p>
+          )}
+        </div>
+        {policy && ev && !ev.at_max_level && (
+          <button
+            onClick={onRequestPromotion}
+            disabled={!ev.eligible || requesting || policy.pending_task_id !== null}
+            className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
+            title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
+          >
+            {requesting ? 'Requesting…' : requested ? 'Requested ✓' : `Request promotion to ${trustLevelName(policy, policy.target_level)}`}
+          </button>
+        )}
+      </div>
+
+      {policy ? (
+        ev ? (
+          <div className="mt-3 space-y-2">
+            {ev.criteria.map(c => {
+              const pct = c.required > 0 ? Math.min(100, Math.round((Number(c.actual) / Number(c.required)) * 100)) : 100;
+              const inverse = c.key === 'guardrail_blocks';
+              return (
+                <div key={c.key} className="flex items-center gap-3">
+                  <div className="w-44 flex-shrink-0 text-[11px] text-dt-support">{c.label}</div>
+                  <div className="flex-1 h-1.5 rounded-full bg-dt-panel overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                      style={{ width: `${inverse ? 100 : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
+                    />
+                  </div>
+                  <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-dt-muted'}`} title={c.detail}>
+                    {c.met ? '✓ ' : ''}{c.detail}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-3 text-[11px] text-dt-muted">Evidence not available yet.</p>
+        )
+      ) : (
+        <p className="mt-3 text-[11px] text-dt-muted">
+          No trust policy yet — a manager opening this page creates one automatically (level 0, human-gated).
+        </p>
+      )}
+
+      <div className="mt-3 flex items-center gap-3 flex-wrap">
+        <label className={`flex items-center gap-2 ${canOverride ? 'cursor-pointer' : 'opacity-60'}`}>
+          <input type="checkbox" checked={draft.enabled} disabled={!canOverride}
+            onChange={e => onDraft({ ...draft, enabled: e.target.checked })}
+            className="accent-indigo-500" />
+          <span className="text-xs text-dt-support">{draft.enabled ? 'Enabled' : 'Off'}</span>
+        </label>
+        {entry.enforcement.uses_amount && (
+          <label className="flex items-center gap-2 text-xs text-dt-support">
+            Max amount $
+            <input type="number" min={0} value={draft.amount} placeholder="e.g. 5000" disabled={!canOverride}
+              onChange={e => onDraft({ ...draft, amount: e.target.value })}
+              className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60" />
+          </label>
+        )}
+        {entry.enforcement.uses_confidence && (
+          <label className="flex items-center gap-2 text-xs text-dt-support">
+            Min confidence %
+            <input type="number" min={0} max={100} value={draft.confidence} placeholder="e.g. 75" disabled={!canOverride}
+              onChange={e => onDraft({ ...draft, confidence: e.target.value })}
+              className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60" />
+          </label>
+        )}
+        {canOverride && (
+          <button onClick={onSaveDial} disabled={saving}
+            className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all">
+            {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save override'}
+          </button>
+        )}
+        {policy && (
+          <button onClick={onOpenLadder}
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-muted transition-all">
+            Customize levels…
+          </button>
+        )}
+      </div>
+      {canOverride ? (
+        <p className="mt-2 text-[10px] text-dt-muted">
+          The dial is a manual override for this employee only — setting it above the earned level is
+          recorded as an override on the audit trail. Guardrails always cap what it can allow.
+        </p>
+      ) : (
+        <p className="mt-2 text-[10px] text-dt-muted">
+          Manual dial overrides need an owner or admin — trust still widens the normal way, through
+          earned, approved promotions.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
   de: DigitalEmployee; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
 }) {
-  const [isPersonal, setIsPersonal] = useState<Record<string, boolean>>({});
-  const [rows, setRows] = useState<Record<string, DEAutonomy>>({});
-  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
-  const [evidence, setEvidence] = useState<ApprovalEvidence | null>(null);
+  const { authedUser, isDTUser } = useAuth();
+  // set_de_autonomy (the manual-override write) is owner/admin-gated in the
+  // database — known limit, founder-decision territory. Below that tier the
+  // override controls render read-only instead of refusing after an edit.
+  const canOverride = isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
+  const [surface, setSurface] = useState<TrustSurfaceEntry[] | null>(null);
+  const [gate, setGate] = useState<{ gated: boolean; reasons: string[] } | null>(null);
   const [thresholdCents, setThresholdCents] = useState<number | null>(null);
+  const [approvalEvidence, setApprovalEvidence] = useState<ApprovalEvidence | null>(null);
+  const [evidence, setEvidence] = useState<Record<string, TrustEvidence>>({});
+  const [history, setHistory] = useState<TrustHistoryEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seedNote, setSeedNote] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
-  const [policies, setPolicies] = useState<Record<string, TrustPolicy>>({});
-  const [trustEvidence, setTrustEvidence] = useState<Record<string, TrustEvidence>>({});
-  const [trustHistory, setTrustHistory] = useState<TrustHistoryEvent[]>([]);
-  const [trustError, setTrustError] = useState<string | null>(null);
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [requestedId, setRequestedId] = useState<string | null>(null);
+  const [trustError, setTrustError] = useState<string | null>(null);
+  const [ladderFor, setLadderFor] = useState<TrustSurfaceEntry | null>(null);
 
-  const refreshTrust = useCallback(async () => {
-    try {
-      let list = await listTrustPolicies();
-      if (list.length === 0) list = await seedTrustPolicies();
-      const byCat: Record<string, TrustPolicy> = {};
-      for (const p of list) byCat[p.action_category] = p;
-      setPolicies(byCat);
-      const ev: Record<string, TrustEvidence> = {};
-      await Promise.all(list.map(async p => {
-        try { ev[p.action_category] = await computeTrustEvidence(p.action_category, p.de_id); } catch { /* per-card */ }
-      }));
-      setTrustEvidence(ev);
-      try { setTrustHistory(await listTrustHistory(8)); } catch { setTrustHistory([]); }
-      setTrustError(null);
-    } catch (err) {
-      setTrustError((err as Error)?.message || 'Failed to load earned trust.');
-    }
-  }, []);
+  const name = de.persona_name || de.name;
 
-  const refresh = useCallback(async (deId: string) => {
-    setLoading(true);
+  const load = useCallback(async (initial: boolean, refreshKey?: string) => {
+    if (initial) setLoading(true);
     setError(null);
     try {
-      const [resolved, list, thr] = await Promise.all([
-        Promise.all(ACTION_ORDER.map(t => resolveAutonomy(t, deId))),
-        listAutonomy(),
-        getApprovalThresholdCents(),
-      ]);
-      const byType: Record<string, DEAutonomy> = {};
-      const personal: Record<string, boolean> = {};
-      ACTION_ORDER.forEach((t, idx) => {
-        const r = resolved[idx];
-        byType[t] = {
-          id: `resolved:${t}`, tenant_id: '', action_type: t, de_id: deId, source_category: null,
-          enabled: r.enabled, max_amount_cents: r.max_amount_cents, min_confidence: r.min_confidence,
-          updated_by: null, created_at: '', updated_at: '',
-        };
-        personal[t] = list.some(a => a.action_type === t && a.de_id === deId);
+      let entries = await listDeTrustSurface(de.id);
+
+      // Lazy-seed the PER-EMPLOYEE policy per surface entry (idempotent,
+      // level 0 — no behavior change; the server refuses destructive
+      // capabilities and non-managers). An entry whose governing policy is
+      // the WORKSPACE-wide row (de_id null) is just as seedable as one with
+      // no policy at all — the reader returns the workspace row when no
+      // per-employee row exists, so without this the per-employee policy
+      // could never be born and per-DE evidence would never apply. A failed
+      // seed renders as ABSENCE on its card, never as a claim that a policy
+      // exists.
+      const missing = entries.filter(e => e.dialable && (!e.policy || e.policy.de_id === null));
+      if (missing.length > 0) {
+        const results = await Promise.allSettled(missing.map(e => seedDeTrustPolicy(de.id, e.capability_key)));
+        const anyOk = results.some(r => r.status === 'fulfilled');
+        if (anyOk) {
+          try { entries = await listDeTrustSurface(de.id); } catch { /* keep the first read */ }
+        }
+        setSeedNote(results.some(r => r.status === 'rejected')
+          ? 'Some capabilities have no policy for this employee specifically yet — creating one requires a manager assigned to this employee.'
+          : null);
+      } else {
+        setSeedNote(null);
+      }
+
+      setSurface(entries);
+      setDrafts(prev => {
+        const fresh = Object.fromEntries(entries.filter(e => e.dialable).map(e => [e.capability_key, draftFromDial(e.dial)]));
+        if (initial) return fresh;
+        // A reload must not clobber in-progress edits on OTHER cards: only
+        // the card just saved (refreshKey) — plus any newly appeared keys —
+        // takes the server's resolved values; everything the user was
+        // editing stays as typed.
+        const merged: Record<string, RowDraft> = { ...fresh };
+        for (const k of Object.keys(prev)) {
+          if (k !== refreshKey && k in merged) merged[k] = prev[k];
+        }
+        return merged;
       });
-      setRows(byType);
-      setIsPersonal(personal);
-      setThresholdCents(thr.cents);
-      setDrafts(Object.fromEntries(ACTION_ORDER.map(t => [t, draftFrom(byType[t])])));
-      setMissingTables(false);
-      try { setEvidence(await getApprovalEvidence()); } catch { setEvidence(null); }
-      void refreshTrust();
+
+      // Server-computed evidence per policied entry — failures stay per-card.
+      const ev: Record<string, TrustEvidence> = {};
+      await Promise.all(entries.filter(e => e.policy).map(async e => {
+        try { ev[e.capability_key] = await computeTrustEvidence(e.capability_key, e.policy!.de_id); } catch { /* per-card absence */ }
+      }));
+      setEvidence(ev);
     } catch (err) {
-      if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
-      else setError((err as Error)?.message || 'Failed to load the trust dial.');
-    } finally {
-      setLoading(false);
+      setSurface(null);
+      setError((err as Error)?.message || 'Failed to load the trust surface.');
     }
-  }, [refreshTrust]);
+    // Independent reads: a failure renders as absence, never as a false claim.
+    setGate(await getDeGateStatus(de.id));
+    try { setThresholdCents((await getApprovalThresholdCents()).cents); } catch { setThresholdCents(null); }
+    try { setApprovalEvidence(await getApprovalEvidence()); } catch { setApprovalEvidence(null); }
+    try { setHistory(await listTrustHistory(8)); } catch { setHistory([]); }
+    if (initial) setLoading(false);
+  }, [de.id]);
 
-  useEffect(() => { void refresh(de.id); }, [de.id, refresh]);
+  useEffect(() => { void load(true); }, [load]);
 
-  /** Does a dial setting exceed what's been EARNED for its category? */
-  const exceedsEarned = useCallback((type: AutonomyActionType, enabled: boolean, maxCents: number | null, minConf: number | null): boolean => {
-    const policy = policies[type];
-    if (!policy || !enabled) return false;
-    const earned = trustLevelSettings(type as TrustCategory, policy.current_level);
-    if (!earned.enabled) return true;
-    if (earned.max_amount_cents !== null && (maxCents ?? Infinity) > earned.max_amount_cents) return true;
-    if (earned.min_confidence !== null && (minConf ?? 0) < earned.min_confidence) return true;
-    return false;
-  }, [policies]);
-
-  const requestPromotion = async (policy: TrustPolicy) => {
-    setRequestingId(policy.id);
-    setTrustError(null);
-    try {
-      await requestTrustPromotion(policy.id);
-      setRequestedId(policy.id);
-      setTimeout(() => setRequestedId(k => (k === policy.id ? null : k)), 4000);
-      await refreshTrust();
-    } catch (err) {
-      setTrustError((err as Error)?.message || 'Promotion request failed.');
-    } finally {
-      setRequestingId(null);
-    }
-  };
-
-  const save = async (type: AutonomyActionType) => {
-    const d = drafts[type];
+  const saveDial = async (entry: TrustSurfaceEntry) => {
+    const d = drafts[entry.capability_key];
     if (!d) return;
-    setSavingKey(type);
+    setSavingKey(entry.capability_key);
     setError(null);
     try {
-      const meta = AUTONOMY_ACTION_META[type];
-      const row = await upsertAutonomy(type, {
+      const label = entry.policy?.display_name || entry.label;
+      const row = await setAutonomyDial(entry.capability_key, label, {
         enabled: d.enabled,
-        max_amount_cents: meta.unit === 'amount' && d.amount.trim() !== ''
+        max_amount_cents: entry.enforcement.uses_amount && d.amount.trim() !== ''
           ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
-        min_confidence: meta.unit === 'confidence' && d.confidence.trim() !== ''
+        min_confidence: entry.enforcement.uses_confidence && d.confidence.trim() !== ''
           ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
       }, de.id);
-      setIsPersonal(prev => ({ ...prev, [type]: true }));
-      if (exceedsEarned(type, row.enabled, row.max_amount_cents, row.min_confidence)) {
+      // Label it as an override when it exceeds the earned ladder level.
+      const earned = entry.policy ? earnedLadderSettings(entry.policy, entry.policy.current_level) : null;
+      const exceeds = earned !== null && row.enabled && (
+        !earned.enabled
+        || (earned.max_amount_cents !== null && (row.max_amount_cents ?? Infinity) > earned.max_amount_cents)
+        || (earned.min_confidence !== null && (row.min_confidence ?? 0) < earned.min_confidence)
+      );
+      if (exceeds) {
         try {
           await appendAuditEvent({
             actor: 'You', actor_type: 'human', category: 'config_change',
-            action: `Manual trust override — ${meta.label} set above the earned level`,
+            action: `Manual trust override — ${label} set above the earned level`,
             detail: {
-              kind: 'trust_manual_override', action_category: type,
-              earned_level: policies[type]?.current_level ?? 0,
+              kind: 'trust_manual_override', action_category: entry.capability_key, de_id: de.id,
+              earned_level: entry.policy?.current_level ?? 0,
               enabled: row.enabled, max_amount_cents: row.max_amount_cents, min_confidence: row.min_confidence,
               composition: 'autonomy_narrows_within_guardrails',
             },
           });
-        } catch { /* audit best-effort; upsert already audited */ }
+        } catch { /* audit best-effort; the dial write already audited */ }
       }
-      setRows(prev => ({ ...prev, [type]: row }));
-      setDrafts(prev => ({ ...prev, [type]: draftFrom(row) }));
-      setSavedKey(type);
-      setTimeout(() => setSavedKey(k => (k === type ? null : k)), 2500);
+      // Re-resolve the enforced dial for the SAVED card only — never trust
+      // the draft, and never clobber edits in progress on the other cards.
+      await load(false, entry.capability_key);
+      setSavedKey(entry.capability_key);
+      setTimeout(() => setSavedKey(k => (k === entry.capability_key ? null : k)), 2500);
     } catch (err) {
       setError((err as Error)?.message || 'Failed to save.');
     } finally {
@@ -3088,12 +3517,57 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
     }
   };
 
-  const evidenceLine = evidence && evidence.total > 0
-    ? `${evidence.total} invoice approval${evidence.total === 1 ? '' : 's'} on record, ${evidence.approved} approved unchanged (${evidence.approvedPct}%)${evidence.approvedPct >= 80 ? ' — consider raising the limit' : ''}`
-    : 'No invoice approvals on record yet — evidence accrues as the DE routes invoices through the human gate.';
+  const requestPromotion = async (entry: TrustSurfaceEntry) => {
+    const policy = entry.policy;
+    if (!policy) return;
+    setRequestingId(policy.id);
+    setTrustError(null);
+    try {
+      await requestTrustPromotion(policy.id);
+      setRequestedId(policy.id);
+      setTimeout(() => setRequestedId(k => (k === policy.id ? null : k)), 4000);
+      await load(false);
+    } catch (err) {
+      setTrustError((err as Error)?.message || 'Promotion request failed.');
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   if (loading) return <LiveLoadingSkeleton rows={4} />;
-  if (missingTables) return <MissingTablesNotice />;
+
+  const entries = surface ?? [];
+  const top = entries.filter(e => e.kind === 'answer' || e.kind === 'playbook');
+  const cats = entries.filter(e => e.kind === 'action_category');
+  const actions = entries.filter(e => e.kind === 'action');
+  const orphanActions = actions.filter(a => !cats.some(c => c.category === a.category));
+
+  // Human-approval evidence for the invoice card (getApprovalEvidence — the
+  // same read the old panel mounted). Rendered as ABSENCE when unavailable.
+  const approvalNote = approvalEvidence
+    ? (approvalEvidence.total > 0
+        ? `${approvalEvidence.total} invoice approval${approvalEvidence.total === 1 ? '' : 's'} on record, ${approvalEvidence.approved} approved unchanged (${approvalEvidence.approvedPct}%)${approvalEvidence.approvedPct >= 80 ? ' — consider raising the limit' : ''}`
+        : 'No invoice approvals on record yet — evidence accrues as invoices route through the human gate.')
+    : null;
+
+  const renderCard = (entry: TrustSurfaceEntry) => (
+    <TrustSurfaceCard
+      key={entry.capability_key}
+      entry={entry}
+      ev={evidence[entry.capability_key]}
+      draft={drafts[entry.capability_key] ?? draftFromDial(entry.dial)}
+      saving={savingKey === entry.capability_key}
+      saved={savedKey === entry.capability_key}
+      requesting={requestingId !== null && requestingId === entry.policy?.id}
+      requested={requestedId !== null && requestedId === entry.policy?.id}
+      canOverride={canOverride}
+      approvalNote={entry.capability_key === 'invoice_auto_send' ? approvalNote : null}
+      onDraft={d => setDrafts(prev => ({ ...prev, [entry.capability_key]: d }))}
+      onSaveDial={() => void saveDial(entry)}
+      onRequestPromotion={() => void requestPromotion(entry)}
+      onOpenLadder={() => setLadderFor(entry)}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -3107,98 +3581,70 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
           the mig-258 records gate, so it lives beside the trust machinery. */}
       <DeCertificationPanel deId={de.id} />
 
-      {/* Trust dial */}
+      {/* The records gate silently clamps EVERY dial below — surface it.
+          Read via the existing get_de_gate_status RPC (the EmployeeFilePage
+          read); when the status cannot be read, nothing is claimed. */}
+      {gate?.gated && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p className="text-xs font-medium text-amber-300">
+            The records gate is clamping every dial on this page — until it clears, {name} drafts for
+            approval no matter what the dials below say.
+          </p>
+          <ul className="mt-1 text-xs text-amber-200/90 space-y-0.5">
+            {gate.reasons.map(r => <li key={r}>· {GATE_REASON_COPY[r] ?? r}</li>)}
+          </ul>
+        </div>
+      )}
+      {gate !== null && !gate.gated && (
+        <p className="text-[11px] text-dt-muted">
+          Records gate: clear — the dials below apply as configured.
+        </p>
+      )}
+
+      {/* The trust surface — one card per capability this employee has */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
-          <h3 className="text-base font-semibold text-white">Trust dial</h3>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per-action autonomy</span>
+          <h3 className="text-base font-semibold text-white">What {name} may do alone</h3>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">derived from this employee's actual work</span>
         </div>
         <p className="text-[11px] text-dt-muted mb-2">
-          Personal to {de.persona_name || de.name} — set a value here and it applies to this employee only.
-          Leave a card at its workspace default and this employee follows the shared setting instead.
+          These cards come from what {name} actually does — its answer channels, the actions reachable
+          through your connected systems, and its playbooks. Trust is earned per capability from measured
+          evidence; a teammate approves each step up, and any regression drops the level automatically.
         </p>
-        <p className="text-xs text-dt-muted mb-1">
-          Autonomy narrows <em>within</em> guardrails — it never overrides them. An invoice auto-sends only when it passes
-          both the {thresholdCents !== null ? fmtMoneyK(thresholdCents) : 'guardrail'} approval threshold <em>and</em> the trust-dial limit.
-        </p>
-        <p className="text-xs text-dt-support mb-5">
-          Evidence: <span className="text-dt-support">{evidenceLine}</span>
+        <p className="text-xs text-dt-muted mb-4">
+          Autonomy narrows <em>within</em> guardrails — it never overrides them. An action runs unaided only
+          when it passes {thresholdCents !== null ? `the ${fmtMoneyK(thresholdCents)} guardrail approval threshold` : 'the guardrail approval threshold'} <em>and</em> the
+          trust dial, and destructive actions always stop for a person.
         </p>
 
-        <div className="space-y-4">
-          {ACTION_ORDER.map(type => {
-            const meta = AUTONOMY_ACTION_META[type];
-            const d = drafts[type] ?? { enabled: false, amount: '', confidence: '' };
-            return (
-              <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-dt-body font-medium">{meta.label}</span>
-                      {isPersonal[type] ? (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300" title="This value is set for this employee specifically.">
-                          Personal
-                        </span>
-                      ) : (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="No personal override — this employee follows the workspace-wide default.">
-                          Workspace default
-                        </span>
-                      )}
-                      {rows[type] && exceedsEarned(type, rows[type].enabled, rows[type].max_amount_cents, rows[type].min_confidence) && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title="This dial is set above the level the DE has earned from evidence. Still capped by guardrails.">
-                          Manual override
-                        </span>
-                      )}
-                      {meta.dormant && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="Stored now; enforced when the DE brain is activated (R1)">
-                          dormant until activation
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-dt-muted mt-1">{meta.description}</p>
+        {seedNote && <p className="text-[11px] text-amber-400/80 mb-3">{seedNote}</p>}
+        {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
+
+        {surface === null ? (
+          <EmptyState icon="🔒" headline="The trust surface could not be loaded">
+            Nothing is shown rather than guessed — the error above has the details.
+          </EmptyState>
+        ) : entries.length === 0 ? (
+          <EmptyState icon="🔒" headline="No capabilities derived for this employee">
+            The server derived nothing this employee can do — no answer channels, reachable actions or playbooks.
+          </EmptyState>
+        ) : (
+          <div className="space-y-4">
+            {top.map(renderCard)}
+            {cats.map(cat => (
+              <div key={cat.capability_key} className="space-y-3">
+                {renderCard(cat)}
+                {actions.filter(a => a.category === cat.category).length > 0 && (
+                  <div className="ml-4 space-y-3 border-l border-dt-border pl-4">
+                    {actions.filter(a => a.category === cat.category).map(renderCard)}
                   </div>
-                  <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={d.enabled}
-                      onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, enabled: e.target.checked } }))}
-                      className="accent-indigo-500"
-                    />
-                    <span className="text-xs text-dt-support">{d.enabled ? 'Enabled' : 'Off'}</span>
-                  </label>
-                </div>
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
-                  {meta.unit === 'amount' ? (
-                    <label className="flex items-center gap-2 text-xs text-dt-support">
-                      Max amount $
-                      <input
-                        type="number" min={0} value={d.amount} placeholder="e.g. 5000"
-                        onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, amount: e.target.value } }))}
-                        className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
-                      />
-                    </label>
-                  ) : (
-                    <label className="flex items-center gap-2 text-xs text-dt-support">
-                      Min confidence %
-                      <input
-                        type="number" min={0} max={100} value={d.confidence} placeholder="e.g. 75"
-                        onChange={e => setDrafts(prev => ({ ...prev, [type]: { ...d, confidence: e.target.value } }))}
-                        className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none"
-                      />
-                    </label>
-                  )}
-                  <button
-                    onClick={() => void save(type)}
-                    disabled={savingKey !== null}
-                    className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all"
-                  >
-                    {savingKey === type ? 'Saving…' : savedKey === type ? 'Saved ✓' : 'Save'}
-                  </button>
-                </div>
+                )}
               </div>
-            );
-          })}
-        </div>
+            ))}
+            {orphanActions.map(renderCard)}
+          </div>
+        )}
 
         <p className="mt-4 text-[11px] text-dt-muted">
           Every change is recorded as a config_change event on the immutable audit trail.{' '}
@@ -3208,110 +3654,41 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
         </p>
       </div>
 
-      {/* Earned Trust */}
+      {/* Promotion history */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-        <div className="mb-1 flex items-center gap-2 flex-wrap">
-          <h3 className="text-base font-semibold text-white">Earned trust</h3>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">promote slow · demote fast</span>
-        </div>
-        <p className="text-[11px] text-amber-400/80 mb-2">
-          The earned-progression ladder is still workspace-wide today, not yet per employee — the personal dial above can be set below or above it, but the ladder itself tracks evidence for the whole workspace.
+        <h3 className="text-base font-semibold text-white mb-1">Promotion history</h3>
+        <p className="text-[11px] text-dt-muted mb-3">
+          Promotions, demotions and manual overrides, from the immutable audit trail. Evidence is computed
+          on the server — scoped to this employee where the policy is employee-scoped — and never asserted
+          by the browser.
         </p>
-        <p className="text-xs text-dt-muted mb-5">
-          Your workspace earns wider autonomy from measured evidence — evaluation results, human review outcomes, and a clean guardrail record.
-          A teammate approves each step up; any regression drops the level automatically. Guardrails always cap what's possible.
-        </p>
-
-        {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
-
-        <div className="space-y-4">
-          {ACTION_ORDER.map(type => {
-            const policy = policies[type];
-            const ev = trustEvidence[type];
-            if (!policy) return null;
-            const meta = AUTONOMY_ACTION_META[type];
-            return (
-              <div key={type} className="rounded-xl border border-dt-border bg-dt-inset p-4">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-dt-body font-medium">{meta.label}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
-                        {TRUST_LEVEL_LABELS[policy.current_level] ?? `Level ${policy.current_level}`}
-                      </span>
-                      {ev?.eligible && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Eligible for promotion</span>
-                      )}
-                      {policy.pending_task_id && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Awaiting approval</span>
-                      )}
-                    </div>
-                  </div>
-                  {ev && !ev.at_max_level && (
-                    <button
-                      onClick={() => void requestPromotion(policy)}
-                      disabled={!ev.eligible || requestingId !== null || policy.pending_task_id !== null}
-                      className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
-                      title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
-                    >
-                      {requestingId === policy.id ? 'Requesting…' : requestedId === policy.id ? 'Requested ✓' : `Request promotion to ${TRUST_LEVEL_LABELS[policy.target_level]}`}
-                    </button>
-                  )}
-                </div>
-
-                {ev ? (
-                  <div className="mt-3 space-y-2">
-                    {ev.criteria.map(c => {
-                      const pct = c.required > 0 ? Math.min(100, Math.round((Number(c.actual) / Number(c.required)) * 100)) : 100;
-                      const inverse = c.key === 'guardrail_blocks';
-                      return (
-                        <div key={c.key} className="flex items-center gap-3">
-                          <div className="w-44 flex-shrink-0 text-[11px] text-dt-support">{c.label}</div>
-                          <div className="flex-1 h-1.5 rounded-full bg-dt-panel overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${c.met ? 'bg-emerald-500' : 'bg-slate-600'}`}
-                              style={{ width: `${inverse ? (c.met ? 100 : 100) : pct}%`, opacity: inverse && !c.met ? 0.3 : 1 }}
-                            />
-                          </div>
-                          <div className={`w-56 flex-shrink-0 text-[11px] ${c.met ? 'text-emerald-400' : 'text-dt-muted'}`} title={c.detail}>
-                            {c.met ? '✓ ' : ''}{c.detail}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-[11px] text-dt-muted">Evidence not available yet.</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {trustHistory.length > 0 && (
-          <div className="mt-5">
-            <h4 className="text-xs font-semibold text-dt-support mb-2">Promotion history</h4>
-            <ul className="space-y-1.5">
-              {trustHistory.map(h => (
-                <li key={h.id} className="text-[11px] text-dt-muted flex items-start gap-2">
-                  <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    h.kind === 'trust_promoted' ? 'bg-emerald-500' :
-                    h.kind === 'trust_demoted' ? 'bg-rose-500' :
-                    h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
-                  }`} />
-                  <span className="flex-1">{h.action}</span>
-                  <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {history.length === 0 ? (
+          <p className="text-xs text-dt-muted">No promotions or demotions recorded yet.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {history.map(h => (
+              <li key={h.id} className="text-[11px] text-dt-muted flex items-start gap-2">
+                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  h.kind === 'trust_promoted' ? 'bg-emerald-500' :
+                  h.kind === 'trust_demoted' ? 'bg-rose-500' :
+                  h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
+                }`} />
+                <span className="flex-1">{h.action}</span>
+                <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>
+              </li>
+            ))}
+          </ul>
         )}
-
-        <p className="mt-4 text-[11px] text-dt-muted">
-          Evidence is computed on the server from the Proving Ground, human reviews, and the guardrail record — never asserted by the browser.
-          Promotions and demotions are recorded on the immutable audit trail.
-        </p>
       </div>
+
+      {ladderFor && (
+        <LadderEditorDrawer
+          entry={ladderFor}
+          deName={name}
+          onClose={() => setLadderFor(null)}
+          onSaved={() => load(false, ladderFor.capability_key)}
+        />
+      )}
     </div>
   );
 }
