@@ -570,6 +570,20 @@ Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2
 > real human approval through the UI. ⚠ dev connector still holds the exposed
 > token — rotate.
 
+> **★ G1 GATE — AUTONOMOUS CHAIN PROVEN LIVE, 2026-07-28.** The end-to-end
+> money-shot runs hands-off. Added a `{{invoice.external_ref}}` bridge in
+> playbook-execute (resolves the fire's internal renewal_invoices.id → the ERP
+> invoice name at run start) + migration 526 (a real dunning playbook wired to
+> erpnext send_payment_reminder; invoice_overdue rule repointed). PROVEN: fresh
+> overdue invoice ACC-SINV-2026-00008 → sync → dispatch → invoice_overdue trigger
+> fired → dunning playbook ran (check_account → connector_action → complete) →
+> resolved the erpnext connector → gate returned human_gated_trust → an **approval
+> task was created referencing the REAL ERP invoice** (bridge resolved
+> external_ref to ACC-SINV-2026-00008, not the uuid). Autonomous up to the human
+> approval, which stays human by design (A3 already proved an approved note posts
+> to the ERP). G1 substantively met on one dev tenant; full close still wants
+> `npm test`/`test:isolation` green + one real UI approval click.
+
 ### 8.6 Living tracker
 
 Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
