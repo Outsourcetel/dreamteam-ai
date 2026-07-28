@@ -96,6 +96,7 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   close: '🎯', kustomer: '🫂', mailchimp: '🐵', gitbook: '📘',
   netsuite: '📒', powerschool: '🎒', ellucian: '🎓', toast: '🍞', athenahealth: '⚕️', epic: '🏥', cerner: '🩺',
   dropbox: '🗄️', twilio: '📱', typeform: '📝', calendly: '📆', okta: '🔐', contentful: '🗂️', template: '🧱',
+  erpnext: '🧮',
 };
 
 const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2';

@@ -30,7 +30,8 @@ export type ConnectorProvider =
   | 'pipedrive' | 'smartsheet' | 'wrike' | 'trello' | 'datadog'
   | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
   | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
-  | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template';
+  | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template'
+  | 'erpnext';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -98,6 +99,17 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  erpnext: {
+    label: 'ERPNext', tagline: 'ERP — invoices, customers, accounts receivable',
+    defaultCategory: 'erp_financials',
+    baseUrlLabel: 'ERPNext site URL', baseUrlPlaceholder: 'https://yourcompany.frappe.cloud',
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'from your ERPNext user', secret: false },
+      { key: 'api_secret', label: 'API secret', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In ERPNext: open your user (avatar → My Settings) → Settings tab → API Access → Generate Keys. Copy the API Key and the API Secret (the secret shows only once). The connector reads with that user’s permissions, so pick a user who can see Sales Invoices and Customers.',
+    knowledgeSync: false, implemented: true,
   },
   notion: {
     label: 'Notion', tagline: 'Wiki & docs — pages, databases, processes',

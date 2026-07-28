@@ -197,6 +197,69 @@ const zendesk = {
   },
 };
 
+// ── erpnext ── secrets: { api_key, api_secret } ──
+// ERPNext / Frappe Framework REST. Token auth is a single static header —
+// `token <api_key>:<api_secret>` — so there is no OAuth refresh dance. The
+// erp_financials category reads the Sales Invoice DocType via /api/resource;
+// only SUBMITTED invoices (docstatus=1) are real AR — drafts and cancelled
+// ones are excluded so the platform's dunning / at-risk machinery never acts
+// on a number that was never issued. Read-only in this slice; the dunning
+// WRITE actions are a separate, human-gated action package.
+const ERPNEXT_INVOICE_FIELDS =
+  '["name","customer","customer_name","posting_date","due_date","currency","grand_total","outstanding_amount","status","docstatus"]';
+const erpnext = {
+  auth: (c: Ctx) => `token ${c.secret.api_key ?? ''}:${c.secret.api_secret ?? ''}`,
+  hdrs(c: Ctx) { return { Authorization: this.auth(c), Accept: 'application/json' }; },
+  invoiceItem(c: Ctx, d: Record<string, unknown>): HubItem {
+    const cust = String(d.customer_name ?? d.customer ?? '');
+    const outstanding = d.outstanding_amount ?? d.grand_total ?? '';
+    return {
+      ref: String(d.name ?? ''),
+      type: 'invoice',
+      title: clip(`${d.name ?? '(invoice)'}${cust ? ` — ${cust}` : ''}`, 160),
+      snippet: clip(`${d.status ?? ''} · ${d.currency ?? ''} ${outstanding} outstanding · due ${d.due_date ?? '?'}`, 400),
+      url: d.name ? `${c.baseUrl}/app/sales-invoice/${encodeURIComponent(String(d.name))}` : null,
+      raw: d,
+    };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await httpJson(`${c.baseUrl}/api/method/frappe.auth.get_logged_user`, { headers: this.hdrs(c) });
+    const who = (r.body as { message?: string } | null)?.message;
+    if (!r.ok || !who) return { ok: false, error: r.error ?? 'auth_failed' };
+    return { ok: true, detail: `authenticated as ${who}` };
+  },
+  invoicesUrl(c: Ctx, extraFilters: unknown[][]): string {
+    const filters: unknown[][] = [['docstatus', '=', 1], ...extraFilters];
+    const qs = new URLSearchParams({
+      fields: ERPNEXT_INVOICE_FIELDS,
+      filters: JSON.stringify(filters),
+      order_by: 'due_date asc',
+      limit_page_length: '10',
+    });
+    return `${c.baseUrl}/api/resource/Sales%20Invoice?${qs.toString()}`;
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const q = String(query ?? '').trim().slice(0, 80);
+    const r = await httpJson(this.invoicesUrl(c, q ? [['customer_name', 'like', `%${q}%`]] : []), { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return { ok: true, items: rows.map((d) => this.invoiceItem(c, d)) };
+  },
+  async fetchRecord(c: Ctx, _type: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${c.baseUrl}/api/resource/Sales%20Invoice/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const d = (r.body as { data?: Record<string, unknown> })?.data ?? {};
+    return { ok: true, items: [this.invoiceItem(c, d)] };
+  },
+  // "Recent" for AR = the dunning queue: submitted, still owing, oldest due first.
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const r = await httpJson(this.invoicesUrl(c, [['outstanding_amount', '>', 0]]), { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return { ok: true, items: rows.map((d) => this.invoiceItem(c, d)) };
+  },
+};
+
 // ════════════════════════════════════════════════════════════════
 // NATIVE ACTION EXECUTORS — the GENERALIZED ACTION LAYER's write-side
 // counterpart to the read-side adapter objects above. A native
@@ -4116,6 +4179,14 @@ const sfSoqlItems = (
 const soqlSafe = (q: string) => q.replace(/['\\%_]/g, ' ').trim().slice(0, 80);
 
 const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
+  erpnext: {
+    // erp_financials — ERPNext is the FIRST native provider for this category
+    // (only the jsonplaceholder verification template served it before). The
+    // ops map straight onto the read adapter; writes (dunning) are a separate
+    // human-gated action package, not part of this read-only slice.
+    search_invoices: (c, p) => erpnext.search(c, p.query ?? ''),
+    get_invoice: (c, p) => erpnext.fetchRecord(c, 'invoice', p.external_ref ?? ''),
+  },
   salesforce: {
     // crm
     search_accounts: async (c, p) => {
@@ -4755,6 +4826,7 @@ serve(async (req) => {
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
       dropbox, twilio, typeform, calendly, okta, contentful,
+      erpnext,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
