@@ -225,11 +225,16 @@ Naming stays trademark-compliant: "DreamTeam SMB Suite — managed ERP powered b
 
 **Still open (do not block S1 code, but gate their milestones):**
 - **Design partners** — 2–3 named from the fresh-tenant prospect list. Gates G2 entry, not G1.
-- **G0 field-verification** (needs a live target): a dev ERPNext site + Frappe Cloud
-  access must exist before S1's *exit proof* can be observed (R3 forbids proving against
-  a mock). Founder provisions the site / grants access — account creation and credential
-  entry stay with the founder per the safety boundary. Token-auth mechanics + trademark
-  naming get re-verified against that live site as S1's first act.
+- **G0 field-verification — CLEARED 2026-07-28.** Dev site `outsourcetel.m.frappe.cloud`
+  (v16, Mumbai, 13-day trial) is live with sample data; a System-Manager user's API token
+  authenticates (`Authorization: token key:secret`) and reads Sales Invoice, Customer, and
+  Payment Entry (HTTP 200 on each). The `/api/resource/{DocType}` shape and token-auth
+  mechanics are confirmed empirically, not from docs; trademark naming ("DreamTeam SMB
+  Suite") cleared. Invoice field mapping grounded against a real record (`name`,
+  `customer_name`, `due_date`, `outstanding_amount`, `status`, `grand_total`, `docstatus`).
+  ⚠ The dev token was exposed on-screen/in-chat during setup — **rotate it** and store the
+  fresh pair only in Vault via `set_connector_secret` as part of S1. No secret is written
+  to this repo.
 
 ## 7. Program roadmap v2 — full depth (2026-07-28; supersedes the §3 estimates)
 
@@ -527,7 +532,7 @@ Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`,
 
 | Track | Packages | State (2026-07-28, post-lock) |
 |---|---|---|
-| A connector platform | A1–A6 | **ready** — S1 code may start; exit proof pending dev ERPNext site |
+| A connector platform | A1–A6 | **in progress** — G0 field-verify CLEARED (live dev site + working token); S1 invoice mapping grounded against real data |
 | B data plane + drift | B1–B5 | **ready after A1** — landing zone locked (D2 = renewal_invoices) |
 | C staffing | C1–C4 | blocked — entry after A3 |
 | D provisioning + lifecycle | D1–D5 | blocked — G2/G3 milestone |
