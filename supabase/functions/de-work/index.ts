@@ -1388,7 +1388,18 @@ serve(async (req) => {
       const { data } = await admin.from('de_work_items').update({ status: 'running', locked_at: new Date().toISOString(), locked_by: 'de-work', attempts: 1 }).eq('id', body.work_item_id).eq('status', 'queued').select('id, tenant_id, de_id, title, payload');
       items = data ?? [];
     } else {
-      const { data } = await admin.rpc('claim_de_work_items', { p_limit: Math.min(MAX_ITEMS_PER_RUN, body.max_items ?? MAX_ITEMS_PER_RUN), p_worker: 'de-work', p_tenant_id: body.tenant_id ?? null });
+      const { data, error: claimErr } = await admin.rpc('claim_de_work_items', { p_limit: Math.min(MAX_ITEMS_PER_RUN, body.max_items ?? MAX_ITEMS_PER_RUN), p_worker: 'de-work', p_tenant_id: body.tenant_id ?? null });
+      // A FAILING CLAIM MUST NOT LOOK LIKE AN EMPTY QUEUE.
+      // Migration 514 broke this RPC and nobody noticed for 40 minutes: the
+      // error was never destructured, so a raise became data=null, items=[],
+      // and a cheerful HTTP 200 {"worked":0} eight times an hour. Every surface
+      // anyone was watching said the workforce was healthy and idle. It was
+      // neither. Loud is the only acceptable behaviour here.
+      if (claimErr) {
+        console.error('de-work: claim_de_work_items failed:', claimErr.message);
+        await reportEdgeError('de-work', new Error(`claim_de_work_items failed: ${claimErr.message}`), {});
+        return json({ error: 'claim_failed', detail: claimErr.message, worked: 0 }, 500);
+      }
       items = (data ?? []).map((r: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }) => ({ id: r.id, tenant_id: r.tenant_id, de_id: r.de_id, title: r.title, payload: r.payload }));
     }
 
