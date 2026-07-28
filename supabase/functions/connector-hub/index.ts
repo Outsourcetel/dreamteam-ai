@@ -228,15 +228,42 @@ const erpnext = {
     if (!r.ok || !who) return { ok: false, error: r.error ?? 'auth_failed' };
     return { ok: true, detail: `authenticated as ${who}` };
   },
-  invoicesUrl(c: Ctx, extraFilters: unknown[][]): string {
+  invoicesUrl(c: Ctx, extraFilters: unknown[][], limit = '10'): string {
     const filters: unknown[][] = [['docstatus', '=', 1], ...extraFilters];
     const qs = new URLSearchParams({
       fields: ERPNEXT_INVOICE_FIELDS,
       filters: JSON.stringify(filters),
       order_by: 'due_date asc',
-      limit_page_length: '10',
+      limit_page_length: limit,
     });
     return `${c.baseUrl}/api/resource/Sales%20Invoice?${qs.toString()}`;
+  },
+  // ERPNext Sales Invoice status → our renewal_invoices vocabulary. Anything
+  // that isn't clearly Paid/Overdue is treated as issued-and-owing ('sent'),
+  // which is what the invoice_overdue trigger filters on.
+  arStatus(s: string): string {
+    const x = String(s ?? '').toLowerCase();
+    if (x === 'paid') return 'paid';
+    if (x === 'overdue') return 'overdue';
+    return 'sent';
+  },
+  // Pull ALL submitted invoices as normalized AR records for the platform's
+  // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
+  // the upsert lives in the DB (upsert_external_ar_record).
+  async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+    const r = await httpJson(this.invoicesUrl(c, [], '100'), { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    const records = rows.map((d) => ({
+      customer_external_ref: String(d.customer ?? d.customer_name ?? ''),
+      customer_name: String(d.customer_name ?? d.customer ?? ''),
+      invoice_external_ref: String(d.name ?? ''),
+      amount_cents: Math.round(Number(d.grand_total ?? 0) * 100),
+      due_date: d.due_date ? String(d.due_date) : null,
+      status: this.arStatus(String(d.status ?? '')),
+      currency: String(d.currency ?? ''),
+    })).filter((x) => x.invoice_external_ref && x.customer_external_ref);
+    return { ok: true, records };
   },
   async search(c: Ctx, query: string): Promise<AdapterResult> {
     const q = String(query ?? '').trim().slice(0, 80);
@@ -4979,6 +5006,49 @@ serve(async (req) => {
           : `Category op ${category}.${op} on ${connector.provider} FAILED — ${r.error} (recorded honestly)`,
         { mode: 'read_through', hub_action: 'category_op', category, op, ok: r.ok, error: r.error ?? null, item_count: items.length, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
       return json({ ok: r.ok, category, op, object: opDef.object, items, error: r.error ?? null, detail: r.detail ?? null, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
+    }
+
+    // ════════ sync_financials — ERP AR ingest into the platform's tables ════
+    // Fetch every submitted invoice/customer from the connected ERP and upsert
+    // them into renewal_invoices / customer_accounts via a provider-generic,
+    // idempotent RPC, so the EXISTING dunning / at-risk / staleness machinery
+    // runs on real ERP data. Unlike category_op (read-through, persisted:false),
+    // this deliberately PERSISTS into the AR tables the platform already owns.
+    if (action === 'sync_financials') {
+      if (typeof adapter.syncFinancials !== 'function') {
+        return json({ ok: false, error: 'sync_not_supported', detail: `${connector.provider} has no financial sync adapter.` }, 200);
+      }
+      const started = Date.now();
+      const sr = await adapter.syncFinancials(ctx);
+      if (!sr.ok) {
+        const health = await recordHealth(false, sr.error);
+        return json({ ok: false, error: sr.error ?? 'sync_failed', health }, 200);
+      }
+      const records = (sr.records ?? []) as Array<Record<string, unknown>>;
+      let upserted = 0;
+      const errors: string[] = [];
+      for (const rec of records) {
+        const { error: upErr } = await admin.rpc('upsert_external_ar_record', {
+          p_tenant_id: tenantId,
+          p_provider: connector.provider,
+          p_customer_external_ref: rec.customer_external_ref ?? null,
+          p_customer_name: rec.customer_name ?? null,
+          p_invoice_external_ref: rec.invoice_external_ref ?? null,
+          p_amount_cents: rec.amount_cents ?? 0,
+          p_due_date: rec.due_date ?? null,
+          p_status: rec.status ?? 'sent',
+          p_currency: rec.currency ?? null,
+        });
+        if (upErr) errors.push(`${rec.invoice_external_ref}: ${upErr.message}`.slice(0, 160));
+        else upserted += 1;
+      }
+      const ms = Date.now() - started;
+      const health = await recordHealth(errors.length === 0, errors[0] ?? null);
+      await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
+      await audit('connector_sync',
+        `Financial sync from ${connector.provider} — ${upserted}/${records.length} invoice(s) upserted into the AR tables in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
+        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
+      return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
     }
 
     // ════════ search / fetch_record / list_recent — READ-THROUGH ════════
