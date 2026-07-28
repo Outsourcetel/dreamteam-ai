@@ -143,6 +143,12 @@ interface RunContext {
   invoice_id?: string;
   invoice_amount_cents?: number;
   invoice_status?: string;
+  /** The external SYSTEM-OF-RECORD reference of the invoice that triggered
+   * this run (e.g. an ERPNext Sales Invoice name). event.ref carries our
+   * internal renewal_invoices.id; this carries the ERP's own id so a
+   * connector_action can write BACK to the right document. Only set when the
+   * fire resolves to a synced invoice. */
+  invoice_external_ref?: string;
   gated?: boolean;
   ticket_id?: string;
   /** Accumulated instruction step bodies for this run — assembled context
@@ -635,6 +641,9 @@ function renderTemplate(t: string, ctx: RunContext, runId: string, steps?: RunSt
     if (token === 'run.id') return runId;
     if (token === 'event.ref') return String(ctx.event_ref ?? '');
     if (token === 'event.note') return String(ctx.event_note ?? '');
+    // The ERP's own invoice ref (for writing BACK), falling back to event.ref
+    // so a template that uses it still renders when the bridge didn't resolve.
+    if (token === 'invoice.external_ref') return String(ctx.invoice_external_ref ?? ctx.event_ref ?? '');
     if (token.startsWith('party.')) {
       const attrs = (ctx.party_attributes ?? {}) as Record<string, unknown>;
       const v = attrs[token.slice('party.'.length)];
@@ -2387,6 +2396,19 @@ async function startDefinitionRunServer(
     .select('sop_text').eq('definition_id', def.id).maybeSingle();
   if (studyRow?.sop_text) sopContext = String(studyRow.sop_text).slice(0, 8000);
 
+  // ERP write-back bridge: an invoice_overdue fire carries event.ref =
+  // renewal_invoices.id (our internal id), but a connector_action that writes
+  // BACK to the ERP needs the ERP's own invoice reference. Resolve it once here
+  // and expose it as {{invoice.external_ref}}. Guarded to a uuid ref that maps
+  // to a synced invoice — a non-invoice fire (ticket/opportunity) leaves it unset.
+  let invoiceExternalRef: string | null = null;
+  const eventRefIsUuid = !!opts?.eventRef && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(opts.eventRef);
+  if (eventRefIsUuid) {
+    const { data: invRow } = await admin.from('renewal_invoices')
+      .select('source_external_ref').eq('tenant_id', tenantId).eq('id', opts!.eventRef).maybeSingle();
+    if (invRow?.source_external_ref) invoiceExternalRef = String(invRow.source_external_ref);
+  }
+
   const context: RunContext = {
     account_id: accountId,
     ...(opts?.deSubjectId ? { de_subject_id: opts.deSubjectId } : {}),
@@ -2394,6 +2416,7 @@ async function startDefinitionRunServer(
     // {{event.ref}} / {{event.note}} template tokens read these.
     ...(opts?.eventRef ? { event_ref: opts.eventRef } : {}),
     ...(opts?.eventNote ? { event_note: opts.eventNote } : {}),
+    ...(invoiceExternalRef ? { invoice_external_ref: invoiceExternalRef } : {}),
     ...(sopContext ? { sop_context: sopContext } : {}),
   };
   const { data: runRow, error: runErr } = await admin
