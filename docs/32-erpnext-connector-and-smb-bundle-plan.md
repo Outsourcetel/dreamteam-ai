@@ -409,6 +409,140 @@ G0 ─ A1 ──► A2 ─ A3 ─ A4 ─ A5          (A: connector platform)
 - **Any change to the §0 invariant** (customer-owned, swappable, standard connector)
   returns to you by name — it is the moat clause.
 
+## 8. Execution playbook — how §7 gets worked flawlessly
+
+§7 is the *what*. This section is the *how*: the discipline that turns 7 workstreams and
+27–33 sessions into shipped, proven work without the failure modes this codebase has
+already paid for. It is written to be picked up cold by any session.
+
+### 8.0 Prime directive — the gate before the gate
+
+**Nothing in §7 begins until G0 clears:** D1–D5 answered in writing (§6) and 2–3 design
+partners named (§7.6). This playbook is not authorization to build. The moment a build
+session legitimately opens, §8.1's rules bind it. Until then, every package below is in
+state `blocked-on-G0` (§8.6).
+
+### 8.1 Operating doctrine — eight rules, each bought with a real scar
+
+| # | Rule (operational form) | The scar it encodes |
+|---|---|---|
+| R1 | **Fresh-dump before every recreate-apply.** Any migration doing `CREATE OR REPLACE` on an existing function: immediately before apply, dump the LIVE body (`pg_get_functiondef`), diff *every* recreated body against the migration's base, regenerate on any diff. | This session: the 425→430 number collision, then mig 453 silently rewrote `detect_de_development_needs_internal` after my dump — caught only by the pre-apply re-diff. Streams are at ledger #480 and moving. |
+| R2 | **Rebase before every deploy.** Before any edge-fn deploy, rebase on `origin/main` and confirm parallel edits coexist in the file. | `playbook-execute` had +4 lines on main (Experience-door-b) a blind deploy would have reverted. |
+| R3 | **Prove as behaviour, never infer from code.** Each exit proof is *observed* — a real scoped user, tenant, or run — not asserted from a function body. "Code, not behaviour" is named as a gap, never counted as done. | docs/30's own header; the 5× "inferred a system property from one object" error (verification-discipline memory). |
+| R4 | **No false-greens.** Every assertion must be able to fail; test the primary key, not the object; a green that encodes the bug is worse than no test. | mig 435 blinded 5 crons for 8h behind a tautological assert; the null-composite guard bug (3 clicks = 3 hook runs). |
+| R5 | **Honesty labels on everything.** `proven-live` / `built-unverified` / `inferred`, always distinguished; gaps surfaced unprompted. | Honesty mandate. |
+| R6 | **Genericity — no ERP special-casing.** The connector generalizes via config; nothing ERPNext-shaped leaks into core (the §0 invariant). A provider/department hardcode fails review. | DE-genericity test; §0 moat clause. |
+| R7 | **Money-safety floor.** Destructive risk tested per action (never assumed from the flag); every bundle DE starts draft-for-approval; journal entries never auto-execute. | Action-gate destructive floor; trust ladder. |
+| R8 | **Data-safety: detect, don't correct.** Mirror drift is alarmed, never silently reconciled; restore is *drilled on a real backup* before GA, not assumed. | Data-restore has never been drilled platform-wide (recovery memory); ERP-wins conflict policy (B2). |
+
+### 8.2 The per-session loop — Entry → Work → Prove → Land → Record
+
+Every build session, no exceptions:
+
+1. **Entry.** `npm run migrate:status` to see the live ledger max; reserve the next
+   migration number(s) on-branch + announce to active streams (§8.3); confirm the work
+   package's entry criteria are met; `git pull` / rebase `origin/main`.
+2. **Work.** One package. Smallest shippable slice. Always-live — the change reaches all
+   tenants via baseline, never one tenant (always-live rule), *except* the bundle-plan
+   flag which is deliberately gated.
+3. **Prove.** Run the package's exit proof (§8.5), which is machine-checkable:
+   migrations carry in-body `DO $assert$` blocks *and* get a post-apply live query;
+   RLS/scoping changes run `npm run test:isolation` + `test:invariants`; UI runs
+   design-drift clean + a screenshot; money actions run a destructive-floor test that
+   actually gates.
+4. **Land.** Apply R1/R2 first. Apply migrations via `node scripts/db-query.mjs <file>`
+   (auto-records the ledger); deploy fns via `node scripts/deploy.mjs --no-migrations
+   --fn <name>` (preserves per-fn `verify_jwt`). Then `npm test` + `npm run typecheck`
+   green before the session is allowed to close.
+5. **Record.** Update the §8.6 tracker and the project memory; commit with the
+   `bkhan@outsourcetel.com` identity. The `schema_migrations` row — not anyone's
+   memory — is the source of truth for "applied".
+
+### 8.3 Coordination with the parallel streams
+
+The repo runs concurrent migration streams (this branch + the audit/employee-file
+stream; live ledger already at #480). The contract that keeps them from clobbering:
+
+- **Number reservation.** Before writing a migration, `migrate:status`, take the next
+  free number, announce it via cross-session-message. Any number ≤ the live ledger max
+  is burned — never reuse.
+- **R1 is a shared invariant, not ours alone.** It is precisely what lets two streams
+  recreate overlapping function bodies safely. If a stream skips it, the last-applied
+  wins and silently reverts the other.
+- **Cadence.** Rebase daily and before every apply/deploy.
+- **The moat clause.** Any change to the §0 invariant returns to the founder by name.
+
+### 8.4 Gate go/no-go checklists — founder authorizes each transition
+
+I do not self-advance a gate. Each transition needs its proofs green *and* an explicit
+founder go.
+
+- **G0 → build:** D1–D5 recorded; partners named; Frappe Cloud token-auth + partner
+  terms re-verified live; trademark naming cleared; dev ERPNext site reachable.
+- **G1 (spine):** the scripted E2E passes end-to-end — real overdue invoice in dev ERP →
+  existing dunning playbook fires → approval task carries the real invoice ref →
+  approval executes the reminder into ERP → nightly drift check reconciles to zero. Plus
+  `npm test` + `test:isolation` green.
+- **G2 (private beta):** per partner — books migrated with trial-balance sign-off, ≥30
+  days live, ≥1 DE promoted past draft-only on evidence (not by hand), zero sev-1, the
+  support-escalation path exercised at least once for real.
+- **G3 (GA):** provisioning timed < 30 min signup→live; `npm run restore:drill` PASSED
+  on a real partner backup (this is the first platform-wide data-restore proof — it does
+  not get waved through); runbooks + SLAs published; billing line-item live; unit
+  economics (per-tenant COGS vs D3 price) observed and positive.
+
+### 8.5 Session ledger to G1 — the only immediately-actionable increment
+
+Detailed because it's next; G2/G3 packages stay coarse until their entry criteria
+approach (fully planning them now would be planning on unverified assumptions — R3).
+
+| Session | Package | Entry | Deliverable | Exit proof (behaviour) | Rollback |
+|---|---|---|---|---|---|
+| S1 | A1 provider foundation | G0 clear | native `erpnext` adapter (test/search/fetch/listRecent), token auth, health, SSRF-safe; `connectors_provider_check` widen; `PROVIDERS` UI entry | wizard connects a real dev ERPNext; `hubTest` green; `category_op` returns real Sales-Invoice rows | drop the provider-check widen migration; revert fn deploy (prior on main) |
+| S2 | B1 canonical mapping | A1 | external-ref columns migration; amount→cents; currency guard; multi-company refused loudly at connect | insert a mapped invoice, assert external-ref idempotency (primary-key level, R4); reject a 2nd-currency connector in a test | migration is additive columns — safe drop |
+| S3 | A3 action catalog v1 | A1 | platform-scope `action_definitions` (mig-217 shape) for dunning trio + `record_payment_promise`/`add_comment`; per-action destructive/idempotent classification; previews | each action tested through `decide_action_execution`: destructive floor gates the final-notice **before** trust is consulted (R7) | `WHERE NOT EXISTS` inserts; delete the rows |
+| S4 | B2 sync engine | B1 | webhook + scheduled upserts, idempotent by external ref; ERP-wins conflict; local edits to mirrored fields blocked at RPC | a real ERP invoice syncs; edit the mirrored field via RPC → refused; ERP change wins on next tick | pause the schedule; sync is upsert-idempotent |
+| S5 | E1 money guardrail pack | A3 | `require_approval_over_cents` defaults, legal-threat blocked phrases, per-category autonomy defaults | a dunning note over the threshold gates; a legal-threat phrase blocks — both observed, not assumed (R3) | guardrail rows are data; disable |
+| S6 | A4 event plane | A1, B2 | ERPNext Webhook → `emit-event` (tenant api key); `invoice_overdue` realtime, `payment_received` clears dunning | fire a real ERP webhook → trigger row appears → dunning clears on payment | webhook is additive; delete the rule |
+| S7 | **G1 assembly + proof** | S1–S6 | wire the scripted E2E harness; run it | the full G1 chain (§8.4) passes; `npm test` + `test:isolation` green | n/a — this is the proof session |
+
+Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2 once A1 lands).
+
+### 8.6 Living tracker
+
+Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
+`in-progress`, `proven-live`}. Source of truth for "applied" is always the ledger row.
+
+| Track | Packages | State (2026-07-28) |
+|---|---|---|
+| A connector platform | A1–A6 | blocked-on-G0 |
+| B data plane + drift | B1–B5 | blocked-on-G0 |
+| C staffing | C1–C4 | blocked-on-G0 |
+| D provisioning + lifecycle | D1–D5 | blocked-on-G0 |
+| E governance | E1–E4 | blocked-on-G0 |
+| F experience | F1–F4 | blocked-on-G0 |
+| G commercial + support | G1–G4 | blocked-on-G0 |
+
+### 8.7 Risk register → control mapping
+
+Each §7.4 risk is neutralized by a specific doctrine rule + gate check, not by good
+intentions:
+
+| Risk (§7.4) | Control |
+|---|---|
+| Action misfire on real money | R7 draft-first + per-action destructive-floor test (S3/S5); G1 proves the gate, not the bypass |
+| Bad books migrated in | D3 trial-balance sign-off before workforce activates; G2 blocks without it |
+| Mirror drift | R8 detect-don't-correct; B3 nightly reconcile → `ops_alerts`; G1 requires drift=zero |
+| Frappe Cloud dependency | weekly backup pulls; **R8 restore drill is a hard G3 exit**; open-source press = credible exit |
+| Migration collision / clobber | R1 fresh-dump + §8.3 number reservation; proven twice this session |
+| Deploy reverts a parallel edit | R2 rebase-before-deploy; proven this session |
+| Support gravity | G2 scope-boundary exercised for real; Support-DE deflection measured (G-track) |
+| Per-tenant cost creep | G3 unit-economics gate; cost tracked from S-day-one |
+| GPL contamination / trademark | E4 config-only, no forked apps; naming cleared at G0 |
+| Scope creep into ERP consulting | R6 genericity; bundle = fixed role kits + migration workbench, rest is paid services |
+| Suspension gap recurrence | D4 extends mig-430 dormancy to the ERP site — tested at G2, not assumed |
+
+
 ## Sources
 - https://www.erpresearch.com/pricing/erpnext · https://frappe.io/cloud
 - https://frappe.io/partners/plans · https://frappe.io/blog/community/a-guide-to-working-with-frappe-partners
