@@ -1107,10 +1107,14 @@ export const checkMyIpAllowed = async (): Promise<boolean> => {
 // ============================================================
 
 export interface DePerformanceMetrics {
-  de_id: string; de_name: string; total_decisions: number; resolution_rate: number;
-  avg_confidence: number; escalation_rate: number; blocked_guardrail_count: number;
-  total_runs: number; error_rate: number;
-  avg_frustration_score: number; high_frustration_count: number;
+  // mig 491: the five RATES are null when the platform never measured them —
+  // an employee with no evidence used to display "0% escalation" while holding
+  // nine real escalations. The COUNTS stay non-null: a zero there is a true
+  // measurement. Render null as "not measured", never as a number.
+  de_id: string; de_name: string; total_decisions: number; resolution_rate: number | null;
+  avg_confidence: number | null; escalation_rate: number | null; blocked_guardrail_count: number;
+  total_runs: number; error_rate: number | null;
+  avg_frustration_score: number | null; high_frustration_count: number;
   trend: { week: string; decisions: number; resolution_rate: number; avg_confidence: number }[];
 }
 

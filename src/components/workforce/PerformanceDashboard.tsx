@@ -6,35 +6,53 @@ interface PerformanceDashboardProps {
   performance: DEPerformanceSummary;
 }
 
+/** A rate the platform never measured must not render as a number.
+ *
+ *  mig 491 stopped the SQL fabricating these (missing evidence used to be
+ *  coalesced to 0, so an employee with nine real escalations displayed "0%").
+ *  That fix only reaches the screen if the client stops doing the same thing:
+ *  Math.round(null) is 0 in JavaScript, so a pure-SQL fix would have been
+ *  invisible here. A genuine 0 still renders as 0 — the distinction is the
+ *  whole point. */
+const measured = (v: number | null | undefined): v is number =>
+  v !== null && v !== undefined && !Number.isNaN(Number(v));
+
 export function PerformanceDashboard({ performance }: PerformanceDashboardProps) {
+  const NOT_MEASURED = 'Not measured';
+  const neutral = { color: 'text-dt-muted', bg: 'bg-dt-inset' };
   const metrics = [
     {
       label: 'CSAT',
-      value: `${Math.round(performance.avg_csat)}%`,
+      value: measured(performance.avg_csat) ? `${Math.round(performance.avg_csat)}%` : NOT_MEASURED,
       icon: TrendingUp,
-      color: performance.avg_csat >= 90 ? 'text-green-400' : 'text-amber-400',
-      bg: performance.avg_csat >= 90 ? 'bg-green-900' : 'bg-amber-900',
+      ...(measured(performance.avg_csat)
+        ? { color: performance.avg_csat >= 90 ? 'text-green-400' : 'text-amber-400',
+            bg: performance.avg_csat >= 90 ? 'bg-green-900' : 'bg-amber-900' }
+        : neutral),
     },
     {
       label: 'Escalation Rate',
-      value: `${Math.round(performance.escalation_rate)}%`,
+      value: measured(performance.escalation_rate) ? `${Math.round(performance.escalation_rate)}%` : NOT_MEASURED,
       icon: AlertCircle,
-      color: performance.escalation_rate <= 5 ? 'text-green-400' : 'text-red-400',
-      bg: performance.escalation_rate <= 5 ? 'bg-green-900' : 'bg-red-900',
+      ...(measured(performance.escalation_rate)
+        ? { color: performance.escalation_rate <= 5 ? 'text-green-400' : 'text-red-400',
+            bg: performance.escalation_rate <= 5 ? 'bg-green-900' : 'bg-red-900' }
+        : neutral),
     },
     {
       label: 'Resolution Rate',
-      value: `${Math.round(performance.resolution_rate)}%`,
+      value: measured(performance.resolution_rate) ? `${Math.round(performance.resolution_rate)}%` : NOT_MEASURED,
       icon: MessageSquare,
-      color: performance.resolution_rate >= 85 ? 'text-green-400' : 'text-amber-400',
-      bg: performance.resolution_rate >= 85 ? 'bg-green-900' : 'bg-amber-900',
+      ...(measured(performance.resolution_rate)
+        ? { color: performance.resolution_rate >= 85 ? 'text-green-400' : 'text-amber-400',
+            bg: performance.resolution_rate >= 85 ? 'bg-green-900' : 'bg-amber-900' }
+        : neutral),
     },
     {
       label: 'Monthly Cost',
-      value: `$${Math.round(performance.cost_this_month)}`,
+      value: measured(performance.cost_this_month) ? `$${Math.round(performance.cost_this_month)}` : NOT_MEASURED,
       icon: DollarSign,
-      color: 'text-blue-400',
-      bg: 'bg-blue-900',
+      ...(measured(performance.cost_this_month) ? { color: 'text-blue-400', bg: 'bg-blue-900' } : neutral),
     },
   ];
 

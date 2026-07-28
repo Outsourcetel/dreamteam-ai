@@ -37,9 +37,11 @@ export interface DEPerformanceSummary {
   time_window_days: number;
   cost_this_month: number;
   responses_this_month: number;
-  avg_csat: number;
-  escalation_rate: number;
-  resolution_rate: number;
+  // Nullable since mig 491: a rate the platform never measured is NULL, not 0.
+  // Counts stay non-null — a genuine zero is a true measurement.
+  avg_csat: number | null;
+  escalation_rate: number | null;
+  resolution_rate: number | null;
   amendments_applied: number;
   training_sessions: number;
   fte_equivalent_cost: number;
