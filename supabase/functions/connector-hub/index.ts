@@ -5078,6 +5078,46 @@ serve(async (req) => {
       return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
     }
 
+    // ════════ reconcile_financials — DRIFT SENTINEL (B3) ════════
+    // Compare the ERP's live submitted-invoice count + total against the mirror
+    // (renewal_invoices) and raise an ops_alert on any mismatch. Detect, never
+    // silently correct: a human sees the drift and decides. Read-only — it does
+    // NOT upsert (that's sync_financials' job).
+    if (action === 'reconcile_financials') {
+      if (typeof adapter.syncFinancials !== 'function') {
+        return json({ ok: false, error: 'reconcile_not_supported', detail: `${connector.provider} has no financial adapter.` }, 200);
+      }
+      const started = Date.now();
+      const sr = await adapter.syncFinancials(ctx);
+      if (!sr.ok) {
+        const health = await recordHealth(false, sr.error);
+        return json({ ok: false, error: sr.error ?? 'fetch_failed', health }, 200);
+      }
+      const erp = (sr.records ?? []) as Array<Record<string, unknown>>;
+      const erpCount = erp.length;
+      const erpCents = erp.reduce((a, r) => a + (Number(r.amount_cents) || 0), 0);
+      const { data: mirror } = await admin.rpc('erp_ar_mirror_totals', { p_tenant_id: tenantId, p_provider: connector.provider });
+      const mRow = (Array.isArray(mirror) ? mirror[0] : mirror) as { cnt?: number; cents?: number } | null;
+      const mirrorCount = Number(mRow?.cnt ?? 0);
+      const mirrorCents = Number(mRow?.cents ?? 0);
+      const countDrift = erpCount - mirrorCount;
+      const centsDrift = erpCents - mirrorCents;
+      const inSync = countDrift === 0 && centsDrift === 0;
+      if (!inSync) {
+        await admin.rpc('raise_ops_alert', {
+          p_kind: 'erp_ar_drift',
+          p_message: `ERP AR mirror drift on ${connector.provider} (${connector.display_name || connector.base_url}): count Δ${countDrift}, amount Δ${(centsDrift / 100).toFixed(2)} — the governed copy no longer matches the ERP.`,
+          p_detail: { connector_id: connectorId, tenant_id: tenantId, provider: connector.provider, erp_count: erpCount, mirror_count: mirrorCount, erp_cents: erpCents, mirror_cents: mirrorCents, count_drift: countDrift, cents_drift: centsDrift },
+        });
+      }
+      const health = await recordHealth(true, null);
+      const ms = Date.now() - started;
+      await audit('connector_sync',
+        `AR drift check on ${connector.provider} — ${inSync ? 'in sync' : 'DRIFT DETECTED'}: ERP ${erpCount} inv / ${(erpCents / 100).toFixed(2)} vs mirror ${mirrorCount} / ${(mirrorCents / 100).toFixed(2)}`,
+        { hub_action: 'reconcile_financials', in_sync: inSync, erp_count: erpCount, mirror_count: mirrorCount, count_drift: countDrift, cents_drift: centsDrift, latency_ms: ms, health });
+      return json({ ok: true, in_sync: inSync, erp: { count: erpCount, cents: erpCents }, mirror: { count: mirrorCount, cents: mirrorCents }, drift: { count: countDrift, cents: centsDrift }, latency_ms: ms });
+    }
+
     // ════════ search / fetch_record / list_recent — READ-THROUGH ════════
     if (action === 'search' || action === 'fetch_record' || action === 'list_recent') {
       // Access grants: search/list_recent → "search"; fetch_record opens
