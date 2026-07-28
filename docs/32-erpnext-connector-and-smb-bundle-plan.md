@@ -525,6 +525,19 @@ approach (fully planning them now would be planning on unverified assumptions �
 
 Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2 once A1 lands).
 
+> **S1 SHIPPED & PROVEN LIVE — 2026-07-28.** Native `erpnext` read adapter
+> (test/search/fetchRecord/listRecent, Frappe `token key:secret`, Sales Invoice
+> DocType, submitted-only) + `PROVIDER_OP_TRANSLATORS.erpnext`
+> (search_invoices/get_invoice) in connector-hub; migration 514 registers the
+> provider; frontend PROVIDERS entry + wizard + icon. Deployed. Proof: a real
+> ERPNext (outsourcetel.m.frappe.cloud) connected to tenant outsourcetel-hq
+> (connector 7f595bec) → `test` returns "authenticated as bkhan@outsourcetel.com"
+> (healthy); `category_op search_invoices` returns real invoices in canonical
+> shape; `get_invoice` returns full detail. Read-only slice — A2 (wider ops),
+> A3 (dunning WRITE actions), and B-track ingest are next. ⚠ the dev connector
+> holds the exposed dev token — rotate in ERPNext and re-store via
+> set_connector_secret; low-risk throwaway trial site.
+
 ### 8.6 Living tracker
 
 Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
@@ -532,7 +545,7 @@ Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`,
 
 | Track | Packages | State (2026-07-28, post-lock) |
 |---|---|---|
-| A connector platform | A1–A6 | **in progress** — G0 field-verify CLEARED (live dev site + working token); S1 invoice mapping grounded against real data |
+| A connector platform | A1–A6 | **S1 PROVEN LIVE 2026-07-28** — erpnext read adapter + mig 514 deployed; category_op search_invoices/get_invoice returns real invoices through the platform, test green. A2–A6 pending |
 | B data plane + drift | B1–B5 | **ready after A1** — landing zone locked (D2 = renewal_invoices) |
 | C staffing | C1–C4 | blocked — entry after A3 |
 | D provisioning + lifecycle | D1–D5 | blocked — G2/G3 milestone |
