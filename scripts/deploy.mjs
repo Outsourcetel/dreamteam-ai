@@ -112,6 +112,7 @@ async function applyMigrations() {
 // smaller, safer instrument.
 const NO_VERIFY_JWT = new Set([
   'scim', // IdP presents its own bearer token; verified in-function (mig 375)
+  'mcp-demo-server', // a demo MCP server target; MCP clients POST JSON-RPC, not a Supabase JWT
 ]);
 
 function deployFunctions() {

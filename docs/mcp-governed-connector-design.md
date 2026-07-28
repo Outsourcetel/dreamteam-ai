@@ -86,10 +86,15 @@ auth**. Options, founder picks:
 - **A public/reference MCP server** (e.g., a read-only demo server) — fastest for M1/M2.
 - **A tiny local MCP server** we stand up — full control, no third-party creds.
 
-## 6. Decisions requested
+## 6. Decisions — LOCKED 2026-07-29
 
-1. **Approve the approach** (annotations → risk gate; MCP as a provider under the existing gate)?
-2. **Fail-safe default** for un-annotated tools = destructive/human-gated? (recommended)
-3. **Which target MCP server** for the M1/M2 proof?
+1. **Approach APPROVED** — MCP as a provider whose tools become gated action_definitions.
+2. **Fail-safe default: un-annotated tool ⇒ destructive ⇒ human-gated.** A server that omits
+   annotations can never auto-fire a side effect.
+3. **Proof target: a public reference MCP server.** Realized as a self-controlled MCP server
+   deployed as an edge function (real Streamable-HTTP protocol, HTTPS so it passes the SSRF
+   guard, no third-party creds) exposing three tools — a read-only one (readOnlyHint), a
+   destructive one (destructiveHint), and one with NO annotations — so M1/M2 can prove risk
+   derivation AND the fail-safe in one shot.
 
-On your answers I start M1 immediately.
+BUILDING M1 now.
