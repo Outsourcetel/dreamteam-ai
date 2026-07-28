@@ -9,8 +9,9 @@ import { fmtWhen } from '../../components/WorkforceBoard';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
-  getOutcomeMetering,
+  getOutcomeMetering, getDeWorkMetrics,
   type DePerformanceMetrics, type DeInquiryMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
+  type DeWorkMetrics,
 } from '../../lib/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useEmployeeFileDeId, EMPLOYEE_FILE_PATH } from '../../lib/employeeFileRoute';
@@ -444,6 +445,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   const [actions, setActions] = useState<DeActionMetrics | null>(null);
   const [resolutions, setResolutions] = useState<{ resolutions: number; escalations: number } | null>(null);
   const [outputs, setOutputs] = useState<{ items_done: number; deliverables: number } | null>(null);
+  const [work, setWork] = useState<DeWorkMetrics | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -456,9 +458,11 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       getDeActionMetrics(tenantId, range),
       getOutcomeMetering(tenantId, range),
       countDeOutputs(de.id, range).catch(() => ({ items_done: 0, deliverables: 0 })),
-    ]).then(([m, iq, c, s, a, om, outs]) => {
+      getDeWorkMetrics(tenantId),
+    ]).then(([m, iq, c, s, a, om, outs, wk]) => {
       if (cancelled) return;
       setPerf(m.find(x => x.de_id === de.id) ?? null);
+      setWork(wk.find(x => x.de_id === de.id) ?? null);
       setInquiry(iq.find(x => x.de_id === de.id) ?? null);
       setCost(c.find(x => x.de_id === de.id) ?? null);
       setCsat(s.find(x => x.de_id === de.id) ?? null);
@@ -516,6 +520,30 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
         <StatTile label="Actions executed" value={String(actions?.executed ?? 0)} sub={actions ? `${actions.sent_to_human} sent to a human` : undefined} tone="ok" />
         <StatTile label="AI cost" value={cost ? `$${cost.total_cost_usd.toFixed(2)}` : '$0.00'} sub={cost ? `${cost.total_calls} calls` : undefined} tone="neutral" />
       </div>
+
+      {/* Work-shaped performance (mig 499/500). The tiles above are computed
+          over answered inquiries — a queue employee produces none of that
+          evidence, which is why its Resolution and Escalation read "not
+          measured" since mig 491. These are its OWN numbers, kept separate on
+          purpose: a renewal case and a support conversation share no
+          denominator, and blending them moves a support employee's rate with
+          zero change in its behaviour. Rendered only when there IS work. */}
+      {work && (work.items_completed + work.items_cancelled + work.escalations_raised + work.goals_needing_attention) > 0 && (
+        <PanelCard title="Work this employee runs">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatTile label="Work completed" value={String(work.items_completed)}
+              sub={work.items_cancelled > 0 ? `${work.items_cancelled} cancelled` : undefined} tone="ok" />
+            <StatTile label="Raised to a person" value={String(work.escalations_raised)}
+              sub={work.escalations_unanswered > 0 ? `${work.escalations_unanswered} still unanswered` : 'all answered'}
+              tone={work.escalations_unanswered > 0 ? 'warn' : 'neutral'} />
+            <StatTile label="Escalation" value={pct(work.escalation_rate)}
+              tone={work.escalation_rate !== null && work.escalation_rate > 50 ? 'warn' : 'neutral'} />
+            <StatTile label="Goals needing you" value={String(work.goals_needing_attention)}
+              sub={work.oldest_unanswered_hours ? `oldest wait ${Math.round(work.oldest_unanswered_hours)}h` : undefined}
+              tone={work.goals_needing_attention > 0 ? 'warn' : 'neutral'} />
+          </div>
+        </PanelCard>
+      )}
 
       <div className="grid md:grid-cols-3 gap-3">
         <PanelCard title="Autonomy">

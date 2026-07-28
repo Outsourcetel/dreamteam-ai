@@ -1118,6 +1118,29 @@ export interface DePerformanceMetrics {
   trend: { week: string; decisions: number; resolution_rate: number; avg_confidence: number }[];
 }
 
+/** Work-shaped performance (mig 499/500) — the queue employee's own numbers.
+ *
+ *  Deliberately SEPARATE from DePerformanceMetrics rather than merged into it.
+ *  Those metrics are computed over answered inquiries; a renewal case and a
+ *  support conversation share no denominator, and blending them would push a
+ *  support employee's escalation rate around with zero change in its behaviour.
+ *  Rates are null when there is no denominator — never 0. */
+export interface DeWorkMetrics {
+  de_id: string; de_name: string; archetype_key: string | null;
+  items_completed: number; items_cancelled: number; items_waiting_human: number;
+  escalations_raised: number; escalations_answered: number; escalations_unanswered: number;
+  escalation_rate: number | null; oldest_unanswered_hours: number | null;
+  goals_open: number; goals_blocked: number; goals_needing_attention: number;
+  attention_oldest_since: string | null;
+  wakes_recorded: number; wakes_concluded_blocked: number;
+}
+
+export const getDeWorkMetrics = async (tenantId: string, weeks = 26): Promise<DeWorkMetrics[]> => {
+  const { data, error } = await supabase.rpc('get_de_work_metrics', { p_tenant_id: tenantId, p_weeks: weeks });
+  if (error) { console.error('getDeWorkMetrics:', error.message); return []; }
+  return (data ?? []) as DeWorkMetrics[];
+};
+
 export const getDePerformanceMetrics = async (tenantId: string): Promise<DePerformanceMetrics[]> => {
   const { data, error } = await supabase.rpc('get_de_performance_metrics', { p_tenant_id: tenantId });
   if (error) { console.error('getDePerformanceMetrics:', error.message); return []; }
