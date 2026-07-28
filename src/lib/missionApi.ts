@@ -193,6 +193,12 @@ export interface WorkforceBoardRow {
   listens_live: boolean;
   waiting_on_you: number;
   blocked_objectives: number;
+  // mig 494. A goal the stall sweep has flagged: the loop is alive but nothing
+  // is moving. Distinct from blocked_objectives — a spinning goal reports
+  // itself as in_progress and would otherwise look like normal activity.
+  needs_attention: number;
+  attention_oldest_since: string | null;
+  attention_kinds: string[];
   open_objectives: number;
   done_today: number;
 }

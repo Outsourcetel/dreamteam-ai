@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
-import { getDeWorkItems, getDeObjectives, saveObjective, countDeOutputs, type WorkItemRow, type ObjectiveRow } from '../../lib/deWorkbenchApi';
+import { getDeWorkItems, getDeObjectives, saveObjective, countDeOutputs, getObjectiveWakes, type WorkItemRow, type ObjectiveRow, type ObjectiveWakeRow } from '../../lib/deWorkbenchApi';
 import { getWorkforceBoard, listMissions, type WorkforceBoardRow } from '../../lib/missionApi';
 import { fmtWhen } from '../../components/WorkforceBoard';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
@@ -32,7 +32,7 @@ import {
   type DeProfileSectionKey,
 } from './LiveWorkforceDEs';
 import {
-  Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, type Tone,
+  Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, type Tone,
 } from '../../design/primitives';
 
 // ═══════════════════════════════════════════════════════════════
@@ -96,6 +96,65 @@ const TAB_ALIASES: Record<string, FileTab> = { capabilities: 'profile', developm
 // as the Workbench rendering did. The DE population is bimodal (queue-driven
 // vs answer-driven), so every panel collapses rather than stacks when empty.
 
+/** Plain-language label for a stalled goal.
+ *
+ *  Mapped over ALL THREE flag values so an unhandled one can never render raw,
+ *  even though the sweep currently only writes two of them. Every label is
+ *  tone 'warn' — the loop is alive, a person has to intervene. */
+function attentionLabel(o: ObjectiveRow): string {
+  const since = o.attention_since ? fmtWhen(o.attention_since) : null;
+  switch (o.attention_flag) {
+    // wake_count is a LIFETIME counter, so this says "woke N times" — never
+    // "N notes", which would be false for every goal older than the wake store.
+    case 'wake_spin': return `Woke ${o.wake_count} times, nothing moved`;
+    case 'waiting_too_long': return since ? `Waiting on you since ${since}` : 'Waiting on you';
+    case 'stalled': return since ? `Stalled since ${since}` : 'Stalled';
+    default: return 'Needs you';
+  }
+}
+
+/** The employee's own account of where a goal got to, newest first.
+ *
+ *  Deliberately NOT a new primitive — TimelineStep already exists for exactly
+ *  this shape. The empty state is load-bearing: recording only began with the
+ *  wake store, so an older goal legitimately has no entries, and saying
+ *  "nothing happened" would be a fresh lie on the screen built to end one. */
+function ObjectiveCheckIns({ objectiveId }: { objectiveId: string }) {
+  const [rows, setRows] = useState<ObjectiveWakeRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getObjectiveWakes(objectiveId)
+      .then(r => { if (!cancelled) setRows(r); })
+      .catch(e => { if (!cancelled) setError((e as Error)?.message || 'Could not load check-ins.'); });
+    return () => { cancelled = true; };
+  }, [objectiveId]);
+
+  if (error) return <Banner tone="danger" className="ml-3">{error}</Banner>;
+  if (rows === null) return <p className="text-[11px] text-dt-faint ml-3">Loading check-ins…</p>;
+  if (rows.length === 0) {
+    return (
+      <p className="text-[11px] text-dt-muted ml-3">
+        No check-ins recorded yet — this goal has been running since before check-in
+        recording began, so its earlier passes were not written down.
+      </p>
+    );
+  }
+  return (
+    <ol className="space-y-2 ml-3 mt-1">
+      {rows.map(w => (
+        <TimelineStep
+          key={w.id}
+          n={w.wake_no}
+          action={w.note || (w.assessment ? `Assessed: ${w.assessment}` : 'No note recorded for this check-in.')}
+          detail={`${w.assessment ?? 'in progress'} · ${w.done_item_count} done / ${w.open_item_count} open`}
+          at={w.concluded_at ?? w.started_at}
+        />
+      ))}
+    </ol>
+  );
+}
+
 function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [work, setWork] = useState<WorkItemRow[] | null>(null);
   const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
@@ -110,6 +169,9 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
   const [objTitle, setObjTitle] = useState('');
   const [objPriority, setObjPriority] = useState(3);
   const [objSaving, setObjSaving] = useState(false);
+  // Progressive disclosure: the check-in log answers "why is it stuck" exactly
+  // where the flag is shown, without making every row taller.
+  const [wakesOpen, setWakesOpen] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -279,17 +341,34 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
         ) : (
           <div className="space-y-2">
             {objectives.map(o => (
-              <div key={o.id} className="flex items-center gap-3">
-                <Chip tone={o.status === 'blocked' ? 'warn' : 'info'}>{o.status.replace(/_/g, ' ')}</Chip>
-                <span className="text-sm text-dt-body flex-1">{o.title}</span>
-                <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
-                <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
-                  className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
-                {/* This list is already filtered to open | in_progress | blocked
-                    (the statuses de_objectives can actually hold while live), so
-                    every row gets the Done brake. */}
-                <button onClick={() => void handleCloseObjective(o)}
-                  className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
+              <div key={o.id} className="space-y-1">
+                <div className="flex items-center gap-3">
+                  {/* Tone semantics are fixed (docs/design-system.md): danger =
+                      blocked, warn = needs a human. This row used to render a
+                      blocked goal as warn while the board rendered the same fact
+                      as danger — with a stall chip alongside, warn had to mean
+                      exactly one thing, so the drifted one is corrected here. */}
+                  <Chip tone={o.status === 'blocked' ? 'danger' : o.status === 'in_progress' ? 'info' : 'neutral'}>{o.status.replace(/_/g, ' ')}</Chip>
+                  {o.attention_flag && (
+                    <Chip tone="warn">{attentionLabel(o)}</Chip>
+                  )}
+                  <span className="text-sm text-dt-body flex-1">{o.title}</span>
+                  <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
+                  {o.attention_flag && (
+                    <button onClick={() => setWakesOpen(w => ({ ...w, [o.id]: !w[o.id] }))}
+                      className="text-[10px] text-dt-faint hover:text-amber-300">
+                      {wakesOpen[o.id] ? 'Hide check-ins' : 'Why?'}
+                    </button>
+                  )}
+                  <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
+                    className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
+                  {/* This list is already filtered to open | in_progress | blocked
+                      (the statuses de_objectives can actually hold while live), so
+                      every row gets the Done brake. */}
+                  <button onClick={() => void handleCloseObjective(o)}
+                    className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
+                </div>
+                {o.attention_flag && wakesOpen[o.id] && <ObjectiveCheckIns objectiveId={o.id} />}
               </div>
             ))}
           </div>

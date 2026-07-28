@@ -5,7 +5,15 @@
 import { supabase } from '../supabase';
 
 export interface MemoryRow { id: string; content: string; kind: string; subject_kind: string; subject_ref: string | null; salience: number; created_at: string }
-export interface ObjectiveRow { id: string; title: string; status: string; priority: number; due_at: string | null; created_at: string }
+/** attention_* are written by de_stall_sweep_internal (mig 485) every 15 minutes
+ *  and cleared only when a human decision resumes the work. wake_count is a
+ *  LIFETIME counter — it long predates the wake store, so it is legitimate to
+ *  say "woke 122 times" but never "122 notes". */
+export type AttentionFlag = 'stalled' | 'waiting_too_long' | 'wake_spin';
+export interface ObjectiveRow { id: string; title: string; status: string; priority: number; due_at: string | null; created_at: string; attention_flag: AttentionFlag | null; attention_since: string | null; wake_count: number; next_wake_at: string | null }
+/** One check-in on a long-running goal: the employee's own account of where it
+ *  got to, written by conclude_objective_wake (mig 482). */
+export interface ObjectiveWakeRow { id: string; objective_id: string; wake_no: number; started_at: string; concluded_at: string | null; assessment: 'achieved' | 'blocked' | 'continue' | null; note: string; enqueued_count: number; open_item_count: number; done_item_count: number; source_category: string | null }
 export interface WorkItemRow { id: string; title: string; kind: string; status: string; scheduled_for: string; attempts: number; last_error: string | null; result: Record<string, unknown> | null; created_at: string; depends_on: string | null }
 export interface TraceRow { id: string; run_ref: string | null; run_kind: string; seq: number; thought: string | null; tool: string | null; inputs: Record<string, unknown> | null; outputs: Record<string, unknown> | null; created_at: string }
 export interface ExceptionRow { id: string; situation: string; proposed_action: string; justification: string; status: string; outcome: string | null; learned: boolean; created_at: string }
@@ -26,10 +34,28 @@ export const getDeMemory = async (deId: string, limit = 40): Promise<MemoryRow[]
 
 export const getDeObjectives = async (deId: string): Promise<ObjectiveRow[]> => {
   const { data, error } = await supabase.from('de_objectives')
-    .select('id, title, status, priority, due_at, created_at')
+    .select('id, title, status, priority, due_at, created_at, attention_flag, attention_since, wake_count, next_wake_at')
     .eq('de_id', deId).order('created_at', { ascending: false }).limit(50);
   if (error) throw error;
   return (data ?? []) as ObjectiveRow[];
+};
+
+/** The employee's own check-in log for one goal.
+ *
+ *  Reads de_objective_wakes directly: both its policies mirror de_objectives
+ *  (tenant match AND can_access_de), so the feed inherits the two-axes DE
+ *  scoping and cannot leak an unassigned employee's notes. Covered exactly by
+ *  de_objective_wakes_obj_idx (objective_id, wake_no DESC).
+ *
+ *  Expect this to be EMPTY for older goals: the store only began recording with
+ *  mig 482, while flagged objectives carry wake counts accumulated long before
+ *  it existed. That is an honest empty state, not "nothing happened". */
+export const getObjectiveWakes = async (objectiveId: string, limit = 10): Promise<ObjectiveWakeRow[]> => {
+  const { data, error } = await supabase.from('de_objective_wakes')
+    .select('id, objective_id, wake_no, started_at, concluded_at, assessment, note, enqueued_count, open_item_count, done_item_count, source_category')
+    .eq('objective_id', objectiveId).order('wake_no', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []) as ObjectiveWakeRow[];
 };
 
 // Tenant-wide "who is mid-task right now" for the Command Centre strip —

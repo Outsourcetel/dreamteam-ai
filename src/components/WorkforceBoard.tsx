@@ -142,9 +142,27 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
                       : <span className="text-dt-muted text-xs">nothing scheduled — works when spoken to</span>}
                   </td>
                   <td className="py-2.5 pr-3">
-                    {r.waiting_on_you > 0 && <Chip tone="warn">waits on you ×{r.waiting_on_you}</Chip>}
-                    {r.blocked_objectives > 0 && <Chip tone="danger">{r.blocked_objectives} blocked</Chip>}
-                    {r.waiting_on_you === 0 && r.blocked_objectives === 0 && <span className="text-dt-muted text-xs">—</span>}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {r.waiting_on_you > 0 && <Chip tone="warn">waits on you ×{r.waiting_on_you}</Chip>}
+                      {r.blocked_objectives > 0 && <Chip tone="danger">{r.blocked_objectives} blocked</Chip>}
+                      {/* What this ADDS over "N blocked" is TIME. A goal can be
+                          blocked for three minutes or three days and the danger
+                          chip reads identically; the stall sweep is the only
+                          thing that knows which. It also carries the case the
+                          board cannot otherwise show at all — a goal reporting
+                          itself in_progress while nothing moves.
+                          (An earlier version gated this on
+                          needs_attention > blocked_objectives, which compares
+                          two different sets: with 5 flagged and 6 blocked it
+                          rendered nothing. Verified against live data.) */}
+                      {r.needs_attention > 0 && (
+                        <Chip tone="warn">
+                          {r.needs_attention} need{r.needs_attention === 1 ? 's' : ''} you
+                          {r.attention_oldest_since ? ` · since ${fmtWhen(r.attention_oldest_since)}` : ''}
+                        </Chip>
+                      )}
+                      {r.waiting_on_you === 0 && r.blocked_objectives === 0 && r.needs_attention === 0 && <span className="text-dt-muted text-xs">—</span>}
+                    </div>
                   </td>
                   <td className="py-2.5 text-right text-dt-body">{r.done_today > 0 ? r.done_today : <span className="text-dt-muted text-xs">0</span>}</td>
                 </tr>
