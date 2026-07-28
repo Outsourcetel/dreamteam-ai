@@ -171,7 +171,11 @@ already a standalone win for non-bundle customers.
 
 ---
 
-## 4. Pricing sketch (founder to bless numbers)
+> **D3 LOCKED 2026-07-28: pricing DEFERRED to G2.** The numbers below stand as an
+> illustrative sketch only — no price is committed. Per-tenant COGS is tracked from S1 so
+> the G2 pricing decision runs on observed cost, not a guess.
+
+## 4. Pricing sketch (illustrative only — D3 deferred to G2)
 
 **COGS per bundle customer:** Frappe Cloud Medium $25/mo (recommended for real books;
 Small $10/mo viable for tiny customers) − partner discount later. Plus marginal support.
@@ -209,15 +213,23 @@ Naming stays trademark-compliant: "DreamTeam SMB Suite — managed ERP powered b
 
 ---
 
-## 6. Founder decisions requested
+## 6. Founder decisions — LOCKED 2026-07-28
 
-| # | Decision | Recommendation |
+| # | Decision | **Ruling** |
 |---|---|---|
-| D1 | Approve phasing (1a→1b→1c→2→3, 4a with 3, 4b deferred) | Yes as laid out |
-| D2 | Canonical ERP landing zone | `renewal_invoices` + `customer_accounts`; `invoices` unification filed as debt |
-| D3 | Bundle price point | $99/mo flat Managed-ERP add-on (Medium plan COGS) |
-| D4 | Pursue Frappe partner tier (2 certifications — who?) | Yes, after first 5 bundle customers |
-| D5 | Green-light Phase 1a+1b now (serves BYO-ERP customers regardless of bundle) | Yes |
+| D1 | Program shape (7 tracks / 4 gates, §7) | **APPROVED** — start to G1; each later gate still needs an explicit founder go |
+| D2 | Canonical ERP landing zone | **`renewal_invoices` + `customer_accounts`** — workforce live day one; `invoices` unification = debt (B4) |
+| D3 | Bundle price point | **DEFERRED to G2** — no number committed; unit economics tracked from S1 so the G2 decision runs on real COGS, not a guess |
+| D4 | Frappe partner tier | **After first 5 bundle sites** — no upfront cost; certs when volume justifies the discount |
+| D5 | Green-light Phase 1 (connector spine, serves BYO-ERP regardless of bundle) | **GO** — S1 authorized |
+
+**Still open (do not block S1 code, but gate their milestones):**
+- **Design partners** — 2–3 named from the fresh-tenant prospect list. Gates G2 entry, not G1.
+- **G0 field-verification** (needs a live target): a dev ERPNext site + Frappe Cloud
+  access must exist before S1's *exit proof* can be observed (R3 forbids proving against
+  a mock). Founder provisions the site / grants access — account creation and credential
+  entry stay with the founder per the safety boundary. Token-auth mechanics + trademark
+  naming get re-verified against that live site as S1's first act.
 
 ## 7. Program roadmap v2 — full depth (2026-07-28; supersedes the §3 estimates)
 
@@ -513,15 +525,15 @@ Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2
 Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
 `in-progress`, `proven-live`}. Source of truth for "applied" is always the ledger row.
 
-| Track | Packages | State (2026-07-28) |
+| Track | Packages | State (2026-07-28, post-lock) |
 |---|---|---|
-| A connector platform | A1–A6 | blocked-on-G0 |
-| B data plane + drift | B1–B5 | blocked-on-G0 |
-| C staffing | C1–C4 | blocked-on-G0 |
-| D provisioning + lifecycle | D1–D5 | blocked-on-G0 |
-| E governance | E1–E4 | blocked-on-G0 |
-| F experience | F1–F4 | blocked-on-G0 |
-| G commercial + support | G1–G4 | blocked-on-G0 |
+| A connector platform | A1–A6 | **ready** — S1 code may start; exit proof pending dev ERPNext site |
+| B data plane + drift | B1–B5 | **ready after A1** — landing zone locked (D2 = renewal_invoices) |
+| C staffing | C1–C4 | blocked — entry after A3 |
+| D provisioning + lifecycle | D1–D5 | blocked — G2/G3 milestone |
+| E governance | E1–E4 | **ready after A3** |
+| F experience | F1–F4 | blocked — entry after B2 |
+| G commercial + support | G1–G4 | blocked — pre-G3; price deferred to G2 (D3) |
 
 ### 8.7 Risk register → control mapping
 
