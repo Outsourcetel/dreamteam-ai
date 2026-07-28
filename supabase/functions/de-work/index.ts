@@ -118,7 +118,101 @@ async function operableSystemsBriefing(admin: SupabaseClient, deId: string): Pro
   } catch { return ''; }
 }
 
+/** Compile the role's SOP into work items, when the SOP is an actual procedure.
+ *
+ *  THE DEFECT THIS CLOSES. There were two engines that never spoke.
+ *  playbook-execute owns a real 20-primitive interpreter but knows nothing
+ *  about objectives, cases, agreements or work items. de-work owns the
+ *  grounded desk, the tools and the gates — but consumed the SOP only as
+ *  FLATTENED PROSE inside a planner prompt and then invented its own steps with
+ *  an LLM. So no step in any published playbook could ever cause an employee to
+ *  call a tool, every role SOP across all 12 archetypes was 100% prose (61
+ *  steps, 0 executable), and two identical cases ran differently and stalled in
+ *  different places.
+ *
+ *  A published procedure should be FOLLOWED, not re-imagined per case. Where a
+ *  step declares `kind:'use_tool'` it compiles straight into a work item; the
+ *  employee still exercises judgment INSIDE the step, but the shape of the
+ *  motion, its order and its dependencies are the operator's, not the model's.
+ *
+ *  Returns 0 when the role has no executable SOP, so the LLM planner remains
+ *  the fallback for every role that has not been authored yet. */
+async function compileSopToWorkItems(
+  admin: SupabaseClient,
+  obj: { id: string; tenant_id: string; de_id: string; title: string; description: string },
+): Promise<number> {
+  const { data: defs } = await admin.from('playbook_definitions')
+    .select('id, status, steps')
+    .eq('tenant_id', obj.tenant_id).eq('de_id', obj.de_id).eq('status', 'published')
+    .limit(5);
+  const rows = (defs ?? []) as Array<{ steps: unknown }>;
+  type SopStep = { key?: string; kind?: string; title?: string; detail?: string; tool?: string; work_kind?: string };
+  let steps: SopStep[] = [];
+  for (const r of rows) {
+    const s = Array.isArray(r.steps) ? (r.steps as SopStep[]) : [];
+    if (s.some((x) => x?.kind === 'use_tool')) { steps = s; break; }
+  }
+  // Only the executable steps become work. Prose steps in the same SOP stay
+  // prose — they already reach the employee through its briefing.
+  const runnable = steps.filter((s) => s?.kind === 'use_tool' && (s.title || s.key));
+  if (runnable.length === 0) return 0;
+
+  let prev: string | null = null;
+  let n = 0;
+  for (let i = 0; i < runnable.length; i++) {
+    const s = runnable[i];
+    const key = String(s.key ?? `step-${i + 1}`).slice(0, 60);
+    // Annotated because the RPC's return type infers circularly here — the
+    // same shape as the two pre-existing occurrences in planObjective, fixed
+    // rather than inherited.
+    const { data: newId, error: enqErr }: { data: string | null; error: { message: string } | null } =
+      await admin.rpc('enqueue_de_work_item', {
+      p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
+      p_title: String(s.title ?? key).slice(0, 200),
+      p_kind: ['act', 'check', 'follow_up'].includes(String(s.work_kind)) ? s.work_kind : 'act',
+      p_scheduled_for: new Date().toISOString(), p_objective_id: obj.id, p_seq: i + 1,
+      p_depends_on: prev,
+      p_payload: {
+        // Every compiled step gets the same terminator. Found by running the
+        // first real SOP: a step whose work is judgment rather than a tool call
+        // produced a perfectly good answer, never called mark_done, and was
+        // correctly caught by the completion-integrity path as an unfinished
+        // question — which then blocked every step behind it. Relying on each
+        // SOP author to remember this would guarantee it recurs, so the
+        // compiler appends it rather than the procedure carrying it.
+        detail: String(s.detail ?? '').slice(0, 2000)
+          + '\n\nWhen this step is done, call mark_done with a one-line summary of what you established or produced. If you genuinely cannot complete it, call escalate_to_human instead — do not simply reply with text.',
+        // Named so the step's own instruction can say which tool finishes it.
+        // The employee still decides HOW; the procedure decides WHAT and WHEN.
+        sop_step: key,
+        sop_tool: s.tool ?? null,
+      },
+      // Distinct from the planner's key, so a role that gains an SOP after an
+      // improvised plan cannot collide with its own earlier steps.
+      p_idempotency_key: `sop-${obj.id}-${key}`,
+      p_max_attempts: 3,
+    });
+    if (enqErr) { console.error('compileSopToWorkItems enqueue:', enqErr.message); break; }
+    prev = (newId as string | null) ?? prev;
+    n++;
+  }
+  if (n === 0) return 0;
+
+  await admin.rpc('set_de_objective_status', { p_id: obj.id, p_status: 'in_progress' });
+  await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', obj.id);
+  await admin.from('de_decision_trace').insert({
+    tenant_id: obj.tenant_id, de_id: obj.de_id, run_kind: 'work_item', run_ref: obj.id, seq: 0,
+    tool: 'compile_sop', outputs: { steps: runnable.map((s) => s.key ?? s.title), source: 'published_sop' },
+  });
+  return n;
+}
+
 async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id: string; de_id: string; title: string; description: string }): Promise<number> {
+  // A published procedure wins over an invented one. Only when the role has no
+  // executable SOP does the model decompose the goal itself.
+  const compiled = await compileSopToWorkItems(admin, obj);
+  if (compiled > 0) return compiled;
+
   // The employee's SOP + guardrails (operator config) shape the plan — without
   // this the planner decomposes the goal blind to the role's procedure (EXEC-2).
   const brief = await deBriefing(admin, obj.de_id, `${obj.title}\n${obj.description ?? ''}`);
@@ -365,7 +459,7 @@ async function callConsultSpecialist(
   }
 }
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>, entityName?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -487,6 +581,32 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       });
       if (error) return { result: { error: `write-back failed: ${error.message}` } };
       return { result: data };
+    }
+    case 'read_contacts': {
+      if (!ctxAccountForContacts) return { result: { error: 'no customer resolved for this case' } };
+      const wanted = typeof input.role === 'string' ? input.role.trim() : '';
+      const base = admin.from('customer_account_contacts')
+        .select('first_name, last_name, title, department, email, phone, mobile, role, is_primary')
+        .eq('tenant_id', tenantId).eq('account_id', ctxAccountForContacts);
+      // Built in one expression: the query-builder's type changes after .eq(),
+      // so reassigning it is a type error rather than a style choice.
+      const { data, error } = await (wanted
+        ? base.eq('role', wanted).order('is_primary', { ascending: false }).limit(25)
+        : base.order('is_primary', { ascending: false }).limit(25));
+      if (error) return { result: { error: `could not read contacts: ${error.message}` } };
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      // An empty book is a real answer, not a lookup failure — say which it is
+      // so the employee escalates for a person rather than for access.
+      if (rows.length === 0) {
+        return { result: { contacts: [], note: wanted
+          ? `No contact is recorded in the ${wanted} role for this customer. Escalate to ask who it should be; do not guess.`
+          : 'No contacts are recorded for this customer. Escalate to ask who receives this; do not guess.' } };
+      }
+      return { result: { contacts: rows.map((c) => ({
+        name: `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim(),
+        title: c.title, department: c.department, email: c.email,
+        phone: c.phone ?? c.mobile, role: c.role, primary: c.is_primary === true,
+      })) } };
     }
     case 'write_back_to_case': {
       // The employee's OWN case desk. Same close-the-loop, same gate, keyed on
@@ -638,7 +758,7 @@ const ENTITY_DESKS: Record<string, EntityDesk> = {
   },
   commercial_agreement: {
     table: 'commercial_agreements', label: 'Agreement',
-    fields: ['counterparty_name', 'title', 'agreement_type', 'party_side', 'status', 'auto_renew',
+    fields: ['counterparty_name', 'title', 'agreement_type', 'party_side', 'status', 'auto_renew', 'account_id',
       'notice_period_days', 'baseline_value_cents', 'currency', 'start_date', 'end_date',
       'renewal_date', 'notice_deadline', 'cancellation_deadline', 'pricing_notice_deadline', 'attributes'],
     nameFields: ['counterparty_name', 'title'],
@@ -737,6 +857,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let oppRef: string | null = null;
   let entityRef: string | null = null;    // the case's own record id, whatever kind it is
   let caseFacet = false;                  // this objective has a continuity case desk it can write to
+  let contactAccountRef: string | null = null;   // the customer whose contacts this case may read
   let entityName: string | null = null;   // human-readable NAME — the Experience ledger keys on names, not UUIDs
   let accountContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
@@ -766,6 +887,11 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         .select(desk.fields.join(',')).eq('id', ref).eq('tenant_id', tenantId).maybeSingle();
       if (rec) {
         const row = rec as unknown as Record<string, unknown>;
+        // The customer on the contract itself. The continuity facet usually
+        // carries this, but a case opened without one would otherwise leave the
+        // employee able to read the agreement and still unable to name anyone —
+        // the exact failure this wave exists to close. Facet wins if present.
+        if (!contactAccountRef && typeof row.account_id === 'string') contactAccountRef = row.account_id;
         entityName = (desk.nameFields.map((f) => row[f]).find((v) => typeof v === 'string' && v) as string) ?? null;
         accountContext = `\n\n${desk.label} record on file — ${entityName ?? desk.label}: ${renderRecord(desk, row)}.`
           + ` These are the real facts for this ${desk.label.toLowerCase()} — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
@@ -787,10 +913,16 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       // desk keyed on the objective, holding stage / forecast / next step).
       if (desk.caseTable) {
         const { data: facet } = await admin.from(desk.caseTable)
-          .select('motion, stage_key, next_step, next_step_date, baseline_cents, forecast_cents, risk_level')
+          .select('motion, stage_key, next_step, next_step_date, baseline_cents, forecast_cents, risk_level, account_id')
           .eq('objective_id', objectiveId).maybeSingle();
         if (facet) {
           caseFacet = true;
+          // The customer behind the contract (mig 506 links them). This is what
+          // makes read_contacts reachable on an agreement case — without it the
+          // employee can read the contract and still not know who to write to,
+          // which is the exact question it asked: "Who on the Meridian Group
+          // team should receive this outreach?"
+          contactAccountRef = ((facet as Record<string, unknown>).account_id as string) ?? null;
           const f = facet as Record<string, unknown>;
           const bits = Object.entries(f)
             .filter(([, v]) => v !== null && v !== undefined && v !== '')
@@ -979,6 +1111,23 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       }, required: ['op'] },
     });
   }
+  // WHO to write to. The contact book was a stub with no name, title or email
+  // and no writer at all until mig 507 — which is why an employee that could
+  // read a contract still asked "Who on the Meridian Group team should receive
+  // this outreach?" and had to stop. Offered wherever the case resolves to a
+  // customer: directly for an account case, or through the agreement's linked
+  // account for a contract case (mig 506).
+  const contactsFor = accountRef ?? contactAccountRef;
+  if (contactsFor) {
+    motionTools.push({
+      name: 'read_contacts',
+      description: "Look up the people at this customer — who signs, who pays, who runs it day to day. Use this BEFORE drafting any outreach so it is addressed to a named person in the right role. Returns the primary contact first. If the person you need is not listed, say so and escalate rather than inventing a name or address.",
+      input_schema: { type: 'object', properties: {
+        role: { type: 'string', description: 'optional — narrow to one role: decision_maker, economic_buyer, billing, technical, exec_sponsor, day_to_day, procurement, legal' },
+      }, required: [] },
+    } as unknown as typeof TOOLS[number]);
+  }
+
   // The CASE desk. propose_continuity_writeback has existed and been fully
   // gated for some time, with exactly one caller: a human clicking in the
   // Continuity page. The employee whose case it is could not reach it — so the
@@ -1081,7 +1230,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets, entityName);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets, entityName, contactsFor);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
