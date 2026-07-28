@@ -619,6 +619,57 @@ intentions:
 | Suspension gap recurrence | D4 extends mig-430 dormancy to the ERP site — tested at G2, not assumed |
 
 
+## 9. SoR alternatives — performance re-evaluation (researched 2026-07-28)
+
+Prompted by an ERPNext performance concern. First, an honest confound: everything
+was proven on a **Frappe Cloud trial** (cheapest shared tier) — near the worst case
+for ERPNext, whose stack is heavy (Python + MariaDB + Redis + workers + socketio). The
+perceived slowness may be the *deployment*, not the software; a fair test wants a
+dedicated instance. Regardless, the free alternatives, verified against OUR criteria
+(complete free accounting · true open-source/ownable · clean REST for our connector ·
+light stack · provisionable):
+
+| Option | License | API shape | Fit | Verdict |
+|---|---|---|---|---|
+| **Dolibarr** | **GPL-3+** | REST, `DOLAPIKEY` header; `/invoices`, `/thirdparties`, `/payments`; Swagger explorer | complete free ERP/CRM, light PHP, official Docker (amd64+arm64) | **Top pick.** ⚠ accounting/GL API thinner than invoicing (AR is well-covered); webhooks unconfirmed (we poll anyway) |
+| **Tryton** | GPL-3+ | **JSON-RPC / XML-RPC first** (REST only via a stale community add-on) | strongest double-entry accounting; Python 3-tier (lighter than Frappe, heavier than PHP) | Good if accounting depth is paramount, but the RPC-first API is a different adapter shape |
+| **Akaunting** | **BSL** (→ GPLv3 after 4 yrs) | REST CRUD, but thin docs; Laravel | lightest for finance-only | ⚠ **BSL is source-available, NOT open-source** — restricts hosted/reseller use. Fails the "customer owns a free open instance" invariant without legal review. Correction to an earlier verbal "GPL core." |
+| ERPNext (incumbent) | GPL-3 | REST `/api/resource/{DocType}` (proven) | complete, proven live | keep pending a fair perf test on real hardware |
+
+**Dolibarr port sketch — what actually changes.** Because the connector was built
+provider-generic on purpose (R6, "no erpnext in the schema"), the surrounding machinery
+**ports unchanged**:
+- REUSED as-is: the AR ingest (`upsert_external_ar_record`, mig 517), the drift sentinel
+  (`erp_ar_mirror_totals` + `dispatch_erp_reconcile_internal` + `reconcile_financials`,
+  mig 521 — the dispatcher already loops `provider <> 'template'` erp_financials
+  connectors), the `{{invoice.external_ref}}` bridge (mig 110fbde), the autonomous dunning
+  playbook + `connector_action` resolution (mig 526 — resolves the tenant's erp_financials
+  connector regardless of provider), the whole governance/gate/approval path.
+- NET-NEW (the port): a `dolibarr` adapter object in connector-hub (test/search/fetch/
+  listRecent/syncFinancials + a `dolibarr_invoice_note` write executor — Dolibarr's
+  equivalent of the ERP comment is an invoice note or a linked agenda event); field
+  mapping (`ref`→external_ref, `socid`→customer, `total_ttc`→amount×100,
+  `date_lim_reglement`→due_date, `paye`/`statut`→status); a provider-check widen migration
+  (mig-514 shape); platform-scope `action_definitions` for dolibarr (mig-520 shape); a
+  `PROVIDERS`/icon entry.
+
+**Effort to Dolibarr parity: ~2 sessions** (vs the ~6–8 the ERPNext path took), because
+only the adapter + registration are new — ingest, drift, gate, and the autonomous chain
+are already generic and proven. Needs a dev Dolibarr (Docker, ~15 min).
+
+**Recommendation.** (1) Rule out the trial-tier confound with one honest ERPNext perf
+test on a dedicated box before abandoning it. (2) In parallel, **evaluate Dolibarr** — it
+is the cleanest free + open + light + REST-shaped fit, and the port is cheap. (3) Drop
+Akaunting as an *anchor* (BSL); it could only be a connector after legal review.
+(4) Tryton only if accounting depth outweighs the RPC-first API cost. The bundle can even
+support BOTH ERPNext and Dolibarr as selectable anchors — same generic machinery.
+
+Sources: Dolibarr REST API (wiki.dolibarr.org Module_Web_Services_API_REST; deepwiki
+Dolibarr/dolibarr) · Dolibarr license + Docker (github.com/Dolibarr/dolibarr;
+hub.docker.com/r/dolibarr/dolibarr) · Akaunting API + license (akaunting.com/hc/docs/
+developers/restful-api; akaunting.com/license) · Tryton license + API (tryton.org;
+github.com/openlabs/tryton-restful).
+
 ## Sources
 - https://www.erpresearch.com/pricing/erpnext · https://frappe.io/cloud
 - https://frappe.io/partners/plans · https://frappe.io/blog/community/a-guide-to-working-with-frappe-partners
