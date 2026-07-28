@@ -613,6 +613,21 @@ export async function rerouteEscalation(taskId: string, toDeId: string, note: st
   return (data ?? {}) as { to_name?: string; dependants_freed?: number };
 }
 
+/** Clear the blockers the employee can now answer itself (mig 513).
+ *
+ *  Most of a stalled queue is not questions needing a person — it is questions
+ *  the employee asked before it had the tools, frozen at that moment. Retrying
+ *  re-queues the step under today's capabilities: it either completes, or
+ *  raises a NEW blocker describing what is actually missing now rather than
+ *  what was missing last week. Each item is retried once; a step that fails a
+ *  fair retry is a genuine human decision and stays in the queue. */
+export async function retryAnswerableBlockers(): Promise<{ retried: number; already_retried_left_alone: number }> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('retry_answerable_blockers', { p_tenant_id: tid, p_limit: 100 });
+  if (error) raise('retryAnswerableBlockers', error);
+  return (data ?? { retried: 0, already_retried_left_alone: 0 }) as { retried: number; already_retried_left_alone: number };
+}
+
 export async function listOpenStalenessEscalations(): Promise<Map<string, StalenessEscalation>> {
   const tid = await requireTenantId();
   const { data, error } = await supabase

@@ -5,7 +5,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers } from '../../../lib/customerApi';
 import type { BlockedWork } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
@@ -280,6 +280,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [rerouteTo, setRerouteTo] = useState('');
   const [rerouteNote, setRerouteNote] = useState('');
   const [colleagues, setColleagues] = useState<{ id: string; name: string }[]>([]);
+  const [retrying, setRetrying] = useState(false);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
   // docs/34 — approve WITH EDITS. The correction is the valuable half of the
   // learning loop: it produces an (original, corrected) pair written by the
   // person who knows, at the moment of work. Held as the proposal actually
@@ -383,6 +385,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     void getImprovementReviewSignals(sel.related_id).then(s => { if (!cancelled) setImpSignals(s); }).catch(() => { /* signals stay hidden — absence means untagged, not safe */ });
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
+
+  const doRetry = async () => {
+    setRetrying(true); setRetryNote(null); setError(null);
+    try {
+      const res = await retryAnswerableBlockers();
+      await refresh();
+      // Say what happened either way — a silent no-op reads as a broken button.
+      setRetryNote(res.retried > 0
+        ? `Retried ${res.retried} blocker${res.retried === 1 ? '' : 's'}. They will either finish on their own or come back with a sharper question.`
+        : 'Nothing to retry — everything left in this queue has already had a fair attempt and needs a person.');
+    } catch (err) {
+      setError((err as Error)?.message || 'Could not retry these blockers.');
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const doReroute = async () => {
     if (!selected || !rerouteTo || !rerouteNote.trim()) return;
@@ -544,6 +562,28 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               </div>
             ))}
           </div>
+
+          {/* mig 513. Most of a stalled queue is not work for a person: it is
+              questions the employee asked before it had the tools, frozen at
+              that moment. Measured here: 45 of 61 predated the capability that
+              answers them. Retrying cleared 31 in one pass — one completed
+              itself ("receivables books are clear"), one came back with a
+              sharper question naming exactly what was missing. */}
+          {scope !== 'chat' && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-dt-border bg-dt-inset px-4 py-2.5">
+              <p className="text-[13px] text-dt-muted">
+                Some of these were raised before the employee had what it asked for. Retrying lets them try again
+                — they either finish, or come back with a sharper question.
+              </p>
+              <button
+                onClick={() => void doRetry()}
+                disabled={retrying}
+                className="shrink-0 rounded-lg border border-dt-border-strong px-3 py-1.5 text-xs font-medium text-dt-body transition-colors hover:text-dt-title disabled:opacity-50">
+                {retrying ? 'Retrying…' : 'Retry what they can now answer'}
+              </button>
+            </div>
+          )}
+          {retryNote && <p className="mb-3 text-[12px] text-dt-support">{retryNote}</p>}
 
           {/* N4: one queue, opened on the work. TabBar rather than another
               hand-rolled pill strip — the design system names it as the filter
