@@ -9,9 +9,9 @@ import { fmtWhen } from '../../components/WorkforceBoard';
 import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
-  getOutcomeMetering, getDeWorkMetrics,
+  getOutcomeMetering, getDeWorkMetrics, getDeContractMetrics,
   type DePerformanceMetrics, type DeInquiryMetrics, type DeCostMetrics, type DeCsatMetrics, type DeActionMetrics,
-  type DeWorkMetrics,
+  type DeWorkMetrics, type DeContractMetric,
 } from '../../lib/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useEmployeeFileDeId, EMPLOYEE_FILE_PATH } from '../../lib/employeeFileRoute';
@@ -446,6 +446,7 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
   const [resolutions, setResolutions] = useState<{ resolutions: number; escalations: number } | null>(null);
   const [outputs, setOutputs] = useState<{ items_done: number; deliverables: number } | null>(null);
   const [work, setWork] = useState<DeWorkMetrics | null>(null);
+  const [contract, setContract] = useState<DeContractMetric[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -459,10 +460,12 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
       getOutcomeMetering(tenantId, range),
       countDeOutputs(de.id, range).catch(() => ({ items_done: 0, deliverables: 0 })),
       getDeWorkMetrics(tenantId),
-    ]).then(([m, iq, c, s, a, om, outs, wk]) => {
+      getDeContractMetrics(tenantId, de.id),
+    ]).then(([m, iq, c, s, a, om, outs, wk, ct]) => {
       if (cancelled) return;
       setPerf(m.find(x => x.de_id === de.id) ?? null);
       setWork(wk.find(x => x.de_id === de.id) ?? null);
+      setContract(ct);
       setInquiry(iq.find(x => x.de_id === de.id) ?? null);
       setCost(c.find(x => x.de_id === de.id) ?? null);
       setCsat(s.find(x => x.de_id === de.id) ?? null);
@@ -520,6 +523,51 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
         <StatTile label="Actions executed" value={String(actions?.executed ?? 0)} sub={actions ? `${actions.sent_to_human} sent to a human` : undefined} tone="ok" />
         <StatTile label="AI cost" value={cost ? `$${cost.total_cost_usd.toFixed(2)}` : '$0.00'} sub={cost ? `${cost.total_calls} calls` : undefined} tone="neutral" />
       </div>
+
+      {/* What good work MEANS for this role (mig 502, founder decision D3).
+          Sits above the generic work counts because it is the scorecard; the
+          counts below are the raw activity behind it. Rendered only for an
+          employee whose role has a contract — 94 of 116 employees platform-wide
+          have no archetype, and a generic scorecard for them would be invented. */}
+      {contract.length > 0 && (
+        <PanelCard title={`What good work means for ${de.name}`}>
+          <div className="space-y-3">
+            {(['primary', 'secondary'] as const).map(tier => {
+              const rows = contract.filter(m => m.tier === tier);
+              if (rows.length === 0) return null;
+              return (
+                <div key={tier}>
+                  <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1.5">{tier}</p>
+                  <div className="space-y-1.5">
+                    {rows.map(m => (
+                      <div key={m.metric_key} className="flex items-baseline gap-3">
+                        <span className="text-sm text-dt-body flex-1">{m.label}</span>
+                        {m.measurable ? (
+                          <span className="text-sm font-semibold text-dt-title">
+                            {m.unit === 'cents' ? `$${Math.round((m.value ?? 0) / 100).toLocaleString('en-US')}`
+                              : m.unit === 'percent' ? `${m.value}%`
+                              : String(m.value ?? 0)}
+                            {m.target !== null && <span className="text-[11px] text-dt-faint font-normal"> / target {m.unit === 'percent' ? `${m.target}%` : m.target}</span>}
+                          </span>
+                        ) : (
+                          // Never a number here. A zero would say the employee
+                          // failed at something nothing has ever attempted.
+                          <Chip tone="neutral">Not measured</Chip>
+                        )}
+                      </div>
+                    ))}
+                    {rows.filter(m => !m.measurable).map(m => (
+                      <p key={`${m.metric_key}-why`} className="text-[11px] text-dt-muted pl-1">
+                        {m.label}: {m.unmeasurable_because}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </PanelCard>
+      )}
 
       {/* Work-shaped performance (mig 499/500). The tiles above are computed
           over answered inquiries — a queue employee produces none of that

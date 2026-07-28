@@ -1135,6 +1135,26 @@ export interface DeWorkMetrics {
   wakes_recorded: number; wakes_concluded_blocked: number;
 }
 
+/** What good work means for THIS employee's role (mig 502, founder decision D3).
+ *
+ *  Each metric carries `measurable` and, when false, a plain-language reason.
+ *  That is the point rather than a detail: most of the renewal contract cannot
+ *  be computed yet — no renewal has ever been closed in this platform — and
+ *  rendering 0% would tell a manager the employee missed every renewal. Never
+ *  render a value when measurable is false; render the reason. */
+export interface DeContractMetric {
+  metric_key: string; tier: 'primary' | 'secondary'; label: string;
+  unit: 'cents' | 'percent' | 'count' | 'unknown';
+  value: number | null; target: number | null;
+  measurable: boolean; unmeasurable_because: string | null;
+}
+
+export const getDeContractMetrics = async (tenantId: string, deId: string): Promise<DeContractMetric[]> => {
+  const { data, error } = await supabase.rpc('get_de_contract_metrics', { p_tenant_id: tenantId, p_de_id: deId });
+  if (error) { console.error('getDeContractMetrics:', error.message); return []; }
+  return (data ?? []) as DeContractMetric[];
+};
+
 export const getDeWorkMetrics = async (tenantId: string, weeks = 26): Promise<DeWorkMetrics[]> => {
   const { data, error } = await supabase.rpc('get_de_work_metrics', { p_tenant_id: tenantId, p_weeks: weeks });
   if (error) { console.error('getDeWorkMetrics:', error.message); return []; }
