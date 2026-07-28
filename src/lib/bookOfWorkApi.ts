@@ -8,8 +8,18 @@
 // new match — never twice for the same occurrence.
 import { supabase } from '../supabase';
 import { requireTenantId } from './liveShared';
+import { KIND_TAKES_RESPONSE_WINDOW, readResponseWindow, describeResponseWindow } from './responseWindow';
 
 export type WatcherKind = 'inbox' | 'date_horizon' | 'state_condition' | 'metric_threshold' | 'schedule';
+
+// The response window lives in its own pure module so it can be unit-tested
+// without pulling in the Supabase client. Re-exported here because this is
+// where callers already look for everything watcher-shaped.
+export {
+  RESPONSE_UNITS, KIND_TAKES_RESPONSE_WINDOW, readResponseWindow,
+  describeResponseWindow, responseWindowHasPassed,
+} from './responseWindow';
+export type { ResponseWindow } from './responseWindow';
 
 export interface WorkWatcher {
   id: string;
@@ -56,6 +66,26 @@ export async function createWatcher(input: {
   return data as WorkWatcher;
 }
 
+/**
+ * Change a saved watcher. Until now the only writes were create, pause and
+ * delete — so changing a response window meant deleting the watcher and losing
+ * its match history with it. The SQL validator (validate_watcher_config) runs
+ * on this update exactly as it does on insert, so a bad window is refused here
+ * too rather than only in the create form.
+ */
+export async function updateWatcher(
+  id: string,
+  patch: { label?: string; config?: Record<string, unknown> },
+): Promise<void> {
+  const tid = await requireTenantId();
+  const fields: Record<string, unknown> = {};
+  if (patch.label !== undefined) fields.label = patch.label.trim();
+  if (patch.config !== undefined) fields.config = patch.config;
+  if (Object.keys(fields).length === 0) return;
+  const { error } = await supabase.from('work_watchers').update(fields).eq('id', id).eq('tenant_id', tid);
+  if (error) throw new Error(friendly(error.message));
+}
+
 export async function setWatcherActive(id: string, active: boolean): Promise<void> {
   const tid = await requireTenantId();
   const { error } = await supabase.from('work_watchers').update({ active }).eq('id', id).eq('tenant_id', tid);
@@ -68,8 +98,21 @@ export async function deleteWatcher(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Turn a saved watcher's config back into one plain-language sentence. */
+/**
+ * Turn a saved watcher's config back into one plain-language sentence.
+ * The response window is appended for every kind that can carry one — a
+ * declared standard that never appears on the only screen listing watchers may
+ * as well not have been declared.
+ */
 export function describeWatcher(w: WorkWatcher): string {
+  const base = describeTrigger(w);
+  if (!KIND_TAKES_RESPONSE_WINDOW(w.kind)) return base;
+  const rw = readResponseWindow(w.config);
+  if (!rw) return `${base} · no response time set`;
+  return `${base} · ${describeResponseWindow(rw).toLowerCase()}`;
+}
+
+function describeTrigger(w: WorkWatcher): string {
   const c = w.config;
   if (w.kind === 'date_horizon') {
     const h = Array.isArray(c.horizons_days) ? (c.horizons_days as number[]).join(' / ') : '90 / 60 / 30';

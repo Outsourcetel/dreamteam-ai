@@ -6,9 +6,13 @@
 // 5-minute engine matches opens a case the employee then works.
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  listWatchers, createWatcher, setWatcherActive, deleteWatcher, describeWatcher,
+  listWatchers, createWatcher, updateWatcher, setWatcherActive, deleteWatcher, describeWatcher,
   WATCHER_KIND_META, type WorkWatcher, type WatcherKind,
 } from '../lib/bookOfWorkApi';
+import {
+  RESPONSE_UNITS, KIND_TAKES_RESPONSE_WINDOW, readResponseWindow, responseWindowHasPassed,
+  isoToLocal, buildWindow, type ResponseUnit as RwUnit,
+} from '../lib/responseWindow';
 
 const CONFIGURABLE: WatcherKind[] = ['date_horizon', 'state_condition', 'metric_threshold', 'schedule'];
 
@@ -57,6 +61,55 @@ const SCHEDULE_INTERVALS = [
   { minutes: 20160, label: 'Every 2 weeks' }, { minutes: 43200, label: 'Every ~month' },
 ];
 
+/**
+ * The service standard, in whichever unit the operator actually thinks in.
+ * Minutes and hours matter as much as days: a support-shaped condition is
+ * answered in minutes, and a recurring sweep in hours — a whole-day granularity
+ * cannot express either.
+ */
+function ResponseWindowFields({
+  unit, amount, date, onUnit, onAmount, onDate,
+}: {
+  unit: RwUnit; amount: string; date: string;
+  onUnit: (u: RwUnit) => void; onAmount: (v: string) => void; onDate: (v: string) => void;
+}) {
+  const stale = unit === 'date' && !!date && new Date(date).getTime() < Date.now();
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-xs text-dt-support flex-wrap">
+        <span>Handle it</span>
+        {unit === 'date' ? (
+          <>
+            <span>by</span>
+            <input type="datetime-local" value={date} onChange={e => onDate(e.target.value)}
+              className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5" />
+          </>
+        ) : (
+          <>
+            <span>within</span>
+            <input type="number" min={1} value={amount} onChange={e => onAmount(e.target.value)} placeholder="4"
+              className="w-20 bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5" />
+          </>
+        )}
+        <select value={unit} onChange={e => onUnit(e.target.value as RwUnit)}
+          className="bg-dt-card border border-dt-border-strong text-dt-body rounded-lg px-2 py-1.5">
+          {RESPONSE_UNITS.map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
+          <option value="date">— by a specific date</option>
+        </select>
+      </div>
+      {stale ? (
+        <p className="text-[11px] text-amber-300">
+          That date has already passed — every new case would open overdue.
+        </p>
+      ) : (
+        <p className="text-[11px] text-dt-faint">
+          Leave blank if no one has set a standard yet. Cases then carry no deadline, rather than an invented one.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function BookOfWorkPanel({ deId }: { deId: string }) {
   const [watchers, setWatchers] = useState<WorkWatcher[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +129,18 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
   const [metricKey, setMetricKey] = useState('');
   const [metricOp, setMetricOp] = useState<'gt' | 'lt'>('gt');
   const [intervalMin, setIntervalMin] = useState(10080);
+  const [rwUnit, setRwUnit] = useState<RwUnit>('days');
+  const [rwAmount, setRwAmount] = useState('');
+  const [rwDate, setRwDate] = useState('');
+
+  // Inline edit of a saved watcher's response time. Everything else about a
+  // watcher is still create-and-delete; this is the one field the founder asked
+  // to be able to change, and deleting a watcher to change it would throw away
+  // its match history and re-open every case it had already seen.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [edUnit, setEdUnit] = useState<RwUnit>('days');
+  const [edAmount, setEdAmount] = useState('');
+  const [edDate, setEdDate] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
@@ -84,7 +149,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
   }, [deId]);
   useEffect(() => { void load(); }, [load]);
 
-  const resetForm = () => { setLabel(''); setHorizons('90, 60, 30'); setField('health_score'); setOp('lt'); setValue(''); setMetricKey(''); setMetricOp('gt'); setIntervalMin(10080); };
+  const resetForm = () => { setLabel(''); setHorizons('90, 60, 30'); setField('health_score'); setOp('lt'); setValue(''); setMetricKey(''); setMetricOp('gt'); setIntervalMin(10080); setRwUnit('days'); setRwAmount(''); setRwDate(''); };
 
   const submit = async () => {
     if (!label.trim()) return;
@@ -101,11 +166,45 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
     } else if (kind === 'schedule') {
       config = { interval_minutes: intervalMin };
     }
+    if (KIND_TAKES_RESPONSE_WINDOW(kind)) {
+      const rw = buildWindow(rwUnit, rwAmount, rwDate);
+      if (rw === 'invalid') {
+        setError(rwUnit === 'date' ? 'That deadline is not a real date.' : 'Give a whole number above zero for the response time.');
+        return;
+      }
+      // Left off on purpose = no standard declared. The goal then carries no
+      // deadline, which is honest — rather than a made-up one.
+      if (rw) config.response_window = rw;
+    }
     setBusy(true); setError(null);
     try {
       await createWatcher({ deId, kind, label, config });
       setAdding(false); resetForm(); await load();
     } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  const beginEdit = (w: WorkWatcher) => {
+    const rw = readResponseWindow(w.config);
+    setEditing(w.id); setError(null);
+    if (rw?.unit === 'date') { setEdUnit('date'); setEdDate(isoToLocal(rw.at)); setEdAmount(''); }
+    else if (rw) { setEdUnit(rw.unit); setEdAmount(String(rw.amount)); setEdDate(''); }
+    else { setEdUnit('days'); setEdAmount(''); setEdDate(''); }
+  };
+
+  const saveWindow = async (w: WorkWatcher) => {
+    const rw = buildWindow(edUnit, edAmount, edDate);
+    if (rw === 'invalid') {
+      setError(edUnit === 'date' ? 'That deadline is not a real date.' : 'Give a whole number above zero for the response time.');
+      return;
+    }
+    // Clearing it removes the key rather than storing a zero — "no standard
+    // declared" has to stay distinguishable from "declared as nothing".
+    const next = { ...w.config };
+    if (rw) next.response_window = rw; else delete next.response_window;
+    setBusy(true); setError(null);
+    try { await updateWatcher(w.id, { config: next }); setEditing(null); await load(); }
+    catch (e) { setError((e as Error).message); }
     setBusy(false);
   };
 
@@ -199,6 +298,19 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
             </select>
           )}
 
+          {KIND_TAKES_RESPONSE_WINDOW(kind) && (
+            <div className="pt-1 border-t border-dt-border">
+              <ResponseWindowFields
+                unit={rwUnit} amount={rwAmount} date={rwDate}
+                onUnit={setRwUnit} onAmount={setRwAmount} onDate={setRwDate} />
+            </div>
+          )}
+          {kind === 'date_horizon' && (
+            <p className="text-[11px] text-dt-faint pt-1 border-t border-dt-border">
+              This kind already has its deadline — the date it counts down to.
+            </p>
+          )}
+
           <div className="flex items-center gap-2">
             <button onClick={() => void submit()} disabled={busy || !label.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
@@ -225,6 +337,10 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                 </span>
                 <span className="text-sm text-dt-body">{w.label}</span>
                 <div className="ml-auto flex items-center gap-2 shrink-0">
+                  {KIND_TAKES_RESPONSE_WINDOW(w.kind) && editing !== w.id && (
+                    <button onClick={() => beginEdit(w)} disabled={busy}
+                      className="text-[10px] text-dt-muted hover:text-indigo-300">response time</button>
+                  )}
                   <button onClick={() => void run(() => setWatcherActive(w.id, !w.active))} disabled={busy}
                     className="text-[10px] text-dt-muted hover:text-amber-300">{w.active ? 'pause' : 'resume'}</button>
                   <button onClick={() => void run(() => deleteWatcher(w.id))} disabled={busy}
@@ -232,6 +348,26 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                 </div>
               </div>
               <p className="text-xs text-dt-support mt-1">{describeWatcher(w)}</p>
+              {responseWindowHasPassed(readResponseWindow(w.config)) && editing !== w.id && (
+                <p className="text-[11px] text-amber-300 mt-0.5">
+                  Its deadline has passed — every new case opens overdue until this is changed.
+                </p>
+              )}
+              {editing === w.id && (
+                <div className="mt-2 rounded-lg border border-dt-border-strong bg-dt-page/70 p-2.5 space-y-2">
+                  <ResponseWindowFields
+                    unit={edUnit} amount={edAmount} date={edDate}
+                    onUnit={setEdUnit} onAmount={setEdAmount} onDate={setEdDate} />
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => void saveWindow(w)} disabled={busy}
+                      className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                      {busy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={() => { setEditing(null); setError(null); }}
+                      className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
+                  </div>
+                </div>
+              )}
               {w.last_run_at && (
                 <p className="text-[10px] text-dt-faint mt-0.5">
                   Last checked {new Date(w.last_run_at).toLocaleString()}{w.last_match_count > 0 ? ` · opened ${w.last_match_count} case(s)` : ''}
