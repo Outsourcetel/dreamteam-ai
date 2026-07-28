@@ -116,6 +116,12 @@ export interface DBHumanTask {
   decision_reason_code?: DecisionReasonCode | null;
   decision_note?: string | null;
   decision_edit?: { before: unknown; after: unknown } | null;
+  /** Which employee raised it. Needed to offer a reroute (mig 504) — the
+   *  destination list must exclude the current owner. Present since the
+   *  column was added; the select is `*`, so it always arrives. */
+  de_id?: string | null;
+  /** N4 disposition (mig 483): what the decision actually resolved to. */
+  disposition?: 'answered' | 'cancelled' | 'rerouted' | null;
 }
 
 /** Toggle one checklist item's tick state. Approve stays disabled in the
@@ -591,6 +597,20 @@ export async function getBlockedWorkForTask(task: DBHumanTask): Promise<BlockedW
     queuedBehind: count ?? 0,
     question: row.result?.needs_input ? (row.result.question ?? null) : null,
   };
+}
+
+/** N4's third disposition (mig 504): the work belongs to a different employee.
+ *
+ *  Uses the HUMAN path of the delegation primitive, so no employee-to-employee
+ *  grant is required — a person reassigning is not a DE delegating. The original
+ *  step is cancelled with a reason naming where it went, and its dependants are
+ *  FREED rather than cascade-cancelled: the work moved, it was not abandoned. */
+export async function rerouteEscalation(taskId: string, toDeId: string, note: string): Promise<{ to_name?: string; dependants_freed?: number }> {
+  const { data, error } = await supabase.rpc('reroute_de_escalation', {
+    p_task_id: taskId, p_to_de_id: toDeId, p_note: note,
+  });
+  if (error) raise('rerouteEscalation', error);
+  return (data ?? {}) as { to_name?: string; dependants_freed?: number };
 }
 
 export async function listOpenStalenessEscalations(): Promise<Map<string, StalenessEscalation>> {

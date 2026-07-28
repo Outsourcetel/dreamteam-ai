@@ -5,7 +5,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation } from '../../../lib/customerApi';
 import type { BlockedWork } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
@@ -13,7 +13,8 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 // Design system is law (docs/design-system.md): the blocked-work panel uses
 // Chip and INPUT_CLS rather than another hand-rolled badge/input, which the
 // drift detector counts and fails on.
-import { Chip, INPUT_CLS } from '../../../design/primitives';
+import { Chip, INPUT_CLS, TabBar } from '../../../design/primitives';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -206,6 +207,20 @@ function stalledBadge(tier: StalenessEscalation['tier']) {
   return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30" title="Past the warning threshold — nothing has happened on this in a while.">⏱ STALLED</span>;
 }
 
+/** N4 (founder decision, block 4): ONE queue, work blockers first.
+ *
+ *  125 of this workspace's 175 pending items are support-chat escalations. An
+ *  undifferentiated merge buries the 45 work blockers — and those are the ones
+ *  where an answer restarts frozen work, because since mig 483 a decision on
+ *  them actually moves the work item. Nothing is hidden; the queue simply opens
+ *  where the consequence is. */
+type Scope = 'work' | 'chat' | 'all';
+const WORK_TABLES = ['de_work_items', 'de_objectives'];
+const inScope = (t: DBHumanTask, s: Scope) =>
+  s === 'all' ? true
+    : s === 'work' ? WORK_TABLES.includes(String(t.related_table ?? ''))
+    : String(t.related_table ?? '') === 'de_conversations';
+
 const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'approval_gate', label: 'Approvals' },
@@ -234,6 +249,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskType | 'all'>('all');
+  // Opens on work, per N4. Chat is one click away, never hidden.
+  const [scope, setScope] = useState<Scope>('work');
   const [stalledOnly, setStalledOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
@@ -258,6 +275,11 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // more than that someone had said yes.
   const [instruction, setInstruction] = useState('');
   const [blocked, setBlocked] = useState<BlockedWork | null>(null);
+  // N4's third disposition (mig 504).
+  const [rerouting, setRerouting] = useState(false);
+  const [rerouteTo, setRerouteTo] = useState('');
+  const [rerouteNote, setRerouteNote] = useState('');
+  const [colleagues, setColleagues] = useState<{ id: string; name: string }[]>([]);
   // docs/34 — approve WITH EDITS. The correction is the valuable half of the
   // learning loop: it produces an (original, corrected) pair written by the
   // person who knows, at the moment of work. Held as the proposal actually
@@ -320,6 +342,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     setRejecting(false); setReasonCode(''); setReasonNote('');
     setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
     setInstruction('');   // same discipline: an answer typed for one blocker must never carry to another
+    setRerouting(false); setRerouteTo(''); setRerouteNote('');
   }, [selectedId]);
 
 
@@ -360,6 +383,26 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     void getImprovementReviewSignals(sel.related_id).then(s => { if (!cancelled) setImpSignals(s); }).catch(() => { /* signals stay hidden — absence means untagged, not safe */ });
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
+
+  const doReroute = async () => {
+    if (!selected || !rerouteTo || !rerouteNote.trim()) return;
+    setDeciding(true); setError(null);
+    try {
+      const res = await rerouteEscalation(selected.id, rerouteTo, rerouteNote.trim());
+      setRerouting(false); setRerouteTo(''); setRerouteNote('');
+      await refresh();
+      // Say what actually happened, including what it unfroze — a silent
+      // success here would leave the operator guessing what moved.
+      setError(null);
+      if (res.dependants_freed) {
+        console.info(`Rerouted to ${res.to_name}; ${res.dependants_freed} step(s) freed.`);
+      }
+    } catch (err) {
+      setError((err as Error)?.message || 'Could not reroute this blocker.');
+    } finally {
+      setDeciding(false);
+    }
+  };
 
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected', capture?: DecisionCapture) => {
     setDeciding(true);
@@ -426,13 +469,30 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const approvedCount = tasks.filter(t => t.status === 'approved').length;
   const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
   const stalledCount = pending.filter(t => staleness.has(t.id)).length;
-  const visible = tasks.filter(t => (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
+  const visible = tasks.filter(t => inScope(t, scope) && (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
+  const scopeCount = (s: Scope) => tasks.filter(t => t.status === 'pending' && inScope(t, s)).length;
   const selected = tasks.find(t => t.id === selectedId) ?? null;
 
   // What this escalation is actually holding up. Escalations only started
   // carrying the back-link in mig 483 (older ones were backfilled in 484), so
   // this stays null for the ones that never had a decidable record — shown as
   // nothing rather than as a guess.
+  // Who this could be handed to. RLS + can_access_de already scope this list to
+  // the employees the viewer may reach, and mig 504 re-checks the target
+  // server-side — so an unreachable employee can never be chosen, nor smuggled.
+  useEffect(() => {
+    let live = true;
+    void listDigitalEmployees()
+      .then(rows => {
+        if (!live) return;
+        setColleagues(rows
+          .filter(d => d.id !== selected?.de_id)
+          .map(d => ({ id: d.id, name: d.persona_name || d.name })));
+      })
+      .catch(() => { /* the reroute option simply does not appear */ });
+    return () => { live = false; };
+  }, [selected?.de_id]);
+
   useEffect(() => {
     let live = true;
     setBlocked(null);
@@ -483,6 +543,21 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
               </div>
             ))}
+          </div>
+
+          {/* N4: one queue, opened on the work. TabBar rather than another
+              hand-rolled pill strip — the design system names it as the filter
+              primitive and the existing strip below is pre-existing drift. */}
+          <div className="mb-4">
+            <TabBar<Scope>
+              tabs={[
+                { key: 'work', label: 'Blocking work', badge: scopeCount('work') > 0 ? <Chip tone="warn">{scopeCount('work')}</Chip> : undefined },
+                { key: 'chat', label: 'From conversations', badge: scopeCount('chat') > 0 ? <Chip tone="neutral">{scopeCount('chat')}</Chip> : undefined },
+                { key: 'all', label: 'Everything', badge: scopeCount('all') > 0 ? <Chip tone="neutral">{scopeCount('all')}</Chip> : undefined },
+              ]}
+              active={scope}
+              onSelect={setScope}
+            />
           </div>
 
           {/* Filters */}
@@ -869,6 +944,44 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       className="flex-1 rounded-lg bg-red-600/30 hover:bg-red-600/50 disabled:opacity-50 text-red-400 border border-red-500/30 text-sm font-medium py-2 transition-colors">
                       Reject
                     </button>
+                  </div>
+                )}
+                {/* N4's third disposition. Offered only on a work blocker —
+                    rerouting a chat escalation has no work to move. */}
+                {selected.status === 'pending' && !draftEditing && !rejecting && blocked && colleagues.length > 0 && (
+                  <div className="mt-2">
+                    {!rerouting ? (
+                      <button onClick={() => setRerouting(true)} disabled={deciding}
+                        className="text-[11px] text-dt-faint hover:text-indigo-300">
+                        …or hand this to a different employee
+                      </button>
+                    ) : (
+                      <div className="rounded-lg border border-dt-border bg-dt-inset p-3">
+                        <p className="text-xs font-medium text-dt-text mb-2">Who should own this instead?</p>
+                        <select value={rerouteTo} onChange={(e) => setRerouteTo(e.target.value)} className={INPUT_CLS}>
+                          <option value="">Choose an employee…</option>
+                          {colleagues.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <textarea value={rerouteNote} onChange={(e) => setRerouteNote(e.target.value)} rows={2}
+                          placeholder="Required — why does it belong with them?"
+                          className={`${INPUT_CLS} mt-2`} />
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => void doReroute()}
+                            disabled={deciding || !rerouteTo || !rerouteNote.trim()}
+                            className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
+                            Hand it over
+                          </button>
+                          <button onClick={() => { setRerouting(false); setRerouteTo(''); setRerouteNote(''); }}
+                            className="rounded-lg border border-dt-border text-dt-support text-sm px-3 transition-colors hover:text-dt-body">
+                            Cancel
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-dt-muted mt-2">
+                          The step closes with your reason, they get it as their own task, and anything queued behind it stays runnable.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* docs/34 — a rejection must say why. Closed codes rather than a
