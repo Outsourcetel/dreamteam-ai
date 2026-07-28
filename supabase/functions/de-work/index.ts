@@ -800,6 +800,30 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         }
       }
     }
+
+    // THE WORKLIST DESK (mig 505). A scheduled shift has no record to resolve —
+    // its "entity" is a timestamp — so the registry above finds nothing and the
+    // employee used to wake holding literally nothing and escalate that it had
+    // no access. Hand it the standing books for its role instead.
+    //
+    // An EMPTY book is a complete answer, not a failure: "0 invoices past due"
+    // finishes an AR sweep honestly. That distinction is the whole fix — it is
+    // what turns a permanently-blocked employee into a correctly-idle one.
+    if (!desk || !UUID_RE.test(ref)) {
+      const { data: books } = await admin.rpc('get_de_worklists', { p_tenant_id: tenantId, p_de_id: deId });
+      const rows = (books ?? []) as Array<{ label: string; row_count: number; sample: unknown; book_is_empty: boolean; source_table: string | null }>;
+      if (rows.length > 0) {
+        const lines = rows.map((b) => {
+          if (b.book_is_empty) return `- ${b.label}: nothing to work today (0 items).`;
+          return `- ${b.label}: ${b.row_count} item(s). ${JSON.stringify(b.sample).slice(0, 1500)}`;
+        }).join('\n');
+        const allEmpty = rows.every((b) => b.book_is_empty);
+        accountContext = `\n\nYour books right now:\n${lines}\n\n`
+          + (allEmpty
+            ? 'Every book is empty. That is a COMPLETE and correct answer for this shift — record that there was nothing to work and finish. Do NOT escalate for access: you have been shown the books and they are empty.'
+            : 'These are the real rows to work. Use them; do not ask for a list you have already been given. Anything not listed here is unknown — escalate rather than invent it.');
+      }
+    }
   }
 
   // Injection hardening: task text is tenant-authored DATA, not operator
