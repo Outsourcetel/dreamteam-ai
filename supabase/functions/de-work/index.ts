@@ -943,17 +943,27 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     // what turns a permanently-blocked employee into a correctly-idle one.
     if (!desk || !UUID_RE.test(ref)) {
       const { data: books } = await admin.rpc('get_de_worklists', { p_tenant_id: tenantId, p_de_id: deId });
-      const rows = (books ?? []) as Array<{ label: string; row_count: number; sample: unknown; book_is_empty: boolean; source_table: string | null }>;
+      // book_is_empty is THREE-valued (mig 528). null means the book's source
+      // holds nothing at all for this tenant, so nobody can conclude it is
+      // empty. Collapsing that to "empty" is how a Daily AR Sweep Summary came
+      // to report "all accounts current, 0 invoices reviewed" over $431k of
+      // live receivables — the desk read `invoices` while the ERP ingest wrote
+      // `renewal_invoices`. An unknown book must never finish a shift.
+      const rows = (books ?? []) as Array<{ label: string; row_count: number; sample: unknown; book_is_empty: boolean | null; source_table: string | null }>;
       if (rows.length > 0) {
         const lines = rows.map((b) => {
+          if (b.book_is_empty === null) return `- ${b.label}: CANNOT BE READ — no source is connected for it. This is not the same as "nothing to do".`;
           if (b.book_is_empty) return `- ${b.label}: nothing to work today (0 items).`;
           return `- ${b.label}: ${b.row_count} item(s). ${JSON.stringify(b.sample).slice(0, 1500)}`;
         }).join('\n');
-        const allEmpty = rows.every((b) => b.book_is_empty);
+        const unreadable = rows.filter((b) => b.book_is_empty === null);
+        const allEmpty = rows.every((b) => b.book_is_empty === true);
         accountContext = `\n\nYour books right now:\n${lines}\n\n`
           + (allEmpty
             ? 'Every book is empty. That is a COMPLETE and correct answer for this shift — record that there was nothing to work and finish. Do NOT escalate for access: you have been shown the books and they are empty.'
-            : 'These are the real rows to work. Use them; do not ask for a list you have already been given. Anything not listed here is unknown — escalate rather than invent it.');
+            : unreadable.length > 0
+              ? `You could not read ${unreadable.length} of your books. Work whatever IS listed above, then escalate naming exactly which book could not be read. Do NOT report those as clear, empty, or "no activity required" — you did not see them, and saying otherwise would be a false all-clear on work that may be overdue.`
+              : 'These are the real rows to work. Use them; do not ask for a list you have already been given. Anything not listed here is unknown — escalate rather than invent it.');
       }
     }
   }
