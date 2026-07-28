@@ -238,14 +238,13 @@ const erpnext = {
     });
     return `${c.baseUrl}/api/resource/Sales%20Invoice?${qs.toString()}`;
   },
-  // ERPNext Sales Invoice status → our renewal_invoices vocabulary. Anything
-  // that isn't clearly Paid/Overdue is treated as issued-and-owing ('sent'),
-  // which is what the invoice_overdue trigger filters on.
+  // ERPNext Sales Invoice status → our renewal_invoices vocabulary. Only Paid
+  // maps to 'paid'; everything owing (Unpaid, Overdue, Partly Paid, …) maps to
+  // 'sent'. Deliberate: the platform derives overdue-ness from due_date and the
+  // invoice_overdue trigger filters status='sent', so mapping ERPNext 'Overdue'
+  // to our 'overdue' would hide it from the very trigger that should dun it.
   arStatus(s: string): string {
-    const x = String(s ?? '').toLowerCase();
-    if (x === 'paid') return 'paid';
-    if (x === 'overdue') return 'overdue';
-    return 'sent';
+    return String(s ?? '').toLowerCase() === 'paid' ? 'paid' : 'sent';
   },
   // Pull ALL submitted invoices as normalized AR records for the platform's
   // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
@@ -2648,7 +2647,35 @@ const freshdeskActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions };
+// erpnext write actions — the dunning family. All three share one executor
+// (a note on the invoice's ERP timeline); they differ only in the action
+// DEFINITION's risk (send_final_notice / flag_for_collections are destructive
+// and so are floor-gated to a human before trust is even consulted). A note,
+// not an email: a verifiable, non-destructive-to-the-customer record that "a
+// reminder was issued", which is exactly what the existing dunning playbooks do.
+const erpnextActions: Record<string, NativeAction> = {
+  erpnext_invoice_comment: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (invoice number) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'POST',
+        url: `${c.baseUrl}/api/resource/Comment`,
+        body: { comment_type: 'Comment', reference_doctype: 'Sales Invoice', reference_name: p.external_ref, content: p.note },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const cid = (res.body as { data?: { name?: string } } | null)?.data?.name;
+      return { ok: true, status: res.status, raw: res.body, receipt: `Logged a dunning note on invoice ${p.external_ref} in ERPNext${cid ? ` (comment ${cid})` : ''}.` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
