@@ -2581,11 +2581,88 @@ serve(async (req) => {
         gatesResumed.push({ run_id: g.id, status: result.status });
       }
 
+      // 5) THE ORPHANING FIX. Passes 3 and 4 both filter status='waiting' — but
+      //    human_approval and checklist steps park at 'waiting_approval', and
+      //    NOTHING server-side has ever resumed that. resume_playbook_on_task
+      //    is called from exactly one place in the codebase: a browser click.
+      //    So a run whose gate a person decided out of band — or decided in a
+      //    tab they then closed — waited forever. Measured platform-wide: 50
+      //    runs parked in waiting_approval, 4 of them with a gate the human had
+      //    ALREADY decided. Four of hq's own runs were orphaned exactly this
+      //    way when their tasks were bulk-rejected on 2026-07-22.
+      //    Selected on the DECISION, not on a blind page of parked runs: there
+      //    are 50 runs in this state and only 4 have a decided gate, so taking
+      //    an unordered 25 and testing each missed every one of them. Gather
+      //    the candidates, ask which of their gates are decided, then act only
+      //    on those.
+      let apprQuery = admin.from('playbook_runs')
+        .select('*').eq('status', 'waiting_approval')
+        .not('waiting_task_id', 'is', null).limit(200);
+      if (scopeTenant) apprQuery = apprQuery.eq('tenant_id', scopeTenant);
+      const { data: parkedRuns } = await apprQuery;
+      const parked = (parkedRuns ?? []) as Array<Record<string, unknown>>;
+      const decidedById = new Map<string, string>();
+      if (parked.length > 0) {
+        const { data: decidedTasks } = await admin.from('human_tasks')
+          .select('id, status')
+          .in('id', parked.map((p) => String(p.waiting_task_id)))
+          .neq('status', 'pending');
+        for (const t of (decidedTasks ?? []) as Array<{ id: string; status: string }>) {
+          decidedById.set(t.id, t.status);
+        }
+      }
+      const apprRuns = parked.filter((p) => decidedById.has(String(p.waiting_task_id))).slice(0, 25);
+      const approvalsResumed: Array<{ run_id: string; status: string; decision: string }> = [];
+      for (const a of apprRuns) {
+        const decision = decidedById.get(String(a.waiting_task_id)) ?? 'pending';
+        if (decision === 'pending') continue;   // genuinely still with a human
+        const steps = a.steps as RunStep[];
+        const idx = a.current_step as number;
+        if (steps[idx]) {
+          steps[idx].status = 'done'; steps[idx].at = now();
+          steps[idx].detail = `${steps[idx].detail ?? 'Approval'} — decided (${decision}) and resumed by the dispatcher`;
+        }
+        const actx = (a.context ?? {}) as RunContext;
+        actx.approval_decision = decision;
+        const defRun: DefRunRow = {
+          id: a.id, tenant_id: a.tenant_id, account_id: a.account_id,
+          status: 'running', current_step: idx + 1, steps,
+          waiting_task_id: null, context: actx,
+          definition_id: a.definition_id, definition_version: a.definition_version ?? 1,
+          playbook_key: a.playbook_key, parent_run_id: a.parent_run_id ?? null,
+        };
+        await admin.from('playbook_runs')
+          .update({ status: 'running', waiting_task_id: null, context: actx }).eq('id', a.id);
+        const result = await executeDefinitionSteps(admin, defRun, idx + 1);
+        approvalsResumed.push({ run_id: a.id, status: result.status, decision });
+      }
+
+      // 6) Drain 'resume_pending'. The SQL resume path parks a run here when a
+      //    step needs an HTTP re-entry and returns needs_http — and no cron
+      //    query has ever touched this status, so it was a second silent
+      //    dead end behind the first.
+      let pendQuery = admin.from('playbook_runs').select('*').eq('status', 'resume_pending').limit(25);
+      if (scopeTenant) pendQuery = pendQuery.eq('tenant_id', scopeTenant);
+      const { data: pendRuns } = await pendQuery;
+      for (const p of pendRuns ?? []) {
+        const defRun: DefRunRow = {
+          id: p.id, tenant_id: p.tenant_id, account_id: p.account_id,
+          status: 'running', current_step: p.current_step as number, steps: p.steps as RunStep[],
+          waiting_task_id: null, context: (p.context ?? {}) as RunContext,
+          definition_id: p.definition_id, definition_version: p.definition_version ?? 1,
+          playbook_key: p.playbook_key, parent_run_id: p.parent_run_id ?? null,
+        };
+        await admin.from('playbook_runs').update({ status: 'running' }).eq('id', p.id);
+        const result = await executeDefinitionSteps(admin, defRun, p.current_step as number);
+        approvalsResumed.push({ run_id: p.id, status: result.status, decision: 'resume_pending' });
+      }
+
       return json({
         dispatched: true, caller, scope: scopeTenant ?? 'all',
         evaluation: dispatchRes, processed_fires: processed.length, fires: processed,
         waits_resumed: waitsResumed.length, waits: waitsResumed,
         gates_resumed: gatesResumed.length, gates: gatesResumed,
+        approvals_resumed: approvalsResumed.length, approvals: approvalsResumed,
       });
     }
 
