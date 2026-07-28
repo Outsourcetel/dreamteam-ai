@@ -488,6 +488,22 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       if (error) return { result: { error: `write-back failed: ${error.message}` } };
       return { result: data };
     }
+    case 'write_back_to_case': {
+      // The employee's OWN case desk. Same close-the-loop, same gate, keyed on
+      // the objective (continuity_cases has no separate id). advance_stage is
+      // destructive → human approval; log_activity / set_next_step are not,
+      // which is exactly founder decision D4's split.
+      if (!objectiveId) return { result: { error: 'no case for this task' } };
+      const op = String(input.op ?? '');
+      const params: Record<string, unknown> = op === 'log_activity' ? { summary: input.summary }
+        : op === 'set_next_step' ? { next_step: input.next_step, next_step_date: input.next_step_date }
+        : op === 'advance_stage' ? { to_stage: input.to_stage } : {};
+      const { data, error } = await admin.rpc('propose_continuity_writeback', {
+        p_de_id: deId, p_objective_id: objectiveId, p_op: op, p_params: params,
+      });
+      if (error) return { result: { error: `case write-back failed: ${error.message}` } };
+      return { result: data };
+    }
     case 'write_back_to_opportunity': {
       // Pipeline desk (EXEC-2b SDR) — same close-the-loop, same gate, on the
       // opportunities record. A stage change is destructive → human approval.
@@ -720,6 +736,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let accountRef: string | null = null;
   let oppRef: string | null = null;
   let entityRef: string | null = null;    // the case's own record id, whatever kind it is
+  let caseFacet = false;                  // this objective has a continuity case desk it can write to
   let entityName: string | null = null;   // human-readable NAME — the Experience ledger keys on names, not UUIDs
   let accountContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
@@ -773,6 +790,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
           .select('motion, stage_key, next_step, next_step_date, baseline_cents, forecast_cents, risk_level')
           .eq('objective_id', objectiveId).maybeSingle();
         if (facet) {
+          caseFacet = true;
           const f = facet as Record<string, unknown>;
           const bits = Object.entries(f)
             .filter(([, v]) => v !== null && v !== undefined && v !== '')
@@ -937,6 +955,38 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       }, required: ['op'] },
     });
   }
+  // The CASE desk. propose_continuity_writeback has existed and been fully
+  // gated for some time, with exactly one caller: a human clicking in the
+  // Continuity page. The employee whose case it is could not reach it — so the
+  // renewal kit's own responsibility ("keep the record current") was
+  // unperformable, and every case sat at stage 'discovered' with a blank next
+  // step no matter how much work happened (docs/38).
+  // Founder decision D4: records unattended, money and customer-facing gated —
+  // which is exactly how the RPC already behaves (advance_stage is destructive
+  // and routes to approval; log_activity / set_next_step do not).
+  if (caseFacet && objectiveId) {
+    // The stage vocabulary is per-tenant config. Without the live enum the
+    // model invents a stage and the RPC answers {ok:false, error:'bad_stage'}.
+    const { data: stageRows } = await admin.from('continuity_stage_config')
+      .select('stage_key').eq('tenant_id', tenantId).eq('active', true).limit(40);
+    const stageKeys = ((stageRows ?? []) as Array<{ stage_key: string }>).map((s) => s.stage_key).filter(Boolean);
+    motionTools.push({
+      name: 'write_back_to_case',
+      description: "Keep YOUR case desk current — the case is not done until the record reflects it. log_activity records what you did; set_next_step records the follow-up and its date; advance_stage moves the case forward and ALWAYS needs human approval. If the result says gated/pending approval, report it and move on."
+        + (stageKeys.length ? ` Valid stages for advance_stage: ${stageKeys.join(', ')}. Use one of these exactly — any other value is rejected.` : ''),
+      input_schema: { type: 'object', properties: {
+        op: { type: 'string', enum: ['log_activity', 'set_next_step', 'advance_stage'] },
+        summary: { type: 'string', description: 'for log_activity — what happened' },
+        next_step: { type: 'string', description: 'for set_next_step' },
+        next_step_date: { type: 'string', description: 'for set_next_step — YYYY-MM-DD, optional' },
+        to_stage: { type: 'string', description: 'for advance_stage — the target stage key, exactly as listed in this tool description' },
+      }, required: ['op'] },
+      // TOOLS' element type is a big inferred union of the existing schemas;
+      // a new property combination matches none of them exactly. Local cast
+      // only — the runtime shape is identical to its two sibling write-backs.
+    } as unknown as typeof TOOLS[number]);
+  }
+
   // Connected Systems desk (mig 221): a config-driven read + verify across the
   // DE's registered systems. read_system grounds the DE in the real record;
   // verify_in_system is the "come back and confirm the write landed" primitive.

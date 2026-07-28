@@ -5,10 +5,15 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask } from '../../../lib/customerApi';
+import type { BlockedWork } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
+// Design system is law (docs/design-system.md): the blocked-work panel uses
+// Chip and INPUT_CLS rather than another hand-rolled badge/input, which the
+// drift detector counts and fails on.
+import { Chip, INPUT_CLS } from '../../../design/primitives';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -245,6 +250,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [rejecting, setRejecting] = useState(false);
   const [reasonCode, setReasonCode] = useState<DecisionReasonCode | ''>('');
   const [reasonNote, setReasonNote] = useState('');
+  // The typed answer that RESUMES the blocked work. mig 483 appends
+  // decision_note into the work item's payload.detail, which is the exact
+  // field the next run reads — so this box is the only channel by which a
+  // human's guidance reaches a stalled employee. Before it existed, an
+  // approval carried no words at all and the employee resumed knowing nothing
+  // more than that someone had said yes.
+  const [instruction, setInstruction] = useState('');
+  const [blocked, setBlocked] = useState<BlockedWork | null>(null);
   // docs/34 — approve WITH EDITS. The correction is the valuable half of the
   // learning loop: it produces an (original, corrected) pair written by the
   // person who knows, at the moment of work. Held as the proposal actually
@@ -306,7 +319,9 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   useEffect(() => {
     setRejecting(false); setReasonCode(''); setReasonNote('');
     setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
+    setInstruction('');   // same discipline: an answer typed for one blocker must never carry to another
   }, [selectedId]);
+
 
   // The proposed article behind a self-improvement review, so approving with a
   // correction publishes the CORRECTION. Same reset discipline as the reason
@@ -362,11 +377,19 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // main path.
       const corrected = proposal !== null && editText.trim() !== proposal.content.trim();
       await decideHumanTask(task, decision, capture ?? (decision === 'rejected'
+        // A rejection on a BLOCKER cancels the work and its dependants
+        // (mig 483), so the reason is not just a label — it is the record of
+        // why that work stopped. Carry the typed note either way.
         ? { reasonCode: reasonCode as DecisionReasonCode, note: reasonNote.trim() || undefined }
         : corrected
           ? { edit: { before: proposal!.content, after: editText } }
-          : undefined));
-      setRejecting(false); setReasonCode(''); setReasonNote('');
+          // The answer that resumes the work. Only sent when the approver
+          // actually typed one — an empty note would overwrite nothing but
+          // also teach nothing.
+          : instruction.trim()
+            ? { note: instruction.trim() }
+            : undefined));
+      setRejecting(false); setReasonCode(''); setReasonNote(''); setInstruction('');
       setEditing(false);
       setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
       await refresh();
@@ -405,6 +428,20 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const stalledCount = pending.filter(t => staleness.has(t.id)).length;
   const visible = tasks.filter(t => (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
   const selected = tasks.find(t => t.id === selectedId) ?? null;
+
+  // What this escalation is actually holding up. Escalations only started
+  // carrying the back-link in mig 483 (older ones were backfilled in 484), so
+  // this stays null for the ones that never had a decidable record — shown as
+  // nothing rather than as a guess.
+  useEffect(() => {
+    let live = true;
+    setBlocked(null);
+    if (!selected || selected.related_table !== 'de_work_items') return;
+    void getBlockedWorkForTask(selected)
+      .then((b) => { if (live) setBlocked(b); })
+      .catch(() => { /* additive panel — never block a decision on it */ });
+    return () => { live = false; };
+  }, [selectedId, selected]);
   const selectedStale = selected ? staleness.get(selected.id) ?? null : null;
   // Same precedence as the Full-draft display below — the text the approver
   // sees is exactly the text their edit replaces.
@@ -764,6 +801,53 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     correction can never be lost to a reflex click on the plain
                     Approve. (The improvement editor above is the opposite: it
                     commits THROUGH this row, whose label says so.) */}
+                {/* What this decision actually moves. An approver used to see a
+                    title and a paragraph; the work being held — and everything
+                    queued behind it — was invisible, which is how four
+                    rejections froze sixteen dependent steps unnoticed. */}
+                {selected.status === 'pending' && blocked && (
+                  <div className="mt-4 rounded-lg border border-dt-border bg-dt-inset px-4 py-3">
+                    <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1.5">Work this is holding up</p>
+                    <p className="text-sm text-dt-body">{blocked.title}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <Chip tone={blocked.status === 'waiting_human' ? 'warn' : 'neutral'}>{blocked.status.replace(/_/g, ' ')}</Chip>
+                      {blocked.waitingSince && (
+                        <span className="text-[11px] text-dt-muted">
+                          waiting {Math.max(0, Math.round((Date.now() - new Date(blocked.waitingSince).getTime()) / 3.6e6))}h
+                        </span>
+                      )}
+                      {blocked.queuedBehind > 0 && (
+                        <Chip tone="danger">{blocked.queuedBehind} step{blocked.queuedBehind === 1 ? '' : 's'} frozen behind it</Chip>
+                      )}
+                    </div>
+                    {blocked.question && (
+                      <div className="mt-3">
+                        <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1">What it asked</p>
+                        <p className="text-[13px] text-dt-muted whitespace-pre-wrap">{blocked.question.slice(0, 1200)}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* The answer that resumes the work (mig 483 appends it to the
+                    exact field the next run reads). Optional — approving alone
+                    still unfreezes the task — but this is the only way to say
+                    HOW to proceed, so it sits above the button, not behind a
+                    disclosure. */}
+                {selected.status === 'pending' && !draftEditing && !rejecting && blocked && (
+                  <div className="mt-3">
+                    <label htmlFor="dt-instruction" className="block text-xs font-medium text-dt-text mb-1.5">
+                      Your answer to the employee <span className="text-dt-faint font-normal">— optional, but it is what tells them how to proceed</span>
+                    </label>
+                    <textarea
+                      id="dt-instruction"
+                      value={instruction}
+                      onChange={(e) => setInstruction(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Use the contract record in Commercial Continuity; price the renewal with the 7% contractual increase."
+                      className={INPUT_CLS}
+                    />
+                  </div>
+                )}
                 {selected.status === 'pending' && !draftEditing && (
                   <div className="flex gap-2 mt-4">
                     <button

@@ -546,6 +546,53 @@ export interface StalenessEscalation {
 
 /** Open (unresolved) staleness escalations for the current tenant, keyed
  * by human_task_id for O(1) lookup from the Human Tasks list. */
+/** What an escalation is actually blocking.
+ *
+ *  Escalations now carry related_table='de_work_items' + related_id (mig 483,
+ *  backfilled in 484), so a decision can finally be made with the blocked work
+ *  in view. Before this, the approvals queue showed a title and a paragraph and
+ *  nothing about what stopped — which is how four rejections on 2026-07-22
+ *  froze sixteen dependent steps that nobody could see. */
+export type BlockedWork = {
+  workItemId: string;
+  title: string;
+  status: string;
+  waitingSince: string | null;
+  queuedBehind: number;
+  question: string | null;
+};
+
+export async function getBlockedWorkForTask(task: DBHumanTask): Promise<BlockedWork | null> {
+  if (task.related_table !== 'de_work_items' || !task.related_id) return null;
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('de_work_items')
+    .select('id, title, status, updated_at, result')
+    .eq('id', task.related_id)
+    .eq('tenant_id', tid)
+    .maybeSingle();
+  if (error) raise('getBlockedWorkForTask', error);
+  if (!data) return null;
+  const row = data as { id: string; title: string; status: string; updated_at: string | null; result: { needs_input?: boolean; question?: string } | null };
+  // How much work is stranded behind this one. claim_de_work_items will not
+  // claim a successor until its predecessor is 'done', so every one of these
+  // is frozen until this decision is made.
+  const { count } = await supabase
+    .from('de_work_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('tenant_id', tid)
+    .eq('depends_on', row.id)
+    .in('status', ['queued', 'waiting_human']);
+  return {
+    workItemId: row.id,
+    title: row.title,
+    status: row.status,
+    waitingSince: row.updated_at,
+    queuedBehind: count ?? 0,
+    question: row.result?.needs_input ? (row.result.question ?? null) : null,
+  };
+}
+
 export async function listOpenStalenessEscalations(): Promise<Map<string, StalenessEscalation>> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
