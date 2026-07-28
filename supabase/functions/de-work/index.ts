@@ -43,6 +43,14 @@ const MAX_TURNS = 6;
 const MAX_ITEMS_PER_RUN = 3;
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
+/** N6 stall budgets (founder-locked, docs/39). Work may be in flight, but not
+ *  forever and not silently: past either budget the reviewer runs ANYWAY
+ *  instead of returning blind. Kept in step with de_stall_sweep_internal(24,12)
+ *  — the sweep raises the alarm, this decides what to do about it. */
+const STALL_HOURS = 24;
+const STALL_MS = STALL_HOURS * 3600 * 1000;
+const WAKE_BUDGET = 12;
+
 interface ContentBlock { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -170,16 +178,39 @@ async function reviewObjective(
   wakeN: number,
 ): Promise<{ assessment: string; enqueued: number }> {
   const { data: items } = await admin.from('de_work_items')
-    .select('title, status, result, seq').eq('objective_id', obj.id).order('seq', { ascending: true }).limit(30);
-  const open = (items ?? []).filter((i: { status: string }) => ['queued', 'running', 'waiting_human'].includes(i.status));
-  if (open.length > 0) {
-    // Work is still in flight — the alarm has already advanced; check again later.
+    .select('id, title, status, result, seq, updated_at').eq('objective_id', obj.id).order('seq', { ascending: true }).limit(30);
+  type WorkRow = { id?: string; status: string; title: string; result: { summary?: string } | null; updated_at?: string };
+  const open = (items ?? []).filter((i: WorkRow) => ['queued', 'running', 'waiting_human'].includes(i.status));
+
+  // N6 (docs/39). The old code returned here on ANY open item, which is why
+  // 475 wakes across four objectives produced zero reassessments: the reviewer
+  // was structurally incapable of seeing its own paralysis. Work in flight and
+  // inside budget still short-circuits — but a stall now falls through to a
+  // real review with the authority to cancel, re-plan, or escalate.
+  const nowMs = Date.now();
+  const ageMs = (t?: string) => (t ? nowMs - new Date(String(t)).getTime() : 0);
+  const oldestOpenMs = open.length ? Math.max(...open.map((i: WorkRow) => ageMs(i.updated_at))) : 0;
+  const stalled = oldestOpenMs >= STALL_MS || wakeN >= WAKE_BUDGET;
+
+  if (open.length > 0 && !stalled) {
+    // Genuinely in flight and within budget. Still record the wake — a silent
+    // wake is what made 1,556 of them unreadable.
+    await admin.rpc('conclude_objective_wake', {
+      p_objective_id: obj.id, p_assessment: 'continue',
+      p_note: `${open.length} step(s) in flight, oldest unchanged ${Math.round(oldestOpenMs / 3.6e6)}h — inside the ${STALL_HOURS}h/${WAKE_BUDGET}-wake budget, no review needed.`,
+    });
     return { assessment: 'continue', enqueued: 0 };
   }
-  const progress = (items ?? []).map((i: { status: string; title: string; result: { summary?: string } | null }) =>
-    `- [${i.status}] ${i.title}${i.result?.summary ? `: ${String(i.result.summary).slice(0, 200)}` : ''}`).join('\n') || '(no steps have run yet)';
 
-  const system = 'You review progress on a long-running business objective owned by an AI employee. Decide: "achieved" (the goal is met — be strict, only when the completed work actually accomplishes it), "blocked" (cannot progress without human help), or "continue" (more work needed). If continue, propose 1-3 concrete NEXT steps that build on what happened — not a restart. Return ONLY JSON {"assessment":"achieved"|"blocked"|"continue","note":string,"next_steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}.' + FIREWALL_RULES;
+  const progress = (items ?? []).map((i: WorkRow) => {
+    const h = Math.round(ageMs(i.updated_at) / 3.6e6);
+    const stale = ['queued', 'running', 'waiting_human'].includes(i.status) && i.updated_at ? ` unchanged ${h}h` : '';
+    return `- [${i.status}${stale}] ${i.title}${i.result?.summary ? `: ${String(i.result.summary).slice(0, 200)}` : ''}`;
+  }).join('\n') || '(no steps have run yet)';
+
+  const system = 'You review progress on a long-running business objective owned by an AI employee. Decide: "achieved" (the goal is met — be strict, only when the completed work actually accomplishes it), "blocked" (cannot progress without human help), or "continue" (more work needed). If continue, propose 1-3 concrete NEXT steps that build on what happened — not a restart.'
+    + ' A step marked "unchanged Nh" has not moved in N hours. If the plan is stalled behind such a step, do NOT propose more steps — anything you add would queue behind the stuck one and never run. Say "blocked" and use the note to state plainly what is needed and from whom; a person is alerted and the goal is re-reviewed. Only say "continue" when work can actually proceed.'
+    + ' Return ONLY JSON {"assessment":"achieved"|"blocked"|"continue","note":string,"next_steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}.' + FIREWALL_RULES;
   // thinking disabled + retry, same rationale as planObjective (structured JSON).
   const d = await anthropicWithRetry(admin,{ model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
   // AWAITED — lazy thenable; unmetered reviewer spend evades the budget gate.
@@ -211,6 +242,9 @@ async function reviewObjective(
       prev = (id as string) ?? prev;
       enqueued++;
     }
+    // The note used to exist only in a 300-char trace slice. conclude on
+    // 'continue' too, so every wake leaves a readable verdict (mig 482).
+    await admin.rpc('conclude_objective_wake', { p_objective_id: obj.id, p_assessment: 'continue', p_note: note });
   } else {
     // §3 def-of-done (W3): don't conclude an objective 'achieved' over a pending
     // objective-scoped write-back. Shadow logs; enforce withholds → 'continue' so the
@@ -535,29 +569,87 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
         : { error: rr.error ?? 'could not delegate', detail: rr.detail } };
     }
     case 'escalate_to_human': {
-      await admin.from('human_tasks').insert({ tenant_id: tenantId, de_id: deId, type: 'escalation', title: `DE work escalation`, detail: String(input.reason ?? ''), source: 'de', priority: 'high' });
-      // Ledger close-out (docs/16): the Exceptions desk finally has a
-      // PRODUCER — when the DE escalates WITH a proposal, it lands as a
-      // de_exceptions row the founder can approve/reject (and optionally
-      // let the employee remember) on the Workbench Exceptions tab.
-      if (typeof input.proposed_action === 'string' && input.proposed_action.trim()) {
-        try {
-          await admin.from('de_exceptions').insert({
-            tenant_id: tenantId, de_id: deId,
-            work_item_id: workItemId ?? null, objective_id: objectiveId ?? null,
-            situation: String(input.reason ?? '').slice(0, 1000),
-            proposed_action: String(input.proposed_action).slice(0, 1000),
-            justification: String(input.justification ?? 'No justification given.').slice(0, 1000),
-          });
-        } catch (e) { console.error('de_exceptions insert:', e); }
-      }
-      return { result: { escalated: true }, escalated: true, done: true, summary: `Escalated: ${input.reason}` };
+      // One RPC writes BOTH rows, cross-linked, with the back-link to the work
+      // item and an SLA clock (mig 483). Previously this inserted a human_task
+      // with related_table/related_id NULL — so no decision could find the work
+      // it blocked — and an exception row ONLY when the model happened to offer
+      // a proposal, leaving 33 escalations nothing could act on. Rejecting four
+      // of them on 2026-07-22 changed nothing; that is the defect this closes.
+      const { data: esc, error: escErr } = await admin.rpc('open_de_escalation', {
+        p_tenant_id: tenantId, p_de_id: deId,
+        p_work_item_id: workItemId ?? null, p_objective_id: objectiveId ?? null,
+        p_title: entityName ? `Needs a decision — ${entityName}` : null,
+        p_reason: String(input.reason ?? ''),
+        p_proposed_action: typeof input.proposed_action === 'string' ? input.proposed_action : null,
+        p_justification: typeof input.justification === 'string' ? input.justification : null,
+        p_needs_input: false, p_sla_hours: STALL_HOURS,
+      });
+      if (escErr) console.error('open_de_escalation:', escErr.message);
+      const e = (esc ?? {}) as { task_id?: string; exception_id?: string };
+      return {
+        result: { escalated: true, task_id: e.task_id ?? null, exception_id: e.exception_id ?? null },
+        escalated: true, done: true, summary: `Escalated: ${input.reason}`,
+      };
     }
     case 'mark_done':
       return { result: { done: true }, done: true, summary: String(input.summary ?? 'done') };
     default:
       return { result: { error: `unknown tool ${name}` } };
   }
+}
+
+/** The DE's DESK, keyed by the objective's entity_kind.
+ *
+ *  run_work_watchers can already MINT six entity kinds (watch_source_catalog),
+ *  but only customer_account and opportunity ever got a desk. A renewal case
+ *  therefore arrived with no record and no tool that could read one, and the
+ *  employee escalated for a lookup it does not have — while the agreement sat
+ *  in the tenant's own table and its key facts sat in the objective's own plan
+ *  JSON, written by our watcher and read by nothing (docs/38).
+ *
+ *  Adding a kind here is config, not code. */
+interface EntityDesk { table: string; label: string; fields: string[]; nameFields: string[]; caseTable?: string }
+const ENTITY_DESKS: Record<string, EntityDesk> = {
+  customer_account: {
+    table: 'customer_accounts', label: 'Account',
+    fields: ['name', 'health_score', 'arr_cents', 'status', 'renewal_date', 'tier', 'attributes'],
+    nameFields: ['name'],
+  },
+  opportunity: {
+    table: 'opportunities', label: 'Opportunity',
+    fields: ['name', 'company_name', 'stage', 'amount_cents', 'close_date', 'owner', 'source'],
+    nameFields: ['name', 'company_name'],
+  },
+  commercial_agreement: {
+    table: 'commercial_agreements', label: 'Agreement',
+    fields: ['counterparty_name', 'title', 'agreement_type', 'party_side', 'status', 'auto_renew',
+      'notice_period_days', 'baseline_value_cents', 'currency', 'start_date', 'end_date',
+      'renewal_date', 'notice_deadline', 'cancellation_deadline', 'pricing_notice_deadline', 'attributes'],
+    nameFields: ['counterparty_name', 'title'],
+    caseTable: 'continuity_cases',
+  },
+};
+
+const deskLabel = (k: string) => k.replace(/_cents$/, '').replace(/_/g, ' ');
+/** Renders whatever the desk declared, so a new entity kind needs no renderer. */
+function renderRecord(desk: EntityDesk, row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const f of desk.fields) {
+    const v = row[f];
+    if (v === null || v === undefined || v === '') continue;
+    if (f.endsWith('_cents') && typeof v === 'number') {
+      parts.push(`${deskLabel(f)} $${Math.round(v / 100).toLocaleString('en-US')}`);
+    } else if (f === 'attributes' && typeof v === 'object') {
+      for (const [ak, av] of Object.entries(v as Record<string, unknown>)) {
+        if (av !== null && av !== undefined && av !== '' && typeof av !== 'object') {
+          parts.push(`${deskLabel(ak)} ${String(av)}`);
+        }
+      }
+    } else {
+      parts.push(`${deskLabel(f)} ${String(v)}`);
+    }
+  }
+  return parts.join(', ');
 }
 
 async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: string; de_id: string; title: string; payload: Record<string, unknown> }): Promise<{ id: string; status: string; summary: string; turns: number }> {
@@ -583,52 +675,92 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     const { data: routed } = await admin.rpc('resolve_de_model_for_task', { p_de_id: deId, p_task_class: 'standard' });
     if (typeof routed === 'string' && routed) model = routed;
   } catch { /* fall back to default */ }
-  const goal = item.title + (item.payload?.detail ? `\n\nDetail: ${item.payload.detail}` : '');
+  let goal = item.title + (item.payload?.detail ? `\n\nDetail: ${item.payload.detail}` : '');
   const subjectRef = (item.payload?.subject_ref as string) ?? null;
 
   // The CASE this work item belongs to (EXEC 0.2/0.3), so the mid-motion tools
   // can pause the case, write back to its account, or attach a deliverable.
-  const { data: wi } = await admin.from('de_work_items').select('objective_id').eq('id', item.id).maybeSingle();
+  const { data: wi } = await admin.from('de_work_items').select('objective_id, depends_on').eq('id', item.id).maybeSingle();
   const objectiveId = (wi?.objective_id as string) ?? null;
+
+  // Hand-off between steps. A step's goal used to be its title plus its own
+  // payload detail and nothing else, so step 2 of a plan began by asking which
+  // account it was even looking at (docs/38). The predecessor's own output is
+  // the cheapest context there is.
+  if (wi?.depends_on) {
+    const { data: prev } = await admin.from('de_work_items')
+      .select('title, status, result').eq('id', String(wi.depends_on)).maybeSingle();
+    if (prev) {
+      const p = prev as { title?: string; status?: string; result?: { summary?: string; question?: string } | null };
+      const prior = String(p.result?.summary ?? '').slice(0, 1200);
+      if (prior) goal += `\n\nWhat the previous step produced — "${p.title ?? 'previous step'}" [${p.status ?? '?'}]: ${prior}`;
+    }
+  }
   let accountRef: string | null = null;
   let oppRef: string | null = null;
+  let entityRef: string | null = null;    // the case's own record id, whatever kind it is
   let entityName: string | null = null;   // human-readable NAME — the Experience ledger keys on names, not UUIDs
   let accountContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
   let objectiveKind: string | undefined;        // T1.2: single-hop delegation pre-filter
   if (objectiveId) {
-    const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description').eq('id', objectiveId).maybeSingle();
+    const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description, plan').eq('id', objectiveId).maybeSingle();
     objectiveBriefText = `${obj?.title ?? ''}\n${obj?.description ?? ''}`.trim() || undefined;
     objectiveKind = (obj?.entity_kind as string | undefined) ?? undefined;
-    if (obj?.entity_kind === 'customer_account' && obj?.entity_ref) {
-      accountRef = String(obj.entity_ref);
-      // The DE's DESK: hand it the account record it's working, so step 1
-      // ("understand the account") is grounded instead of escalating for a
-      // lookup tool it doesn't have. Internal account book; when an external
-      // CRM connector lands, this snapshot comes from there instead.
-      const { data: acct } = await admin.from('customer_accounts')
-        .select('name, health_score, arr_cents, status, renewal_date, tier, attributes')
-        .eq('id', accountRef).maybeSingle();
-      if (acct) {
-        const a = acct as { name?: string; health_score?: number; arr_cents?: number; status?: string; renewal_date?: string; tier?: string; attributes?: { next_step?: string; next_step_date?: string } };
-        entityName = a.name ?? null;
-        const arr = a.arr_cents != null ? `$${Math.round(a.arr_cents / 100).toLocaleString('en-US')}` : 'n/a';
-        accountContext = `\n\nAccount record on file — ${a.name ?? 'account'}: health score ${a.health_score ?? 'n/a'}, ARR ${arr}, status ${a.status ?? 'n/a'}, renews ${a.renewal_date ?? 'n/a'}, tier ${a.tier ?? 'n/a'}`
-          + `${a.attributes?.next_step ? `, current next step: ${a.attributes.next_step}` : ''}.`
-          + ` These are the real facts for this account — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
+    const kind = String(obj?.entity_kind ?? '');
+    const desk = ENTITY_DESKS[kind];
+    const ref = obj?.entity_ref ? String(obj.entity_ref) : '';
+    // entity_ref is TEXT and is NOT always an id — 'schedule' watchers write a
+    // timestamp string, metric watchers a metric key. A non-uuid into a uuid
+    // column returns an error supabase-js surfaces as a null row: silent.
+    if (desk && UUID_RE.test(ref)) {
+      entityRef = ref;
+      // Preserved so the write_back_to_record / write_back_to_opportunity gates
+      // downstream keep behaving exactly as before.
+      accountRef = kind === 'customer_account' ? ref : null;
+      oppRef = kind === 'opportunity' ? ref : null;
+
+      // The DE's DESK: hand it the record it is working, so step 1 ("pull the
+      // record") is grounded instead of escalating for a lookup tool it does
+      // not have. Internal book of record; an external connector, when one
+      // lands, supplies this same snapshot instead.
+      const { data: rec } = await admin.from(desk.table)
+        .select(desk.fields.join(',')).eq('id', ref).eq('tenant_id', tenantId).maybeSingle();
+      if (rec) {
+        const row = rec as unknown as Record<string, unknown>;
+        entityName = (desk.nameFields.map((f) => row[f]).find((v) => typeof v === 'string' && v) as string) ?? null;
+        accountContext = `\n\n${desk.label} record on file — ${entityName ?? desk.label}: ${renderRecord(desk, row)}.`
+          + ` These are the real facts for this ${desk.label.toLowerCase()} — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
       }
-    } else if (obj?.entity_kind === 'opportunity' && obj?.entity_ref) {
-      oppRef = String(obj.entity_ref);
-      // The DESK for a pipeline role: hand the DE the opportunity record.
-      const { data: opp } = await admin.from('opportunities')
-        .select('name, company_name, stage, amount_cents, close_date, owner, source')
-        .eq('id', oppRef).maybeSingle();
-      if (opp) {
-        const o = opp as { name?: string; company_name?: string; stage?: string; amount_cents?: number; close_date?: string; owner?: string; source?: string };
-        entityName = o.name ?? o.company_name ?? null;
-        const amt = o.amount_cents != null ? `$${Math.round(o.amount_cents / 100).toLocaleString('en-US')}` : 'n/a';
-        accountContext = `\n\nOpportunity record on file — ${o.name ?? o.company_name ?? 'opportunity'}: stage ${o.stage ?? 'n/a'}, amount ${amt}, closes ${o.close_date ?? 'n/a'}, owner ${o.owner ?? 'n/a'}, source ${o.source ?? 'n/a'}.`
-          + ` These are the real facts for this opportunity — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
+
+      // Why this case is open at all. run_work_watchers stamped the motion,
+      // the date it is watching and the horizon into plan — read by nothing
+      // until now. NB: the column DEFAULTS to a jsonb array, so guard the type.
+      const plan = obj?.plan as unknown;
+      if (plan && typeof plan === 'object' && !Array.isArray(plan)) {
+        const p = plan as { motion?: string; date_field?: string; horizon_days?: number };
+        const why = [p.motion ? `motion "${p.motion}"` : '', p.date_field ? `watching ${deskLabel(p.date_field)}` : '',
+          p.horizon_days !== undefined && p.horizon_days !== null ? `${p.horizon_days}-day horizon` : '']
+          .filter(Boolean).join(', ');
+        if (why) accountContext += ` This case was opened automatically: ${why}.`;
+      }
+
+      // The case facet, for kinds that have one (renewals carry a continuity
+      // desk keyed on the objective, holding stage / forecast / next step).
+      if (desk.caseTable) {
+        const { data: facet } = await admin.from(desk.caseTable)
+          .select('motion, stage_key, next_step, next_step_date, baseline_cents, forecast_cents, risk_level')
+          .eq('objective_id', objectiveId).maybeSingle();
+        if (facet) {
+          const f = facet as Record<string, unknown>;
+          const bits = Object.entries(f)
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .map(([k, v]) => typeof v === 'number' && k.endsWith('_cents')
+              ? `${deskLabel(k)} $${Math.round(v / 100).toLocaleString('en-US')}`
+              : `${deskLabel(k)} ${String(v)}`)
+            .join(', ');
+          if (bits) accountContext += `\n\nYour case desk for this record: ${bits}. Keep it current as you work.`;
+        }
       }
     }
   }
@@ -806,6 +938,11 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
 
   let done = false, summary = '', finalStatus = 'done', turn = 0;
+  // N3 (docs/39): a text-only reply is a QUESTION, not a completion. The status
+  // stays 'waiting_human' — deliberately the existing value, so the one working
+  // unblock (decide_de_exception, which filters on it) keeps moving these items
+  // instead of silently reporting success while moving nothing.
+  let needsInput = false, questionText = '';
   for (turn = 0; turn < MAX_TURNS && !done; turn++) {
     const resp = await callAnthropic(admin, model, system, messages, tools);
     // Meter every call — check_tenant_ai_budget sums de_token_usage, so an
@@ -821,8 +958,26 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     } catch (e) { console.error('record_de_token_usage:', e); }
     messages.push({ role: 'assistant', content: resp.content });
     const toolUses = resp.content.filter((b) => b.type === 'tool_use');
-    if (toolUses.length === 0) { // model answered with text, no tool -> finish
-      summary = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').slice(0, 500) || 'completed';
+    if (toolUses.length === 0) {
+      // The model replied with prose and never called mark_done. This used to
+      // be stamped 'done' with the text sliced to 500 chars — the mechanism
+      // behind all 33 "completed" work items at hq that are, verbatim,
+      // questions addressed to nobody (docs/38). N3: it is NOT done. It is a
+      // question, and it goes to a person with the full text intact.
+      const modelText = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim();
+      needsInput = true;
+      finalStatus = 'waiting_human';
+      summary = 'Stopped without finishing — asked a question instead. Routed to a person.';
+      questionText = modelText;
+      const { error: qErr } = await admin.rpc('open_de_escalation', {
+        p_tenant_id: tenantId, p_de_id: deId,
+        p_work_item_id: item.id, p_objective_id: objectiveId,
+        p_title: entityName ? `Question on ${entityName} — ${item.title}`.slice(0, 300) : `Question — ${item.title}`.slice(0, 300),
+        p_reason: modelText || '(the employee produced no text)',
+        p_proposed_action: null, p_justification: null,
+        p_needs_input: true, p_sla_hours: STALL_HOURS,
+      });
+      if (qErr) console.error('open_de_escalation (needs_input):', qErr.message);
       done = true; break;
     }
     const toolResults: unknown[] = [];
@@ -849,7 +1004,13 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     if (withhold) finalStatus = 'waiting_human';
   }
 
-  await admin.rpc('complete_de_work_item', { p_id: item.id, p_status: finalStatus, p_result: { summary, turns: turn }, p_error: finalStatus === 'failed' ? summary : null });
+  await admin.rpc('complete_de_work_item', {
+    p_id: item.id, p_status: finalStatus,
+    // The full question is kept, not sliced to 500 chars: the truncation is
+    // what destroyed the evidence of what was actually being asked.
+    p_result: needsInput ? { summary, turns: turn, needs_input: true, question: questionText } : { summary, turns: turn },
+    p_error: finalStatus === 'failed' ? summary : null,
+  });
   // OTel GenAI span (#13, mig 177) — one span per autonomous task, best-effort.
   await recordSpan(admin, {
     tenant_id: tenantId, name: 'invoke_agent de-work', kind: 'agent', started_at: spanStart,
