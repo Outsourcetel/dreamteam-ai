@@ -322,8 +322,12 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
         )}
       </PanelCard>
 
+      {/* Not "Recently finished": since mig 493 this panel also carries
+          cancelled work — including the items the old runtime recorded as
+          completed when the employee had actually stopped to ask a question.
+          Each row states its own status; the heading must not contradict them. */}
       {recent.length > 0 && (
-        <PanelCard title="Recently finished">
+        <PanelCard title="Recently closed">
           <div className="divide-y divide-dt-border">
             {recent.map(w => (
               <div key={w.id} className="py-2">
