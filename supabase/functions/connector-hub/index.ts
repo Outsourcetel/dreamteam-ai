@@ -258,6 +258,14 @@ const erpnext = {
       customer_name: String(d.customer_name ?? d.customer ?? ''),
       invoice_external_ref: String(d.name ?? ''),
       amount_cents: Math.round(Number(d.grand_total ?? 0) * 100),
+      // What is STILL OWED, per ERPNext's own arithmetic — the one number a
+      // collections agent must quote. It was already being fetched (see
+      // ERPNEXT_INVOICE_FIELDS) and used to filter the dunning queue, but never
+      // stored, so a part-paid invoice looked fully unpaid and would have been
+      // chased for its face value. Undefined when ERPNext omits the field, so
+      // the invoice stays honestly unverified rather than acquiring a guess.
+      outstanding_cents: d.outstanding_amount === undefined || d.outstanding_amount === null
+        ? null : Math.round(Number(d.outstanding_amount) * 100),
       due_date: d.due_date ? String(d.due_date) : null,
       status: this.arStatus(String(d.status ?? '')),
       currency: String(d.currency ?? ''),
@@ -5065,6 +5073,9 @@ serve(async (req) => {
           p_due_date: rec.due_date ?? null,
           p_status: rec.status ?? 'sent',
           p_currency: rec.currency ?? null,
+          // NULL when the provider did not state a balance — the upsert keeps
+          // any balance already known rather than erasing it (mig 532).
+          p_outstanding_cents: rec.outstanding_cents ?? null,
         });
         if (upErr) errors.push(`${rec.invoice_external_ref}: ${upErr.message}`.slice(0, 160));
         else upserted += 1;
