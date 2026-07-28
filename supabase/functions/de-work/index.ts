@@ -1129,7 +1129,12 @@ serve(async (req) => {
       for (const o of (due ?? [])) {
         // 'open' objectives in this list are in planning backoff — the
         // planner owns them; reviewing an unplanned goal is meaningless.
-        if (o.status !== 'in_progress') continue;
+        // 'blocked' IS reviewable now (mig 482 re-arms it at 24h instead of
+        // disarming it forever) — that re-review is the whole point of making
+        // it revivable. Skipping it here would also STARVE the queue: blocked
+        // objectives sort earliest, so they would eat all 3 wake slots per tick
+        // and silently skip, and nothing else would ever wake.
+        if (o.status !== 'in_progress' && o.status !== 'blocked') continue;
         const deferWake = () =>
           admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
         // Wave-1: paused/retired DEs don't wake their goals either.
