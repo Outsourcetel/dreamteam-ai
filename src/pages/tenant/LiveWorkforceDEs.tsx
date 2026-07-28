@@ -3842,13 +3842,26 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
     setError(null);
     try {
       const label = entry.policy?.display_name || entry.label;
-      const row = await setAutonomyDial(entry.capability_key, label, {
-        enabled: d.enabled,
-        max_amount_cents: entry.enforcement.uses_amount && d.amount.trim() !== ''
-          ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
-        min_confidence: entry.enforcement.uses_confidence && d.confidence.trim() !== ''
-          ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
-      }, de.id);
+      // mig 496: a record write-back is governed by the gate's own key
+      // (action_execute + category), not by the card's capability key. Writing
+      // the capability-shaped key would produce a dial that reads ON here and
+      // changes nothing at runtime — the resolver returns at the first
+      // action_type that has any row, and 'action_execute' rows exist in every
+      // provisioned tenant. Same distinction the surface makes when reading.
+      const isWriteback = entry.capability_key.startsWith('writeback:');
+      const row = await setAutonomyDial(
+        isWriteback ? 'action_execute' : entry.capability_key,
+        label,
+        {
+          enabled: d.enabled,
+          max_amount_cents: entry.enforcement.uses_amount && d.amount.trim() !== ''
+            ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
+          min_confidence: entry.enforcement.uses_confidence && d.confidence.trim() !== ''
+            ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
+        },
+        de.id,
+        isWriteback ? entry.capability_key.slice('writeback:'.length) : null,
+      );
       // Label it as an override when it exceeds the earned ladder level.
       const earned = entry.policy ? earnedLadderSettings(entry.policy, entry.policy.current_level) : null;
       const exceeds = earned !== null && row.enabled && (

@@ -132,6 +132,13 @@ export async function setAutonomyDial(
   label: string,
   updates: { enabled: boolean; max_amount_cents?: number | null; min_confidence?: number | null },
   deId: string | null = null,
+  // mig 496: record write-backs are governed by (action_execute, <category>),
+  // not by a capability-shaped key. The resolver returns at the FIRST
+  // action_type that has any row for the tenant, and provisioning guarantees
+  // 'action_execute' rows exist everywhere — so writing a 'writeback:crm' row
+  // here would read as ON in the UI and change nothing at runtime. The card
+  // therefore passes the gate's own key, and the category with it.
+  sourceCategory: string | null = null,
 ): Promise<DEAutonomy> {
   const { data, error } = await supabase.rpc('set_de_autonomy', {
     p_action_type: actionKey,
@@ -139,7 +146,7 @@ export async function setAutonomyDial(
     p_max_amount_cents: updates.max_amount_cents ?? null,
     p_min_confidence: updates.min_confidence ?? null,
     p_de_id: deId,
-    p_source_category: null,
+    p_source_category: sourceCategory,
   });
   if (error) raise('setAutonomyDial', error);
   const row = data as DEAutonomy;
