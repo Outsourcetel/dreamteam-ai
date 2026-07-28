@@ -733,14 +733,14 @@ export default function LiveConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   // W4-R: grants + DE names for the per-card access line (read-only view of
   // the same default-deny matrix Governance → Data Access manages).
-  const [grants, setGrants] = useState<Array<{ subject_id: string; connector_id: string | null; resource_category: string | null; permission: string }>>([]);
+  const [grants, setGrants] = useState<Array<{ subject_id: string; resource_kind: string; resource_id: string | null; resource_category: string | null; permission: string }>>([]);
   const [deNames, setDeNames] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const [{ data: g }, { data: d }] = await Promise.all([
-          supabase.from('data_access_grants').select('subject_id, connector_id, resource_category, permission'),
+          supabase.from('data_access_grants').select('subject_id, resource_kind, resource_id, resource_category, permission'),
           supabase.from('digital_employees').select('id, name, persona_name').eq('status', 'active'),
         ]);
         if (cancelled) return;
@@ -765,13 +765,14 @@ export default function LiveConnectorsPage() {
   const grantsFor = (c: Connector): Array<{ name: string; level: string }> => {
     const byDe = new Map<string, string>();
     for (const g of grants) {
-      const applies = g.connector_id === c.id || (!g.connector_id && g.resource_category === c.category);
+      const isConnector = g.resource_kind === 'connector' && g.resource_id === c.id;
+      const applies = isConnector || (g.resource_kind === 'category' && g.resource_category === c.category);
       if (!applies) continue;
       const name = deNames.get(g.subject_id);
       if (!name) continue;
       const prev = byDe.get(name);
       // connector-specific beats category; write_back beats read for display
-      if (!prev || g.connector_id === c.id || (g.permission === 'write_back' && prev !== 'write_back')) byDe.set(name, g.permission);
+      if (!prev || isConnector || (g.permission === 'write_back' && prev !== 'write_back')) byDe.set(name, g.permission);
     }
     return [...byDe.entries()].map(([name, level]) => ({ name, level }));
   };
