@@ -551,6 +551,25 @@ Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2
 > WRITE actions, human-gated) + a backdated overdue invoice to fire the
 > playbook end-to-end + B3 drift reconciliation.
 
+> **A3 + B3 + overdue invoice SHIPPED & PROVEN LIVE — 2026-07-28 (near-G1).**
+> **Overdue:** created ACC-SINV-2026-00006 in ERPNext (due 2026-07-02, 26 days
+> past due), synced → renewal_invoices status='sent'; arStatus fixed so ERPNext
+> 'Overdue'→'sent'; confirmed in the exact set invoice_overdue selects (target
+> tenant outsourcetel-hq already has the published dunning rules).
+> **A3 (mig 520 + erpnext_invoice_comment executor):** send_final_notice →
+> `human_gated_destructive` (floored before trust), send_payment_reminder →
+> `human_gated_trust` — the platform cannot write to the ERP without a human
+> (the moat, proven through the gate). The write mechanism (POST Comment to the
+> Sales Invoice timeline) proven to land in ERPNext. The approve→execute step is
+> human-gated by design (needs a real authenticated approver — not faked).
+> **B3 (mig 521 + reconcile_financials + nightly cron):** compares ERP live
+> count/total vs the mirror, raise_ops_alert on mismatch — proven 6/6 in-sync →
+> induced 7-vs-6 drift (ops_alert 'erp_ar_drift' raised) → re-sync → 7/7 clear.
+> REMAINING for the formal G1 gate: the autonomous playbook→erpnext-action
+> binding (wire "Overdue Invoice Follow-Up" to the erpnext dunning actions) and a
+> real human approval through the UI. ⚠ dev connector still holds the exposed
+> token — rotate.
+
 ### 8.6 Living tracker
 
 Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
@@ -558,8 +577,8 @@ Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`,
 
 | Track | Packages | State (2026-07-28, post-lock) |
 |---|---|---|
-| A connector platform | A1–A6 | **S1 PROVEN LIVE 2026-07-28** — erpnext read adapter + mig 514 deployed; category_op search_invoices/get_invoice returns real invoices through the platform, test green. A2–A6 pending |
-| B data plane + drift | B1–B5 | **B1+B2 PROVEN LIVE 2026-07-28** — ERPNext invoices sync into renewal_invoices/customer_accounts idempotently (5 inv / 3 acct); B3 drift, B4 unify, B5 backfill pending |
+| A connector platform | A1–A6 | **S1 + A3 PROVEN LIVE 2026-07-28** — read adapter (mig 514) + dunning write actions (mig 520): gate floors destructive to a human, write posts to the ERP timeline. A2/A4–A6 pending |
+| B data plane + drift | B1–B5 | **B1+B2+B3 PROVEN LIVE 2026-07-28** — ingest idempotent; drift sentinel (mig 521) detects/alarms/clears (proven: 6/6 → 7-vs-6 alert → 7/7). B4 unify, B5 backfill pending |
 | C staffing | C1–C4 | blocked — entry after A3 |
 | D provisioning + lifecycle | D1–D5 | blocked — G2/G3 milestone |
 | E governance | E1–E4 | **ready after A3** |
