@@ -802,7 +802,10 @@ export default function LiveConnectorsPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const conns = await listConnectors();
+      // Hide internal platform connectors (the "DreamTeam AI (self)" self-management
+      // connector, category platform_admin) — it's plumbing a DE uses to operate
+      // DreamTeam itself, not an external data source the customer connects or tests.
+      const conns = (await listConnectors()).filter((c) => String(c.category) !== 'platform_admin');
       setConnectors(conns);
       try { setTemplates(await listAdapterTemplates()); } catch { setTemplates([]); /* library appears once migration 028 is applied */ }
       const objMap: Record<string, ConnectorObject[]> = {};
