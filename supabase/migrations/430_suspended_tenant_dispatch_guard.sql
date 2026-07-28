@@ -1346,6 +1346,24 @@ begin
         perform sync_de_lifecycle_from_development(m.de_id);
         return next v_row;
       end loop;
+      -- Recovery pass (docs/31 Q10, mig 453): each opening bar above, inverted,
+      -- releases the entry it opened once the measure is back inside the line;
+      -- the employee lifecycle is then re-derived so the flip back to active
+      -- fires when the last open entry goes. The two filters keep this
+      -- statement away from human-created entries and from the kinds the
+      -- other two sweeps own — each of those closes its own.
+      update de_development_items i
+         set status = 'completed', completed_at = now(), updated_at = now()
+       where i.tenant_id = t.id and i.de_id = m.de_id
+         and i.source = 'detected'
+         and i.status in ('proposed', 'in_progress')
+         and ((i.item_type = 'escalation_spike'  and m.escalation_rate <= 50)
+           or (i.item_type = 'confidence_gap'    and m.avg_confidence >= 50)
+           or (i.item_type = 'error_rate'        and m.error_rate <= 15)
+           or (i.item_type = 'guardrail_pattern' and m.blocked_guardrail_count::numeric <= 0.1 * m.total_runs));
+      if found then
+        perform sync_de_lifecycle_from_development(m.de_id);
+      end if;
     end loop;
   end loop;
   return;
