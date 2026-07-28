@@ -9,7 +9,7 @@ export interface MemoryRow { id: string; content: string; kind: string; subject_
  *  and cleared only when a human decision resumes the work. wake_count is a
  *  LIFETIME counter — it long predates the wake store, so it is legitimate to
  *  say "woke 122 times" but never "122 notes". */
-export type AttentionFlag = 'stalled' | 'waiting_too_long' | 'wake_spin';
+export type AttentionFlag = 'stalled' | 'waiting_too_long' | 'wake_spin' | 'steps_failed';
 export interface ObjectiveRow { id: string; title: string; status: string; priority: number; due_at: string | null; created_at: string; attention_flag: AttentionFlag | null; attention_since: string | null; wake_count: number; next_wake_at: string | null }
 /** One check-in on a long-running goal: the employee's own account of where it
  *  got to, written by conclude_objective_wake (mig 482). */

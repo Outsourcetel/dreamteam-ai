@@ -110,6 +110,11 @@ function attentionLabel(o: ObjectiveRow): string {
     case 'wake_spin': return `Woke ${o.wake_count} times, nothing moved`;
     case 'waiting_too_long': return since ? `Waiting on you since ${since}` : 'Waiting on you';
     case 'stalled': return since ? `Stalled since ${since}` : 'Stalled';
+    // Distinct from 'stalled' on purpose: nothing here is going to start moving
+    // on its own. A step failed, so every step behind it is dead too, and
+    // somebody has to decide whether to retry it, change the approach or drop
+    // the goal. The reason sits on the failed step itself.
+    case 'steps_failed': return since ? `A step failed — stuck since ${since}` : 'A step failed — cannot continue';
     default: return 'Needs you';
   }
 }
