@@ -538,6 +538,19 @@ Estimate holds at §7's **7–8 sessions to G1** (S3 and B-track overlap S1–S2
 > holds the exposed dev token — rotate in ERPNext and re-store via
 > set_connector_secret; low-risk throwaway trial site.
 
+> **B1+B2 SHIPPED & PROVEN LIVE — 2026-07-28.** Migration 517 adds
+> provider-generic `source_provider`/`source_external_ref`/`source_currency`
+> columns + partial-unique idempotency indexes + `upsert_external_ar_record`
+> (account then invoice; unknown status → 'sent'); no `erpnext` in the schema.
+> `erpnext.syncFinancials` + a connector-hub `sync_financials` action pull all
+> submitted invoices and upsert them. Proof: sync of connector 7f595bec landed
+> 5 invoices / 3 deduped accounts into renewal_invoices/customer_accounts,
+> amount×100 correct (PKR), status mapped (Unpaid→sent, Paid→paid); ran twice →
+> still 5/3 (idempotent, R4 at row level). The existing dunning/at-risk/
+> staleness machinery now reads real ERP data. NEXT toward G1: A3 (dunning
+> WRITE actions, human-gated) + a backdated overdue invoice to fire the
+> playbook end-to-end + B3 drift reconciliation.
+
 ### 8.6 Living tracker
 
 Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`, `ready`,
@@ -546,7 +559,7 @@ Maintained here and mirrored to memory each session. State ∈ {`blocked-on-G0`,
 | Track | Packages | State (2026-07-28, post-lock) |
 |---|---|---|
 | A connector platform | A1–A6 | **S1 PROVEN LIVE 2026-07-28** — erpnext read adapter + mig 514 deployed; category_op search_invoices/get_invoice returns real invoices through the platform, test green. A2–A6 pending |
-| B data plane + drift | B1–B5 | **ready after A1** — landing zone locked (D2 = renewal_invoices) |
+| B data plane + drift | B1–B5 | **B1+B2 PROVEN LIVE 2026-07-28** — ERPNext invoices sync into renewal_invoices/customer_accounts idempotently (5 inv / 3 acct); B3 drift, B4 unify, B5 backfill pending |
 | C staffing | C1–C4 | blocked — entry after A3 |
 | D provisioning + lifecycle | D1–D5 | blocked — G2/G3 milestone |
 | E governance | E1–E4 | **ready after A3** |
