@@ -1,0 +1,84 @@
+# 40 — Native Top-5 Integration Program (+ MCP long tail)
+
+**Status:** PLAN, awaiting founder phase pick. Nothing built beyond what's marked live.
+**Date:** 2026-07-30
+**Directive (founder):** identify the top 5 systems in each category and make them true
+native integrations where the customer needs *only an API key* — with MCP as the
+supported extension path for everything else.
+
+---
+
+## 1. The quality ladder (what "native" honestly means)
+
+| Level | Meaning | Customer experience |
+|---|---|---|
+| **L3 — Full native** | key-only wizard + live test + category reads + **governed write actions** (gated, audited, human-approved) + health | "Paste key → your workforce reads AND acts, under approval" |
+| **L2 — Native reads** | key-only wizard + live test + category reads; no write actions yet | "Paste key → your workforce sees, cites, answers" |
+| L1 — Registered | listed in the wizard, adapter honest-not-built | "Registers now" |
+| L0 — Absent | not listed | → MCP / template builder / generic REST |
+
+**Current truth (audited from the live code, not the marketing flag):** ~66 providers at
+L2, only **8 at L3** (zendesk, freshdesk, servicenow, slack, github, gitlab, asana,
+erpnext). The moat is the governed *action* — so the program's center of gravity is
+promoting top-5 systems from L2 → L3, not adding more L2 logos.
+
+## 2. Top 5 per category — SMB-weighted, mapped to today's ladder
+
+Picks are from stable market knowledge; per-provider API-openness gets a live check at
+build time (standing rule: API-openness beats popularity). ★ = has native reads today.
+
+| Category | Top 5 (SMB) | Today | Gap to close |
+|---|---|---|---|
+| **CRM** | HubSpot★, Salesforce★, Pipedrive★, Zoho CRM, Dynamics★ | 4/5 at L2 | → L3 writes for HubSpot + Salesforce + Pipedrive; **build Zoho CRM** |
+| **Helpdesk** | Zendesk★(L3), Freshdesk★(L3), Intercom★, Zoho Desk, Gorgias★ | 2 L3, 2 L2 | → L3 for Intercom + Gorgias; **build Zoho Desk** |
+| **Knowledge** | Notion★, Confluence★, SharePoint★, Google Drive★, Guru★ | 5/5 at L2 | reads suffice for KB (writes rare) — polish sync; optional L3 later |
+| **ERP / Financials** | QuickBooks★, Xero★, ERPNext★(L3), NetSuite★, Sage | 1 L3, 3 L2 | → L3 for QuickBooks + Xero (AR ingest + dunning, the proven ERPNext pattern); **build Sage** (or Zoho Books) |
+| **Billing** | Stripe★, QuickBooks★, Chargebee, Square★, Recurly | 3/5 at L2 | → L3 for Stripe (refund/credit gated); **build Chargebee** (Recurly via MCP first) |
+| **Payroll / HCM** | Gusto★, BambooHR★, ADP, Rippling, Deel | 2/5 at L2 | → L3 for Gusto + BambooHR (time-off approve = naturally gated); ADP/Rippling/Deel APIs are partner-gated — **MCP first**, native later if demand |
+| **POS** | Square★, Shopify★, Toast★, Clover, Lightspeed | 3/5 at L2 | → L3 for Square + Shopify; **build Clover**; Lightspeed via MCP |
+| **Product system** | (customer's own product) | generic_rest + template builder | this category's "top 5" IS the long tail → **MCP + template builder are the answer** |
+
+Missing-adapter shortlist that actually cracks a top-5: **Zoho family (CRM/Desk — one
+auth), Sage, Chargebee, Clover.** Everything else top-5 already has native reads.
+
+## 3. The MCP leg ("PLUS MCP option")
+
+Already founder-approved + designed (docs/mcp-governed-connector-design.md; reference
+server live and proven). MCP is the *governed* long-tail: any allowlisted MCP server's
+tools become gated action_definitions (annotations→risk, fail-safe destructive). This is
+what makes "top 5 native, everything else still supported" an honest sentence — the
+6th-through-Nth system in every category connects via MCP **under the same gate**.
+Remaining: tasks #18–21 (M1 annotations capture + provider, M2 governed call path, M3/M4
+DE exposure + UI). ~4–6 sessions.
+
+## 4. UI changes (small — the wizard already does key-only)
+
+- Category landing: show the **top-5 rail** first with capability badges ("reads · acts
+  (gated)" vs "reads"), long tail behind search, MCP + template builder as the explicit
+  "not listed?" path.
+- Badges derive from the ladder (L3/L2), not a hand-set flag — no overselling.
+- Reconnect/Remove + in-place reconnect already shipped.
+
+## 5. Phases (each provider promotion = the proven ERPNext playbook: action_definitions
+rows + native executor + gate proof + write-back proof)
+
+| Phase | Scope | Sessions (est.) |
+|---|---|---|
+| **P1 — Money + CRM writes** | L3 for HubSpot, Salesforce, QuickBooks, Xero, Stripe (gated: log note/task, update deal stage, send invoice reminder, refund-request) | ~4–5 |
+| **P2 — MCP governed connector** | tasks #18–21 (M1–M4) — unlocks the long tail everywhere | ~4–6 |
+| **P3 — Support + people writes** | L3 for Intercom, Gorgias, Gusto, BambooHR, Square, Shopify | ~4–5 |
+| **P4 — Missing top-5 adapters** | Zoho CRM/Desk, Sage, Chargebee, Clover (reads → writes) | ~5–6 |
+| **P5 — Top-5 rail UI + badges** | category landing + capability badges | ~1–2 |
+
+P1 and P2 are independent — can interleave. Recommended order: **P1 → P2 → P5 → P3 → P4**
+(money/CRM writes prove the moat where customers feel it; MCP then honestly covers
+everything the natives don't; the rail makes it visible; then breadth).
+
+## 6. Founder decisions requested
+
+| # | Decision | Recommendation |
+|---|---|---|
+| D1 | Approve the ladder + top-5 map (§1–2) | as laid out |
+| D2 | Phase order | P1 → P2 → P5 → P3 → P4 |
+| D3 | Zoho/Sage/Chargebee/Clover: build native (P4) vs MCP-only until demand | build in P4; MCP bridges meanwhile |
+| D4 | Start P1 now? | yes — begin with HubSpot writes (ties to the connector you're re-adding) |
