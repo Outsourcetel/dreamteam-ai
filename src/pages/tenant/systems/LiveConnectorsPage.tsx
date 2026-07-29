@@ -104,13 +104,14 @@ const selectCls = 'bg-dt-page border border-dt-border-strong rounded-lg text-xs 
 
 // ── Connect wizard ────────────────────────────────────────────────
 
-function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onDone: (msg: string) => void; onCustom: () => void }) {
+function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () => void; onDone: (msg: string) => void; onCustom: () => void; reconnect?: Connector }) {
   // Category FIRST (what kind of system), provider second (which brand).
-  const [category, setCategory] = useState<SystemCategory | null>(null);
-  const [provider, setProvider] = useState<ConnectorProvider | null>(null);
-  const [baseUrl, setBaseUrl] = useState('');
-  const [name, setName] = useState('');
-  const [accessMode, setAccessMode] = useState<ConnectorAccessMode>('fetch_only');
+  // On reconnect, prefill from the existing connector and jump straight to credentials.
+  const [category, setCategory] = useState<SystemCategory | null>(reconnect?.category ?? null);
+  const [provider, setProvider] = useState<ConnectorProvider | null>(reconnect?.provider ?? null);
+  const [baseUrl, setBaseUrl] = useState(reconnect?.base_url ?? '');
+  const [name, setName] = useState(reconnect?.display_name ?? '');
+  const [accessMode, setAccessMode] = useState<ConnectorAccessMode>(reconnect?.access_mode ?? 'fetch_only');
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   // generic_rest endpoint config
   const [searchPath, setSearchPath] = useState('');
@@ -154,9 +155,10 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
       } : {};
       const { test } = await connectProvider({
         provider, displayName: name, baseUrl, category: category ?? PROVIDERS[provider].defaultCategory, accessMode, secrets, config,
+        reconnectId: reconnect?.id,
       });
       onDone(test.ok
-        ? `${meta.label} connected — credentials verified live${test.detail ? ` (${test.detail})` : ''}.`
+        ? `${meta.label} ${reconnect ? 'reconnected' : 'connected'} — credentials verified live${test.detail ? ` (${test.detail})` : ''}.`
         : `${meta.label} saved, but the live test failed: ${connectorErrorLabel(test.error)}`);
       onClose();
     } catch (e) {
@@ -234,8 +236,8 @@ function ConnectWizard({ onClose, onDone, onCustom }: { onClose: () => void; onD
             </>
           ) : (
             <>
-              <button onClick={() => setProvider(null)} className="text-xs text-dt-muted hover:text-white mb-2">← All systems</button>
-              <h2 className="text-sm font-semibold text-white mb-1">Connect {meta!.label}</h2>
+              {!reconnect && <button onClick={() => setProvider(null)} className="text-xs text-dt-muted hover:text-white mb-2">← All systems</button>}
+              <h2 className="text-sm font-semibold text-white mb-1">{reconnect ? 'Reconnect' : 'Connect'} {meta!.label}</h2>
               <p className="text-xs text-dt-muted mb-4">{meta!.tagline}</p>
 
               {meta!.oauth ? (
@@ -731,6 +733,7 @@ function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
 
 export default function LiveConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [reconnectTarget, setReconnectTarget] = useState<Connector | null>(null);
   // W4-R: grants + DE names for the per-card access line (read-only view of
   // the same default-deny matrix Governance → Data Access manages).
   const [grants, setGrants] = useState<Array<{ subject_id: string; resource_kind: string; resource_id: string | null; resource_category: string | null; permission: string }>>([]);
@@ -1089,7 +1092,7 @@ export default function LiveConnectorsPage() {
                       </button>
                     ) : (
                       <>
-                        <button disabled={isBusy} onClick={() => setShowConnect(true)} className="px-3 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/20 disabled:opacity-50 transition-colors">
+                        <button disabled={isBusy} onClick={() => { setReconnectTarget(c); setShowConnect(true); }} className="px-3 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/20 disabled:opacity-50 transition-colors">
                           Reconnect
                         </button>
                         <button disabled={isBusy} onClick={() => void doRemove(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
@@ -1214,7 +1217,7 @@ export default function LiveConnectorsPage() {
         </div>
       )}
 
-      {showConnect && <ConnectWizard onClose={() => setShowConnect(false)} onDone={m => { showToast(m); void load(); }} onCustom={() => setShowBuilder(true)} />}
+      {showConnect && <ConnectWizard reconnect={reconnectTarget ?? undefined} onClose={() => { setShowConnect(false); setReconnectTarget(null); }} onDone={m => { showToast(m); void load(); }} onCustom={() => setShowBuilder(true)} />}
       {showBuilder && <TemplateBuilderModal onClose={() => setShowBuilder(false)} onDone={m => { showToast(m); void load(); }} />}
       {useTemplate && <ConnectFromTemplateModal template={useTemplate} onClose={() => setUseTemplate(null)} onDone={m => { showToast(m); void load(); }} />}
     </div>

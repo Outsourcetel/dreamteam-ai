@@ -1063,6 +1063,9 @@ export interface ConnectProviderInput {
   secrets: Record<string, string>;
   /** generic_rest endpoint templates */
   config?: Record<string, unknown>;
+  /** When set, UPDATE this existing connector in place (reconnect) instead of
+   *  inserting a new row — so re-entering credentials never spawns a duplicate. */
+  reconnectId?: string;
 }
 
 export async function connectProvider(
@@ -1070,20 +1073,19 @@ export async function connectProvider(
 ): Promise<{ connector: Connector; test: { ok: boolean; error?: string; detail?: string } }> {
   const tid = await requireTenantId();
   const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
-  const { data, error } = await supabase
-    .from('connectors')
-    .insert({
-      tenant_id: tid,
-      provider: input.provider,
-      display_name: input.displayName.trim() || PROVIDERS[input.provider].label,
-      base_url: baseUrl,
-      category: input.category,
-      access_mode: input.accessMode,
-      config: input.config ?? {},
-      status: 'disconnected',
-    })
-    .select()
-    .single();
+  const row = {
+    provider: input.provider,
+    display_name: input.displayName.trim() || PROVIDERS[input.provider].label,
+    base_url: baseUrl,
+    category: input.category,
+    access_mode: input.accessMode,
+    config: input.config ?? {},
+    status: 'disconnected' as ConnectorStatus,
+  };
+  // Reconnect updates the SAME row (no duplicate); a fresh connect inserts.
+  const { data, error } = input.reconnectId
+    ? await supabase.from('connectors').update({ ...row, last_error: null }).eq('id', input.reconnectId).eq('tenant_id', tid).select().single()
+    : await supabase.from('connectors').insert({ tenant_id: tid, ...row }).select().single();
   if (error) raise('connectProvider', error);
   const connector = data as Connector;
 
@@ -1097,7 +1099,8 @@ export async function connectProvider(
   }
 
   // Zendesk keeps its object/action registries (sync + write-back path).
-  if (input.provider === 'zendesk') {
+  // Seed only on a fresh connect — a reconnect already has them.
+  if (!input.reconnectId && input.provider === 'zendesk') {
     await supabase.from('connector_objects').insert([
       { connector_id: connector.id, object_type: 'ticket', mode: input.accessMode === 'ingest' ? 'sync' : 'read_through', sync_interval_mins: 60, enabled: true },
       { connector_id: connector.id, object_type: 'user', mode: 'read_through', enabled: true },
