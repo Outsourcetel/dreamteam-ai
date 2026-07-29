@@ -10,7 +10,7 @@ import {
   listConnectors, listConnectorObjects, listConnectorActions,
   connectProvider, hubTest, hubSearch, hubSync, syncTickets,
   hubHealthCheck, updateConnectorFieldMap, connectorHealth,
-  updateConnectorObject, updateConnectorAction, disconnectConnector,
+  updateConnectorObject, updateConnectorAction, disconnectConnector, deleteConnector,
   connectorErrorLabel, fmtSince,
   IngestFilters, IngestCandidate, INGEST_TYPES, readIngestFilters,
   setIngestConfig, listIngestCandidates, decideIngestCandidates, discoverConnector,
@@ -904,6 +904,16 @@ export default function LiveConnectorsPage() {
     } finally { setBusy(null); }
   };
 
+  const doRemove = async (c: Connector) => {
+    if (!window.confirm(`Remove ${c.display_name || PROVIDERS[c.provider]?.label} from the list? This permanently deletes the connector.`)) return;
+    setBusy(c.id);
+    try {
+      await deleteConnector(c.id);
+      showToast('Connector removed.');
+      await load();
+    } finally { setBusy(null); }
+  };
+
   const setObjField = async (o: ConnectorObject, updates: Partial<Pick<ConnectorObject, 'mode' | 'sync_interval_mins' | 'enabled'>>) => {
     const next = await updateConnectorObject(o.id, updates);
     setObjects(prev => ({
@@ -1073,9 +1083,20 @@ export default function LiveConnectorsPage() {
                         Sync tickets
                       </button>
                     )}
-                    <button disabled={isBusy} onClick={() => void doDisconnect(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
-                      Disconnect
-                    </button>
+                    {c.status === 'connected' ? (
+                      <button disabled={isBusy} onClick={() => void doDisconnect(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
+                        Disconnect
+                      </button>
+                    ) : (
+                      <>
+                        <button disabled={isBusy} onClick={() => setShowConnect(true)} className="px-3 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/20 disabled:opacity-50 transition-colors">
+                          Reconnect
+                        </button>
+                        <button disabled={isBusy} onClick={() => void doRemove(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
+                          Remove
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 
