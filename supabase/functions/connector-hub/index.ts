@@ -2750,7 +2750,179 @@ const hubspotActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions };
+// ── P1 write actions for the remaining top-5 money/CRM systems (docs/40).
+// Deliberately bound to the SAME canonical action_keys as their category
+// siblings (crm: log_account_note / create_followup_task / update_deal_stage;
+// erp_financials + billing: send_payment_reminder) so a playbook written once
+// runs on whichever brand the tenant actually has — the category contract
+// doing its job. RISK IS PER PROVIDER, not per key: ERPNext's reminder is an
+// internal ledger note (not destructive) whereas QuickBooks/Xero/Stripe
+// reminders EMAIL THE CUSTOMER, which is irreversible → destructive.
+
+// salesforce — Tasks are Salesforce's activity record; WhatId ties one to an
+// Account/Opportunity. instance_url is known synchronously; only the bearer
+// token needs the async client-credentials exchange.
+const sfInstance = (c: Ctx) => String(c.secret.instance_url ?? c.baseUrl ?? '').replace(/\/+$/, '');
+const salesforceActions: Record<string, NativeAction> = {
+  salesforce_log_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Salesforce Account/Opportunity id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'POST', url: `${sfInstance(c)}/services/data/v60.0/sobjects/Task`,
+        body: { Subject: (p.subject ?? 'Note logged by DreamTeam').slice(0, 255), Description: p.note.slice(0, 32000), Status: 'Completed', WhatId: p.external_ref },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const t = await salesforce.token(c);
+      if (!t.ok) return { ok: false, error: t.error ?? 'auth_failed' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Logged an activity note on Salesforce record ${p.external_ref} (internal — not visible to the customer).` };
+    },
+  },
+  salesforce_create_task: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Salesforce Account/Opportunity id) is required.' };
+      if (!p.subject?.trim()) return { ok: false, error: 'param_required', detail: 'subject is required.' };
+      const due = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+      return {
+        ok: true, method: 'POST', url: `${sfInstance(c)}/services/data/v60.0/sobjects/Task`,
+        body: { Subject: p.subject.slice(0, 255), Description: (p.note ?? '').slice(0, 32000), Status: 'Not Started', ActivityDate: due, WhatId: p.external_ref },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const t = await salesforce.token(c);
+      if (!t.ok) return { ok: false, error: t.error ?? 'auth_failed' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Created a follow-up task ("${p.subject}") on Salesforce record ${p.external_ref}, due tomorrow.` };
+    },
+  },
+  salesforce_update_opportunity_stage: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Salesforce Opportunity id) is required.' };
+      if (!p.stage?.trim()) return { ok: false, error: 'param_required', detail: 'stage (StageName) is required.' };
+      return { ok: true, method: 'PATCH', url: `${sfInstance(c)}/services/data/v60.0/sobjects/Opportunity/${encodeURIComponent(p.external_ref)}`, body: { StageName: p.stage } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const t = await salesforce.token(c);
+      if (!t.ok) return { ok: false, error: t.error ?? 'auth_failed' };
+      const hdrs = { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' };
+      const before = await httpJson(`${sfInstance(c)}/services/data/v60.0/sobjects/Opportunity/${encodeURIComponent(p.external_ref)}?fields=StageName`, { headers: hdrs });
+      const prev = String((before.body as { StageName?: unknown } | null)?.StageName ?? 'unknown');
+      const res = await httpJson(r.url!, { method: 'PATCH', headers: hdrs, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Moved Salesforce opportunity ${p.external_ref} from stage "${prev}" to "${p.stage}".` };
+    },
+  },
+};
+
+// quickbooks — /invoice/{id}/send EMAILS the invoice to the customer.
+const quickbooksActions: Record<string, NativeAction> = {
+  quickbooks_send_invoice_reminder: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (QuickBooks invoice id) is required.' };
+      const to = (p.email ?? '').trim();
+      return {
+        ok: true, method: 'POST',
+        url: `${QBO}/${quickbooks.realm(c)}/invoice/${encodeURIComponent(p.external_ref)}/send${to ? `?sendTo=${encodeURIComponent(to)}` : ''}`,
+        body: null,
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const t = await oauthAccessToken(c, 'quickbooks');
+      if (!t.ok) return { ok: false, error: t.error ?? 'auth_failed' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/octet-stream', Accept: 'application/json' } });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Emailed QuickBooks invoice ${p.external_ref} to the customer${p.email ? ` (${p.email})` : ''} — the customer received this.` };
+    },
+  },
+};
+
+// xero — Email sends the invoice to the customer; History is an internal note.
+const xeroActions: Record<string, NativeAction> = {
+  xero_send_invoice_reminder: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Xero InvoiceID) is required.' };
+      return { ok: true, method: 'POST', url: `${XERO}/Invoices/${encodeURIComponent(p.external_ref)}/Email`, body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const h = await xero.hdrs(c);
+      if (!h) return { ok: false, error: 'auth_failed' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Emailed Xero invoice ${p.external_ref} to the customer — the customer received this.` };
+    },
+  },
+  xero_log_invoice_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Xero InvoiceID) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return { ok: true, method: 'POST', url: `${XERO}/Invoices/${encodeURIComponent(p.external_ref)}/History`, body: { HistoryRecords: [{ Details: p.note.slice(0, 3000) }] } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const h = await xero.hdrs(c);
+      if (!h) return { ok: false, error: 'auth_failed' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Logged a note in the history of Xero invoice ${p.external_ref} (internal — not visible to the customer).` };
+    },
+  },
+};
+
+// stripe — form-encoded API. refund_payment MOVES MONEY: its amount param is
+// deliberately named `amount_cents`, the registry's money convention, so the
+// approval-threshold / spend-cap / trust-ceiling gates all engage (and an
+// unreadable amount fails closed to a human instead of refunding an unbounded
+// value). It is also classified destructive, so it can never auto-execute.
+const stripeForm = (c: Ctx) => ({ ...stripe.hdrs(c), 'Content-Type': 'application/x-www-form-urlencoded' });
+const stripeActions: Record<string, NativeAction> = {
+  stripe_send_invoice_reminder: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Stripe invoice id, in_…) is required.' };
+      return { ok: true, method: 'POST', url: `${STRIPE}/invoices/${encodeURIComponent(p.external_ref)}/send`, body: null };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: stripeForm(c) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Emailed Stripe invoice ${p.external_ref} to the customer — the customer received this.` };
+    },
+  },
+  stripe_refund_payment: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Stripe PaymentIntent id, pi_…) is required.' };
+      const amt = String(p.amount_cents ?? '').trim();
+      if (amt && !/^\d+$/.test(amt)) return { ok: false, error: 'param_invalid', detail: 'amount_cents must be a whole number of cents.' };
+      const form = new URLSearchParams({ payment_intent: p.external_ref, ...(amt ? { amount: amt } : {}) });
+      return { ok: true, method: 'POST', url: `${STRIPE}/refunds`, body: form.toString() };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: stripeForm(c), body: String(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const amt = String(p.amount_cents ?? '').trim();
+      return { ok: true, status: res.status, raw: res.body, receipt: `Refunded ${amt ? `${(Number(amt) / 100).toFixed(2)} of ` : 'the full amount of '}Stripe payment ${p.external_ref} — the money left your account.` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
