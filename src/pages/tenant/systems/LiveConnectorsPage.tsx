@@ -11,6 +11,7 @@ import {
   connectProvider, hubTest, hubSearch, hubSync, syncTickets,
   hubHealthCheck, updateConnectorFieldMap, connectorHealth,
   updateConnectorObject, updateConnectorAction, disconnectConnector, deleteConnector, hubSyncMcpTools,
+  TOP_PROVIDERS, listWriteCapableProviders,
   connectorErrorLabel, fmtSince,
   IngestFilters, IngestCandidate, INGEST_TYPES, readIngestFilters,
   setIngestConfig, listIngestCandidates, decideIngestCandidates, discoverConnector,
@@ -124,6 +125,32 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
 
   const meta = provider ? PROVIDERS[provider] : null;
 
+  // Which providers can actually ACT — read live from the registered actions,
+  // so a badge can never over-claim (docs/40: derived from the ladder, never a
+  // hand-set flag). Empty set = everything reads-only, which is the honest
+  // fallback if the lookup fails.
+  const [writeCapable, setWriteCapable] = useState<Set<string>>(new Set());
+  useEffect(() => { void listWriteCapableProviders().then(setWriteCapable).catch(() => {}); }, []);
+
+  const providerCard = (p: ConnectorProvider) => {
+    const m = PROVIDERS[p];
+    const acts = writeCapable.has(p);
+    return (
+      <button key={p} onClick={() => pick(p)}
+        className={`text-left rounded-xl border p-3 transition-colors ${m.implemented ? 'bg-dt-page border-dt-border hover:border-indigo-500/50' : 'bg-dt-inset border-dt-border'}`}>
+        <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {m.label}</p>
+        <p className="text-[11px] text-dt-muted mt-0.5">{m.tagline}</p>
+        {m.implemented
+          ? (
+            <p className={`text-[10px] mt-1 ${acts ? 'text-emerald-300' : 'text-dt-faint'}`}>
+              {acts ? 'reads · acts (every action approval-gated)' : 'reads only'}
+            </p>
+          )
+          : <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
+      </button>
+    );
+  };
+
   const pick = (p: ConnectorProvider) => {
     setProvider(p);
     if (!category) setCategory(PROVIDERS[p].defaultCategory);
@@ -214,18 +241,29 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
                   <p className="text-[11px] text-dt-muted mt-0.5">Not listed? Any REST API becomes a reusable template in five guided steps — no code.</p>
                 </button>
                 )}
-                {(Object.keys(PROVIDERS) as ConnectorProvider[])
-                  .filter(p => p !== 'template')
-                  .filter(p => { const q = providerQuery.trim().toLowerCase(); return !q || `${PROVIDERS[p].label} ${PROVIDERS[p].tagline}`.toLowerCase().includes(q); })
-                  .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category))
-                  .map(p => (
-                    <button key={p} onClick={() => pick(p)}
-                      className={`text-left rounded-xl border p-3 transition-colors ${PROVIDERS[p].implemented ? 'bg-dt-page border-dt-border hover:border-indigo-500/50' : 'bg-dt-inset border-dt-border'}`}>
-                      <p className="text-sm font-semibold text-white">{PROVIDER_ICON[p]} {PROVIDERS[p].label}</p>
-                      <p className="text-[11px] text-dt-muted mt-0.5">{PROVIDERS[p].tagline}</p>
-                      {!PROVIDERS[p].implemented && <p className="text-[10px] text-amber-400 mt-1">Registers now — adapter not built yet (honest)</p>}
-                    </button>
-                  ))}
+                {(() => {
+                  const q = providerQuery.trim().toLowerCase();
+                  const matches = (p: ConnectorProvider) => !q || `${PROVIDERS[p].label} ${PROVIDERS[p].tagline}`.toLowerCase().includes(q);
+                  const all = (Object.keys(PROVIDERS) as ConnectorProvider[]).filter(p => p !== 'template');
+                  // The systems most SMBs run for THIS category, first. Editorial
+                  // order only — the badge on each card is derived, not curated.
+                  const top = (TOP_PROVIDERS[category] ?? []).filter(p => PROVIDERS[p] && matches(p));
+                  const rest = all
+                    .filter(p => !top.includes(p) && matches(p))
+                    .sort((a, b) => Number(PROVIDERS[b].defaultCategory === category) - Number(PROVIDERS[a].defaultCategory === category));
+                  return (
+                    <>
+                      {top.length > 0 && (
+                        <p className="col-span-2 text-[11px] font-medium text-dt-support">Most used for {CATEGORY_SHORT[category]}</p>
+                      )}
+                      {top.map(p => providerCard(p))}
+                      {top.length > 0 && rest.length > 0 && (
+                        <p className="col-span-2 text-[11px] font-medium text-dt-support mt-2">Everything else</p>
+                      )}
+                      {rest.map(p => providerCard(p))}
+                    </>
+                  );
+                })()}
                 <div className="text-left rounded-xl border border-dashed border-dt-border p-3 bg-dt-inset">
                   <p className="text-sm font-semibold text-dt-support">🔗 Aggregator (hundreds of systems)</p>
                   <p className="text-[11px] text-dt-muted mt-0.5">One connection covering the long tail of niche tools.</p>

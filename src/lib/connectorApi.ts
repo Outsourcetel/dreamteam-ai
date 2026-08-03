@@ -1131,6 +1131,40 @@ export async function connectProvider(
   return { connector: (fresh ?? connector) as Connector, test };
 }
 
+/**
+ * The systems most SMBs actually run, per category (docs/40 §2). Editorial —
+ * it decides ORDER, never capability. Only providers that genuinely exist in
+ * PROVIDERS are listed; a category's rail is simply shorter where we haven't
+ * built the adapter yet, rather than advertising something that isn't there.
+ */
+export const TOP_PROVIDERS: Partial<Record<SystemCategory, ConnectorProvider[]>> = {
+  crm: ['hubspot', 'salesforce', 'pipedrive', 'dynamics', 'close'],
+  helpdesk: ['zendesk', 'freshdesk', 'intercom', 'gorgias', 'front'],
+  knowledge_base: ['notion', 'confluence', 'sharepoint', 'gdrive', 'guru'],
+  erp_financials: ['quickbooks', 'xero', 'erpnext', 'netsuite'],
+  billing: ['stripe', 'quickbooks', 'square', 'shopify'],
+  payroll_hcm: ['gusto', 'bamboohr'],
+  pos: ['square', 'shopify', 'toast'],
+  product_system: ['generic_rest', 'mcp'],
+  other: ['mcp', 'generic_rest'],
+};
+
+/**
+ * Which providers can actually ACT (governed writes), derived live from the
+ * registered platform-scope action_definitions — never a hand-set flag. A
+ * capability badge therefore cannot claim more than the platform can really
+ * do: the day a provider's write actions ship, its badge changes by itself.
+ */
+export async function listWriteCapableProviders(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('action_definitions')
+    .select('provider')
+    .eq('scope', 'platform')
+    .eq('status', 'active');
+  if (error) return new Set();
+  return new Set(((data ?? []) as Array<{ provider: string }>).map((r) => r.provider));
+}
+
 export async function hubTest(connectorId: string): Promise<{ ok: boolean; error?: string; detail?: string }> {
   return invokeHub({ action: 'test', connector_id: connectorId });
 }
