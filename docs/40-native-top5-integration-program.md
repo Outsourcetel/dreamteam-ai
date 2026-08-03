@@ -68,7 +68,7 @@ rows + native executor + gate proof + write-back proof)
 | **P2 — MCP governed connector** ✅ **M1+M2 SHIPPED 2026-08-04** (mig 541, commit 32ee618) | the long tail now inherits the gate: any allowlisted MCP server's tools register as tenant-scoped gated actions, risk derived fail-safe from annotations. M3/M4 shipped 2026-08-04 (commit 4951fc5): tools reach DEs automatically, and an MCP server is connectable from the wizard with one-click tool registration. Only the allowlist admin UI remains | done |
 | **P3 — Support + people writes** | L3 for Intercom, Gorgias, Gusto, BambooHR, Square, Shopify | ~4–5 |
 | **P4 — Missing top-5 adapters** | Zoho CRM/Desk, Sage, Chargebee, Clover (reads → writes) | ~5–6 |
-| **P5 — Top-5 rail UI + badges** | category landing + capability badges | ~1–2 |
+| **P5 — Top-5 rail UI + badges** ✅ **SHIPPED 2026-08-04** (commit 5d4e22a) | wizard leads with "Most used for {category}", long tail under "Everything else"; each card badged **reads · acts (approval-gated)** vs **reads only**, DERIVED live from registered platform-scope action_definitions (never a hand-set flag → cannot over-claim; degrades to "reads only" if the lookup fails) | done |
 
 P1 and P2 are independent — can interleave. Recommended order: **P1 → P2 → P5 → P3 → P4**
 (money/CRM writes prove the moat where customers feel it; MCP then honestly covers
