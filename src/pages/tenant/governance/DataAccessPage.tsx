@@ -9,6 +9,9 @@ import {
   setAccessGrant, revokeAccessGrant, effectiveGrant,
 } from '../../../lib/accessGrantsApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
+import {
+  McpAllowlistEntry, listMcpAllowlist, addMcpAllowlistHost, removeMcpAllowlistHost, normalizeMcpHost,
+} from '../../../lib/mcpAllowlistApi';
 
 // ============================================================
 // GOVERNANCE — Data Access (migration 029).
@@ -45,17 +48,25 @@ export default function DataAccessPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [lastChange, setLastChange] = useState<string | null>(null);
+  // MCP server allowlist — opt-in: no rows = open, any row = strict.
+  const [mcpAllow, setMcpAllow] = useState<McpAllowlistEntry[]>([]);
+  const [mcpHostInput, setMcpHostInput] = useState('');
+  const [mcpNoteInput, setMcpNoteInput] = useState('');
+  const [mcpBusy, setMcpBusy] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [subs, grs, conns, dens] = await Promise.all([
+      const [subs, grs, conns, dens, mcpHosts] = await Promise.all([
         listAccessSubjects(), listAccessGrants(),
         listConnectors().catch(() => [] as Connector[]),
         listRecentDenials().catch(() => [] as AccessDenialEvent[]),
+        listMcpAllowlist().catch(() => [] as McpAllowlistEntry[]),
       ]);
       setSubjects(subs); setGrants(grs); setConnectors(conns); setDenials(dens);
+      setMcpAllow(mcpHosts);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Demo sessions have no live tenant — that's not an error, it's the boundary.
@@ -109,6 +120,51 @@ export default function DataAccessPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally { setSavingCell(null); }
   };
+
+  // ── MCP allowlist ──
+  // Adding the first host, or removing the last, switches the whole workspace
+  // between open and strict. Neither happens without saying so first.
+  const addMcpHost = async () => {
+    const clean = normalizeMcpHost(mcpHostInput);
+    if (!clean) { setMcpError('Enter the server hostname, for example mcp.example.com'); return; }
+    if (mcpAllow.some(e => e.host === clean)) { setMcpError(`${clean} is already allowed.`); return; }
+    if (mcpAllow.length === 0 && !window.confirm(
+      `Restrict this workspace to listed MCP servers only?\n\n`
+      + `Right now any public MCP server may be connected. Adding "${clean}" switches to strict mode: `
+      + `from then on ONLY servers on this list can be connected or called — including any already connected.`)) return;
+    setMcpBusy(true); setMcpError(null);
+    try {
+      await addMcpAllowlistHost(clean, mcpNoteInput);
+      setMcpHostInput(''); setMcpNoteInput('');
+      setLastChange(`${clean} added to the MCP server allowlist.`);
+      await load();
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : String(err));
+    } finally { setMcpBusy(false); }
+  };
+
+  const removeMcpHost = async (entry: McpAllowlistEntry) => {
+    const isLast = mcpAllow.length === 1;
+    if (!window.confirm(isLast
+      ? `Remove "${entry.host}" — the last entry?\n\nThis returns the workspace to OPEN: any public MCP server could then be connected. Private and loopback addresses stay blocked either way.`
+      : `Remove "${entry.host}"? Servers on that host can no longer be connected or called.`)) return;
+    setMcpBusy(true); setMcpError(null);
+    try {
+      await removeMcpAllowlistHost(entry.id);
+      setLastChange(`${entry.host} removed from the MCP server allowlist.`);
+      await load();
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : String(err));
+    } finally { setMcpBusy(false); }
+  };
+
+  // In strict mode, an already-connected MCP server whose host is NOT listed is
+  // silently refused server-side — surface it rather than let it fail quietly.
+  const blockedMcpConnectors = mcpAllow.length === 0 ? [] : connectors.filter(c => {
+    if (c.provider !== 'mcp') return false;
+    const host = normalizeMcpHost(String((c.config as Record<string, unknown> | null)?.mcp_url ?? c.base_url ?? ''));
+    return !!host && !mcpAllow.some(e => e.host === host);
+  });
 
   if (loading) {
     return (
@@ -298,6 +354,70 @@ export default function DataAccessPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* MCP server allowlist — which MCP servers may be connected at all */}
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+          <h3 className="text-sm font-semibold text-white">MCP servers this workspace will talk to</h3>
+          <span className={`text-[10px] px-2 py-0.5 rounded ${mcpAllow.length === 0 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
+            {mcpAllow.length === 0 ? 'Open — any public MCP server' : `Restricted — ${mcpAllow.length} server${mcpAllow.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        <p className="text-[11px] text-dt-muted mb-3">
+          An MCP server exposes tools your digital employees can use. Whichever mode you are in, private, loopback
+          and link-local addresses are always refused, and every tool a server exposes still runs through the
+          approval gate — anything not explicitly read-only needs a human.
+        </p>
+
+        {mcpError && <p className="text-[11px] text-red-300 mb-2">{mcpError}</p>}
+
+        {mcpAllow.length === 0 ? (
+          <p className="text-[11px] text-dt-muted mb-3">
+            No servers listed, so <span className="text-amber-300">any public MCP server may be connected</span>.
+            Add one below to switch this workspace to strict mode, where only the servers you list are allowed.
+          </p>
+        ) : (
+          <div className="space-y-1.5 mb-3">
+            {mcpAllow.map(e => (
+              <div key={e.id} className="flex items-center gap-2 rounded-lg border border-dt-border bg-dt-inset px-3 py-2">
+                <span className="text-xs text-white font-mono">{e.host}</span>
+                {e.note && <span className="text-[11px] text-dt-muted truncate">{e.note}</span>}
+                <span className="text-[10px] text-dt-faint ml-auto whitespace-nowrap">{fmtDate(e.created_at)}</span>
+                <button disabled={mcpBusy} onClick={() => void removeMcpHost(e)}
+                  className="text-[11px] text-red-400 hover:text-red-300 disabled:opacity-50">Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {blockedMcpConnectors.length > 0 && (
+          <p className="text-[11px] text-amber-300 mb-3">
+            ⚠ {blockedMcpConnectors.length} connected MCP server{blockedMcpConnectors.length === 1 ? ' is' : 's are'} not on this list
+            ({blockedMcpConnectors.map(c => c.display_name || c.base_url).join(', ')}) — calls to {blockedMcpConnectors.length === 1 ? 'it' : 'them'} are refused until you add the host.
+          </p>
+        )}
+
+        <div className="flex gap-2 flex-wrap items-end">
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-[11px] text-dt-support mb-1">Server hostname</label>
+            <input value={mcpHostInput} onChange={e => setMcpHostInput(e.target.value)} placeholder="mcp.example.com"
+              className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-[11px] text-dt-support mb-1">Note (optional)</label>
+            <input value={mcpNoteInput} onChange={e => setMcpNoteInput(e.target.value)} placeholder="what this server is for"
+              className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-indigo-500" />
+          </div>
+          <button disabled={mcpBusy || !mcpHostInput.trim()} onClick={() => void addMcpHost()}
+            className="px-3 py-2 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+            {mcpBusy ? 'Saving…' : 'Allow this server'}
+          </button>
+        </div>
+        <p className="text-[10px] text-dt-faint mt-2">
+          Paste a hostname or a full URL — only the host is stored, because that is what the rule matches on.
+          Only a workspace owner or admin can change this list.
+        </p>
       </div>
 
       {/* Honest limits */}
