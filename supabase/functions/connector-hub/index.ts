@@ -294,6 +294,88 @@ const erpnext = {
   },
 };
 
+// ── mcp ── an MCP server as a FIRST-CLASS GOVERNED CONNECTOR.
+// (docs/mcp-governed-connector-design.md.) The MCP protocol itself lives in
+// the mcp-client edge function; this adapter drives it and — crucially — makes
+// every tool call arrive through decide_action_execution instead of beside it.
+interface McpToolDef {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+}
+
+async function mcpClientCall(c: Ctx, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+  const anon = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  try {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/mcp-client`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anon}`, apikey: anon,
+        'x-dispatch-secret': dispatch,
+        // The governed escape hatch mcp-client reserves for exactly this path.
+        // Direct tools/call is refused for everyone else precisely because it
+        // would skip the gate; anything arriving here has already passed it.
+        'x-mcp-governed-call': dispatch,
+      },
+      body: JSON.stringify({ ...body, connector_id: c.connectorId, tenant_id: c.tenantId }),
+    });
+    return await res.json().catch(() => null);
+  } catch { return null; }
+}
+
+/**
+ * MCP tool annotation → our risk classification. FAIL-SAFE, per the founder
+ * decision: ONLY an explicit `readOnlyHint: true` earns destructive:false.
+ * Everything else — a declared destructive tool, an "additive" write, or a
+ * tool carrying NO annotations at all — is treated as destructive and is
+ * therefore floored to a human before trust is even consulted.
+ *
+ * This is deliberately STRICTER than the MCP spec's own defaults: a server
+ * that annotates sloppily (or not at all) must never be able to auto-fire a
+ * side effect inside someone's business. It can be relaxed per-tool later by
+ * a human editing the registered action.
+ */
+function mcpRisk(t: McpToolDef): { destructive: boolean; idempotent: boolean } {
+  const a = (t.annotations ?? {}) as Record<string, unknown>;
+  return { destructive: a.readOnlyHint !== true, idempotent: a.idempotentHint === true };
+}
+
+/** JSON-Schema inputSchema → our param_schema shape. */
+function mcpParamSchema(t: McpToolDef): Array<Record<string, unknown>> {
+  const schema = (t.inputSchema ?? {}) as {
+    properties?: Record<string, { type?: string; description?: string }>;
+    required?: string[];
+  };
+  const required = new Set(schema.required ?? []);
+  return Object.entries(schema.properties ?? {}).slice(0, 20).map(([name, def]) => ({
+    name,
+    type: def?.type === 'number' || def?.type === 'integer' ? 'number' : 'string',
+    required: required.has(name),
+    help: String(def?.description ?? '').slice(0, 200),
+  }));
+}
+
+const mcpNotApplicable = (): AdapterResult => ({
+  ok: false, error: 'not_applicable',
+  detail: 'An MCP server exposes TOOLS, not a searchable record set. Run "sync_mcp_tools" to register its tools as governed actions, then invoke them through the action gate.',
+});
+
+const mcp = {
+  async test(c: Ctx): Promise<TestResult> {
+    const r = await mcpClientCall(c, { action: 'handshake' });
+    if (!r || r.ok !== true) return { ok: false, error: String(r?.error ?? 'handshake_failed') };
+    const info = (r.server_info ?? {}) as { name?: string };
+    const n = Array.isArray(r.tools) ? (r.tools as unknown[]).length : 0;
+    return { ok: true, detail: `${info.name ?? 'MCP server'} reachable — ${n} tool${n === 1 ? '' : 's'} listed` };
+  },
+  search(): Promise<AdapterResult> { return Promise.resolve(mcpNotApplicable()); },
+  fetchRecord(): Promise<AdapterResult> { return Promise.resolve(mcpNotApplicable()); },
+  listRecent(): Promise<AdapterResult> { return Promise.resolve(mcpNotApplicable()); },
+};
+
 // ════════════════════════════════════════════════════════════════
 // NATIVE ACTION EXECUTORS — the GENERALIZED ACTION LAYER's write-side
 // counterpart to the read-side adapter objects above. A native
@@ -1387,6 +1469,22 @@ function validateActionParams(
   return { ok: true, values };
 }
 
+/**
+ * An MCP action_definition names its tool in execution.mcp_tool. Native
+ * executors are handed params only (not the definition), so thread the tool
+ * name through under a reserved key.
+ *
+ * SAFE BY CONSTRUCTION: validateActionParams above builds `values` solely from
+ * the definition's own param_schema and drops every undeclared key — so a
+ * caller can never inject __mcp_tool to point one action's approval at a
+ * different, more dangerous tool on the same server. It can only ever come
+ * from the registered definition.
+ */
+const withMcpTool = (def: ActionDefRow, values: Record<string, string>): Record<string, string> => {
+  const tool = (def.execution as Record<string, unknown> | undefined)?.mcp_tool;
+  return tool ? { ...values, __mcp_tool: String(tool) } : values;
+};
+
 /** Plain-language RECEIPT PREVIEW — "This will change ticket #4521's
  *  status from Open to Resolved" — never a raw JSON diff. Generic
  *  fallback covers any action_definition; the two seeded Zendesk
@@ -1549,7 +1647,7 @@ async function renderRegisteredAction(
   const executionKey = String(def.execution?.execution_key ?? '');
   const native = NATIVE_ACTIONS[executionKey];
   if (!native) return { ok: false, error: 'execution_not_implemented', detail: `No native execution path for "${executionKey}".` };
-  const r = native.render(ctx, values);
+  const r = native.render(ctx, withMcpTool(def, values));
   return r;
 }
 
@@ -1605,7 +1703,7 @@ async function runRegisteredAction(
   const executionKey = String(def.execution?.execution_key ?? '');
   const native = NATIVE_ACTIONS[executionKey];
   if (!native) return { ok: false, error: 'execution_not_implemented' };
-  return native.run(ctx, values);
+  return native.run(ctx, withMcpTool(def, values));
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2922,7 +3020,35 @@ const stripeActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions };
+// mcp — ONE executor serves EVERY tool on EVERY MCP server. The specific tool
+// is named by the action_definition's execution.mcp_tool and threaded in as
+// __mcp_tool (see withMcpTool); it can never be supplied by a caller. This is
+// what lets the whole MCP ecosystem inherit the gate without a bespoke
+// executor per server.
+const mcpActions: Record<string, NativeAction> = {
+  mcp_tool_call: {
+    render(c, p) {
+      const tool = String(p.__mcp_tool ?? '').trim();
+      if (!tool) return { ok: false, error: 'execution_misconfigured', detail: 'This MCP action does not name a tool (execution.mcp_tool is missing).' };
+      const args: Record<string, string> = {};
+      for (const [k, v] of Object.entries(p)) if (k !== '__mcp_tool') args[k] = v;
+      return { ok: true, method: 'POST', url: c.baseUrl, body: { name: tool, arguments: args } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const call = r.body as { name: string; arguments: Record<string, string> };
+      const res = await mcpClientCall(c, { action: 'call_tool', tool: call.name, args: call.arguments });
+      if (!res || res.ok !== true) {
+        return { ok: false, error: String(res?.error ?? 'mcp_call_failed'), detail: String(res?.detail ?? ''), raw: res };
+      }
+      const text = String(res.text ?? '').trim().slice(0, 300);
+      return { ok: true, raw: res, receipt: `Ran MCP tool "${call.name}"${text ? ` — ${text}` : ' (no text output)'}.` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
@@ -5089,7 +5215,11 @@ serve(async (req) => {
     let secret: Record<string, string> = {};
     if (secretRow?.secret) {
       try { secret = JSON.parse(secretRow.secret); } catch { return json({ error: 'invalid_credentials_format' }, 400); }
-    } else if (connector.provider !== 'generic_rest' && connector.provider !== 'template' && connector.provider !== 'dreamteam') {
+    } else if (connector.provider !== 'generic_rest' && connector.provider !== 'template' && connector.provider !== 'dreamteam'
+               // An MCP server may legitimately be open (no bearer). mcp-client
+               // simply omits the auth header when no secret is stored, and the
+               // SSRF guard + tenant allowlist still apply.
+               && connector.provider !== 'mcp') {
       return json({ error: 'no_credentials' }, 400);
     }
 
@@ -5127,7 +5257,7 @@ serve(async (req) => {
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
       dropbox, twilio, typeform, calendly, okta, contentful,
-      erpnext,
+      erpnext, mcp,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
@@ -5280,6 +5410,64 @@ serve(async (req) => {
           : `Category op ${category}.${op} on ${connector.provider} FAILED — ${r.error} (recorded honestly)`,
         { mode: 'read_through', hub_action: 'category_op', category, op, ok: r.ok, error: r.error ?? null, item_count: items.length, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
       return json({ ok: r.ok, category, op, object: opDef.object, items, error: r.error ?? null, detail: r.detail ?? null, latency_ms: ms, health, persisted: false, ...(templateName ? { template: templateName } : {}) });
+    }
+
+    // ════════ sync_mcp_tools — REGISTER an MCP server's tools as gated actions ════
+    // The heart of the governed-MCP feature: handshake the server, then upsert
+    // each tool as an action_definition whose RISK is derived from the tool's
+    // own MCP annotations (fail-safe: anything not explicitly read-only is
+    // destructive). From that moment the tool is reachable only through
+    // execute_action → decide_action_execution, i.e. the same destructive
+    // floor / guardrail / trust gate every other connector write passes.
+    // Rows are TENANT-scoped: one workspace's MCP server never leaks tools to
+    // another.
+    if (action === 'sync_mcp_tools') {
+      if (connector.provider !== 'mcp') {
+        return json({ ok: false, error: 'not_an_mcp_connector', detail: `This action only applies to MCP connectors (this one is "${connector.provider}").` }, 200);
+      }
+      const started = Date.now();
+      const hs = await mcpClientCall(ctx, { action: 'handshake' });
+      if (!hs || hs.ok !== true) {
+        const health = await recordHealth(false, String(hs?.error ?? 'handshake_failed'));
+        return json({ ok: false, error: String(hs?.error ?? 'handshake_failed'), detail: String(hs?.detail ?? ''), health }, 200);
+      }
+      const tools = (hs.tools ?? []) as McpToolDef[];
+      const registered: Array<{ tool: string; action_key: string; destructive: boolean; gate: string }> = [];
+      const errors: string[] = [];
+      for (const t of tools) {
+        const name = String(t.name ?? '').trim();
+        if (!name) continue;
+        const risk = mcpRisk(t);
+        const annotations = (t.annotations ?? {}) as Record<string, unknown>;
+        const { error: upErr } = await admin.from('action_definitions').upsert({
+          scope: 'tenant',
+          tenant_id: tenantId,
+          category: connector.category,
+          // Namespaced so an MCP tool can never shadow a native action key.
+          action_key: `mcp_${name}`.slice(0, 120),
+          label: String(annotations.title ?? name).slice(0, 120),
+          description: `${String(t.description ?? `MCP tool "${name}"`).slice(0, 400)} (via ${connector.display_name || 'MCP server'})`,
+          provider: 'mcp',
+          execution: { execution_key: 'mcp_tool_call', mcp_tool: name, connector_id: connectorId },
+          param_schema: mcpParamSchema(t),
+          risk,
+          status: 'active',
+        }, { onConflict: 'scope,tenant_id,category,action_key' });
+        if (upErr) { errors.push(`${name}: ${upErr.message}`.slice(0, 160)); continue; }
+        registered.push({
+          tool: name, action_key: `mcp_${name}`, destructive: risk.destructive,
+          gate: risk.destructive
+            ? (annotations.destructiveHint === true ? 'human approval (declared destructive)' : 'human approval (fail-safe — not declared read-only)')
+            : 'trust dial (declared read-only)',
+        });
+      }
+      const ms = Date.now() - started;
+      const health = await recordHealth(errors.length === 0, errors[0] ?? null);
+      await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
+      await audit('connector_sync',
+        `MCP tools registered as governed actions — ${registered.length}/${tools.length} from ${connector.display_name || connector.base_url} (${registered.filter((r) => r.destructive).length} require human approval)`,
+        { hub_action: 'sync_mcp_tools', registered: registered.length, tool_count: tools.length, errors: errors.slice(0, 5), latency_ms: ms, health });
+      return json({ ok: errors.length === 0, tool_count: tools.length, registered, errors: errors.slice(0, 5), latency_ms: ms, health });
     }
 
     // ════════ sync_financials — ERP AR ingest into the platform's tables ════

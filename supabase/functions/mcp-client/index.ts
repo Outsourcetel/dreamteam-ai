@@ -125,11 +125,32 @@ async function rpc(
   return { ok: true, result: parsed.result, sessionId: newSession, status: res.status };
 }
 
-interface McpToolSummary { name: string; description: string }
+/**
+ * MCP tool annotations (spec: readOnlyHint / destructiveHint / idempotentHint).
+ * These are the RISK SIGNAL the governed-connector build maps onto
+ * action_definitions.risk — a read-only tool may auto-execute under trust, a
+ * destructive one is floored to a human. Captured verbatim; interpretation
+ * (incl. the fail-safe for absent annotations) belongs to the caller.
+ */
+interface McpToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+/** Full tool definition. The handshake RETURNS these; it still STORES only the
+ *  name/description summary on the source row (no payloads), as before. */
+interface McpToolDef {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+  annotations?: McpToolAnnotations;
+}
 interface McpServerInfo { name?: string; version?: string; protocolVersion?: string }
 
 async function mcpSession(endpoint: string, headers: Record<string, string>): Promise<
-  { ok: true; sessionId?: string; serverInfo: McpServerInfo; tools: McpToolSummary[]; protocolVersion: string } |
+  { ok: true; sessionId?: string; serverInfo: McpServerInfo; tools: McpToolDef[]; protocolVersion: string } |
   { ok: false; error: string; stage: string }
 > {
   // 1. initialize — offer the latest spec + declare the tasks capability;
@@ -155,7 +176,15 @@ async function mcpSession(endpoint: string, headers: Record<string, string>): Pr
   return {
     ok: true, sessionId, protocolVersion: negotiated,
     serverInfo: { ...(initRes.serverInfo ?? {}), protocolVersion: negotiated },
-    tools: toolsRaw.slice(0, 40).map((t) => ({ name: String(t.name ?? ''), description: String(t.description ?? '').slice(0, 200) })),
+    // Full defs: annotations + inputSchema are what the governed-connector
+    // registration needs (risk classification + param_schema). Previously this
+    // dropped both, keeping only name/description.
+    tools: toolsRaw.slice(0, 40).map((t) => ({
+      name: String(t.name ?? ''),
+      description: String(t.description ?? '').slice(0, 200),
+      inputSchema: (t.inputSchema ?? (t as Record<string, unknown>).input_schema) as Record<string, unknown> | undefined,
+      annotations: t.annotations as McpToolAnnotations | undefined,
+    })),
   };
 }
 
@@ -182,8 +211,14 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action: string = body.action ?? '';
     const sourceId: string = String(body.source_id ?? '');
+    // GOVERNED-CONNECTOR PATH (docs/mcp-governed-connector-design.md): an MCP
+    // server may now be a first-class connector (provider 'mcp') instead of a
+    // specialist source. Same protocol, same SSRF + allowlist guards; the
+    // difference is that a connector's tools get REGISTERED as gated
+    // action_definitions rather than called ad hoc.
+    const connectorId: string = String(body.connector_id ?? '');
     if (!action) return json({ error: 'action_required' }, 400);
-    if (!sourceId) return json({ error: 'source_id_required' }, 400);
+    if (!sourceId && !connectorId) return json({ error: 'source_id_or_connector_id_required' }, 400);
 
     const admin: SupabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -229,18 +264,47 @@ serve(async (req) => {
     // ── Source row (tenant-checked) + optional bearer secret ──
     // Specialists are Digital Employees now (migrations 208/211); resolve the
     // source's tenant via its owning specialist DE.
-    const { data: src } = await admin.from('specialist_sources')
-      .select('id, source_type, config, specialist_de_id')
-      .eq('id', sourceId).maybeSingle();
-    const { data: srcDe } = src?.specialist_de_id
-      ? await admin.from('digital_employees').select('tenant_id').eq('id', src.specialist_de_id).maybeSingle()
-      : { data: null };
-    const srcTenant = (srcDe as { tenant_id?: string } | null)?.tenant_id;
-    if (!src || srcTenant !== tenantId) return json({ error: 'source_not_found' }, 404);
-    if (src.source_type !== 'mcp_server') return json({ error: 'not_an_mcp_source' }, 400);
+    let cfg: Record<string, unknown> = {};
+    let endpoint = '';
+    let secretText: string | null = null;
 
-    const cfg = (src.config ?? {}) as Record<string, unknown>;
-    const endpoint = String(cfg.endpoint ?? '');
+    if (connectorId) {
+      // Connector path — tenant-scoped exactly like connector-hub does it.
+      const { data: conn } = await admin.from('connectors')
+        .select('id, provider, base_url, config')
+        .eq('id', connectorId).eq('tenant_id', tenantId).maybeSingle();
+      if (!conn) return json({ error: 'connector_not_found' }, 404);
+      if (conn.provider !== 'mcp') return json({ error: 'not_an_mcp_connector' }, 400);
+      cfg = (conn.config ?? {}) as Record<string, unknown>;
+      endpoint = String(cfg.mcp_url ?? conn.base_url ?? '');
+      const { data: cSecret } = await admin.from('connector_secrets_decrypted')
+        .select('secret').eq('connector_id', connectorId).maybeSingle();
+      if (cSecret?.secret) {
+        // Connector secrets are a JSON bag; an MCP server's bearer lives under
+        // `token` (fall back to the raw string for a bare-token secret).
+        try {
+          const parsed = JSON.parse(cSecret.secret) as Record<string, unknown>;
+          secretText = String(parsed.token ?? parsed.api_key ?? parsed.access_token ?? '') || null;
+        } catch { secretText = cSecret.secret; }
+      }
+    } else {
+      // Specialist-source path (unchanged). Specialists are Digital Employees
+      // now (migrations 208/211); resolve the source's tenant via its owner.
+      const { data: src } = await admin.from('specialist_sources')
+        .select('id, source_type, config, specialist_de_id')
+        .eq('id', sourceId).maybeSingle();
+      const { data: srcDe } = src?.specialist_de_id
+        ? await admin.from('digital_employees').select('tenant_id').eq('id', src.specialist_de_id).maybeSingle()
+        : { data: null };
+      const srcTenant = (srcDe as { tenant_id?: string } | null)?.tenant_id;
+      if (!src || srcTenant !== tenantId) return json({ error: 'source_not_found' }, 404);
+      if (src.source_type !== 'mcp_server') return json({ error: 'not_an_mcp_source' }, 400);
+      cfg = (src.config ?? {}) as Record<string, unknown>;
+      endpoint = String(cfg.endpoint ?? '');
+      const { data: sSecret } = await admin.from('specialist_source_secrets_decrypted')
+        .select('secret').eq('source_id', sourceId).maybeSingle();
+      secretText = sSecret?.secret ?? null;
+    }
     if (!endpoint) return json({ error: 'no_endpoint_configured' }, 400);
     // Reject unsafe endpoints up front with an actionable message (rpc()
     // re-checks at the fetch itself). Without this, a tenant member could
@@ -267,19 +331,21 @@ serve(async (req) => {
     } catch { /* URL parse failed → isSafeExternalUrl would have rejected */ }
 
     const headers: Record<string, string> = {};
-    const { data: secretRow } = await admin.from('specialist_source_secrets_decrypted')
-      .select('secret').eq('source_id', sourceId).maybeSingle();
-    if (secretRow?.secret) {
+    if (secretText) {
       const headerName = String(cfg.auth_header ?? '') || 'Authorization';
-      headers[headerName] = headerName.toLowerCase() === 'authorization' && !/^bearer /i.test(secretRow.secret)
-        ? `Bearer ${secretRow.secret}` : secretRow.secret;
+      headers[headerName] = headerName.toLowerCase() === 'authorization' && !/^bearer /i.test(secretText)
+        ? `Bearer ${secretText}` : secretText;
     }
 
     const audit = (actionText: string, detail: Record<string, unknown>) =>
       admin.rpc('append_audit_event', {
         p_tenant_id: tenantId, p_actor: 'MCP client', p_actor_type: 'system',
         p_action: actionText, p_category: 'connector_sync',
-        p_detail: { kind: 'mcp', source_id: sourceId, endpoint, ...detail },
+        p_detail: {
+          kind: 'mcp', endpoint,
+          ...(connectorId ? { connector_id: connectorId } : { source_id: sourceId }),
+          ...detail,
+        },
       });
 
     // ════════ handshake ════════
@@ -287,23 +353,28 @@ serve(async (req) => {
       const started = Date.now();
       const s = await mcpSession(endpoint, headers);
       const ms = Date.now() - started;
+      // Persist the handshake record onto whichever row this call is for.
+      const persistMcp = (meta: Record<string, unknown>) => (connectorId
+        ? admin.from('connectors').update({ config: { ...cfg, mcp: meta } }).eq('id', connectorId)
+        : admin.from('specialist_sources').update({ config: { ...cfg, mcp: meta } }).eq('id', sourceId));
+
       if (!s.ok) {
-        // Honest structured failure — recorded on the source row too.
+        // Honest structured failure — recorded on the row too.
         const lastHandshake = { ok: false, error: s.error, stage: s.stage, at: new Date().toISOString() };
-        await admin.from('specialist_sources')
-          .update({ config: { ...cfg, mcp: { ...(cfg.mcp as Record<string, unknown> ?? {}), last_handshake: lastHandshake } } })
-          .eq('id', sourceId);
+        await persistMcp({ ...(cfg.mcp as Record<string, unknown> ?? {}), last_handshake: lastHandshake });
         await audit(`MCP handshake FAILED at ${s.stage} — ${s.error} (recorded honestly)`, { ok: false, stage: s.stage, error: s.error, latency_ms: ms });
         return json({ ok: false, error: s.error, stage: s.stage, latency_ms: ms });
       }
       const mcpMeta = {
         server_info: s.serverInfo,
-        tools: s.tools,
+        // STORE the summary only (no inputSchema payloads) — unchanged promise.
+        // The full defs, incl. annotations, are RETURNED to the caller below so
+        // the governed registration can classify risk without persisting schemas.
+        tools: s.tools.map((t) => ({ name: t.name, description: t.description })),
         tool_count: s.tools.length,
         last_handshake: { ok: true, at: new Date().toISOString(), latency_ms: ms },
       };
-      await admin.from('specialist_sources')
-        .update({ config: { ...cfg, mcp: mcpMeta } }).eq('id', sourceId);
+      await persistMcp(mcpMeta);
       await audit(
         `MCP handshake succeeded — ${s.serverInfo.name ?? 'server'} (${s.tools.length} tool${s.tools.length === 1 ? '' : 's'} listed) via Streamable HTTP`,
         { ok: true, server_info: s.serverInfo, tool_count: s.tools.length, tools: s.tools.map((t) => t.name), latency_ms: ms });
