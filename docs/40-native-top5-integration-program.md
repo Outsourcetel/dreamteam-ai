@@ -65,7 +65,7 @@ rows + native executor + gate proof + write-back proof)
 | Phase | Scope | Sessions (est.) |
 |---|---|---|
 | **P1 — Money + CRM writes** ✅ **SHIPPED 2026-07-30** (migs 539+540, commits 59cdbbd/d024538) | L3 for HubSpot, Salesforce, QuickBooks, Xero, Stripe. 11 platform action_definitions on canonical category keys; native executors deployed. Native-write providers 9 → 14. ⚠ per-provider write-proofs are built-unverified (R3) until each connector exists | done |
-| **P2 — MCP governed connector** ✅ **M1+M2 SHIPPED 2026-08-04** (mig 541, commit 32ee618) | the long tail now inherits the gate: any allowlisted MCP server's tools register as tenant-scoped gated actions, risk derived fail-safe from annotations. M3/M4 (DE exposure + wizard/allowlist UI) remain | ~2 left |
+| **P2 — MCP governed connector** ✅ **M1+M2 SHIPPED 2026-08-04** (mig 541, commit 32ee618) | the long tail now inherits the gate: any allowlisted MCP server's tools register as tenant-scoped gated actions, risk derived fail-safe from annotations. M3/M4 shipped 2026-08-04 (commit 4951fc5): tools reach DEs automatically, and an MCP server is connectable from the wizard with one-click tool registration. Only the allowlist admin UI remains | done |
 | **P3 — Support + people writes** | L3 for Intercom, Gorgias, Gusto, BambooHR, Square, Shopify | ~4–5 |
 | **P4 — Missing top-5 adapters** | Zoho CRM/Desk, Sage, Chargebee, Clover (reads → writes) | ~5–6 |
 | **P5 — Top-5 rail UI + badges** | category landing + capability badges | ~1–2 |

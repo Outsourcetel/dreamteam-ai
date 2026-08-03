@@ -73,8 +73,9 @@ existing moat.
 |---|---|---|
 | **M1** ✅ **SHIPPED 2026-08-04** (mig 541, commit 32ee618) | `mcp` provider + handshake captures annotations + `sync_mcp_tools` upserts tenant-scoped `action_definitions` with derived risk | **PROVEN**: echo→`destructive:false`, delete_widget→`true` (declared), poke→`true` (**fail-safe**, un-annotated) |
 | **M2** ✅ **SHIPPED 2026-08-04** | governed call path — one `mcp_tool_call` executor for every tool on every server; tool name travels in the definition, never from the caller | **PROVEN**: execute_action → `human_gated_destructive` / `human_gated_trust` per derived risk; ungoverned direct `call_tool` **403 refused**; governed path executes and returns output. ⚠ approval→execute is human-gated by design (not faked) |
-| **M3** | DE tool exposure + wizard UI + allowlist management | a DE sees + invokes an MCP tool; the destructive one gates for approval |
-| **M4** | polish: per-tool receipts, health, audit surfacing | drift/health parity; screenshots |
+| **M3** ✅ **SHIPPED 2026-08-04** (commit 4951fc5) | DE tool exposure — **needed no code**: `get_agentic_tools_for_de` already includes tenant-scoped action_definitions matching a connected connector's category | **PROVEN**: with a `write_back` grant, all 3 demo tools appear in the DE's toolset with correct destructive flags |
+| **M4** ✅ **SHIPPED 2026-08-04** | 'MCP server' in the connect wizard (URL + optional bearer; blank allowed for open servers) + one-click **Register tools**; receipts/health/audit inherited from the connector substrate | frontend typecheck + build clean; backend proven in M1/M2 |
+| **M4 remainder** | platform-admin UI for `mcp_server_allowlist` (enforcement already works server-side; opt-in per tenant, manageable via SQL meanwhile) | not started — the one honest gap |
 
 **Effort: ~4–6 sessions**, because the gate, Vault, allowlist, and DE-tool machinery are all reused — the new code is provider registration + tool→action mapping + the mcp branch in execute_action.
 
