@@ -3020,6 +3020,198 @@ const stripeActions: Record<string, NativeAction> = {
   },
 };
 
+// ── P3 write actions: support + people + point-of-sale (docs/40).
+// Same canonical-key discipline as P1 — Intercom and Gorgias reuse the helpdesk
+// vocabulary zendesk/freshdesk already established (add_internal_note /
+// reply_to_ticket / update_status), so a support playbook runs on whichever
+// desk the tenant has. Risk stays per provider and per EFFECT: an internal note
+// is not destructive; anything the customer sees, or that moves money or
+// cancels an order, is.
+//
+// NOTE ON GUSTO (deliberately absent): Gusto's public API is read-centric —
+// its write surface is payroll-grade (running payroll, editing compensation).
+// Rather than register a guessed endpoint, Gusto stays reads-only until we can
+// verify a safe write against a real account. BambooHR carries the people-side
+// write instead (time-off decisions), which is the action a workforce actually
+// needs. Honest gap, not an oversight.
+
+const intercomActions: Record<string, NativeAction> = {
+  intercom_add_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Intercom conversation id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      if (!p.admin_id?.trim()) return { ok: false, error: 'param_required', detail: 'admin_id (the Intercom teammate the note is posted as) is required.' };
+      return {
+        ok: true, method: 'POST', url: `${c.baseUrl}/conversations/${encodeURIComponent(p.external_ref)}/reply`,
+        body: { message_type: 'note', type: 'admin', admin_id: p.admin_id, body: p.note },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: intercom.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added an internal note to Intercom conversation ${p.external_ref} (not visible to the customer).` };
+    },
+  },
+  intercom_reply: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Intercom conversation id) is required.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'reply body text is required.' };
+      if (!p.admin_id?.trim()) return { ok: false, error: 'param_required', detail: 'admin_id (the Intercom teammate the reply is sent as) is required.' };
+      return {
+        ok: true, method: 'POST', url: `${c.baseUrl}/conversations/${encodeURIComponent(p.external_ref)}/reply`,
+        body: { message_type: 'comment', type: 'admin', admin_id: p.admin_id, body: p.body },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: intercom.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Posted a public reply on Intercom conversation ${p.external_ref} — the customer will see it.` };
+    },
+  },
+};
+
+const gorgiasActions: Record<string, NativeAction> = {
+  gorgias_add_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Gorgias ticket id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'POST', url: `${c.baseUrl}/api/tickets/${encodeURIComponent(p.external_ref)}/messages`,
+        body: { body_html: p.note, body_text: p.note, channel: 'internal-note', via: 'helpdesk', from_agent: true },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: gorgias.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added an internal note to Gorgias ticket ${p.external_ref} (not visible to the customer).` };
+    },
+  },
+  gorgias_reply: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Gorgias ticket id) is required.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'reply body text is required.' };
+      return {
+        ok: true, method: 'POST', url: `${c.baseUrl}/api/tickets/${encodeURIComponent(p.external_ref)}/messages`,
+        body: { body_html: p.body, body_text: p.body, channel: 'email', via: 'helpdesk', from_agent: true },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: gorgias.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Sent a reply on Gorgias ticket ${p.external_ref} — the customer received it.` };
+    },
+  },
+  gorgias_update_status: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Gorgias ticket id) is required.' };
+      if (!['open', 'closed'].includes(String(p.status))) return { ok: false, error: 'param_invalid', detail: 'status must be "open" or "closed".' };
+      return { ok: true, method: 'PUT', url: `${c.baseUrl}/api/tickets/${encodeURIComponent(p.external_ref)}`, body: { status: p.status } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: gorgias.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Set Gorgias ticket ${p.external_ref} to "${p.status}".` };
+    },
+  },
+};
+
+const bamboohrActions: Record<string, NativeAction> = {
+  bamboohr_time_off_decision: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (BambooHR time-off request id) is required.' };
+      if (!['approved', 'denied'].includes(String(p.status))) return { ok: false, error: 'param_invalid', detail: 'status must be "approved" or "denied".' };
+      return {
+        ok: true, method: 'PUT', url: `${bamboohr.base(c)}/v1/time_off/requests/${encodeURIComponent(p.external_ref)}/status`,
+        body: { status: p.status, note: (p.note ?? '').slice(0, 1000) },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, {
+        method: 'PUT',
+        headers: { Authorization: bamboohr.auth(c), 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(r.body),
+      });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `${p.status === 'approved' ? 'Approved' : 'Denied'} BambooHR time-off request ${p.external_ref} — the employee will be notified by BambooHR.` };
+    },
+  },
+};
+
+const squareActions: Record<string, NativeAction> = {
+  square_refund_payment: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Square payment id) is required.' };
+      const amt = String(p.amount_cents ?? '').trim();
+      if (!/^\d+$/.test(amt)) return { ok: false, error: 'param_invalid', detail: 'amount_cents must be a whole number of cents (Square requires an explicit refund amount).' };
+      return {
+        ok: true, method: 'POST', url: `${SQUARE}/refunds`,
+        body: {
+          idempotency_key: crypto.randomUUID(),
+          payment_id: p.external_ref,
+          amount_money: { amount: Number(amt), currency: (p.currency ?? 'USD').toUpperCase() },
+          ...(p.reason ? { reason: String(p.reason).slice(0, 192) } : {}),
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: square.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const amt = Number(String(p.amount_cents));
+      return { ok: true, status: res.status, raw: res.body, receipt: `Refunded ${(amt / 100).toFixed(2)} ${(p.currency ?? 'USD').toUpperCase()} on Square payment ${p.external_ref} — the money left your account.` };
+    },
+  },
+};
+
+const shopifyActions: Record<string, NativeAction> = {
+  shopify_add_order_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Shopify order id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'PUT', url: `${c.baseUrl}/admin/api/2024-01/orders/${encodeURIComponent(p.external_ref)}.json`,
+        body: { order: { id: p.external_ref, note: p.note.slice(0, 5000) } },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { ...shopify.hdrs(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Added an internal note to Shopify order ${p.external_ref} (staff-only).` };
+    },
+  },
+  shopify_cancel_order: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (Shopify order id) is required.' };
+      return {
+        ok: true, method: 'POST', url: `${c.baseUrl}/admin/api/2024-01/orders/${encodeURIComponent(p.external_ref)}/cancel.json`,
+        body: { ...(p.reason ? { reason: String(p.reason) } : {}) },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...shopify.hdrs(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Cancelled Shopify order ${p.external_ref}${p.reason ? ` (reason: ${p.reason})` : ''} — the customer is notified by Shopify.` };
+    },
+  },
+};
+
 // mcp — ONE executor serves EVERY tool on EVERY MCP server. The specific tool
 // is named by the action_definition's execution.mcp_tool and threaded in as
 // __mcp_tool (see withMcpTool); it can never be supplied by a caller. This is
@@ -3048,7 +3240,7 @@ const mcpActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions };
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions, ...intercomActions, ...gorgiasActions, ...bamboohrActions, ...squareActions, ...shopifyActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
