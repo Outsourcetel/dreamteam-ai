@@ -34,6 +34,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantGate } from '../_shared/tenantStatus.ts';
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -150,6 +151,14 @@ serve(async (req) => {
       console.log(`[email-inbound] unroutable: to=${toList.join(',')} from=${from.email}`);
       return json({ ok: true, ignored: 'no_tenant_for_recipient' });
     }
+    // A suspended workspace does no work on inbound mail — no conversation,
+    // no answer, no outbound draft, no approval task. Deliberately 200 with a
+    // reason (the file's idiom for "not ours") rather than 402: this is a mail
+    // provider's webhook, and a non-2xx would just make it retry the same
+    // message. The email is not lost — it stays in the customer's own inbox.
+    const gate = await loadTenantGate(admin, tenantId);
+    if (gate.suspended) return json({ ok: true, ignored: 'tenant_suspended' });
+
     const { data: comms } = await admin.from('tenant_comms_settings').select('from_email').eq('tenant_id', tenantId).maybeSingle();
     if (comms?.from_email && from.email === String(comms.from_email).toLowerCase()) {
       return json({ ok: true, ignored: 'own_from_address' });

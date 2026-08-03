@@ -39,6 +39,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -189,8 +190,17 @@ serve(async (req) => {
         .select('id, tenant_id, account_id, template_version_id, items_state')
         .eq('status', 'active');
 
+      // This sweep is tenant-WIDE — it had no tenant filter at all, so a
+      // suspended workspace kept being verified (and gaining review tasks)
+      // every cron tick. Filtering here rather than per project keeps it to a
+      // single query, and apply_onboarding_verification carries the same check
+      // at the writer (mig 547) so neither layer relies on the other.
+      const { data: suspendedRows } = await admin.from('tenants')
+        .select('id').eq('status', 'suspended');
+      const suspended = new Set((suspendedRows ?? []).map((t: { id: string }) => t.id));
+
       let checked = 0, verified = 0, skipped = 0;
-      for (const proj of (projects ?? []) as Array<{ id: string; tenant_id: string; account_id: string; template_version_id: string; items_state: Array<{ key: string; status: string }> }>) {
+      for (const proj of (projects ?? []).filter((p: { tenant_id: string }) => !suspended.has(p.tenant_id)) as Array<{ id: string; tenant_id: string; account_id: string; template_version_id: string; items_state: Array<{ key: string; status: string }> }>) {
         const { data: ver } = await admin.from('onboarding_template_versions')
           .select('items').eq('id', proj.template_version_id).maybeSingle();
         const defs = ((ver?.items ?? []) as ItemDef[]).filter((d) => d.verify);
@@ -223,6 +233,10 @@ serve(async (req) => {
       tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, body?.tenant_id);
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
+
+    // The on-demand path gets the same answer as the sweep above.
+    const verifyGate = await loadTenantGate(admin, tenantId);
+    if (verifyGate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
 
     const projectId = String(body.project_id ?? '');
     const key = String(body.key ?? '');

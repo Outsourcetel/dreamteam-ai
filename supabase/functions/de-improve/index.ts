@@ -28,6 +28,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -58,6 +59,12 @@ serve(async (req) => {
     }
 
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
+    // A suspended workspace spends nothing — checked beside the budget gate,
+    // since both answer the same question: may we do paid work for this
+    // tenant? Its dispatcher (dispatch_de_improve_internal) already filters
+    // suspended tenants; this makes the function safe on its own too.
+    const improveGate = await loadTenantGate(admin, tenant_id);
+    if (improveGate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
     const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
     if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
 

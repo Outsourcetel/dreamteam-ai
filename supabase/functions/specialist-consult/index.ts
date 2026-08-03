@@ -59,6 +59,7 @@ import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { resolveDeModel } from '../_shared/deModel.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1126,6 +1127,13 @@ serve(async (req) => {
       tenantId = await resolveTenantWithRemoteAccess(admin, userData.user.id, profile?.tenant_id, profile?.layer, body?.tenant_id);
       if (!tenantId) return json({ error: 'no_tenant' }, 403);
     }
+
+    // A suspended workspace consults nobody and polls nothing — refused before
+    // any LLM spend or evidence write. The inbox-poll path already reaches
+    // here only for operational tenants (poll_de_work_sources_targets is
+    // guarded); this closes the direct-call path too.
+    const consultGate = await loadTenantGate(admin, tenantId);
+    if (consultGate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
 
     // ════════════════════════════════════════════════════════════
     // action: resolve_inquiry — the EVIDENCE PIPELINE (v4:
