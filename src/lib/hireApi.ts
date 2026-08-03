@@ -430,6 +430,54 @@ export async function promoteAsFarAsGatesAllow(deId: string, startStage: string)
   return { reachedStage: current, blockedAt: null, todo: [], message: null };
 }
 
+export interface AppliedRoleKit {
+  employee: string;
+  archetypeName: string;
+  previousArchetype: string | null;
+  watchersCreated: number;
+  watchersSkipped: number;
+  guardrailsCreated: number;
+  systemsInstalled: number;
+  sopPlaybookId: string | null;
+}
+
+/**
+ * Give an employee that ALREADY exists a role template — its Book of Work
+ * watchers, published SOP, role guardrails and connected systems.
+ *
+ * Until migration 553 the only caller of install_role_kit was the hire path,
+ * so every employee hired before then had none of it and the only remedy was
+ * hiring a replacement. One RPC does the whole thing so it is atomic,
+ * authorised once, and leaves a single audit record.
+ *
+ * `allowRerole` is required when the employee already carries a different
+ * template: that changes what it watches and what it may do, so it is never
+ * a silent side effect.
+ */
+export async function applyRoleKitToEmployee(
+  deId: string,
+  archetypeKey: string,
+  allowRerole = false
+): Promise<AppliedRoleKit> {
+  const { data, error } = await supabase.rpc('apply_role_kit_to_employee', {
+    p_de_id: deId,
+    p_archetype_key: archetypeKey,
+    p_allow_rerole: allowRerole,
+  });
+  if (error) throw new Error(error.message);
+  const d = (data ?? {}) as Record<string, unknown>;
+  return {
+    employee: String(d.employee ?? ''),
+    archetypeName: String(d.archetype_name ?? archetypeKey),
+    previousArchetype: (d.previous_archetype as string | null) ?? null,
+    watchersCreated: Number(d.watchers_created ?? 0),
+    watchersSkipped: Number(d.watchers_skipped ?? 0),
+    guardrailsCreated: Number(d.guardrails_created ?? 0),
+    systemsInstalled: Number(d.systems_installed ?? 0),
+    sopPlaybookId: (d.sop_playbook_id as string | null) ?? null,
+  };
+}
+
 /** Friendly one-liner for where the employee landed. */
 export function describeStage(stage: string): string {
   switch (stage) {

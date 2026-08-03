@@ -35,6 +35,10 @@ import {
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, type Tone,
 } from '../../design/primitives';
+import {
+  listRoleArchetypes, applyRoleKitToEmployee,
+  type RoleArchetype, type AppliedRoleKit,
+} from '../../lib/hireApi';
 
 // ═══════════════════════════════════════════════════════════════
 // Employee File — ONE page per Digital Employee, with a URL other
@@ -649,9 +653,120 @@ function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: strin
 const domainLabel = (c: string): string => CATEGORY_LABELS[c as SystemCategory] ?? c.replace(/_/g, ' ');
 const domainShort = (c: string): string => CATEGORY_SHORT[c as SystemCategory] ?? c.replace(/_/g, ' ');
 
+// ── Role template — give an existing employee its Book of Work + SOP ──
+// Until migration 553 a role kit could only be installed at hire time, so
+// every employee hired before that has no watchers, no SOP and no role
+// guardrails, and the only remedy was hiring a replacement. This applies one
+// in place. Re-roling an employee that already has a template changes what it
+// watches and what it may do, so that path asks first.
+function RoleTemplatePanel({
+  de, role, onApplied,
+}: { de: DigitalEmployee; role: RoleContext | null; onApplied: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [kits, setKits] = useState<RoleArchetype[] | null>(null);
+  const [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<AppliedRoleKit | null>(null);
+
+  const current = role?.archetype_key ?? null;
+
+  useEffect(() => {
+    if (!open || kits !== null) return;
+    listRoleArchetypes().then(setKits).catch(() => setKits([]));
+  }, [open, kits]);
+
+  const apply = async () => {
+    if (!choice) return;
+    setBusy(true); setError(null);
+    try {
+      // Re-roling is confirmed here rather than passed blindly: the server
+      // refuses without it, and the operator should know why.
+      const rerole = !!current && current !== choice;
+      if (rerole && !window.confirm(
+        `${de.persona_name ?? de.name} is currently a ${role?.archetype_name ?? current}. `
+        + `Applying a different template changes what it watches and what it is allowed to do. `
+        + `Its existing work is not deleted. Continue?`)) { setBusy(false); return; }
+      const res = await applyRoleKitToEmployee(de.id, choice, rerole);
+      setDone(res); setOpen(false); onApplied();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply that role template.');
+    } finally { setBusy(false); }
+  };
+
+  if (done) {
+    return (
+      <div className="mt-3 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+        Applied the {done.archetypeName} template — {done.watchersCreated} watcher{done.watchersCreated === 1 ? '' : 's'},
+        {' '}{done.guardrailsCreated} role guardrail{done.guardrailsCreated === 1 ? '' : 's'},
+        {' '}{done.systemsInstalled} connected system{done.systemsInstalled === 1 ? '' : 's'}
+        {done.sopPlaybookId ? ', and its SOP is published' : ''}.
+        {done.watchersSkipped > 0 && (
+          <span className="block mt-1 text-dt-muted">
+            {done.watchersSkipped} watcher template{done.watchersSkipped === 1 ? '' : 's'} could not be installed and
+            {' '}{done.watchersSkipped === 1 ? 'was' : 'were'} skipped — the rest of the kit is in place.
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      {!open ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          {!current && (
+            <p className="text-xs text-dt-muted flex-1 min-w-[16rem]">
+              No role template applied — this employee has no Book of Work watchers, no standard operating
+              procedure and no role guardrails.
+            </p>
+          )}
+          <Button kind="secondary" size="sm" onClick={() => setOpen(true)}>
+            {current ? 'Change role template' : 'Apply a role template'}
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dt-border bg-dt-bg p-3 space-y-2">
+          <p className="text-xs text-dt-support">
+            A role template installs this employee's Book of Work watchers, a published SOP it follows,
+            and the guardrails for that role. Existing work is never deleted.
+          </p>
+          {kits === null ? (
+            <p className="text-xs text-dt-muted">Loading templates…</p>
+          ) : (
+            <select
+              value={choice}
+              onChange={e => setChoice(e.target.value)}
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500 w-full"
+            >
+              <option value="">Choose a role…</option>
+              {kits.map(k => (
+                <option key={k.key} value={k.key}>
+                  {k.name}{k.domain ? ` — ${k.domain}` : ''}{k.key === current ? ' (current)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {choice && kits && (
+            <p className="text-[11px] text-dt-muted">{kits.find(k => k.key === choice)?.description}</p>
+          )}
+          {error && <p className="text-xs text-red-300">{error}</p>}
+          <div className="flex items-center gap-2">
+            <Button kind="primary" size="sm" onClick={() => void apply()} disabled={!choice || busy}>
+              {busy ? 'Applying…' : 'Apply'}
+            </Button>
+            <Button kind="ghost" size="sm" onClick={() => { setOpen(false); setError(null); }}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LifetimeLedger({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [role, setRole] = useState<RoleContext | null>(null);
   const [wp, setWp] = useState<WorkProduct | null>(null);
+  const [reloadRole, setReloadRole] = useState(0);
   const name = de.persona_name ?? de.name;
 
   useEffect(() => {
@@ -659,7 +774,7 @@ function LifetimeLedger({ de, setPage }: { de: DigitalEmployee; setPage: (p: Pag
     getDeRoleContext(de.id).then(r => !cancelled && setRole(r)).catch(() => !cancelled && setRole(null));
     getDeWorkProduct(de.id).then(w => !cancelled && setWp(w)).catch(() => !cancelled && setWp(null));
     return () => { cancelled = true; };
-  }, [de.id]);
+  }, [de.id, reloadRole]);
 
   // The employee's operating domains: certified archetype categories first,
   // else the categories it's granted. Falls back to department text.
@@ -693,6 +808,7 @@ function LifetimeLedger({ de, setPage }: { de: DigitalEmployee; setPage: (p: Pag
         ) : (
           <p className="text-xs text-dt-muted mt-1">No connected systems granted yet — this employee's domain is set by what you give it access to.</p>
         )}
+        <RoleTemplatePanel de={de} role={role} onApplied={() => setReloadRole(n => n + 1)} />
       </div>
 
       {role === null && wp === null
