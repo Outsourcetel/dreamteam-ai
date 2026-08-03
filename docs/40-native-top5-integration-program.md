@@ -64,7 +64,7 @@ rows + native executor + gate proof + write-back proof)
 
 | Phase | Scope | Sessions (est.) |
 |---|---|---|
-| **P1 — Money + CRM writes** | L3 for HubSpot, Salesforce, QuickBooks, Xero, Stripe (gated: log note/task, update deal stage, send invoice reminder, refund-request) | ~4–5 |
+| **P1 — Money + CRM writes** ✅ **SHIPPED 2026-07-30** (migs 539+540, commits 59cdbbd/d024538) | L3 for HubSpot, Salesforce, QuickBooks, Xero, Stripe. 11 platform action_definitions on canonical category keys; native executors deployed. Native-write providers 9 → 14. ⚠ per-provider write-proofs are built-unverified (R3) until each connector exists | done |
 | **P2 — MCP governed connector** | tasks #18–21 (M1–M4) — unlocks the long tail everywhere | ~4–6 |
 | **P3 — Support + people writes** | L3 for Intercom, Gorgias, Gusto, BambooHR, Square, Shopify | ~4–5 |
 | **P4 — Missing top-5 adapters** | Zoho CRM/Desk, Sage, Chargebee, Clover (reads → writes) | ~5–6 |
