@@ -294,6 +294,240 @@ const erpnext = {
   },
 };
 
+// ════════════════════════════════════════════════════════════════
+// P4 (docs/40): the top-5 systems that had NO adapter at all.
+//
+// All three below authenticate with credentials the CUSTOMER holds — no
+// platform-level OAuth app registration — which is what keeps the promise
+// that connecting is "paste your own API credentials".
+//
+// ⚠ SAGE is deliberately absent. Sage Business Cloud requires a registered
+// developer app + a redirect-based OAuth grant, so it cannot be connected by
+// pasting credentials; it needs US to register an app first (a founder
+// decision, not an engineering one). erp_financials already has QuickBooks,
+// Xero, ERPNext and NetSuite, so this is the least costly of the gaps.
+// ════════════════════════════════════════════════════════════════
+
+// ── chargebee ── secrets: { site, api_key } — Basic auth, api_key as username.
+const chargebee = {
+  base: (c: Ctx) => `https://${String(c.secret.site ?? '').replace(/\.chargebee\.com$/, '')}.chargebee.com/api/v2`,
+  hdrs: (c: Ctx) => ({ Authorization: 'Basic ' + btoa(`${c.secret.api_key ?? ''}:`), Accept: 'application/json' }),
+  invoiceItem(c: Ctx, inv: Record<string, unknown>): HubItem {
+    const total = Number(inv.total ?? 0) / 100;
+    return {
+      ref: String(inv.id ?? ''), type: 'invoice',
+      title: clip(`Invoice ${inv.id}${inv.customer_id ? ` — ${inv.customer_id}` : ''}`, 160),
+      snippet: clip(`${inv.status ?? ''} · ${(inv.currency_code ?? '')} ${total.toFixed(2)}${inv.due_date ? ` · due ${new Date(Number(inv.due_date) * 1000).toISOString().slice(0, 10)}` : ''}`, 400),
+      url: c.secret.site ? `https://${c.secret.site}.chargebee.com/d/invoices/${inv.id}` : null,
+      raw: inv,
+    };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    if (!c.secret.site) return { ok: false, error: 'missing_site', detail: 'The Chargebee site name is required (the part before .chargebee.com).' };
+    const r = await httpJson(`${this.base(c)}/subscriptions?limit=1`, { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: `Chargebee site "${c.secret.site}" verified` };
+  },
+  async listInvoices(c: Ctx, query: string): Promise<AdapterResult> {
+    const q = String(query ?? '').trim();
+    const url = `${this.base(c)}/invoices?limit=10${q ? `&customer_id[is]=${encodeURIComponent(q)}` : ''}`;
+    const r = await httpJson(url, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const list = ((r.body as { list?: Array<{ invoice?: Record<string, unknown> }> })?.list) ?? [];
+    return { ok: true, items: list.map((row) => this.invoiceItem(c, row.invoice ?? {})) };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> { return this.listInvoices(c, query); },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/invoices/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const inv = ((r.body as { invoice?: Record<string, unknown> })?.invoice) ?? {};
+    return { ok: true, items: [this.invoiceItem(c, inv)] };
+  },
+  async getSubscription(c: Ctx, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/subscriptions/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const s = ((r.body as { subscription?: Record<string, unknown> })?.subscription) ?? {};
+    return { ok: true, items: [{
+      ref: String(s.id ?? ref), type: 'subscription',
+      title: clip(`Subscription ${s.id ?? ref}`, 160),
+      snippet: clip(`${s.status ?? ''} · plan ${s.plan_id ?? s.subscription_items ?? '?'} · ${s.currency_code ?? ''}`, 400),
+      url: c.secret.site ? `https://${c.secret.site}.chargebee.com/d/subscriptions/${s.id ?? ref}` : null,
+      raw: s,
+    }] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.listInvoices(c, ''); },
+};
+
+// ── clover ── secrets: { api_token, merchant_id } — Bearer token.
+const CLOVER = 'https://api.clover.com/v3/merchants';
+const clover = {
+  base: (c: Ctx) => `${CLOVER}/${String(c.secret.merchant_id ?? '')}`,
+  hdrs: (c: Ctx) => ({ Authorization: `Bearer ${c.secret.api_token ?? ''}`, Accept: 'application/json' }),
+  orderItem(c: Ctx, o: Record<string, unknown>): HubItem {
+    const total = Number(o.total ?? 0) / 100;
+    return {
+      ref: String(o.id ?? ''), type: 'order',
+      title: clip(`Order ${o.id}${o.title ? ` — ${o.title}` : ''}`, 160),
+      snippet: clip(`${o.state ?? ''} · ${total.toFixed(2)}${o.createdTime ? ` · ${new Date(Number(o.createdTime)).toISOString().slice(0, 10)}` : ''}`, 400),
+      url: c.secret.merchant_id ? `https://www.clover.com/r/${o.id}` : null,
+      raw: o,
+    };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    if (!c.secret.merchant_id) return { ok: false, error: 'missing_merchant_id', detail: 'The Clover merchant ID is required.' };
+    const r = await httpJson(`${this.base(c)}?expand=owner`, { headers: this.hdrs(c) });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'auth_failed' };
+    if (!r.ok) return { ok: false, error: r.error };
+    const m = r.body as { name?: string } | null;
+    return { ok: true, detail: `Clover merchant "${m?.name ?? c.secret.merchant_id}" verified` };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/orders?limit=25`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = ((r.body as { elements?: Array<Record<string, unknown>> })?.elements) ?? [];
+    const q = String(query ?? '').trim().toLowerCase();
+    const filtered = q ? rows.filter((o) => JSON.stringify(o).toLowerCase().includes(q)) : rows;
+    return { ok: true, items: filtered.slice(0, 10).map((o) => this.orderItem(c, o)) };
+  },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const r = await httpJson(`${this.base(c)}/orders/${encodeURIComponent(ref)}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [this.orderItem(c, (r.body ?? {}) as Record<string, unknown>)] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
+// ── zoho (CRM + Desk) ──
+// Zoho's "self client" lets a TENANT mint its own client_id/secret/refresh_token
+// without us registering a platform OAuth app, so this refreshes from the
+// CONNECTOR secret rather than platform_config (unlike oauthAccessToken).
+// Refreshed tokens are written back exactly the same way, so a long-lived
+// connector keeps working. accounts_domain/api_domain cover Zoho's data
+// centres (.com/.eu/.in/.com.au) — a EU tenant is not silently sent to .com.
+async function zohoToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const s = c.secret as Record<string, unknown>;
+  const access = String(s.access_token ?? '');
+  const expiresAt = Number(s.expires_at ?? 0);
+  if (access && Date.now() < expiresAt) return { ok: true, token: access };
+  const refresh = String(s.refresh_token ?? '');
+  const clientId = String(s.client_id ?? '');
+  const clientSecret = String(s.client_secret ?? '');
+  if (!refresh || !clientId || !clientSecret) {
+    return access ? { ok: true, token: access } : { ok: false, error: 'zoho_self_client_incomplete' };
+  }
+  const accounts = String(s.accounts_domain ?? 'https://accounts.zoho.com').replace(/\/+$/, '');
+  const res = await fetch(`${accounts}/oauth/v2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId, client_secret: clientSecret }).toString(),
+  }).catch(() => null);
+  const tok = res ? await res.json().catch(() => null) as { access_token?: string; expires_in?: number } | null : null;
+  if (!res || !res.ok || !tok?.access_token) return { ok: false, error: 'zoho_refresh_failed' };
+  const next = { ...s, access_token: tok.access_token, expires_at: Date.now() + (Number(tok.expires_in ?? 3600) - 60) * 1000 };
+  if (c.admin && c.connectorId) {
+    await c.admin.rpc('set_connector_secret_sysadmin', { p_connector_id: c.connectorId, p_secret: JSON.stringify(next) });
+  }
+  s.access_token = tok.access_token; s.expires_at = next.expires_at;
+  return { ok: true, token: tok.access_token };
+}
+
+const zohocrm = {
+  api: (c: Ctx) => String(c.secret.api_domain ?? 'https://www.zohoapis.com').replace(/\/+$/, ''),
+  async hdrs(c: Ctx): Promise<Record<string, string> | null> {
+    const t = await zohoToken(c);
+    if (!t.ok) return null;
+    return { Authorization: `Zoho-oauthtoken ${t.token}`, Accept: 'application/json' };
+  },
+  rec(c: Ctx, r: Record<string, unknown>, type: string, module: string): HubItem {
+    return {
+      ref: String(r.id ?? ''), type,
+      title: clip(String(r.Account_Name ?? r.Deal_Name ?? r.Full_Name ?? r.id ?? '(record)'), 160),
+      snippet: clip(`${r.Industry ?? r.Stage ?? ''} ${r.Amount ? `· ${r.Amount}` : ''} ${r.Website ?? r.Email ?? ''}`.trim(), 400),
+      url: `${this.api(c).replace('www.zohoapis', 'crm.zoho')}/crm/tab/${module}/${r.id}`,
+      raw: r,
+    };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed', detail: 'Zoho self-client credentials incomplete or refresh failed.' };
+    const r = await httpJson(`${this.api(c)}/crm/v5/Accounts?per_page=1`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Zoho CRM reachable' };
+  },
+  async searchModule(c: Ctx, module: string, query: string, type: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const q = String(query ?? '').trim();
+    const url = q
+      ? `${this.api(c)}/crm/v5/${module}/search?word=${encodeURIComponent(q.slice(0, 80))}`
+      : `${this.api(c)}/crm/v5/${module}?per_page=10`;
+    const r = await httpJson(url, { headers: h });
+    // Zoho answers 204 (no body) when nothing matches — an honest empty list.
+    if (r.status === 204) return { ok: true, items: [] };
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: rows.slice(0, 10).map((x) => this.rec(c, x, type, module)) };
+  },
+  search(c: Ctx, query: string): Promise<AdapterResult> { return this.searchModule(c, 'Accounts', query, 'account'); },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const r = await httpJson(`${this.api(c)}/crm/v5/Accounts/${encodeURIComponent(ref)}`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: rows.map((x) => this.rec(c, x, 'account', 'Accounts')) };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.searchModule(c, 'Accounts', '', 'account'); },
+};
+
+const zohodesk = {
+  base: (c: Ctx) => String(c.secret.desk_domain ?? 'https://desk.zoho.com').replace(/\/+$/, ''),
+  async hdrs(c: Ctx): Promise<Record<string, string> | null> {
+    const t = await zohoToken(c);
+    if (!t.ok) return null;
+    return { Authorization: `Zoho-oauthtoken ${t.token}`, orgId: String(c.secret.org_id ?? ''), Accept: 'application/json' };
+  },
+  ticket(c: Ctx, t: Record<string, unknown>): HubItem {
+    return {
+      ref: String(t.id ?? ''), type: 'ticket',
+      title: clip(`#${t.ticketNumber ?? t.id}: ${t.subject ?? '(no subject)'}`, 160),
+      snippet: clip(String(t.description ?? t.status ?? ''), 400),
+      url: t.webUrl ? String(t.webUrl) : null,
+      raw: t,
+    };
+  },
+  async test(c: Ctx): Promise<TestResult> {
+    if (!c.secret.org_id) return { ok: false, error: 'missing_org_id', detail: 'The Zoho Desk organisation ID is required.' };
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed', detail: 'Zoho self-client credentials incomplete or refresh failed.' };
+    const r = await httpJson(`${this.base(c)}/api/v1/tickets?limit=1`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, detail: 'Zoho Desk reachable' };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const q = String(query ?? '').trim();
+    const url = q
+      ? `${this.base(c)}/api/v1/tickets/search?searchStr=${encodeURIComponent(q.slice(0, 80))}&limit=10`
+      : `${this.base(c)}/api/v1/tickets?limit=10&sortBy=-modifiedTime`;
+    const r = await httpJson(url, { headers: h });
+    if (r.status === 204) return { ok: true, items: [] };
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = ((r.body as { data?: Array<Record<string, unknown>> })?.data) ?? [];
+    return { ok: true, items: rows.slice(0, 10).map((t) => this.ticket(c, t)) };
+  },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'auth_failed' };
+    const r = await httpJson(`${this.base(c)}/api/v1/tickets/${encodeURIComponent(ref)}`, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [this.ticket(c, (r.body ?? {}) as Record<string, unknown>)] };
+  },
+  listRecent(c: Ctx): Promise<AdapterResult> { return this.search(c, ''); },
+};
+
 // ── mcp ── an MCP server as a FIRST-CLASS GOVERNED CONNECTOR.
 // (docs/mcp-governed-connector-design.md.) The MCP protocol itself lives in
 // the mcp-client edge function; this adapter drives it and — crucially — makes
@@ -4798,6 +5032,29 @@ const sfSoqlItems = (
 const soqlSafe = (q: string) => q.replace(/['\\%_]/g, ' ').trim().slice(0, 80);
 
 const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
+  // ── P4: the previously-missing top-5 systems ──
+  chargebee: {
+    // billing
+    search_invoices: (c, p) => chargebee.listInvoices(c, p.query ?? ''),
+    get_subscription: (c, p) => chargebee.getSubscription(c, p.external_ref ?? ''),
+  },
+  clover: {
+    // pos
+    search_orders: (c, p) => clover.search(c, p.query ?? ''),
+    get_order: (c, p) => clover.fetchRecord(c, 'order', p.external_ref ?? ''),
+  },
+  zohocrm: {
+    // crm — Accounts and Deals. Zoho CRM has no native "cases" module, so
+    // search_conversations is deliberately absent → honest op_not_supported.
+    search_accounts: (c, p) => zohocrm.searchModule(c, 'Accounts', p.query ?? '', 'account'),
+    get_account: (c, p) => zohocrm.fetchRecord(c, 'account', p.external_ref ?? ''),
+    search_opportunities: (c, p) => zohocrm.searchModule(c, 'Deals', p.query ?? '', 'opportunity'),
+  },
+  zohodesk: {
+    // helpdesk
+    search_tickets: (c, p) => zohodesk.search(c, p.query ?? ''),
+    get_ticket: (c, p) => zohodesk.fetchRecord(c, 'ticket', p.external_ref ?? ''),
+  },
   erpnext: {
     // erp_financials — ERPNext is the FIRST native provider for this category
     // (only the jsonplaceholder verification template served it before). The
@@ -5449,7 +5706,7 @@ serve(async (req) => {
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
       dropbox, twilio, typeform, calendly, okta, contentful,
-      erpnext, mcp,
+      erpnext, mcp, chargebee, clover, zohocrm, zohodesk,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];

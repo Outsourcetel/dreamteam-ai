@@ -98,6 +98,7 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   netsuite: '📒', powerschool: '🎒', ellucian: '🎓', toast: '🍞', athenahealth: '⚕️', epic: '🏥', cerner: '🩺',
   dropbox: '🗄️', twilio: '📱', typeform: '📝', calendly: '📆', okta: '🔐', contentful: '🗂️', template: '🧱',
   erpnext: '🧮', mcp: '🔗',
+  chargebee: '🧾', clover: '🍀', zohocrm: '🟠', zohodesk: '🎟️',
 };
 
 const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2';
@@ -169,7 +170,10 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
       'pipedrive', 'smartsheet', 'wrike', 'trello', 'datadog',
       'close', 'kustomer', 'mailchimp', 'gitbook',
       'ellucian', 'toast', 'athenahealth',
-      'twilio', 'typeform', 'calendly', 'contentful'];
+      'twilio', 'typeform', 'calendly', 'contentful',
+      // P4: base URL is derived from a credential field (site / merchant id /
+      // Zoho data-centre domain), so the customer never types a URL.
+      'chargebee', 'clover', 'zohocrm', 'zohodesk'];
     if (!noBaseUrl.includes(provider) && !baseUrl.trim()) { setErr(`${meta.baseUrlLabel} is required.`); return; }
     if (provider === 'generic_rest' && !searchPath.trim()) { setErr('A search endpoint path is required so DreamTeam knows how to look things up.'); return; }
     setBusy(true);

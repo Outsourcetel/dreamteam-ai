@@ -31,7 +31,7 @@ export type ConnectorProvider =
   | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
   | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
   | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template'
-  | 'erpnext' | 'mcp';
+  | 'erpnext' | 'mcp' | 'chargebee' | 'clover' | 'zohocrm' | 'zohodesk';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -99,6 +99,57 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  chargebee: {
+    label: 'Chargebee', tagline: 'Subscription billing — invoices, subscriptions, dunning',
+    defaultCategory: 'billing',
+    baseUrlLabel: 'Chargebee API (derived from your site — leave blank)', baseUrlPlaceholder: 'not needed for Chargebee',
+    fields: [
+      { key: 'site', label: 'Site name', placeholder: 'acme (the part before .chargebee.com)', secret: false },
+      { key: 'api_key', label: 'API key', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Chargebee: Settings → Configure Chargebee → API Keys → Create a Key (read-only is enough for reading invoices and subscriptions). Your site name is the part before ".chargebee.com" in your dashboard URL.',
+    knowledgeSync: false, implemented: true,
+  },
+  clover: {
+    label: 'Clover', tagline: 'Point of sale — orders and payments',
+    defaultCategory: 'pos',
+    baseUrlLabel: 'Clover API (fixed — leave blank)', baseUrlPlaceholder: 'not needed for Clover',
+    fields: [
+      { key: 'merchant_id', label: 'Merchant ID', placeholder: 'from your Clover dashboard URL', secret: false },
+      { key: 'api_token', label: 'API token', placeholder: '••••••••', secret: true },
+    ],
+    help: 'In Clover: Account & Setup → API Tokens → Create a new token, granting read access to Orders and Payments. The merchant ID appears in your Clover dashboard URL (…/m/{MERCHANT_ID}/…).',
+    knowledgeSync: false, implemented: true,
+  },
+  zohocrm: {
+    label: 'Zoho CRM', tagline: 'CRM — accounts, deals, contacts',
+    defaultCategory: 'crm',
+    baseUrlLabel: 'Zoho API (set below — leave blank)', baseUrlPlaceholder: 'not needed for Zoho',
+    fields: [
+      { key: 'client_id', label: 'Self-client ID', placeholder: '1000.XXXXXXXX', secret: false },
+      { key: 'client_secret', label: 'Self-client secret', placeholder: '••••••••', secret: true },
+      { key: 'refresh_token', label: 'Refresh token', placeholder: '1000.••••••••', secret: true },
+      { key: 'api_domain', label: 'API domain (only if not .com)', placeholder: 'https://www.zohoapis.eu', secret: false },
+      { key: 'accounts_domain', label: 'Accounts domain (only if not .com)', placeholder: 'https://accounts.zoho.eu', secret: false },
+    ],
+    help: 'In Zoho: api-console.zoho.com → Add Client → Self Client → copy the Client ID and Secret, then generate a code for the scope ZohoCRM.modules.READ and exchange it for a refresh token. DreamTeam refreshes the access token itself from then on. If your Zoho account is not on .com (EU, India, Australia), set the two domain fields to match — otherwise leave them blank.',
+    knowledgeSync: false, implemented: true,
+  },
+  zohodesk: {
+    label: 'Zoho Desk', tagline: 'Support desk — tickets and conversations',
+    defaultCategory: 'helpdesk',
+    baseUrlLabel: 'Zoho Desk API (set below — leave blank)', baseUrlPlaceholder: 'not needed for Zoho Desk',
+    fields: [
+      { key: 'org_id', label: 'Organisation ID', placeholder: 'from Desk → Setup → Developer Space → API', secret: false },
+      { key: 'client_id', label: 'Self-client ID', placeholder: '1000.XXXXXXXX', secret: false },
+      { key: 'client_secret', label: 'Self-client secret', placeholder: '••••••••', secret: true },
+      { key: 'refresh_token', label: 'Refresh token', placeholder: '1000.••••••••', secret: true },
+      { key: 'desk_domain', label: 'Desk domain (only if not .com)', placeholder: 'https://desk.zoho.eu', secret: false },
+      { key: 'accounts_domain', label: 'Accounts domain (only if not .com)', placeholder: 'https://accounts.zoho.eu', secret: false },
+    ],
+    help: 'In Zoho: api-console.zoho.com → Add Client → Self Client → copy the Client ID and Secret, then generate a code for the scope Desk.tickets.READ and exchange it for a refresh token. The organisation ID is in Desk → Setup → Developer Space → API. If your Zoho account is not on .com, set the domain fields to match.',
+    knowledgeSync: false, implemented: true,
   },
   mcp: {
     label: 'MCP server', tagline: 'Any Model Context Protocol server — its tools become governed actions',
@@ -1082,7 +1133,17 @@ export async function connectProvider(
   input: ConnectProviderInput,
 ): Promise<{ connector: Connector; test: { ok: boolean; error?: string; detail?: string } }> {
   const tid = await requireTenantId();
-  const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
+  // Providers whose endpoint is DERIVED from a credential (a Chargebee site, a
+  // Zoho data centre) record the real root rather than an empty string, so the
+  // connector row shows where we actually call. Blank stays legal (mig 544) for
+  // the fixed-API-root providers.
+  const derivedBase: Partial<Record<ConnectorProvider, () => string>> = {
+    chargebee: () => (input.secrets.site ? `https://${input.secrets.site.trim().replace(/\.chargebee\.com$/, '')}.chargebee.com` : ''),
+    clover: () => 'https://api.clover.com',
+    zohocrm: () => (input.secrets.api_domain || 'https://www.zohoapis.com').trim(),
+    zohodesk: () => (input.secrets.desk_domain || 'https://desk.zoho.com').trim(),
+  };
+  const baseUrl = (input.baseUrl.trim() || derivedBase[input.provider]?.() || '').replace(/\/+$/, '');
   const row = {
     provider: input.provider,
     display_name: input.displayName.trim() || PROVIDERS[input.provider].label,
@@ -1138,13 +1199,15 @@ export async function connectProvider(
  * built the adapter yet, rather than advertising something that isn't there.
  */
 export const TOP_PROVIDERS: Partial<Record<SystemCategory, ConnectorProvider[]>> = {
-  crm: ['hubspot', 'salesforce', 'pipedrive', 'dynamics', 'close'],
-  helpdesk: ['zendesk', 'freshdesk', 'intercom', 'gorgias', 'front'],
+  crm: ['hubspot', 'salesforce', 'pipedrive', 'zohocrm', 'dynamics'],
+  helpdesk: ['zendesk', 'freshdesk', 'intercom', 'zohodesk', 'gorgias'],
   knowledge_base: ['notion', 'confluence', 'sharepoint', 'gdrive', 'guru'],
+  // Sage is the one top-5 gap: it needs a registered developer app + redirect
+  // OAuth, so it cannot be connected by pasting credentials (docs/40 P4).
   erp_financials: ['quickbooks', 'xero', 'erpnext', 'netsuite'],
-  billing: ['stripe', 'quickbooks', 'square', 'shopify'],
+  billing: ['stripe', 'chargebee', 'quickbooks', 'square'],
   payroll_hcm: ['gusto', 'bamboohr'],
-  pos: ['square', 'shopify', 'toast'],
+  pos: ['square', 'shopify', 'clover', 'toast'],
   product_system: ['generic_rest', 'mcp'],
   other: ['mcp', 'generic_rest'],
 };
