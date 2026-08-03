@@ -241,15 +241,40 @@ export async function listAuditEvents(days: number | null = 7, limit = 500): Pro
   return (data ?? []) as AuditEvent[];
 }
 
-export interface ChainVerification { intact: boolean; checked: number; broken_at: string | null }
+export interface ChainVerification {
+  intact: boolean;
+  checked: number;
+  broken_at: string | null;
+  /** Why it failed, when it did — the server names the specific check. */
+  reason: string | null;
+  /** Records sharing a parent. Non-zero is only acceptable while every one of
+   *  them is recorded in audit_chain_anomalies; an unrecorded fork fails. */
+  forks: number;
+  known_anomalies: number;
+}
 
-/** Server-side walk of the tenant's full chain — recomputes every hash. */
+/**
+ * Server-side verification of the tenant's full chain (mig 549). Three checks,
+ * none of which assume any ordering: every row's hash matches its own contents,
+ * every row is reachable from genesis (which catches deletions the old
+ * timestamp-ordered walk could not), and no record has an unrecorded sibling.
+ */
 export async function verifyAuditChain(): Promise<ChainVerification> {
   const tid = await requireTenantId();
   const { data, error } = await supabase.rpc('verify_audit_chain', { p_tenant_id: tid });
   if (error) raise('verifyAuditChain', error);
-  const d = data as { intact?: boolean; checked?: number; broken_at?: string | null };
-  return { intact: !!d?.intact, checked: Number(d?.checked ?? 0), broken_at: d?.broken_at ?? null };
+  const d = data as {
+    intact?: boolean; checked?: number; broken_at?: string | null;
+    reason?: string | null; forks?: number; known_anomalies?: number;
+  };
+  return {
+    intact: !!d?.intact,
+    checked: Number(d?.checked ?? 0),
+    broken_at: d?.broken_at ?? null,
+    reason: d?.reason ?? null,
+    forks: Number(d?.forks ?? 0),
+    known_anomalies: Number(d?.known_anomalies ?? 0),
+  };
 }
 
 // ── GI-10: guardrail adjudication ───────────────────────────────────────────

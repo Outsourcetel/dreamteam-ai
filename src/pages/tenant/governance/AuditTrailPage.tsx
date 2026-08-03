@@ -548,8 +548,19 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
               ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300'
               : 'border-red-800/50 bg-red-500/10 text-red-300'}`}>
               {verification.intact
-                ? `Chain intact — all ${verification.checked} events recomputed and verified server-side.`
-                : `Chain BROKEN after ${verification.checked} verified events (record ${verification.broken_at ?? 'unknown'}). This should be impossible unless the database was tampered with directly.`}
+                ? `Chain intact — all ${verification.checked} events recomputed and verified server-side: every record matches its own hash, and every record is reachable from the first one.`
+                : `Chain BROKEN after ${verification.checked} verified events${verification.reason ? ` — ${verification.reason}` : ''} (record ${verification.broken_at ?? 'unknown'}). This should be impossible unless the database was tampered with directly.`}
+              {/* Honest footnote: "intact" with recorded anomalies is not the
+                  same as a perfectly linear chain, and the founder should not
+                  have to read a migration to learn that. */}
+              {verification.intact && verification.known_anomalies > 0 && (
+                <span className="block mt-1 text-dt-muted">
+                  Includes {verification.known_anomalies} recorded concurrency {verification.known_anomalies === 1 ? 'anomaly' : 'anomalies'} from
+                  before the ordering fix (migration 549), where two records were written against the same
+                  predecessor. No record was altered or lost — these are recorded rather than repaired,
+                  because rewriting the log is exactly what it exists to detect.
+                </span>
+              )}
             </div>
           )}
 

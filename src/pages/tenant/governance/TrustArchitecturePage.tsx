@@ -239,7 +239,7 @@ export default function TrustArchitecturePage() {
                 hash = sha256(prev_hash ‖ tenant ‖ action ‖ detail ‖ created_at), computed inside the append RPC under a per-tenant advisory lock.
               </Row>
               <Row label="Server-side chain verification" status="live">
-                verify_audit_chain recomputes the whole chain in the database and reports the first broken link — the "Verify chain" button on Audit Trail.
+                verify_audit_chain recomputes every record's hash from its own contents, then walks the links from the first record to prove none is missing, and reports which check failed and where — the "Verify chain" button on Audit Trail. Migration 549 removed its dependence on timestamp order, which could report a break that was not one (and, because it stopped at the first, hide a later real one).
               </Row>
               <Row label="Writers across the platform" status="live">
                 Invoices, approvals, guardrail changes and blocks, DE resolutions/escalations, every playbook step, connector syncs/actions, eval runs, trust-dial changes.
