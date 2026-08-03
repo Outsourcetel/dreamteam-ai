@@ -71,8 +71,8 @@ existing moat.
 
 | Slice | Build | Exit proof |
 |---|---|---|
-| **M1** | `mcp` provider + handshake captures annotations + tools upserted as `action_definitions` with derived risk | connect an allowlisted MCP server → its read tools register `destructive:false`, its write tools `destructive:true` (fail-safe on missing) |
-| **M2** | governed call path (execute_action for mcp → gate → call_tool) | a read-only tool **auto-executes** and returns; a destructive tool → **human_gated_destructive** task → approve → `call_tool` runs, audited |
+| **M1** ✅ **SHIPPED 2026-08-04** (mig 541, commit 32ee618) | `mcp` provider + handshake captures annotations + `sync_mcp_tools` upserts tenant-scoped `action_definitions` with derived risk | **PROVEN**: echo→`destructive:false`, delete_widget→`true` (declared), poke→`true` (**fail-safe**, un-annotated) |
+| **M2** ✅ **SHIPPED 2026-08-04** | governed call path — one `mcp_tool_call` executor for every tool on every server; tool name travels in the definition, never from the caller | **PROVEN**: execute_action → `human_gated_destructive` / `human_gated_trust` per derived risk; ungoverned direct `call_tool` **403 refused**; governed path executes and returns output. ⚠ approval→execute is human-gated by design (not faked) |
 | **M3** | DE tool exposure + wizard UI + allowlist management | a DE sees + invokes an MCP tool; the destructive one gates for approval |
 | **M4** | polish: per-tool receipts, health, audit surfacing | drift/health parity; screenshots |
 
