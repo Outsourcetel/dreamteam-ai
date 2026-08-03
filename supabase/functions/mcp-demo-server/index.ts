@@ -10,7 +10,15 @@
  *
  * Deploy with --no-verify-jwt (it authenticates nothing; it's a demo target).
  * Public HTTPS URL passes the SSRF guard; add it to mcp_server_allowlist.
- * Safe to delete once the feature is proven.
+ *
+ * ⚠ NOT DEPLOYED. Undeployed from production on 2026-08-04 along with its
+ * connector and approvals (migration 548) — an unauthenticated public endpoint
+ * has no business living in the production project once the proof is done.
+ * The source is kept because it is the only MCP server we control, so it is
+ * how the governed-MCP path gets re-tested. deploy.mjs only deploys functions
+ * named with --fn, so it cannot come back by accident:
+ *   node scripts/deploy.mjs --no-migrations --fn mcp-demo-server
+ * If you redeploy it, remember to remove it again afterwards.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
