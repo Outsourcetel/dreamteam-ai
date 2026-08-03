@@ -74,11 +74,16 @@ P1 and P2 are independent — can interleave. Recommended order: **P1 → P2 →
 (money/CRM writes prove the moat where customers feel it; MCP then honestly covers
 everything the natives don't; the rail makes it visible; then breadth).
 
-## 6. Founder decisions requested
+## 6. Founder decisions — LOCKED 2026-07-30
 
-| # | Decision | Recommendation |
+| # | Decision | **Ruling** |
 |---|---|---|
-| D1 | Approve the ladder + top-5 map (§1–2) | as laid out |
-| D2 | Phase order | P1 → P2 → P5 → P3 → P4 |
-| D3 | Zoho/Sage/Chargebee/Clover: build native (P4) vs MCP-only until demand | build in P4; MCP bridges meanwhile |
-| D4 | Start P1 now? | yes — begin with HubSpot writes (ties to the connector you're re-adding) |
+| D1 | Ladder + top-5 map (§1–2) | **APPROVED** |
+| D2 | Phase order | **P1 → P2 → P5 → P3 → P4** |
+| D3 | Zoho/Sage/Chargebee/Clover | **Build native in P4**; MCP bridges meanwhile |
+| D4 | Start | **GO — P1 begins with HubSpot writes** |
+
+> P1 proof dependency (R3): live write-proofs need each provider connected with real
+> credentials. HubSpot's is the founder's private-app token (being added via the UI);
+> until connected, P1 HubSpot code is **built-unverified**, proven the moment the
+> connector exists.

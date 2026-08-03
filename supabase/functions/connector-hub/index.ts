@@ -2683,7 +2683,74 @@ const erpnextActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions };
+// hubspot write actions — P1 of the top-5 program (docs/40): the canonical CRM
+// write vocabulary. log_account_note / create_followup_task are internal
+// records (not customer-facing) → destructive:false, trust-gated;
+// update_deal_stage mutates pipeline state → destructive:true, human-floored.
+// HUBSPOT_DEFINED association type ids: note→company 190, task→company 192.
+const hubspotActions: Record<string, NativeAction> = {
+  hubspot_log_note: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (HubSpot company id) is required.' };
+      if (!p.note?.trim()) return { ok: false, error: 'param_required', detail: 'note text is required.' };
+      return {
+        ok: true, method: 'POST', url: `${HUBSPOT}/crm/v3/objects/notes`,
+        body: {
+          properties: { hs_note_body: p.note.slice(0, 4000), hs_timestamp: new Date().toISOString() },
+          associations: [{ to: { id: p.external_ref }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 190 }] }],
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: hubspot.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Logged a note on HubSpot company ${p.external_ref} (internal — not visible to the customer).` };
+    },
+  },
+  hubspot_create_task: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (HubSpot company id) is required.' };
+      if (!p.subject?.trim()) return { ok: false, error: 'param_required', detail: 'subject is required.' };
+      return {
+        ok: true, method: 'POST', url: `${HUBSPOT}/crm/v3/objects/tasks`,
+        body: {
+          properties: {
+            hs_task_subject: p.subject.slice(0, 300), hs_task_body: (p.note ?? '').slice(0, 4000),
+            hs_timestamp: new Date(Date.now() + 24 * 3600 * 1000).toISOString(), hs_task_status: 'NOT_STARTED', hs_task_type: 'TODO',
+          },
+          associations: [{ to: { id: p.external_ref }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 192 }] }],
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: hubspot.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Created a follow-up task ("${p.subject}") on HubSpot company ${p.external_ref}, due tomorrow.` };
+    },
+  },
+  hubspot_update_deal_stage: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (HubSpot deal id) is required.' };
+      if (!p.stage?.trim()) return { ok: false, error: 'param_required', detail: 'stage (pipeline stage id) is required.' };
+      return { ok: true, method: 'PATCH', url: `${HUBSPOT}/crm/v3/objects/deals/${encodeURIComponent(p.external_ref)}`, body: { properties: { dealstage: p.stage } } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const before = await httpJson(`${HUBSPOT}/crm/v3/objects/deals/${encodeURIComponent(p.external_ref)}?properties=dealstage`, { headers: hubspot.hdrs(c) });
+      const prev = String(((before.body as { properties?: Record<string, unknown> })?.properties ?? {}).dealstage ?? 'unknown');
+      const res = await httpJson(r.url!, { method: 'PATCH', headers: hubspot.hdrs(c), body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body, receipt: `Moved HubSpot deal ${p.external_ref} from stage "${prev}" to "${p.stage}".` };
+    },
+  },
+};
+
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
