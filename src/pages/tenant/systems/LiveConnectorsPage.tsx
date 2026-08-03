@@ -10,7 +10,7 @@ import {
   listConnectors, listConnectorObjects, listConnectorActions,
   connectProvider, hubTest, hubSearch, hubSync, syncTickets,
   hubHealthCheck, updateConnectorFieldMap, connectorHealth,
-  updateConnectorObject, updateConnectorAction, disconnectConnector, deleteConnector,
+  updateConnectorObject, updateConnectorAction, disconnectConnector, deleteConnector, hubSyncMcpTools,
   connectorErrorLabel, fmtSince,
   IngestFilters, IngestCandidate, INGEST_TYPES, readIngestFilters,
   setIngestConfig, listIngestCandidates, decideIngestCandidates, discoverConnector,
@@ -96,7 +96,7 @@ const PROVIDER_ICON: Record<ConnectorProvider, string> = {
   close: '🎯', kustomer: '🫂', mailchimp: '🐵', gitbook: '📘',
   netsuite: '📒', powerschool: '🎒', ellucian: '🎓', toast: '🍞', athenahealth: '⚕️', epic: '🏥', cerner: '🩺',
   dropbox: '🗄️', twilio: '📱', typeform: '📝', calendly: '📆', okta: '🔐', contentful: '🗂️', template: '🧱',
-  erpnext: '🧮',
+  erpnext: '🧮', mcp: '🔗',
 };
 
 const inputCls = 'w-full bg-dt-page border border-dt-border-strong rounded-lg text-sm text-dt-body px-3 py-2';
@@ -907,6 +907,18 @@ export default function LiveConnectorsPage() {
     } finally { setBusy(null); }
   };
 
+  // MCP: read the server's tools and register each as an approval-gated action.
+  const doMcpSync = async (c: Connector) => {
+    setBusy(c.id);
+    try {
+      const r = await hubSyncMcpTools(c.id);
+      if (!r.ok) { showToast(`Could not read the server's tools: ${connectorErrorLabel(r.error)}`); return; }
+      const gated = (r.registered ?? []).filter(x => x.destructive).length;
+      showToast(`${r.registered?.length ?? 0} tool(s) registered as governed actions — ${gated} require human approval.`);
+      await load();
+    } finally { setBusy(null); }
+  };
+
   const doRemove = async (c: Connector) => {
     if (!window.confirm(`Remove ${c.display_name || PROVIDERS[c.provider]?.label} from the list? This permanently deletes the connector.`)) return;
     setBusy(c.id);
@@ -1079,6 +1091,13 @@ export default function LiveConnectorsPage() {
                         title={c.access_mode === 'fetch_only' ? 'Fetch-only connectors refuse sync server-side — try it.' : 'Ingest help articles / pages into knowledge'}
                         className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
                         {isBusy ? 'Working…' : 'Sync knowledge'}
+                      </button>
+                    )}
+                    {c.provider === 'mcp' && (
+                      <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doMcpSync(c)}
+                        title="Read this server's tool list and register each tool as an approval-gated action"
+                        className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+                        {isBusy ? 'Working…' : 'Register tools'}
                       </button>
                     )}
                     {c.provider === 'zendesk' && (

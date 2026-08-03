@@ -31,7 +31,7 @@ export type ConnectorProvider =
   | 'close' | 'kustomer' | 'mailchimp' | 'gitbook'
   | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
   | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template'
-  | 'erpnext';
+  | 'erpnext' | 'mcp';
 export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
@@ -99,6 +99,16 @@ export const PROVIDERS: Record<ConnectorProvider, ProviderMeta> = {
     ],
     help: 'In Zendesk: Admin Center → Apps and integrations → APIs → Zendesk API → enable Token access → Add API token. Use your admin email plus that token.',
     knowledgeSync: true, implemented: true,
+  },
+  mcp: {
+    label: 'MCP server', tagline: 'Any Model Context Protocol server — its tools become governed actions',
+    defaultCategory: 'other',
+    baseUrlLabel: 'MCP server URL', baseUrlPlaceholder: 'https://example.com/mcp',
+    fields: [
+      { key: 'token', label: 'Bearer token (leave blank if the server is open)', placeholder: '••••••••', secret: true },
+    ],
+    help: 'Paste the server’s Streamable-HTTP endpoint. After connecting, use "Register tools" — DreamTeam reads the server’s tool list and registers each tool as an approval-gated action. Risk comes from the tool’s own MCP annotations, and anything not explicitly marked read-only requires human approval, so a tool can never quietly act on its own. Only public https addresses are allowed, and an admin can restrict which servers are permitted.',
+    knowledgeSync: false, implemented: true,
   },
   erpnext: {
     label: 'ERPNext', tagline: 'ERP — invoices, customers, accounts receivable',
@@ -1123,6 +1133,15 @@ export async function connectProvider(
 
 export async function hubTest(connectorId: string): Promise<{ ok: boolean; error?: string; detail?: string }> {
   return invokeHub({ action: 'test', connector_id: connectorId });
+}
+
+/** MCP: read the server's tool list and register each tool as a governed
+ *  (approval-gated) action. Safe to re-run — tools are upserted. */
+export async function hubSyncMcpTools(connectorId: string): Promise<{
+  ok: boolean; tool_count?: number; error?: string; detail?: string;
+  registered?: Array<{ tool: string; action_key: string; destructive: boolean; gate: string }>;
+}> {
+  return invokeHub({ action: 'sync_mcp_tools', connector_id: connectorId });
 }
 
 /** Read-through search: fetched live, returned, nothing persisted but audit. */
