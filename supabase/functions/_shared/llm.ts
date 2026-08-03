@@ -49,23 +49,28 @@ interface ChainConfig {
 
 // Chain resolution hits platform_config (Vault) — cache it briefly so
 // multi-turn loops (de-work runs up to 6 turns per item) pay once.
-let cachedChain: ChainConfig | null = null;
-let cachedAt = 0;
+// KEYED BY TENANT (mig 541). This was a single module-level cache, which was
+// correct only while every tenant shared one key: the moment workspaces bring
+// their own, a global cache serves tenant A's credential to tenant B for up to
+// a minute. The key is the tenant id (or '' for platform-level callers).
+const chainCache = new Map<string, { chain: ChainConfig; at: number }>();
 const CHAIN_TTL_MS = 60_000;
 
-async function resolveChain(admin: SupabaseClient): Promise<ChainConfig> {
-  if (cachedChain && Date.now() - cachedAt < CHAIN_TTL_MS) return cachedChain;
+async function resolveChain(admin: SupabaseClient, tenantId?: string | null): Promise<ChainConfig> {
+  const cacheKey = tenantId ?? '';
+  const hit = chainCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CHAIN_TTL_MS) return hit.chain;
   const [anthropicKey, bedrockKey, bedrockRegion, bedrockModelPrefix, bedrockModelMapRaw, openaiKey, openaiModel, googleKey, googleModel, order] = await Promise.all([
-    getAIKey(admin, 'ANTHROPIC_API_KEY'),
-    getAIKey(admin, 'BEDROCK_API_KEY'),
-    getAIKey(admin, 'BEDROCK_REGION'),
-    getAIKey(admin, 'BEDROCK_MODEL_PREFIX'),
-    getAIKey(admin, 'BEDROCK_MODEL_MAP'),
-    getAIKey(admin, 'OPENAI_API_KEY'),
-    getAIKey(admin, 'OPENAI_MODEL'),
-    getAIKey(admin, 'GOOGLE_AI_KEY'),
-    getAIKey(admin, 'GOOGLE_AI_MODEL'),
-    getAIKey(admin, 'LLM_PROVIDER_ORDER'),
+    getAIKey(admin, 'ANTHROPIC_API_KEY', tenantId),
+    getAIKey(admin, 'BEDROCK_API_KEY', tenantId),
+    getAIKey(admin, 'BEDROCK_REGION', tenantId),
+    getAIKey(admin, 'BEDROCK_MODEL_PREFIX', tenantId),
+    getAIKey(admin, 'BEDROCK_MODEL_MAP', tenantId),
+    getAIKey(admin, 'OPENAI_API_KEY', tenantId),
+    getAIKey(admin, 'OPENAI_MODEL', tenantId),
+    getAIKey(admin, 'GOOGLE_AI_KEY', tenantId),
+    getAIKey(admin, 'GOOGLE_AI_MODEL', tenantId),
+    getAIKey(admin, 'LLM_PROVIDER_ORDER', tenantId),
   ]);
   const available: Provider[] = [];
   if (anthropicKey) available.push('anthropic');
@@ -87,7 +92,7 @@ async function resolveChain(admin: SupabaseClient): Promise<ChainConfig> {
   if (bedrockModelMapRaw) {
     try { bedrockModelMap = JSON.parse(bedrockModelMapRaw); } catch { bedrockModelMap = {}; }
   }
-  cachedChain = {
+  const chain: ChainConfig = {
     providers,
     anthropicKey, bedrockKey, openaiKey, googleKey,
     bedrockModelMap,
@@ -98,13 +103,13 @@ async function resolveChain(admin: SupabaseClient): Promise<ChainConfig> {
     openaiModel: openaiModel || 'gpt-5.1',
     googleModel: googleModel || 'gemini-2.5-pro',
   };
-  cachedAt = Date.now();
-  return cachedChain;
+  chainCache.set(cacheKey, { chain, at: Date.now() });
+  return chain;
 }
 
-/** True when at least one provider key is configured — the new "is the brain wired" gate. */
-export async function hasLLMProvider(admin: SupabaseClient): Promise<boolean> {
-  return (await resolveChain(admin)).providers.length > 0;
+/** True when at least one provider key is configured — the "is the brain wired" gate. */
+export async function hasLLMProvider(admin: SupabaseClient, tenantId?: string | null): Promise<boolean> {
+  return (await resolveChain(admin, tenantId)).providers.length > 0;
 }
 
 // ── Anthropic-shape helpers ──────────────────────────────────────────────
@@ -292,10 +297,13 @@ function jsonResponse(payload: unknown, status: number, provider: string): Respo
  * Response whose JSON is always anthropic-shaped regardless of the provider
  * that served it. `label` names the caller in failover logs.
  */
-export async function llmMessages(admin: SupabaseClient, body: Record<string, unknown>, label = 'llm'): Promise<Response> {
-  const cfg = await resolveChain(admin);
+export async function llmMessages(admin: SupabaseClient, body: Record<string, unknown>, label = 'llm', tenantId?: string | null): Promise<Response> {
+  const cfg = await resolveChain(admin, tenantId);
   if (cfg.providers.length === 0) {
-    return jsonResponse({ type: 'error', error: { type: 'authentication_error', message: 'No AI engine key configured (Settings → AI Engine).' } }, 401, 'none');
+    return jsonResponse({ type: 'error', error: { type: 'authentication_error',
+      message: tenantId
+        ? 'No AI engine key is configured for this workspace (Settings → AI Engine). If this workspace brings its own key, add it there.'
+        : 'No AI engine key configured (Settings → AI Engine).' } }, 401, 'none');
   }
   let firstFailure: { status: number; text: string; provider: Provider } | null = null;
 

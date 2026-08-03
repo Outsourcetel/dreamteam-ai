@@ -18,7 +18,42 @@
  */
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-export async function getAIKey(admin: SupabaseClient, keyName: string): Promise<string | undefined> {
+/**
+ * Per-tenant keys (mig 541). When a tenantId is given, that workspace's own
+ * credential is tried FIRST, and a workspace set to 'byo' with no key of its own
+ * gets nothing rather than quietly borrowing the platform's — silent fallback is
+ * exactly how one key came to carry sixteen tenants unnoticed.
+ *
+ * Without a tenantId this behaves as before, so callers that genuinely have no
+ * tenant in scope (platform-level jobs) keep working.
+ */
+export async function getAIKey(
+  admin: SupabaseClient, keyName: string, tenantId?: string | null,
+): Promise<string | undefined> {
+  if (tenantId) {
+    try {
+      const { data, error } = await admin.rpc('resolve_llm_key', {
+        p_tenant_id: tenantId, p_provider_key: keyName,
+      });
+      if (!error && data) {
+        const r = data as { ok?: boolean; key?: string; source?: string; reason?: string };
+        if (r.ok && r.key) return r.key;
+        // An explicit refusal is an ANSWER, not a miss. Falling through to the
+        // platform key here would reinstate the behaviour this replaced.
+        if (r.source === 'none') {
+          console.warn(`getAIKey: ${keyName} unavailable for tenant ${tenantId} — ${r.reason ?? 'not configured'}`);
+          return undefined;
+        }
+      }
+    } catch {
+      // Fall through to the platform path only on a transport failure, never on
+      // a considered refusal.
+    }
+  }
+  return await getPlatformAIKey(admin, keyName);
+}
+
+async function getPlatformAIKey(admin: SupabaseClient, keyName: string): Promise<string | undefined> {
   // Two attempts: a transient platform_config_get/Vault hiccup used to
   // silently degrade to "key not configured" (observed live on a cron
   // tick 2026-07-11: one tick reported llm_not_configured while the
