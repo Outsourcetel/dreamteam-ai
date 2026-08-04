@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Modal, Drawer } from '../../../design/primitives';
 import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
 import KnowledgeTreePanel, { LifecycleChip, UNFILED_ID } from '../../../components/KnowledgeTreePanel';
@@ -61,6 +62,18 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // Phase-3 WS5: collections (taxonomy) — filter the corpus + organize docs.
   const [collections, setCollections] = useState<KnowledgeCollection[]>([]);
   const [collectionFilter, setCollectionFilter] = useState('');
+  // Whether the spaces panel shares the width with the article list (md+).
+  // Remembered, so someone who works with it collapsed does not re-collapse it
+  // every visit. Defaults to shown — a first-time visitor should see that the
+  // hierarchy exists before deciding they would rather not.
+  const [showTree, setShowTree] = useState<boolean>(() => {
+    try { return localStorage.getItem('dt_kb_tree') !== 'hidden'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('dt_kb_tree', showTree ? 'shown' : 'hidden'); } catch { /* private mode */ }
+  }, [showTree]);
+  // Below md there is no side panel at all; the same control opens this instead.
+  const [treeDrawer, setTreeDrawer] = useState(false);
   const [collectionDoc, setCollectionDoc] = useState<SearchDocRow | null>(null); // doc whose collections modal is open
   const [docCollIds, setDocCollIds] = useState<Set<string>>(new Set());
   // Phase-3 WS6: lifecycle governance modal (owner / review cadence / authority / expiry).
@@ -457,15 +470,29 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(200px,260px)_1fr] gap-5 items-start">
-        {/* LEFT — hierarchy */}
-        <div className="lg:sticky lg:top-4">
-          <KnowledgeTreePanel
-            selectedId={collectionFilter || null}
-            onSelect={(id) => { setPageIdx(0); setCollectionFilter(id ?? ''); }}
-            refreshKey={total}
-          />
-        </div>
+      {/* THE ARTICLES ARE THE POINT OF THIS PAGE.
+          Previously the tree only sat beside them above 1024px — below that it
+          STACKED ON TOP, so on a laptop you scrolled past the whole hierarchy to
+          reach the list you came for. And above 1024px it took 260px
+          permanently, with no way to get that width back.
+
+          Now: the split starts at md (768px) so a laptop gets two columns, the
+          tree is narrower, and it can be collapsed to give the list the full
+          width. Below md the tree is not stacked at all — it opens as a drawer
+          from the toolbar, so the articles are the first thing on screen at
+          every size. The choice is remembered, because re-collapsing it on every
+          visit is its own small tax. */}
+      <div className={`grid grid-cols-1 gap-5 items-start ${showTree ? 'md:grid-cols-[minmax(180px,230px)_1fr]' : ''}`}>
+        {/* LEFT — hierarchy, md and up only */}
+        {showTree && (
+          <div className="hidden md:block md:sticky md:top-4">
+            <KnowledgeTreePanel
+              selectedId={collectionFilter || null}
+              onSelect={(id) => { setPageIdx(0); setCollectionFilter(id ?? ''); }}
+              refreshKey={total}
+            />
+          </div>
+        )}
 
         {/* RIGHT — documents */}
         <div className="min-w-0">
@@ -473,6 +500,17 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         {/* Emphasis order is the fix: the fastest route to a populated library
             is primary, and typing a document by hand — the slowest — is not. */}
+        {/* Spaces control. On md+ it collapses the side panel to reclaim its
+            width; below md there is no side panel, so it opens the drawer. One
+            control, because "show me the spaces" is one intent at any size. */}
+        <button
+          onClick={() => { if (window.matchMedia('(min-width: 768px)').matches) setShowTree(v => !v); else setTreeDrawer(true); }}
+          aria-pressed={showTree}
+          title={showTree ? 'Hide the spaces panel and give the list its width' : 'Show the spaces panel'}
+          className="text-sm px-3 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body transition-colors"
+        >
+          {collectionFilter ? '◧ Spaces · filtered' : '◧ Spaces'}
+        </button>
         <button
           onClick={() => setShowSiteImport(true)}
           className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dt-accent"
@@ -814,6 +852,21 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </div>{/* end RIGHT column */}
       </div>{/* end two-column shell */}
 
+      {/* Narrow screens: the hierarchy on demand rather than stacked above the
+          articles. Uses the shared Drawer, so it closes on Escape, locks the
+          page behind it and returns focus — none of which a bespoke panel here
+          would have had. Picking a space closes it, because on a small screen
+          the whole point was to get back to the list. */}
+      {treeDrawer && (
+        <Drawer title="Where knowledge lives" onClose={() => setTreeDrawer(false)}>
+          <KnowledgeTreePanel
+            selectedId={collectionFilter || null}
+            onSelect={(id) => { setPageIdx(0); setCollectionFilter(id ?? ''); setTreeDrawer(false); }}
+            refreshKey={total}
+          />
+        </Drawer>
+      )}
+
       {/* Whole-site import. Reloads on close rather than on each document so
           the list refresh can't unmount the modal out from under its summary. */}
       {showSiteImport && (
@@ -822,10 +875,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       {/* Editor modal */}
       {editor && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-2xl bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit document' : 'Add document'}</h2>
+        <Modal
+          size="2xl"
+          onClose={() => { if (!saving) setEditor(null); }}
+          title={editor.id ? 'Edit document' : 'Add document'}
+        >
+          <div>
             <label className="block text-xs text-dt-muted mb-1">Title</label>
             <input
               value={editor.title}
@@ -865,18 +920,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Governance modal — lifecycle: verify, owner, review cadence, authority, expiry (WS6) */}
       {governDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm" onClick={() => setGovernDoc(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-dt-border bg-dt-card p-5 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white truncate pr-2">Govern — “{governDoc.title}”</h3>
-              <button onClick={() => setGovernDoc(null)} className="text-dt-support hover:text-white text-sm shrink-0">✕</button>
-            </div>
-
+        <Modal size="md" onClose={() => setGovernDoc(null)} title={`Govern — “${governDoc.title}”`}>
+          <div className="space-y-4">
             <div className="rounded-lg bg-dt-inset px-3 py-2 flex items-center justify-between gap-2">
               <div className="text-xs text-dt-support">
                 {governDoc.last_verified_at
@@ -920,17 +970,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <button onClick={() => void saveGovern()} disabled={govSaving} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">{govSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Collections modal — organize this doc into collections (WS5) */}
       {collectionDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm" onClick={() => setCollectionDoc(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-dt-border bg-dt-card p-5" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-white truncate pr-2">Collections — “{collectionDoc.title}”</h3>
-              <button onClick={() => setCollectionDoc(null)} className="text-dt-support hover:text-white text-sm shrink-0">✕</button>
-            </div>
+        <Modal size="md" onClose={() => setCollectionDoc(null)} title={`Collections — “${collectionDoc.title}”`}>
+          <div>
             {collections.length === 0 ? (
               <p className="text-xs text-dt-muted">No collections yet — close this and use “＋ Collection” above to make one.</p>
             ) : (
@@ -948,15 +994,16 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <button onClick={() => setCollectionDoc(null)} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">Done</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Scope modal — Who can use this document (migration 030) */}
+      {/* The !scopeSaving guard moves into onClose: the primitive also closes on
+          Escape and backdrop, so leaving it out would let a save in flight be
+          interrupted — a protection this dialog already had. */}
       {scopeDoc && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !scopeSaving && setScopeDoc(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-1">Who can use this document?</h2>
+        <Modal size="md" onClose={() => { if (!scopeSaving) setScopeDoc(null); }} title="Who can use this document?">
+          <div>
             <p className="text-xs text-dt-muted mb-4">
               “{scopeDoc.title}” — by default every digital employee and specialist answers from it.
               Select team members to limit it: <span className="text-dt-support">only selected team members
@@ -1010,20 +1057,23 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Eval gate override dialog (R3) */}
       {versionsFor && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={() => { setVersionsFor(null); setVersions(null); }}>
-          <div className="w-full max-w-xl bg-dt-page border-l border-dt-border h-full overflow-auto p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Version history</h2>
-                <p className="text-xs text-dt-muted mt-0.5">{versionsFor.title} — newest first; every revision is an immutable new version.</p>
-              </div>
-              <button onClick={() => { setVersionsFor(null); setVersions(null); }} className="text-dt-support hover:text-white text-sm">✕</button>
-            </div>
+        <Drawer
+          onClose={() => { setVersionsFor(null); setVersions(null); }}
+          title={
+            <span className="block">
+              Version history
+              <span className="block text-xs font-normal text-dt-muted mt-0.5">
+                {versionsFor.title} — newest first; every revision is an immutable new version.
+              </span>
+            </span>
+          }
+        >
+          <div>
             {versions === null ? (
               <p className="text-xs text-dt-muted">Loading versions…</p>
             ) : versions.length <= 1 ? (
@@ -1045,13 +1095,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </div>
             )}
           </div>
-        </div>
+        </Drawer>
       )}
       {gateConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" onClick={() => setGateConfirm(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-red-500/40 rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-2">Publishing gated by the Proving Ground</h2>
+        <Modal size="md" onClose={() => setGateConfirm(null)} title="Publishing gated by the Proving Ground">
+          <div>
             <p className="text-sm text-dt-support mb-1">
               Last eval run failed ({gateConfirm.gate.passed}/{gateConfirm.gate.total} passed). Publishing may worsen answers.
             </p>
@@ -1081,7 +1129,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       {removeTarget && (
         <ConfirmDeleteModal
