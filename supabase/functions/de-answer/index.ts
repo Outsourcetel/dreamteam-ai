@@ -544,6 +544,10 @@ serve(async (req) => {
     // and slip a thread out of (or into) the Support Inbox. Everything else,
     // including anything unrecognised, stays 'dock' exactly as before.
     const convChannel = reqBody.channel === 'exam' ? 'exam' : 'dock';
+    // Declared here, beside what it derives from, because BOTH the escalate
+    // and resolved branches need it — the first version scoped it inside the
+    // escalate branch and the resolved branch silently kept writing.
+    const isExam = convChannel === 'exam';
     // GI-6b: a caller may pin temperature ONLY on the dry-run/measurement path
     // (fitness replay needs T=0 for a stable pass-count delta). A live customer
     // answer can NEVER be temperature-overridden — the replayMode gate guarantees it.
@@ -769,11 +773,17 @@ serve(async (req) => {
             content: hit.answer, confidence: hit.confidence, escalated: false,
           });
         }
-        await admin.from('activity_events').insert({
-          tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
-          text: `Answered a chat question instantly from the verified answer cache`,
-          confidence: hit.confidence,
-        });
+        // Third writer of the same event, and the one that only showed up
+        // once the answer cache started working: a repeat exam question now
+        // hits the cache instead of the model. Same rule — an exam answer is
+        // not business activity, however it was produced.
+        if (!isExam) {
+          await admin.from('activity_events').insert({
+            tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
+            text: `Answered a chat question instantly from the verified answer cache`,
+            confidence: hit.confidence,
+          });
+        }
         // Outcome metering (#15): a delivered cached answer is a resolution.
         if (convId) {
           await admin.rpc('record_billable_outcome', {
@@ -1389,7 +1399,14 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       // look like one that keeps failing.
       if (!heldForApproval) await bump('escalations');
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
-      const { data: escTask } = await admin.from('human_tasks').insert({
+      // An EXAM answer that escalates does not need a person. Nobody reviews a
+      // test question, and every exam run was filing one task per escalated
+      // answer — all 74 pending escalations on the HQ tenant were exam answers,
+      // created in a single day. The audit and activity trail below still
+      // record what happened; what is withdrawn is the CLAIM ON A HUMAN.
+      // (Third surface of the same root cause: migration 570 took exams out of
+      // the Inbox, 571 out of the performance metric, this out of the queue.)
+      const { data: escTask } = isExam ? { data: null } : await admin.from('human_tasks').insert({
         tenant_id: tenantId,
         de_id: subjectDeId,
         type: 'escalation',
@@ -1406,13 +1423,20 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         related_id: convId,
       }).select('id').single();
       escTaskId = escTask?.id ?? null;
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
-        text: heldForApproval
-          ? `Answer held for approval — "${truncated}"`
-          : `Chat question escalated to human review — "${truncated}"`,
-        confidence: parsed.confidence,
-      });
+      // Same split for the activity feed: it answers "what did my workforce do
+      // for the business today", and a fire drill does not belong in the
+      // incident log — 74 of today's 78 events were exam escalations. The
+      // auditEvent below is the COMPLIANCE trail and still records every exam,
+      // so nothing is lost, it is just filed where it belongs.
+      if (!isExam) {
+        await admin.from('activity_events').insert({
+          tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
+          text: heldForApproval
+            ? `Answer held for approval — "${truncated}"`
+            : `Chat question escalated to human review — "${truncated}"`,
+          confidence: parsed.confidence,
+        });
+      }
       // (The mig-252 "gap bridge" that lived here never once succeeded — its
       // direct insert violated the source_category FK and the catch swallowed
       // it. Superseded by the unconditional recorder below, which routes
@@ -1423,11 +1447,17 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           : `Chat question escalated to human review — "${truncated}"`,
         'escalated', { confidence: parsed.confidence, conversation_id: convId, held_for_approval: heldForApproval });
     } else {
-      await admin.from('activity_events').insert({
-        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
-        text: `Answered a chat question from knowledge docs (${parsed.sources.join(', ') || 'no sources cited'})`,
-        confidence: parsed.confidence,
-      });
+      // Same rule as the escalated branch: an exam answer is not business
+      // activity. Without this the feed just fills with 'resolved' instead of
+      // 'escalated' — 16 per run — and the fix would have MOVED the noise
+      // rather than removed it. The auditEvent below still records every one.
+      if (!isExam) {
+        await admin.from('activity_events').insert({
+          tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
+          text: `Answered a chat question from knowledge docs (${parsed.sources.join(', ') || 'no sources cited'})`,
+          confidence: parsed.confidence,
+        });
+      }
       await auditEvent(admin, tenantId, persona.name, 'de',
         `Resolved a chat question from knowledge docs (${parsed.sources.join(', ') || 'no sources cited'})`,
         'resolved', { confidence: parsed.confidence, conversation_id: convId });
