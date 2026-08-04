@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Modal } from '../../design/primitives';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
 import { useDepartments } from '../../lib/useDepartments';
@@ -60,16 +61,21 @@ const InviteModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl w-full max-w-md shadow-2xl">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-dt-border">
-          <div>
-            <h2 className="text-base font-bold text-white">Invite Team Member</h2>
-            <p className="text-xs text-dt-support mt-0.5">They'll receive an email to set their password</p>
-          </div>
-          <button onClick={onClose} className="text-dt-muted hover:text-white text-xl leading-none">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <Modal
+      size="md"
+      padded={false}
+      onClose={onClose}
+      title={
+        <span className="block">
+          Invite team member
+          <span className="block text-xs font-normal text-dt-support mt-0.5">
+            They'll receive an email to set their password
+          </span>
+        </span>
+      }
+    >
+      <>
+        <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
           <div>
             <label className="text-xs text-dt-support mb-1.5 block">Full Name *</label>
             <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Sarah Mitchell"
@@ -122,8 +128,8 @@ const InviteModal = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 };
 

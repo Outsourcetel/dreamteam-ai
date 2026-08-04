@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { Modal } from '../../../design/primitives'
 import { useAuth } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
@@ -316,9 +317,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
       {/* Add rule form */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAdd(false)}>
-          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-[440px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-white mb-4">Add guardrail rule</h3>
+        <Modal size="md" onClose={() => setShowAdd(false)} title="Add guardrail rule">
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-dt-support mb-1">Rule (plain English)</label>
@@ -409,8 +408,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 {busy ? 'Saving…' : 'Add rule'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
