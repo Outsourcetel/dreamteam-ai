@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal, Drawer } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
@@ -115,12 +116,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
   const c = account.health_components ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md h-full overflow-y-auto bg-dt-card border-l border-dt-border-strong p-5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-1">
-          <h3 className="text-white font-semibold">{account.name}</h3>
-          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
-        </div>
+    <Drawer title={account.name} onClose={onClose}>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <StatusChip status={account.status} />
           <span className={`text-xs font-semibold ${healthText(account.health_score)}`}>health {account.health_score}</span>
@@ -236,8 +232,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
           )}
           {runMsg && <p className="text-[11px] text-emerald-300 mt-2">✓ {runMsg}</p>}
         </div>
-      </div>
-    </div>
+    </Drawer>
   );
 }
 
@@ -560,9 +555,7 @@ export default function CustomerSuccessLive() {
 
       {/* Add account modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-4">Add {vocab.party_singular.toLowerCase()}</h3>
+        <Modal size="sm" title={`Add ${vocab.party_singular.toLowerCase()}`} onClose={() => setShowAdd(false)}>
             <div className="space-y-3 mb-5">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1">{vocab.party_singular} name</label>
@@ -594,8 +587,7 @@ export default function CustomerSuccessLive() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {showImport && (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Modal } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
@@ -1397,12 +1398,7 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
     finally { setBusy(false); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-2xl border border-dt-border bg-dt-page p-5" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-semibold text-white">✨ Draft a playbook with AI</h3>
-          <button onClick={onClose} className="text-dt-muted hover:text-dt-support">✕</button>
-        </div>
+    <Modal size="2xl" title="✨ Draft a playbook with AI" onClose={onClose}>
         <DeOwnerPicker value={deId} onChange={setDeId} />
         <p className="text-[11px] text-dt-support mb-3">Write the procedure in plain language, or paste an existing SOP. The Copilot compiles it into steps and studies it against your knowledge base — surfacing conflicts, questions to answer, and test scenarios before you go live.</p>
         <textarea
@@ -1417,8 +1413,7 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
             {busy ? 'Studying & compiling…' : 'Study & draft'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1744,9 +1739,11 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             {selectedDef.description && <p className="text-sm text-dt-support mb-3">{selectedDef.description}</p>}
 
             {aiEditing && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-                onClick={() => setAiEditing(false)}>
-                <div className="w-full max-w-2xl h-[600px] max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+              // chrome={false} for the same reason as the employee editor:
+              // AISessionPanel brings its own header and close button.
+              <Modal size="2xl" chrome={false} padded={false}
+                     panelClass="h-[600px] max-h-[85vh] overflow-hidden"
+                     onClose={() => setAiEditing(false)}>
                   <AISessionPanel
                     subjectKind="playbook"
                     subjectId={selectedDef.id}
@@ -1754,8 +1751,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                     onChanged={() => { void refresh(); }}
                     onClose={() => setAiEditing(false)}
                   />
-                </div>
-              </div>
+              </Modal>
             )}
 
             {/* PB3 Deep Study — shown for AI-drafted playbooks */}

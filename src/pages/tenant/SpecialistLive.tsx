@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal } from '../../design/primitives';
 import { PageHeader, th, td } from '../../components/ui';
 import { CustomerApiError } from '../../lib/customerApi';
 import { listConnectors, Connector } from '../../lib/connectorApi';
@@ -927,10 +928,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
 
       {/* Quality flag modal */}
       {flagFor && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setFlagFor(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-md bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-3">Flag "{flagFor.title}"</h2>
+        <Modal size="md" title={`Flag "${flagFor.title}"`} onClose={() => setFlagFor(null)}>
             <select className={selectCls + ' w-full mb-3'} value={flagKind} onChange={e => setFlagKind(e.target.value as QualityFlag['flag'])}>
               <option value="stale">Stale</option>
               <option value="incomplete">Incomplete</option>
@@ -947,8 +945,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                   .finally(() => setFlagFor(null));
               }}>Raise flag</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {removeSourceTarget && (
@@ -984,10 +981,8 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
           category, not a hardcoded two-item list. Risk badges use the
           MCP tool-annotation vocabulary (destructive/idempotent). */}
       {scribeFor && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => setScribeFor(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-lg bg-dt-card border border-purple-500/40 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-white mb-1">Scribe write-back</h2>
+        <Modal size="lg" title="Scribe write-back" panelClass="border-purple-500/40"
+               onClose={() => setScribeFor(null)}>
             <p className="text-xs text-dt-muted mb-4">
               Grounded in consultation <span className="font-mono">{scribeFor.id.slice(0, 8)}…</span>. The payload is built server-side from
               the consultation only — you choose the target and action, never the text.
@@ -1055,8 +1050,7 @@ export default function SpecialistLive({ setPage, specialistKey = 'technical' }:
                 {creatingScribe ? 'Creating…' : 'Create gated request'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {amendmentOpen && profile && (

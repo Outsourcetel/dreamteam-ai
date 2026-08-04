@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Modal } from '../../../design/primitives';
 import { supabase } from '../../../supabase';
 import AISessionPanel from '../../../components/AISessionPanel';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -200,13 +201,14 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
   };
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
+    // Busy guard preserved and now covering Escape as well as the backdrop.
+    <Modal size="2xl"
+           title={!category ? 'Connect a system — what kind is it?'
+                  : !provider ? `Which system is your ${CATEGORY_SHORT[category]}?`
+                  : `${reconnect ? 'Reconnect' : 'Connect'} ${meta!.label}`}
+           onClose={() => { if (!busy) onClose(); }}>
           {!category ? (
             <>
-              <h2 className="text-sm font-semibold text-white mb-1">Connect a system — what kind is it?</h2>
               <p className="text-xs text-dt-muted mb-4">DreamTeam speaks in system categories: your Digital Employees ask "the helpdesk" or "the CRM" — whichever brand you actually run answers. Pick the category first.</p>
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {CATEGORIES.map(cat => (
@@ -233,7 +235,6 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
           ) : !provider ? (
             <>
               <button onClick={() => setCategory(null)} className="text-xs text-dt-muted hover:text-white mb-2">← Categories</button>
-              <h2 className="text-sm font-semibold text-white mb-1">Which system is your {CATEGORY_SHORT[category]}?</h2>
               <p className="text-xs text-dt-muted mb-3">Your systems stay yours — DreamTeam works on top of them. Not listed? Rung 4: connect its API via "Your product API"; rung 5: upload files into Knowledge instead.</p>
               <input value={providerQuery} onChange={e => setProviderQuery(e.target.value)} placeholder="Search 30+ systems…"
                 className={`${inputCls} mb-3`} />
@@ -279,7 +280,6 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
           ) : (
             <>
               {!reconnect && <button onClick={() => setProvider(null)} className="text-xs text-dt-muted hover:text-white mb-2">← All systems</button>}
-              <h2 className="text-sm font-semibold text-white mb-1">{reconnect ? 'Reconnect' : 'Connect'} {meta!.label}</h2>
               <p className="text-xs text-dt-muted mb-4">{meta!.tagline}</p>
 
               {meta!.oauth ? (
@@ -377,9 +377,7 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
               </>)}
             </>
           )}
-        </div>
-      </div>
-    </>
+    </Modal>
   );
 }
 
