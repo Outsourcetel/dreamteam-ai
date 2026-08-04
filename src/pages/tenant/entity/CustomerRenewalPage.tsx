@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Modal } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import {
@@ -256,9 +257,8 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
 
       {/* Generate Invoice Modal */}
       {invoiceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-2">Generate Zuora Invoice</h3>
+        <Modal size="sm" onClose={() => setInvoiceModal(null)} title="Generate Zuora invoice">
+          <div>
             <p className="text-sm text-dt-support mb-5">
               Generate Zuora invoice for <span className="text-white font-medium">{invoiceModal.account}</span> — <span className="text-indigo-300 font-medium">{invoiceModal.arr}</span>?
             </p>
@@ -277,7 +277,7 @@ function RenewalsPipeline({ setPage }: { setPage?: (p: any) => void }) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Toast */}
@@ -676,9 +676,8 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
 
       {/* Generate invoice modal */}
       {genModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-2">Generate renewal invoice</h3>
+        <Modal size="sm" onClose={() => setGenModal(null)} title="Generate renewal invoice">
+          <div>
             <p className="text-sm text-dt-support mb-2">
               Generate renewal invoice for <span className="text-white font-medium">{genModal.name}</span> —{' '}
               <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
@@ -696,7 +695,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {toast && (
