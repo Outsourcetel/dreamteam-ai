@@ -6,7 +6,8 @@ import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
 import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
 import React, { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget } from '../../lib/api';
+import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget,
+  getTenantLlmKeyStatus, saveTenantLlmKey, clearTenantLlmKey, setTenantLlmKeyMode, type LlmKeyMode } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { canAccessSettingsTab, type SettingsTab } from '../../lib/navAccess';
 import {
@@ -77,6 +78,11 @@ const SettingsPage = ({
   const [googleSet, setGoogleSet] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  // Whose key this workspace runs on (mig 541). 'platform' = we provide it and
+  // bill for tokens; 'byo' = this workspace supplies its own and calls refuse
+  // without it, rather than quietly borrowing the platform's.
+  const [keyMode, setKeyMode] = useState<LlmKeyMode>('platform');
+  const [keyError, setKeyError] = useState<string | null>(null);
 
   // Widget & API tab
   const [widgetKeys, setWidgetKeys] = useState<WidgetKeyRow[]>([]);
@@ -121,13 +127,19 @@ const SettingsPage = ({
   }, [tenant, user]);
 
   useEffect(() => {
-    if (activeTab === 'ai_engine' && isDTUser) {
-      Promise.all([
-        hasPlatformConfigKey('ANTHROPIC_API_KEY'),
-        hasPlatformConfigKey('BEDROCK_API_KEY'),
-        hasPlatformConfigKey('OPENAI_API_KEY'),
-        hasPlatformConfigKey('GOOGLE_AI_KEY'),
-      ]).then(([a, b, o, g]) => { setAnthropicSet(a); setBedrockSet(b); setOpenaiSet(o); setGoogleSet(g); });
+    if (activeTab === 'ai_engine' && tenant?.id) {
+      // This workspace's OWN keys first. Previously this read platform_config —
+      // one global row — so every workspace saw the same answer and a tenant
+      // could never tell whether a key was theirs.
+      getTenantLlmKeyStatus(tenant.id).then((st) => {
+        if (!st) return;
+        setKeyMode(st.mode);
+        const has = (k: string) => st.keys.some((x) => x.provider_key === k);
+        setAnthropicSet(has('ANTHROPIC_API_KEY'));
+        setBedrockSet(has('BEDROCK_API_KEY'));
+        setOpenaiSet(has('OPENAI_API_KEY'));
+        setGoogleSet(has('GOOGLE_AI_KEY'));
+      });
     }
     if (activeTab === 'widget' && tenant?.id) {
       Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
@@ -171,19 +183,34 @@ const SettingsPage = ({
     setTimeout(() => setSaveStatus('idle'), 3000);
   };
 
+  // Saves to THIS workspace's credentials, not the platform's. The old version
+  // called savePlatformConfig, which writes one global row gated on a platform
+  // capability — so a tenant admin got "not authorized", and a platform admin
+  // changed the key for all sixteen workspaces at once.
   const handleSaveKeys = async () => {
-    const entries: Record<string, string> = {};
-    if (anthropicKey.trim()) entries['ANTHROPIC_API_KEY'] = anthropicKey.trim();
-    if (bedrockKey.trim()) entries['BEDROCK_API_KEY'] = bedrockKey.trim();
-    if (bedrockRegion.trim()) entries['BEDROCK_REGION'] = bedrockRegion.trim();
-    if (openaiKey.trim()) entries['OPENAI_API_KEY'] = openaiKey.trim();
-    if (googleKey.trim()) entries['GOOGLE_AI_KEY'] = googleKey.trim();
-    if (!Object.keys(entries).length) return;
-    setKeySaving(true);
-    const ok = await savePlatformConfig(entries);
+    if (!tenant?.id) { setKeyStatus('error'); setKeyError('No workspace in scope.'); return; }
+    const entries: Array<[string, string]> = [];
+    if (anthropicKey.trim()) entries.push(['ANTHROPIC_API_KEY', anthropicKey.trim()]);
+    if (bedrockKey.trim()) entries.push(['BEDROCK_API_KEY', bedrockKey.trim()]);
+    if (openaiKey.trim()) entries.push(['OPENAI_API_KEY', openaiKey.trim()]);
+    if (googleKey.trim()) entries.push(['GOOGLE_AI_KEY', googleKey.trim()]);
+    if (!entries.length && !bedrockRegion.trim()) return;
+
+    setKeySaving(true); setKeyError(null);
+    const failures: string[] = [];
+    for (const [name, value] of entries) {
+      const err = await saveTenantLlmKey(tenant.id, name, value);
+      if (err) failures.push(`${name}: ${err}`);
+    }
+    // The Bedrock region is configuration, not a credential, and stays platform
+    // level — it is not secret and not per-workspace.
+    if (bedrockRegion.trim()) await savePlatformConfig({ BEDROCK_REGION: bedrockRegion.trim() });
     setKeySaving(false);
-    setKeyStatus(ok ? 'saved' : 'error');
-    if (ok) {
+
+    if (failures.length) {
+      setKeyStatus('error'); setKeyError(failures.join(' · '));
+    } else {
+      setKeyStatus('saved');
       if (anthropicKey.trim()) { setAnthropicSet(true); setAnthropicKey(''); }
       if (bedrockKey.trim()) { setBedrockSet(true); setBedrockKey(''); }
       if (bedrockRegion.trim()) setBedrockRegion('');
@@ -191,6 +218,23 @@ const SettingsPage = ({
       if (googleKey.trim()) { setGoogleSet(true); setGoogleKey(''); }
     }
     setTimeout(() => setKeyStatus('idle'), 4000);
+  };
+
+  const handleRemoveKey = async (providerKey: string, clearFlag: (v: boolean) => void) => {
+    if (!tenant?.id) return;
+    setKeySaving(true); setKeyError(null);
+    const err = await clearTenantLlmKey(tenant.id, providerKey);
+    setKeySaving(false);
+    if (err) { setKeyStatus('error'); setKeyError(err); } else { clearFlag(false); setKeyStatus('saved'); }
+    setTimeout(() => setKeyStatus('idle'), 4000);
+  };
+
+  const handleKeyModeChange = async (mode: LlmKeyMode) => {
+    if (!tenant?.id) return;
+    const previous = keyMode;
+    setKeyMode(mode);
+    const err = await setTenantLlmKeyMode(tenant.id, mode);
+    if (err) { setKeyMode(previous); setKeyStatus('error'); setKeyError(err); }
   };
 
   const handleSaveBudget = async (tenantId: string) => {
@@ -470,17 +514,49 @@ const SettingsPage = ({
         </div>
       )}
 
-      {/* ── AI Engine (platform admins only — keys are shared platform-wide) ── */}
-      {activeTab === 'ai_engine' && isDTUser && (
+      {/* ── AI Engine — keys belong to THIS workspace (mig 541) ── */}
+      {activeTab === 'ai_engine' && (
         <div className="max-w-2xl space-y-4">
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
-            <p className="text-xs text-dt-support mb-5">
-              These keys are stored encrypted in your database and shared across all your client tenants.
+            <p className="text-xs text-dt-support mb-4">
+              Keys are stored encrypted and belong to <strong className="text-dt-body">this workspace only</strong>.
               Every answer tries the engines in order — Anthropic first, then the Bedrock Claude fallback,
               then the optional cross-vendor tiers — and the first configured engine that responds serves it.
-              You control usage and spend via the Usage &amp; Budgets tab.
+              Usage and spend are on the Usage &amp; Budgets tab.
             </p>
+
+            {/* Whose account the calls are billed to. Stated plainly, because it
+                decides who holds the relationship with the model provider. */}
+            <div className="mb-5 rounded-xl border border-dt-border-strong bg-dt-panel/60 p-3.5">
+              <p className="text-xs font-medium text-dt-support mb-2">Which account pays for this workspace's AI?</p>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="radio" name="llm_key_mode" className="mt-0.5" checked={keyMode === 'platform'}
+                    onChange={() => void handleKeyModeChange('platform')} />
+                  <span className="text-xs text-dt-support">
+                    <strong className="text-dt-body">We provide it.</strong> This workspace uses our keys when it has
+                    none of its own, and we bill for what it uses.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="radio" name="llm_key_mode" className="mt-0.5" checked={keyMode === 'byo'}
+                    onChange={() => void handleKeyModeChange('byo')} />
+                  <span className="text-xs text-dt-support">
+                    <strong className="text-dt-body">This workspace brings its own.</strong> Calls are billed to its
+                    own provider account. If a key is missing, work <em>stops with a clear message</em> rather than
+                    quietly falling back to ours.
+                  </span>
+                </label>
+              </div>
+              {keyMode === 'byo' && !anthropicSet && (
+                <p className="text-xs text-amber-300 mt-2.5">
+                  No Anthropic key is set for this workspace, so its Digital Employees cannot answer. Add one below.
+                </p>
+              )}
+            </div>
+
+            {keyError && <p className="text-xs text-rose-300 mb-4">{keyError}</p>}
 
             {/* Anthropic */}
             <div className="mb-5">

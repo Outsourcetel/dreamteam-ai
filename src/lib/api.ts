@@ -656,6 +656,49 @@ export const hasPlatformConfigKey = async (key: string): Promise<boolean> => {
 };
 
 // =====================================================
+// PER-WORKSPACE MODEL KEYS (mig 541)
+// =====================================================
+// platform_config is global — one ANTHROPIC_API_KEY row for the whole platform,
+// writable only by a platform admin. So the "enter your key" field on a tenant's
+// Settings page could not work for the tenant, and when a platform admin used it
+// the key applied to everyone. These go to the workspace's own credential.
+export type LlmKeyMode = 'byo' | 'platform';
+export interface TenantLlmKeyStatus {
+  mode: LlmKeyMode;
+  keys: Array<{ provider_key: string; status: 'untested' | 'working' | 'failing'; last_verified_at: string | null; last_error: string | null }>;
+}
+
+export const getTenantLlmKeyStatus = async (tenantId: string): Promise<TenantLlmKeyStatus | null> => {
+  const { data, error } = await supabase.rpc('tenant_llm_key_status', { p_tenant_id: tenantId });
+  if (error) { console.error('getTenantLlmKeyStatus:', error.message); return null; }
+  const r = data as { ok?: boolean; mode?: LlmKeyMode; keys?: TenantLlmKeyStatus['keys'] } | null;
+  if (!r?.ok) return null;
+  return { mode: r.mode ?? 'platform', keys: r.keys ?? [] };
+};
+
+/** Returns null on success, or a message to show the operator. */
+export const saveTenantLlmKey = async (tenantId: string, providerKey: string, value: string): Promise<string | null> => {
+  const { data, error } = await supabase.rpc('set_tenant_llm_key', {
+    p_tenant_id: tenantId, p_provider_key: providerKey, p_value: value,
+  });
+  if (error) return error.message;
+  const r = data as { ok?: boolean; error?: string } | null;
+  return r?.ok ? null : (r?.error ?? 'Could not save that key.');
+};
+
+export const clearTenantLlmKey = async (tenantId: string, providerKey: string): Promise<string | null> => {
+  const { error } = await supabase.rpc('clear_tenant_llm_key', {
+    p_tenant_id: tenantId, p_provider_key: providerKey,
+  });
+  return error ? error.message : null;
+};
+
+export const setTenantLlmKeyMode = async (tenantId: string, mode: LlmKeyMode): Promise<string | null> => {
+  const { error } = await supabase.from('tenants').update({ llm_key_mode: mode }).eq('id', tenantId);
+  return error ? error.message : null;
+};
+
+// =====================================================
 // TENANT AI USAGE
 // =====================================================
 export interface TenantUsage {

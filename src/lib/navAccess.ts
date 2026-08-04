@@ -263,8 +263,13 @@ const SETTINGS_TAB_ACCESS: Record<SettingsTab, UserRole[]> = {
   // Settings home. ADMIN, matching the set_trust_ladder gate for
   // workspace-wide (de_id null) policies: owner/admin in the database.
   trust: ADMIN,
-  // Shared platform-wide LLM keys — DreamTeam staff only, never a tenant's.
-  ai_engine: [],
+  // Model keys. Was [] — platform staff only — because there was ONE global key
+  // shared by every workspace, so showing the tab to a tenant would have offered
+  // them a control that changed everyone's engine and that the database refused
+  // them anyway. Since mig 541 keys belong to the workspace, so does the tab:
+  // an owner/admin can supply their own provider account, and set_tenant_llm_key
+  // enforces the same boundary in the database.
+  ai_engine: ADMIN,
 };
 
 /**
