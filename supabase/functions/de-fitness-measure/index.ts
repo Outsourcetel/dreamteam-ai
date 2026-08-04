@@ -30,6 +30,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -105,8 +106,8 @@ serve(async (req) => {
 
     // Budget guard for THIS tenant. A missing LLM provider surfaces downstream as
     // a de-simulate 'llm_not_configured' -> not-completed -> honest NULL/NULL.
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ ok: true, skipped: 'ai_budget_exceeded', tenant_id });
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budgetBlocked(budgetErr, budget)) return json({ ok: true, skipped: 'ai_budget_exceeded', tenant_id });
 
     // Claim FIRST — the NULL/NULL row is the claim AND the fail-closed record.
     const { data: claim } = await admin.rpc('claim_amendment_for_fitness', {

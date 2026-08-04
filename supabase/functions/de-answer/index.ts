@@ -33,6 +33,7 @@ import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } fro
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { adjudicateRegexHit, type AdjHit } from '../_shared/guardrailAdjudicator.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -988,8 +989,8 @@ serve(async (req) => {
       return json({ error: 'llm_not_configured', conversation_id: convId });
     }
 
-    const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budgetCheck && budgetCheck.allowed === false) {
+    const { data: budgetCheck, error: budgetCheckErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetCheckErr, budgetCheck)) {
       return json({ error: 'ai_budget_exceeded', conversation_id: convId });
     }
 

@@ -24,6 +24,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -63,8 +64,8 @@ serve(async (req) => {
     }
 
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     const reference = typeof body.reference === 'string' && body.reference.trim() ? body.reference.trim() : null;
 

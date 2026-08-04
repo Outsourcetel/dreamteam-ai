@@ -32,6 +32,7 @@ import { resolveDePersona, type DePersona } from '../_shared/dePersona.ts';
 import { findBlockingMatch, type PatternHit, type PatternRule } from '../_shared/guardrailMatch.ts';
 import { secureEqual } from '../_shared/secureCompare.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -427,7 +428,7 @@ serve(async (req) => {
     const { data: rules } = await rulesP;
     const hit = findBlockingMatch((rules ?? []).filter((r) => r.pattern), text);
     if (hit) {
-      await admin.rpc('append_audit_event', {
+      await rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId, p_actor: persona.name, p_actor_type: 'de',
         p_action: `Guardrail blocked a voice utterance before synthesis — rule "${hit.rule.rule}"`,
         p_category: 'guardrail_block',

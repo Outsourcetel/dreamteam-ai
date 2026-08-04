@@ -30,6 +30,7 @@ import { recordSpan } from '../_shared/otel.ts';
 import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
 import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1377,10 +1378,10 @@ serve(async (req) => {
           await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
           continue;
         }
-        const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
-        if (budget && budget.allowed === false) { await deferPlan(o.id); continue; }
+        const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
+        if (budgetBlocked(budgetErr, budget)) { await deferPlan(o.id); continue; }
         const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
-        if (deBudget && deBudget.allowed === false) { await deferPlan(o.id); continue; }
+        if (budgetBlocked(deBudgetErr, deBudget)) { await deferPlan(o.id); continue; }
         try {
           const steps = await planObjective(admin, o);
           planned.push({ objective_id: o.id, steps });
@@ -1417,10 +1418,10 @@ serve(async (req) => {
             await deferWake(); continue;
           }
         }
-        const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
-        if (budget && budget.allowed === false) { await deferWake(); continue; }
+        const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
+        if (budgetBlocked(budgetErr, budget)) { await deferWake(); continue; }
         const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
-        if (deBudget && deBudget.allowed === false) { await deferWake(); continue; }
+        if (budgetBlocked(deBudgetErr, deBudget)) { await deferWake(); continue; }
         try {
           // Real claim (mig 180): the UPDATE re-checks next_wake_at <= now(),
           // so a concurrent run that lost the race gets an error and skips.
@@ -1475,14 +1476,14 @@ serve(async (req) => {
     for (const it of items) {
       try {
         // Budget gate per tenant before spending on the LLM.
-        const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: it.tenant_id });
-        if (budget && budget.allowed === false) {
+        const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: it.tenant_id });
+        if (budgetBlocked(budgetErr, budget)) {
           await admin.rpc('complete_de_work_item', { p_id: it.id, p_status: 'failed', p_error: 'ai_budget_exceeded', p_retry_delay_seconds: 3600 });
           results.push({ id: it.id, status: 'failed', summary: 'ai_budget_exceeded' }); continue;
         }
         // Wave-4 per-DE monthly ceiling (mig 163) on top of the tenant budget.
         const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: it.de_id });
-        if (deBudget && deBudget.allowed === false) {
+        if (budgetBlocked(deBudgetErr, deBudget)) {
           await admin.rpc('complete_de_work_item', { p_id: it.id, p_status: 'failed', p_error: 'de_budget_exceeded', p_retry_delay_seconds: 3600 });
           results.push({ id: it.id, status: 'failed', summary: 'de_budget_exceeded' }); continue;
         }

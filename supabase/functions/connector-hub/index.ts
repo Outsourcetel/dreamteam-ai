@@ -89,6 +89,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { contentHash } from '../_shared/contentHash.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -5587,7 +5588,7 @@ serve(async (req) => {
         query: typeof payload.params?.query === 'string' ? payload.params.query : undefined,
         ref: typeof payload.params?.external_ref === 'string' ? payload.params.external_ref : undefined,
       });
-      await admin.rpc('append_audit_event', {
+      await rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId,
         p_actor: 'Template builder (dry run)', p_actor_type: 'human',
         p_action: r.ok
@@ -5637,7 +5638,7 @@ serve(async (req) => {
       if (raErr) return json({ ok: false, error: 'access_check_failed', detail: raErr.message }, 500);
       const v = verdict as { allowed: boolean; reason: string; has: string | null; via: string | null };
       if (v.allowed) return null;
-      await admin.rpc('append_audit_event', {
+      await rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId,
         p_actor: `${subjectKind === 'de' ? 'DE' : 'Specialist'} ${subjectId.slice(0, 8)}`,
         p_actor_type: 'de',
@@ -5734,7 +5735,7 @@ serve(async (req) => {
     }
 
     const audit = (category: string, actionText: string, detail: Record<string, unknown>) =>
-      admin.rpc('append_audit_event', {
+      rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId,
         p_actor: `${connector.provider} connector (${connector.display_name || connector.base_url})`,
         p_actor_type: 'system',
@@ -5991,7 +5992,7 @@ serve(async (req) => {
       const centsDrift = erpCents - mirrorCents;
       const inSync = countDrift === 0 && centsDrift === 0;
       if (!inSync) {
-        await admin.rpc('raise_ops_alert', {
+        await rpcLoud(admin, 'raise_ops_alert', {
           p_kind: 'erp_ar_drift',
           p_message: `ERP AR mirror drift on ${connector.provider} (${connector.display_name || connector.base_url}): count Δ${countDrift}, amount Δ${(centsDrift / 100).toFixed(2)} — the governed copy no longer matches the ERP.`,
           p_detail: { connector_id: connectorId, tenant_id: tenantId, provider: connector.provider, erp_count: erpCount, mirror_count: mirrorCount, erp_cents: erpCents, mirror_cents: mirrorCents, count_drift: countDrift, cents_drift: centsDrift },
@@ -6212,7 +6213,7 @@ serve(async (req) => {
       }
 
       const summary = plainLanguagePreview(def, validated.values);
-      await admin.rpc('record_action_execution', {
+      await rpcLoud(admin, 'record_action_execution', {
         p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
         p_subject_kind: subjectKind, p_subject_id: subjectId,
         p_mode: 'preview', p_params: validated.values, p_decision: 'previewed',
@@ -6277,7 +6278,7 @@ serve(async (req) => {
         });
         const v = verdict as { allowed: boolean; has: string | null; reason: string };
         if (!v.allowed) {
-          await admin.rpc('append_audit_event', {
+          await rpcLoud(admin, 'append_audit_event', {
             p_tenant_id: tenantId, p_actor: `${subjectKind === 'de' ? 'DE' : 'Specialist'} ${subjectId.slice(0, 8)}`, p_actor_type: 'de',
             p_action: `Action REFUSED by data access rules — ${def.label} on ${connector.display_name || connector.provider} (needs write_back, has ${v.has ?? 'no grant'})`,
             p_category: 'access_control',
@@ -6329,11 +6330,21 @@ serve(async (req) => {
         // 'amount_cents' (already in cents; the only money param in the registry).
         // Passing null here is what silently disabled all three (audit critical).
         // amountCents / hasAmountParam are resolved once above (also reused post-exec).
-        const { data: decisionRaw } = await admin.rpc('decide_action_execution', {
+        const { data: decisionRaw, error: decideErr } = await admin.rpc('decide_action_execution', {
           p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
           p_de_id: subjectKind === 'de' ? subjectId : null,
           p_amount_cents: amountCents, p_action_type: def.action_key,
         });
+        // FAIL CLOSED, legibly. An unreadable gate decision used to leave this
+        // null and crash on the next property read — nothing executed, which
+        // was luck rather than design, and the caller got an opaque 500.
+        if (decideErr || !decisionRaw) {
+          console.error(`[connector-hub] gate decision unreadable for ${actionKey} — refusing: ${decideErr?.message ?? 'no decision returned'}`);
+          return json({
+            ok: false, error: 'gate_unavailable',
+            detail: 'The approval rules could not be evaluated, so this action was refused rather than run ungoverned. Nothing was sent.',
+          }, 503);
+        }
         let decision = decisionRaw as { decision: string; guardrail_rule_id: string | null; guardrail_rule: string | null; trust_level: number | null; reasoning: string };
 
         // Fail closed: a money action whose amount we could NOT read must never
@@ -6372,7 +6383,7 @@ serve(async (req) => {
           // Gated — create the human_task, do NOT call the external system.
           const taskTitle = `Approve action — ${def.label} (${connector.display_name || connector.provider})`;
           const taskDetail = `${decision.reasoning} Preview: ${summary}`;
-          const { data: rec } = await admin.rpc('record_action_execution', {
+          const { data: rec, error: recErr } = await admin.rpc('record_action_execution', {
             p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
             p_subject_kind: subjectKind, p_subject_id: subjectId,
             p_mode: 'execute', p_params: paramsForLedger, p_decision: decision.decision,
@@ -6381,6 +6392,18 @@ serve(async (req) => {
             p_task_title: taskTitle, p_task_detail: taskDetail,
             p_origin_kind: originKind, p_origin_id: originId,
           });
+          // The gate is only real if the ledger row exists. This exact site
+          // told the voice channel a booking was "human_gated" while the write
+          // had silently failed on a uuid type mismatch — a caller was
+          // reassured about an approval that no human would ever see, because
+          // .rpc() resolves on a Postgres error instead of throwing.
+          if (recErr || !(rec as { id?: string } | null)?.id) {
+            console.error(`[connector-hub] GATED action NOT RECORDED for ${actionKey}: ${recErr?.message ?? 'no execution id returned'}`);
+            return json({
+              ok: false, error: 'action_not_recorded',
+              detail: 'This action could not be written to the approval ledger, so it has NOT been queued for a human and nothing was sent. Please try again.',
+            }, 503);
+          }
           await audit('approval',
             `Action GATED — ${def.label} on ${connector.display_name || connector.provider}: ${decision.reasoning}`,
             { kind: 'action_gated', action_definition_id: def.id, action_key: actionKey, category, decision: decision.decision, guardrail_rule_id: decision.guardrail_rule_id, task_id: (rec as { task_id?: string })?.task_id ?? null });
@@ -6419,9 +6442,19 @@ serve(async (req) => {
           return json({ ok: false, error: 'approval_mismatch',
             detail: 'The approval referenced does not belong to this action. Nothing was sent.' }, 200);
         }
-        const { data: claim } = await admin.rpc('claim_gated_action_execution', {
+        const { data: claim, error: claimErr } = await admin.rpc('claim_gated_action_execution', {
           p_tenant_id: tenantId, p_task_id: gatedTaskId, p_execution_id: approvedExecutionId,
         });
+        // Already fails closed (a null claim is not `claimed === true`), but it
+        // then tells the operator "no human approved this" — which is a lie
+        // when the truth is that the database could not answer. Say which.
+        if (claimErr) {
+          console.error(`[connector-hub] claim of approved execution ${approvedExecutionId} failed: ${claimErr.message}`);
+          return json({
+            ok: false, error: 'claim_unavailable',
+            detail: 'The approval could not be verified against the ledger, so nothing was sent. This is a system fault, not a rejection — please try again.',
+          }, 503);
+        }
         const c = claim as { claimed?: boolean; claim_row_id?: string; existing_id?: string; receipt?: string | null; reason?: string } | null;
         if (c?.claimed !== true) {
           // Not approved yet / rejected → the RPC refuses (task_not_approved). Already
@@ -6485,7 +6518,12 @@ serve(async (req) => {
           } catch (e) { console.error('def-of-done reconcile:', e); }
         }
       } else {
-        const { data } = await admin.rpc('record_action_execution', {
+        // The external call has ALREADY happened, so failing the request now
+        // would be dishonest in the other direction — the world changed. But a
+        // missing ledger row after a real action means the record no longer
+        // matches reality, and that must not pass silently: it is exactly the
+        // drift the audit story exists to prevent.
+        const data = await rpcLoud(admin, 'record_action_execution', {
           p_tenant_id: tenantId, p_action_definition_id: def.id, p_connector_id: connectorId,
           p_subject_kind: subjectKind, p_subject_id: subjectId,
           p_mode: 'execute', p_params: paramsForLedger,
@@ -6496,6 +6534,14 @@ serve(async (req) => {
           p_task_title: null, p_task_detail: null,
           p_origin_kind: originKind, p_origin_id: originId,
         });
+        if (!(data as { id?: string } | null)?.id) {
+          console.error(`[connector-hub] EXECUTED ${actionKey} but did NOT record it — ledger is behind reality`);
+          await rpcLoud(admin, 'raise_ops_alert', {
+            p_kind: 'action_ledger_write_failed',
+            p_message: `An action ran against ${connector.display_name || connector.provider} but could not be written to the execution ledger. The change happened; the record of it is missing.`,
+            p_detail: { tenant_id: tenantId, action_key: actionKey, connector_id: connectorId, ok: outcome.ok },
+          });
+        }
         rec2 = data as { id?: string };
       }
 

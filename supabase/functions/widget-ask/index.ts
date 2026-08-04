@@ -38,6 +38,7 @@ import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '..
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type CustomerState, type Turn } from '../_shared/conversation.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -729,8 +730,8 @@ serve(async (req) => {
 
     // ── LLM (cost governor #2: budget ceiling; #3: prompt-cached persona) ──
     if (!hasLLM) return json({ error: 'llm_not_configured', conversation_id: convId });
-    const { data: budgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budgetCheck && budgetCheck.allowed === false) return json({ error: 'ai_budget_exceeded', conversation_id: convId });
+    const { data: budgetCheck, error: budgetCheckErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetCheckErr, budgetCheck)) return json({ error: 'ai_budget_exceeded', conversation_id: convId });
 
     const audience = accountName
       ? `You are answering an end user (${displayName || 'an employee'}) at customer account "${accountName}".`

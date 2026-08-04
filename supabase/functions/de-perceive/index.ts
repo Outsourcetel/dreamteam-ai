@@ -16,6 +16,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -67,8 +68,8 @@ serve(async (req) => {
 
     // Cost governance: this is an LLM call site — it must sit inside the
     // same budget net as every other one (was previously ungated).
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     if (action === 'extract_fields') {
       let fields = Array.isArray(body.fields) ? body.fields : null;

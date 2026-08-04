@@ -24,6 +24,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -236,8 +237,8 @@ serve(async (req) => {
       const allowed = prof?.layer === 'platform' || (prof?.tenant_id === tenantId && ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(String(prof?.role)));
       if (!allowed) return json({ error: 'forbidden' }, 403);
     }
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     return await doSubmit(admin, apiKey, body, createdBy);
   } catch (err) {

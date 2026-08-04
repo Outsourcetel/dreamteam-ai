@@ -34,6 +34,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -123,7 +124,7 @@ serve(async (req) => {
       return json({ error: `invite sent, but linking the account to this workspace failed: ${linkErr.message}` }, 500);
     }
 
-    await admin.rpc('append_audit_event_internal', {
+    await rpcLoud(admin, 'append_audit_event_internal', {
       p_tenant_id: tenantId,
       p_actor: callerProfile.full_name ?? 'a workspace admin',
       p_actor_type: 'human',

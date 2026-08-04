@@ -58,6 +58,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -344,8 +345,8 @@ async function runLoop(
       return { status: 'budget_exceeded', agentic_step_run_id: runId };
     }
 
-    const { data: tenantBudget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (tenantBudget && tenantBudget.allowed === false) {
+    const { data: tenantBudget, error: tenantBudgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(tenantBudgetErr, tenantBudget)) {
       const result = { reason: 'tenant_ai_budget_exceeded' };
       await markTerminal(admin, runId, 'budget_exceeded', result);
       return { status: 'budget_exceeded', agentic_step_run_id: runId };

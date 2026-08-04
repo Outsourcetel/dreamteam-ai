@@ -19,6 +19,7 @@ import { resolveTenantWithRemoteAccess } from "../_shared/resolveTenant.ts";
 import { wrapUntrusted, FIREWALL_RULES } from "../_shared/injectionSafety.ts";
 import { resolveDeModel } from "../_shared/deModel.ts";
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -56,7 +57,7 @@ serve(async (req: Request) => {
 
     // ── AI budget gate before any model spend ──
     const { data: budget } = await admin.rpc("check_tenant_ai_budget", { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ error: "ai_budget_exceeded" }, 429);
+    if (budgetBlocked(budgetErr, budget)) return json({ error: "ai_budget_exceeded" }, 429);
 
     // ── Workforce Assistant DE for this tenant ──
     const { data: assistant } = await admin

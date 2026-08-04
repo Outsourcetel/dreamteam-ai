@@ -25,6 +25,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -76,8 +77,8 @@ serve(async (req) => {
     }
 
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     // ── evidence ──
     const { data: def } = await admin.from('playbook_definitions')
@@ -168,7 +169,7 @@ serve(async (req) => {
     }
 
     if (def.de_id) await admin.rpc('record_de_token_usage', { p_tenant_id: tenantId, p_de_id: def.de_id, p_model_id: MODEL, p_input_tokens: totalIn, p_output_tokens: totalOut });
-    await admin.rpc('append_audit_event', {
+    await rpcLoud(admin, 'append_audit_event', {
       p_tenant_id: tenantId, p_actor: 'Practice Engine', p_actor_type: 'de',
       p_action: `Playbook amendment drafted — "${def.name}" (${(draft.redline as unknown[] ?? []).length} changes, replay ${(replay as { would_complete?: boolean }).would_complete ? 'PASSED' : 'n/a'})`,
       p_category: 'config_change',

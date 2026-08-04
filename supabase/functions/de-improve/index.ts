@@ -29,6 +29,7 @@ import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -65,8 +66,8 @@ serve(async (req) => {
     // suspended tenants; this makes the function safe on its own too.
     const improveGate = await loadTenantGate(admin, tenant_id);
     if (improveGate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     // ── 1) the failure ──
     // Improvement-worthy = below-standard, not only catastrophic: a

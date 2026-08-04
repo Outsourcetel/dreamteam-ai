@@ -32,6 +32,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -321,7 +322,18 @@ serve(async (req) => {
     // one row flips them to host∈allowlist enforcement.
     try {
       const host = new URL(endpoint).hostname;
-      const { data: allowed } = await admin.rpc('mcp_host_allowed', { p_tenant_id: tenantId, p_host: host });
+      // FAIL CLOSED. This is the injection firewall, not a preference: if the
+      // allowlist cannot be read we do not know whether this tenant restricts
+      // hosts, and `allowed === false` on a null answer is false — which used
+      // to let the call through to an unvetted host.
+      const { data: allowed, error: allowErr } = await admin.rpc('mcp_host_allowed', { p_tenant_id: tenantId, p_host: host });
+      if (allowErr) {
+        console.error(`[mcp-client] host allowlist unreadable for ${host} — refusing (fail closed): ${allowErr.message}`);
+        return json({
+          error: 'mcp_allowlist_unavailable',
+          detail: 'The MCP server allowlist could not be checked, so the request was refused rather than sent to an unverified host. Try again shortly.',
+        }, 503);
+      }
       if (allowed === false) {
         return json({
           error: 'mcp_host_not_allowlisted',
@@ -338,7 +350,7 @@ serve(async (req) => {
     }
 
     const audit = (actionText: string, detail: Record<string, unknown>) =>
-      admin.rpc('append_audit_event', {
+      rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId, p_actor: 'MCP client', p_actor_type: 'system',
         p_action: actionText, p_category: 'connector_sync',
         p_detail: {

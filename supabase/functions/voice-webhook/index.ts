@@ -28,6 +28,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { secureEqual } from '../_shared/secureCompare.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -185,7 +186,7 @@ serve(async (req) => {
       completed_at: new Date().toISOString(),
     }).select('id').single();
 
-    await admin.rpc('append_audit_event', {
+    await rpcLoud(admin, 'append_audit_event', {
       p_tenant_id: tenantId, p_actor: 'Voice channel', p_actor_type: 'de',
       p_action: `Handled a phone call${durationSec ? ` (${Math.round(durationSec)}s)` : ''} — ${summary.slice(0, 140)}`,
       p_category: 'resolved',

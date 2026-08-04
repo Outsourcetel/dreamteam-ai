@@ -13,6 +13,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -380,7 +381,7 @@ async function approve(admin: SupabaseClient, tenantId: string, userId: string |
       await admin.from('de_missions').update({ status: 'failed', error: String(detail).slice(0, 400), updated_at: new Date().toISOString() }).eq('id', missionId);
       return json({ error: 'standing_install_failed', detail: String(detail) }, 422);
     }
-    await admin.rpc('append_audit_event', {
+    await rpcLoud(admin, 'append_audit_event', {
       p_tenant_id: tenantId, p_actor: 'Founder', p_actor_type: 'human', p_category: 'config_change',
       p_action: `Standing mission approved — "${String(mission.directive_text).slice(0, 100)}" installed ${res.installed} watcher(s)`,
       p_detail: { kind: 'de_mission', mission_id: mission.id, de_id: mission.de_id, standing: true },
@@ -455,7 +456,7 @@ async function approve(admin: SupabaseClient, tenantId: string, userId: string |
     report: { per_de: perDe, unrouted, created, skipped_busy: skippedBusy, skipped_excluded: skippedExcluded },
     updated_at: new Date().toISOString(),
   }).eq('id', missionId);
-  await admin.rpc('append_audit_event', {
+  await rpcLoud(admin, 'append_audit_event', {
     p_tenant_id: tenantId, p_actor: 'Founder', p_actor_type: 'human', p_category: 'config_change',
     p_action: `Mission approved — "${String(mission.directive_text).slice(0, 100)}" fanned out: ${created} case(s)${isTeam ? ` across ${Object.keys(perDe).length} employee(s)` : ''}, ${skippedBusy} skipped (already in motion)${unrouted.length ? `, ${unrouted.length} unrouted (no eligible employee)` : ''}`,
     p_detail: { kind: 'de_mission', mission_id: mission.id, team: isTeam },
@@ -494,8 +495,8 @@ serve(async (req) => {
 
     if (action === 'compile') {
       if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
-      const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-      if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+      const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+      if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
       return await compile(admin, tenantId, missionId);
     }
     if (action === 'approve') {

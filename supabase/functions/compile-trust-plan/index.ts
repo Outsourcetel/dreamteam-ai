@@ -46,6 +46,7 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -219,8 +220,8 @@ serve(async (req) => {
 
     // ── budget + brain, BEFORE any spend ──
     if (!(await hasLLMProvider(admin))) return fail('llm_not_configured', 'no AI engine key configured (Settings → AI Engine)', 503);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budget && budget.allowed === false) return fail('ai_budget_exceeded', 'this workspace has reached its AI budget', 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetErr, budget)) return fail('ai_budget_exceeded', 'this workspace has reached its AI budget', 429);
 
     // ── the real trust surface, read AS THE USER ──
     const { data: surfaceRaw, error: surfErr } = await asUser.rpc('list_de_trust_surface', { p_de_id: deId });
@@ -356,7 +357,7 @@ serve(async (req) => {
 
     // The ONE permitted side effect: record that a compile happened.
     // Category 'config_change' verified against the live audit_events_category_check.
-    await admin.rpc('append_audit_event', {
+    await rpcLoud(admin, 'append_audit_event', {
       p_tenant_id: tenantId,
       p_actor: String(u.user.email ?? 'manager'),
       p_actor_type: 'human',

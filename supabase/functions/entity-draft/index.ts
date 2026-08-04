@@ -23,6 +23,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -68,8 +69,8 @@ serve(async (req) => {
     }
 
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     // tenant context for the study
     const [guard, kb] = await Promise.all([
@@ -145,7 +146,7 @@ serve(async (req) => {
     }, { onConflict: 'entity_kind,entity_id' });
 
     if (kind === 'de') await admin.rpc('record_de_token_usage', { p_tenant_id: tenantId, p_de_id: entityId, p_model_id: MODEL, p_input_tokens: totalIn, p_output_tokens: totalOut });
-    await admin.rpc('append_audit_event', {
+    await rpcLoud(admin, 'append_audit_event', {
       p_tenant_id: tenantId, p_actor: 'Workforce Copilot', p_actor_type: 'de',
       p_action: `${kind === 'de' ? 'Digital employee' : 'Specialist'} drafted from a plain-language brief — "${cfg.name}" (${(study.questions as unknown[] ?? []).length} questions, ${(study.exam as unknown[] ?? []).length} exam scenarios)`,
       p_category: 'config_change', p_detail: { entity_kind: kind, entity_id: entityId },

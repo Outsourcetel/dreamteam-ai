@@ -98,6 +98,7 @@ import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 import { matchPattern } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1217,7 +1218,7 @@ async function executeDefinitionSteps(
           // fails the step — observability must not break execution.
           try {
             if (invDefId) {
-              await admin.rpc('record_action_execution', {
+              await rpcLoud(admin, 'record_action_execution', {
                 p_tenant_id: tenantId, p_action_definition_id: invDefId, p_connector_id: null,
                 p_subject_kind: invoiceRunDeId ? 'de' : null, p_subject_id: invoiceRunDeId,
                 p_mode: 'execute', p_params: { amount_cents: amount, account_name: ctx.account_name ?? null, invoice_id: invoice.id, run_id: run.id },
@@ -2133,7 +2134,7 @@ async function executeDefinitionSteps(
           try {
             if (onbDefId) {
               const onbRunDeId = await resolveRunDeId();
-              await admin.rpc('record_action_execution', {
+              await rpcLoud(admin, 'record_action_execution', {
                 p_tenant_id: tenantId, p_action_definition_id: onbDefId, p_connector_id: null,
                 p_subject_kind: onbRunDeId ? 'de' : null, p_subject_id: onbRunDeId,
                 p_mode: 'execute', p_params: { template_version_id: params.template_version_id, account_name: ctx.account_name ?? null, project_id: projectId, run_id: run.id },

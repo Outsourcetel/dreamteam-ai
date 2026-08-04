@@ -25,6 +25,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -123,8 +124,8 @@ serve(async (req) => {
     if (!simDe) return json({ error: 'de_not_in_tenant' }, 403);
 
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);
-    const { data: budget } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
-    if (budget && budget.allowed === false) return json({ error: 'ai_budget_exceeded' }, 429);
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
+    if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
     const scenarios = await scenarioQuestions(admin, tenant_id, de_id, mode, count);
     if (scenarios.length === 0) return json({ error: mode === 'historical' ? 'no_historical_questions' : mode === 'golden' ? 'no_golden_qa' : 'scenario_generation_failed' }, 400);

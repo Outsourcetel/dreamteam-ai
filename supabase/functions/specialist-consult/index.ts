@@ -61,6 +61,7 @@ import { resolveDeModel } from '../_shared/deModel.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { budgetBlocked } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -666,7 +667,7 @@ async function runResolveInquiry(
   const { data: resolveBudgetCheck } = resolveHasLLM
     ? await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId })
     : { data: null };
-  const answerStatus = !resolveHasLLM ? 'llm_not_configured' : (resolveBudgetCheck && resolveBudgetCheck.allowed === false) ? 'ai_budget_exceeded' : 'answered';
+  const answerStatus = !resolveHasLLM ? 'llm_not_configured' : (budgetBlocked(resolveBudgetCheckErr, resolveBudgetCheck)) ? 'ai_budget_exceeded' : 'answered';
   let answerText: string | null = null;
   if (answerStatus === 'answered') {
     const evidenceText = allCitations.map((c, i) => `[${i + 1}] (${c.system} · ${c.ref}) ${c.title}: ${c.snippet}`).join('\n');
@@ -1662,8 +1663,8 @@ serve(async (req) => {
 
     // Same enforcement gate the other 4 LLM call sites use — checked
     // right before spending real AI-provider cost.
-    const { data: consultBudgetCheck } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
-    if (consultBudgetCheck && consultBudgetCheck.allowed === false) {
+    const { data: consultBudgetCheck, error: consultBudgetCheckErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(consultBudgetCheckErr, consultBudgetCheck)) {
       const { data: row } = await admin.from('spec_consultations').insert({
         tenant_id: tenantId, specialist_de_id: prof.id, requested_by: requestedBy, run_id: runId,
         question, answer: null, confidence: null,

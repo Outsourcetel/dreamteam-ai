@@ -23,6 +23,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { rpcLoud } from '../_shared/rpcSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -152,7 +153,7 @@ serve(async (req) => {
     }
 
     const audit = (category: string, actionText: string, detail: Record<string, unknown>) =>
-      admin.rpc('append_audit_event', {
+      rpcLoud(admin, 'append_audit_event', {
         p_tenant_id: tenantId,
         p_actor: `Zendesk connector (${connector.display_name || connector.base_url})`,
         p_actor_type: 'system',
