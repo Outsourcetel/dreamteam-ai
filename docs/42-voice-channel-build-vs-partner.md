@@ -174,14 +174,24 @@ names is aimed at the wrong target.**
 **Where the time actually goes** (measured per stage, not inferred):
 
 ```
-tenant suspension gate     ~250 ms   control — deliberately never cached
+tenant suspension gate     ~260 ms   control — deliberately never cached
 DE persona resolve         ~190 ms   was ~390; two independent reads made concurrent
-LLM provider chain resolve ~600 ms   10 Vault key lookups; partly hidden behind the above
-Bedrock time-to-first-token ~1930 ms  <-- the floor
+LLM provider chain resolve    ~0 ms   was ~600; now one batched round trip (mig 576)
+Bedrock time-to-first-token ~1820 ms  <-- the floor
 first sentence completes    ~150 ms
                            ───────
-caller hears first words   ~3800 ms
+caller hears first words   ~3140 ms   (5140 -> 3770 -> 3140 over three rounds)
 ```
+
+The chain resolve deserves its own note, because the cause was not what it
+looked like. Ten keys were resolved per call, and every key that resolved to
+*absent* then made two more calls with a **400ms sleep between them** — a
+retry written to survive a transient Vault hiccup, which could not tell a
+hiccup from a key that was simply never set. Five of the ten are legitimately
+absent here (Bedrock's credential is env-only; OpenAI and Gemini are
+unconfigured tiers), so the common path paid that sleep every single time.
+Migration 576 resolves the whole chain in one trip; the retry now fires only
+on a real error.
 
 **The kill criterion in the original plan — "switch to Retell's socket shape"
 — would not have fixed this.** Vapi's own share (endpointing, STT, TTS) is
@@ -198,6 +208,16 @@ Two findings that change the decision:
 2. **Bedrock alone exceeds the gate.** Even with zero overhead on our side,
    1.9s > 1.2s. No amount of tuning our code reaches the criterion while
    Bedrock is the serving provider.
+
+3. **Vapi's endpointing is a third lever, and it sits in front of us.**
+   `startSpeakingPlan` was `waitSeconds: 0.4` plus a smart wait function
+   spanning ~13ms to ~1990ms — up to ~2.4s of pure silence spent deciding the
+   caller had stopped talking, before our endpoint is called at all. Tuned by
+   **scaling** the wait function (`2000/…` → `1200/…`) and the floor
+   (0.4s → 0.25s), which shortens how long it lingers without reshaping when
+   it becomes confident. Deliberately moderate: cut this too far and the
+   assistant talks over anyone who pauses mid-sentence, which on a support
+   line reads as rude. Worth up to ~0.95s.
 
 **Therefore the remaining levers are provider-level, and both need the
 founder:**

@@ -30,7 +30,7 @@
  * under cross-vendor failover is approximate.
  */
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getAIKey } from './aiKeys.ts';
+import { getAIKey, getAIKeys } from './aiKeys.ts';
 
 type Provider = 'anthropic' | 'bedrock' | 'openai' | 'google';
 
@@ -60,18 +60,21 @@ async function resolveChain(admin: SupabaseClient, tenantId?: string | null): Pr
   const cacheKey = tenantId ?? '';
   const hit = chainCache.get(cacheKey);
   if (hit && Date.now() - hit.at < CHAIN_TTL_MS) return hit.chain;
-  const [anthropicKey, bedrockKey, bedrockRegion, bedrockModelPrefix, bedrockModelMapRaw, openaiKey, openaiModel, googleKey, googleModel, order] = await Promise.all([
-    getAIKey(admin, 'ANTHROPIC_API_KEY', tenantId),
-    getAIKey(admin, 'BEDROCK_API_KEY', tenantId),
-    getAIKey(admin, 'BEDROCK_REGION', tenantId),
-    getAIKey(admin, 'BEDROCK_MODEL_PREFIX', tenantId),
-    getAIKey(admin, 'BEDROCK_MODEL_MAP', tenantId),
-    getAIKey(admin, 'OPENAI_API_KEY', tenantId),
-    getAIKey(admin, 'OPENAI_MODEL', tenantId),
-    getAIKey(admin, 'GOOGLE_AI_KEY', tenantId),
-    getAIKey(admin, 'GOOGLE_AI_MODEL', tenantId),
-    getAIKey(admin, 'LLM_PROVIDER_ORDER', tenantId),
-  ]);
+  // ONE round trip for the whole chain (mig 576). This was ten concurrent
+  // per-key resolutions, and each key that resolved to "absent" then made two
+  // more calls with a 400ms sleep between them — measured at 0.6-1.2s per LLM
+  // call, which is inaudible in chat and is dead air on a phone call.
+  const k = await getAIKeys(admin, [
+    'ANTHROPIC_API_KEY', 'BEDROCK_API_KEY', 'BEDROCK_REGION', 'BEDROCK_MODEL_PREFIX',
+    'BEDROCK_MODEL_MAP', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'GOOGLE_AI_KEY',
+    'GOOGLE_AI_MODEL', 'LLM_PROVIDER_ORDER',
+  ], tenantId);
+  const anthropicKey = k.ANTHROPIC_API_KEY, bedrockKey = k.BEDROCK_API_KEY;
+  const bedrockRegion = k.BEDROCK_REGION, bedrockModelPrefix = k.BEDROCK_MODEL_PREFIX;
+  const bedrockModelMapRaw = k.BEDROCK_MODEL_MAP;
+  const openaiKey = k.OPENAI_API_KEY, openaiModel = k.OPENAI_MODEL;
+  const googleKey = k.GOOGLE_AI_KEY, googleModel = k.GOOGLE_AI_MODEL;
+  const order = k.LLM_PROVIDER_ORDER;
   const available: Provider[] = [];
   if (anthropicKey) available.push('anthropic');
   if (bedrockKey) available.push('bedrock');

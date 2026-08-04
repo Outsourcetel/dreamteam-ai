@@ -69,10 +69,59 @@ async function getPlatformAIKey(admin: SupabaseClient, keyName: string): Promise
     try {
       const { data, error } = await admin.rpc('platform_config_get', { p_key: keyName });
       if (!error && typeof data === 'string' && data.length > 0) return data;
+      // A CLEAN response carrying no value means the key is not configured.
+      // That is an answer, not a hiccup — and retrying it was costing a 400ms
+      // sleep on the most common path, because five of the ten keys the
+      // provider chain resolves are legitimately absent (Bedrock's credential
+      // is env-only; OpenAI and Gemini are unconfigured tiers). Only a genuine
+      // error or throw earns the retry this loop was written for.
+      if (!error) break;
     } catch {
-      // fall through to retry / env secret
+      // transient — worth exactly one retry
     }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
   }
   return Deno.env.get(keyName) ?? undefined;
+}
+
+/**
+ * Batch twin of getAIKey (mig 576). Resolves many keys in ONE round trip with
+ * identical semantics: tenant credential wins, a 'byo' workspace with no key
+ * of its own is refused rather than silently borrowing the platform's, and
+ * plain absence falls through to the env secret — which is the only reason
+ * env-only Bedrock survives in a tenant-scoped chain.
+ *
+ * Falls back to the per-key path if the batch RPC is unavailable, so a
+ * half-deployed environment degrades to the old behaviour rather than losing
+ * its brain.
+ */
+export async function getAIKeys(
+  admin: SupabaseClient, keyNames: string[], tenantId?: string | null,
+): Promise<Record<string, string | undefined>> {
+  const out: Record<string, string | undefined> = {};
+  try {
+    const { data, error } = await admin.rpc('resolve_llm_keys', {
+      p_tenant_id: tenantId ?? null, p_keys: keyNames,
+    });
+    if (!error && data && typeof data === 'object') {
+      const m = data as Record<string, { ok?: boolean; key?: string; source?: string; reason?: string }>;
+      for (const name of keyNames) {
+        const r = m[name];
+        if (r?.ok && r.key) { out[name] = r.key; continue; }
+        if (r?.source === 'byo_refused') {
+          console.warn(`getAIKeys: ${name} unavailable for tenant ${tenantId} — ${r.reason ?? 'not configured'}`);
+          out[name] = undefined;
+          continue;
+        }
+        out[name] = Deno.env.get(name) ?? undefined;
+      }
+      return out;
+    }
+    console.warn(`getAIKeys: batch resolve unavailable (${error?.message ?? 'no data'}) — falling back to per-key`);
+  } catch (e) {
+    console.warn(`getAIKeys: batch resolve threw (${e instanceof Error ? e.message : String(e)}) — falling back to per-key`);
+  }
+  const vals = await Promise.all(keyNames.map((n) => getAIKey(admin, n, tenantId)));
+  keyNames.forEach((n, i) => { out[n] = vals[i]; });
+  return out;
 }
