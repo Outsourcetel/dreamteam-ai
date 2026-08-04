@@ -35,7 +35,7 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 const BASELINE = {
   'bg-slate variants': 8, 'border-slate variants': 3, 'radius variants': 13,
   'card padding variants': 10, 'local StatCard-likes (files)': 7,
-  'hand-rolled dialogs': 24,
+  'hand-rolled dialogs': 21,
   'inline style objects': 65, 'raw hex colors': 18,
 };
 const NOW = {

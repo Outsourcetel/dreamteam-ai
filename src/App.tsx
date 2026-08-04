@@ -30,7 +30,7 @@ function BrandingLoader() {
 }
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
-import ConnectorsPage from './pages/tenant/systems/ConnectorsPage';
+import LiveConnectorsPage from './pages/tenant/systems/LiveConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
@@ -462,7 +462,7 @@ function AppShell() {
         return <KnowledgeHubPage tab={currentPage} setPage={handleSetPage} />;
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
-        return <ConnectorsPage setPage={handleSetPage} />;
+        return <LiveConnectorsPage />;
       case 'systems_playbooks':
         return <PlaybooksPage setPage={handleSetPage} />;
       // ── Operations ────────────────────────────────────────────
