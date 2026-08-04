@@ -2,9 +2,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Chip, EmptyState, Banner, Modal, Field, INPUT_CLS } from '../design/primitives';
 import {
   listKnowledgeTree, createKnowledgeSpace, createChildCollection,
-  renameKnowledgeCollection, archiveKnowledgeCollection,
+  renameKnowledgeCollection, archiveKnowledgeCollection, knowledgeUnfiledCount,
   type KnowledgeTreeNode,
 } from '../lib/knowledgeApi';
+
+/**
+ * Selection sentinel for "documents filed in no collection". Not a real
+ * collection id, because these documents are defined by belonging to none.
+ * The parent maps it to searchKnowledgeDocs({ unfiled: true }).
+ */
+export const UNFILED_ID = '__unfiled__';
 
 // ============================================================
 // The Library's left panel — where knowledge lives.
@@ -35,12 +42,17 @@ export default function KnowledgeTreePanel({ selectedId, onSelect, refreshKey }:
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState<{ mode: 'space' | 'child' | 'rename'; node?: KnowledgeTreeNode } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Documents belonging to no collection. Counted in the workspace total and
+  // reachable from nothing, which is why the tree's arithmetic disagreed with
+  // itself — 50 + 0 + 0 + 0 under a heading that said 76.
+  const [unfiled, setUnfiled] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const t = await listKnowledgeTree(false);
+      const [t, u] = await Promise.all([listKnowledgeTree(false), knowledgeUnfiledCount()]);
       setNodes(t);
+      setUnfiled(u);
       setError(null);
       // Open every Space on first load: a collapsed tree of empty folders looks
       // like nothing is there.
@@ -67,10 +79,15 @@ export default function KnowledgeTreePanel({ selectedId, onSelect, refreshKey }:
     return m;
   }, [nodes]);
 
-  const totalDocs = useMemo(
+  // The workspace total must equal what the tree can actually reach: every
+  // space's closure count PLUS the documents filed nowhere. Previously this
+  // summed only the spaces while the heading claimed to be everything, so a
+  // library with unfiled documents displayed a total no row could account for.
+  const spaceDocs = useMemo(
     () => nodes.filter(n => n.is_space).reduce((a, n) => a + Number(n.doc_count || 0), 0),
     [nodes],
   );
+  const totalDocs = spaceDocs + unfiled;
 
   const toggle = (id: string) =>
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -190,6 +207,25 @@ export default function KnowledgeTreePanel({ selectedId, onSelect, refreshKey }:
               <span className="float-right text-[11px] text-dt-muted tabular-nums">{totalDocs}</span>
             </button>
             <ul>{spaces.map(s => renderNode(s, 0))}</ul>
+
+            {/* Documents belonging to no space. Shown ONLY when there are some —
+                an empty row here would be the same clutter as the empty folders
+                it sits beneath. Amber because it is a state to resolve, not a
+                place to file things. */}
+            {unfiled > 0 && (
+              <button
+                onClick={() => onSelect(selectedId === UNFILED_ID ? null : UNFILED_ID)}
+                aria-pressed={selectedId === UNFILED_ID}
+                className={`w-full text-left rounded-lg px-3 py-1.5 mt-1 transition-colors ${
+                  selectedId === UNFILED_ID
+                    ? 'bg-amber-500/15 text-amber-300 font-medium'
+                    : 'text-dt-support hover:bg-dt-panel'}`}
+                title="These documents are searchable, but they are not in any space"
+              >
+                <span className="text-sm">Not in a space</span>
+                <span className="float-right text-[11px] tabular-nums text-amber-400/80">{unfiled}</span>
+              </button>
+            )}
           </>
         )}
       </div>

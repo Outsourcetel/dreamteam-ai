@@ -144,6 +144,17 @@ export interface SearchDocRow {
 export interface SearchDocsParams {
   query?: string; tags?: string[]; source?: string | null; visibility?: string | null;
   collectionId?: string | null; currentOnly?: boolean; limit?: number; offset?: number;
+  /** Documents filed in no collection. collectionId=null has always meant
+   *  "everywhere" — this is the opposite question, and there was no way to ask
+   *  it, which is why a third of this library was unreachable from the tree. */
+  unfiled?: boolean;
+}
+
+/** How many documents sit outside every collection (mig 543). */
+export async function knowledgeUnfiledCount(): Promise<number> {
+  const { data, error } = await supabase.rpc('knowledge_unfiled_count');
+  if (error) { console.error('knowledgeUnfiledCount:', error.message); return 0; }
+  return Number(data ?? 0);
 }
 export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ rows: SearchDocRow[]; total: number }> {
   const { data, error } = await supabase.rpc('search_knowledge_docs', {
@@ -155,6 +166,7 @@ export async function searchKnowledgeDocs(p: SearchDocsParams = {}): Promise<{ r
     p_current_only: p.currentOnly ?? true,
     p_limit: p.limit ?? 50,
     p_offset: p.offset ?? 0,
+    p_unfiled: p.unfiled ?? false,
   });
   if (error) raise('searchKnowledgeDocs', error);
   const rows = (data ?? []) as SearchDocRow[];

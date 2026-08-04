@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
-import KnowledgeTreePanel, { LifecycleChip } from '../../../components/KnowledgeTreePanel';
+import KnowledgeTreePanel, { LifecycleChip, UNFILED_ID } from '../../../components/KnowledgeTreePanel';
 import {
   KnowledgeDoc, createKnowledgeDoc,
   updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -135,9 +135,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       // Server-side, paginated, faceted — never fetches the whole corpus or
       // aggregates chunks (mig 279). Retrieval status comes from the row's
       // denormalized embedded_count, so no per-load chunk scan.
+      // UNFILED_ID is not a collection — it means "belongs to none", so it is
+      // sent as its own flag rather than as a collection that does not exist.
+      const wantUnfiled = collectionFilter === UNFILED_ID;
       const { rows: r, total: t } = await searchKnowledgeDocs({
         query, source: sourceFilter || null, visibility: visFilter || null,
-        collectionId: collectionFilter || null,
+        collectionId: wantUnfiled ? null : (collectionFilter || null),
+        unfiled: wantUnfiled,
         limit: PAGE_SIZE, offset: pageIdx * PAGE_SIZE,
       });
       setRows(r); setTotal(t);
