@@ -211,11 +211,56 @@ export function TableScroll({ children, className = '' }: { children: React.Reac
 }
 
 /* ── Overlays — the ONE modal and the ONE right-drawer ──────────────────── */
+/**
+ * The behaviour every dialog owes its user, in one place.
+ *
+ * None of it existed: no modal in this application closed on Escape — not the
+ * ten hand-rolled ones, and not this shared component either, so using the
+ * primitive correctly still left you trapped. The page also kept scrolling
+ * behind an open dialog, and focus stayed wherever it had been, so a keyboard
+ * user tabbed through the page underneath.
+ *
+ * Fixing it here reaches every dialog that uses these primitives at once.
+ */
+function useDialogBehaviour(onClose: () => void) {
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+
+    // Stop the page scrolling underneath. Restore whatever was there rather
+    // than assuming '' — another dialog may already have locked it.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Move focus INTO the dialog: the first control if there is one, else the
+    // panel itself, so the next Tab stays inside rather than starting from the
+    // page behind.
+    const focusable = panelRef.current?.querySelector<HTMLElement>(
+      'input, textarea, select, button, [href], [tabindex]:not([tabindex="-1"])',
+    );
+    (focusable ?? panelRef.current)?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();   // put focus back where the user left it
+    };
+  }, [onClose]);
+
+  return panelRef;
+}
+
 export function Modal({ title, onClose, children, wide }:
   { title: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  const panelRef = useDialogBehaviour(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className={`w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto bg-dt-page border border-dt-border-strong rounded-2xl p-6`}
+      <div ref={panelRef} tabIndex={-1}
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto bg-dt-page border border-dt-border-strong rounded-2xl p-6 focus:outline-none`}
         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
@@ -228,9 +273,11 @@ export function Modal({ title, onClose, children, wide }:
 }
 export function Drawer({ title, onClose, children }:
   { title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+  const panelRef = useDialogBehaviour(onClose);
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-xl h-full bg-dt-page border-l border-dt-border-strong overflow-y-auto p-6"
+      <div ref={panelRef} tabIndex={-1}
+        className="w-full max-w-xl h-full bg-dt-page border-l border-dt-border-strong overflow-y-auto p-6 focus:outline-none"
         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="flex items-start justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
