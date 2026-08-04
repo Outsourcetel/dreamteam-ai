@@ -21,6 +21,10 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { runQuery, scalar, adminTokenAvailable } from './helpers/adminQuery';
+// The REAL implementation the edge functions use — imported, not reimplemented.
+// A copy of the algorithm in the test could drift alongside the one it checks
+// and the test would still pass.
+import { contentHash } from '../supabase/functions/_shared/contentHash.ts';
 
 if (!adminTokenAvailable()) {
   throw new Error(
@@ -177,12 +181,44 @@ describe('knowledge ACL invariants', () => {
   });
 
   // ── One content-hash algorithm (migs 352, 353) ─────────────────────────
-  it('the SQL hash twin still agrees with what ingest-chunks writes', async () => {
-    const mismatches = await scalar<number>(q(`
-      select count(*)::int from knowledge_docs d
+  //
+  // ⚠ THIS TEST USED TO ASSERT THE WRONG THING, and sat red for it:
+  //     content_hash IS NOT DISTINCT FROM knowledge_content_hash(title, content)
+  //       for every document
+  // That is not an invariant of this system. content_hash is a WATERMARK of
+  // what was last EMBEDDED, not a derived property of the current row —
+  // ingest-chunks decides whether to re-embed with exactly this comparison:
+  //     const unchanged = doc.content_hash === newHash && existingCount > 0
+  // So a document whose text was edited SHOULD have a hash that no longer
+  // matches its content. That mismatch is the dedupe mechanism working. The old
+  // assertion therefore went red the moment anyone edited a document, which is
+  // ordinary use — and a test that fails on correct behaviour teaches people to
+  // ignore the suite.
+  //
+  // (When it was replaced it was failing on 4 real documents: three had never
+  // been hashed at all, one had been edited after its last embed. All four were
+  // embedded and retrievable, and all four were correctly queued for re-embed
+  // BECAUSE their hashes did not match.)
+  //
+  // What the NAME always claimed — that the two implementations agree — is a
+  // real invariant, and this is it: run both over the same input and compare.
+  // It holds regardless of when anything was last ingested.
+  it('the SQL hash twin still agrees with the TypeScript one', async () => {
+    const docs = await runQuery<{ id: string; title: string; content: string; sql_hash: string }>(q(`
+      select d.id, d.title, d.content,
+             public.knowledge_content_hash(d.title, d.content) as sql_hash
+        from knowledge_docs d
        where d.content is not null
-         and d.content_hash is distinct from public.knowledge_content_hash(d.title, d.content)`));
-    expect(mismatches, 'TypeScript and SQL have drifted — dedupe silently stops working').toBe(0);
+       order by length(d.content) desc
+       limit 40`));
+    expect(docs.length, 'no documents to compare — the check would pass vacuously').toBeGreaterThan(0);
+
+    const drifted: string[] = [];
+    for (const d of docs) {
+      const ts = await contentHash(`${d.title}\n\n${d.content}`);
+      if (ts !== d.sql_hash) drifted.push(`${d.id} ${d.title.slice(0, 40)}`);
+    }
+    expect(drifted, 'TypeScript and SQL have drifted — dedupe silently stops working').toEqual([]);
   });
 
   // ── Nothing knowledge-related is reachable anonymously ─────────────────
