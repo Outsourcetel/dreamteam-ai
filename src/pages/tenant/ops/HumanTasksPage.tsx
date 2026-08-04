@@ -252,6 +252,12 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // Opens on work, per N4. Chat is one click away, never hidden.
   const [scope, setScope] = useState<Scope>('work');
   const [stalledOnly, setStalledOnly] = useState(false);
+  // WHAT STILL NEEDS YOU vs what is already settled. This page listed pending,
+  // approved, rejected and completed in one undifferentiated column, so the
+  // handful of decisions actually waiting were buried in everything ever
+  // decided. Defaults to 'needs_you' because that is why anyone opens this page;
+  // the decided history is one click away, not gone.
+  const [decision, setDecision] = useState<'needs_you' | 'decided' | 'all'>('needs_you');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
@@ -487,8 +493,19 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const approvedCount = tasks.filter(t => t.status === 'approved').length;
   const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
   const stalledCount = pending.filter(t => staleness.has(t.id)).length;
-  const visible = tasks.filter(t => inScope(t, scope) && (filter === 'all' || t.type === filter) && (!stalledOnly || staleness.has(t.id)));
+  const matchesDecision = (t: DBHumanTask) =>
+    decision === 'all' ? true : decision === 'needs_you' ? t.status === 'pending' : t.status !== 'pending';
+  const visible = tasks.filter(t =>
+    inScope(t, scope)
+    && matchesDecision(t)
+    && (filter === 'all' || t.type === filter)
+    && (!stalledOnly || staleness.has(t.id)));
   const scopeCount = (s: Scope) => tasks.filter(t => t.status === 'pending' && inScope(t, s)).length;
+  // Counts for the decision control, narrowed by the scope already chosen — a
+  // count that ignores the other filters tells you a number you cannot click to.
+  const inScopeTasks = tasks.filter(t => inScope(t, scope));
+  const needsYouCount = inScopeTasks.filter(t => t.status === 'pending').length;
+  const decidedInScope = inScopeTasks.filter(t => t.status !== 'pending').length;
   const selected = tasks.find(t => t.id === selectedId) ?? null;
 
   // What this escalation is actually holding up. Escalations only started
@@ -600,6 +617,31 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             />
           </div>
 
+          {/* Waiting on you, or already settled. The primary cut — everything
+              below narrows within it. */}
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {([
+              { id: 'needs_you' as const, label: 'Needs a decision', count: needsYouCount },
+              { id: 'decided' as const, label: 'Already decided', count: decidedInScope },
+              { id: 'all' as const, label: 'All', count: inScopeTasks.length },
+            ]).map(d => (
+              <button
+                key={d.id}
+                onClick={() => setDecision(d.id)}
+                aria-pressed={decision === d.id}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  decision === d.id
+                    ? (d.id === 'needs_you'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : 'bg-indigo-600 text-white border border-indigo-600')
+                    : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
+              >
+                {d.label}
+                <span className={`ml-1.5 tabular-nums ${decision === d.id ? 'opacity-80' : 'text-dt-faint'}`}>{d.count}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Filters */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
             {FILTERS.map(f => (
@@ -625,9 +667,29 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             <div className={`${selected ? 'col-span-3' : 'col-span-5'} space-y-1.5`}>
               {visible.length === 0 && (
                 <div className="text-center py-10 border border-dashed border-dt-border rounded-xl">
+                  {/* Say which of the three situations this is. "No tasks match
+                      the current filter" was true for all of them and useful for
+                      none — an empty inbox and a filter hiding everything read
+                      identically. */}
                   <p className="text-dt-muted text-sm">
-                    {stalledOnly ? 'No stalled work right now — nothing has gone quiet past its threshold.' : 'No tasks match the current filter.'}
+                    {stalledOnly
+                      ? 'No stalled work right now — nothing has gone quiet past its threshold.'
+                      : decision === 'needs_you'
+                        ? (decidedInScope > 0
+                            ? 'Nothing is waiting on you here. Everything in this view has been decided.'
+                            : 'Nothing is waiting on you here.')
+                        : decision === 'decided'
+                          ? 'Nothing has been decided here yet.'
+                          : 'No tasks match the current filter.'}
                   </p>
+                  {decision === 'needs_you' && decidedInScope > 0 && (
+                    <button
+                      onClick={() => setDecision('decided')}
+                      className="mt-2 text-xs text-indigo-400 hover:text-indigo-300"
+                    >
+                      See the {decidedInScope} already decided
+                    </button>
+                  )}
                 </div>
               )}
               {visible.map(task => {
