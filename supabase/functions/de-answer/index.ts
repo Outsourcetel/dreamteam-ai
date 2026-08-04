@@ -1212,11 +1212,20 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     if (!replayMode && !escalate && subjectDeId) {
       let auditEnabled = false;
       try {
-        const { data: acfg } = await admin.rpc('get_de_config', {
+        // get_de_config RETURNS TABLE, so PostgREST hands back an ARRAY — proven
+        // over the live HTTP path, not assumed. `acfg.data` on an array is
+        // undefined, so the previous read could never see an opted-in DE.
+        const { data: acfg, error: acfgErr } = await admin.rpc('get_de_config', {
           p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
         });
-        auditEnabled = acfg?.data?.pre_send_audit_enabled === true;
-      } catch { /* config unreadable → treat as not opted in; never disrupt DEs that didn't enable it */ }
+        // .rpc() RESOLVES on a Postgres error, it does not throw — an unchecked
+        // `error` is how this stayed silent for so long (the catch below was
+        // never once reached). Read errors keep the not-opted-in default so a
+        // transient blip cannot escalate every answer at once, but they are no
+        // longer invisible.
+        if (acfgErr) console.error('pre-send audit: config unreadable →', acfgErr.message);
+        auditEnabled = acfg?.[0]?.data?.pre_send_audit_enabled === true;
+      } catch (e) { console.error('pre-send audit: config read threw →', e); }
       if (auditEnabled) {
         try {
           const verdict = await preSendAudit(admin, tenantId, subjectDeId, question, parsed.answer);
@@ -1359,11 +1368,16 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     let draftId: string | null = null;
     if (!replayMode && !escalate && subjectDeId && convId) {
       try {
-        const { data: config } = await admin.rpc('get_de_config', {
+        // Array, not object — see the pre-send audit read above. `config.data`
+        // was undefined on every request, so reply-mode could never engage and
+        // draft_responses stayed empty from the day this shipped.
+        const { data: config, error: configErr } = await admin.rpc('get_de_config', {
           p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
         });
-        const replyModeEnabled = config?.data?.reply_mode_enabled === true ||
-                                 config?.data?.preapproval_strategy === 'all';
+        if (configErr) console.error('reply-mode: config unreadable →', configErr.message);
+        const cfg = config?.[0]?.data;
+        const replyModeEnabled = cfg?.reply_mode_enabled === true ||
+                                 cfg?.preapproval_strategy === 'all';
         if (replyModeEnabled) {
           const { data: draftResp } = await admin.rpc('submit_draft_for_review', {
             p_de_id: subjectDeId, p_conversation_id: convId,
