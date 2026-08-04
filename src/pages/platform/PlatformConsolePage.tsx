@@ -253,7 +253,7 @@ const PlatformConsolePage = ({
 
         <PendingApprovalsPanel />
 
-        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-dt-border">
@@ -574,7 +574,7 @@ const PlatformConsolePage = ({
           <StatCard label="Enterprise" value={String(byPlan.enterprise)} icon="★" color="purple" trend="Plan tier" />
         </div>
 
-        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-dt-border">
@@ -735,7 +735,7 @@ const PlatformHealthPage = () => {
         <p className="text-xs text-dt-muted text-center py-10">No connectors configured by any tenant yet.</p>
       )}
       {rows !== null && rows.length > 0 && (
-        <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
+        <div className="bg-dt-card border border-dt-border rounded-xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-dt-border">

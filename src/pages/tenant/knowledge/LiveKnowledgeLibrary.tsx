@@ -62,17 +62,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // Phase-3 WS5: collections (taxonomy) — filter the corpus + organize docs.
   const [collections, setCollections] = useState<KnowledgeCollection[]>([]);
   const [collectionFilter, setCollectionFilter] = useState('');
-  // Whether the spaces panel shares the width with the article list (md+).
-  // Remembered, so someone who works with it collapsed does not re-collapse it
-  // every visit. Defaults to shown — a first-time visitor should see that the
-  // hierarchy exists before deciding they would rather not.
-  const [showTree, setShowTree] = useState<boolean>(() => {
-    try { return localStorage.getItem('dt_kb_tree') !== 'hidden'; } catch { return true; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('dt_kb_tree', showTree ? 'shown' : 'hidden'); } catch { /* private mode */ }
-  }, [showTree]);
-  // Below md there is no side panel at all; the same control opens this instead.
+  // The spaces tree is a drawer at every width, so there is no persisted
+  // shown/hidden preference any more — the dt_kb_tree localStorage key and the
+  // effect that wrote it are gone with the sidebar they described.
   const [treeDrawer, setTreeDrawer] = useState(false);
   const [collectionDoc, setCollectionDoc] = useState<SearchDocRow | null>(null); // doc whose collections modal is open
   const [docCollIds, setDocCollIds] = useState<Set<string>>(new Set());
@@ -471,42 +463,34 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       )}
 
       {/* THE ARTICLES ARE THE POINT OF THIS PAGE.
-          Previously the tree only sat beside them above 1024px — below that it
-          STACKED ON TOP, so on a laptop you scrolled past the whole hierarchy to
-          reach the list you came for. And above 1024px it took 260px
-          permanently, with no way to get that width back.
+          Two earlier attempts got this wrong in opposite directions. First the
+          tree stacked ON TOP below 1024px, so on a laptop you scrolled past the
+          whole hierarchy to reach the list. Then it became a collapsible 230px
+          sidebar from md up — better, but a nine-column table cannot spare
+          230px, and the columns it squeezed were the ones people came to read.
 
-          Now: the split starts at md (768px) so a laptop gets two columns, the
-          tree is narrower, and it can be collapsed to give the list the full
-          width. Below md the tree is not stacked at all — it opens as a drawer
-          from the toolbar, so the articles are the first thing on screen at
-          every size. The choice is remembered, because re-collapsing it on every
-          visit is its own small tax. */}
-      <div className={`grid grid-cols-1 gap-5 items-start ${showTree ? 'md:grid-cols-[minmax(180px,230px)_1fr]' : ''}`}>
-        {/* LEFT — hierarchy, md and up only */}
-        {showTree && (
-          <div className="hidden md:block md:sticky md:top-4">
-            <KnowledgeTreePanel
-              selectedId={collectionFilter || null}
-              onSelect={(id) => { setPageIdx(0); setCollectionFilter(id ?? ''); }}
-              refreshKey={total}
-            />
-          </div>
-        )}
-
-        {/* RIGHT — documents */}
+          Now the tree is a DRAWER at every width and the list always has the
+          full page. Reading the list is what this screen is for; picking a
+          space is occasional, and occasional work belongs behind a click. */}
+      <div className="grid grid-cols-1 gap-5 items-start">
+        {/* The spaces tree used to sit here as a sticky sidebar. It is a drawer
+            at EVERY size now, because a nine-column table cannot also give up
+            230px: on a laptop the columns it squeezed were the ones people came
+            to read. Navigating spaces is a thing you do occasionally; reading
+            the list is what this screen is FOR, so the list keeps the width and
+            the tree is one click away. */}
         <div className="min-w-0">
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         {/* Emphasis order is the fix: the fastest route to a populated library
             is primary, and typing a document by hand — the slowest — is not. */}
-        {/* Spaces control. On md+ it collapses the side panel to reclaim its
-            width; below md there is no side panel, so it opens the drawer. One
-            control, because "show me the spaces" is one intent at any size. */}
+        {/* One control, one behaviour, every width: open the spaces drawer.
+            It used to branch on viewport — collapse a sidebar above md, open a
+            drawer below — which meant the same button did two different things
+            depending on a window size the person could not see. */}
         <button
-          onClick={() => { if (window.matchMedia('(min-width: 768px)').matches) setShowTree(v => !v); else setTreeDrawer(true); }}
-          aria-pressed={showTree}
-          title={showTree ? 'Hide the spaces panel and give the list its width' : 'Show the spaces panel'}
+          onClick={() => setTreeDrawer(true)}
+          title="Browse the spaces knowledge is filed under"
           className="text-sm px-3 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body transition-colors"
         >
           {collectionFilter ? '◧ Spaces · filtered' : '◧ Spaces'}
@@ -654,8 +638,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           />
         )
       ) : (
-        <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
-          <table className="w-full text-sm text-dt-support">
+        // overflow-x-auto, NOT overflow-hidden. This was clipping: when the
+        // columns did not fit, the ones past the edge were simply invisible and
+        // there was no scrollbar to reach them — the table looked broken rather
+        // than wide. Now it scrolls inside its own box and the page itself
+        // never scrolls sideways.
+        <div className="rounded-2xl border border-dt-border bg-dt-card overflow-x-auto">
+          <table className="w-full min-w-[64rem] text-sm text-dt-support">
             <thead className="bg-dt-card border-b border-dt-border">
               <tr>
                 <th className={`${th} w-8`}>
@@ -663,7 +652,13 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 </th>
                 <th className={th}>Title</th>
                 <th className={th}>Preview</th>
-                <th className={th}>Tags</th>
+                {/* Tags had its own column and was the only one with no width
+                    ceiling — a wrapping chip list that grew with the document
+                    and shoved Retrieval and Who-can-use-this off a laptop
+                    screen. Tags are still set and read when a document is
+                    opened, and search_knowledge_docs already filters on them;
+                    what is gone is the column that cost every other row its
+                    width to display them. */}
                 <th className={th}>Source</th>
                 <th className={th}>Retrieval</th>
                 <th className={th}>Who can use this</th>
@@ -689,14 +684,6 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     <span className="line-clamp-2">{d.preview}</span>
                   </td>
                   <td className={td}>
-                    <div className="flex flex-wrap gap-1">
-                      {d.tags.length === 0 && <span className="text-xs text-dt-faint">—</span>}
-                      {d.tags.map(t => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{t}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className={td}>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${d.source === 'upload' ? 'bg-teal-500/20 text-teal-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
                       {d.source}
                     </span>
@@ -708,7 +695,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   <td className={td}><ScopeBadge doc={d} /></td>
                   <td className={`${td} text-xs text-dt-support`}>{fmtDate(d.updated_at)}</td>
                   <td className={td}>
-                    <div className="flex gap-2 justify-end">
+                    {/* Five text buttons with no wrap were a ~230px floor this
+                        column could never go below. Wrapping lets it give way
+                        before the columns people actually read do. */}
+                    <div className="flex flex-wrap gap-x-2 gap-y-1 justify-end">
                       <button
                         onClick={async () => {
                           // Load full content on open — the row carries only a preview.

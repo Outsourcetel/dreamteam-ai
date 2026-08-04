@@ -400,7 +400,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
+          <div className="rounded-2xl border border-dt-border bg-dt-card overflow-x-auto">
             <table className="w-full text-sm text-dt-support">
               <thead className="bg-dt-card border-b border-dt-border">
                 <tr>
