@@ -38,9 +38,14 @@ export async function getAIKey(
       if (!error && data) {
         const r = data as { ok?: boolean; key?: string; source?: string; reason?: string };
         if (r.ok && r.key) return r.key;
-        // An explicit refusal is an ANSWER, not a miss. Falling through to the
-        // platform key here would reinstate the behaviour this replaced.
-        if (r.source === 'none') {
+        // A BYO refusal is an ANSWER, not a miss. Falling through to the
+        // platform key here would reinstate the silent borrowing mig 541
+        // replaced. ('none' used to be treated the same — but 'none' also
+        // covered "platform_config simply has no row", which silently deleted
+        // env-only providers like BEDROCK_API_KEY from tenant-scoped failover
+        // chains; mig 575 split the two, and plain absence now falls through
+        // to the platform path below, same as every no-tenant caller.)
+        if (r.source === 'byo_refused') {
           console.warn(`getAIKey: ${keyName} unavailable for tenant ${tenantId} — ${r.reason ?? 'not configured'}`);
           return undefined;
         }

@@ -171,12 +171,11 @@ serve(async (req) => {
   };
   if (tools.length) llmBody.tools = tools;
 
-  // NO tenantId here, deliberately: every production caller (widget-ask,
-  // de-answer, de-work) uses the platform key path. The tenant-scoped
-  // resolve_llm_key path returns a stale Anthropic key and no Bedrock
-  // fallback (found 2026-08-04, filed) — route voice the same way the
-  // working brain functions route until that is fixed.
-  const res = await llmMessages(admin, llmBody, 'voice-turn');
+  // Tenant-scoped, so a BYO workspace's own key serves its calls. Safe again
+  // since mig 575: plain key-absence falls through to the platform path
+  // (platform_config, then env), and only a considered BYO refusal blocks —
+  // so env-only providers (Bedrock) stay in the failover chain.
+  const res = await llmMessages(admin, llmBody, 'voice-turn', tenantId);
   if (!res.ok) {
     // Secret-gated diagnostics: same header value as auth, different header
     // name — never reachable without the gateway secret, never spoken.
