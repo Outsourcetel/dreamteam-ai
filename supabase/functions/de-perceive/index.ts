@@ -25,7 +25,13 @@ const CORS = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 async function claude(admin: SupabaseClient, system: string, user: string): Promise<string> {
-  const res = await llmMessages(admin, { model: 'claude-sonnet-5', max_tokens: 1024, system, messages: [{ role: 'user', content: user }] }, 'de-perceive');
+  // Haiku-class on purpose. Both actions here are STRUCTURED EXTRACTION whose
+  // output is consumed by code, not read as work product: extract_fields pulls
+  // named values from document text and stores them UNVERIFIED (a person must
+  // flip them via verify_extraction_result before a DE may act on them), and
+  // nl_query maps a question onto one existing query. Neither is a judgement
+  // call, and the verification step already stands between this and any action.
+  const res = await llmMessages(admin, { model: 'claude-haiku-4-5', max_tokens: 1024, system, messages: [{ role: 'user', content: user }] }, 'de-perceive');
   if (!res.ok) throw new Error(`anthropic_${res.status}: ${(await res.text()).slice(0, 200)}`);
   const d = await res.json();
   return (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';

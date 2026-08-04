@@ -43,6 +43,36 @@ const MAX_TURNS = 6;
 const MAX_ITEMS_PER_RUN = 3;
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
+/** Which model this employee should use for a given brain task.
+ *
+ *  The executor already routed this way; the planner and reviewer were pinned
+ *  to DEFAULT_MODEL, so an employee configured for Haiku still planned and
+ *  reviewed on Sonnet — a per-employee setting that only governed one of its
+ *  three calls. resolve_de_model_for_task falls back per-DE route > archetype
+ *  route > the DE's own model_id > platform default, so this respects whatever
+ *  the operator chose rather than imposing a cheaper model on them.
+ *
+ *  Fails OPEN to the default: a routing lookup that errors must never stop an
+ *  employee from working. The cost of falling back is a pricier call; the cost
+ *  of throwing is a stalled objective. */
+async function resolveTaskModel(
+  admin: SupabaseClient, deId: string | null, taskClass: 'planner' | 'review',
+): Promise<string> {
+  if (!deId) return DEFAULT_MODEL;
+  try {
+    const { data, error } = await admin.rpc('resolve_de_model_for_task', {
+      p_de_id: deId, p_task_class: taskClass,
+    });
+    // .rpc() RESOLVES on a Postgres error rather than throwing, so `error` has
+    // to be read explicitly or a failed lookup silently reads as "no model".
+    if (error) { console.error(`resolveTaskModel(${taskClass}):`, error.message); return DEFAULT_MODEL; }
+    return typeof data === 'string' && data.startsWith('claude-') ? data : DEFAULT_MODEL;
+  } catch (e) {
+    console.error(`resolveTaskModel(${taskClass}) threw:`, e);
+    return DEFAULT_MODEL;
+  }
+}
+
 /** N6 stall budgets (founder-locked, docs/39). Work may be in flight, but not
  *  forever and not silently: past either budget the reviewer runs ANYWAY
  *  instead of returning blind. Kept in step with de_stall_sweep_internal(24,12)
@@ -226,11 +256,18 @@ async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id
   // the output budget, so it intermittently ate the plan JSON before the steps
   // were emitted (tokens spent, 0 parseable steps → silent defer). A planner
   // that returns structured JSON doesn't need thinking. Retry transient 429/529.
-  const d = await anthropicWithRetry(admin,{ model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }, 'planner');
+  // Route the planner the same way the EXECUTOR is already routed: per-DE
+  // route > archetype route > the DE's own model > default. This was pinned to
+  // the platform default, so an employee configured for Haiku still planned on
+  // Sonnet — the model setting was a lie for two of its three brain calls.
+  const planModel = await resolveTaskModel(admin, obj.de_id, 'planner');
+  const d = await anthropicWithRetry(admin,{ model: planModel, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: "user", content: wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective') }] }, 'planner');
   // Meter BEFORE any early return, and AWAITED — a lazy supabase-js thenable
   // never fires unless awaited, and unmetered planner spend can never trip
   // the very budget gate that checks it (consolidation-review finding).
-  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
+  // Record the model ACTUALLY used: metering the default while calling another
+  // would price the spend at the wrong rate and quietly corrupt cost reporting.
+  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: planModel, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
   const a = text.indexOf('{'), b = text.lastIndexOf('}');
   let parsed: { steps?: unknown } | null = null;
@@ -306,9 +343,11 @@ async function reviewObjective(
     + ' A step marked "unchanged Nh" has not moved in N hours. If the plan is stalled behind such a step, do NOT propose more steps — anything you add would queue behind the stuck one and never run. Say "blocked" and use the note to state plainly what is needed and from whom; a person is alerted and the goal is re-reviewed. Only say "continue" when work can actually proceed.'
     + ' Return ONLY JSON {"assessment":"achieved"|"blocked"|"continue","note":string,"next_steps":[{"title":string,"kind":"act"|"check"|"follow_up","detail":string}]}.' + FIREWALL_RULES;
   // thinking disabled + retry, same rationale as planObjective (structured JSON).
-  const d = await anthropicWithRetry(admin,{ model: DEFAULT_MODEL, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
+  const reviewModel = await resolveTaskModel(admin, obj.de_id, 'review');
+  const d = await anthropicWithRetry(admin,{ model: reviewModel, max_tokens: 4096, thinking: { type: 'disabled' }, system, messages: [{ role: 'user', content: `${wrapUntrusted(`${obj.title}\n${obj.description ?? ''}`, 'objective')}\n\nProgress so far:\n${wrapUntrusted(progress, 'work-item-results')}` }] }, 'review');
   // AWAITED — lazy thenable; unmetered reviewer spend evades the budget gate.
-  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: DEFAULT_MODEL, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
+  // Metered against the model actually used, not the default.
+  await admin.rpc('record_de_token_usage', { p_tenant_id: obj.tenant_id, p_de_id: obj.de_id, p_model_id: reviewModel, p_input_tokens: Number(d.usage?.input_tokens ?? 0), p_output_tokens: Number(d.usage?.output_tokens ?? 0) });
   const text = (d.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
   const a = text.indexOf('{'), b = text.lastIndexOf('}');
   let parsed: { assessment?: string; note?: string; next_steps?: unknown } = {};

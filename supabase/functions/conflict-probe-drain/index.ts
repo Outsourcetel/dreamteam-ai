@@ -76,7 +76,12 @@ async function adjudicate(admin: SupabaseClient, aText: string, bText: string):
   const user = `SNIPPET A:\n${aText.slice(0, 1500)}\n\nSNIPPET B:\n${bText.slice(0, 1500)}`;
   let res: Response;
   try {
-    res = await llmMessages(admin, { model: 'claude-sonnet-5', max_tokens: 300, system, messages: [{ role: 'user', content: user }] }, 'conflict-adjudicate');
+    // Haiku-class: this classifies a PAIR of neighbouring chunks that vector
+    // search has already shortlisted, into contradiction / duplicate / neither.
+    // 300 max_tokens — it returns a verdict, not prose, and nothing acts on that
+    // verdict without a person reading the conflict it raises. Near-duplicates
+    // are decided by distance alone and never reach an LLM at all.
+    res = await llmMessages(admin, { model: 'claude-haiku-4-5', max_tokens: 300, system, messages: [{ role: 'user', content: user }] }, 'conflict-adjudicate');
   } catch { return null; }
   if (!res.ok) return null;
   const d = await res.json();
