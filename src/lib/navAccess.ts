@@ -145,6 +145,7 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   // nav and the database must stay in agreement here; if that grant is ever
   // reverted, this must move back to ADMIN in the same change.
   systems_connectors: MANAGE,
+  systems_mcp: MANAGE,
 
   // ── Workspace administration ──────────────────────────────────────────────
   company_setup: ADMIN,

@@ -32,6 +32,7 @@ import UserManagementPage from './pages/tenant/UserManagementPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import LiveConnectorsPage from './pages/tenant/systems/LiveConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
+import McpServersPage from './pages/tenant/systems/McpServersPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
 import SupportHubPage from './pages/tenant/support/SupportHubPage';
@@ -108,6 +109,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   knowledge_permissions: '/knowledge/permissions',
   // Systems
   systems_connectors: '/systems/connectors',
+  systems_mcp: '/systems/mcp',
   systems_playbooks:  '/systems/playbooks',
   // Operations
   ops_human_tasks: '/ops/tasks',
@@ -463,6 +465,8 @@ function AppShell() {
       // ── Systems ───────────────────────────────────────────────
       case 'systems_connectors':
         return <LiveConnectorsPage />;
+      case 'systems_mcp':
+        return <McpServersPage setPage={handleSetPage} />;
       case 'systems_playbooks':
         return <PlaybooksPage setPage={handleSetPage} />;
       // ── Operations ────────────────────────────────────────────

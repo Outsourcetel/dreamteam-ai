@@ -57,6 +57,7 @@ export type TenantPage =
 
   // ── Systems ───────────────────────────────────────
   | 'systems_connectors'        // All integrations
+  | 'systems_mcp'               // MCP servers — connect, tool inventory, allowlist (the home MCP never had)
   | 'systems_playbooks'         // Workflow library
 
   // ── Operations ────────────────────────────────────

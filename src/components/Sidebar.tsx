@@ -167,6 +167,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       title: 'SYSTEMS & ACTIONS',
       groups: [
         { id: 'connectors', label: 'Connected systems', icon: '⟷', page: 'systems_connectors' },
+        { id: 'mcp', label: 'MCP servers', icon: '🔗', page: 'systems_mcp' },
         // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
         // live tenants (descoped 2026-07-09) — hiding dead nav sections
         // from live workspaces instead of advertising empty pages. The
