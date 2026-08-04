@@ -277,9 +277,16 @@ serve(async (req) => {
             'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
             ...(isServiceCaller && headerSecret ? { 'x-dispatch-secret': headerSecret } : {}),
           },
+          // channel:'exam' — NOT replay:true. Replay would skip the platform
+          // knowledge shelf, the grounded-confidence gate and the pre-send
+          // auditor, so the exam would grade a weaker pipeline than the one
+          // that answers customers, and the certification would stop meaning
+          // what it claims. The exam stays fully live; only where its threads
+          // are FILED changes, so 16 exam questions no longer look like 16
+          // customer conversations in the Support Inbox.
           body: JSON.stringify(isServiceCaller
-            ? { question: qa.question, tenant_id: tenantId, ...(targetDeId ? { de_id: targetDeId } : {}) }
-            : { question: qa.question, ...(targetDeId ? { de_id: targetDeId } : {}) }),
+            ? { question: qa.question, tenant_id: tenantId, channel: 'exam', ...(targetDeId ? { de_id: targetDeId } : {}) }
+            : { question: qa.question, channel: 'exam', ...(targetDeId ? { de_id: targetDeId } : {}) }),
         });
         const data = await res.json().catch(() => ({} as Record<string, unknown>));
 

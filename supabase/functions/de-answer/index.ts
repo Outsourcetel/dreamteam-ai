@@ -539,6 +539,11 @@ serve(async (req) => {
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
     const replayMode = candidateKnowledge.length > 0 || candidatePersona !== null || reqBody.replay === true;
+    // Where a NEW thread is filed. Only 'exam' is accepted from the caller —
+    // an allow-list, not a passthrough, so a caller can never invent a channel
+    // and slip a thread out of (or into) the Support Inbox. Everything else,
+    // including anything unrecognised, stays 'dock' exactly as before.
+    const convChannel = reqBody.channel === 'exam' ? 'exam' : 'dock';
     // GI-6b: a caller may pin temperature ONLY on the dry-run/measurement path
     // (fitness replay needs T=0 for a stable pass-count delta). A live customer
     // answer can NEVER be temperature-overridden — the replayMode gate guarantees it.
@@ -683,9 +688,16 @@ serve(async (req) => {
         if (!owned) return json({ error: 'conversation_not_found' }, 404);
         convId = conversation_id;
       } else {
+        // A certification exam runs the REAL pipeline on purpose — replay mode
+        // would skip the platform knowledge shelf, the grounded-confidence gate
+        // and the pre-send auditor, so a replayed exam would grade a weaker
+        // pipeline than the one serving customers. The answers are therefore
+        // real, and so are their threads. What they are NOT is customer
+        // conversations, so they get their own channel and stay out of the
+        // Support Inbox rather than being suppressed or deleted.
         const { data: conv } = await admin
           .from('de_conversations')
-          .insert({ tenant_id: tenantId, channel: 'dock', de_id: subjectDeId })
+          .insert({ tenant_id: tenantId, channel: convChannel, de_id: subjectDeId })
           .select('id').single();
         convId = conv?.id ?? null;
       }
