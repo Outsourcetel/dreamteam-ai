@@ -113,6 +113,8 @@ async function applyMigrations() {
 const NO_VERIFY_JWT = new Set([
   'scim', // IdP presents its own bearer token; verified in-function (mig 375)
   'mcp-demo-server', // a demo MCP server target; MCP clients POST JSON-RPC, not a Supabase JWT
+  'voice-turn', // the voice platform is a third party; verified in-function via x-voice-secret (docs/42)
+  'voice-webhook', // same caller, same in-function secret (docs/42)
 ]);
 
 function deployFunctions() {
