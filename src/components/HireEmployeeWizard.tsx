@@ -6,6 +6,7 @@
 // lifecycle gates as far as they honestly allow. No governance is
 // bypassed — the gates just speak plain language now.
 import { useState, useEffect } from 'react';
+import { Modal } from '../design/primitives';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,
@@ -155,19 +156,24 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
   const answeredCount = answers.filter((a) => a.trim()).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-2xl border border-dt-border bg-dt-page shadow-2xl my-8">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-dt-border">
-          <div>
-            <h2 className="text-base font-semibold text-white">✨ Hire a Digital Employee</h2>
-            <p className="text-xs text-dt-muted mt-0.5">Describe the role. The rest is a conversation.</p>
-          </div>
-          {!busy && (
-            <button onClick={onClose} className="text-dt-muted hover:text-white text-sm px-2 py-1">✕</button>
-          )}
-        </div>
-
-        <div className="p-6 space-y-5">
+    // The close button was hidden while busy, so a hire in flight could not be
+    // abandoned half-way. The primitive also closes on Escape and on backdrop
+    // click, so that guard has to live in onClose now or the new behaviour
+    // would quietly remove an existing protection.
+    <Modal
+      size="2xl"
+      padded={false}
+      onClose={() => { if (!busy) onClose(); }}
+      title={
+        <span className="block">
+          ✨ Hire a Digital Employee
+          <span className="block text-xs font-normal text-dt-muted mt-0.5">
+            Describe the role. The rest is a conversation.
+          </span>
+        </span>
+      }
+    >
+        <div className="px-6 pb-6 space-y-5">
           {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
 
           {/* ── Step 1: describe the role ── */}
@@ -564,7 +570,6 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

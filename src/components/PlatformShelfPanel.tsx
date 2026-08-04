@@ -22,6 +22,7 @@
  * are SELECTs.
  */
 import React, { useEffect, useState } from 'react'
+import { Modal } from '../design/primitives'
 import {
   listPlatformShelf, getPlatformShelfDoc, getPlatformShelfStatus,
   type ShelfDoc, type ShelfStatus,
@@ -148,20 +149,14 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
 
       {/* Reader. Read-only: no edit, no delete, no re-embed anywhere. */}
       {reading && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-             onClick={() => setReading(null)}>
-          <div className="w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl border border-dt-border bg-dt-card p-5"
-               onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3 mb-1">
-              <h3 className="text-base font-semibold text-white">{reading.title}</h3>
-              <button onClick={() => setReading(null)} className="text-dt-muted hover:text-white text-sm">✕</button>
-            </div>
-            <div className="text-[10px] text-dt-muted mb-3">
+        <Modal size="2xl" onClose={() => setReading(null)} title={reading.title}>
+          <>
+            <div className="text-[10px] text-dt-muted mb-3 -mt-2">
               Provided by DreamTeam · read-only{reading.path ? ` · ${reading.path}` : ''}
             </div>
             <pre className="text-xs text-dt-body whitespace-pre-wrap font-sans leading-relaxed">{reading.content}</pre>
-          </div>
-        </div>
+          </>
+        </Modal>
       )}
     </>
   )

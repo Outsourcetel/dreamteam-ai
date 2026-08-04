@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Modal } from '../design/primitives';
 import {
   parseCsv,
   importAccountsCsv,
@@ -130,18 +131,23 @@ export default function ImportCustomersModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-dt-border">
-          <div>
-            <h3 className="text-white font-semibold">Import customer data</h3>
-            <p className="text-xs text-dt-muted mt-0.5">Paste CSV or upload a file — first row must be headers</p>
-          </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-xs">×</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+    // padded={false}: the body scrolls independently of the footer, which the
+    // default box padding would break.
+    <Modal
+      onClose={onClose}
+      size="2xl"
+      padded={false}
+      title={
+        <span className="block">
+          Import customer data
+          <span className="block text-xs font-normal text-dt-muted mt-0.5">
+            Paste CSV or upload a file — first row must be headers
+          </span>
+        </span>
+      }
+    >
+      <>
+        <div className="overflow-y-auto px-5 pb-5 space-y-4">
           {/* Tabs */}
           <div className="flex gap-1 bg-dt-panel rounded-xl p-1 w-fit">
             {(['accounts', 'tickets'] as Tab[]).map(t => (
@@ -273,7 +279,7 @@ export default function ImportCustomersModal({
             {importing ? 'Importing…' : `Import ${tab === 'accounts' ? 'accounts' : 'tickets'}`}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

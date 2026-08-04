@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { Modal } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { PageHeader } from '../../../components/ui';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
@@ -330,9 +331,8 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        <h3 className="text-white font-semibold mb-4">New onboarding project</h3>
+    <Modal size="md" onClose={onClose} title="New onboarding project">
+      <>
         <div className="space-y-3 mb-5">
           <div>
             <label className="text-xs font-medium text-dt-support block mb-1">Customer account</label>
@@ -364,8 +364,8 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
           </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">Cancel</button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
@@ -493,12 +493,8 @@ function TemplateEditor({ template, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
-          <h3 className="text-white font-semibold">Edit template</h3>
-          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
-        </div>
+    <Modal size="3xl" onClose={onClose} title="Edit template">
+      <>
         <div className="grid sm:grid-cols-2 gap-3 mb-4">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Template name" className={inputCls} />
           <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className={inputCls} />
@@ -550,8 +546,8 @@ function TemplateEditor({ template, onClose, onSaved }: {
           <button onClick={() => void publish()} disabled={busy !== null} className={btnPrimary}>{busy === 'publish' ? 'Publishing…' : `Publish v${template.version + 1}`}</button>
           <p className="text-[10px] text-dt-faint">Publishing snapshots the checklist — running projects keep the version they started on. Sign-off items must be owned by human or either.</p>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

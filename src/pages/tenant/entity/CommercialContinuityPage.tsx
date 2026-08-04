@@ -9,7 +9,7 @@ import type {
   CommercialAgreement, ContinuityCase, ContinuityStage, ContinuityCaseEvent,
 } from '../../../lib/continuityApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
-import { Modal as DtModal } from '../../../design/primitives';
+import { Modal as DtModal, Drawer } from '../../../design/primitives';
 
 // ============================================================
 // Commercial Continuity — the renewal EMPLOYEE's full desk (EXEC-2c).
@@ -155,23 +155,26 @@ function CaseDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xl bg-dt-page border-l border-dt-border h-full overflow-auto p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4 gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 uppercase tracking-wide">{motionLabel(kase.motion)}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{kase.party_side === 'buy' ? 'Vendor' : 'Customer'}</span>
-              {kase.risk_level && <span className={`text-[10px] px-2 py-0.5 rounded bg-dt-card ${RISK_CLS[kase.risk_level]}`}>{kase.risk_level} risk</span>}
-            </div>
-            <h2 className="text-lg font-semibold text-white">{kase.title || kase.counterparty_name || 'Continuity case'}</h2>
-            <p className="text-xs text-dt-muted mt-0.5">
-              {kase.counterparty_name || '—'}{kase.agreement_type ? ` · ${kase.agreement_type.replace(/_/g, ' ')}` : ''}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-dt-support hover:text-white text-sm">✕</button>
-        </div>
-
+    // A right-hand panel, so Drawer rather than Modal — same behaviour
+    // contract, correct shape. The chips and subtitle move into the title so
+    // nothing that identified the case is lost.
+    <Drawer
+      onClose={onClose}
+      title={
+        <span className="block">
+          <span className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 uppercase tracking-wide">{motionLabel(kase.motion)}</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{kase.party_side === 'buy' ? 'Vendor' : 'Customer'}</span>
+            {kase.risk_level && <span className={`text-[10px] px-2 py-0.5 rounded bg-dt-card ${RISK_CLS[kase.risk_level]}`}>{kase.risk_level} risk</span>}
+          </span>
+          {kase.title || kase.counterparty_name || 'Continuity case'}
+          <span className="block text-xs font-normal text-dt-muted mt-0.5">
+            {kase.counterparty_name || '—'}{kase.agreement_type ? ` · ${kase.agreement_type.replace(/_/g, ' ')}` : ''}
+          </span>
+        </span>
+      }
+    >
+      <>
         {/* Overview */}
         <div className="grid grid-cols-3 gap-3 mb-5">
           <StatCard label="Stage" value={kase.stage_key ? kase.stage_key.replace(/_/g, ' ') : '—'} />
@@ -239,8 +242,8 @@ function CaseDrawer({
             ))}
           </ol>
         )}
-      </div>
-    </div>
+      </>
+    </Drawer>
   );
 }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import { supabase } from '../supabase';
+import { Modal } from '../design/primitives';
 
 interface PreApprovalRule {
   id: string;
@@ -234,14 +235,12 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
 
       {/* Rule Editor Modal */}
       {editingRule && (
-        <>
-          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setEditingRule(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-white">
-                {config.rules?.find(r => r.id === editingRule.id) ? 'Edit Rule' : 'Add Pre-Approval Rule'}
-              </h3>
-
+        <Modal
+          size="md"
+          onClose={() => setEditingRule(null)}
+          title={config.rules?.find(r => r.id === editingRule.id) ? 'Edit rule' : 'Add pre-approval rule'}
+        >
+          <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1">Rule Type</label>
                 <select
@@ -304,9 +303,8 @@ export function DEPreApprovalRulesPanel({ de }: { de: DigitalEmployee }) {
                   Cancel
                 </button>
               </div>
-            </div>
           </div>
-        </>
+        </Modal>
       )}
 
       {/* Save Button */}

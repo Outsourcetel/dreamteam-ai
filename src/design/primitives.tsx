@@ -254,15 +254,28 @@ function useDialogBehaviour(onClose: () => void) {
   return panelRef;
 }
 
-export function Modal({ title, onClose, children, wide }:
-  { title: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+/** Dialog widths. A confirm prompt in a 2xl box is as wrong as a wizard in a
+ *  small one, so the primitive offers the sizes the hand-rolled dialogs were
+ *  reaching for rather than forcing everything to one of two. */
+const MODAL_WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl' } as const;
+export type ModalSize = keyof typeof MODAL_WIDTH;
+
+export function Modal({ title, onClose, children, wide, size, padded = true }:
+  { title: React.ReactNode; onClose: () => void; children: React.ReactNode;
+    wide?: boolean; size?: ModalSize;
+    /** Off when the body manages its own padding — a full-height wizard with a
+     *  sticky footer cannot live inside the default box padding. */
+    padded?: boolean }) {
   const panelRef = useDialogBehaviour(onClose);
+  const width = MODAL_WIDTH[size ?? (wide ? '2xl' : 'lg')];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div ref={panelRef} tabIndex={-1}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto bg-dt-page border border-dt-border-strong rounded-2xl p-6 focus:outline-none`}
+        className={`w-full ${width} max-h-[90vh] overflow-y-auto bg-dt-page border border-dt-border-strong rounded-2xl ${padded ? 'p-6' : ''} focus:outline-none`}
         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between mb-4">
+        {/* When the body brings its own padding, the header still needs some —
+            otherwise the title sits flush against the panel edge. */}
+        <div className={`flex items-center justify-between ${padded ? 'mb-4' : 'px-6 pt-6 pb-4'}`}>
           <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
           <button onClick={onClose} aria-label="Close" className="text-dt-muted hover:text-dt-body text-xl leading-none">×</button>
         </div>

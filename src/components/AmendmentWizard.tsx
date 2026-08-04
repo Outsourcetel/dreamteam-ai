@@ -1,6 +1,7 @@
 ﻿import React, { useState } from 'react'
 import type { EntityKind } from '../lib/amendmentApi'
 import { requestAmendment } from '../lib/amendmentApi'
+import { Modal } from '../design/primitives'
 import { AmendmentReviewCard } from './AmendmentReviewCard'
 import type { AmendmentProposal } from '../lib/amendmentApi'
 
@@ -107,28 +108,26 @@ export function AmendmentWizard({
   }
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={onClose} />
-
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl overflow-hidden flex flex-col">
-          <div className="flex-shrink-0 border-b border-dt-border px-6 py-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Improve {entity_name}</h2>
-              <p className="text-xs text-dt-muted mt-0.5">
-                {step === 'problem' && 'Step 1: Describe the issue'}
-                {step === 'context' && 'Step 2: Add context'}
-                {step === 'working' && 'Generating proposal...'}
-                {step === 'proposal' && 'Review proposal'}
-                {step === 'done' && 'Submitted'}
-              </p>
-            </div>
-            <button onClick={onClose} className="text-dt-muted hover:text-dt-body text-xl">
-              ✕
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+    // The step label lives in the title so the wizard keeps telling you where
+    // you are, which the shared header would otherwise drop.
+    <Modal
+      size="2xl"
+      padded={false}
+      onClose={onClose}
+      title={
+        <span className="block">
+          Improve {entity_name}
+          <span className="block text-xs font-normal text-dt-muted mt-0.5">
+            {step === 'problem' && 'Step 1: Describe the issue'}
+            {step === 'context' && 'Step 2: Add context'}
+            {step === 'working' && 'Generating proposal…'}
+            {step === 'proposal' && 'Review proposal'}
+            {step === 'done' && 'Submitted'}
+          </span>
+        </span>
+      }
+    >
+          <div className="px-6 pb-4 space-y-4">
             {step === 'problem' && (
               <div className="space-y-3">
                 <div>
@@ -241,8 +240,6 @@ export function AmendmentWizard({
               </div>
             )}
           </div>
-        </div>
-      </div>
-    </>
+    </Modal>
   )
 }

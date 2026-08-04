@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import { Spinner } from './index';
+import { Modal } from '../design/primitives';
 
 // ─────────────────────────────────────────────────────────────────
 // Self-service "change my password" for an already-logged-in user —
@@ -48,12 +49,8 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
-          <h3 className="text-white font-semibold">Change password</h3>
-          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
-        </div>
+    <Modal title="Change password" onClose={onClose} size="sm">
+      <>
         {done ? (
           <div className="text-center py-2">
             <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-2xl mx-auto mb-3">✓</div>
@@ -84,8 +81,8 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             </button>
           </form>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 };
 

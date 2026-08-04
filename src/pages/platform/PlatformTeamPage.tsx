@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { Modal } from '../../design/primitives';
 import {
   listPlatformTeam, updatePlatformTeamRole, setPlatformTeamActive,
   listPlatformCapabilityGrants, setPlatformCapabilityGrant, revokePlatformCapabilityGrant,
@@ -224,13 +225,9 @@ function PermissionsModal({ member, onClose, onChanged }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-1">
-          <h3 className="text-white font-semibold">Permissions — {member.full_name || member.email}</h3>
-          <button onClick={onClose} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
-        </div>
-        <p className="text-[11px] text-dt-muted mb-4">
+    <Modal size="lg" onClose={onClose} title={`Permissions — ${member.full_name || member.email}`}>
+      <>
+        <p className="text-[11px] text-dt-muted mb-4 -mt-2">
           {PLATFORM_INVITE_ROLE_LABELS[member.role]} by default. Click a permission to override it for this person specifically — grant something their role wouldn't normally include, or deny something it would.
         </p>
         {err && <p className="text-[11px] text-rose-400 mb-3">✗ {err}</p>}
@@ -267,8 +264,8 @@ function PermissionsModal({ member, onClose, onChanged }: {
           </div>
         )}
         <p className="text-[10px] text-dt-faint mt-4">Click a row to cycle: role default → explicit grant → explicit deny → back to role default.</p>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

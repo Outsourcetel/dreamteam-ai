@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import { supabase } from '../supabase';
+import { Modal } from '../design/primitives';
 
 interface AuthorityConfig {
   refund_limit?: number;
@@ -165,17 +166,19 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
 
       {/* Commitment Rule Editor Modal */}
       {editingRule && (
-        <>
-          <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => setEditingRule(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl p-4 space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-white">
-                  {config.commitment_rules?.find(r => r.id === editingRule.id) ? 'Edit Rule' : 'Add Commitment Rule'}
-                </h3>
-                <p className="text-xs text-dt-muted mt-1">When should {de.name} be allowed to commit?</p>
-              </div>
-
+        <Modal
+          size="md"
+          onClose={() => setEditingRule(null)}
+          title={
+            <span className="block">
+              {config.commitment_rules?.find(r => r.id === editingRule.id) ? 'Edit rule' : 'Add commitment rule'}
+              <span className="block text-xs font-normal text-dt-muted mt-1">
+                When should {de.name} be allowed to commit?
+              </span>
+            </span>
+          }
+        >
+          <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1">Condition</label>
                 <input
@@ -218,9 +221,8 @@ export function DEAuthorityPanel({ de }: { de: DigitalEmployee }) {
                   Cancel
                 </button>
               </div>
-            </div>
           </div>
-        </>
+        </Modal>
       )}
 
       {/* Save Button */}
