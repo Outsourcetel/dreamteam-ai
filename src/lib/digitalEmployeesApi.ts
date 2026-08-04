@@ -67,6 +67,54 @@ export async function setExternalReplyMode(deId: string, mode: 'draft' | 'auto')
   if (error) raise('setExternalReplyMode', error);
 }
 
+// ── Answer safeguards on INTERNAL answers (migrations 554-556) ────
+// These govern de-answer: the DE Workbench, knowledge Q&A, the teammate dock
+// and agent-to-agent calls. They do NOT govern the customer widget — that is
+// widget-ask, steered by setExternalReplyMode above, which already holds every
+// external reply for approval unless a person chose auto-send.
+export interface DeAnswerSafeguards {
+  /** Independently re-read an answer against its cited sources before it
+   *  auto-sends; route it to a person if it does not hold up. */
+  pre_send_audit_enabled: boolean;
+}
+
+/** Read the whole config blob for a DE. Returns {} rather than throwing when
+ *  the employee has never been configured — absent is not an error. */
+async function readDeConfigData(deId: string): Promise<Record<string, unknown>> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase.rpc('get_de_config', {
+    p_tenant_id: tid, p_entity_kind: 'de', p_entity_id: deId,
+  });
+  if (error) raise('readDeConfig', error);
+  // get_de_config is SET-RETURNING, so PostgREST returns an ARRAY. Reading
+  // `.data` instead of `[0].data` is precisely the bug that kept this feature
+  // dark since the day it shipped — see migration 554. Kept explicit here so
+  // the next reader does not repeat it.
+  const row = Array.isArray(data) ? data[0] : null;
+  return (row?.data as Record<string, unknown>) ?? {};
+}
+
+export async function getDeAnswerSafeguards(deId: string): Promise<DeAnswerSafeguards> {
+  const cfg = await readDeConfigData(deId);
+  return { pre_send_audit_enabled: cfg.pre_send_audit_enabled === true };
+}
+
+export async function setDeAnswerSafeguards(
+  deId: string, next: Partial<DeAnswerSafeguards>,
+): Promise<void> {
+  const tid = await requireTenantId();
+  // READ-MODIFY-WRITE, deliberately. set_de_config does `DO UPDATE SET data =
+  // p_config` — it REPLACES the blob rather than merging it. Writing a bare
+  // { pre_send_audit_enabled } would silently drop every other key an employee
+  // has, including reply_mode_enabled.
+  const current = await readDeConfigData(deId);
+  const { error } = await supabase.rpc('set_de_config', {
+    p_tenant_id: tid, p_entity_kind: 'de', p_entity_id: deId,
+    p_config: { ...current, ...next },
+  });
+  if (error) raise('setDeAnswerSafeguards', error);
+}
+
 // ── DE custom profile fields (migration 136) ──────────────────────
 // Definitions live in de_profile_fields (tenant-scoped, owner/admin/
 // manager writable via RLS); values live in digital_employees.attributes

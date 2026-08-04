@@ -41,6 +41,8 @@ import {
   checkDeRetirementReadiness, retireDigitalEmployee,
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
   setExternalReplyMode,
+  getDeAnswerSafeguards,
+  setDeAnswerSafeguards,
   listDeTaskRequests, assignTaskToDe, respondDeTask, setDeSupervisor,
 } from '../../lib/digitalEmployeesApi';
 import type {
@@ -1970,6 +1972,89 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
           </button>
         ))}
       </div>
+      {error && <p className="text-[11px] text-rose-400 mt-2">{error}</p>}
+    </div>
+  );
+}
+
+// Governs de-answer — the Workbench, knowledge Q&A, the teammate dock and
+// agent-to-agent calls. NOT the customer widget: that is "Customer replies"
+// above. The two are separate paths and conflating them is how the wrong
+// employee ends up trusted on the wrong surface.
+//
+// This check could not be switched on by anyone until migrations 554-556: the
+// config table it reads did not exist, its writer had an ambiguous ON CONFLICT,
+// and the answer-side read looked at `.data` on an array. See migration 554.
+function DeAnswerSafeguardsPanel({ de }: { de: DigitalEmployee }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);   // null = still loading
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setEnabled(null); setError(null);
+    void getDeAnswerSafeguards(de.id)
+      .then(s => { if (!cancelled) setEnabled(s.pre_send_audit_enabled); })
+      .catch(e => { if (!cancelled) { setError((e as Error)?.message || 'Could not read this setting.'); setEnabled(false); } });
+    return () => { cancelled = true; };
+  }, [de.id]);
+
+  const choose = async (next: boolean) => {
+    if (busy || next === enabled) return;
+    setBusy(true); setError(null);
+    const prev = enabled;
+    setEnabled(next);                       // optimistic
+    try {
+      await setDeAnswerSafeguards(de.id, { pre_send_audit_enabled: next });
+    } catch (err) {
+      setEnabled(prev);                     // and honest when it fails
+      setError((err as Error)?.message || 'Failed to save.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Answer quality check</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-inset text-dt-muted">internal answers</span>
+      </div>
+      <p className="text-[11px] text-dt-support mb-4">
+        Before {de.persona_name || de.name} sends an answer on its own, a second check re-reads
+        it against the sources it cited. If the answer isn&apos;t supported by them, it goes to a
+        person instead of the asker. This covers the Workbench, knowledge questions and the
+        teammate dock — replies to <em>customers</em> are governed by Customer replies above.
+      </p>
+
+      {enabled === null ? (
+        <div className="h-[76px] rounded-xl border border-dt-border bg-dt-inset animate-pulse" />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            { key: false, title: 'Off', desc: 'Answers send as soon as they clear the confidence floor and guardrails.' },
+            { key: true, title: 'Check before sending', desc: 'Slower and costs an extra model call. An answer that isn’t grounded goes to a person.' },
+          ]).map(o => (
+            <button
+              key={String(o.key)}
+              onClick={() => void choose(o.key)}
+              disabled={busy}
+              className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${enabled === o.key ? (o.key ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-dt-border-strong bg-dt-inset') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${enabled === o.key ? (o.key ? 'border-emerald-400 bg-emerald-400' : 'border-dt-muted bg-dt-muted') : 'border-dt-border-strong'}`} />
+                <span className="text-sm font-medium text-white">{o.title}</span>
+              </div>
+              <p className="text-[11px] text-dt-support mt-1.5 pl-5">{o.desc}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {enabled === true && (
+        <p className="text-[11px] text-dt-muted mt-3">
+          Answers held back appear in your task queue as escalations — nothing waits in a
+          place nobody looks.
+        </p>
+      )}
       {error && <p className="text-[11px] text-rose-400 mt-2">{error}</p>}
     </div>
   );
@@ -4212,6 +4297,7 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />
         <DeModelPanel de={de} onUpdated={onUpdated} />
         <DeReplyModePanel de={de} onUpdated={onUpdated} />
+        <DeAnswerSafeguardsPanel de={de} />
         <AttachedProceduresPanel deId={de.id} setPage={setPage} />
         <DeKnowledgeScopePanel deId={de.id} />
         <DeSystemAccessPanel deId={de.id} setPage={setPage} />
