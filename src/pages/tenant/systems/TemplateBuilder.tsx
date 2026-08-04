@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Modal } from '../../../design/primitives';
 import {
   AdapterDefinition, AdapterOpBinding, AdapterTemplate, AdapterAuthType,
   AUTH_TYPES, AUTH_META, validateAdapterDefinition,
@@ -151,15 +152,13 @@ export function TemplateBuilderModal({ onClose, onDone }: {
   ][step];
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold text-white">Custom system — step {step} of 5: {stepTitle}</h2>
-            <button onClick={onClose} className="text-xs text-dt-muted hover:text-white">✕</button>
-          </div>
-          <p className="text-xs text-dt-muted mb-4">Connect any system that has a REST API — no code, just answers to five questions. The result is a reusable template.</p>
+    // The busy guard is kept and now covers Escape and the backdrop alike: a
+    // half-saved template should not be dismissable by a stray keypress, and the
+    // hand-rolled version only guarded the backdrop.
+    <Modal size="3xl" title={`Custom system — step ${step} of 5: ${stepTitle}`}
+           onClose={() => { if (!busy) onClose(); }}>
+      <>
+        <p className="text-xs text-dt-muted mb-4">Connect any system that has a REST API — no code, just answers to five questions. The result is a reusable template.</p>
 
           {step === 1 && (
             <div className="space-y-3">
@@ -358,10 +357,9 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 <button disabled={busy} onClick={() => void save(true)} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Saving…' : 'Save & publish'}</button>
               </>
             )}
-          </div>
         </div>
-      </div>
-    </>
+      </>
+    </Modal>
   );
 }
 
@@ -397,11 +395,8 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
   };
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-dt-page/70" onClick={() => !busy && onClose()} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-lg max-h-[90vh] overflow-y-auto bg-dt-card border border-dt-border-strong rounded-2xl shadow-2xl p-6">
-          <h2 className="text-sm font-semibold text-white mb-1">Connect {template.name}</h2>
+    // Same busy guard as the builder above, now also covering Escape.
+    <Modal size="lg" title={`Connect ${template.name}`} onClose={() => { if (!busy) onClose(); }}>
           <p className="text-xs text-dt-muted mb-1">{CATEGORY_SHORT[template.category]} · {AUTH_META[template.definition.auth.type].label}</p>
           {template.scope === 'platform' && (
             <p className="text-[11px] text-amber-400 mb-3">Community template — shaped to the public API documentation, untested until connected. Verify results against your account.</p>
@@ -445,9 +440,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
             <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
             <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
           </div>
-        </div>
-      </div>
-    </>
+    </Modal>
   );
 }
 

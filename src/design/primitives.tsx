@@ -260,25 +260,35 @@ function useDialogBehaviour(onClose: () => void) {
 const MODAL_WIDTH = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl', '3xl': 'max-w-3xl' } as const;
 export type ModalSize = keyof typeof MODAL_WIDTH;
 
-export function Modal({ title, onClose, children, wide, size, padded = true }:
-  { title: React.ReactNode; onClose: () => void; children: React.ReactNode;
+export function Modal({ title, onClose, children, wide, size, padded = true, chrome = true, panelClass }:
+  { title?: React.ReactNode; onClose: () => void; children: React.ReactNode;
     wide?: boolean; size?: ModalSize;
     /** Off when the body manages its own padding — a full-height wizard with a
      *  sticky footer cannot live inside the default box padding. */
-    padded?: boolean }) {
+    padded?: boolean;
+    /** Off when the CHILD already draws a header and close button of its own
+     *  (AISessionPanel does). Without this the dialog shows two titles and two
+     *  close buttons, so such screens stayed hand-rolled and silently missed
+     *  Escape, scroll-lock and focus return — the whole point of this
+     *  primitive. The behaviour is what matters; the chrome is optional. */
+    chrome?: boolean;
+    /** Extra classes for the panel, for the rare dialog with a fixed height. */
+    panelClass?: string }) {
   const panelRef = useDialogBehaviour(onClose);
   const width = MODAL_WIDTH[size ?? (wide ? '2xl' : 'lg')];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div ref={panelRef} tabIndex={-1}
-        className={`w-full ${width} max-h-[90vh] overflow-y-auto bg-dt-page border border-dt-border-strong rounded-2xl ${padded ? 'p-6' : ''} focus:outline-none`}
+        className={`w-full ${width} max-h-[90vh] overflow-y-auto ${chrome ? 'bg-dt-page border border-dt-border-strong rounded-2xl' : ''} ${padded && chrome ? 'p-6' : ''} ${panelClass ?? ''} focus:outline-none`}
         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* When the body brings its own padding, the header still needs some —
             otherwise the title sits flush against the panel edge. */}
-        <div className={`flex items-center justify-between ${padded ? 'mb-4' : 'px-6 pt-6 pb-4'}`}>
-          <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="text-dt-muted hover:text-dt-body text-xl leading-none">×</button>
-        </div>
+        {chrome && (
+          <div className={`flex items-center justify-between ${padded ? 'mb-4' : 'px-6 pt-6 pb-4'}`}>
+            <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
+            <button onClick={onClose} aria-label="Close" className="text-dt-muted hover:text-dt-body text-xl leading-none">×</button>
+          </div>
+        )}
         {children}
       </div>
     </div>

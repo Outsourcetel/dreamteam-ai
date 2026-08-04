@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Modal } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
@@ -154,17 +155,12 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between p-5 border-b border-dt-border">
-          <div>
-            <h3 className="text-white font-semibold">Import pipeline (bootstrap)</h3>
-            <p className="text-xs text-dt-muted mt-0.5">
-              One-time bootstrap from a CRM export — your CRM remains the system of record. Won/lost rows import as open stages (closing is guarded).
-            </p>
-          </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-dt-panel text-dt-support hover:text-white flex items-center justify-center text-xs">×</button>
-        </div>
+    // padded={false}: this one has a scrolling body of its own, so the panel
+    // must not add a second layer of padding around it.
+    <Modal size="2xl" padded={false} title="Import pipeline (bootstrap)" onClose={onClose}>
+        <p className="text-xs text-dt-muted px-6 pb-4 -mt-2 border-b border-dt-border">
+          One-time bootstrap from a CRM export — your CRM remains the system of record. Won/lost rows import as open stages (closing is guarded).
+        </p>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -224,8 +220,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
             {importing ? 'Importing…' : 'Import opportunities'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -290,9 +285,7 @@ function WonModal({ opp, onClose, onWon }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        <h3 className="text-white font-semibold mb-1">Close won — {opp.name}</h3>
+    <Modal size="md" title={`Close won — ${opp.name}`} onClose={onClose}>
         <p className="text-xs text-dt-muted mb-4">
           Winning creates the {vocab.party_singular.toLowerCase()} record and hands the relationship to the lifecycle:
           onboarding → health monitoring → renewals. No re-entry.
@@ -345,8 +338,7 @@ function WonModal({ opp, onClose, onWon }: {
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -362,9 +354,7 @@ function LostModal({ opp, onClose, onLost }: { opp: Opportunity; onClose: () => 
     finally { setBusy(false); }
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-        <h3 className="text-white font-semibold mb-1">Close lost — {opp.name}</h3>
+    <Modal size="sm" title={`Close lost — ${opp.name}`} onClose={onClose}>
         <p className="text-xs text-dt-muted mb-4">A reason is required — lost reasons feed your win/loss learning loop.</p>
         <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3}
           placeholder="e.g. Went with incumbent — pricing" className={`w-full ${inputCls} mb-3`} />
@@ -378,8 +368,7 @@ function LostModal({ opp, onClose, onLost }: { opp: Opportunity; onClose: () => 
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -545,10 +534,8 @@ export function CustomerBDLive() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-dt-card border border-dt-border-strong rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h3 className="text-white font-semibold mb-4">Add prospect</h3>
-            <div className="space-y-3 mb-5">
+        <Modal size="sm" title="Add prospect" onClose={() => setShowAdd(false)}>
+          <div className="space-y-3 mb-5">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1">Company</label>
                 <input value={newCompany} onChange={e => setNewCompany(e.target.value)} placeholder="Acme Corp" className={`w-full ${inputCls}`} />
@@ -571,8 +558,7 @@ export function CustomerBDLive() {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {showImport && <ImportOpportunitiesModal onClose={() => setShowImport(false)} onImported={() => void refresh()} />}
     </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Modal } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import { ConfirmDeleteModal } from '../../../components';
 import {
@@ -435,10 +436,8 @@ const LiveProvingGround = () => {
 
       {/* Editor modal */}
       {editor && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-6" onClick={() => !saving && setEditor(null)}>
-          <div className="absolute inset-0 bg-black/60" />
-          <div onClick={(e) => e.stopPropagation()} className="relative w-full max-w-xl bg-dt-card border border-dt-border-strong rounded-2xl p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-white mb-4">{editor.id ? 'Edit question' : 'Add golden question'}</h2>
+        <Modal size="xl" title={editor.id ? 'Edit question' : 'Add golden question'}
+               onClose={() => { if (!saving) setEditor(null); }}>
             <label className="block text-xs text-dt-muted mb-1">Question (asked to the live DE)</label>
             <input
               value={editor.question}
@@ -490,8 +489,7 @@ const LiveProvingGround = () => {
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add question'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
       {removeTarget && (
         <ConfirmDeleteModal

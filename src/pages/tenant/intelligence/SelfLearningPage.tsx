@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Drawer } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
@@ -443,13 +444,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {selected && (
-            <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setSelectedId(null)}>
-              <div className="absolute inset-0 bg-black/50" />
-              <div onClick={e => e.stopPropagation()} className="relative w-full max-w-xl h-full bg-dt-card border-l border-dt-border overflow-y-auto p-6">
-                <div className="flex items-start justify-between mb-1">
-                  <h2 className="text-lg font-semibold text-white">{selectedRep?.inquiry ?? 'Pattern detail'}</h2>
-                  <button onClick={() => setSelectedId(null)} className="text-dt-muted hover:text-white text-lg leading-none">✕</button>
-                </div>
+            <Drawer title={selectedRep?.inquiry ?? 'Pattern detail'} onClose={() => setSelectedId(null)}>
                 <div className="flex items-center gap-2 mb-5 flex-wrap">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${VERDICT_META[selected.verdict_type].cls}`}>{VERDICT_META[selected.verdict_type].label}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[selected.status].cls}`}>{LIVE_STATUS_META[selected.status].label}</span>
@@ -565,8 +560,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                     Still accumulating — needs {Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count)} more similar decision{Math.max(0, (selectedPolicy?.min_cluster_size ?? 3) - selected.member_count) === 1 ? '' : 's'} before it's promoted to a reviewable proposal.
                   </p>
                 )}
-              </div>
-            </div>
+            </Drawer>
           )}
         </>
       )}

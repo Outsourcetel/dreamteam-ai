@@ -35,7 +35,7 @@ import {
 import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
 import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
-import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, INPUT_CLS } from '../../design/primitives';
+import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, Modal, INPUT_CLS } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   checkDeRetirementReadiness, retireDigitalEmployee,
@@ -50,7 +50,6 @@ import type {
   DigitalEmployee, DEConfigHistoryEntry, RetirementReadiness, DEConsultationGrant,
   DETaskRequest,
 } from '../../lib/digitalEmployeesApi';
-import Modal from '../../components/Modal';
 import {
   listDeHealth, DE_HEALTH_LABELS, listDeDevelopmentItems, detectDeDevelopmentNeeds,
   createDeDevelopmentItem, updateDeDevelopmentItemStatus, listDeImprovementOutcomes,
@@ -170,9 +169,13 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
         />
       )}
       {editingDe && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setEditingDe(null)}>
-          <div className="w-full max-w-2xl h-[600px] max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                // chrome={false}: AISessionPanel draws its own header and close
+        // button, so this would otherwise show two of each. It keeps its own
+        // chrome and gains Escape, scroll-lock and focus return from the
+        // primitive — which is exactly what it was missing.
+        <Modal size="2xl" chrome={false} padded={false}
+               panelClass="h-[600px] max-h-[85vh] overflow-hidden"
+               onClose={() => setEditingDe(null)}>
             <AISessionPanel
               subjectKind="de"
               subjectId={editingDe.id}
@@ -180,8 +183,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
               onChanged={() => { void refresh(); }}
               onClose={() => setEditingDe(null)}
             />
-          </div>
-        </div>
+        </Modal>
       )}
       <p className="text-xs text-dt-muted mb-4">
         Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
