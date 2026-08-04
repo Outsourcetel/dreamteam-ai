@@ -2,6 +2,7 @@ import type { Page } from '../../../types';
 import { TabBar } from '../../../design/primitives';
 import SupportInboxPage from './SupportInboxPage';
 import SupportCommandCenterPage from './SupportCommandCenterPage';
+import SupportCallsPage from './SupportCallsPage';
 import SupportTriageRulesPage from './SupportTriageRulesPage';
 
 // Support hub — one destination for the whole support operation (north-star
@@ -11,6 +12,7 @@ import SupportTriageRulesPage from './SupportTriageRulesPage';
 // Design System v1 pilot surface — composes from src/design primitives.
 const TABS: { key: Page; label: string }[] = [
   { key: 'support_inbox', label: 'Inbox' },
+  { key: 'support_calls', label: 'Calls' },
   { key: 'support_command_center', label: 'Overview' },
   { key: 'support_triage_rules', label: 'Triage rules' },
 ];
@@ -27,6 +29,7 @@ const SupportHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => voi
       </div>
     </div>
     {tab === 'support_inbox' && <SupportInboxPage setPage={setPage} embedded />}
+    {tab === 'support_calls' && <SupportCallsPage setPage={setPage} embedded />}
     {tab === 'support_command_center' && <SupportCommandCenterPage setPage={setPage} embedded />}
     {tab === 'support_triage_rules' && <SupportTriageRulesPage setPage={setPage} embedded />}
   </div>

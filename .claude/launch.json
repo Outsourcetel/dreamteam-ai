@@ -13,6 +13,18 @@
       "port": 5180
     },
     {
+      "name": "dreamteam-hellman",
+      "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "D:/Dream Team AI/.claude/worktrees/charming-hellman-b4dfb6",
+        "--port",
+        "5191",
+        "--strictPort"
+      ],
+      "port": 5191
+    },
+    {
       "name": "dreamteam-worktree",
       "runtimeExecutable": "C:/Users/SPECTRE/AppData/Local/Temp/claude/D--Dream-Team-AI/9cba64e5-0d5c-4e83-a0fe-fe6b89890991/scratchpad/node-v20.19.0-win-x64/node.exe",
       "runtimeArgs": [

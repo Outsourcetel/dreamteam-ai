@@ -116,6 +116,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   support_command_center: '/support/command-center',
   support_triage_rules: '/support/triage-rules',
   support_inbox: '/support/inbox',
+  support_calls: '/support/calls',
   browser_operator: '/autonomy/browser-operator',
   // Intelligence
   intelligence_performance: '/intelligence/performance',
@@ -473,6 +474,7 @@ function AppShell() {
       case 'support_command_center':
       case 'support_triage_rules':
       case 'support_inbox':
+      case 'support_calls':
         return <SupportHubPage tab={currentPage} setPage={handleSetPage} />;
       case 'browser_operator':
         return <BrowserOperatorPage setPage={handleSetPage} />;

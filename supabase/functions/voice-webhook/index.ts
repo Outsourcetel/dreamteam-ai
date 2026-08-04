@@ -95,16 +95,26 @@ serve(async (req) => {
       if (name === 'take_message') {
         const text = str(args.message, 1000);
         if (!text) { results.push({ toolCallId: tcId, result: 'No message text was captured — ask the caller to repeat it.' }); continue; }
-        const { error } = await admin.from('voice_messages').insert({
-          tenant_id: tenantId, de_id: deId, call_id: callId,
-          caller_name: str(args.caller_name) || null,
-          caller_phone: str(args.caller_phone, 40) || null,
-          message: text,
+        // mig 577: the message and the human task who owes this caller a
+        // callback are written together. Before, this wrote the row alone and
+        // told the caller it had been "passed on" — to a table nothing read.
+        // Same rule as the booking path below: trust the ledger, not the
+        // prose. The reassuring line is only spoken when a task id comes back.
+        const { data: rec, error } = await admin.rpc('record_voice_message', {
+          p_tenant_id: tenantId, p_de_id: deId, p_call_id: callId,
+          p_caller_name: str(args.caller_name) || null,
+          p_caller_phone: str(args.caller_phone, 40) || null,
+          p_message: text,
         });
+        const taskId = (rec as { task_id?: string } | null)?.task_id;
+        if (error || !taskId) {
+          console.error(`[voice-webhook] take_message FAILED to raise a callback task: ${error?.message ?? 'no task_id returned'}`);
+        }
         results.push({
           toolCallId: tcId,
-          result: error ? 'The message could not be saved — apologize and offer the direct line.'
-                        : 'Message recorded for the team. Tell the caller it has been passed on.',
+          result: taskId
+            ? 'Message recorded and a callback task raised for the team. Tell the caller it has been passed on.'
+            : 'The message could not be saved — apologize and offer the direct line.',
         });
         continue;
       }

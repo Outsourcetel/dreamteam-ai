@@ -216,10 +216,15 @@ function stalledBadge(tier: StalenessEscalation['tier']) {
  *  where the consequence is. */
 type Scope = 'work' | 'chat' | 'all';
 const WORK_TABLES = ['de_work_items', 'de_objectives'];
+// A phone call is a conversation. Callback tasks (mig 577) belong beside chat
+// escalations rather than under "Everything" — landing only there would have
+// left a caller who was PROMISED a callback invisible on the tab people
+// actually open, which is the defect mig 577 exists to fix.
+const CONVERSATION_TABLES = ['de_conversations', 'voice_messages'];
 const inScope = (t: DBHumanTask, s: Scope) =>
   s === 'all' ? true
     : s === 'work' ? WORK_TABLES.includes(String(t.related_table ?? ''))
-    : String(t.related_table ?? '') === 'de_conversations';
+    : CONVERSATION_TABLES.includes(String(t.related_table ?? ''));
 
 const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
