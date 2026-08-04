@@ -46,7 +46,12 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'post_only' }, 405);
 
   const secret = Deno.env.get('VOICE_GATEWAY_SECRET') ?? '';
-  const given = req.headers.get('x-voice-secret') ?? '';
+  // Vapi can only present the secret where its dashboard allows: the model's
+  // key arrives as Authorization: Bearer, the server URL's as x-vapi-secret.
+  // Accept any of the three; it is the same single low-privilege secret.
+  const given = req.headers.get('x-voice-secret')
+    ?? req.headers.get('x-vapi-secret')
+    ?? (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '');
   if (!secret || !(await secureEqual(secret, given))) return json({ error: 'unauthorized' }, 401);
 
   const url = new URL(req.url);
