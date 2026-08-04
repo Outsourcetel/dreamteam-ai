@@ -1209,23 +1209,28 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // Inert unless the DE opts in (pre_send_audit_enabled); fail-closed WHEN
     // ENABLED (audit unavailable → route to a human rather than auto-send). It
     // reuses the existing escalation path below by only ever setting escalate.
-    if (!replayMode && !escalate && subjectDeId) {
-      let auditEnabled = false;
+    // ── Per-employee answer safeguards (migrations 554-556) ──
+    // ONE read for both controls below. This was read twice, and both reads
+    // were wrong the same way: get_de_config is SET-RETURNING, so PostgREST
+    // returns an ARRAY and `.data` on it is undefined no matter what is stored.
+    // Proven over the live HTTP path, not assumed.
+    let deCfg: Record<string, unknown> | null = null;
+    if (!replayMode && subjectDeId) {
       try {
-        // get_de_config RETURNS TABLE, so PostgREST hands back an ARRAY — proven
-        // over the live HTTP path, not assumed. `acfg.data` on an array is
-        // undefined, so the previous read could never see an opted-in DE.
-        const { data: acfg, error: acfgErr } = await admin.rpc('get_de_config', {
+        const { data: cfgRows, error: cfgErr } = await admin.rpc('get_de_config', {
           p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
         });
-        // .rpc() RESOLVES on a Postgres error, it does not throw — an unchecked
-        // `error` is how this stayed silent for so long (the catch below was
-        // never once reached). Read errors keep the not-opted-in default so a
-        // transient blip cannot escalate every answer at once, but they are no
-        // longer invisible.
-        if (acfgErr) console.error('pre-send audit: config unreadable →', acfgErr.message);
-        auditEnabled = acfg?.[0]?.data?.pre_send_audit_enabled === true;
-      } catch (e) { console.error('pre-send audit: config read threw →', e); }
+        // .rpc() RESOLVES on a Postgres error — it does not throw. The unchecked
+        // `error` is how both controls stayed dark from the day they shipped:
+        // the surrounding catch was never once reached, so nothing was logged
+        // and a returned {data:null} read as "nobody switched this on".
+        if (cfgErr) console.error('answer safeguards: config unreadable →', cfgErr.message);
+        deCfg = (cfgRows?.[0]?.data ?? null) as Record<string, unknown> | null;
+      } catch (e) { console.error('answer safeguards: config read threw →', e); }
+    }
+
+    if (!replayMode && !escalate && subjectDeId) {
+      const auditEnabled = deCfg?.pre_send_audit_enabled === true;
       if (auditEnabled) {
         try {
           const verdict = await preSendAudit(admin, tenantId, subjectDeId, question, parsed.answer);
@@ -1318,6 +1323,24 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       });
     }
 
+    // ── Reply-mode: hold a finished answer until a person approves it ──
+    // This lands in human_tasks — the SAME queue escalations use here and the
+    // same one widget-ask files external replies into. It deliberately does NOT
+    // use draft_responses: that table has no screen that can approve anything,
+    // so an answer parked there waits until it expires and the employee simply
+    // goes quiet. Like the pre-send auditor above, this only ever SETS escalate,
+    // so there is one road to a human instead of three.
+    //
+    // A real escalation wins. If the answer was already going to a person for
+    // low confidence or a matched rule, that is what it is — relabelling it
+    // "waiting for approval" would hide a failure behind a routine review.
+    let heldForApproval = false;
+    if (!replayMode && !escalate && subjectDeId &&
+        (deCfg?.reply_mode_enabled === true || deCfg?.preapproval_strategy === 'all')) {
+      escalate = true;
+      heldForApproval = true;
+    }
+
     // ── Escalation + activity ── (business writes skipped in replay; one
     // audit line keeps dry runs visible in the trail, never silent)
     let escTaskId: string | null = null;
@@ -1326,22 +1349,34 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         `REPLAY (dry run) — answered "${question.length > 60 ? question.slice(0, 60) + '…' : question}" with zero business side effects${candidateKnowledge ? ' (candidate knowledge injected)' : ''}`,
         'evidence_step', { kind: 'replay_run', confidence: parsed.confidence, would_escalate: escalate, candidate: candidateKnowledge.length > 0 });
     } else if (escalate) {
-      await bump('escalations');
+      // A held reply is NOT an escalation. The employee answered perfectly well
+      // and a person simply has to sign it off. Counting it here would inflate
+      // the escalation rate and make a DE that is working exactly as configured
+      // look like one that keeps failing.
+      if (!heldForApproval) await bump('escalations');
       const truncated = question.length > 60 ? question.slice(0, 60) + '…' : question;
       const { data: escTask } = await admin.from('human_tasks').insert({
         tenant_id: tenantId,
         de_id: subjectDeId,
         type: 'escalation',
         source: 'de',
-        title: `Chat escalation — ${truncated}`,
-        detail: `${escalationRuleHit ? `Matched ${escalationRuleHit}. ` : ''}${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
+        // Same two-word distinction widget-ask draws for external replies, so
+        // one queue reads consistently whichever channel filled it.
+        title: heldForApproval
+          ? `Reply to approve — ${truncated}`
+          : `Chat escalation — ${truncated}`,
+        detail: heldForApproval
+          ? `${persona.name} has an answer ready and is waiting for approval before it goes back (confidence ${parsed.confidence}%): ${parsed.answer}`
+          : `${escalationRuleHit ? `Matched ${escalationRuleHit}. ` : ''}${persona.name}'s draft answer (confidence ${parsed.confidence}%): ${parsed.answer}`,
         related_table: convId ? 'de_conversations' : null,
         related_id: convId,
       }).select('id').single();
       escTaskId = escTask?.id ?? null;
       await admin.from('activity_events').insert({
         tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
-        text: `Chat question escalated to human review — "${truncated}"`,
+        text: heldForApproval
+          ? `Answer held for approval — "${truncated}"`
+          : `Chat question escalated to human review — "${truncated}"`,
         confidence: parsed.confidence,
       });
       // (The mig-252 "gap bridge" that lived here never once succeeded — its
@@ -1349,8 +1384,10 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       // it. Superseded by the unconditional recorder below, which routes
       // through record_inquiry_decision — mig 442.)
       await auditEvent(admin, tenantId, persona.name, 'de',
-        `Chat question escalated to human review — "${truncated}"`,
-        'escalated', { confidence: parsed.confidence, conversation_id: convId });
+        heldForApproval
+          ? `Answer held for approval before sending — "${truncated}"`
+          : `Chat question escalated to human review — "${truncated}"`,
+        'escalated', { confidence: parsed.confidence, conversation_id: convId, held_for_approval: heldForApproval });
     } else {
       await admin.from('activity_events').insert({
         tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'resolved',
@@ -1362,40 +1399,10 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         'resolved', { confidence: parsed.confidence, conversation_id: convId });
     }
 
-    // ── Reply-Mode: Draft approval flow ──
-    // If reply_mode_enabled, submit draft for human review instead of sending directly.
-    // Check configuration for this DE; if set, create draft_responses row and return draft_id.
-    let draftId: string | null = null;
-    if (!replayMode && !escalate && subjectDeId && convId) {
-      try {
-        // Array, not object — see the pre-send audit read above. `config.data`
-        // was undefined on every request, so reply-mode could never engage and
-        // draft_responses stayed empty from the day this shipped.
-        const { data: config, error: configErr } = await admin.rpc('get_de_config', {
-          p_tenant_id: tenantId, p_entity_kind: 'de', p_entity_id: subjectDeId,
-        });
-        if (configErr) console.error('reply-mode: config unreadable →', configErr.message);
-        const cfg = config?.[0]?.data;
-        const replyModeEnabled = cfg?.reply_mode_enabled === true ||
-                                 cfg?.preapproval_strategy === 'all';
-        if (replyModeEnabled) {
-          const { data: draftResp } = await admin.rpc('submit_draft_for_review', {
-            p_de_id: subjectDeId, p_conversation_id: convId,
-            p_user_question: question, p_draft_content: parsed.answer,
-            p_confidence: parsed.confidence / 100, p_sources: parsed.sources.map(s => ({ title: s, url: '' })),
-          });
-          if (draftResp?.draft_id) {
-            draftId = draftResp.draft_id;
-            // Record audit event for draft submission
-            await auditEvent(admin, tenantId, persona.name, 'de',
-              `Draft submitted for human review (${parsed.confidence}% confidence) — "${question.slice(0, 60)}"`,
-              'draft_submitted', { draft_id: draftId, confidence: parsed.confidence, conversation_id: convId });
-          }
-        }
-      } catch (e) {
-        console.error('reply-mode draft submission failed (continue with normal flow):', e);
-      }
-    }
+    // (Reply-mode used to live here, writing a draft_responses row AFTER the
+    // answer had already been recorded as resolved. It now runs BEFORE the
+    // escalation block above and files a human task instead — one queue, and
+    // one that somebody can actually act on.)
 
     // ── Evidence decision (docs/31 pre-start #4, mig 442): EVERY live answer
     // records a decision via record_inquiry_decision — the single writer that
@@ -1416,9 +1423,12 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
             p_tenant_id: tenantId, p_evidence_run_id: er.id, p_connector_id: null,
             p_external_ref: convId ? `conversation:${convId}` : null,
             p_source: 'live_channel',
-            p_decision: escalate ? 'needs_review' : (draftId ? 'would_auto_send' : 'acted'),
+            // A held reply IS 'needs_review' — it is waiting on a person. The
+            // old 'would_auto_send' described a hypothetical; this describes
+            // what actually happened.
+            p_decision: escalate ? 'needs_review' : 'acted',
             p_confidence: parsed.confidence, p_guardrail_rule_id: null, p_trust_level: null,
-            p_reasoning: `Chat answer ${escalate ? `escalated to human review${escalationRuleHit ? ` (${escalationRuleHit})` : ''}` : draftId ? 'submitted as a draft for human approval' : 'sent'} at ${parsed.confidence}% confidence with ${parsed.sources.length} knowledge source(s).`,
+            p_reasoning: `Chat answer ${heldForApproval ? 'held for approval before sending' : escalate ? `escalated to human review${escalationRuleHit ? ` (${escalationRuleHit})` : ''}` : 'sent'} at ${parsed.confidence}% confidence with ${parsed.sources.length} knowledge source(s).`,
             p_inquiry_title: question.slice(0, 120),
             p_source_category: 'support',
             p_frustration_score: customerState.intensity,
@@ -1434,7 +1444,10 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       confidence: parsed.confidence,
       sources: parsed.sources,
       needs_escalation: escalate,
-      draft_id: draftId, // included if reply-mode submitted
+      // Both true when an answer is waiting on a person, but they mean
+      // different things: held_for_approval says the employee succeeded and is
+      // waiting for a signature, not that it could not cope.
+      held_for_approval: heldForApproval,
       de_id: subjectDeId, de_name: persona.name,
     });
   } catch (err) {

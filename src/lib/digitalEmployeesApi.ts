@@ -76,6 +76,11 @@ export interface DeAnswerSafeguards {
   /** Independently re-read an answer against its cited sources before it
    *  auto-sends; route it to a person if it does not hold up. */
   pre_send_audit_enabled: boolean;
+  /** Hold every finished answer until a person approves it. Files a
+   *  "Reply to approve" human task — the same queue escalations land in.
+   *  Before migration 557 this wrote to draft_responses, which no screen
+   *  could review, so the answer waited until it expired. */
+  reply_mode_enabled: boolean;
 }
 
 /** Read the whole config blob for a DE. Returns {} rather than throwing when
@@ -96,7 +101,13 @@ async function readDeConfigData(deId: string): Promise<Record<string, unknown>> 
 
 export async function getDeAnswerSafeguards(deId: string): Promise<DeAnswerSafeguards> {
   const cfg = await readDeConfigData(deId);
-  return { pre_send_audit_enabled: cfg.pre_send_audit_enabled === true };
+  return {
+    pre_send_audit_enabled: cfg.pre_send_audit_enabled === true,
+    // de-answer treats preapproval_strategy:'all' as the same instruction, so
+    // the UI must show ON for it too — otherwise a DE configured that way reads
+    // as "off" here while it is very much holding answers.
+    reply_mode_enabled: cfg.reply_mode_enabled === true || cfg.preapproval_strategy === 'all',
+  };
 }
 
 export async function setDeAnswerSafeguards(
@@ -108,9 +119,18 @@ export async function setDeAnswerSafeguards(
   // { pre_send_audit_enabled } would silently drop every other key an employee
   // has, including reply_mode_enabled.
   const current = await readDeConfigData(deId);
+  const merged: Record<string, unknown> = { ...current, ...next };
+
+  // de-answer holds an answer when reply_mode_enabled is true OR
+  // preapproval_strategy is 'all'. Turning the switch off while leaving the
+  // strategy behind would keep holding answers and the toggle would spring
+  // back to ON on the next read — a control that lies about what it did.
+  if (next.reply_mode_enabled === false && merged.preapproval_strategy === 'all') {
+    delete merged.preapproval_strategy;
+  }
+
   const { error } = await supabase.rpc('set_de_config', {
-    p_tenant_id: tid, p_entity_kind: 'de', p_entity_id: deId,
-    p_config: { ...current, ...next },
+    p_tenant_id: tid, p_entity_kind: 'de', p_entity_id: deId, p_config: merged,
   });
   if (error) raise('setDeAnswerSafeguards', error);
 }

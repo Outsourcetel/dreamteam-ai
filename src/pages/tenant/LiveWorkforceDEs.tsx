@@ -42,6 +42,7 @@ import {
   listDeConsultationGrants, createDeConsultationGrant, setDeConsultationGrantActive,
   setExternalReplyMode,
   getDeAnswerSafeguards,
+  type DeAnswerSafeguards,
   setDeAnswerSafeguards,
   listDeTaskRequests, assignTaskToDe, respondDeTask, setDeSupervisor,
 } from '../../lib/digitalEmployeesApi';
@@ -1986,73 +1987,113 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
 // config table it reads did not exist, its writer had an ambiguous ON CONFLICT,
 // and the answer-side read looked at `.data` on an array. See migration 554.
 function DeAnswerSafeguardsPanel({ de }: { de: DigitalEmployee }) {
-  const [enabled, setEnabled] = useState<boolean | null>(null);   // null = still loading
-  const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState<DeAnswerSafeguards | null>(null);   // null = still loading
+  const [busy, setBusy] = useState<keyof DeAnswerSafeguards | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const who = de.persona_name || de.name;
 
   useEffect(() => {
     let cancelled = false;
-    setEnabled(null); setError(null);
+    setCfg(null); setError(null);
     void getDeAnswerSafeguards(de.id)
-      .then(s => { if (!cancelled) setEnabled(s.pre_send_audit_enabled); })
-      .catch(e => { if (!cancelled) { setError((e as Error)?.message || 'Could not read this setting.'); setEnabled(false); } });
+      .then(s => { if (!cancelled) setCfg(s); })
+      .catch(e => {
+        if (cancelled) return;
+        setError((e as Error)?.message || 'Could not read these settings.');
+        // Show the safe reading rather than a blank card, but the error line
+        // above says the values are not trustworthy.
+        setCfg({ pre_send_audit_enabled: false, reply_mode_enabled: false });
+      });
     return () => { cancelled = true; };
   }, [de.id]);
 
-  const choose = async (next: boolean) => {
-    if (busy || next === enabled) return;
-    setBusy(true); setError(null);
-    const prev = enabled;
-    setEnabled(next);                       // optimistic
+  const choose = async (key: keyof DeAnswerSafeguards, next: boolean) => {
+    if (busy || !cfg || next === cfg[key]) return;
+    setBusy(key); setError(null);
+    const prev = cfg;
+    setCfg({ ...cfg, [key]: next });                 // optimistic
     try {
-      await setDeAnswerSafeguards(de.id, { pre_send_audit_enabled: next });
+      await setDeAnswerSafeguards(de.id, { [key]: next });
     } catch (err) {
-      setEnabled(prev);                     // and honest when it fails
+      setCfg(prev);                                  // and honest when it fails
       setError((err as Error)?.message || 'Failed to save.');
-    } finally { setBusy(false); }
+    } finally { setBusy(null); }
   };
+
+  const Choice = ({ field, off, on }: {
+    field: keyof DeAnswerSafeguards;
+    off: { title: string; desc: string };
+    on: { title: string; desc: string };
+  }) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {([{ key: false, ...off }, { key: true, ...on }]).map(o => {
+        const active = cfg?.[field] === o.key;
+        return (
+          <button
+            key={String(o.key)}
+            onClick={() => void choose(field, o.key)}
+            disabled={busy !== null}
+            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${active ? (o.key ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-dt-border-strong bg-dt-inset') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${active ? (o.key ? 'border-emerald-400 bg-emerald-400' : 'border-dt-muted bg-dt-muted') : 'border-dt-border-strong'}`} />
+              <span className="text-sm font-medium text-white">{o.title}</span>
+            </div>
+            <p className="text-[11px] text-dt-support mt-1.5 pl-5">{o.desc}</p>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Answer quality check</h3>
+        <h3 className="text-base font-semibold text-white">Answer safeguards</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-inset text-dt-muted">internal answers</span>
       </div>
-      <p className="text-[11px] text-dt-support mb-4">
-        Before {de.persona_name || de.name} sends an answer on its own, a second check re-reads
-        it against the sources it cited. If the answer isn&apos;t supported by them, it goes to a
-        person instead of the asker. This covers the Workbench, knowledge questions and the
-        teammate dock — replies to <em>customers</em> are governed by Customer replies above.
+      <p className="text-[11px] text-dt-support mb-5">
+        These cover the Workbench, knowledge questions and the teammate dock. Replies to
+        <em> customers</em> are a separate path, governed by Customer replies above.
       </p>
 
-      {enabled === null ? (
-        <div className="h-[76px] rounded-xl border border-dt-border bg-dt-inset animate-pulse" />
+      {cfg === null ? (
+        <div className="space-y-5">
+          <div className="h-[92px] rounded-xl border border-dt-border bg-dt-inset animate-pulse" />
+          <div className="h-[92px] rounded-xl border border-dt-border bg-dt-inset animate-pulse" />
+        </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {([
-            { key: false, title: 'Off', desc: 'Answers send as soon as they clear the confidence floor and guardrails.' },
-            { key: true, title: 'Check before sending', desc: 'Slower and costs an extra model call. An answer that isn’t grounded goes to a person.' },
-          ]).map(o => (
-            <button
-              key={String(o.key)}
-              onClick={() => void choose(o.key)}
-              disabled={busy}
-              className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${enabled === o.key ? (o.key ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-dt-border-strong bg-dt-inset') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${enabled === o.key ? (o.key ? 'border-emerald-400 bg-emerald-400' : 'border-dt-muted bg-dt-muted') : 'border-dt-border-strong'}`} />
-                <span className="text-sm font-medium text-white">{o.title}</span>
-              </div>
-              <p className="text-[11px] text-dt-support mt-1.5 pl-5">{o.desc}</p>
-            </button>
-          ))}
+        <div className="space-y-5">
+          <div>
+            <p className="text-xs font-medium text-white mb-2">Approve before sending</p>
+            <Choice
+              field="reply_mode_enabled"
+              off={{ title: 'Send directly', desc: `${who} answers the asker itself once the answer clears guardrails.` }}
+              on={{ title: 'Hold for approval', desc: 'Every answer waits as a "Reply to approve" task until a teammate signs it off.' }}
+            />
+            {cfg.reply_mode_enabled && (
+              <p className="text-[11px] text-amber-300/90 mt-2">
+                Nobody is answered until someone clears the queue — check Human tasks regularly,
+                or {who} will look unresponsive.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-white mb-2">Quality check</p>
+            <Choice
+              field="pre_send_audit_enabled"
+              off={{ title: 'Off', desc: 'Answers send as soon as they clear the confidence floor and guardrails.' }}
+              on={{ title: 'Check the sources first', desc: 'A second read checks the answer against the sources it cited. Costs an extra model call.' }}
+            />
+          </div>
         </div>
       )}
 
-      {enabled === true && (
-        <p className="text-[11px] text-dt-muted mt-3">
-          Answers held back appear in your task queue as escalations — nothing waits in a
-          place nobody looks.
+      {(cfg?.reply_mode_enabled || cfg?.pre_send_audit_enabled) && (
+        <p className="text-[11px] text-dt-muted mt-4">
+          Anything held back lands in Human tasks — the same queue escalations use, so
+          nothing waits somewhere nobody looks.
         </p>
       )}
       {error && <p className="text-[11px] text-rose-400 mt-2">{error}</p>}
