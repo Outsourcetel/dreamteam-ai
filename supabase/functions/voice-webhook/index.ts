@@ -55,10 +55,13 @@ serve(async (req) => {
   if (!secret || !(await secureEqual(secret, given))) return json({ error: 'unauthorized' }, 401);
 
   const url = new URL(req.url);
-  const tenantId = url.searchParams.get('tenant') ?? '';
-  const deId = url.searchParams.get('de') ?? '';
-  const connectorId = url.searchParams.get('connector') ?? '';
-  if (!/^[0-9a-f-]{36}$/i.test(tenantId) || !/^[0-9a-f-]{36}$/i.test(deId)) {
+  // Same tolerance as voice-turn: Vapi may append path segments after the
+  // query string, so the last param can arrive as "<uuid>/something".
+  const uuidOf = (v: string | null) => (v ?? '').match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? '';
+  const tenantId = uuidOf(url.searchParams.get('tenant'));
+  const deId = uuidOf(url.searchParams.get('de'));
+  const connectorId = uuidOf(url.searchParams.get('connector'));
+  if (!tenantId || !deId) {
     return json({ error: 'tenant_and_de_required' }, 400);
   }
 

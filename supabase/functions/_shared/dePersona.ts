@@ -109,18 +109,25 @@ export async function resolveDePersona(
   admin: SupabaseClient, tenantId: string, deId: string | null, tenantName: string,
   overrides?: DePersonaOverrides | null,
 ): Promise<DePersona> {
-  const style = await styleDirective(admin, tenantId);
   if (!deId) {
+    const style = await styleDirective(admin, tenantId);
     return {
       name: FALLBACK_NAME,
       preamble: `You are a Digital Employee for ${tenantName}. ${HOUSE_VOICE}${style}`,
       contextTurns: DEFAULT_CONTEXT_TURNS,
     };
   }
-  const { data: de } = await admin
-    .from('digital_employees')
-    .select('name, persona_name, description, department, responsibilities, display_title, purpose_statement, voice, context_turns')
-    .eq('id', deId).eq('tenant_id', tenantId).maybeSingle();
+  // The tenant's style directive and the employee's own row are independent
+  // reads. Doing them one after the other cost a whole extra round trip on
+  // every answer this platform gives — invisible in chat, audible on a phone
+  // call, where it is dead air before the employee speaks.
+  const [style, { data: de }] = await Promise.all([
+    styleDirective(admin, tenantId),
+    admin
+      .from('digital_employees')
+      .select('name, persona_name, description, department, responsibilities, display_title, purpose_statement, voice, context_turns')
+      .eq('id', deId).eq('tenant_id', tenantId).maybeSingle(),
+  ]);
   if (!de) {
     return {
       name: FALLBACK_NAME,

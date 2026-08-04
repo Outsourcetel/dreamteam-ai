@@ -391,6 +391,221 @@ function safeParse(text: string): unknown {
   try { return JSON.parse(text); } catch { return { type: 'error', error: { type: 'api_error', message: text.slice(0, 500) } }; }
 }
 
+// ── Streaming ────────────────────────────────────────────────────────────
+//
+// Built for the voice channel, where the whole product is time-to-first-word:
+// a caller hears silence until the FIRST sentence is ready, so generating the
+// whole turn before returning anything costs seconds of dead air. Callers that
+// only need the finished answer should keep using llmMessages.
+//
+// Anthropic and Bedrock stream; OpenAI and Gemini stay unary here and are
+// reached through the llmMessages fallback at the bottom, so the failover
+// chain is unchanged — only its fastest two tiers gained a faster shape.
+
+export type LlmStreamEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown };
+
+/** UTF-8-safe base64 decode. atob() yields a binary string; decoding it as
+ *  Latin-1 would mangle every non-ASCII character — and tenants configure
+ *  their own reply language, so this is a correctness issue, not a nicety. */
+function b64ToText(b64: string, dec: TextDecoder): string {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return dec.decode(bytes);
+}
+
+/** AWS event-stream framing (application/vnd.amazon.eventstream), which is
+ *  what Bedrock's invoke-with-response-stream returns:
+ *
+ *    [u32 total][u32 headersLen][u32 preludeCrc][headers][payload][u32 crc]
+ *
+ *  The payload is {"bytes": base64(<one Anthropic SSE event>)} — so once
+ *  unwrapped, both providers speak the identical event vocabulary. CRCs are a
+ *  transport integrity check that TLS already gives us; a frame that does not
+ *  parse ends the stream rather than being silently skipped forever. */
+async function* awsEventFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = new Uint8Array(0);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value?.length) {
+      const next = new Uint8Array(buf.length + value.length);
+      next.set(buf); next.set(value, buf.length);
+      buf = next;
+    }
+    for (;;) {
+      if (buf.length < 16) break;
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const total = dv.getUint32(0);
+      // A frame length outside any sane bound means we have lost sync with the
+      // framing; continuing would emit garbage as speech.
+      if (total < 16 || total > 1 << 24) return;
+      if (buf.length < total) break;
+      const headersLen = dv.getUint32(4);
+      const payload = buf.slice(12 + headersLen, total - 4);
+      buf = buf.slice(total);
+      try {
+        const wrapper = JSON.parse(dec.decode(payload)) as { bytes?: string };
+        if (typeof wrapper.bytes === 'string') yield b64ToText(wrapper.bytes, dec);
+      } catch { /* ping / exception frame — not a content chunk */ }
+    }
+    if (done) break;
+  }
+}
+
+/** `data:` payloads from a text/event-stream body (Anthropic direct). */
+async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const reader = body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) buf += dec.decode(value, { stream: true });
+    for (;;) {
+      const i = buf.indexOf('\n');
+      if (i < 0) break;
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (line.startsWith('data:')) yield line.slice(5).trim();
+    }
+    if (done) break;
+  }
+}
+
+/** Anthropic Messages streaming events → normalized deltas. Tool calls arrive
+ *  as fragmented JSON across many events, so they are assembled and emitted
+ *  whole at content_block_stop — a half-parsed tool call must never escape. */
+async function* anthropicEvents(src: AsyncGenerator<string>): AsyncGenerator<LlmStreamEvent> {
+  const building = new Map<number, { id: string; name: string; json: string }>();
+  for await (const raw of src) {
+    let ev: Record<string, unknown>;
+    try { ev = JSON.parse(raw); } catch { continue; }
+    const idx = Number(ev.index ?? -1);
+    if (ev.type === 'content_block_start') {
+      const cb = (ev.content_block ?? {}) as Record<string, unknown>;
+      if (cb.type === 'tool_use') building.set(idx, { id: String(cb.id ?? ''), name: String(cb.name ?? ''), json: '' });
+    } else if (ev.type === 'content_block_delta') {
+      const d = (ev.delta ?? {}) as Record<string, unknown>;
+      if (d.type === 'text_delta' && typeof d.text === 'string') {
+        if (d.text) yield { type: 'text', text: d.text };
+      } else if (d.type === 'input_json_delta') {
+        const b = building.get(idx);
+        if (b) b.json += String(d.partial_json ?? '');
+      }
+    } else if (ev.type === 'content_block_stop') {
+      const b = building.get(idx);
+      if (b) {
+        let input: unknown = {};
+        try { input = JSON.parse(b.json || '{}'); } catch { input = {}; }
+        yield { type: 'tool_use', id: b.id || `toolu_${crypto.randomUUID().slice(0, 12)}`, name: b.name, input };
+        building.delete(idx);
+      }
+    }
+  }
+}
+
+/**
+ * Streaming twin of llmMessages: same anthropic-shaped body in, normalized
+ * deltas out, same provider chain and same failover rules.
+ *
+ * Throws only when the entire chain is exhausted — callers must handle that,
+ * because unlike llmMessages there is no Response object to inspect. Once the
+ * first event has been yielded the provider is committed: a mid-stream failure
+ * ends the turn with whatever was already produced rather than restarting on
+ * another provider, which would duplicate speech the caller already heard.
+ */
+export interface LlmStreamMeta {
+  /** Which provider served the turn. */
+  provider?: string;
+  /** 'stream' = incremental; 'unary' = whole-answer fallback (no latency win). */
+  mode?: 'stream' | 'unary';
+  /** Why streaming was not used, when it was not. */
+  why?: string;
+  /** ms until the provider returned response HEADERS. */
+  headersMs?: number;
+  /** ms until the FIRST content event. A large gap between this and headersMs
+   *  means the body was buffered somewhere rather than delivered as it was
+   *  produced — the difference between a real stream and a fake one. */
+  firstEventMs?: number;
+}
+
+export async function* llmStream(
+  admin: SupabaseClient, body: Record<string, unknown>, label = 'llm', tenantId?: string | null,
+  meta: LlmStreamMeta = {},
+): AsyncGenerator<LlmStreamEvent> {
+  const cfg = await resolveChain(admin, tenantId);
+  const tStart = Date.now();
+  for (let i = 0; i < cfg.providers.length; i++) {
+    const provider = cfg.providers[i];
+    if (provider !== 'anthropic' && provider !== 'bedrock') break; // unary tiers — handled by the fallback
+    let res: Response;
+    try {
+      if (provider === 'anthropic') {
+        res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': cfg.anthropicKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ ...body, stream: true }),
+        });
+        if (res.ok && res.body) {
+          if (i > 0) await noteFailover(admin, null, provider, `${label}:stream`);
+          meta.provider = provider; meta.mode = 'stream'; meta.headersMs = Date.now() - tStart;
+          for await (const ev of anthropicEvents(sseData(res.body))) {
+            if (meta.firstEventMs === undefined) meta.firstEventMs = Date.now() - tStart;
+            yield ev;
+          }
+          return;
+        }
+      } else {
+        const { model: _m, ...rest } = body;
+        const requested = String(body.model ?? '');
+        const bedrockModel = cfg.bedrockModelMap[requested] ?? `${cfg.bedrockModelPrefix}${requested}`;
+        res = await fetch(`https://bedrock-runtime.${cfg.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(bedrockModel)}/invoke-with-response-stream`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${cfg.bedrockKey!}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...rest }),
+        });
+        if (res.ok && res.body) {
+          if (i > 0) await noteFailover(admin, null, provider, `${label}:stream`);
+          meta.provider = provider; meta.mode = 'stream'; meta.headersMs = Date.now() - tStart;
+          for await (const ev of anthropicEvents(awsEventFrames(res.body))) {
+            if (meta.firstEventMs === undefined) meta.firstEventMs = Date.now() - tStart;
+            yield ev;
+          }
+          return;
+        }
+      }
+      const detail = (await res.text()).slice(0, 300);
+      console.error(`[llm] ${label}: ${provider} stream ${res.status}: ${detail}`);
+      if (!meta.why) meta.why = `${provider}:${res.status}:${detail.slice(0, 160)}`;
+      // A 400 here is our own malformed request — walking the chain would just
+      // hide it. Drop to the unary fallback, which surfaces it properly.
+      if (!ADVANCE_STATUSES.has(res.status)) break;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[llm] ${label}: ${provider} stream network error: ${msg}`);
+      if (!meta.why) meta.why = `${provider}:network:${msg.slice(0, 160)}`;
+    }
+  }
+
+  // Nothing streamed — fall back to the full unary chain so a stream-capable
+  // provider being down still lands on OpenAI/Gemini rather than dropping the call.
+  meta.mode = 'unary';
+  const res = await llmMessages(admin, body, `${label}:unary-fallback`, tenantId);
+  meta.provider = res.headers.get('x-llm-provider') ?? 'unknown';
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`llm_chain_exhausted status=${res.status} ${detail.slice(0, 200)}`);
+  }
+  const out = await res.json() as { content?: Array<Record<string, unknown>> };
+  for (const b of out.content ?? []) {
+    if (b.type === 'text' && b.text) yield { type: 'text', text: String(b.text) };
+    else if (b.type === 'tool_use') yield { type: 'tool_use', id: String(b.id ?? ''), name: String(b.name ?? ''), input: b.input ?? {} };
+  }
+}
+
 // Failover is rare and worth a durable trace: the Settings page reads
 // LLM_LAST_FAILOVER to show which engine answered last and why. Best-effort —
 // a config write must never break an answer that a fallback just rescued.

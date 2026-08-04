@@ -157,6 +157,67 @@ criteria, all must pass:**
 - the Article 50 disclosure line plays first on every call;
 - a suspended tenant's number answers with the fallback, takes no action.
 
+### P0 result, measured 2026-08-04/05
+
+**Five of six exit criteria pass. Latency fails, and the kill criterion it
+names is aimed at the wrong target.**
+
+| Criterion | Result |
+|---|---|
+| p50 turn latency ≤ 1.2s | **FAIL** — 7.31s on the first real call; 3.8-4.0s after the streaming rebuild |
+| blocking guardrail prevents synthesis | **PASS** — streamed and whole-turn, both audited |
+| gated action completes with a receipt | **PASS** (simulated mid-call; a live caller has not yet completed one) |
+| transcript + actions in the audit chain, call in `evidence_runs` | **BUILT, UNPROVEN LIVE** — the assistant's `server` was null on call 1; fixed, awaiting call 2 |
+| Article 50 disclosure plays first | **PASS** — heard on the real call |
+| suspended tenant answers with fallback, takes no action | **PASS** |
+
+**Where the time actually goes** (measured per stage, not inferred):
+
+```
+tenant suspension gate     ~250 ms   control — deliberately never cached
+DE persona resolve         ~190 ms   was ~390; two independent reads made concurrent
+LLM provider chain resolve ~600 ms   10 Vault key lookups; partly hidden behind the above
+Bedrock time-to-first-token ~1930 ms  <-- the floor
+first sentence completes    ~150 ms
+                           ───────
+caller hears first words   ~3800 ms
+```
+
+**The kill criterion in the original plan — "switch to Retell's socket shape"
+— would not have fixed this.** Vapi's own share (endpointing, STT, TTS) is
+only ~1.5-2s of the 7.3s. The rest was ours, and the largest single piece of
+what remains is the model provider, not the transport.
+
+Two findings that change the decision:
+
+1. **Prompt size is not the cause.** A ~400-token prompt and a ~2,400-token
+   prompt produce the same time-to-first-token (2040ms vs 1667ms). So prompt
+   trimming and prompt caching are both dead ends here — the ~1.9s is fixed
+   overhead reaching Bedrock through the `us.anthropic.*` cross-region
+   inference profile, not prefill.
+2. **Bedrock alone exceeds the gate.** Even with zero overhead on our side,
+   1.9s > 1.2s. No amount of tuning our code reaches the criterion while
+   Bedrock is the serving provider.
+
+**Therefore the remaining levers are provider-level, and both need the
+founder:**
+
+- **Restore the Anthropic key** (dead since before this spike; Bedrock has
+  been serving all traffic). Anthropic direct is a plausible sub-second
+  time-to-first-token, which would put the gate in reach — but this is
+  *untested*, because there is no working Anthropic credential anywhere to
+  test with. It is a hypothesis, not a measurement.
+- **Try a non-cross-region Bedrock model id.** `BEDROCK_MODEL_MAP` routes
+  through `us.anthropic.*` inference profiles; a direct regional id may be
+  faster. Testing means editing shared LLM config that every Digital Employee
+  depends on, so it is a deliberate, supervised change, not a side experiment.
+
+**Honest read:** the voice channel *works* — it answers correctly over real
+audio, discloses that it is AI, refuses to invent, reaches for the right tool,
+and the governance seam holds sentence by sentence. It is **too slow to feel
+natural**, by a factor of roughly three, and the fix is a provider decision
+rather than an engineering one.
+
 **P1 — governed pilot (4-6 weeks).** One design partner in a phone-native
 vertical; supervised trust tier; voice certification exam built on the
 existing exam driver; state-aware recording-consent lines; `de_channels`
