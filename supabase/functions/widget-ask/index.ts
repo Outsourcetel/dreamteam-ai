@@ -359,6 +359,22 @@ serve(async (req) => {
       if (pre.escalate) escalationRuleHit = pre.rule ?? 'escalation rule';
     } catch { /* resolver hiccup → keep the prior default behavior */ }
 
+    // What the CACHE requires of an answer, deliberately decoupled from what
+    // DELIVERY requires. With the autonomy dial off the floor is 101 — a
+    // delivery policy ("a person reviews every reply"), not a claim that a 95%
+    // grounded answer is bad. The write conditions used `conf >=
+    // confidenceFloor`, so on every dial-off tenant (today: all of them) the
+    // cache could never be written, which is why the live hit rate was ZERO —
+    // the comment above the write already said "Draft-mode is a DELIVERY
+    // policy, not answer quality" while the floor coupling did the opposite.
+    // A tenant that set a REAL floor (<=100) keeps it as the quality bar, so a
+    // stricter operator stays stricter; dial-off falls back to the platform
+    // default. Delivery is untouched: a cached answer still drafts for
+    // approval, it just costs zero LLM calls the second time someone asks.
+    const cacheQualityBar = confidenceFloor <= 100
+      ? Math.max(ESCALATION_THRESHOLD, confidenceFloor)
+      : ESCALATION_THRESHOLD;
+
     const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null].filter(Boolean).join(' · ');
 
     // ── Conversation (create with lifecycle fields, or reuse) ──
@@ -903,9 +919,9 @@ Write the answer as plain text — NOT as JSON; prior assistant turns are shown 
               // Cache write — same policy + language tag as the JSON path.
               // Never cache an answer shaped by a caller's identity memory (it
               // could carry their private data into the tenant-wide cache).
-              if (qEmbedding && !isFollowUp && !identityMemoryContext && conf >= confidenceFloor && !escalationRuleHit && !needsEsc) {
-                const clean = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
-                if (!clean) {
+              if (qEmbedding && !isFollowUp && !identityMemoryContext && conf >= cacheQualityBar && !escalationRuleHit && !needsEsc) {
+                const blockedBy = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
+                if (!blockedBy) {
                   await admin.from('answer_cache').insert({
                     tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,
                     question_embedding: qEmbedding, answer: answerText, confidence: conf, sources: srcs,
@@ -1014,9 +1030,9 @@ Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titl
     // so we still cache the answer; the gate in finalize() decides delivery.
     // Never cache a follow-up: its answer was shaped by turns the next asker
     // will not have (same reasoning as the cache read above).
-    if (qEmbedding && !isFollowUp && !identityMemoryContext && parsed.confidence >= confidenceFloor && !escalationRuleHit && !parsed.needs_escalation) {
-      const clean = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
-      if (!clean) {
+    if (qEmbedding && !isFollowUp && !identityMemoryContext && parsed.confidence >= cacheQualityBar && !escalationRuleHit && !parsed.needs_escalation) {
+      const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
+      if (!blockedBy) {
         await admin.from('answer_cache').insert({
           tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,
           question_embedding: qEmbedding, answer: parsed.answer, confidence: parsed.confidence, sources: parsed.sources,

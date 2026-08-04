@@ -724,6 +724,10 @@ serve(async (req) => {
     // Most conversations are single-question, so the FAQ dedup economics —
     // the reason the cache exists — are essentially preserved.
     const qEmbedding = await embedText(question);
+    // A near-verbatim entry can be FOUND yet not SERVED (the floor gate below).
+    // The write must know that, or a dial-off tenant asking the same question
+    // repeatedly would insert a duplicate row per ask.
+    let cacheAlreadyCovered = false;
     if (qEmbedding && !replayMode && !isFollowUp) {
       const { data: cacheRows } = await admin.rpc('match_cached_answer', {
         p_tenant_id: tenantId,
@@ -733,6 +737,7 @@ serve(async (req) => {
         p_de_id: subjectDeId,   // DE-scope the cache (no cross-DE hits)
       });
       const hit = Array.isArray(cacheRows) ? cacheRows[0] : null;
+      cacheAlreadyCovered = !!hit;
       if (hit) {
         // Re-screen the cached answer against CURRENT guardrails + confidence floor
         // + message escalation before serving — a rule added, floor raised, or
@@ -1250,10 +1255,27 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       }
     }
 
-    // ── Semantic cache write (only good, non-escalated answers; never
-    // answers built from scoped docs — the cache is tenant-wide; never a
-    // follow-up, whose answer was shaped by turns the next asker won't have) ──
-    if (qEmbedding && !escalate && !scopedContentUsed && !replayMode && !isFollowUp && !adjudicatedClear) {
+    // ── Semantic cache write (only good answers; never answers built from
+    // scoped docs — the cache is tenant-wide; never a follow-up, whose answer
+    // was shaped by turns the next asker won't have) ──
+    //
+    // Cache-worthiness is a QUALITY judgement, deliberately decoupled from the
+    // DELIVERY decision. The old condition was `!escalate`, and `escalate`
+    // includes `confidence < confidenceFloor` — which is 101 when the autonomy
+    // dial is off. So on every dial-off tenant nothing was ever cached, the
+    // live hit rate was zero, and each repeat question paid full price. The
+    // REAL disqualifiers stay: the model asking for a human, a founder
+    // escalation rule, fabrication risk, genuine uncertainty, a guardrail
+    // adjudication — each is a statement about the ANSWER. The floor is a
+    // statement about who reviews it, and reviews are unaffected: a held reply
+    // is still held; the cache just remembers what it cost to produce.
+    const cacheQualityBar = confidenceFloor <= 100
+      ? Math.max(ESCALATION_THRESHOLD, confidenceFloor)
+      : ESCALATION_THRESHOLD;
+    const cacheworthy = !parsed.needs_escalation && !escalationRuleHit
+      && !fabricationRisk && !genuinelyUnsure
+      && parsed.confidence >= cacheQualityBar;
+    if (qEmbedding && cacheworthy && !cacheAlreadyCovered && !scopedContentUsed && !replayMode && !isFollowUp && !adjudicatedClear) {
       await admin.from('answer_cache').insert({
         tenant_id: tenantId,
         account_id: null,
