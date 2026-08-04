@@ -53,6 +53,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
+import { computeInquiryConfidence } from '../_shared/confidence.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -138,25 +139,15 @@ async function audit(
 
 // ── Migration 034: proactive-poll helpers ──
 
-/** Deterministic confidence (mirrors compute_inquiry_confidence in SQL
- *  exactly, in case the RPC round-trip is skipped) — kept identical to
- *  the SQL formula so the number shown never disagrees with the SQL
- *  triage function that gates on it. Called client-side here only to
- *  pass into decide_inquiry_triage as a single source of truth; the
- *  SQL function does not recompute it, it trusts this input, exactly
- *  like getApprovalThresholdCents/generateInvoice trust the amount
- *  the caller already knows. */
-function computeConfidenceFallback(inputs: Record<string, unknown>): number {
-  const num = (v: unknown) => typeof v === 'number' ? v : 0;
-  const bool = (v: unknown) => v === true;
-  const raw = 40
-    + Math.min(24, 8 * num(inputs.knowledge_hits))
-    + Math.min(24, 8 * num(inputs.history_corroborations))
-    + (bool(inputs.account_context_found) ? 12 : 0)
-    - 15 * num(inputs.systems_failed)
-    - 15 * num(inputs.systems_denied_no_access);
-  return Math.max(0, Math.min(97, Math.round(raw)));
-}
+/** Deterministic confidence — now the ONE shared implementation
+ *  (_shared/confidence.ts), twin-tested against the SQL function so the
+ *  number shown can never disagree with the SQL triage that gates on it.
+ *  Kept under its old local name so the two call sites read unchanged.
+ *  Denied-access systems no longer subtract (migration 567): the formula
+ *  already prices what a denied system withholds as the bonus it can never
+ *  earn, and under default-DENY permissions a penalty on top punished
+ *  least-privilege configuration itself. */
+const computeConfidenceFallback = computeInquiryConfidence;
 
 async function upsertWatch(admin: SupabaseClient, tenantId: string, connectorId: string, ref: string) {
   const { error } = await admin.rpc('upsert_inbox_watch_state', {
