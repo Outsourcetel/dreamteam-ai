@@ -43,7 +43,6 @@ import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomersHubPage from './pages/tenant/entity/CustomersHubPage';
-import CustomerSupportPage from './pages/tenant/entity/CustomerSupportPage';
 import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
 import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';

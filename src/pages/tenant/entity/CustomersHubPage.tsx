@@ -7,7 +7,6 @@ import { CustomerSalesPage, CustomerSuccessPage as CustomerSuccessPageWrapper } 
 import CustomerRenewalPage from './CustomerRenewalPage';
 import CommercialContinuityPage from './CommercialContinuityPage';
 import CustomerOnboardingLive from './CustomerOnboardingLive';
-import CustomerOnboardingPage from './CustomerOnboardingPage';
 
 // ═══════════════════════════════════════════════════════════════
 // Customers hub (founder restructure 2026-07-22): the eight journey pages

@@ -4,16 +4,8 @@ import type { Page } from '../../types'
 import { type Person } from '../../data/people'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
 import { AmendmentWizard } from '../../components/AmendmentWizard'
-import { DEAuthorityPanel } from '../../components/DEAuthorityPanel'
 import { DeEscalationPanel } from './LiveWorkforceDEs'
-import { DEKnowledgeScopePanel } from '../../components/DEKnowledgeScopePanel'
-import { DEPreApprovalRulesPanel } from '../../components/DEPreApprovalRulesPanel'
-import { SophieConfigurationSummary } from '../../components/SophieConfigurationSummary'
 import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget'
-import { MetricsDisplay } from '../../components/MetricsDisplay'
-import { DEConfigurationTab } from '../../components/DEConfigurationTab'
-import { SophieConfigurationEditor } from '../../components/SophieConfigurationEditor'
-import { AmendmentMetricsPanel } from '../../components/AmendmentMetricsPanel'
 
 // ── Types ─────────────────────────────────────────────────────────
 
