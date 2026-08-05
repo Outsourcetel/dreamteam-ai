@@ -471,6 +471,13 @@ function extractAnswerField(text: string): string | null {
     else { out += c; i += 1; }
   }
   const trimmed = out.trim();
+  // A salvaged string with no letters or digits is not an answer, it is
+  // wreckage. The old floor was `length >= 3`, which let a bare "..." through
+  // — and it did: four cert-exam answers to "How do I create a new Digital
+  // Employee?" came back as literally three dots, carrying a self-reported
+  // confidence of 98. A customer would have been shown an ellipsis by a
+  // employee that believed it had answered well.
+  if (!/[a-z0-9]/i.test(trimmed)) return null;
   return trimmed.length >= 3 ? trimmed : null;
 }
 
@@ -488,11 +495,19 @@ function parseModelJson(raw: string, depth = 0): DEAnswer {
       if (depth === 0 && answer.trimStart().startsWith('{') && answer.includes('"answer"')) {
         answer = parseModelJson(answer, 1).answer;
       }
+      // A well-formed envelope can still carry a non-answer. Four cert-exam
+      // answers to "How do I create a new Digital Employee?" came back as
+      // literally "..." inside PERFECTLY VALID JSON, with a self-reported
+      // confidence of 98 — so the model was sure it had answered, and the
+      // parser had no reason to disagree. An empty or punctuation-only answer
+      // is a failed generation, not a poor one: escalate rather than deliver,
+      // and never let it carry a confidence that says otherwise.
+      const degenerate = !/[a-z0-9]/i.test(answer);
       return {
-        answer,
-        confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
+        answer: degenerate ? '' : answer,
+        confidence: degenerate ? 0 : Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
         sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
-        needs_escalation: !!p.needs_escalation,
+        needs_escalation: degenerate || !!p.needs_escalation,
         // Passed through raw; validated + clamped by parseCustomerState. A
         // model that omits it yields nulls, and null signals never match.
         customer_state: p.customer_state,
@@ -512,7 +527,20 @@ function parseModelJson(raw: string, depth = 0): DEAnswer {
       needs_escalation: /"needs_escalation"\s*:\s*true/.test(text),
     };
   }
-  return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false };
+  // Nothing parseable and nothing salvageable. Returning raw.trim() here meant
+  // handing the caller whatever wreckage the model produced — malformed JSON,
+  // an empty string, an ellipsis — as if it were an answer, with
+  // needs_escalation FALSE, i.e. safe to send. A generation we could not read
+  // is not a low-quality answer, it is no answer: escalate it to a human
+  // rather than deliver it.
+  const bare = raw.trim();
+  const usable = /[a-z0-9]/i.test(bare) && bare.length >= 12 && !bare.includes('"answer"');
+  return {
+    answer: usable ? bare : '',
+    confidence: 0,
+    sources: [],
+    needs_escalation: !usable,
+  };
 }
 
 serve(async (req) => {
