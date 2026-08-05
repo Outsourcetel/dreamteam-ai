@@ -1051,7 +1051,19 @@ interface TemplateOpResult extends AdapterResult {
 async function templateAuthHeaders(
   t: TemplateExec,
 ): Promise<{ ok: true; headers: Record<string, string> } | { ok: false; error: string; detail?: string }> {
-  const headers: Record<string, string> = { Accept: 'application/json', ...(t.def.auth.extra_headers ?? {}) };
+  // extra_headers normally carry literals, but some APIs need a header whose
+  // value is per-connector CONFIGURATION. Google Ads' login-customer-id is the
+  // case that forced this: it is required on every call when an agency runs the
+  // account through a manager (MCC), and must be absent otherwise. So values are
+  // rendered against the connector's variables, and a header that renders EMPTY
+  // is DROPPED rather than sent blank — that is how an optional header is
+  // expressed, and Google rejects a blank login-customer-id where it accepts an
+  // absent one. Literals contain no placeholders and pass through untouched.
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  for (const [h, tpl] of Object.entries(t.def.auth.extra_headers ?? {})) {
+    const v = renderTemplate(tpl, t.vars).out.trim();
+    if (v) headers[h] = v;
+  }
   // Headers whose value is a credential (Google Ads' developer-token). Declared
   // as header -> secret KEY so the token itself never sits in the template
   // definition, which is readable configuration.
