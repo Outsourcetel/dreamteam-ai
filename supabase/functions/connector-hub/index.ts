@@ -211,7 +211,10 @@ const zendesk = {
 // on a number that was never issued. Read-only in this slice; the dunning
 // WRITE actions are a separate, human-gated action package.
 const ERPNEXT_INVOICE_FIELDS =
-  '["name","customer","customer_name","posting_date","due_date","currency","grand_total","outstanding_amount","status","docstatus"]';
+  // contact_email is pulled so a chase can reach the CUSTOMER. Without it the
+  // platform can decide a reminder is due, draft it, route it to a named human
+  // and get it approved — and then have no addressee to send it to.
+  '["name","customer","customer_name","posting_date","due_date","currency","grand_total","outstanding_amount","status","docstatus","contact_email"]';
 const erpnext = {
   auth: (c: Ctx) => `token ${c.secret.api_key ?? ''}:${c.secret.api_secret ?? ''}`,
   hdrs(c: Ctx) { return { Authorization: this.auth(c), Accept: 'application/json' }; },
@@ -274,6 +277,11 @@ const erpnext = {
       due_date: d.due_date ? String(d.due_date) : null,
       status: this.arStatus(String(d.status ?? '')),
       currency: String(d.currency ?? ''),
+      // Who a chase would actually go to. Stored rather than fetched at send
+      // time so the approval can NAME the recipient — asking a human to
+      // approve sending an email without showing them the addressee is not
+      // really asking them anything.
+      contact_email: d.contact_email ? String(d.contact_email) : null,
     })).filter((x) => x.invoice_external_ref && x.customer_external_ref);
     return { ok: true, records };
   },
@@ -3206,6 +3214,63 @@ const erpnextActions: Record<string, NativeAction> = {
       if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
       const cid = (res.body as { data?: { name?: string } } | null)?.data?.name;
       return { ok: true, status: res.status, raw: res.body, receipt: `Logged a dunning note on invoice ${p.external_ref} in ERPNext${cid ? ` (comment ${cid})` : ''}.` };
+    },
+  },
+
+  // Chase the CUSTOMER, not the file.
+  //
+  // erpnext_invoice_comment above posts an internal Comment: staff can read it
+  // and the customer never sees it. Stripe, Xero and QuickBooks all have a
+  // one-call "send this invoice" endpoint that emails the customer, so an
+  // ERPNext workspace was the only one where collections could run to
+  // completion and still not reach the person who owes the money.
+  //
+  // frappe.core.doctype.communication.email.make both SENDS the email and
+  // files a Communication against the invoice, so the chase appears on the
+  // document's own timeline. That matters for a dispute months later: the
+  // record of what was sent lives in the accounting system, not only here.
+  erpnext_send_invoice_email: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (invoice number) is required.' };
+      if (!p.recipient?.trim()) return { ok: false, error: 'param_required', detail: 'recipient (customer email) is required — an email with no addressee cannot be sent.' };
+      if (!p.subject?.trim()) return { ok: false, error: 'param_required', detail: 'subject is required.' };
+      if (!p.body?.trim()) return { ok: false, error: 'param_required', detail: 'body is required.' };
+      return {
+        ok: true, method: 'POST',
+        url: `${c.baseUrl}/api/method/frappe.core.doctype.communication.email.make`,
+        body: {
+          recipients: p.recipient,
+          subject: p.subject,
+          content: p.body,
+          doctype: 'Sales Invoice',
+          name: p.external_ref,
+          send_email: 1,
+          communication_medium: 'Email',
+          sent_or_received: 'Sent',
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, {
+        method: 'POST',
+        headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' },
+        body: JSON.stringify(r.body),
+      });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      // Frappe answers 200 with a `message` envelope. Treat a 200 carrying no
+      // message as a failure rather than a send: reporting "emailed" when
+      // nothing left the building is the worst receipt this system can write.
+      const msg = (res.body as { message?: { name?: string } } | null)?.message;
+      if (!msg) {
+        return { ok: false, status: res.status, error: 'no_communication_created',
+                 detail: 'ERPNext returned success but created no Communication record — the email was not sent.', raw: res.body };
+      }
+      return {
+        ok: true, status: res.status, raw: res.body,
+        receipt: `Emailed ${p.recipient} about invoice ${p.external_ref} — the customer received this${msg.name ? ` (communication ${msg.name})` : ''}.`,
+      };
     },
   },
 };
@@ -6191,6 +6256,10 @@ serve(async (req) => {
           // NULL when the provider did not state a balance — the upsert keeps
           // any balance already known rather than erasing it (mig 532).
           p_outstanding_cents: rec.outstanding_cents ?? null,
+          // Same rule: NULL means "this sync did not say", not "there is no
+          // address". Erasing a known contact on a sync that omitted the field
+          // would silently downgrade a chase from an email to an internal note.
+          p_contact_email: rec.contact_email ?? null,
         });
         if (upErr) errors.push(`${rec.invoice_external_ref}: ${upErr.message}`.slice(0, 160));
         else upserted += 1;
