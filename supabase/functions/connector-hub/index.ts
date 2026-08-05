@@ -360,6 +360,68 @@ const erpnext = {
     };
   },
 
+  // Contacts — the wall two digital employees hit today.
+  //
+  // Both stopped at "Find who holds the relationship" because
+  // customer_account_contacts is empty and had no writer of any kind. The same
+  // gap makes every collections chase fall back to an internal note.
+  //
+  // ⚠ A Contact does NOT carry its customer as a field. In Frappe the link
+  // lives in a `Dynamic Link` child table, so reading only /Contact gives
+  // people with no company attached — which is exactly the orphan the upsert
+  // now refuses. Two bounded calls, joined here.
+  async syncContacts(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>>; unlinked?: number }> {
+    const cq = new URLSearchParams({
+      fields: '["name","first_name","last_name","email_id","mobile_no","phone","designation"]',
+      order_by: 'modified desc',
+      limit_page_length: '200',
+    });
+    const cr = await httpJson(`${c.baseUrl}/api/resource/Contact?${cq}`, { headers: this.hdrs(c) });
+    if (!cr.ok) return { ok: false, error: cr.error };
+    const contacts = (cr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    if (contacts.length === 0) return { ok: true, records: [], unlinked: 0 };
+
+    const lq = new URLSearchParams({
+      fields: '["parent","link_name"]',
+      filters: JSON.stringify([['parenttype', '=', 'Contact'], ['link_doctype', '=', 'Customer']]),
+      limit_page_length: '500',
+      parent: 'Contact',
+    });
+    const lr = await httpJson(`${c.baseUrl}/api/resource/Dynamic Link?${lq}`, { headers: this.hdrs(c) });
+    // A link read that fails is not "no links": it would file every contact as
+    // unlinked and silently drop the lot. Report it instead.
+    if (!lr.ok) return { ok: false, error: `contacts read but their customer links did not: ${lr.error ?? ''}`.trim() };
+    const links = (lr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+
+    const customerOf = new Map<string, string>();
+    for (const l of links) {
+      const parent = String(l.parent ?? '');
+      const cust = String(l.link_name ?? '');
+      if (parent && cust && !customerOf.has(parent)) customerOf.set(parent, cust);
+    }
+
+    const records = contacts
+      .map((d) => {
+        const ref = String(d.name ?? '');
+        const cust = customerOf.get(ref) ?? null;
+        return {
+          external_ref: ref,
+          first_name: d.first_name ? String(d.first_name) : null,
+          last_name: d.last_name ? String(d.last_name) : null,
+          email: d.email_id ? String(d.email_id) : null,
+          phone: d.phone ? String(d.phone) : null,
+          mobile: d.mobile_no ? String(d.mobile_no) : null,
+          title: d.designation ? String(d.designation) : null,
+          customer_external_ref: cust,
+          customer_name: cust,
+        };
+      })
+      .filter((x) => x.external_ref);
+
+    const linked = records.filter((r) => r.customer_external_ref);
+    return { ok: true, records: linked, unlinked: records.length - linked.length };
+  },
+
   async syncTickets(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
     const qs = new URLSearchParams({
       fields: '["name","subject","description","status","priority","customer","raised_by"]',
@@ -6383,7 +6445,7 @@ serve(async (req) => {
       const started = Date.now();
       const wanted = typeof payload.kinds === 'string' ? [payload.kinds]
         : Array.isArray(payload.kinds) ? (payload.kinds as string[])
-        : ['opportunities', 'tickets'];
+        : ['opportunities', 'tickets', 'contacts'];
       const out: Record<string, unknown> = {};
       const errors: string[] = [];
 
@@ -6427,9 +6489,43 @@ serve(async (req) => {
         }
       }
 
+      if (wanted.includes('contacts') && typeof adapter.syncContacts === 'function') {
+        const sr = await adapter.syncContacts(ctx);
+        if (!sr.ok) errors.push(`contacts: ${sr.error}`);
+        else {
+          const rows = (sr.records ?? []) as Array<Record<string, unknown>>;
+          let n = 0; let refused = 0;
+          for (const rec of rows) {
+            const { data: res, error: e } = await admin.rpc('upsert_external_contact', {
+              p_tenant_id: tenantId, p_provider: connector.provider,
+              p_external_ref: rec.external_ref ?? null,
+              p_first_name: rec.first_name ?? null, p_last_name: rec.last_name ?? null,
+              p_email: rec.email ?? null, p_phone: rec.phone ?? null, p_mobile: rec.mobile ?? null,
+              p_title: rec.title ?? null,
+              p_customer_external_ref: rec.customer_external_ref ?? null,
+              p_customer_name: rec.customer_name ?? null,
+              p_is_primary: false,
+            });
+            if (e) errors.push(`contact ${rec.external_ref}: ${e.message}`.slice(0, 160));
+            // The upsert REFUSES a contact whose customer this workspace does
+            // not know, rather than filing an orphan. That is a skip, not an
+            // error — but it must be counted or it reads as a success.
+            else if ((res as { ok?: boolean } | null)?.ok === false) refused += 1;
+            else n += 1;
+          }
+          out.contacts = {
+            fetched: rows.length, upserted: n,
+            ...(refused ? { refused_unknown_customer: refused } : {}),
+            // Contacts in the ERP attached to no Customer at all. Reported so
+            // "0 synced" never has to mean "we could not tell you why".
+            ...(sr.unlinked ? { skipped_no_customer_link: sr.unlinked } : {}),
+          };
+        }
+      }
+
       if (Object.keys(out).length === 0) {
         return json({ ok: false, error: 'sync_not_supported',
-          detail: `${connector.provider} has no opportunity or ticket sync adapter.` }, 200);
+          detail: `${connector.provider} has no opportunity, ticket or contact sync adapter.` }, 200);
       }
 
       const ms = Date.now() - started;
