@@ -19,6 +19,8 @@ export interface TeamMember {
   email: string;
   role: TenantRole;
   department: string;
+  /** The unit this person belongs to — the authoritative field. `department` is its name. */
+  orgUnitId: string | null;
   status: 'active' | 'pending' | 'deactivated';
   avatar: string;
   lastSeen: string;
@@ -55,6 +57,7 @@ function profileToMember(row: Record<string, unknown>): TeamMember {
     email: (row.email as string) || '',
     role: (row.role as TenantRole) || 'tenant_user',
     department: (row.department as string | undefined) || '',
+    orgUnitId: (row.org_unit_id as string | null) ?? null,
     status: row.is_active === false ? 'deactivated' : 'active',
     avatar: name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
     lastSeen: row.last_seen_at ? new Date(row.last_seen_at as string).toLocaleDateString() : 'Never',
@@ -155,12 +158,15 @@ export function useUsers() {
     return null;
   }, [members, load]);
 
-  const updateDepartment = useCallback(async (id: string, department: string): Promise<string | null> => {
+  // Takes an org_unit id, not a name (mig 597). `profiles.department` is now a
+  // MIRROR of the unit's name maintained by trigger — writing a bare string
+  // would put a person in a department that exists in no hierarchy.
+  const updateDepartment = useCallback(async (id: string, orgUnitId: string | null): Promise<string | null> => {
     const member = members.find(m => m.id === id);
     if (!member) return 'Member not found.';
     const { error } = await supabase.rpc('update_team_member_department', {
       p_target_user_id: member.userId,
-      p_department: department,
+      p_org_unit_id: orgUnitId || null,
     });
     if (error) return error.message;
     await load();

@@ -30,6 +30,7 @@ function BrandingLoader() {
 }
 import UserManagementPage from './pages/tenant/UserManagementPage';
 import OrganisationPage from './pages/tenant/OrganisationPage';
+import MyProfilePage from './pages/tenant/MyProfilePage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import LiveConnectorsPage from './pages/tenant/systems/LiveConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
@@ -73,6 +74,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   dashboard:              '/dashboard',
   users:                  '/users',
   organisation:                 '/organisation',
+  my_profile:                   '/my-profile',
   settings:               '/settings',
   eu_chat:                '/chat',
   // Entities
@@ -399,6 +401,8 @@ function AppShell() {
         return <EndUserChatPage {...commonProps} />;
       case 'users':
         return <UserManagementPage {...commonProps} />;
+      case 'my_profile':
+        return <MyProfilePage />;
       case 'organisation':
         return <OrganisationPage />;
       // ── Entity pages ──────────────────────────────────────────

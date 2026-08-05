@@ -222,6 +222,10 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // way: by someone trying to do the thing and finding no door.
         // ADMIN tier already, via navAccess ADMIN_PAGES.
         { id: 'users', label: 'People & Access', icon: '◎', page: 'users' },
+        // Your OWN record, not behind the screen for administering everyone
+        // else. The employee record shipped reachable only by clicking a name
+        // on People & Access, so a workspace owner could not find their own.
+        { id: 'my_profile', label: 'My Profile', icon: '◐', page: 'my_profile' },
         // Organisation sits next to People & Access because the two answer
         // adjacent questions: who is in this workspace, and where do they sit.
         // Without the second, every approval landed in one shared queue with

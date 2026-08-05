@@ -91,7 +91,8 @@ export type TenantPage =
   // ── Admin ─────────────────────────────────────────
   | 'settings'
   | 'users'
-  | 'organisation';
+  | 'organisation'
+  | 'my_profile';
 
 export type EndUserPage = 'eu_chat';
 

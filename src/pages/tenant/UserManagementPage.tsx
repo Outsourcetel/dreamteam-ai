@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import EmployeeProfileDrawer from '../../components/EmployeeProfileDrawer';
 import { Modal } from '../../design/primitives';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
-import { useDepartments } from '../../lib/useDepartments';
 import { sendPasswordReset } from '../../lib/api';
+import { loadOrgTree } from '../../lib/orgApi';
+import type { OrgUnit } from '../../lib/orgApi';
+import type { Page } from '../../types';
 import { LiveEmptyState } from '../../components/LiveDataStates';
 
-const DEPARTMENTS = ['Leadership', 'Customer Success', 'Finance', 'HR & People', 'Legal & Compliance', 'Revenue', 'IT', 'Operations', 'Product', 'Marketing'];
 
 const DEPT_COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#06b6d4','#8b5cf6','#ec4899','#ef4444','#84cc16','#f97316'];
 
@@ -33,16 +34,21 @@ const InviteModal = ({
   onInvite,
   currentUser,
   accentColor,
+  units,
 }: {
   onClose: () => void;
   onInvite: (data: { fullName: string; email: string; role: TenantRole; department: string; invitedBy: string }) => Promise<void>;
   currentUser?: AuthUser;
   accentColor: string;
+  /** Real departments and teams from the org tree. There is deliberately no
+   *  fallback list — a hard-coded one is exactly what let somebody sit in a
+   *  department the picker could not offer. */
+  units: OrgUnit[];
 }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<TenantRole>('tenant_user');
-  const [department, setDepartment] = useState(DEPARTMENTS[0]);
+  const [department, setDepartment] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -101,7 +107,10 @@ const InviteModal = ({
               <label className="text-xs text-dt-support mb-1.5 block">Department</label>
               <select value={department} onChange={e => setDepartment(e.target.value)}
                 className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                <option value="">No department</option>
+                {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
+                  <option key={u.id} value={u.name}>{u.path}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -135,16 +144,9 @@ const InviteModal = ({
 };
 
 // ── Main Page ─────────────────────────────────────────────────
-const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant }) => {
+const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant?: Tenant; setPage?: (p: Page) => void }) => {
   const { members, invite, updateRole, updateDepartment, toggleStatus, remove, resendInvite } = useUsers();
-  const { departments, addDepartment, updateDepartment: updateDept, removeDepartment } = useDepartments();
   const [showInvite, setShowInvite] = useState(false);
-  const [showAddDept, setShowAddDept] = useState(false);
-  const [newDeptName, setNewDeptName] = useState('');
-  const [newDeptDesc, setNewDeptDesc] = useState('');
-  const [newDeptHead, setNewDeptHead] = useState('');
-  const [newDeptColor, setNewDeptColor] = useState(DEPT_COLORS[0]);
-  const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<'all' | TenantRole>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | TeamMember['status']>('all');
   const [search, setSearch] = useState('');
@@ -153,10 +155,17 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
   // a display name and a role — no job title, no start date, no manager, no
   // phone, and an email column reading a field `profiles` never had.
   const [openRecordFor, setOpenRecordFor] = useState<string | null>(null);
+  const [units, setUnits] = useState<OrgUnit[]>([]);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [resettingId, setResettingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Departments come from the one hierarchy. If this fails the pickers show
+    // nothing rather than falling back to invented names.
+    loadOrgTree().then(setUnits).catch(() => setUnits([]));
+  }, []);
 
   const runAction = async (action: () => Promise<string | null>) => {
     const err = await action();
@@ -315,9 +324,12 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                 {/* Department */}
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin ? (
-                    <select value={m.department} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value)); }}
+                    <select value={m.orgUnitId ?? ''} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value || null)); }}
                       className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
-                      {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                      <option value="">No department</option>
+                      {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
+                        <option key={u.id} value={u.id}>{u.path}</option>
+                      ))}
                     </select>
                   ) : (
                     <span className="text-xs text-dt-support">{m.department}</span>
@@ -342,6 +354,17 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
 
                 {/* Actions */}
                 <div className="col-span-1 flex items-center justify-end gap-2">
+                  {/* The employee record was reachable only by clicking a person's
+                      NAME, which nobody discovers — the founder reported not being
+                      able to find it at all, including their own. A labelled
+                      control, on every row, for everyone. */}
+                  <button
+                    onClick={() => setOpenRecordFor(m.userId)}
+                    className="text-xs px-2 py-1 rounded bg-dt-panel text-dt-support hover:text-white transition-all"
+                    title={m.userId === user?.id ? 'Open your record' : `Open ${m.fullName}'s record`}
+                  >
+                    {m.userId === user?.id ? 'My record' : 'Record'}
+                  </button>
                   {isAdmin && m.userId !== user?.id && m.role !== 'tenant_owner' && (
                     <>
                       {confirmRemove === m.id ? (
@@ -405,117 +428,27 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
         </div>
       </div>
 
-      {/* Department Management */}
+      {/* Departments live in ONE place now (mig 597).
+          This panel used to add, rename, delete and assign a head to rows in
+          the `departments` table — a different set of rows from the tree on
+          the Organisation page, with its own hard-coded name list. That is
+          how somebody could be in "Customer Success" while the department
+          picker could not offer it. Both were true, about different lists. */}
       <div className="mt-6 bg-dt-card border border-dt-border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-white">Departments</h2>
-            <p className="text-xs text-dt-muted mt-0.5">Organise your team and Digital Employees by department</p>
+            <h2 className="text-sm font-semibold text-white">Departments and teams</h2>
+            <p className="text-xs text-dt-muted mt-0.5">
+              Locations, departments and teams are managed on the Organisation page, together with who works in each one.
+            </p>
           </div>
-          {isAdmin && (
-            <button
-              onClick={() => setShowAddDept(v => !v)}
-              className="text-xs px-3 py-1.5 rounded-lg text-white transition-all"
-              style={{ backgroundColor: accentColor }}
-            >
-              + Add Department
-            </button>
-          )}
-        </div>
-
-        {showAddDept && (
-          <div className="mb-4 p-4 bg-dt-panel/60 rounded-xl border border-dt-border-strong space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-dt-support mb-1 block">Name</label>
-                <input value={newDeptName} onChange={e => setNewDeptName(e.target.value)}
-                  placeholder="e.g. Product"
-                  className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="text-xs text-dt-support mb-1 block">Head of Department</label>
-                <select value={newDeptHead} onChange={e => setNewDeptHead(e.target.value)}
-                  className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
-                  <option value="">None assigned</option>
-                  {members.filter(m => m.status === 'active').map(m => (
-                    <option key={m.id} value={m.fullName}>{m.fullName}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-dt-support mb-1 block">Description</label>
-              <input value={newDeptDesc} onChange={e => setNewDeptDesc(e.target.value)}
-                placeholder="Short description of this department's function"
-                className="w-full bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-            </div>
-            <div>
-              <label className="text-xs text-dt-support mb-1 block">Colour</label>
-              <div className="flex items-center gap-2">
-                {DEPT_COLORS.map(c => (
-                  <button key={c} onClick={() => setNewDeptColor(c)}
-                    className={`w-6 h-6 rounded-full border-2 transition-all ${newDeptColor === c ? 'border-white scale-110' : 'border-transparent'}`}
-                    style={{ backgroundColor: c }} />
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  if (!newDeptName.trim()) return;
-                  addDepartment({ name: newDeptName.trim(), description: newDeptDesc.trim(), head: newDeptHead, color: newDeptColor });
-                  setNewDeptName(''); setNewDeptDesc(''); setNewDeptHead(''); setNewDeptColor(DEPT_COLORS[0]);
-                  setShowAddDept(false);
-                }}
-                className="px-4 py-1.5 text-sm text-white rounded-lg transition-all"
-                style={{ backgroundColor: accentColor }}
-              >Create</button>
-              <button onClick={() => setShowAddDept(false)} className="px-4 py-1.5 text-sm text-dt-support hover:text-white bg-slate-600 rounded-lg transition-all">Cancel</button>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {departments.map(dept => {
-            const deptMembers = members.filter(m => m.department === dept.name && m.status === 'active');
-            return (
-              <div key={dept.id} className="bg-dt-panel rounded-xl p-4 border border-dt-border-strong hover:border-dt-border-strong transition-all group">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold text-white"
-                    style={{ backgroundColor: dept.color + '30', color: dept.color }}>
-                    {dept.name[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-white truncate">{dept.name}</div>
-                    {dept.head && <div className="text-xs text-dt-muted truncate">Lead: {dept.head}</div>}
-                  </div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => removeDepartment(dept.id)}
-                      className="text-dt-faint hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                      title="Remove department"
-                    >✕</button>
-                  )}
-                </div>
-                {dept.description && <p className="text-xs text-dt-muted mb-3 line-clamp-2">{dept.description}</p>}
-                <div className="flex items-center justify-between">
-                  <div className="flex -space-x-1">
-                    {deptMembers.slice(0, 4).map(m => (
-                      <div key={m.id} title={m.fullName}
-                        className="w-5 h-5 rounded-full border border-dt-border text-xs flex items-center justify-center font-bold text-white"
-                        style={{ backgroundColor: dept.color + '60', color: dept.color }}>
-                        {m.avatar[0]}
-                      </div>
-                    ))}
-                    {deptMembers.length > 4 && (
-                      <div className="w-5 h-5 rounded-full bg-slate-600 border border-dt-border text-xs flex items-center justify-center text-dt-support">+{deptMembers.length - 4}</div>
-                    )}
-                  </div>
-                  <span className="text-xs text-dt-muted">{deptMembers.length} active</span>
-                </div>
-              </div>
-            );
-          })}
+          <button
+            onClick={() => setPage?.('organisation')}
+            className="text-xs px-3 py-1.5 rounded-lg text-white transition-all shrink-0"
+            style={{ backgroundColor: accentColor }}
+          >
+            Open Organisation
+          </button>
         </div>
       </div>
 
@@ -524,6 +457,7 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           accentColor={accentColor}
           currentUser={user}
           onClose={() => setShowInvite(false)}
+          units={units}
           onInvite={async (data) => { await invite({ ...data, tenantId: tenant?.id }); }}
         />
       )}

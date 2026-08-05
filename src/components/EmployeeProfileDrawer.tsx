@@ -33,7 +33,14 @@ type TabId = typeof TABS[number]['key'];
 
 const money = (cents: number) => (cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 });
 
-export function EmployeeProfileDrawer({ userId, onClose }: { userId: string; onClose: () => void }) {
+export function EmployeeProfileDrawer({ userId, onClose, inline }: {
+  userId: string;
+  onClose?: () => void;
+  /** Render without the drawer chrome, so the same record can BE a page.
+   *  "My profile" needs to be somewhere a person can reach without first
+   *  finding the admin screen for managing everyone else. */
+  inline?: boolean;
+}) {
   const [tab, setTab] = useState<TabId>('job');
   const [rec, setRec] = useState<EmployeeRecord | null>(null);
   const [tree, setTree] = useState<OrgUnit[]>([]);
@@ -100,8 +107,8 @@ export function EmployeeProfileDrawer({ userId, onClose }: { userId: string; onC
     ? (rec.profile.preferred_name || rec.profile.full_name || 'Employee')
     : 'Employee';
 
-  return (
-    <Drawer title={title} onClose={onClose}>
+  const body = (
+    <>
       {!rec ? (
         <div className="text-sm text-dt-muted">Loading…</div>
       ) : (
@@ -366,8 +373,11 @@ export function EmployeeProfileDrawer({ userId, onClose }: { userId: string; onC
           )}
         </div>
       )}
-    </Drawer>
+    </>
   );
+
+  if (inline) return <div className="max-w-4xl">{body}</div>;
+  return <Drawer title={title} onClose={onClose ?? (() => {})}>{body}</Drawer>;
 }
 
 export default EmployeeProfileDrawer;
