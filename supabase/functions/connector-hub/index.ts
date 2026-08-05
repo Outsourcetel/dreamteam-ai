@@ -6002,7 +6002,7 @@ serve(async (req) => {
       // publishes 91 tools, most of them irrelevant to any given business), and
       // registering all of it buries the actions that matter in a catalogue
       // nobody can read. Look first, then choose.
-      if (body.preview === true) {
+      if (payload.preview === true) {
         return json({
           ok: true, preview: true, tool_count: tools.length,
           tools: tools.map((t) => {
@@ -6027,7 +6027,7 @@ serve(async (req) => {
       }
 
       // Optional subset. Absent = register everything, exactly as before.
-      const onlyRaw = Array.isArray(body.only) ? (body.only as unknown[]).map((x) => String(x)) : null;
+      const onlyRaw = Array.isArray(payload.only) ? (payload.only as unknown[]).map((x) => String(x)) : null;
       const only = onlyRaw && onlyRaw.length > 0 ? new Set(onlyRaw) : null;
       const selected = only ? tools.filter((t) => only.has(String(t.name ?? ''))) : tools;
       const skipped = tools.length - selected.length;
