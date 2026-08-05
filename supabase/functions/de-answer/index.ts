@@ -1099,6 +1099,20 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
     const parsed = parseModelJson(raw);
 
+    // The model ran out of room. stop_reason was never read here, so a reply
+    // the model was still writing when it hit the ceiling was delivered as a
+    // finished answer — the salvage path recovers the partial text and nothing
+    // downstream knew it was partial. An answer that stops mid-thought is not a
+    // low-confidence answer, it is an incomplete one: route it to a human.
+    // (This is NOT what caused the mid-sentence truncation traced to an
+    // unescaped quote — that was a parsing defect at ~110 tokens. This closes
+    // the separate, genuine case.)
+    if (data.stop_reason === 'max_tokens') {
+      console.warn(`[de-answer] generation hit max_tokens — answer is incomplete, escalating (${parsed.answer.length} chars recovered)`);
+      parsed.needs_escalation = true;
+      parsed.confidence = Math.min(parsed.confidence, 40);
+    }
+
     // §5: GROUNDED CONFIDENCE. Compute confidence from real retrieval support
     // (distance/coverage/corroboration — already retrieved, free) and shadow-log it
     // next to the model self-report. Only when a tenant has explicitly enforced AND
