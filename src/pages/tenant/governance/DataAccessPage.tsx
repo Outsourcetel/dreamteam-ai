@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
 import { listConnectors, Connector } from '../../../lib/connectorApi';
-import { CATEGORIES, CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts';
+import { CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT, SystemCategory } from '../../../lib/categoryContracts';
 import {
   AccessGrant, AccessSubject, AccessDenialEvent, AccessPermission,
   PERMISSION_LABELS, PERMISSION_EXPLAIN,
@@ -32,12 +32,19 @@ const PERMS: AccessPermission[] = ['search', 'read', 'ingest', 'write_back'];
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-const CAT_SHORT: Record<SystemCategory, string> = {
-  crm: 'CRM', helpdesk: 'Helpdesk', knowledge_base: 'Knowledge base',
-  erp_financials: 'ERP / Financials', billing: 'Billing', payroll_hcm: 'Payroll / HCM',
-  pos: 'Point of sale', product_system: 'Product system', other: 'Other',
-};
-const SENSITIVE: Set<SystemCategory> = new Set(['erp_financials', 'billing', 'payroll_hcm']);
+// Was a third hand-maintained copy of the category labels; it fell out of date
+// the moment mig 574 added ads/social/web_analytics and the exhaustive
+// Record<SystemCategory, string> refused to compile. Use the shared one.
+const CAT_SHORT = CATEGORY_SHORT;
+
+// Categories where a grant deserves a second look. 'ads' and 'social' are
+// added deliberately, not as bookkeeping: an ads grant lets an employee move a
+// client's MONEY, and a social grant lets it speak publicly under the client's
+// brand — both at least as consequential as reading an invoice. 'web_analytics'
+// is read-only traffic data and stays unmarked.
+const SENSITIVE: Set<SystemCategory> = new Set([
+  'erp_financials', 'billing', 'payroll_hcm', 'ads', 'social',
+]);
 
 export default function DataAccessPage() {
   const [subjects, setSubjects] = useState<AccessSubject[]>([]);

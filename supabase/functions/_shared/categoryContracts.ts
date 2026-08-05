@@ -16,11 +16,18 @@
 
 export type SystemCategory =
   | 'crm' | 'helpdesk' | 'knowledge_base' | 'erp_financials' | 'billing'
-  | 'payroll_hcm' | 'pos' | 'product_system' | 'other';
+  | 'payroll_hcm' | 'pos' | 'product_system'
+  // Marketing surfaces (mig 574). The google_ads/seo/marketing archetypes have
+  // required these categories since they shipped; until now none existed, so a
+  // connector for them could not be created and those roles had no hands.
+  | 'ads' | 'social' | 'web_analytics'
+  | 'other';
 
 export const CATEGORIES: SystemCategory[] = [
   'crm', 'helpdesk', 'knowledge_base', 'erp_financials', 'billing',
-  'payroll_hcm', 'pos', 'product_system', 'other',
+  'payroll_hcm', 'pos', 'product_system',
+  'ads', 'social', 'web_analytics',
+  'other',
 ];
 
 export const CATEGORY_LABELS: Record<SystemCategory, string> = {
@@ -32,6 +39,9 @@ export const CATEGORY_LABELS: Record<SystemCategory, string> = {
   payroll_hcm: 'Payroll / HCM — employees, payruns, time off',
   pos: 'Point of sale — orders & products',
   product_system: 'Product system — your own product’s records',
+  ads: 'Ads — campaigns, keywords, budgets',
+  social: 'Social — posts, comments, engagement',
+  web_analytics: 'Web analytics — traffic, queries, rankings',
   other: 'Other',
 };
 
@@ -78,6 +88,22 @@ export const CATEGORY_OPS: Record<SystemCategory, CategoryOp[]> = {
   product_system: [
     { op: 'get_record', object: 'record', kind: 'get', label: 'Fetch one record' },
     { op: 'search_records', object: 'record', kind: 'search', label: 'Find records' },
+  ],
+  ads: [
+    { op: 'search_campaigns', object: 'campaign', kind: 'search', label: 'Find ad campaigns' },
+    { op: 'get_campaign', object: 'campaign', kind: 'get', label: 'Fetch one campaign' },
+    { op: 'search_keywords', object: 'keyword', kind: 'search', label: 'Find keywords and their performance' },
+    { op: 'search_search_terms', object: 'search_term', kind: 'search', label: 'Find the real searches that triggered ads' },
+    { op: 'get_account_performance', object: 'performance', kind: 'get', label: 'Fetch spend and conversion totals' },
+  ],
+  social: [
+    { op: 'search_posts', object: 'post', kind: 'search', label: 'Find published posts' },
+    { op: 'get_post', object: 'post', kind: 'get', label: 'Fetch one post and its engagement' },
+    { op: 'search_comments', object: 'comment', kind: 'search', label: 'Find comments and mentions' },
+  ],
+  web_analytics: [
+    { op: 'search_queries', object: 'query', kind: 'search', label: 'Find the search queries a site ranks for' },
+    { op: 'get_page_metrics', object: 'page_metrics', kind: 'get', label: 'Fetch traffic and ranking for one page' },
   ],
   other: [
     { op: 'get_record', object: 'record', kind: 'get', label: 'Fetch one record' },

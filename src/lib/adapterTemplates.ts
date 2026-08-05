@@ -18,10 +18,12 @@
 import { SystemCategory, CATEGORY_OPS, legalOps } from './categoryContracts';
 
 export type AdapterAuthType =
-  | 'api_key_header' | 'bearer' | 'basic' | 'oauth2_client_credentials' | 'none';
+  | 'api_key_header' | 'bearer' | 'basic' | 'oauth2_client_credentials'
+  | 'oauth2_refresh_token' | 'none';
 
 export const AUTH_TYPES: AdapterAuthType[] = [
-  'api_key_header', 'bearer', 'basic', 'oauth2_client_credentials', 'none',
+  'api_key_header', 'bearer', 'basic', 'oauth2_client_credentials',
+  'oauth2_refresh_token', 'none',
 ];
 
 /** Plain-language auth descriptions + which secret fields each recipe needs. */
@@ -46,6 +48,15 @@ export const AUTH_META: Record<AdapterAuthType, { label: string; help: string; s
     help: 'The system gives you a Client ID + Secret; DreamTeam exchanges them for a short-lived token automatically on every call.',
     secretFields: [{ key: 'client_id', label: 'Client ID' }, { key: 'client_secret', label: 'Client secret' }],
   },
+  oauth2_refresh_token: {
+    label: 'OAuth2 with a refresh token — Google, Microsoft, Xero, QuickBooks',
+    help: 'You authorise once and keep a long-lived refresh token; DreamTeam trades it for a fresh access token on every call, so nothing expires mid-job.',
+    secretFields: [
+      { key: 'client_id', label: 'Client ID' },
+      { key: 'client_secret', label: 'Client secret' },
+      { key: 'refresh_token', label: 'Refresh token' },
+    ],
+  },
   none: {
     label: 'No authentication',
     help: 'Open API — no credentials needed (rare outside test systems).',
@@ -61,6 +72,13 @@ export interface AdapterAuth {
   token_url?: string;
   /** static headers every call needs (e.g. Accept: application/json) */
   extra_headers?: Record<string, string>;
+  /**
+   * Headers whose VALUE is a secret: { 'developer-token': 'developer_token' }
+   * maps a header name to a key in the connector's secret bag. extra_headers
+   * cannot carry these — it holds literals, and a credential must never be
+   * written into a template definition that is readable as configuration.
+   */
+  secret_headers?: Record<string, string>;
 }
 
 /** A non-secret per-connector variable declared by the template (e.g. subdomain). */

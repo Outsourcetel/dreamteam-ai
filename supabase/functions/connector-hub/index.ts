@@ -1052,6 +1052,14 @@ async function templateAuthHeaders(
   t: TemplateExec,
 ): Promise<{ ok: true; headers: Record<string, string> } | { ok: false; error: string; detail?: string }> {
   const headers: Record<string, string> = { Accept: 'application/json', ...(t.def.auth.extra_headers ?? {}) };
+  // Headers whose value is a credential (Google Ads' developer-token). Declared
+  // as header -> secret KEY so the token itself never sits in the template
+  // definition, which is readable configuration.
+  for (const [h, secretKey] of Object.entries(t.def.auth.secret_headers ?? {})) {
+    const v = t.secret[secretKey]?.trim();
+    if (!v) return { ok: false, error: 'no_credentials', detail: `Missing secret field: ${secretKey} (needed for the ${h} header)` };
+    headers[h] = v;
+  }
   const a = t.def.auth;
   const need = (keys: string[]): string | null => {
     const missing = keys.filter((k) => !t.secret[k]?.trim());
@@ -1094,6 +1102,33 @@ async function templateAuthHeaders(
       const b = r.body as { access_token?: string; error_description?: string; error?: string } | null;
       if (!r.ok || !b?.access_token) {
         return { ok: false, error: 'auth_failed', detail: `Token exchange at ${tokenUrl.out} failed: ${b?.error_description ?? b?.error ?? r.error ?? `HTTP ${r.status}`}` };
+      }
+      headers.Authorization = `Bearer ${b.access_token}`;
+      return { ok: true, headers };
+    }
+    case 'oauth2_refresh_token': {
+      // client_id + client_secret + refresh_token -> a short-lived access
+      // token, exchanged on every call. Used by Google Ads, Microsoft, Xero and
+      // QuickBooks; client_credentials cannot express it because the user's
+      // authorisation, not the app's identity, is what grants access.
+      const m = need(['client_id', 'client_secret', 'refresh_token']);
+      if (m) return { ok: false, error: 'no_credentials', detail: `Missing secret field(s): ${m}` };
+      const tokenUrl = renderTemplate(a.token_url ?? '', t.vars);
+      if (tokenUrl.missing.length) return { ok: false, error: 'var_missing', detail: `token_url needs variable(s): ${tokenUrl.missing.join(', ')}` };
+      const r = await httpJson(tokenUrl.out, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: t.secret.client_id, client_secret: t.secret.client_secret,
+          refresh_token: t.secret.refresh_token,
+        }).toString(),
+      });
+      const b = r.body as { access_token?: string; error_description?: string; error?: string } | null;
+      if (!r.ok || !b?.access_token) {
+        // Say WHICH credential to re-issue: a revoked refresh token and a wrong
+        // client secret fail identically otherwise, and they need different fixes.
+        return { ok: false, error: 'auth_failed', detail: `Token refresh at ${tokenUrl.out} failed: ${b?.error_description ?? b?.error ?? r.error ?? `HTTP ${r.status}`}. If this says invalid_grant the refresh token was revoked or expired and must be re-authorised.` };
       }
       headers.Authorization = `Bearer ${b.access_token}`;
       return { ok: true, headers };
