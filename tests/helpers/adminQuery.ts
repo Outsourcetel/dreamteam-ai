@@ -53,14 +53,31 @@ export async function runQuery<T = Record<string, unknown>>(sql: string): Promis
     throw new Error('runQuery accepts a single statement');
   }
 
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${readAccessToken()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: trimmed }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Management API ${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text) as T[];
+  // Retry ONLY transient transport failures — rate limits and 5xx. The suite
+  // fans several files out in parallel against one Management API endpoint, and
+  // an occasional 429 was failing real assertions for no real reason. A test
+  // that goes red at random is a test people learn to ignore, which is worse
+  // than not having it.
+  //
+  // Deliberately narrow: a 4xx that is not 429 is a genuine bad query and must
+  // fail immediately and loudly. Never retry on a parsed result — only here,
+  // before any row is read, so a retry can never paper over a real disagreement
+  // between the database and an assertion.
+  const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+  let lastErr = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 250 * attempt));
+    const res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${readAccessToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: trimmed }),
+    });
+    const text = await res.text();
+    if (res.ok) return JSON.parse(text) as T[];
+    lastErr = `Management API ${res.status}: ${text.slice(0, 300)}`;
+    if (!TRANSIENT.has(res.status)) break;
+  }
+  throw new Error(lastErr);
 }
 
 /** Convenience for the very common "one row, one column" assertion. */

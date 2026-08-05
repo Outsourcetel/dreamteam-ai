@@ -221,16 +221,23 @@ if (!adminTokenAvailable()) {
     it('every public-speech action is gated, and drafting is not', async () => {
       // The rule, checked against the shipped rows rather than the migration
       // that wrote them: LISTEN ALONE, NEVER SPEAK IN PUBLIC ALONE.
+      // Deliberately NOT filtered to active. An action that is merely absent
+      // from the active set could equally have been DELETED, and "the dangerous
+      // thing is gone" and "the dangerous thing is ungoverned" look identical
+      // from a filtered query. Every key must still exist, and be either gated
+      // or explicitly switched off.
       const rows = await runQuery(
-        `select action_key, (risk->>'destructive')::boolean as destructive
+        `select action_key, status, (risk->>'destructive')::boolean as destructive
            from action_definitions
-          where scope = 'platform' and category = 'social' and status = 'active'`,
+          where scope = 'platform' and category = 'social'`,
       );
-      const by = Object.fromEntries(rows.map((r) => [r.action_key, r.destructive]));
+      const by = Object.fromEntries(rows.map((r) => [r.action_key, r]));
       for (const k of ['publish_post', 'schedule_post', 'reply_to_comment', 'hide_comment', 'delete_post', 'boost_post']) {
-        expect(by[k], `${k} speaks in public but is not gated`).toBe(true);
+        expect(by[k], `${k} has vanished from the registry entirely`).toBeTruthy();
+        if (by[k].status !== 'active') continue; // disabled is safe; write-bindings.test asserts it says why
+        expect(by[k].destructive, `${k} speaks in public but is not gated`).toBe(true);
       }
-      expect(by.draft_post, 'drafting is gated, so the employee can do nothing alone').toBe(false);
+      expect(by.draft_post?.destructive, 'drafting is gated, so the employee can do nothing alone').toBe(false);
     });
   });
 }

@@ -13,21 +13,35 @@ Where a form asks a technical question, the answer is pre-drafted — copy it.
 
 Being straight about this changes what you should apply for, so it goes at the top.
 
-| | Built and path-verified | Governed but **NOT executable** |
-|---|---|---|
-| **Google Ads** | campaigns, keywords, search terms, spend — all reads | pause, resume, set budget, edit copy, negative keyword, ad draft |
-| **Search Console** | queries, page performance — all reads | submit sitemap, request re-crawl |
-| **Meta** | posts, engagement, comments — all reads | publish, schedule, reply, hide, delete, boost |
+*(Updated after migration 580 wired the writes.)*
 
-The right-hand column exists as **governed action definitions** — each one classified,
-gated, guardrail-scanned and routed to a human for approval. That machinery is real and
-enforced. What is missing is the last inch: the HTTP binding that would actually call the
-vendor. Approving a `publish_post` today would find nothing to execute.
+| | Reads | Writes that work | Deliberately switched off |
+|---|---|---|---|
+| **Google Ads** | campaigns, keywords, search terms, spend | pause, resume, add negative keyword | set budget, edit ad copy, draft ad |
+| **Search Console** | queries, page performance | submit sitemap | request re-crawl |
+| **Meta** | posts, engagement, comments | publish, schedule, draft, reply, hide, delete | boost |
+
+Ten writes are wired end to end: classified, gated, guardrail-scanned, routed to a human,
+and — now — actually sent to the vendor when that human approves. The exact HTTP request
+each one produces is pinned by a test.
+
+Five are **disabled with the reason recorded**, rather than left active and broken:
+
+- **request re-crawl** — Google restricts its Indexing API *by policy* to job-posting and
+  live-event pages. A pest-control site is neither. There is no compliant way to ask Google
+  to crawl an ordinary page; submitting a sitemap is the supported route, and it works.
+- **set campaign budget** — Google Ads takes micros, our approval gates take cents. Money
+  is the last place to be clever, so this waits for a proper unit conversion.
+- **edit ad copy / draft ad** — responsive search ads need *lists* of headlines; the
+  template engine substitutes text and cannot build a list.
+- **boost post** — four dependent calls to Meta's Marketing API, and it needs
+  `ads_management`, which we are not requesting.
 
 **Why this matters for the applications:** Meta rejects submissions where the demo video
-does not exactly match the permissions requested. We cannot record a video of publishing
-a post, because publishing is not wired. So **do not request write permissions in the
-first review.** Ask only for what we can show. Details in §3.
+does not exactly match the permissions requested. Publishing is now demonstrable — but only
+once a Page is connected, which §3.1 gets you without any review. So the sequence is:
+connect a test Page under Standard Access → record the real publish-and-approve flow →
+submit for write permissions with a video that actually shows them.
 
 ---
 
@@ -145,22 +159,23 @@ But it means the first real social connection is a day's work, not weeks.
 
 ### 3.3 Which permissions, and when
 
-**Request now (first review) — these are the ones we can demonstrate:**
+All of these are now **wired**, so all of them can be demonstrated — but only after a Page
+is connected. Do §3.1 first, then record one video covering the lot.
 
 | Permission | What it does | Which of our features needs it |
 |---|---|---|
 | `pages_show_list` | Lists which Pages a person manages | Picking the Page during connector setup |
 | `pages_read_engagement` | Reads Page posts, photos, videos and their engagement | `search_posts`, `get_post`, `search_comments` |
-
-**Request later (second review, after the write bindings exist):**
-
-| Permission | What it does | Which of our actions needs it |
-|---|---|---|
-| `pages_manage_posts` | Create, edit and delete Page posts | `publish_post`, `schedule_post`, `delete_post` |
+| `pages_manage_posts` | Create, edit and delete Page posts | `publish_post`, `schedule_post`, `draft_post`, `delete_post` |
 | `pages_manage_engagement` | Create, edit and delete comments; like posts | `reply_to_comment`, `hide_comment` |
-| `instagram_business_basic` | Read an Instagram business profile | Instagram reads |
-| `instagram_content_publish` | Publish photo and video posts to Instagram | Instagram publishing |
-| `ads_management` | Create and manage ads | `boost_post` |
+
+**Still do not request these** — nothing behind them works yet, and asking for a permission
+you cannot show is a documented rejection:
+
+| Permission | Why not yet |
+|---|---|
+| `instagram_business_basic` / `instagram_content_publish` | Instagram publishing is a two-step container-then-publish flow; not built. Our post actions are Facebook Page only, and say so. |
+| `ads_management` | `boost_post` is disabled — four dependent Marketing API calls one binding cannot express. |
 
 **Every one of these requires App Review and Business Verification for Advanced Access** —
 including the read permissions. There is no permission here that Meta grants freely at
@@ -200,16 +215,20 @@ For our first submission, record exactly this:
 5. Complete the connection and show the test call succeeding.
 6. Open the Social Media Manager employee and show it **reading recent posts, their
    engagement counts, and the comments underneath**. *(This is `pages_read_engagement`.)*
-7. Show what the employee produces: a **draft** reply or post, sitting in an approval
-   queue, clearly not published.
+7. Show the employee **preparing a post**, and show it stopping — sitting in the approval
+   queue, clearly not published, with the exact text a person is about to release.
+8. Approve it. Show the post appearing on the Page. *(This is `pages_manage_posts`.)*
+9. Do the same for a reply: employee drafts a reply to a real comment, a person approves,
+   the reply appears. *(This is `pages_manage_engagement`.)*
 
-Step 7 is worth dwelling on. Our whole governance story — nothing reaches the public
-without a person — is the reassuring part of this submission, and it is genuinely true.
-Show it.
+Steps 7 and 8 are the submission. Reviewers see a great many apps that post on a user's
+behalf; very few show the post being **held for a human first**. That is our actual
+architecture, it is enforced in the database rather than by convention, and it is the most
+reassuring thing we can put in front of a reviewer. Do not rush past it — let the approval
+queue sit on screen long enough to read.
 
-**Do not** show anything publishing, replying or boosting. We are not requesting those
-permissions in this round and demonstrating unrequested capability invites questions we
-cannot answer yet.
+**Do not** show boosting or anything Instagram. Those permissions are not being requested
+and demonstrating unrequested capability invites questions we cannot answer yet.
 
 ### 3.6 The use-case text — copy this
 
