@@ -817,7 +817,16 @@ serve(async (req) => {
         // it no longer clears the gate, skip the cache and take the full generate+gate path.
         const cachedBlocked = await screenAnswer(admin, tenantId, hit.answer, subjectDeId,
           { question, actor: persona.name, conversationId: convId, replay: replayMode, onClear: noteClear });
-        if (!cachedBlocked && Number(hit.confidence) >= confidenceFloor && !escalationRuleHit) {
+        // A cached row can predate the guard that would have stopped it being
+        // written — one such row (a bare "...", confidence 98) was being served
+        // instantly to every asker and failed the same exam question on every
+        // run. Re-screening checks guardrails and the floor; neither asks
+        // whether there is an answer at all. Refuse it and regenerate.
+        const cachedHasContent = /[a-z0-9]/i.test(String(hit.answer ?? ''));
+        if (!cachedHasContent) {
+          console.warn(`[de-answer] refusing a degenerate cached answer (${String(hit.answer ?? '').length} chars) — regenerating`);
+        }
+        if (cachedHasContent && !cachedBlocked && Number(hit.confidence) >= confidenceFloor && !escalationRuleHit) {
         await admin.rpc('increment_metric_tenant', { p_tenant_id: tenantId, p_metric: 'cache_hits', p_delta: 1 });
         // hits++ (best-effort read-modify-write; exactness not required)
         const { data: row } = await admin.from('answer_cache').select('hits').eq('id', hit.id).single();
@@ -1364,7 +1373,13 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     const cacheQualityBar = confidenceFloor <= 100
       ? Math.max(ESCALATION_THRESHOLD, confidenceFloor)
       : ESCALATION_THRESHOLD;
-    const cacheworthy = !parsed.needs_escalation && !escalationRuleHit
+    // …and it has to actually BE an answer. Every disqualifier above is about
+    // judgement or confidence; none of them asks whether there is any content.
+    // A reply of "..." carrying a self-reported 98 sailed past all of them and
+    // was cached, which is how ONE bad generation became a permanent wrong
+    // answer served instantly to every future asker.
+    const hasContent = /[a-z0-9]/i.test(String(parsed.answer ?? '')) && String(parsed.answer).trim().length >= 20;
+    const cacheworthy = hasContent && !parsed.needs_escalation && !escalationRuleHit
       && !fabricationRisk && !genuinelyUnsure
       && parsed.confidence >= cacheQualityBar;
     if (qEmbedding && cacheworthy && !cacheAlreadyCovered && !scopedContentUsed && !replayMode && !isFollowUp && !adjudicatedClear) {
