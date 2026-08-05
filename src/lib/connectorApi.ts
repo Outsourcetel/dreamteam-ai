@@ -1234,11 +1234,24 @@ export async function hubTest(connectorId: string): Promise<{ ok: boolean; error
 
 /** MCP: read the server's tool list and register each tool as a governed
  *  (approval-gated) action. Safe to re-run — tools are upserted. */
-export async function hubSyncMcpTools(connectorId: string): Promise<{
-  ok: boolean; tool_count?: number; error?: string; detail?: string;
-  registered?: Array<{ tool: string; action_key: string; destructive: boolean; gate: string }>;
+export async function hubSyncMcpTools(connectorId: string, only?: string[]): Promise<{
+  ok: boolean; tool_count?: number; skipped?: number; error?: string; detail?: string;
+  registered?: Array<{ tool: string; action_key: string; destructive: boolean; sensitive: boolean; gate: string }>;
 }> {
-  return invokeHub({ action: 'sync_mcp_tools', connector_id: connectorId });
+  return invokeHub({ action: 'sync_mcp_tools', connector_id: connectorId, ...(only ? { only } : {}) });
+}
+
+/** What the server publishes and how each tool WOULD be gated — writes nothing.
+ *  A real server can publish ~90 tools; registering blind buries the ones that
+ *  matter, so the UI looks first and the human picks. */
+export async function hubPreviewMcpTools(connectorId: string): Promise<{
+  ok: boolean; tool_count?: number; error?: string; detail?: string;
+  tools?: Array<{
+    tool: string; label: string; description: string; read_only: boolean;
+    destructive: boolean; sensitive: boolean; param_count: number; gate: string;
+  }>;
+}> {
+  return invokeHub({ action: 'sync_mcp_tools', connector_id: connectorId, preview: true });
 }
 
 /** Read-through search: fetched live, returned, nothing persisted but audit. */

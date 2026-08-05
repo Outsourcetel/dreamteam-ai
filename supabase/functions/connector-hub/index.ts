@@ -573,10 +573,43 @@ async function mcpClientCall(c: Ctx, body: Record<string, unknown>): Promise<Rec
  * side effect inside someone's business. It can be relaxed per-tool later by
  * a human editing the registered action.
  */
-function mcpRisk(t: McpToolDef): { destructive: boolean; idempotent: boolean } {
+/**
+ * A read that is not harmless.
+ *
+ * Found by connecting a real server (Resend, 91 tools) and reading what the
+ * gate would actually do: `list-api-keys` and `list-oauth-grants` are
+ * annotated readOnlyHint:true — CORRECTLY, they change nothing — so they came
+ * back auto-runnable under trust. A digital employee could enumerate a
+ * workspace's credentials and OAuth grants with no approval and no human ever
+ * seeing it.
+ *
+ * readOnlyHint answers "does this mutate?". It cannot answer "would you want
+ * to know?". Deriving risk from it alone has this blind spot by construction,
+ * so the name is screened too. Matching is on the TOOL NAME only — deliberately
+ * predictable, rather than scanning descriptions and guessing. It will miss a
+ * sensitive read that is innocuously named; that residual is stated rather
+ * than papered over.
+ */
+const SENSITIVE_READ = /(api[-_]?key|secret|credential|password|passwd|token|oauth|grant|private[-_]?key)/i;
+
+function mcpRisk(t: McpToolDef): { destructive: boolean; idempotent: boolean; sensitive?: boolean; sensitive_reason?: string } {
   const a = (t.annotations ?? {}) as Record<string, unknown>;
-  return { destructive: a.readOnlyHint !== true, idempotent: a.idempotentHint === true };
+  const destructive = a.readOnlyHint !== true;
+  const sensitive = !destructive && SENSITIVE_READ.test(String(t.name ?? ''));
+  return {
+    destructive,
+    idempotent: a.idempotentHint === true,
+    // Kept SEPARATE from `destructive` on purpose: calling a credential read
+    // "destructive" would be a lie in every ledger row and on every screen.
+    // It is the gate call that treats sensitive like destructive, not the label.
+    ...(sensitive ? { sensitive: true, sensitive_reason: 'reads credential or authorization material' } : {}),
+  };
 }
+
+/** What the gate must floor to a human: anything that acts, plus anything that
+ *  reads material you would not hand out unsupervised. */
+const mustAskAHuman = (risk: { destructive?: boolean; sensitive?: boolean } | null | undefined): boolean =>
+  risk?.destructive === true || risk?.sensitive === true;
 
 /** JSON-Schema inputSchema → our param_schema shape. */
 function mcpParamSchema(t: McpToolDef): Array<Record<string, unknown>> {
@@ -5929,9 +5962,45 @@ serve(async (req) => {
         return json({ ok: false, error: String(hs?.error ?? 'handshake_failed'), detail: String(hs?.detail ?? ''), health }, 200);
       }
       const tools = (hs.tools ?? []) as McpToolDef[];
-      const registered: Array<{ tool: string; action_key: string; destructive: boolean; gate: string }> = [];
+
+      // PREVIEW: what would be registered, and how each tool would be gated —
+      // without writing anything. A real server can be enormous (Resend
+      // publishes 91 tools, most of them irrelevant to any given business), and
+      // registering all of it buries the actions that matter in a catalogue
+      // nobody can read. Look first, then choose.
+      if (body.preview === true) {
+        return json({
+          ok: true, preview: true, tool_count: tools.length,
+          tools: tools.map((t) => {
+            const risk = mcpRisk(t);
+            const a = (t.annotations ?? {}) as Record<string, unknown>;
+            return {
+              tool: String(t.name ?? ''),
+              label: String(a.title ?? t.name ?? ''),
+              description: String(t.description ?? '').slice(0, 300),
+              read_only: a.readOnlyHint === true,
+              destructive: risk.destructive,
+              sensitive: risk.sensitive === true,
+              param_count: mcpParamSchema(t).length,
+              gate: mustAskAHuman(risk)
+                ? (risk.sensitive ? 'human approval (sensitive read)'
+                  : a.destructiveHint === true ? 'human approval (declared destructive)'
+                  : 'human approval (fail-safe — not declared read-only)')
+                : 'trust dial (declared read-only)',
+            };
+          }),
+        });
+      }
+
+      // Optional subset. Absent = register everything, exactly as before.
+      const onlyRaw = Array.isArray(body.only) ? (body.only as unknown[]).map((x) => String(x)) : null;
+      const only = onlyRaw && onlyRaw.length > 0 ? new Set(onlyRaw) : null;
+      const selected = only ? tools.filter((t) => only.has(String(t.name ?? ''))) : tools;
+      const skipped = tools.length - selected.length;
+
+      const registered: Array<{ tool: string; action_key: string; destructive: boolean; sensitive: boolean; gate: string }> = [];
       const errors: string[] = [];
-      for (const t of tools) {
+      for (const t of selected) {
         const name = String(t.name ?? '').trim();
         if (!name) continue;
         const risk = mcpRisk(t);
@@ -5952,19 +6021,26 @@ serve(async (req) => {
         }, { onConflict: 'scope,tenant_id,category,action_key' });
         if (upErr) { errors.push(`${name}: ${upErr.message}`.slice(0, 160)); continue; }
         registered.push({
-          tool: name, action_key: `mcp_${name}`, destructive: risk.destructive,
-          gate: risk.destructive
-            ? (annotations.destructiveHint === true ? 'human approval (declared destructive)' : 'human approval (fail-safe — not declared read-only)')
+          tool: name, action_key: `mcp_${name}`,
+          destructive: risk.destructive, sensitive: risk.sensitive === true,
+          gate: mustAskAHuman(risk)
+            ? (risk.sensitive ? 'human approval (sensitive read — credential or authorization material)'
+              : annotations.destructiveHint === true ? 'human approval (declared destructive)'
+              : 'human approval (fail-safe — not declared read-only)')
             : 'trust dial (declared read-only)',
         });
       }
       const ms = Date.now() - started;
       const health = await recordHealth(errors.length === 0, errors[0] ?? null);
       await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
+      const needHuman = registered.filter((r) => r.destructive || r.sensitive).length;
       await audit('connector_sync',
-        `MCP tools registered as governed actions — ${registered.length}/${tools.length} from ${connector.display_name || connector.base_url} (${registered.filter((r) => r.destructive).length} require human approval)`,
-        { hub_action: 'sync_mcp_tools', registered: registered.length, tool_count: tools.length, errors: errors.slice(0, 5), latency_ms: ms, health });
-      return json({ ok: errors.length === 0, tool_count: tools.length, registered, errors: errors.slice(0, 5), latency_ms: ms, health });
+        `MCP tools registered as governed actions — ${registered.length}/${tools.length} from ${connector.display_name || connector.base_url} (${needHuman} require human approval${skipped > 0 ? `; ${skipped} not selected` : ''})`,
+        { hub_action: 'sync_mcp_tools', registered: registered.length, tool_count: tools.length,
+          skipped, selected: only ? [...only].slice(0, 50) : null,
+          sensitive: registered.filter((r) => r.sensitive).map((r) => r.tool).slice(0, 20),
+          errors: errors.slice(0, 5), latency_ms: ms, health });
+      return json({ ok: errors.length === 0, tool_count: tools.length, skipped, registered, errors: errors.slice(0, 5), latency_ms: ms, health });
     }
 
     // ════════ sync_financials — ERP AR ingest into the platform's tables ════
@@ -6378,7 +6454,10 @@ serve(async (req) => {
         // Passing null here is what silently disabled all three (audit critical).
         // amountCents / hasAmountParam are resolved once above (also reused post-exec).
         const { data: decisionRaw, error: decideErr } = await admin.rpc('decide_action_execution', {
-          p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: def.risk.destructive,
+          // mustAskAHuman, not def.risk.destructive: a credential-reading tool
+          // is not destructive and must not be labelled so anywhere, but it
+          // must still stop at a human. The label stays true; the floor widens.
+          p_tenant_id: tenantId, p_action_label: def.label, p_category: category, p_destructive: mustAskAHuman(def.risk),
           p_de_id: subjectKind === 'de' ? subjectId : null,
           p_amount_cents: amountCents, p_action_type: def.action_key,
         });

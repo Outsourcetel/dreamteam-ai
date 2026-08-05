@@ -15,7 +15,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { raise, requireTenantId } from './liveShared';
-import { listConnectors, hubSyncMcpTools } from './connectorApi';
+import { listConnectors, hubSyncMcpTools, hubPreviewMcpTools } from './connectorApi';
 import type { Connector } from './connectorApi';
 
 /** A tool the server exposes, as it exists in the governance model. */
@@ -28,11 +28,27 @@ export interface McpTool {
   tool_name: string;
   destructive: boolean;
   idempotent: boolean;
+  /** A read that is not harmless — credential or authorization material.
+   *  Not destructive, but still floored to a human (found on Resend's
+   *  list-api-keys / list-oauth-grants, both correctly annotated read-only). */
+  sensitive: boolean;
   status: string;
   /** What the gate will do: a read-only tool may auto-execute under trust;
-   *  anything else is floored to a human. Mirrors decide_action_execution. */
+   *  anything that acts — or reads credentials — is floored to a human. */
   gate: 'always human-approved' | 'may auto-run under trust';
   param_count: number;
+}
+
+/** One tool as the server publishes it, before anything is registered. */
+export interface McpToolPreview {
+  tool: string;
+  label: string;
+  description: string;
+  read_only: boolean;
+  destructive: boolean;
+  sensitive: boolean;
+  param_count: number;
+  gate: string;
 }
 
 export interface McpServer {
@@ -78,6 +94,7 @@ export async function listMcpServers(): Promise<McpServer[]> {
       .filter((r) => String(r.execution?.connector_id ?? '') === c.id)
       .map((r) => {
         const destructive = r.risk?.destructive === true;
+        const sensitive = r.risk?.sensitive === true;
         return {
           id: r.id,
           action_key: r.action_key,
@@ -85,12 +102,14 @@ export async function listMcpServers(): Promise<McpServer[]> {
           description: r.description || '',
           tool_name: String(r.execution?.mcp_tool ?? ''),
           destructive,
+          sensitive,
           idempotent: r.risk?.idempotent === true,
           status: r.status,
-          // Not a guess: connector-hub floors anything destructive to a human,
-          // and MCP risk comes from the tool's own annotations with absent
-          // annotations treated as unsafe.
-          gate: (destructive ? 'always human-approved' : 'may auto-run under trust') as McpTool['gate'],
+          // Not a guess: connector-hub floors anything destructive OR sensitive
+          // to a human. MCP risk comes from the tool's own annotations, absent
+          // annotations count as unsafe, and a credential-reading tool is
+          // floored even though it mutates nothing.
+          gate: (destructive || sensitive ? 'always human-approved' : 'may auto-run under trust') as McpTool['gate'],
           param_count: Array.isArray(r.param_schema) ? r.param_schema.length : 0,
         };
       })
@@ -105,10 +124,16 @@ export async function listMcpServers(): Promise<McpServer[]> {
   });
 }
 
-/** Re-read a server's tool list and register each tool as a governed action.
- *  Safe to re-run; tools are upserted. */
-export async function syncMcpServerTools(connectorId: string) {
-  return hubSyncMcpTools(connectorId);
+/** What the server publishes and how each tool WOULD be gated. Writes nothing. */
+export async function previewMcpTools(connectorId: string) {
+  return hubPreviewMcpTools(connectorId);
+}
+
+/** Register tools as governed actions. Pass `only` to register a subset —
+ *  omitting it registers everything, which on a 91-tool server buries the
+ *  handful you actually wanted. Safe to re-run; tools are upserted. */
+export async function syncMcpServerTools(connectorId: string, only?: string[]) {
+  return hubSyncMcpTools(connectorId, only);
 }
 
 // ── Allowlist ────────────────────────────────────────────────

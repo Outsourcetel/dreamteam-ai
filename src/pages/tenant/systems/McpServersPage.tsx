@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../../../types';
 import {
-  listMcpServers, syncMcpServerTools, listMcpAllowedHosts, addMcpAllowedHost,
-  removeMcpAllowedHost, normalizeHost,
+  listMcpServers, syncMcpServerTools, previewMcpTools, listMcpAllowedHosts,
+  addMcpAllowedHost, removeMcpAllowedHost, normalizeHost,
 } from '../../../lib/mcpApi';
-import type { McpServer, McpAllowedHost, McpTool } from '../../../lib/mcpApi';
+import type { McpServer, McpAllowedHost, McpTool, McpToolPreview } from '../../../lib/mcpApi';
 import { connectProvider, deleteConnector, PROVIDERS } from '../../../lib/connectorApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../../components/LiveDataStates';
 import { Button, Chip, EmptyState, PanelCard, StatTile, Banner, Field, INPUT_CLS, TableScroll, TH, TD } from '../../../design/primitives';
@@ -24,6 +24,13 @@ import { Button, Chip, EmptyState, PanelCard, StatTile, Banner, Field, INPUT_CLS
 // to a human, and an absent annotation is treated as unsafe — so a tool
 // cannot quietly act on its own. The allowlist is the same table the
 // injection firewall reads before every outbound call.
+//
+// SENSITIVE READS are shown separately because connecting a real server taught
+// us that readOnlyHint alone is not enough: Resend's list-api-keys and
+// list-oauth-grants are annotated read-only and are — they mutate nothing —
+// yet a trusted employee could have enumerated a workspace's credentials with
+// no approval and nobody watching. Those are floored to a human without being
+// mislabelled destructive, and they are NOT pre-selected when registering.
 // ============================================================
 
 function ToolTable({ tools }: { tools: McpTool[] }) {
@@ -50,9 +57,11 @@ function ToolTable({ tools }: { tools: McpTool[] }) {
               <td className={`${TD} text-dt-support max-w-md`}>{t.description || '—'}</td>
               <td className={TD}>{t.param_count}</td>
               <td className={TD}>
-                {t.destructive
-                  ? <Chip tone="warn">ALWAYS HUMAN-APPROVED</Chip>
-                  : <Chip tone="ok">MAY AUTO-RUN UNDER TRUST</Chip>}
+                {t.sensitive
+                  ? <Chip tone="danger">SENSITIVE READ — HUMAN-APPROVED</Chip>
+                  : t.destructive
+                    ? <Chip tone="warn">ALWAYS HUMAN-APPROVED</Chip>
+                    : <Chip tone="ok">MAY AUTO-RUN UNDER TRUST</Chip>}
               </td>
             </tr>
           ))}
@@ -62,20 +71,97 @@ function ToolTable({ tools }: { tools: McpTool[] }) {
   );
 }
 
+/** Look before you register. A real server can publish ~90 tools, most of them
+ *  irrelevant to any given business; registering blind buries the handful that
+ *  matter under a catalogue nobody reads. Sensitive reads are pre-ticked OFF —
+ *  the safe default is not to hand an employee a credential-listing tool by
+ *  accident. */
+function ToolPicker({ tools, onCancel, onRegister, busy }: {
+  tools: McpToolPreview[];
+  onCancel: () => void;
+  onRegister: (names: string[]) => void;
+  busy: boolean;
+}) {
+  const safeDefault = (t: McpToolPreview) => t.read_only && !t.sensitive;
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(tools.filter(safeDefault).map((t) => t.tool)));
+  const toggle = (name: string) => setPicked((p) => {
+    const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n;
+  });
+  const setAll = (names: string[]) => setPicked(new Set(names));
+
+  return (
+    <div className="mt-3 pt-3 border-t border-dt-border">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p className="text-xs text-dt-support">
+          {tools.length} tool{tools.length === 1 ? '' : 's'} published · {picked.size} selected.
+          Read-only tools are pre-selected; anything that acts, or reads credentials, is not.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button kind="secondary" size="sm" onClick={() => setAll(tools.filter(safeDefault).map((t) => t.tool))}>Safe defaults</Button>
+          <Button kind="secondary" size="sm" onClick={() => setAll(tools.map((t) => t.tool))}>Select all</Button>
+          <Button kind="secondary" size="sm" onClick={() => setAll([])}>None</Button>
+        </div>
+      </div>
+
+      <div className="max-h-80 overflow-y-auto rounded-lg border border-dt-border divide-y divide-dt-border">
+        {tools.map((t) => (
+          <label key={t.tool} className="flex items-start gap-3 px-3 py-2 cursor-pointer hover:bg-dt-inset">
+            <input type="checkbox" className="mt-1" checked={picked.has(t.tool)} onChange={() => toggle(t.tool)} />
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-dt-body">{t.label || t.tool}</span>
+                {t.sensitive
+                  ? <Chip tone="danger">SENSITIVE READ</Chip>
+                  : t.destructive ? <Chip tone="warn">NEEDS A HUMAN</Chip> : <Chip tone="ok">READ-ONLY</Chip>}
+              </span>
+              {t.description && <span className="block text-[11px] text-dt-muted truncate">{t.description}</span>}
+              <span className="block text-[10px] text-dt-faint font-mono">{t.tool} · {t.param_count} input{t.param_count === 1 ? '' : 's'}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <Button kind="primary" size="sm" disabled={busy || picked.size === 0} onClick={() => onRegister([...picked])}>
+          {busy ? 'Registering…' : `Register ${picked.size} tool${picked.size === 1 ? '' : 's'}`}
+        </Button>
+        <Button kind="secondary" size="sm" disabled={busy} onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
 function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<McpToolPreview[] | null>(null);
 
-  const sync = async () => {
+  const readTools = async () => {
     setBusy(true); setMsg(null); setErr(null);
     try {
-      const r = await syncMcpServerTools(s.connector.id);
-      if (!r.ok) setErr(r.error || r.detail || 'The server did not answer.');
-      else { setMsg(`${r.tool_count ?? r.registered?.length ?? 0} tool(s) registered.`); setOpen(true); onChanged(); }
+      const r = await previewMcpTools(s.connector.id);
+      if (!r.ok || !r.tools) setErr(r.error || r.detail || 'The server did not answer.');
+      else { setPreview(r.tools); setOpen(false); }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not reach the server.');
+    } finally { setBusy(false); }
+  };
+
+  const register = async (names: string[]) => {
+    setBusy(true); setMsg(null); setErr(null);
+    try {
+      const r = await syncMcpServerTools(s.connector.id, names);
+      if (!r.ok) setErr(r.error || r.detail || 'Some tools could not be registered.');
+      else {
+        const n = r.registered?.length ?? 0;
+        const sens = r.registered?.filter((x) => x.sensitive).length ?? 0;
+        setMsg(`${n} tool${n === 1 ? '' : 's'} registered${sens > 0 ? ` — ${sens} sensitive read${sens === 1 ? '' : 's'} will always need a human` : ''}.`);
+        setPreview(null); setOpen(true); onChanged();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not register the tools.');
     } finally { setBusy(false); }
   };
 
@@ -88,6 +174,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
   };
 
   const destructive = s.tools.filter((t) => t.destructive).length;
+  const sensitive = s.tools.filter((t) => t.sensitive).length;
 
   return (
     <PanelCard
@@ -97,8 +184,8 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
         : <Chip tone={s.connector.status === 'connected' ? 'ok' : 'neutral'}>{String(s.connector.status).toUpperCase()}</Chip>}
       actions={
         <div className="flex items-center gap-2">
-          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void sync()}>
-            {busy ? 'Reading…' : s.tools.length ? 'Re-read tools' : 'Register tools'}
+          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void readTools()}>
+            {busy ? 'Reading…' : s.tools.length ? 'Re-read tools' : 'Read tools'}
           </Button>
           {s.tools.length > 0 && (
             <Button kind="secondary" size="sm" onClick={() => setOpen((v) => !v)}>
@@ -123,13 +210,18 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-dt-muted">
         <span>{s.tools.length} tool{s.tools.length === 1 ? '' : 's'} registered</span>
         {destructive > 0 && <span>· {destructive} always need a human</span>}
-        {s.tools.length === 0 && <span>· nothing registered yet — use “Register tools”</span>}
+        {sensitive > 0 && <span className="text-rose-300">· {sensitive} sensitive read{sensitive === 1 ? '' : 's'}</span>}
+        {s.tools.length === 0 && <span>· nothing registered yet — use “Read tools”</span>}
       </div>
 
       {msg && <p className="mt-2 text-xs text-emerald-300">{msg}</p>}
       {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
 
-      {open && s.tools.length > 0 && (
+      {preview && (
+        <ToolPicker tools={preview} busy={busy} onCancel={() => setPreview(null)} onRegister={(n) => void register(n)} />
+      )}
+
+      {open && !preview && s.tools.length > 0 && (
         <div className="mt-3 pt-3 border-t border-dt-border"><ToolTable tools={s.tools} /></div>
       )}
     </PanelCard>
