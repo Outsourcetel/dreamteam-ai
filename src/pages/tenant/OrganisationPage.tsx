@@ -78,13 +78,27 @@ const MATCH_TARGETS: { value: string; label: string }[] = [
 const targetLabel = (v: string | null) =>
   MATCH_TARGETS.find((t) => t.value === (v ?? ''))?.label ?? v;
 
+/** Visual weight by level, so the three tiers read as three tiers. The first
+ *  version indented by 24px per level and nothing else, which made one team
+ *  buried under eleven sibling departments effectively invisible — the founder
+ *  reported seeing "only departments" when all three levels were present. */
+const KIND_STYLE: Record<UnitKind, { text: string; icon: string }> = {
+  location:   { text: 'text-sm font-semibold text-dt-title', icon: '⌂' },
+  branch:     { text: 'text-sm font-semibold text-dt-title', icon: '⌂' },
+  department: { text: 'text-sm font-medium text-dt-body',    icon: '▦' },
+  team:       { text: 'text-[13px] text-dt-body',            icon: '◦' },
+};
+
 function UnitRow({
-  unit, people, onChanged, onAddChild,
+  unit, people, onChanged, onAddChild, hasChildren, isOpen, onToggle,
 }: {
   unit: OrgUnit;
   people: AssignablePerson[];
   onChanged: () => void;
   onAddChild: (u: OrgUnit) => void;
+  hasChildren: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -99,15 +113,25 @@ function UnitRow({
   const available = people.filter((p) => !memberIds.has(p.user_id));
   const canHaveChildren = ALLOWED_CHILDREN[unit.kind].length > 0;
 
+  const style = KIND_STYLE[unit.kind];
+
   return (
-    <div
-      className="border-t border-dt-border py-3"
-      style={{ paddingLeft: `${unit.depth * 24}px` }}
-    >
+    <div className="py-2">
       <div className="flex items-start gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-dt-body">{unit.name}</span>
+            {/* A disclosure control only where there is something to disclose;
+                a chevron on a leaf teaches people it means nothing. */}
+            {hasChildren ? (
+              <button
+                onClick={onToggle}
+                className="text-dt-muted hover:text-dt-body w-4 text-xs shrink-0"
+                title={isOpen ? 'Collapse' : 'Expand'}
+              >{isOpen ? '▾' : '▸'}</button>
+            ) : (
+              <span className="w-4 shrink-0 text-dt-faint text-xs text-center">{style.icon}</span>
+            )}
+            <span className={style.text}>{unit.name}</span>
             <Chip tone={unit.kind === 'team' ? 'accent' : 'neutral'}>{KIND_LABEL[unit.kind]}</Chip>
             {!unit.is_active && <Chip tone="warn">INACTIVE</Chip>}
             {unit.member_count === 0 && (
@@ -190,6 +214,54 @@ function UnitRow({
   );
 }
 
+/** Renders one unit and everything under it. The nesting is drawn with a real
+ *  indent guide rather than left-padding alone, because padding by itself does
+ *  not read as containment — which is exactly how a three-level tree looked
+ *  like a flat list of departments. */
+function UnitBranch({
+  unit, childrenOf, people, onChanged, onAddChild, collapsed, onToggle,
+}: {
+  unit: OrgUnit;
+  childrenOf: Map<string, OrgUnit[]>;
+  people: AssignablePerson[];
+  onChanged: () => void;
+  onAddChild: (u: OrgUnit) => void;
+  collapsed: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const kids = childrenOf.get(unit.id) ?? [];
+  const isOpen = !collapsed.has(unit.id);
+  return (
+    <div>
+      <UnitRow
+        unit={unit}
+        people={people}
+        onChanged={onChanged}
+        onAddChild={onAddChild}
+        hasChildren={kids.length > 0}
+        isOpen={isOpen}
+        onToggle={() => onToggle(unit.id)}
+      />
+      {isOpen && kids.length > 0 && (
+        <div className="ml-2 pl-4 border-l border-dt-border">
+          {kids.map((k) => (
+            <UnitBranch
+              key={k.id}
+              unit={k}
+              childrenOf={childrenOf}
+              people={people}
+              onChanged={onChanged}
+              onAddChild={onAddChild}
+              collapsed={collapsed}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OrganisationPage() {
   const [tab, setTab] = useState<TabId>('structure');
   const [tree, setTree] = useState<OrgUnit[]>([]);
@@ -202,6 +274,7 @@ export default function OrganisationPage() {
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [newUnitParent, setNewUnitParent] = useState<OrgUnit | null | 'root'>(null);
   const [newUnitKind, setNewUnitKind] = useState<UnitKind>('department');
   const [newUnitName, setNewUnitName] = useState('');
@@ -225,6 +298,13 @@ export default function OrganisationPage() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const unitById = new Map(tree.map((u) => [u.id, u]));
+  const childrenOf = new Map<string, OrgUnit[]>();
+  for (const u of tree) {
+    if (!u.parent_id) continue;
+    const list = childrenOf.get(u.parent_id) ?? [];
+    list.push(u);
+    childrenOf.set(u.parent_id, list);
+  }
   const unrouted = load.find((l) => l.user_id === null)?.pending ?? 0;
   const emptyUnits = tree.filter((u) => u.is_active && u.member_count === 0).length;
   const totalPending = load.reduce((n, l) => n + l.pending, 0);
@@ -322,8 +402,21 @@ export default function OrganisationPage() {
             </EmptyState>
           ) : (
             <div>
-              {tree.map((u) => (
-                <UnitRow key={u.id} unit={u} people={people} onChanged={refresh} onAddChild={openNewUnit} />
+              {tree.filter((u) => u.parent_id === null).map((u) => (
+                <UnitBranch
+                  key={u.id}
+                  unit={u}
+                  childrenOf={childrenOf}
+                  people={people}
+                  onChanged={refresh}
+                  onAddChild={openNewUnit}
+                  collapsed={collapsed}
+                  onToggle={(id) => setCollapsed((s) => {
+                    const next = new Set(s);
+                    if (next.has(id)) next.delete(id); else next.add(id);
+                    return next;
+                  })}
+                />
               ))}
             </div>
           )}

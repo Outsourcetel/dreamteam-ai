@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import EmployeeProfileDrawer from '../../components/EmployeeProfileDrawer';
 import { Modal } from '../../design/primitives';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
@@ -148,6 +149,10 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
   const [statusFilter, setStatusFilter] = useState<'all' | TeamMember['status']>('all');
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  // The full employee record (mig 594). Until now a "user" here was a login,
+  // a display name and a role — no job title, no start date, no manager, no
+  // phone, and an email column reading a field `profiles` never had.
+  const [openRecordFor, setOpenRecordFor] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [resetMsg, setResetMsg] = useState('');
@@ -277,7 +282,11 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
                     {m.avatar}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{m.fullName}</div>
+                    <button
+                      onClick={() => setOpenRecordFor(m.userId)}
+                      className="text-sm font-medium text-white truncate hover:text-dt-accent-text text-left"
+                      title="Open employee record"
+                    >{m.fullName}</button>
                     <div className="text-xs text-dt-muted truncate">{m.email}</div>
                     {m.invitedBy && m.status === 'pending' && (
                       <div className="text-xs text-dt-faint">Invited by {m.invitedBy}</div>
@@ -517,6 +526,10 @@ const UserManagementPage = ({ user, tenant }: { user?: AuthUser; tenant?: Tenant
           onClose={() => setShowInvite(false)}
           onInvite={async (data) => { await invite({ ...data, tenantId: tenant?.id }); }}
         />
+      )}
+
+      {openRecordFor && (
+        <EmployeeProfileDrawer userId={openRecordFor} onClose={() => setOpenRecordFor(null)} />
       )}
     </div>
   );
