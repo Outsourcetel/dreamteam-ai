@@ -110,10 +110,8 @@ export const CATEGORY_OPS: Record<SystemCategory, CategoryOp[]> = {
   ],
   social: [
     { op: 'list_posts', object: 'post', kind: 'list', label: 'Read the most recent posts' },
-    { op: 'search_posts', object: 'post', kind: 'search', label: 'Find published posts' },
     { op: 'get_post', object: 'post', kind: 'get', label: 'Fetch one post and its engagement' },
     { op: 'list_comments', object: 'comment', kind: 'list', label: 'Read recent comments and mentions' },
-    { op: 'search_comments', object: 'comment', kind: 'search', label: 'Find comments and mentions' },
   ],
   web_analytics: [
     { op: 'search_queries', object: 'query', kind: 'search', label: 'Find the search queries a site ranks for' },

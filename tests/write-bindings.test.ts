@@ -25,7 +25,7 @@ import { renderAction, validateActionBinding, walkPath } from '../supabase/funct
 
 // Connector variables, as a real connected account would have them.
 const VARS: Record<string, Record<string, string>> = {
-  'Meta (Facebook & Instagram)': { page_id: '1234567890' },
+  'Facebook Page': { page_id: '1234567890' },
   'Google Ads': { customer_id: '9876543210', login_customer_id: '' },
   'Google Search Console': { site_url: 'sc-domain%3Aomnexasol.com' },
   'LinkedIn (Company Page)': { organization_id: '5515715' },
@@ -213,14 +213,14 @@ if (!adminTokenAvailable()) {
             and t.definition->'actions' ? 'publish_post'
           order by t.name`,
       );
-      expect(tpls.map((t) => t.name)).toEqual(['LinkedIn (Company Page)', 'Meta (Facebook & Instagram)']);
+      expect(tpls.map((t) => t.name)).toEqual(['Facebook Page', 'LinkedIn (Company Page)']);
 
       const rendered = tpls.map((t) =>
         renderAction(t.base_url_template, t.binding as never, VARS[t.name] ?? {}, { body: VALUE.body }));
       for (const r of rendered) expect(r.ok).toBe(true);
 
       // Same capability, same approval, same governed row — different hosts.
-      const [li, meta] = rendered;
+      const [meta, li] = rendered;
       expect(li.url).toBe('https://api.linkedin.com/rest/posts');
       expect(meta.url).toBe('https://graph.facebook.com/v21.0/1234567890/feed');
       expect(new URL(li.url!).host).not.toBe(new URL(meta.url!).host);

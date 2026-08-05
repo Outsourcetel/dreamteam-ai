@@ -1289,6 +1289,21 @@ async function runTemplateOp(
     };
   }
 
+  // A 200 is not always a success. Where the op declares it, the vendor's own
+  // verdict decides — checked BEFORE the items are walked, so a failed read can
+  // never be reported as an empty one.
+  const opSw = binding.response.success_when;
+  if (opSw) {
+    const verdict = walkPath(r.body, opSw.path);
+    const got = verdict.found && verdict.value != null ? String(verdict.value) : '';
+    if (got !== opSw.equals) {
+      return {
+        ok: false, url, raw_response: r.body, error: 'vendor_reported_failure',
+        detail: `The API returned HTTP ${r.status}, but reported failure in its body: ${opSw.path} is "${got || '(absent)'}", expected "${opSw.equals}". This is not an empty result — the call did not succeed.`,
+      };
+    }
+  }
+
   // Walk to the items
   const itemsPath = binding.response.items_path ?? '';
   const walked = walkPath(r.body, itemsPath);

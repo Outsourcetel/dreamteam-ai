@@ -87,6 +87,14 @@ export interface AdapterVar { key: string; label: string; help?: string }
 export interface AdapterOpResponse {
   /** dot path to the list of items; '' = the response root */
   items_path: string;
+  /**
+   * For APIs that report FAILURE inside a 200 — see the same field on
+   * AdapterActionBinding. TikTok is the case that forced it: an expired token
+   * or a rate limit comes back 200 with the verdict in error.code, and an empty
+   * result then reads as "this account has nothing", which is a wrong answer
+   * wearing the costume of a right one.
+   */
+  success_when?: { path: string; equals: string };
   id_path: string;
   title_path: string;
   url_path?: string;

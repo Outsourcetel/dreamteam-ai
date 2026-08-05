@@ -147,7 +147,7 @@ const RESPONSES: Record<string, Record<string, unknown>> = {
       error: { code: 'ok', message: '', log_id: 'x' },
     },
   },
-  'Meta (Facebook & Instagram)': {
+  'Facebook Page': {
     // Collections are {data:[…]}; a single node is the object itself.
     list_posts: {
       data: [
@@ -214,10 +214,10 @@ if (!adminTokenAvailable()) {
       templates = await runQuery(
         `select name, category, definition from adapter_templates
           where scope = 'platform' and status = 'published'
-            and name in ('Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok')
+            and name in ('Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Facebook Page', 'TikTok')
           order by name`,
       );
-      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok']);
+      expect(templates.map((t) => t.name)).toEqual(['Facebook Page', 'Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'TikTok']);
     });
 
     it('pass the framework validator the wizard runs', async () => {
@@ -315,7 +315,7 @@ if (!adminTokenAvailable()) {
     });
 
     it('the Meta template cannot write — publishing stays under approval', async () => {
-      const meta = templates.find((t) => t.name === 'Meta (Facebook & Instagram)')!;
+      const meta = templates.find((t) => t.name === 'Facebook Page')!;
       const ops = meta.definition.ops as Record<string, Binding>;
       for (const [op, b] of Object.entries(ops)) {
         expect(b.method, `${op} is not a read`).toBe('GET');
