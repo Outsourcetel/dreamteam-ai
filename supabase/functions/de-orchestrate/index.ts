@@ -19,7 +19,7 @@
  *     with the question firewalled as untrusted content (#9).
  *   • Paused/retired teammates are never candidates (lifecycle rule).
  *
- * POST { tenant_id, supervisor_de_id, question, conversation_id? }
+ * POST { tenant_id, supervisor_de_id, question, conversation_id?, channel? }
  *   -> { answer, confidence, sources, needs_escalation, conversation_id,
  *        handled_by: { de_id, name }, routed, route_reason }
  * Auth: dispatch secret or tenant-member JWT (frontend-callable).
@@ -63,7 +63,7 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   try {
     const body = await req.json().catch(() => ({}));
-    const { tenant_id, question, conversation_id, de_id: passthroughDeId } = body;
+    const { tenant_id, question, conversation_id, de_id: passthroughDeId, channel } = body;
     const bodySupervisor = typeof body.supervisor_de_id === 'string' && body.supervisor_de_id ? body.supervisor_de_id : null;
     if (!tenant_id) return json({ error: 'tenant_id required' }, 400);
     if (!question || typeof question !== 'string') return json({ error: 'question required' }, 400);
@@ -97,6 +97,7 @@ serve(async (req) => {
           question, tenant_id,
           ...(typeof passthroughDeId === 'string' && passthroughDeId ? { de_id: passthroughDeId } : {}),
           ...(conversation_id ? { conversation_id } : {}),
+          ...(channel ? { channel } : {}),
         });
         if (j.error) return json({ error: j.error, ...(j.conversation_id ? { conversation_id: j.conversation_id } : {}) }, r.status);
         return json({ ...j, routed: false, route_reason: 'no supervisor configured — answered directly',
@@ -173,7 +174,7 @@ serve(async (req) => {
     }
 
     // The chosen employee answers on the SAME thread (shared memory).
-    const { r: ar, j: aj } = await callDeAnswer({ question, tenant_id, de_id: chosen, ...(conversation_id ? { conversation_id } : {}) });
+    const { r: ar, j: aj } = await callDeAnswer({ question, tenant_id, de_id: chosen, ...(conversation_id ? { conversation_id } : {}), ...(channel ? { channel } : {}) });
     if (aj.error) return json({ error: aj.error, ...(aj.conversation_id ? { conversation_id: aj.conversation_id } : {}) }, ar.status >= 400 ? ar.status : 200);
 
     const routed = chosen !== supervisor_de_id;

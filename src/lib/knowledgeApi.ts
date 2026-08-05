@@ -598,6 +598,11 @@ export async function askDE(
   conversationId?: string | null,
   tenantId?: string | null,
   deId?: string | null,
+  /** Which surface this thread belongs to. The server treats it as an
+   *  ALLOW-LIST ('exam' | 'portal', else 'dock') — a caller cannot invent a
+   *  channel and move a thread in or out of the Support Inbox. Omit it and the
+   *  behaviour is exactly as before. */
+  channel?: 'portal',
 ): Promise<DEAnswerResult> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new DEAnswerError('server', 'Not signed in.');
@@ -620,7 +625,7 @@ export async function askDE(
       // "the oldest employee in this workspace", which is never the Workforce
       // Assistant (assistants were backfilled, so they are the NEWEST). The
       // dock displayed the Assistant and silently asked someone else.
-      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined, ...(tenantId ? { tenant_id: tenantId } : {}), ...(deId ? { de_id: deId } : {}) }),
+      body: JSON.stringify({ question, conversation_id: conversationId ?? undefined, ...(tenantId ? { tenant_id: tenantId } : {}), ...(deId ? { de_id: deId } : {}), ...(channel ? { channel } : {}) }),
     });
   } catch (err) {
     throw new DEAnswerError('network', String(err));

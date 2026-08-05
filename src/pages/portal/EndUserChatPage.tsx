@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { runPortalTurn, submitCSAT } from '../../lib/api';
+import { submitCSAT } from '../../lib/api';
+import { askDE, DEAnswerError } from '../../lib/knowledgeApi';
 import { PageTabs, PORTAL_TABS } from '../../components';
 
 interface ChatMessage {
@@ -179,24 +180,46 @@ const EndUserChatPage = ({
       setMessages(prev => [...prev, userMsg]);
       setLoading(true);
 
-      const result = await runPortalTurn(tenantId, text, { conversationId, customerName });
-      if (result.conversationId) setConversationId(result.conversationId);
-      if (result.escalated) setEscalated(true);
-
-      const confPct = result.confidence != null ? Math.round(result.confidence * 100) : undefined;
-      const deMsg: ChatMessage = {
-        id: Date.now() + '_de',
-        role: result.escalated ? 'system' : 'de',
-        text: result.escalated
-          ? 'Your question has been passed to our team. A human agent will be in touch shortly.'
-          : result.answer,
-        ts: ts(),
-        confidence: confPct,
-        status: result.escalated ? 'escalated' : 'answered',
-        sources: result.sources as any,
-        deName: result.agentName || 'Assistant',
-        escalated: result.escalated,
-      };
+      // The portal now asks the SAME employee every other channel asks.
+      // It used to run its own keyword search over knowledge_articles and
+      // file the thread in `conversations` — invisible to the Support Inbox,
+      // to triage and to escalation, and unreachable by submit_csat (which
+      // updates de_conversations, so every rating here failed silently).
+      let deMsg: ChatMessage;
+      try {
+        const res = await askDE(text, conversationId, tenantId, null, 'portal');
+        if (res.conversation_id) setConversationId(res.conversation_id);
+        if (res.needs_escalation) setEscalated(true);
+        deMsg = {
+          id: Date.now() + '_de',
+          role: res.needs_escalation ? 'system' : 'de',
+          text: res.needs_escalation
+            ? 'Your question has been passed to our team. A human agent will be in touch shortly.'
+            : res.answer,
+          ts: ts(),
+          // ⚠ askDE reports confidence 0..100; runPortalTurn reported 0..1 and
+          // this line multiplied by 100. Carrying that multiply over would
+          // have rendered "8800% confident".
+          confidence: res.confidence != null ? Math.round(res.confidence) : undefined,
+          status: res.needs_escalation ? 'escalated' : 'answered',
+          sources: (res.sources ?? []).map(title => ({ title })) as any,
+          deName: res.de_name || 'Assistant',
+          escalated: res.needs_escalation,
+        };
+      } catch (err) {
+        // askDE THROWS where runPortalTurn returned a value. Say what happened
+        // rather than rendering an empty bubble.
+        deMsg = {
+          id: Date.now() + '_de',
+          role: 'system',
+          text: err instanceof DEAnswerError && err.code === 'llm_not_configured'
+            ? 'Our assistant is not switched on yet. Your message has been noted — a human will follow up.'
+            : 'I could not reach our assistant just now. Please try again in a moment.',
+          ts: ts(),
+          status: 'escalated',
+          deName: 'Assistant',
+        };
+      }
       setMessages(prev => [...prev, deMsg]);
       setLoading(false);
     }
@@ -231,15 +254,26 @@ const EndUserChatPage = ({
           setMessages(prev => [...prev, imgReply]);
         } else {
           setLoading(true);
-          const result = await runPortalTurn(tenantId, `[Attachment: ${att.name} (${att.type})]`, { conversationId, customerName });
-          if (result.conversationId) setConversationId(result.conversationId);
-          const deMsg: ChatMessage = {
-            id: Date.now() + '_de',
-            role: 'de',
-            text: result.answer,
-            ts: ts(),
-            deName: result.agentName || 'Assistant',
-          };
+          let deMsg: ChatMessage;
+          try {
+            const res = await askDE(`[Attachment: ${att.name} (${att.type})]`, conversationId, tenantId, null, 'portal');
+            if (res.conversation_id) setConversationId(res.conversation_id);
+            deMsg = {
+              id: Date.now() + '_de',
+              role: 'de',
+              text: res.answer,
+              ts: ts(),
+              deName: res.de_name || 'Assistant',
+            };
+          } catch {
+            deMsg = {
+              id: Date.now() + '_de',
+              role: 'system',
+              text: 'I could not reach our assistant just now. Please try again in a moment.',
+              ts: ts(),
+              deName: 'Assistant',
+            };
+          }
           setMessages(prev => [...prev, deMsg]);
           setLoading(false);
         }

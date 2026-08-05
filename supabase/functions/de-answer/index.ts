@@ -595,11 +595,22 @@ serve(async (req) => {
     // replay === true forces replay semantics even with no candidate
     // knowledge (question-only counterfactuals in the Replay Lab).
     const replayMode = candidateKnowledge.length > 0 || candidatePersona !== null || reqBody.replay === true;
-    // Where a NEW thread is filed. Only 'exam' is accepted from the caller —
-    // an allow-list, not a passthrough, so a caller can never invent a channel
-    // and slip a thread out of (or into) the Support Inbox. Everything else,
-    // including anything unrecognised, stays 'dock' exactly as before.
-    const convChannel = reqBody.channel === 'exam' ? 'exam' : 'dock';
+    // Where a NEW thread is filed. Still an ALLOW-LIST, not a passthrough, so a
+    // caller can never invent a channel and slip a thread out of (or into) the
+    // Support Inbox. Anything unrecognised stays 'dock' exactly as before.
+    //
+    // 'portal' joins 'exam' because the customer portal used to keep its own
+    // conversation store entirely: runPortalTurn wrote `conversations` +
+    // `messages` while every other channel wrote here. A customer who chatted
+    // through the portal was therefore invisible to the Support Inbox, to
+    // triage and to escalation — and submit_csat, which updates
+    // de_conversations, could never find the row, so every thumbs-up in the
+    // portal failed silently. The inbox already accepts 'portal'
+    // (supportInboxApi filters widget|hosted|portal|email|dock); it simply
+    // never received one.
+    const convChannel = reqBody.channel === 'exam' ? 'exam'
+      : reqBody.channel === 'portal' ? 'portal'
+      : 'dock';
     // Declared here, beside what it derives from, because BOTH the escalate
     // and resolved branches need it — the first version scoped it inside the
     // escalate branch and the resolved branch silently kept writing.
