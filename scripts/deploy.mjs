@@ -117,8 +117,53 @@ const NO_VERIFY_JWT = new Set([
   'voice-webhook', // same caller, same in-function secret (docs/42)
 ]);
 
+/**
+ * Refuse to deploy an edge function from a tree that is behind origin/main.
+ *
+ * Deploying replaces the LIVE function wholesale. If another session has
+ * shipped a change to that function — or to a _shared module it bundles — and
+ * you deploy from before it, their code is simply gone from production while
+ * still sitting in git, with nothing erroring and the deploy reporting success.
+ *
+ * That happened twice in one day: connector-hub was deployed over a parallel
+ * session's Google Ads work, and de-answer was deployed before a rebase that
+ * had aborted on a dirty tree (its exit code swallowed by a pipe). The first
+ * caused a real outage of their feature; the second was harmless only by luck,
+ * because the shared file they touched was not one de-answer bundles.
+ *
+ * A rule that lives in someone's memory fails the second time they are tired.
+ * This lives in the tool.
+ */
+function assertNotStale() {
+  if (args.includes('--stale-ok')) return;
+  try { execSync('git fetch origin main --quiet', { stdio: 'ignore' }); } catch { /* offline: use the ref we have */ }
+  let behind = '0';
+  try {
+    behind = execSync('git rev-list --count HEAD..origin/main', { encoding: 'utf8' }).trim();
+  } catch {
+    return; // not a git checkout, or no origin/main — nothing to compare against
+  }
+  if (behind === '0') return;
+
+  let touched = '';
+  try {
+    touched = execSync('git diff --name-only HEAD...origin/main -- supabase/functions', { encoding: 'utf8' }).trim();
+  } catch { /* best effort */ }
+
+  die([
+    `refusing to deploy from a STALE tree — origin/main is ${behind} commit(s) ahead of you.`,
+    touched
+      ? `\nAnother session has changed these edge files:\n  ${touched.split('\n').join('\n  ')}`
+      : '\n(no edge files changed upstream, but your tree is still behind)',
+    '\nDeploying now would replace their live function with your older copy.',
+    'Fix:  git fetch origin main && git rebase origin/main   — then deploy again.',
+    'If you are certain this is safe:  --stale-ok',
+  ].join('\n'));
+}
+
 function deployFunctions() {
   if (!ACCESS) die('SUPABASE_ACCESS_TOKEN missing — add it to .env.local (supabase.com/dashboard/account/tokens)');
+  assertNotStale();
   for (const fn of FUNCTIONS) {
     const dir = path.join(process.cwd(), 'supabase', 'functions', fn);
     if (!fs.existsSync(dir)) die(`function not found: supabase/functions/${fn}`);

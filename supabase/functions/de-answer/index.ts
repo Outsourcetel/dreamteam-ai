@@ -451,9 +451,33 @@ interface DEAnswer { answer: string; confidence: number; sources: string[]; need
 function extractAnswerField(text: string): string | null {
   const m = text.match(/"answer"\s*:\s*"/);
   if (!m || m.index === undefined) return null;
-  let i = m.index + m[0].length;
+  const start = m.index + m[0].length;
+
+  // Find the REAL end of the answer string.
+  //
+  // The model sometimes writes an unescaped double quote inside the answer —
+  // e.g. `sets the run to "waiting_human" until someone decides`. That makes
+  // the envelope invalid JSON, which is why we are in the salvage path at all,
+  // and stopping at the FIRST unescaped quote cut the answer off exactly where
+  // the quoted term began. That is the mid-sentence truncation seen in
+  // production: a 423-character answer ending "...sets the run to", while the
+  // same question answered in full elsewhere. It had nothing to do with
+  // max_tokens — the answer was ~110 tokens against a 1536 ceiling.
+  //
+  // The closing quote is the last one sitting in a JSON structural position:
+  // followed only by whitespace and then a comma, a closing brace, or the end
+  // of the text. Inner quotes never satisfy that. If none does, the envelope
+  // really was cut off mid-string and we take what is there, as before.
+  let limit = text.length;
+  for (let k = text.length - 1; k > start; k--) {
+    if (text[k] !== '"') continue;
+    const rest = text.slice(k + 1).replace(/^\s+/, '');
+    if (rest === '' || rest[0] === ',' || rest[0] === '}') { limit = k; break; }
+  }
+
+  let i = start;
   let out = '';
-  while (i < text.length) {
+  while (i < limit) {
     const c = text[i];
     if (c === '\\') {
       const n = text[i + 1];
@@ -467,8 +491,11 @@ function extractAnswerField(text: string): string | null {
         i += 4;
       } else out += n ?? '';
       i += 2;
-    } else if (c === '"') break;   // clean close; truncation just runs out
-    else { out += c; i += 1; }
+    } else { out += c; i += 1; }
+    // NOTE: no break on '"'. The closing quote is already excluded by `limit`
+    // above, so any quote reached here is one the model left unescaped INSIDE
+    // the answer — it is content, and breaking on it is exactly what truncated
+    // answers mid-sentence.
   }
   const trimmed = out.trim();
   // A salvaged string with no letters or digits is not an answer, it is
