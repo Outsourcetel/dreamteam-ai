@@ -266,10 +266,17 @@ const erpnext = {
   //
   // Two bounded calls per sync, not one per invoice: customers first, then the
   // contacts they point at.
-  async customerEmails(c: Ctx, customers: string[]): Promise<Record<string, string>> {
-    const out: Record<string, string> = {};
+  // ⚠ Returns a DIAGNOSIS, not just a map. A best-effort lookup that swallows
+  // its failures makes "this customer has no contact recorded" look identical
+  // to "the API key cannot read the Customer doctype" — and the visible symptom
+  // of both is the same empty column. One is the customer's data to fix and the
+  // other is a permission to grant, so the sync has to be able to say which.
+  async customerEmails(c: Ctx, customers: string[]): Promise<{
+    emails: Record<string, string>; checked: number; withContact: number; error?: string;
+  }> {
+    const emails: Record<string, string> = {};
     const names = [...new Set(customers.filter(Boolean))].slice(0, 100);
-    if (names.length === 0) return out;
+    if (names.length === 0) return { emails, checked: 0, withContact: 0 };
 
     const custQs = new URLSearchParams({
       fields: '["name","customer_primary_contact"]',
@@ -277,7 +284,10 @@ const erpnext = {
       limit_page_length: String(names.length),
     });
     const cr = await httpJson(`${c.baseUrl}/api/resource/Customer?${custQs}`, { headers: this.hdrs(c) });
-    if (!cr.ok) return out; // best effort: no address simply means no email chase
+    if (!cr.ok) {
+      return { emails, checked: names.length, withContact: 0,
+               error: `cannot read Customer records (${cr.status ?? ''} ${cr.error ?? ''})`.trim() };
+    }
     const custRows = (cr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
 
     const byContact: Record<string, string[]> = {};
@@ -287,7 +297,12 @@ const erpnext = {
       (byContact[contact] ??= []).push(String(row.name));
     }
     const contactNames = Object.keys(byContact);
-    if (contactNames.length === 0) return out;
+    if (contactNames.length === 0) {
+      return { emails, checked: custRows.length, withContact: 0,
+               error: custRows.length === 0
+                 ? 'no matching Customer records were returned'
+                 : 'no customer has a primary contact set in the ERP' };
+    }
 
     const contQs = new URLSearchParams({
       fields: '["name","email_id"]',
@@ -295,17 +310,24 @@ const erpnext = {
       limit_page_length: String(contactNames.length),
     });
     const kr = await httpJson(`${c.baseUrl}/api/resource/Contact?${contQs}`, { headers: this.hdrs(c) });
-    if (!kr.ok) return out;
+    if (!kr.ok) {
+      return { emails, checked: custRows.length, withContact: contactNames.length,
+               error: `cannot read Contact records (${kr.status ?? ''} ${kr.error ?? ''})`.trim() };
+    }
     for (const row of (kr.body as { data?: Array<Record<string, unknown>> })?.data ?? []) {
       const email = row.email_id ? String(row.email_id).trim() : '';
       if (!email) continue;
-      for (const customer of byContact[String(row.name)] ?? []) out[customer] = email;
+      for (const customer of byContact[String(row.name)] ?? []) emails[customer] = email;
     }
-    return out;
+    return {
+      emails, checked: custRows.length, withContact: contactNames.length,
+      error: Object.keys(emails).length === 0
+        ? 'primary contacts exist but none has an email address' : undefined,
+    };
   },
   // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
   // the upsert lives in the DB (upsert_external_ar_record).
-  async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+  async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>>; contacts?: Record<string, unknown> }> {
     const r = await httpJson(this.invoicesUrl(c, [], '100'), { headers: this.hdrs(c) });
     if (!r.ok) return { ok: false, error: r.error };
     const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
@@ -336,13 +358,20 @@ const erpnext = {
     // field wins where it is set — it is the more specific answer to "who
     // should hear about THIS invoice".
     const missing = records.filter((r) => !r.contact_email).map((r) => r.customer_external_ref);
+    let contactDiag: Record<string, unknown> | undefined;
     if (missing.length > 0) {
-      const emails = await this.customerEmails(c, missing);
+      const look = await this.customerEmails(c, missing);
       for (const r of records) {
-        if (!r.contact_email) r.contact_email = emails[r.customer_external_ref] ?? null;
+        if (!r.contact_email) r.contact_email = look.emails[r.customer_external_ref] ?? null;
       }
+      contactDiag = {
+        customers_checked: look.checked,
+        with_primary_contact: look.withContact,
+        emails_found: Object.keys(look.emails).length,
+        ...(look.error ? { why_not: look.error } : {}),
+      };
     }
-    return { ok: true, records };
+    return { ok: true, records, contacts: contactDiag };
   },
   async search(c: Ctx, query: string): Promise<AdapterResult> {
     const q = String(query ?? '').trim().slice(0, 80);
@@ -6329,7 +6358,12 @@ serve(async (req) => {
       await audit('connector_sync',
         `Financial sync from ${connector.provider} — ${upserted}/${records.length} invoice(s) upserted into the AR tables in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
         { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
-      return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
+      // "contacts" says WHY a chase would fall back to an internal note, so a
+      // blank email column is never left ambiguous between "no data" and "no
+      // permission" — one is the customer's record to fix, the other is an API
+      // scope to grant, and the visible symptom of both is identical.
+      return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health,
+        ...(sr.contacts ? { contacts: sr.contacts } : {}) });
     }
 
     // ════════ reconcile_financials — DRIFT SENTINEL (B3) ════════
