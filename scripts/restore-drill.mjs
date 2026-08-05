@@ -43,15 +43,84 @@ function token() {
   return line.slice('SUPABASE_ACCESS_TOKEN='.length).replace(/^["']|["']$/g, '').trim();
 }
 
-async function run(ref, sql) {
-  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: sql }),
-  });
+async function run(ref, sql, attempt = 0) {
+  // Retries cover BOTH failure modes, which is the point: the batched cleanup
+  // makes hundreds of calls in a row and hits rate limits (HTTP 429, an HTML
+  // error page) AND bare transport failures where fetch itself throws. Handling
+  // only the first left the drop dying on "fetch failed" halfway through.
+  //
+  // A genuine SQL error (4xx that is not 429) is NOT retried — that is a real
+  // answer and repeating it just hides it.
+  let res;
+  try {
+    res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: sql }),
+    });
+  } catch (e) {
+    if (attempt < 5) { await new Promise((r) => setTimeout(r, 1000 * (attempt + 1))); return run(ref, sql, attempt + 1); }
+    throw e;
+  }
   const text = await res.text();
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+  if (!res.ok) {
+    const transient = res.status === 429 || res.status >= 500;
+    if (transient && attempt < 5) {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      return run(ref, sql, attempt + 1);
+    }
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
   return JSON.parse(text);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Drop the scratch schema in BATCHES, because two limits pull opposite ways:
+ *
+ *   · DROP SCHEMA … CASCADE takes a lock on every dependent object inside ONE
+ *     transaction. At ~1,050 objects that exceeds max_locks_per_transaction and
+ *     fails with "out of shared memory" — so it cannot be a single statement.
+ *   · One request per object is rate-limited into an HTML error page after a few
+ *     hundred calls — so it cannot be a statement each, either.
+ *
+ * Many objects per statement, few statements. This is not hypothetical tidiness:
+ * the single-statement version worked until the schema crossed roughly a
+ * thousand objects, then began leaving the ENTIRE scratch schema on dev after a
+ * drill that reported success. The comparison passed, the cleanup threw, and the
+ * next run inherited the mess.
+ */
+async function dropSchemaInBatches(ref, schema, batch = 30) {
+  const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+
+  for (;;) {
+    const rows = await run(ref, `select tablename from pg_tables where schemaname = '${schema}' limit ${batch}`);
+    if (!rows.length) break;
+    await run(ref, `DROP TABLE IF EXISTS ${rows.map((r) => `${schema}.${qi(r.tablename)}`).join(', ')} CASCADE`);
+    await sleep(150);
+  }
+  for (;;) {
+    const rows = await run(ref, `select table_name from information_schema.views where table_schema = '${schema}' limit ${batch}`);
+    if (!rows.length) break;
+    await run(ref, `DROP VIEW IF EXISTS ${rows.map((r) => `${schema}.${qi(r.table_name)}`).join(', ')} CASCADE`);
+    await sleep(150);
+  }
+  for (;;) {
+    const rows = await run(ref, `select p.oid::regprocedure::text as sig, p.prokind
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = '${schema}' and p.prokind in ('f','p') limit ${batch}`);
+    if (!rows.length) break;
+    // Grouped by prokind: DROP FUNCTION on a procedure raises 42809.
+    for (const kind of ['f', 'p']) {
+      const sigs = rows.filter((r) => r.prokind === kind).map((r) => r.sig);
+      if (sigs.length) await run(ref, `DROP ${kind === 'p' ? 'PROCEDURE' : 'FUNCTION'} IF EXISTS ${sigs.join(', ')} CASCADE`);
+    }
+    await sleep(150);
+  }
+  await run(ref, `DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  const [left] = await run(ref, `select count(*)::int as n from pg_namespace where nspname = '${schema}'`);
+  if (left.n !== 0) throw new Error(`scratch schema ${schema} survived the batched drop`);
 }
 
 const census = (ns, excludeExtensionFns) => `
@@ -101,17 +170,33 @@ const rows = Object.keys(want).map((k) => ({
 }));
 console.table(rows);
 
+// The verdict is decided BEFORE cleanup, and cleanup can no longer change it.
+// Previously the drop ran first and threw, so a drill whose comparison had
+// PASSED exited non-zero with a lock-table error — the run looked like a backup
+// failure when the backup was fine and only the housekeeping had broken. A
+// tidying step must never be able to impersonate the thing being tested.
+const bad = rows.filter((r) => r.match !== 'OK');
+
+let cleanupError = null;
 if (!KEEP) {
-  await run(DEV_REF, `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE; select 1 as done`);
-  console.log('4/4  scratch schema dropped.');
+  try {
+    await dropSchemaInBatches(DEV_REF, SCHEMA);
+    console.log('4/4  scratch schema dropped.');
+  } catch (e) {
+    cleanupError = e;
+    console.error(`4/4  CLEANUP FAILED — ${SCHEMA} is still on dev: ${e.message}`);
+    console.error('     The drill result below stands; this is housekeeping, not the backup.');
+  }
 } else {
   console.log(`4/4  left ${SCHEMA} in place (--keep).`);
 }
 
-const bad = rows.filter((r) => r.match !== 'OK');
 if (bad.length) {
   console.error(`\nRESTORE DRILL FAILED — ${bad.map((b) => b.object).join(', ')} differ.`);
   console.error('The backup does not reproduce production. Do not rely on it until this passes.');
   process.exit(1);
 }
 console.log('\nRESTORE DRILL PASSED — the schema backup reproduces production exactly.');
+// Still a non-zero exit, because a scratch schema left on dev will confuse the
+// next run — but the message above says plainly which of the two failed.
+if (cleanupError) process.exit(2);
