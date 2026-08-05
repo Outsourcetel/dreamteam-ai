@@ -3,9 +3,11 @@ import {
   loadOrgTree, createUnit, renameUnit, setUnitActive, addMember, setMemberRole, removeMember,
   listAssignablePeople, listAssignmentRules, saveRule, setRuleActive, deleteRule,
   reassignUnowned, loadOwnerLoad, ALLOWED_CHILDREN, KIND_LABEL,
+  listApprovalAuthority, saveApprovalAuthority, deleteApprovalAuthority, AUTHORITY_CATEGORIES,
 } from '../../lib/orgApi';
 import type {
   OrgUnit, UnitKind, AssignmentRule, AssignablePerson, AssignStrategy, OwnerLoad,
+  ApprovalAuthority,
 } from '../../lib/orgApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../components/LiveDataStates';
 import {
@@ -38,9 +40,19 @@ import {
 const TABS = [
   { key: 'structure' as const, label: 'Structure' },
   { key: 'rules' as const, label: 'Assignment rules' },
+  { key: 'authority' as const, label: 'Approval limits' },
   { key: 'load' as const, label: 'Who holds the work' },
 ];
 type TabId = typeof TABS[number]['key'];
+
+/** Money in, money out — the database stores minor units (cents/paisa) so a
+ *  rounding error cannot creep into a spending limit. */
+const toCents = (s: string): number | null => {
+  const n = Number(String(s).replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && String(s).trim() !== '' ? Math.round(n * 100) : null;
+};
+const fromCents = (c: number | null | undefined): string =>
+  c === null || c === undefined ? '' : (c / 100).toFixed(2);
 
 const STRATEGY_LABEL: Record<AssignStrategy, string> = {
   lead: 'The unit lead',
@@ -183,6 +195,8 @@ export default function OrganisationPage() {
   const [tree, setTree] = useState<OrgUnit[]>([]);
   const [people, setPeople] = useState<AssignablePerson[]>([]);
   const [rules, setRules] = useState<AssignmentRule[]>([]);
+  const [authority, setAuthority] = useState<ApprovalAuthority[]>([]);
+  const [editAuth, setEditAuth] = useState<Partial<ApprovalAuthority> | null>(null);
   const [load, setLoad] = useState<OwnerLoad[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -196,10 +210,11 @@ export default function OrganisationPage() {
   const refresh = useCallback(async () => {
     setErr(null);
     try {
-      const [t, p, r, l] = await Promise.all([
+      const [t, p, r, l, a] = await Promise.all([
         loadOrgTree(), listAssignablePeople(), listAssignmentRules(), loadOwnerLoad(),
+        listApprovalAuthority(),
       ]);
-      setTree(t); setPeople(p); setRules(r); setLoad(l);
+      setTree(t); setPeople(p); setRules(r); setLoad(l); setAuthority(a);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -391,6 +406,92 @@ export default function OrganisationPage() {
         </PanelCard>
       )}
 
+      {tab === 'authority' && (
+        <PanelCard
+          title="Approval limits"
+          actions={
+            <Button size="sm" onClick={() => setEditAuth({ is_active: true })}>Add limit</Button>
+          }
+        >
+          {authority.length === 0 ? (
+            <>
+              <Banner tone="warn" className="mb-3">
+                <strong>No limits are set, so there are none.</strong> Today anyone who can
+                see an approval can grant it — a large credit hold and a small refund are
+                checked identically. Adding the first limit below turns this on for
+                everybody at once, so add one for yourself first.
+              </Banner>
+              <EmptyState icon="⚖" headline="Nobody has a signing limit yet">
+                A limit says who may approve which kind of work, up to what value, and when
+                a second pair of eyes is needed.
+              </EmptyState>
+            </>
+          ) : (
+            <>
+              <Banner tone="info" className="mb-3">
+                Limits are <strong>in force</strong>. Anyone without a matching limit can no
+                longer approve — they can still reject, which is always allowed. A limit on a
+                department also covers the teams inside it.
+              </Banner>
+              <TableScroll>
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th className={TH}>Who</th>
+                      <th className={TH}>May approve</th>
+                      <th className={TH}>Up to</th>
+                      <th className={TH}>Second signature above</th>
+                      <th className={TH}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {authority.map((a) => {
+                      const unit = a.org_unit_id ? unitById.get(a.org_unit_id) : null;
+                      const person = a.user_id ? people.find((p) => p.user_id === a.user_id) : null;
+                      return (
+                        <tr key={a.id} className="border-t border-dt-border">
+                          <td className={TD}>
+                            {unit ? unit.path : person ? (person.full_name || 'Unnamed user')
+                              : a.role ? `Everyone with the ${a.role.replace('tenant_', '')} role`
+                              : <span className="text-dt-danger">nobody</span>}
+                            {!a.is_active && <Chip tone="warn" className="ml-2">OFF</Chip>}
+                          </td>
+                          <td className={`${TD} text-dt-support`}>
+                            {AUTHORITY_CATEGORIES.find((c) => c.value === (a.category ?? ''))?.label ?? a.category}
+                          </td>
+                          <td className={TD}>
+                            {a.max_amount_cents === null
+                              ? <Chip tone="warn">NO CEILING</Chip>
+                              : fromCents(a.max_amount_cents)}
+                          </td>
+                          <td className={`${TD} text-dt-support`}>
+                            {a.second_approver_above_cents === null ? '—' : fromCents(a.second_approver_above_cents)}
+                          </td>
+                          <td className={TD}>
+                            <div className="flex gap-1.5 justify-end">
+                              <Button size="sm" kind="ghost" onClick={() => setEditAuth(a)}>Edit</Button>
+                              <Button
+                                size="sm"
+                                kind="ghost"
+                                onClick={async () => {
+                                  if (window.confirm('Remove this limit? Anyone relying on it will no longer be able to approve.')) {
+                                    await deleteApprovalAuthority(a.id); await refresh();
+                                  }
+                                }}
+                              >Remove</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </TableScroll>
+            </>
+          )}
+        </PanelCard>
+      )}
+
       {tab === 'load' && (
         <PanelCard title="Who holds the work">
           {load.length === 0 ? (
@@ -460,6 +561,97 @@ export default function OrganisationPage() {
             <div className="flex justify-end gap-2 pt-1">
               <Button kind="ghost" onClick={() => setNewUnitParent(null)}>Cancel</Button>
               <Button disabled={!newUnitName.trim()} onClick={submitNewUnit}>Create</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editAuth && (
+        <Modal title={editAuth.id ? 'Edit approval limit' : 'Add approval limit'} onClose={() => setEditAuth(null)}>
+          <div className="space-y-3">
+            {authority.length === 0 && !editAuth.id && (
+              <Banner tone="warn">
+                This is the first limit in the workspace. Until now everyone could approve
+                everything; once you save this, only people covered by a limit can approve.
+                Make sure this one covers you.
+              </Banner>
+            )}
+            <Field label="Who holds it" hint="Pick a department or team, a role, or one person. A department limit also covers the teams inside it.">
+              <select
+                className={INPUT_CLS}
+                value={editAuth.org_unit_id ? `unit:${editAuth.org_unit_id}`
+                     : editAuth.user_id ? `user:${editAuth.user_id}`
+                     : editAuth.role ? `role:${editAuth.role}` : ''}
+                onChange={(e) => {
+                  const [kind, id] = e.target.value.split(':');
+                  setEditAuth({
+                    ...editAuth,
+                    org_unit_id: kind === 'unit' ? id : null,
+                    user_id: kind === 'user' ? id : null,
+                    role: kind === 'role' ? id : null,
+                  });
+                }}
+              >
+                <option value="">Choose…</option>
+                <optgroup label="Org unit">
+                  {tree.filter((u) => u.is_active).map((u) => (
+                    <option key={u.id} value={`unit:${u.id}`}>{u.path}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Role">
+                  <option value="role:tenant_owner">Everyone with the owner role</option>
+                  <option value="role:tenant_admin">Everyone with the admin role</option>
+                  <option value="role:tenant_manager">Everyone with the manager role</option>
+                  <option value="role:approver">Everyone with the approver role</option>
+                </optgroup>
+                <optgroup label="One person">
+                  {people.map((p) => (
+                    <option key={p.user_id} value={`user:${p.user_id}`}>{p.full_name || 'Unnamed user'}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </Field>
+            <Field label="May approve">
+              <select
+                className={INPUT_CLS}
+                value={editAuth.category ?? ''}
+                onChange={(e) => setEditAuth({ ...editAuth, category: e.target.value || null })}
+              >
+                {AUTHORITY_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Up to" hint="Leave blank for no ceiling. Work with no money attached is always covered.">
+              <input
+                className={INPUT_CLS}
+                inputMode="decimal"
+                placeholder="e.g. 5000"
+                value={fromCents(editAuth.max_amount_cents)}
+                onChange={(e) => setEditAuth({ ...editAuth, max_amount_cents: toCents(e.target.value) })}
+              />
+            </Field>
+            <Field label="Second signature above" hint="Leave blank if one approval is always enough. Above this, a different person must approve as well.">
+              <input
+                className={INPUT_CLS}
+                inputMode="decimal"
+                placeholder="optional"
+                value={fromCents(editAuth.second_approver_above_cents)}
+                onChange={(e) => setEditAuth({ ...editAuth, second_approver_above_cents: toCents(e.target.value) })}
+              />
+            </Field>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button kind="ghost" onClick={() => setEditAuth(null)}>Cancel</Button>
+              <Button
+                disabled={!editAuth.org_unit_id && !editAuth.user_id && !editAuth.role}
+                onClick={async () => {
+                  try {
+                    await saveApprovalAuthority(editAuth);
+                    setEditAuth(null);
+                    await refresh();
+                  } catch (e) {
+                    setErr(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >{editAuth.id ? 'Save' : 'Create'}</Button>
             </div>
           </div>
         </Modal>

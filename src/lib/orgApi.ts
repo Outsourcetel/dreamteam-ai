@@ -219,6 +219,80 @@ export async function reassignUnowned(): Promise<{ assigned: number; unroutable:
   return { assigned, unroutable };
 }
 
+// ── Approval authority (mig 593) ───────────────────────────────────────────
+// Who may SIGN what, as opposed to who may SEE it. Until 593 those were the
+// same question: anyone who could open an approval could grant it, whatever it
+// was and whatever it was worth.
+//
+// ⚠ THE PERMISSIVE DEFAULT IS LOAD-BEARING. A workspace with no rows here
+// behaves exactly as it did before — everyone who can see an item may still
+// decide it. Adding the FIRST rule is the moment limits begin to apply, and it
+// applies them to everyone at once. The UI says so before you save one.
+
+export interface ApprovalAuthority {
+  id: string;
+  org_unit_id: string | null;
+  role: string | null;
+  user_id: string | null;
+  category: string | null;
+  max_amount_cents: number | null;
+  second_approver_above_cents: number | null;
+  note: string | null;
+  is_active: boolean;
+}
+
+/** The categories a task can actually carry — action categories where an
+ *  action approval exists, task types otherwise. Offered as a list so a rule
+ *  cannot be written against a category that will never appear. */
+export const AUTHORITY_CATEGORIES: { value: string; label: string }[] = [
+  { value: '', label: 'Any kind of work' },
+  { value: 'erp_financials', label: 'Finance & accounting' },
+  { value: 'billing', label: 'Billing' },
+  { value: 'crm', label: 'CRM changes' },
+  { value: 'helpdesk', label: 'Helpdesk' },
+  { value: 'ads', label: 'Advertising' },
+  { value: 'social', label: 'Social posting' },
+  { value: 'platform_admin', label: 'Platform administration' },
+  { value: 'escalation', label: 'Escalations' },
+  { value: 'review_gate', label: 'Review gates' },
+  { value: 'trust_promotion', label: 'Trust promotions' },
+];
+
+export async function listApprovalAuthority(): Promise<ApprovalAuthority[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('approval_authority')
+    .select('id, org_unit_id, role, user_id, category, max_amount_cents, second_approver_above_cents, note, is_active')
+    .eq('tenant_id', tid)
+    .order('created_at', { ascending: true });
+  if (error) raise('listApprovalAuthority', error);
+  return (data ?? []) as ApprovalAuthority[];
+}
+
+export async function saveApprovalAuthority(row: Partial<ApprovalAuthority>): Promise<void> {
+  const tid = await requireTenantId();
+  const payload = {
+    tenant_id: tid,
+    org_unit_id: row.org_unit_id || null,
+    role: row.role || null,
+    user_id: row.user_id || null,
+    category: row.category || null,
+    max_amount_cents: row.max_amount_cents ?? null,
+    second_approver_above_cents: row.second_approver_above_cents ?? null,
+    note: row.note?.trim() || null,
+    is_active: row.is_active ?? true,
+  };
+  const { error } = row.id
+    ? await supabase.from('approval_authority').update(payload).eq('id', row.id)
+    : await supabase.from('approval_authority').insert(payload);
+  if (error) raise('saveApprovalAuthority', error);
+}
+
+export async function deleteApprovalAuthority(id: string): Promise<void> {
+  const { error } = await supabase.from('approval_authority').delete().eq('id', id);
+  if (error) raise('deleteApprovalAuthority', error);
+}
+
 /** Who currently holds pending work, so a queue that is not draining reads as
  *  "these three people are underwater" instead of "the queue is big". */
 export interface OwnerLoad {

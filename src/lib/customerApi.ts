@@ -122,6 +122,20 @@ export interface DBHumanTask {
   de_id?: string | null;
   /** N4 disposition (mig 483): what the decision actually resolved to. */
   disposition?: 'answered' | 'cancelled' | 'rerouted' | null;
+  /** Whose job this is (migs 587/588). These columns existed and were indexed
+   *  for months with nothing ever writing to them — all 349 tasks had a NULL
+   *  owner — because no structure in the product grouped humans. The router
+   *  fills them on insert now. The select is `*`, so they always arrive. */
+  assigned_user_id?: string | null;
+  assigned_role?: string | null;
+  assigned_at?: string | null;
+  /** Why it landed here: the rule, the unit it aimed at, and whether the
+   *  person was drawn from that unit or from a staffed parent. */
+  assigned_via?: { rule?: string; unit?: string; scope?: string; pool_unit?: string } | null;
+  /** Set when an approval needs a second signature (mig 593) and the first
+   *  has been given. The task stays pending until a DIFFERENT person approves. */
+  first_approver_id?: string | null;
+  first_approved_at?: string | null;
 }
 
 /** Toggle one checklist item's tick state. Approve stays disabled in the

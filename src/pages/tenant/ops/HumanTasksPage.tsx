@@ -15,6 +15,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 // drift detector counts and fails on.
 import { Chip, INPUT_CLS, TabBar } from '../../../design/primitives';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
+import { listAssignablePeople } from '../../../lib/orgApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -250,6 +251,10 @@ function taskAge(iso: string): string {
 function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
   const [staleness, setStaleness] = useState<Map<string, StalenessEscalation>>(new Map());
+  // Owner names. assigned_user_id holds a user id; without this map the queue
+  // would show a uuid or nothing at all, which is how a populated column still
+  // reads as "unassigned" to the person working it.
+  const [peopleById, setPeopleById] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -323,6 +328,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // applied migration 042 yet (or any transient error) should still
       // show the task list, just without the stalled badges.
       try { setStaleness(await listOpenStalenessEscalations()); } catch { /* noop */ }
+      try {
+        const ppl = await listAssignablePeople();
+        setPeopleById(new Map(ppl.map(p => [p.user_id, p.full_name || 'Unnamed user'])));
+      } catch { /* the queue is still usable without owner names */ }
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
       else setError((err as Error)?.message || 'Failed to load tasks.');
@@ -719,6 +728,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       {stale && stalledBadge(stale.tier)}
                     </div>
                     {task.detail && <span className="text-[10px] text-dt-muted">{task.detail}</span>}
+                    {/* Whose job this is. The column has existed for months and
+                        was never written to, so the queue read as one shared
+                        pile in which no single item was anybody's problem. */}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {task.assigned_user_id ? (
+                        <span className="text-[10px] text-dt-support">
+                          {peopleById.get(task.assigned_user_id) ?? 'Unnamed user'}
+                          {task.assigned_role && <span className="text-dt-muted"> · {task.assigned_role}</span>}
+                        </span>
+                      ) : task.status === 'pending' && (
+                        <span className="text-[10px] text-dt-warn">Nobody's job yet</span>
+                      )}
+                      {task.first_approver_id && (
+                        <Chip tone="info">1 OF 2 APPROVED</Chip>
+                      )}
+                    </div>
                   </div>
                   <span className="text-xs text-dt-muted">{taskAge(task.created_at)}</span>
                   <span className="justify-self-end">{statusBadge(task.status as TaskStatus)}</span>
