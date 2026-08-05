@@ -3,10 +3,11 @@ import {
   loadOrgTree, createUnit, renameUnit, setUnitActive, addMember, setMemberRole, removeMember,
   listAssignablePeople, listAssignmentRules, saveRule, setRuleActive, deleteRule,
   reassignUnowned, loadOwnerLoad, ALLOWED_CHILDREN, KIND_LABEL,
+  listDigitalEmployees, setDeOrgUnit,
   listApprovalAuthority, saveApprovalAuthority, deleteApprovalAuthority, AUTHORITY_CATEGORIES,
 } from '../../lib/orgApi';
 import type {
-  OrgUnit, UnitKind, AssignmentRule, AssignablePerson, AssignStrategy, OwnerLoad,
+  OrgUnit, UnitKind, AssignmentRule, AssignablePerson, AssignStrategy, OwnerLoad, OrgDigitalEmployee,
   ApprovalAuthority,
 } from '../../lib/orgApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../components/LiveDataStates';
@@ -90,10 +91,12 @@ const KIND_STYLE: Record<UnitKind, { text: string; icon: string }> = {
 };
 
 function UnitRow({
-  unit, people, onChanged, onAddChild, hasChildren, isOpen, onToggle,
+  unit, people, des, onChanged, onAddChild, hasChildren, isOpen, onToggle,
 }: {
   unit: OrgUnit;
   people: AssignablePerson[];
+  /** The whole active roster, so one can be moved into a unit it is not in yet. */
+  des: OrgDigitalEmployee[];
   onChanged: () => void;
   onAddChild: (u: OrgUnit) => void;
   hasChildren: boolean;
@@ -103,6 +106,8 @@ function UnitRow({
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [pick, setPick] = useState('');
+  const [addingDe, setAddingDe] = useState(false);
+  const [pickDe, setPickDe] = useState('');
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -112,6 +117,8 @@ function UnitRow({
   const memberIds = new Set(unit.members.map((m) => m.user_id));
   const available = people.filter((p) => !memberIds.has(p.user_id));
   const canHaveChildren = ALLOWED_CHILDREN[unit.kind].length > 0;
+  const hereIds = new Set(unit.digital_employees.map((d) => d.de_id));
+  const availableDes = des.filter((d) => !hereIds.has(d.de_id));
 
   const style = KIND_STYLE[unit.kind];
 
@@ -134,8 +141,14 @@ function UnitRow({
             <span className={style.text}>{unit.name}</span>
             <Chip tone={unit.kind === 'team' ? 'accent' : 'neutral'}>{KIND_LABEL[unit.kind]}</Chip>
             {!unit.is_active && <Chip tone="warn">INACTIVE</Chip>}
-            {unit.member_count === 0 && (
+            {unit.member_count === 0 && unit.de_count === 0 && (
               <Chip tone="info">EMPTY — WORK ESCALATES UP</Chip>
+            )}
+            {/* A unit staffed only by digital employees is NOT staffed for
+                approvals — the rota is people. Said here rather than left for
+                someone to discover when a chase fails to route. */}
+            {unit.member_count === 0 && unit.de_count > 0 && (
+              <Chip tone="warn">NO PEOPLE — APPROVALS ESCALATE UP</Chip>
             )}
             {unit.open_tasks > 0 && (
               <Chip tone="warn">{unit.open_tasks} WAITING</Chip>
@@ -168,6 +181,50 @@ function UnitRow({
             </div>
           )}
 
+          {/* Digital employees in the same department (mig 600). Shown in their
+              own row, not blended with the people above: they belong to the
+              same unit, but only people enter the approval rota and one mixed
+              list would hide that distinction. */}
+          {unit.digital_employees.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+              <span className="text-[10px] uppercase tracking-wide text-dt-muted mr-1">Digital</span>
+              {unit.digital_employees.map((d) => (
+                <span
+                  key={d.de_id}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-dt-inset border border-dt-accent/40 px-2 py-0.5 text-xs text-dt-body"
+                  title={`${d.title || d.name} · trust: ${d.trust_level ?? 'unknown'}`}
+                >
+                  <span className="text-dt-accent-text">◆</span>
+                  {d.name}
+                  {d.trust_level && <span className="text-dt-muted text-[10px]">{d.trust_level}</span>}
+                  <button
+                    className="text-dt-muted hover:text-dt-danger"
+                    disabled={busy}
+                    title="Remove from this department"
+                    onClick={() => run(() => setDeOrgUnit(d.de_id, null))}
+                  >×</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {addingDe && (
+            <div className="mt-2 flex gap-2 items-center flex-wrap">
+              <select className={`${INPUT_CLS} max-w-xs`} value={pickDe} onChange={(e) => setPickDe(e.target.value)}>
+                <option value="">Choose a digital employee…</option>
+                {availableDes.map((d) => (
+                  <option key={d.de_id} value={d.de_id}>{d.name}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                disabled={!pickDe || busy}
+                onClick={() => run(async () => { await setDeOrgUnit(pickDe, unit.id); setPickDe(''); setAddingDe(false); })}
+              >Add</Button>
+              <Button size="sm" kind="ghost" onClick={() => { setAddingDe(false); setPickDe(''); }}>Cancel</Button>
+            </div>
+          )}
+
           {adding && (
             <div className="mt-2 flex gap-2 items-center flex-wrap">
               <select className={`${INPUT_CLS} max-w-xs`} value={pick} onChange={(e) => setPick(e.target.value)}>
@@ -189,6 +246,9 @@ function UnitRow({
         <div className="flex items-center gap-1.5 shrink-0">
           {available.length > 0 && !adding && (
             <Button size="sm" kind="ghost" onClick={() => setAdding(true)}>Add person</Button>
+          )}
+          {availableDes.length > 0 && !addingDe && (unit.kind === 'department' || unit.kind === 'team') && (
+            <Button size="sm" kind="ghost" onClick={() => setAddingDe(true)}>Add digital</Button>
           )}
           {canHaveChildren && (
             <Button size="sm" kind="ghost" onClick={() => onAddChild(unit)}>Add unit</Button>
@@ -219,11 +279,12 @@ function UnitRow({
  *  not read as containment — which is exactly how a three-level tree looked
  *  like a flat list of departments. */
 function UnitBranch({
-  unit, childrenOf, people, onChanged, onAddChild, collapsed, onToggle,
+  unit, childrenOf, people, des, onChanged, onAddChild, collapsed, onToggle,
 }: {
   unit: OrgUnit;
   childrenOf: Map<string, OrgUnit[]>;
   people: AssignablePerson[];
+  des: OrgDigitalEmployee[];
   onChanged: () => void;
   onAddChild: (u: OrgUnit) => void;
   collapsed: Set<string>;
@@ -236,6 +297,7 @@ function UnitBranch({
       <UnitRow
         unit={unit}
         people={people}
+        des={des}
         onChanged={onChanged}
         onAddChild={onAddChild}
         hasChildren={kids.length > 0}
@@ -250,6 +312,7 @@ function UnitBranch({
               unit={k}
               childrenOf={childrenOf}
               people={people}
+              des={des}
               onChanged={onChanged}
               onAddChild={onAddChild}
               collapsed={collapsed}
@@ -266,6 +329,7 @@ export default function OrganisationPage() {
   const [tab, setTab] = useState<TabId>('structure');
   const [tree, setTree] = useState<OrgUnit[]>([]);
   const [people, setPeople] = useState<AssignablePerson[]>([]);
+  const [des, setDes] = useState<OrgDigitalEmployee[]>([]);
   const [rules, setRules] = useState<AssignmentRule[]>([]);
   const [authority, setAuthority] = useState<ApprovalAuthority[]>([]);
   const [editAuth, setEditAuth] = useState<Partial<ApprovalAuthority> | null>(null);
@@ -283,11 +347,11 @@ export default function OrganisationPage() {
   const refresh = useCallback(async () => {
     setErr(null);
     try {
-      const [t, p, r, l, a] = await Promise.all([
+      const [t, p, r, l, a, d] = await Promise.all([
         loadOrgTree(), listAssignablePeople(), listAssignmentRules(), loadOwnerLoad(),
-        listApprovalAuthority(),
+        listApprovalAuthority(), listDigitalEmployees(),
       ]);
-      setTree(t); setPeople(p); setRules(r); setLoad(l); setAuthority(a);
+      setTree(t); setPeople(p); setRules(r); setLoad(l); setAuthority(a); setDes(d);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -408,6 +472,7 @@ export default function OrganisationPage() {
                   unit={u}
                   childrenOf={childrenOf}
                   people={people}
+                  des={des}
                   onChanged={refresh}
                   onAddChild={openNewUnit}
                   collapsed={collapsed}

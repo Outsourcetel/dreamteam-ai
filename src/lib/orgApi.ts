@@ -27,6 +27,22 @@ export interface OrgMember {
   user_id: string;
   name: string | null;
   role_in_unit: 'member' | 'lead';
+  job_title?: string | null;
+  /** True for the membership mirroring this person's home department. A second
+   *  team they were added to by hand is false. */
+  is_primary?: boolean;
+}
+
+/** A digital employee in the same department as the people above it.
+ *  Same tree, same unit — kept as its own list because only PEOPLE enter the
+ *  approval rota, and a single blended list would hide that at the one moment
+ *  it matters. */
+export interface OrgDigitalEmployee {
+  de_id: string;
+  name: string;
+  title: string | null;
+  trust_level: string | null;
+  status: string;
 }
 
 /** A unit as `list_org_tree` returns it — flattened, depth-tagged, in tree order. */
@@ -40,10 +56,13 @@ export interface OrgUnit {
   /** "Head Office / Finance / Accounts Receivable" — unique even when names repeat. */
   path: string;
   member_count: number;
+  /** Active digital employees in this same unit (mig 600). */
+  de_count: number;
   /** Pending approvals routed here, counted on the unit id recorded at
    *  assignment time — never on the name, which two units can share. */
   open_tasks: number;
   members: OrgMember[];
+  digital_employees: OrgDigitalEmployee[];
 }
 
 export interface AssignmentRule {
@@ -152,6 +171,35 @@ export async function listAssignablePeople(): Promise<AssignablePerson[]> {
     .order('full_name', { ascending: true });
   if (error) raise('listAssignablePeople', error);
   return (data ?? []) as AssignablePerson[];
+}
+
+/** Digital employees available to place — the whole active roster, so one can
+ *  be moved into a department it is not in yet. */
+export async function listDigitalEmployees(): Promise<OrgDigitalEmployee[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('digital_employees')
+    .select('id, name, display_title, trust_level, status, org_unit_id')
+    .eq('tenant_id', tid)
+    .eq('status', 'active')
+    .order('name', { ascending: true });
+  if (error) raise('listDigitalEmployees', error);
+  return ((data ?? []) as Record<string, unknown>[]).map((d) => ({
+    de_id: d.id as string,
+    name: d.name as string,
+    title: (d.display_title as string | null) ?? null,
+    trust_level: (d.trust_level as string | null) ?? null,
+    status: d.status as string,
+  }));
+}
+
+/** Move a digital employee between departments. `department` follows the unit
+ *  by trigger — it is a derived name, never written directly. */
+export async function setDeOrgUnit(deId: string, orgUnitId: string | null): Promise<void> {
+  const { error } = await supabase.rpc('set_de_org_unit', {
+    p_de_id: deId, p_org_unit_id: orgUnitId,
+  });
+  if (error) raise('setDeOrgUnit', error);
 }
 
 export async function listAssignmentRules(): Promise<AssignmentRule[]> {
