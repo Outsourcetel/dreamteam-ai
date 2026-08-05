@@ -162,6 +162,42 @@ export interface AdapterTemplate {
 
 const PLACEHOLDER_RE = /\{([a-zA-Z0-9_]+)\}/g;
 
+/**
+ * Placeholders the framework fills in itself, so a template never has to
+ * declare them as variables: {query} and {ref} are the caller's, and
+ * {today} / {days_ago_N} are the clock's.
+ *
+ * WHY: Google Search Console requires literal startDate/endDate — it has no
+ * relative-range keyword the way Google Ads GAQL has DURING LAST_30_DAYS. A
+ * template with hard-coded dates goes stale the day it is saved, and asking the
+ * user to type a date range into connector settings would freeze it just as
+ * hard. Most analytics APIs are the same, so this is generic rather than a
+ * Search Console special case.
+ */
+const DATE_PLACEHOLDER_RE = /^(today|days_ago_\d+)$/;
+
+export function isFrameworkPlaceholder(key: string): boolean {
+  return key === 'query' || key === 'ref' || DATE_PLACEHOLDER_RE.test(key);
+}
+
+/**
+ * Resolve {today} and {days_ago_N} against a caller-supplied clock. `now` is a
+ * parameter, not Date.now(), so rendering stays deterministic and a test can
+ * pin the date. Dates are UTC yyyy-mm-dd, which is what these APIs take.
+ *
+ * Preview and execute each call this at their own moment, so a request
+ * previewed at 23:59:59 and executed at 00:00:01 spans different days. That is
+ * inherent to a relative window and affects the DATA, never the request shape.
+ */
+export function dateValues(now: Date): Record<string, string> {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const out: Record<string, string> = { today: iso(now) };
+  for (const n of [1, 3, 7, 14, 28, 30, 60, 90, 180, 365, 480]) {
+    out[`days_ago_${n}`] = iso(new Date(now.getTime() - n * 86_400_000));
+  }
+  return out;
+}
+
 function placeholdersIn(s: string): string[] {
   return [...s.matchAll(PLACEHOLDER_RE)].map((m) => m[1]);
 }
@@ -210,7 +246,7 @@ export function validateActionBinding(
   if (!a.path_template?.startsWith('/')) errors.push(`${name}: path_template must start with "/" (it is appended to the base URL).`);
   const legalPlaceholders = new Set([...paramNames, ...declaredVars]);
   for (const ph of actionPlaceholders(a)) {
-    if (!legalPlaceholders.has(ph)) errors.push(`${name} uses {${ph}} but that is neither a declared param nor a template variable.`);
+    if (!isFrameworkPlaceholder(ph) && !legalPlaceholders.has(ph)) errors.push(`${name} uses {${ph}} but that is neither a declared param nor a template variable.`);
   }
   return errors;
 }
@@ -267,7 +303,7 @@ export function validateAdapterDefinition(
     if (kind === 'search' && !phs.includes('query')) errors.push(`${name} is a search operation — its path, query params, or body must use {query} so the search words reach the API.`);
     if (kind === 'get' && !phs.includes('ref')) errors.push(`${name} fetches one record — its path, query params, or body must use {ref} (the record id).`);
     for (const ph of phs) {
-      if (ph !== 'query' && ph !== 'ref' && !declaredVars.has(ph)) errors.push(`${name} uses {${ph}} but no variable "${ph}" is declared.`);
+      if (!isFrameworkPlaceholder(ph) && !declaredVars.has(ph)) errors.push(`${name} uses {${ph}} but no variable "${ph}" is declared.`);
     }
     const r = op.response;
     if (!r || typeof r.items_path !== 'string') errors.push(`${name}: response.items_path is required — where in the response do the results live? Use "" if the response root IS the list.`);
@@ -360,7 +396,7 @@ export interface RenderedAction {
 export function renderAction(
   baseUrlTemplate: string, binding: AdapterActionBinding, vars: Record<string, string>, params: Record<string, string>,
 ): RenderedAction {
-  const values = { ...vars, ...params };
+  const values = { ...dateValues(new Date()), ...vars, ...params };
   const missing: string[] = [];
   const base = renderTemplate(baseUrlTemplate, values);
   missing.push(...base.missing);

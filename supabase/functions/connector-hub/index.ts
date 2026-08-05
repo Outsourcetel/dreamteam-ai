@@ -80,7 +80,7 @@ import {
 } from '../_shared/categoryContracts.ts';
 import {
   AdapterDefinition, AdapterActionBinding, AUTH_META, validateAdapterDefinition,
-  walkPath, renderTemplate, renderBody, renderAction,
+  walkPath, renderTemplate, renderBody, renderAction, dateValues,
 } from '../_shared/adapterTemplates.ts';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { OAUTH_PROVIDERS } from '../_shared/oauthProviders.ts';
@@ -1195,7 +1195,9 @@ async function runTemplateOp(
   if (!binding) {
     return { ok: false, error: 'op_not_bound', detail: `This template has no binding for "${opName}". Bound operations: ${Object.keys(t.def.ops ?? {}).join(', ') || 'none'}.` };
   }
-  const values = { ...t.vars, query: params.query ?? '', ref: params.ref ?? '' };
+  // dateValues FIRST so a connector variable of the same name would win —
+  // the tenant's own configuration should always beat a framework default.
+  const values = { ...dateValues(new Date()), ...t.vars, query: params.query ?? '', ref: params.ref ?? '' };
   const missing: string[] = [];
 
   const base = renderTemplate(t.def.base_url_template, values);

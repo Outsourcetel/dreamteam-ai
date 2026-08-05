@@ -30,7 +30,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { runQuery, adminTokenAvailable } from './helpers/adminQuery';
-import { walkPath } from '../supabase/functions/_shared/adapterTemplates.ts';
+import { walkPath, validateAdapterDefinition } from '../supabase/functions/_shared/adapterTemplates.ts';
 
 // A GoogleAdsRow as the REST API returns it: camelCase field names, int64 as
 // string, money in micros. One fixture per resource the template queries.
@@ -159,6 +159,15 @@ if (!adminTokenAvailable()) {
 
     it('binds no mutate endpoint — writes must stay under decide_action_execution', async () => {
       expect(JSON.stringify(def.ops)).not.toContain(':mutate');
+    });
+
+    it('passes the framework validator the wizard itself runs', async () => {
+      // A template can sit in the database and still be unusable: the builder
+      // validates before saving and the connect flow re-reads it. Asserting the
+      // ROW exists proves storage, not usability.
+      const r = validateAdapterDefinition(def, 'ads');
+      expect(r.errors, `\n  ${r.errors.join('\n  ')}\n`).toEqual([]);
+      expect(r.ok).toBe(true);
     });
   });
 }
