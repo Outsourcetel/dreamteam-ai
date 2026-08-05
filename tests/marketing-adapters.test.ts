@@ -43,6 +43,51 @@ const RESPONSES: Record<string, Record<string, unknown>> = {
       responseAggregationType: 'byPage',
     },
   },
+  'Instagram (Business)': {
+    // {data:[…]} like the rest of Graph, but the fields are Instagram's own —
+    // caption not message, permalink not permalink_url, comments_count not a
+    // summary object. Close enough to Facebook's to copy by mistake.
+    list_posts: {
+      data: [
+        {
+          id: '17900000000000001',
+          caption: 'Ant season is here — booking now',
+          media_type: 'IMAGE',
+          media_url: 'https://scontent.cdninstagram.com/v/ant-season.jpg',
+          permalink: 'https://www.instagram.com/p/CxYzAbCdEfG/',
+          timestamp: '2026-07-28T09:12:00+0000',
+          like_count: 214,
+          comments_count: 18,
+        },
+      ],
+      paging: { cursors: { before: 'a', after: 'b' } },
+    },
+    get_post: {
+      id: '17900000000000001',
+      caption: 'Ant season is here — booking now',
+      media_type: 'IMAGE',
+      media_url: 'https://scontent.cdninstagram.com/v/ant-season.jpg',
+      permalink: 'https://www.instagram.com/p/CxYzAbCdEfG/',
+      timestamp: '2026-07-28T09:12:00+0000',
+      like_count: 214,
+      comments_count: 18,
+    },
+    list_comments: {
+      data: [
+        {
+          id: '17900000000000001',
+          caption: 'Ant season is here — booking now',
+          permalink: 'https://www.instagram.com/p/CxYzAbCdEfG/',
+          timestamp: '2026-07-28T09:12:00+0000',
+          comments: {
+            data: [
+              { id: '17800000000000009', text: 'Do you cover Obhur?', username: 'a_customer', timestamp: '2026-07-29T06:00:00+0000', like_count: 0 },
+            ],
+          },
+        },
+      ],
+    },
+  },
   'LinkedIn (Company Page)': {
     // {paging, elements:[…]}; the post id is a URN and commentary is the text.
     list_posts: {
@@ -169,10 +214,10 @@ if (!adminTokenAvailable()) {
       templates = await runQuery(
         `select name, category, definition from adapter_templates
           where scope = 'platform' and status = 'published'
-            and name in ('Google Search Console', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)')
+            and name in ('Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)')
           order by name`,
       );
-      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)']);
+      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)']);
     });
 
     it('pass the framework validator the wizard runs', async () => {

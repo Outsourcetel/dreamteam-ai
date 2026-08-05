@@ -691,7 +691,17 @@ const mcp = {
 // building code so preview and execute can never drift.
 // ════════════════════════════════════════════════════════════════
 interface ActionRenderResult { ok: boolean; method?: string; url?: string; body?: unknown; error?: string; detail?: string }
-interface ActionRunResult { ok: boolean; status?: number; raw?: unknown; error?: string; detail?: string; receipt?: string }
+interface ActionRunResult {
+  ok: boolean; status?: number; raw?: unknown; error?: string; detail?: string; receipt?: string;
+  /**
+   * The id the external system gave the thing we just created, pulled from the
+   * response via the binding's response.id_path. Two jobs:
+   *   · the audit row names the actual post, not just "HTTP 200"
+   *   · a two-step vendor flow can thread it (Instagram publishes the container
+   *     id that its create call returned)
+   */
+  result_ref?: string | null;
+}
 
 interface NativeAction {
   render(c: Ctx, params: Record<string, string>): ActionRenderResult;
@@ -2051,9 +2061,17 @@ async function runRegisteredAction(
     const headers = { ...actionHeaders, ...auth.headers, ...(rendered.body ? { 'Content-Type': 'application/json' } : {}) };
     const res = await httpJson(rendered.url!, { method: rendered.method, headers, body: rendered.body });
     if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body, url: rendered.url };
+    // Pull the created object's id out of the response. Declared on the binding
+    // since 035 and never read until now — which is why a successful publish
+    // could only say "HTTP 200", with nothing connecting the approval to the
+    // post that actually appeared.
+    const idPath = binding.response?.id_path;
+    const walked = idPath ? walkPath(res.body, idPath) : { found: false } as const;
+    const resultRef = walked.found && walked.value != null ? scalarOrJson(walked.value, 200) : null;
     return {
       ok: true, status: res.status, raw: res.body, url: rendered.url,
-      receipt: `${def.label} succeeded (HTTP ${res.status}) against ${rendered.url}.`,
+      result_ref: resultRef,
+      receipt: `${def.label} succeeded (HTTP ${res.status}) against ${rendered.url}${resultRef ? ` — created ${resultRef}` : ''}.`,
     };
   }
   if (def.provider === 'learned_http') {
@@ -6670,7 +6688,7 @@ serve(async (req) => {
         if (outcome.ok) {
           await admin.from('action_executions').update({
             receipt: outcome.receipt ?? null,
-            result: { ok: true, status: outcome.status ?? null, error: outcome.error ?? null },
+            result: { ok: true, status: outcome.status ?? null, error: outcome.error ?? null, ref: outcome.result_ref ?? null },
           }).eq('id', claimRowId);
         } else {
           await admin.from('action_executions').update({

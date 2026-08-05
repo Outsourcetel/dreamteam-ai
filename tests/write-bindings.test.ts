@@ -21,7 +21,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { runQuery, adminTokenAvailable } from './helpers/adminQuery';
-import { renderAction, validateActionBinding } from '../supabase/functions/_shared/adapterTemplates.ts';
+import { renderAction, validateActionBinding, walkPath } from '../supabase/functions/_shared/adapterTemplates.ts';
 
 // Connector variables, as a real connected account would have them.
 const VARS: Record<string, Record<string, string>> = {
@@ -29,6 +29,7 @@ const VARS: Record<string, Record<string, string>> = {
   'Google Ads': { customer_id: '9876543210', login_customer_id: '' },
   'Google Search Console': { site_url: 'sc-domain%3Aomnexasol.com' },
   'LinkedIn (Company Page)': { organization_id: '5515715' },
+  'Instagram (Business)': { ig_user_id: '17841400000000000' },
 };
 
 // Plausible values per param name, so every binding renders with real input.
@@ -42,6 +43,9 @@ const VALUE: Record<string, string> = {
   keyword: 'free pest control',
   match_type: 'PHRASE',
   sitemap_url: 'https://omnexasol.com/sitemap.xml',
+  image_url: 'https://omnexasol.com/media/ant-season.jpg',
+  caption: 'Ant season is here — booking now',
+  creation_id: '17890000000000000',
   reason: 'wasting budget on non-buyers',
   amount_cents: '50000',
   duration_days: '7',
@@ -249,6 +253,70 @@ if (!adminTokenAvailable()) {
       // A malformed version is rejected by every LinkedIn endpoint, and the
       // error does not say which header is at fault.
       expect(li[0].version).toMatch(/^20\d{2}(0[1-9]|1[0-2])$/);
+    });
+
+    it("Instagram's two steps actually connect", async () => {
+      // Instagram publishes in two calls: build a container, then publish that
+      // container's id. The link between them is response.id_path — a field
+      // declared on action bindings since migration 035 and never READ for
+      // actions until this work, so the create response was discarded and the
+      // second step had no first step.
+      //
+      // This walks the chain the way production does: render create, pull the id
+      // out of a real-shaped response using the BINDING'S OWN declared id_path,
+      // feed that as creation_id, render publish. If the declared path and the
+      // vendor's response ever disagree, the chain breaks here rather than
+      // halfway through publishing something.
+      const tpl = (await runQuery<{ base_url_template: string; actions: Record<string, never> }>(
+        `select t.definition->>'base_url_template' as base_url_template,
+                t.definition->'actions' as actions
+           from adapter_templates t where t.name = 'Instagram (Business)'`,
+      ))[0];
+      const vars = VARS['Instagram (Business)'];
+
+      const create = renderAction(tpl.base_url_template, tpl.actions.create_media_draft, vars, {
+        image_url: VALUE.image_url, caption: VALUE.caption,
+      });
+      expect(create.ok).toBe(true);
+      expect(create.url).toBe('https://graph.facebook.com/v21.0/17841400000000000/media');
+      expect(JSON.parse(create.body!)).toEqual({
+        image_url: VALUE.image_url, caption: VALUE.caption, media_type: 'IMAGE',
+      });
+
+      // What Instagram actually returns from /media — the container id, nothing else.
+      const createResponse = { id: '17890000000000000' };
+      const declaredPath = (tpl.actions.create_media_draft as { response?: { id_path?: string } }).response?.id_path;
+      expect(declaredPath, 'create declares no id_path, so publish can never be fed').toBeTruthy();
+      const containerId = walkPath(createResponse, declaredPath!);
+      expect(containerId.found).toBe(true);
+      expect(containerId.value).toBe('17890000000000000');
+
+      // Step two, fed by step one.
+      const publish = renderAction(tpl.base_url_template, tpl.actions.publish_media, vars, {
+        creation_id: String(containerId.value),
+      });
+      expect(publish.ok).toBe(true);
+      expect(publish.url).toBe('https://graph.facebook.com/v21.0/17841400000000000/media_publish');
+      expect(JSON.parse(publish.body!)).toEqual({ creation_id: '17890000000000000' });
+
+      // And the two are DIFFERENT endpoints. If they ever collapsed to one, the
+      // gated step would be publishing whatever the ungated step just built,
+      // with no person between them.
+      expect(publish.url).not.toBe(create.url);
+    });
+
+    it('preparing an Instagram post is free; publishing it is not', async () => {
+      const rows2 = await runQuery<{ action_key: string; destructive: boolean }>(
+        `select action_key, (risk->>'destructive')::boolean as destructive
+           from action_definitions
+          where scope = 'platform' and category = 'social'
+            and action_key in ('create_media_draft','publish_media')`,
+      );
+      const by = Object.fromEntries(rows2.map((r) => [r.action_key, r.destructive]));
+      // A container is genuinely invisible, which is exactly what tempts you to
+      // gate neither — and then the publish step gates nothing either.
+      expect(by.create_media_draft, 'preparing is gated, so the employee cannot work').toBe(false);
+      expect(by.publish_media, 'publishing is ungated — it can post to the public alone').toBe(true);
     });
 
     it('a money param is named amount_cents, or every money gate is inert', async () => {
