@@ -120,6 +120,64 @@ export async function getAccountSignals(accountId: string): Promise<AccountSigna
   };
 }
 
+// ── Who to contact (migration 609) ───────────────────────────────
+// The account row names a COMPANY. Every step that says "reach out" needs a
+// PERSON, and until 609 there was nowhere to put one — which is what stalled
+// the account check-in objectives at "no contact is recorded".
+
+export interface AccountContact {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  phone: string | null;
+  mobile: string | null;
+  title: string | null;
+  is_primary: boolean;
+  /** 'erpnext' etc. for a mirrored row, or 'entered by hand'. Editing a
+   *  mirrored contact here is overwritten on the next sync — the UI says so. */
+  source: string;
+}
+
+export async function listAccountContacts(accountId: string): Promise<AccountContact[]> {
+  const { data, error } = await supabase.rpc('list_account_contacts', { p_account_id: accountId });
+  if (error) raise('listAccountContacts', error);
+  return (data ?? []) as AccountContact[];
+}
+
+export interface AccountContactInput {
+  contactId?: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  title?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  isPrimary?: boolean;
+}
+
+export async function saveAccountContact(accountId: string, c: AccountContactInput): Promise<string> {
+  const { data, error } = await supabase.rpc('set_account_contact', {
+    p_account_id: accountId,
+    p_first_name: c.firstName,
+    p_last_name: c.lastName,
+    p_email: c.email,
+    p_title: c.title ?? null,
+    p_phone: c.phone ?? null,
+    p_mobile: c.mobile ?? null,
+    p_is_primary: c.isPrimary ?? false,
+    p_contact_id: c.contactId ?? null,
+  });
+  if (error) raise('saveAccountContact', error);
+  return (data as { contact_id: string }).contact_id;
+}
+
+export async function deleteAccountContact(contactId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('delete_account_contact', { p_contact_id: contactId });
+  if (error) raise('deleteAccountContact', error);
+  if (!(data as { ok: boolean })?.ok) throw new Error('That contact no longer exists.');
+}
+
 // ── Breakdown rendering helper ───────────────────────────────────
 
 export function describeComponents(c: HealthComponents | null | undefined): string {

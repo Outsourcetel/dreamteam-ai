@@ -10,8 +10,12 @@ import { useVocabulary } from '../../../lib/vocabulary';
 import {
   getHealthConfig, saveHealthConfig, recomputeHealth, getAccountSignals, describeComponents,
   DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS,
+  listAccountContacts, saveAccountContact, deleteAccountContact,
 } from '../../../lib/successApi';
-import type { HealthWeights, HealthThresholds, AccountSignals, HealthComponents } from '../../../lib/successApi';
+import type {
+  HealthWeights, HealthThresholds, AccountSignals, HealthComponents,
+  AccountContact, AccountContactInput,
+} from '../../../lib/successApi';
 import { listDefinitions, startDefinitionRun } from '../../../lib/playbookBuilderApi';
 import { listAccountActivities, type AccountActivity } from '../../../lib/writeBackApi';
 import type { PlaybookDefinition } from '../../../lib/playbookBuilderApi';
@@ -72,6 +76,146 @@ function BreakdownPopover({ c }: { c: HealthComponents }) {
 }
 
 // ── Account detail drawer ─────────────────────────────────────────
+// ── Who to contact (migration 609) ──────────────────────────────────
+// The account row names a company; a step that says "reach out" needs a
+// person. Every account check-in stalled at "no contact is recorded" until
+// there was somewhere to put one. Rows mirrored from a connected system are
+// labelled, because editing one here is overwritten on the next sync.
+
+const BLANK_CONTACT: AccountContactInput = {
+  firstName: '', lastName: '', email: '', title: '', phone: '', mobile: '', isPrimary: false,
+};
+
+function ContactsPanel({ accountId, accountName }: { accountId: string; accountName: string }) {
+  // set_account_contact refuses anyone below manager. Don't offer a button
+  // that the server is going to turn down — everyone can still READ.
+  const { authedUser } = useAuth();
+  const canEdit = ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(authedUser?.role ?? '');
+  const [contacts, setContacts] = useState<AccountContact[] | null>(null);
+  const [form, setForm] = useState<AccountContactInput | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try { setContacts(await listAccountContacts(accountId)); }
+    catch (e) { setErr((e as Error).message); setContacts([]); }
+  }, [accountId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const save = async () => {
+    if (!form) return;
+    setSaving(true); setErr(null);
+    try {
+      await saveAccountContact(accountId, form);
+      setForm(null);
+      await load();
+    } catch (e) {
+      // The RPC refuses by raising; show what it said, without the code prefix.
+      setErr((e as Error).message.replace(/^.*?not_allowed:\s*/, '').replace(/^.*?:\s*(?=a contact)/, ''));
+    } finally { setSaving(false); }
+  };
+
+  const remove = async (c: AccountContact) => {
+    setErr(null);
+    try { await deleteAccountContact(c.id); await load(); }
+    catch (e) { setErr((e as Error).message.replace(/^.*?not_allowed:?\s*/, '') || 'Not allowed.'); }
+  };
+
+  const edit = (c: AccountContact) => setForm({
+    contactId: c.id, firstName: c.first_name ?? '', lastName: c.last_name ?? '',
+    email: c.email, title: c.title ?? '', phone: c.phone ?? '', mobile: c.mobile ?? '',
+    isPrimary: c.is_primary,
+  });
+
+  const set = (k: keyof AccountContactInput) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => (f ? { ...f, [k]: e.target.value } : f));
+
+  const fieldCls = `${inputCls} !py-1.5 !text-xs w-full`;
+
+  return (
+    <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-semibold text-white">Who to contact</p>
+        {form === null && canEdit && (
+          <button onClick={() => { setForm({ ...BLANK_CONTACT }); setErr(null); }}
+            className="text-[11px] px-2 py-1 rounded-lg bg-dt-panel hover:bg-dt-border text-dt-support transition-colors">
+            + Add contact
+          </button>
+        )}
+      </div>
+
+      {err && <p className="text-[11px] text-rose-300 mb-2">{err}</p>}
+
+      {contacts === null ? (
+        <p className="text-xs text-dt-muted">Loading…</p>
+      ) : contacts.length === 0 && form === null ? (
+        <p className="text-xs text-dt-muted">
+          No one is recorded for {accountName}. An employee asked to check in on this account
+          will stop here and wait for a person, because there is nobody to write to.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {contacts.map(c => (
+            <div key={c.id} className="flex items-start justify-between gap-2 py-1 border-b border-dt-border last:border-0">
+              <div className="min-w-0">
+                <p className="text-xs text-dt-body truncate">
+                  {[c.first_name, c.last_name].filter(Boolean).join(' ') || c.email}
+                  {c.is_primary && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">primary</span>}
+                  {c.source !== 'entered by hand' && (
+                    <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="Mirrored from a connected system — edits here are overwritten on the next sync.">
+                      from {c.source}
+                    </span>
+                  )}
+                </p>
+                <p className="text-[11px] text-dt-muted truncate">
+                  {c.title ? `${c.title} · ` : ''}{c.email}{c.phone ? ` · ${c.phone}` : ''}
+                </p>
+              </div>
+              {canEdit && (
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => edit(c)} className="text-[11px] px-1.5 py-0.5 rounded text-dt-muted hover:text-white transition-colors">Edit</button>
+                  <button onClick={() => void remove(c)} className="text-[11px] px-1.5 py-0.5 rounded text-dt-muted hover:text-rose-300 transition-colors">Remove</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {form !== null && (
+        <div className="mt-3 pt-3 border-t border-dt-border space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input className={fieldCls} placeholder="First name" value={form.firstName} onChange={set('firstName')} />
+            <input className={fieldCls} placeholder="Last name" value={form.lastName} onChange={set('lastName')} />
+          </div>
+          <input className={fieldCls} placeholder="Email — how the customer is recognised" value={form.email} onChange={set('email')} />
+          <div className="grid grid-cols-2 gap-2">
+            <input className={fieldCls} placeholder="Title (optional)" value={form.title ?? ''} onChange={set('title')} />
+            <input className={fieldCls} placeholder="Phone (optional)" value={form.phone ?? ''} onChange={set('phone')} />
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-dt-support">
+            <input type="checkbox" checked={form.isPrimary ?? false}
+              onChange={e => setForm(f => (f ? { ...f, isPrimary: e.target.checked } : f))}
+              className="rounded border-dt-border-strong bg-dt-panel" />
+            Primary contact — the one an employee writes to by default
+          </label>
+          <div className="flex gap-2">
+            <button onClick={() => void save()} disabled={saving || !form.email.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+              {saving ? 'Saving…' : form.contactId ? 'Save changes' : 'Add contact'}
+            </button>
+            <button onClick={() => { setForm(null); setErr(null); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-border text-dt-support transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountDrawer({ account, onClose, onChanged }: {
   account: CustomerAccount; onClose: () => void; onChanged: () => void;
 }) {
@@ -133,6 +277,8 @@ function AccountDrawer({ account, onClose, onChanged }: {
           <p className="text-xs text-dt-support">{describeComponents(c)}</p>
           <p className="text-[10px] text-dt-faint mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
+
+        <ContactsPanel accountId={account.id} accountName={account.name} />
 
         {wonOpps.length > 0 && (
           <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
