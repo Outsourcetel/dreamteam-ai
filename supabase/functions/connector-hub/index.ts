@@ -592,17 +592,49 @@ async function mcpClientCall(c: Ctx, body: Record<string, unknown>): Promise<Rec
  */
 const SENSITIVE_READ = /(api[-_]?key|secret|credential|password|passwd|token|oauth|grant|private[-_]?key)/i;
 
+/**
+ * A GENERIC PASSTHROUGH tool, where the risk lives in the parameters rather
+ * than the tool.
+ *
+ * Found on the second real server tested. Stripe's MCP publishes only 8 tools,
+ * and `stripe_api_read` is "Read data from ANY Stripe API GET operation" — one
+ * tool, correctly annotated readOnlyHint:true, that can read every customer,
+ * charge, payout, balance and dispute in the account. The credential screen
+ * above did not catch it, because nothing in the NAME says credential. That is
+ * precisely the residual this file admitted to, showing up on the common case
+ * rather than an exotic one.
+ *
+ * Per-tool risk classification cannot describe a tool like this: the blast
+ * radius is `stripe_api_operation_id`, not the tool. So the tool itself is
+ * floored, and a human sees the parameters before it runs.
+ *
+ * Narrow on purpose. `stripe_api_search` (searches the API REFERENCE) and
+ * `stripe_api_details` (parameter docs) are genuinely harmless and must stay
+ * auto-runnable, which is why this matches the verbs and not the prefix.
+ */
+const BROAD_PASSTHROUGH = /(api[-_]?(read|write|call|request|execute|invoke|proxy)|raw[-_]?(request|api)|execute[-_]?(sql|query|graphql)|run[-_]?query)/i;
+
 function mcpRisk(t: McpToolDef): { destructive: boolean; idempotent: boolean; sensitive?: boolean; sensitive_reason?: string } {
   const a = (t.annotations ?? {}) as Record<string, unknown>;
   const destructive = a.readOnlyHint !== true;
-  const sensitive = !destructive && SENSITIVE_READ.test(String(t.name ?? ''));
+  const name = String(t.name ?? '');
+  const credential = !destructive && SENSITIVE_READ.test(name);
+  const passthrough = !destructive && BROAD_PASSTHROUGH.test(name);
+  const sensitive = credential || passthrough;
   return {
     destructive,
     idempotent: a.idempotentHint === true,
     // Kept SEPARATE from `destructive` on purpose: calling a credential read
     // "destructive" would be a lie in every ledger row and on every screen.
     // It is the gate call that treats sensitive like destructive, not the label.
-    ...(sensitive ? { sensitive: true, sensitive_reason: 'reads credential or authorization material' } : {}),
+    ...(sensitive
+      ? {
+        sensitive: true,
+        sensitive_reason: credential
+          ? 'reads credential or authorization material'
+          : 'unbounded passthrough — the scope is set by its parameters, not by the tool',
+      }
+      : {}),
   };
 }
 
@@ -5985,7 +6017,7 @@ serve(async (req) => {
               sensitive: risk.sensitive === true,
               param_count: mcpParamSchema(t).length,
               gate: mustAskAHuman(risk)
-                ? (risk.sensitive ? 'human approval (sensitive read)'
+                ? (risk.sensitive ? `human approval (sensitive — ${risk.sensitive_reason})`
                   : a.destructiveHint === true ? 'human approval (declared destructive)'
                   : 'human approval (fail-safe — not declared read-only)')
                 : 'trust dial (declared read-only)',
@@ -6026,7 +6058,7 @@ serve(async (req) => {
           tool: name, action_key: `mcp_${name}`,
           destructive: risk.destructive, sensitive: risk.sensitive === true,
           gate: mustAskAHuman(risk)
-            ? (risk.sensitive ? 'human approval (sensitive read — credential or authorization material)'
+            ? (risk.sensitive ? `human approval (sensitive — ${risk.sensitive_reason})`
               : annotations.destructiveHint === true ? 'human approval (declared destructive)'
               : 'human approval (fail-safe — not declared read-only)')
             : 'trust dial (declared read-only)',
