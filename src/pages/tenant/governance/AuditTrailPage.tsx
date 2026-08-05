@@ -32,56 +32,6 @@ interface AuditEvent {
   outcome: string
 }
 
-const TCP_EVENTS: AuditEvent[] = [
-  { id: 't1', timestamp: '2026-07-03 14:22', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Alex resolved — "How do I reset 2FA?"', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't2', timestamp: '2026-07-03 14:16', actor: 'Alex', actorType: 'de', actionType: 'escalated', action: 'Alex escalated — API auth bug to L2', entity: 'Customer', outcome: 'Escalated to L2' },
-  { id: 't3', timestamp: '2026-07-03 14:10', actor: 'Casey', actorType: 'de', actionType: 'escalated', action: 'Generated invoice — Meridian Group $15,600', entity: 'Customer', outcome: 'Pending approval' },
-  { id: 't4', timestamp: '2026-07-03 14:02', actor: 'Casey', actorType: 'de', actionType: 'resolved', action: 'Casey sent renewal invoice — Harbor Tech $67K', entity: 'Customer', outcome: 'Sent' },
-  { id: 't5', timestamp: '2026-07-03 13:00', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Riley processed onboarding — new hire Jordan K.', entity: 'Workforce', outcome: 'Complete' },
-  { id: 't6', timestamp: '2026-07-03 12:15', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Submitted KB article — "Rate limiting guide"', entity: 'Knowledge', outcome: 'Pending review' },
-  { id: 't7', timestamp: '2026-07-03 11:30', actor: 'Casey', actorType: 'de', actionType: 'resolved', action: 'Sent renewal email cadence — 3 accounts', entity: 'Customer', outcome: 'Sent' },
-  { id: 't8', timestamp: '2026-07-03 11:47', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Alex resolved ticket #4815 — billing question', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't9', timestamp: '2026-07-03 10:40', actor: 'HR Manager', actorType: 'human', actionType: 'approval', action: 'Approved equipment provisioning for Jordan K.', entity: 'Workforce', outcome: 'Approved' },
-  { id: 't10', timestamp: '2026-07-03 09:45', actor: 'Alex', actorType: 'de', actionType: 'guardrail_violation', action: 'BLOCKED: Alex attempted SLA commitment outside standard tier — guardrail DE-R2', entity: 'Customer', outcome: 'Blocked' },
-  { id: 't11', timestamp: '2026-07-03 09:12', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4811 — password reset loop', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't12', timestamp: '2026-07-02 16:30', actor: 'K. Douglas (Security)', actorType: 'human', actionType: 'config_change', action: 'Guardrails updated v2.2→v2.3 — added SLA-tier restriction (Alex)', entity: 'Governance', outcome: 'Config change' },
-  { id: 't13', timestamp: '2026-07-02 15:10', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved 8 tickets — batch shift', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't14', timestamp: '2026-07-02 15:00', actor: 'Casey', actorType: 'de', actionType: 'escalated', action: 'Flagged at-risk — Apex Systems', entity: 'Customer', outcome: 'Escalated to AE' },
-  { id: 't15', timestamp: '2026-07-02 14:00', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Leave request approved — P. Sharma', entity: 'Workforce', outcome: 'Approved' },
-  { id: 't16', timestamp: '2026-07-02 11:20', actor: 'Renewal Manager', actorType: 'human', actionType: 'approval', action: 'Approved renewal terms — Northwind Labs (24 months)', entity: 'Customer', outcome: 'Approved' },
-  { id: 't17', timestamp: '2026-07-02 10:05', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4802 — webhook configuration', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't18', timestamp: '2026-07-02 09:00', actor: 'Alex', actorType: 'de', actionType: 'escalated', action: 'KB gap flagged — "Webhook retry logic"', entity: 'Knowledge', outcome: 'Gap logged' },
-  { id: 't19', timestamp: '2026-07-01 16:45', actor: 'System', actorType: 'system', actionType: 'config_change', action: 'Quarterly access review cycle opened — 3 systems', entity: 'Governance', outcome: 'Scheduled' },
-  { id: 't20', timestamp: '2026-07-01 14:30', actor: 'Riley', actorType: 'de', actionType: 'escalated', action: 'Compensation query routed to HRBP — restriction DE-R1', entity: 'Workforce', outcome: 'Escalated to HRBP' },
-  { id: 't21', timestamp: '2026-07-01 11:00', actor: 'Riley', actorType: 'de', actionType: 'escalated', action: 'Recertification overdue — flagged', entity: 'Workforce', outcome: 'Needs recertification' },
-  { id: 't22', timestamp: '2026-07-01 09:00', actor: 'Casey', actorType: 'de', actionType: 'resolved', action: 'Renewal close — Harbor Tech $67,000', entity: 'Customer', outcome: 'Closed Won' },
-  { id: 't23', timestamp: '2026-06-30 15:40', actor: 'Finance Manager', actorType: 'human', actionType: 'approval', action: 'Approved 15% renewal discount — Harbor Tech', entity: 'Customer', outcome: 'Approved' },
-  { id: 't24', timestamp: '2026-06-30 13:10', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4790 — SSO login failure', entity: 'Customer', outcome: 'Resolved' },
-  { id: 't25', timestamp: '2026-06-30 10:30', actor: 'Admin', actorType: 'human', actionType: 'config_change', action: 'Customer override edited — "Never quote competitor pricing" scope confirmed as All DEs', entity: 'Governance', outcome: 'Config change' },
-  { id: 't26', timestamp: '2026-06-29 16:20', actor: 'Riley', actorType: 'de', actionType: 'resolved', action: 'Offboarding checklist completed — contractor T. Nguyen', entity: 'Workforce', outcome: 'Complete' },
-  { id: 't27', timestamp: '2026-06-29 11:15', actor: 'Alex', actorType: 'de', actionType: 'resolved', action: 'Resolved ticket #4784 — API rate limit increase request', entity: 'Customer', outcome: 'Resolved' },
-]
-
-const PWC_EVENTS: AuditEvent[] = [
-  { id: 'p1', timestamp: '2026-07-03 14:05', actor: 'Avery', actorType: 'de', actionType: 'escalated', action: 'Completed Q2 corporate tax memo — Crestline Corp', entity: 'Specialist', outcome: 'Sent to partner review' },
-  { id: 'p2', timestamp: '2026-07-03 14:00', actor: 'Morgan', actorType: 'de', actionType: 'escalated', action: 'GDPR request — overdue response escalated', entity: 'Customer', outcome: 'Escalated to partner' },
-  { id: 'p3', timestamp: '2026-07-03 11:00', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'KYC completed — new engagement #E-2247', entity: 'Customer', outcome: 'Passed' },
-  { id: 'p4', timestamp: '2026-07-03 10:15', actor: 'Engagement Partner', actorType: 'human', actionType: 'approval', action: 'Partner sign-off — engagement letter #E-2247', entity: 'Customer', outcome: 'Approved' },
-  { id: 'p5', timestamp: '2026-07-03 09:00', actor: 'Avery', actorType: 'de', actionType: 'escalated', action: 'Research — FATCA dual-national issue', entity: 'Knowledge', outcome: 'KB gap logged' },
-  { id: 'p6', timestamp: '2026-07-02 16:00', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'Sent engagement update — Harbor Financial', entity: 'Customer', outcome: 'Sent' },
-  { id: 'p7', timestamp: '2026-07-02 14:30', actor: 'Managing Partner', actorType: 'human', actionType: 'approval', action: 'Approved fee adjustment — Sterling Trust ($4,200)', entity: 'Customer', outcome: 'Approved' },
-  { id: 'p8', timestamp: '2026-07-02 15:00', actor: 'Avery', actorType: 'de', actionType: 'resolved', action: 'Memo completed — R&D credit analysis', entity: 'Specialist', outcome: 'Delivered' },
-  { id: 'p9', timestamp: '2026-07-02 11:45', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'Quarterly client review scheduled — 6 engagements', entity: 'Customer', outcome: 'Scheduled' },
-  { id: 'p10', timestamp: '2026-07-02 09:30', actor: 'Quality & Risk', actorType: 'human', actionType: 'config_change', action: 'Independence attestation reminder issued — Harbor Financial expansion', entity: 'Governance', outcome: 'Pending' },
-  { id: 'p11', timestamp: '2026-07-01 16:10', actor: 'Avery', actorType: 'de', actionType: 'resolved', action: 'Reviewed IRS Notice 2026-14', entity: 'Specialist', outcome: 'Summary filed' },
-  { id: 'p12', timestamp: '2026-07-01 13:00', actor: 'Partner (Tax)', actorType: 'human', actionType: 'approval', action: 'Partner review passed — state nexus memo', entity: 'Specialist', outcome: 'Approved' },
-  { id: 'p13', timestamp: '2026-07-01 10:20', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'AML screening completed — 2 new client entities', entity: 'Customer', outcome: 'Passed' },
-  { id: 'p14', timestamp: '2026-06-30 15:00', actor: 'Quality & Risk', actorType: 'human', actionType: 'config_change', action: 'Guardrails updated v2.3→v2.4 — PCAOB independence conflict rule (Avery)', entity: 'Governance', outcome: 'Config change' },
-  { id: 'p15', timestamp: '2026-06-30 11:30', actor: 'Morgan', actorType: 'de', actionType: 'escalated', action: 'Client complaint routed — SLA breach concern, Sterling Trust', entity: 'Customer', outcome: 'Escalated to partner' },
-  { id: 'p16', timestamp: '2026-06-29 14:00', actor: 'Avery', actorType: 'de', actionType: 'resolved', action: 'Memo completed — transfer pricing documentation review', entity: 'Specialist', outcome: 'Delivered' },
-  { id: 'p17', timestamp: '2026-06-29 09:45', actor: 'Morgan', actorType: 'de', actionType: 'resolved', action: 'Engagement intake completed — Beacon Capital advisory', entity: 'Customer', outcome: 'Complete' },
-]
-
 const ACTION_TYPE_META: Record<ActionType, { label: string; style: string }> = {
   resolved: { label: 'Resolved', style: 'bg-emerald-500/15 text-emerald-300' },
   escalated: { label: 'Escalated', style: 'bg-amber-500/15 text-amber-300' },

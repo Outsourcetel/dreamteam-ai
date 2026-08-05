@@ -35,18 +35,6 @@ interface DEMetrics {
   humanBaseline: string;
 }
 
-const TCP_METRICS: DEMetrics[] = [
-  { name: 'Alex', role: 'Customer Support DE', resolutionRate: 88, confidence: 91, escalationRate: 12, errorRate: 2, tasksThisMonth: 847, actionsTaken: 612, autoActions: 548, sentToHuman: 64, blockedActions: 4, trend: [82, 84, 83, 86, 87, 88], costPerTask: '$1.40', humanBaseline: '$14.20' },
-  { name: 'Casey', role: 'Renewal DE', resolutionRate: 92, confidence: 88, escalationRate: 8, errorRate: 1, tasksThisMonth: 312, actionsTaken: 236, autoActions: 176, sentToHuman: 60, blockedActions: 2, trend: [88, 89, 91, 90, 92, 92], costPerTask: '$2.10', humanBaseline: '$31.50' },
-  { name: 'Riley', role: 'HR & People DE', resolutionRate: 79, confidence: 83, escalationRate: 14, errorRate: 4, tasksThisMonth: 178, actionsTaken: 94, autoActions: 58, sentToHuman: 36, blockedActions: 3, trend: [84, 83, 81, 80, 79, 79], costPerTask: '$1.85', humanBaseline: '$18.70' },
-];
-
-const PWC_METRICS: DEMetrics[] = [
-  { name: 'Morgan', role: 'Client Relations DE', resolutionRate: 85, confidence: 87, escalationRate: 10, errorRate: 2, tasksThisMonth: 241, actionsTaken: 152, autoActions: 116, sentToHuman: 36, blockedActions: 1, trend: [80, 82, 83, 84, 85, 85], costPerTask: '$2.60', humanBaseline: '$42.00' },
-  { name: 'Avery', role: 'Tax Research DE', resolutionRate: 82, confidence: 91, escalationRate: 16, errorRate: 1, tasksThisMonth: 94, actionsTaken: 41, autoActions: 22, sentToHuman: 19, blockedActions: 0, trend: [78, 79, 80, 81, 82, 82], costPerTask: '$6.80', humanBaseline: '$185.00' },
-];
-
-const METRICS: Record<CompanyId, DEMetrics[]> = { tcp: TCP_METRICS, pwc: PWC_METRICS };
 
 // Company benchmark — same wording as WorkforceDEsPage TabPerformance
 const BENCHMARK: Record<CompanyId, { resolution: number; confidence: number; escalation: number }> = {

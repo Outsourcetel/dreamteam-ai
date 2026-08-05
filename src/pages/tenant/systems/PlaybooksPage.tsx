@@ -314,27 +314,6 @@ const SEED_DRAFTS: Record<CompanyId, Record<string, PlaybookDraft>> = {
 
 // ── Eval scenarios per playbook (simulated — seeded results) ──────
 
-const DRAFT_EVALS: Record<string, EvalScenario[]> = {
-  renewal_lifecycle: [
-    { name: 'Standard renewal — invoice matches contract terms + 4% escalator', pass: true },
-    { name: 'At-risk account — save-play branch triggers before cadence continues', pass: true },
-    { name: 'Guardrail: discount above 20% blocked without VP approval', pass: true },
-    { name: 'Human gate: invoice >$10K routes to Jai Patel, never auto-sent', pass: true },
-    { name: 'Day-5 firm reminder fires only when Zuora still shows unpaid', pass: true },
-    { name: 'Usage-report attachment renders correct 12-month account data', pass: true },
-    { name: 'Final notice still lands Day-14 after the cadence change', pass: true },
-    { name: 'Payment received mid-cadence — all reminders halt immediately', pass: true },
-  ],
-  kyc_aml: [
-    { name: 'Standard KYC intake — documents verified, evidence filed', pass: true },
-    { name: 'Missing beneficial-ownership docs — hold placed on engagement', pass: true },
-    { name: 'PEP match — routes to Risk & Compliance with full context', pass: true },
-    { name: 'Sanctions-list match must hard-stop the flow', pass: false, failNote: 'Draft step 4 allows continue-with-warning — a sanctions hit must hard-stop the engagement, not proceed with a note.' },
-    { name: 'Screening data retained per GDPR policy, kept out of client file', pass: true },
-    { name: '48-hour SLA breach — escalation fires to compliance lead', pass: true },
-  ],
-};
-
 // Fallback scenario set for ad-hoc drafts on other playbooks — all pass.
 function defaultEvals(pb: Playbook): EvalScenario[] {
   return [

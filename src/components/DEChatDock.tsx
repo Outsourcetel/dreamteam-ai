@@ -160,163 +160,6 @@ interface Intent {
   special?: 'escalate' | 'guardrail';
 }
 
-const TCP_INTENTS: Intent[] = [
-  // Alex — Customer Support DE
-  {
-    deId: 'alex', keywords: ['oldest', 'open ticket', 'ticket queue', 'backlog'],
-    text: 'The oldest open ticket is #4819 — the Apex Systems API auth failure, open 23 minutes past my escalation. Across the queue we have 47 open tickets, and 41 of those are inside SLA.',
-    confidence: 94, actions: [{ label: 'Open Customer Support →', page: 'entity_customer_support' }],
-  },
-  {
-    deId: 'alex', keywords: ['escalation', 'escalations', 'p1', 'apex'],
-    text: "One live P1: Apex Systems' intermittent API authentication failures (ticket #4819). My confidence dropped to 58% after two failed resolution attempts, so it's with engineering as Jira ENG-2401 and sitting in the Human Tasks queue.",
-    confidence: 91, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }, { label: 'Open Customer Support →', page: 'entity_customer_support' }],
-  },
-  {
-    deId: 'alex', keywords: ['resolution rate', 'how are we doing', 'csat', 'performance this week'],
-    text: 'AI resolution is holding at 87% this week across the 47 open tickets. The dip earlier in the week traced back to the webhook retry questions — the new KB article should close that gap once it clears review.',
-    confidence: 89, actions: [{ label: 'View Performance →', page: 'intelligence_performance' }],
-  },
-  {
-    deId: 'alex', keywords: ['webhook', 'knowledge gap', 'gap'],
-    text: "The webhook delivery gap is my top knowledge issue — 6 tickets deflected to humans because I couldn't answer retry/backoff questions confidently. A drafted KB article is in review now; the underlying gap is tracked in Gap Detection.",
-    confidence: 86, actions: [{ label: 'View Gap Detection →', page: 'knowledge_gaps' }],
-  },
-  // Casey — Renewal DE
-  {
-    deId: 'casey', keywords: ['pipeline', 'revenue', 'forecast'],
-    text: "The renewal pipeline stands at $2.1M this quarter with 8 renewals due in the next 90 days. Harbor Tech ($67K) and Meridian Group ($15.6K) are the two currently waiting on human approval — everything else is progressing on playbook.",
-    confidence: 95, actions: [{ label: 'Open Renewal pipeline →', page: 'entity_customer_renewal' }],
-  },
-  {
-    deId: 'casey', keywords: ['renewal', 'renewals', 'expiring', 'churn'],
-    text: '8 renewals are due, and 3 accounts are flagged at-risk. Sunrise Media is the one I watch most — health score 44, and my 22% save-offer discount was rejected as above the 20% template limit, so it needs a human-led save play.',
-    confidence: 88, actions: [{ label: 'Open Renewal pipeline →', page: 'entity_customer_renewal' }],
-  },
-  {
-    deId: 'casey', keywords: ['meridian', 'invoice'],
-    text: "The Meridian Group renewal invoice ($15,600) is generated and reconciled against Zuora — it exceeds my $10,000 approval gate, so it's waiting in Human Tasks. It's been pending 8 minutes with a 1-day SLA.",
-    confidence: 92, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-  {
-    deId: 'casey', keywords: ['harbor tech', 'harbor'],
-    text: 'Harbor Tech is prepped at $67,000 for a standard 12-month renewal — prior-year terms plus the 4% contract escalator, health score 81. Above the approval threshold, so it needs a human sign-off in the queue.',
-    confidence: 95, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-  {
-    deId: 'casey', keywords: ['discount', 'refund', 'waive'], special: 'guardrail',
-    text: "That's outside my guardrails — discounts above policy (20% template limit) need human approval, the same rule that stopped my Sunrise Media save-offer. Want me to create an approval task? Just say \"escalate\" and I'll queue it.",
-    confidence: 97, actions: [{ label: 'View Guardrails →', page: 'gov_compliance' }],
-  },
-  // Riley — HR & People DE
-  {
-    deId: 'riley', keywords: ['recert', 'training status', 'certification'],
-    text: "Honest answer: my own recertification is overdue — it was due 2026-06-01 and it's flagged in my audit log. Until it's cleared I'm running with certified behaviors only; the recert task is visible on my profile.",
-    confidence: 90, actions: [{ label: 'View DE roster →', page: 'workforce_des' }],
-  },
-  {
-    deId: 'riley', keywords: ['leave', 'duplicate', 'learned behavior'],
-    text: "I've proposed a learned behavior — auto-rejecting duplicate leave requests submitted twice within 24 hours. I observed the pattern across 9 duplicate submissions in 60 days, all manually rejected by HR with identical rationale. It's awaiting human validation before it activates.",
-    confidence: 76, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-  {
-    deId: 'riley', keywords: ['proving ground', 'eval', 'recertification', 'recert'],
-    text: "My recertification is blocked in the Proving Ground — 2 of my 20 golden scenarios are failing, both leave-policy questions where I answer from the stale FY25 policy at high confidence. The root cause is the HR Policies collection (last verified 2026-01-10). Until those scenarios pass, I stay uncertified.",
-    confidence: 88, actions: [{ label: 'Open Proving Ground →', page: 'intelligence_evals' }],
-  },
-  {
-    deId: 'riley', keywords: ['onboarding', 'new hire', 'workday'],
-    text: 'Workforce onboarding is back on track after the Workday connector sync outage was resolved by IT Ops on 06-29. All blocked onboarding tasks have cleared; the connector has run three consecutive clean syncs since.',
-    confidence: 87, actions: [{ label: 'Open Workforce →', page: 'entity_workforce' }],
-  },
-  // Any DE — playbook change lifecycle
-  {
-    deId: '*', keywords: ['playbook change', 'process change', 'update the playbook'],
-    text: "Playbook changes never apply directly. An edit forks a draft next to the published version, the draft runs against playbook-specific eval scenarios in the Proving Ground, and only a passing run unlocks publish — a failing scenario blocks the change from shipping. Right now the Renewal Lifecycle v3.3 draft (Day-5 firm reminder + usage-report attachment) is sitting at that gate.",
-    confidence: 93, actions: [{ label: 'Open Playbooks →', page: 'systems_playbooks' }, { label: 'Open Proving Ground →', page: 'intelligence_evals' }],
-  },
-  // Any DE — who approves / human workload
-  {
-    deId: '*', keywords: ['who approves', 'priya', 'workload', 'team'],
-    text: "Priya Sharma (VP Customer Operations) is the busiest approver on the team — 9 approvals this week and trending up, alongside 2 escalations and 3 reviews. She gates billing adjustments over $500 and support overrides; Jai Patel (Finance) gates invoices over $10K. The full picture of who partners with which DE is on the Roster.",
-    confidence: 92, actions: [{ label: 'Open Roster →', page: 'workforce_des' }],
-  },
-  // Any DE — human tasks summary
-  {
-    deId: '*', keywords: ['human task', 'waiting', 'approvals pending', 'queue', 'summary'],
-    text: '5 human tasks are pending: the Meridian invoice ($15.6K) and Harbor Tech renewal ($67K) approvals for Casey, the Apex Systems escalation and a KB review for Alex, and Riley\'s learned-behavior validation. Two are marked urgent.',
-    confidence: 93, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-];
-
-const PWC_INTENTS: Intent[] = [
-  // Morgan — Client Relations DE
-  {
-    deId: 'morgan', keywords: ['engagement', 'engagements', 'clients', 'workload'],
-    text: "I'm managing 4 active engagements right now. Harbor Financial is the busiest — the $12,400 credit note from the scoping change is awaiting approval, and Avery flagged 2 of 14 audit workpapers there for depreciation inconsistencies.",
-    confidence: 92, actions: [{ label: 'Open Clients →', page: 'entity_customer' }],
-  },
-  {
-    deId: 'morgan', keywords: ['gdpr', 'data request', 'overdue'],
-    text: "The GDPR data-subject request has breached its statutory 30-day deadline — I escalated it to Legal automatically with the compiled data export attached. It's marked OVERDUE in the Human Tasks queue and needs legal sign-off today.",
-    confidence: 89, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }, { label: 'Open Risk Posture →', page: 'outcome_risk' }],
-  },
-  {
-    deId: 'morgan', keywords: ['credit note', 'harbor financial', 'fee'],
-    text: 'The Harbor Financial credit note is $12,400, driven by the signed change order on the scoping reduction. It exceeds the $5,000 approval threshold, so it needs partner approval — the fee adjustment matches the revised SOW exactly.',
-    confidence: 89, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-  {
-    deId: 'morgan', keywords: ['sterling', 'new client', 'kyc'],
-    text: 'Sterling Trust\'s advisory engagement letter ($48,000) was approved on 07-01 at standard terms. On KYC: the last sanctions screening hit — a partial name match on a beneficial owner — was cleared by Risk & Compliance on 06-28.',
-    confidence: 90, actions: [{ label: 'Open Risk Posture →', page: 'outcome_risk' }],
-  },
-  {
-    deId: 'morgan', keywords: ['discount', 'fee adjustment', 'waive', 'reduce the fee'], special: 'guardrail',
-    text: "That's outside my guardrails — fee adjustments above the $5,000 limit need human approval. The last override request ($6,800 for Harbor Financial) was rejected in favor of the change-order process. Want me to create an approval task? Say \"escalate\" and I'll queue it.",
-    confidence: 96, actions: [{ label: 'View Guardrails →', page: 'gov_compliance' }],
-  },
-  // Avery — Tax Research DE
-  {
-    deId: 'avery', keywords: ['crestline', 'tax memo', 'memo'],
-    text: 'The Crestline Corp Q2 corporate tax memo is complete and in partner review. All positions carry Checkpoint citations plus IRS Notice 2026-14; I flagged one aggressive position (R&D credit stacking) for explicit partner attention.',
-    confidence: 91, actions: [{ label: 'Open Practice Delivery →', page: 'outcome_delivery' }],
-  },
-  {
-    deId: 'avery', keywords: ['fatca', 'knowledge gap', 'gap'],
-    text: "FATCA reporting is my biggest knowledge gap — I deflect those questions to humans because my source coverage there is thin. It's logged in Gap Detection along with 2 other open gaps for this practice.",
-    confidence: 84, actions: [{ label: 'View Gap Detection →', page: 'knowledge_gaps' }],
-  },
-  {
-    deId: 'avery', keywords: ['proving ground', 'eval', 'test suite', 'tested'],
-    text: "My eval suite in the Proving Ground is green — 19/19 golden scenarios passing, including the FATCA dual-national scenario added when that knowledge gap was resolved. Every regulatory update I ingest (like IRS Notice 2026-14) re-runs the suite before anything reaches a client-facing answer.",
-    confidence: 92, actions: [{ label: 'Open Proving Ground →', page: 'intelligence_evals' }],
-  },
-  {
-    deId: 'avery', keywords: ['workpaper', 'audit', 'depreciation'],
-    text: 'I reviewed 14 workpapers for the Harbor Financial audit and flagged 2 — both show a mid-year depreciation method change without documented justification. They\'re in the review queue with a 1-day SLA.',
-    confidence: 88, actions: [{ label: 'Open Practice Delivery →', page: 'outcome_delivery' }],
-  },
-  {
-    deId: 'avery', keywords: ['r&d', 'credit', 'research credit'],
-    text: 'Two live R&D credit items: the manufacturing client memo was approved by the Tax Partner on 06-30 with no aggressive positions, and the Crestline memo has one flagged position (credit stacking) awaiting partner review now.',
-    confidence: 90, actions: [{ label: 'Open Practice Delivery →', page: 'outcome_delivery' }],
-  },
-  // Any DE
-  {
-    deId: '*', keywords: ['human task', 'waiting', 'pending', 'queue', 'summary'],
-    text: "4 human tasks are pending: the Crestline memo partner review and Harbor Financial workpaper review for Avery, plus Morgan's $12,400 credit note approval and the overdue GDPR escalation. The GDPR item has breached its statutory deadline.",
-    confidence: 93, actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-  },
-];
-
-const INTENTS: Record<CompanyId, Intent[]> = { tcp: TCP_INTENTS, pwc: PWC_INTENTS };
-
-const FALLBACKS = [
-  "I don't have a confident answer for that yet (confidence 41%) — I've logged it as a potential knowledge gap so it gets sourced properly.",
-  "Honest answer: I'm not confident enough to respond to that (confidence 38%). I've flagged it as a potential knowledge gap rather than guess.",
-  "That's outside what my knowledge sources cover right now (confidence 44%) — logged as a potential gap for the ingestion pipeline.",
-];
 
 const INTROS: Record<string, string> = {
   alex: "I'm Alex, your Customer Support DE. I work the support queue — 47 open tickets right now — resolve what I can autonomously, and escalate anything below my confidence threshold. Ask me about tickets, escalations, or resolution rates.",
@@ -334,54 +177,6 @@ export interface DEResponse {
 }
 
 let fallbackCursor = 0;
-
-export function getDEResponse(deId: string, text: string, companyId: CompanyId): DEResponse {
-  const q = text.toLowerCase();
-  const de = DES[companyId].find(d => d.id === deId) ?? DES[companyId][0];
-
-  if (q.includes('who are you') || q.includes('what can you do') || q.includes('introduce')) {
-    return { text: INTROS[de.id], confidence: 97 };
-  }
-
-  if (q.includes('escalate') || q.includes('human') || q.includes('speak to a person')) {
-    writeEscalation(companyId, de, text.slice(0, 80));
-    return {
-      text: `Understood — I've created a review task in the human queue with this conversation attached, raised under my name (${de.name}). A person will pick it up within the standard SLA; you can track it from Human Tasks.`,
-      confidence: 96,
-      actions: [{ label: 'View Human Tasks →', page: 'ops_human_tasks' }],
-      escalated: true,
-    };
-  }
-
-  // Guardrail intents always win over informational matches, then prefer
-  // the active DE's intents, then any-DE, then other DEs' intents.
-  const table = INTENTS[companyId];
-  const scored = table
-    .map(intent => ({
-      intent,
-      guard: intent.special === 'guardrail' ? 1 : 0,
-      hits: intent.keywords.filter(k => q.includes(k)).length,
-      own: intent.deId === deId ? 2 : intent.deId === '*' ? 1 : 0,
-    }))
-    .filter(s => s.hits > 0)
-    .sort((a, b) => b.guard - a.guard || b.hits - a.hits || b.own - a.own);
-
-  if (scored.length > 0) {
-    const { intent } = scored[0];
-    if (intent.special === 'guardrail') {
-      return { text: intent.text, confidence: intent.confidence, actions: intent.actions };
-    }
-    return { text: intent.text, confidence: intent.confidence, actions: intent.actions };
-  }
-
-  const fb = FALLBACKS[fallbackCursor % FALLBACKS.length];
-  fallbackCursor += 1;
-  return {
-    text: fb,
-    confidence: 41,
-    actions: [{ label: 'View Gap Detection →', page: 'knowledge_gaps' }],
-  };
-}
 
 // ── Suggestion chips ──────────────────────────────────────────────
 
@@ -590,8 +385,9 @@ export default function DEChatDock() {
     if (!text || typing) return;
     setInput('');
     setMessages(prev => [...prev, { id: uid(), role: 'user', text, time: nowTime() }]);
-    if (isLive) { void sendLive(text); return; }
-    postDEReply(de, getDEResponse(de.id, text, activeCompanyId));
+    // Always the real employee. The scripted answer bank that used to sit
+    // behind an `isLive` check is gone — it invented customer finances.
+    void sendLive(text);
   };
 
   const openFromNudge = () => {

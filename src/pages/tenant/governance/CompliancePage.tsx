@@ -4,7 +4,6 @@ import { useAuth } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
-import { TCP_DES, PWC_DES } from '../WorkforceDEsPage'
 import { CustomerApiError } from '../../../lib/customerApi'
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
