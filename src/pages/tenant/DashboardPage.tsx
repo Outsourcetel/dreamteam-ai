@@ -488,7 +488,6 @@ export default function DashboardPage(props: {
   user?: any;
   page?: Page;
   accentColor?: string;
-  dbStats?: any;
 }) {
   return <LiveDashboard setPage={props.setPage} />;
 }

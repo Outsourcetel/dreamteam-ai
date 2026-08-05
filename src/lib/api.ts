@@ -736,33 +736,6 @@ export const updateTenantBudget = async (
 // =====================================================
 // DASHBOARD STATS
 // =====================================================
-export const fetchDashboardStats = async (tenantId: string) => {
-  const [convResult, kbResult, actionResult] = await Promise.all([
-    supabase.from('conversations').select('status, sentiment, channel').eq('tenant_id', tenantId),
-    supabase.from('knowledge_articles').select('status').eq('tenant_id', tenantId),
-    supabase.from('agent_actions').select('status, requires_approval').eq('tenant_id', tenantId),
-  ]);
-
-  const convs = convResult.data ?? [];
-  const articles = kbResult.data ?? [];
-  const actions = actionResult.data ?? [];
-
-  return {
-    totalConversations: convs.length,
-    openConversations: convs.filter(c => c.status === 'open').length,
-    resolvedConversations: convs.filter(c => c.status === 'resolved').length,
-    totalArticles: articles.length,
-    publishedArticles: articles.filter(a => a.status === 'published').length,
-    pendingApprovals: actions.filter(a => a.requires_approval && a.status === 'pending').length,
-    autoResolved: convs.filter(c => c.status === 'resolved').length,
-    channelBreakdown: {
-      chat: convs.filter(c => c.channel === 'chat').length,
-      email: convs.filter(c => c.channel === 'email').length,
-      phone: convs.filter(c => c.channel === 'phone').length,
-    },
-  };
-};
-
 // =====================================================
 // AGENT BRAIN (Option A: zero-cost, rule-based + KB retrieval)
 // Swap-in point for an LLM later: replace draftAgentAction's

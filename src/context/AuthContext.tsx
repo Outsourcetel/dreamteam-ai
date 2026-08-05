@@ -3,7 +3,6 @@ import { supabase } from '../supabase';
 import {
   fetchTenants,
   fetchTenantById,
-  fetchDashboardStats,
   fetchMyProfile,
   fetchMyDeRelations,
   DBTenant,
@@ -51,7 +50,6 @@ interface AuthContextValue {
    *  empty) at least once — lets the platform console tell "still loading"
    *  apart from "genuinely zero tenants" instead of guessing from length. */
   dbTenantsLoaded: boolean;
-  dbStats: DbStats | null;
   currentTenant: Tenant | undefined;
   isDTUser: boolean;
   isTenantUser: boolean;
@@ -132,7 +130,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [dbTenants, setDbTenants] = useState<DBTenant[]>([]);
   const [dbTenantsLoaded, setDbTenantsLoaded] = useState(false);
-  const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [dbCurrentTenant, setDbCurrentTenant] = useState<DBTenant | null>(null);
 
   // Keeps the shared "Live" API libs (customerApi.ts + everything built on
@@ -196,7 +193,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthedUser(null);
     setDbTenants([]);
     setDbTenantsLoaded(false);
-    setDbStats(null);
     setDbCurrentTenant(null);
     setGodModeSession(null);
     setCurrentPage('dashboard');
@@ -280,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const syncProfile = async () => {
       try {
         if (!authedUser) {
-          setDbTenants([]); setDbTenantsLoaded(false); setDbStats(null);
+          setDbTenants([]); setDbTenantsLoaded(false);
           return;
         }
         // Authoritative deactivation check on every resync tick — this is
@@ -370,12 +366,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         if (tid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid)) {
-          const [s, t] = await Promise.all([
-            fetchDashboardStats(tid),
-            fetchTenantById(tid),
-          ]);
+          // dbStats was removed: fetchDashboardStats counted rows in the
+          // portal + demo tables and NOTHING rendered its result — DashboardPage
+          // declared the prop and never read it, and LiveDashboard loads its own.
+          const t = await fetchTenantById(tid);
           if (!_cleanup) {
-            setDbStats(s as any);
             setDbCurrentTenant(t);
           }
         }
@@ -634,7 +629,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentPage('dashboard');
     setDbTenants([]);
     setDbTenantsLoaded(false);
-    setDbStats(null);
     setDbCurrentTenant(null);
     setGodModeSession(null);
     clearLocalTenantState();
@@ -648,7 +642,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       godModeSession,
       dbTenants,
       dbTenantsLoaded,
-      dbStats,
       currentTenant,
       isDTUser,
       isTenantUser,

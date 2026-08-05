@@ -268,7 +268,6 @@ function AppShell() {
     godModeSession,
     dbTenants,
     dbTenantsLoaded,
-    dbStats,
     currentTenant,
     isDTUser,
     isTenantUser,
@@ -394,7 +393,7 @@ function AppShell() {
       );
     switch (currentPage) {
       case 'dashboard':
-        return <DashboardPage {...commonProps} dbStats={dbStats} />;
+        return <DashboardPage {...commonProps} />;
       case 'settings':
         return <SettingsPage {...commonProps} />;
       case 'eu_chat':
