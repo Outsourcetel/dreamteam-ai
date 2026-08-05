@@ -255,6 +255,54 @@ const erpnext = {
     return String(s ?? '').toLowerCase() === 'paid' ? 'paid' : 'sent';
   },
   // Pull ALL submitted invoices as normalized AR records for the platform's
+  // Where a customer's email actually lives in ERPNext.
+  //
+  // A Sales Invoice only carries `contact_email` when a Contact was explicitly
+  // linked at invoicing time, and in practice it is empty — it is null on every
+  // invoice in the first workspace to use this. The address a business really
+  // maintains sits on the Customer's primary Contact. Without this lookup the
+  // collections chase would be capable of emailing and would still have nobody
+  // to email, which is indistinguishable from not having built it.
+  //
+  // Two bounded calls per sync, not one per invoice: customers first, then the
+  // contacts they point at.
+  async customerEmails(c: Ctx, customers: string[]): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const names = [...new Set(customers.filter(Boolean))].slice(0, 100);
+    if (names.length === 0) return out;
+
+    const custQs = new URLSearchParams({
+      fields: '["name","customer_primary_contact"]',
+      filters: JSON.stringify([['name', 'in', names]]),
+      limit_page_length: String(names.length),
+    });
+    const cr = await httpJson(`${c.baseUrl}/api/resource/Customer?${custQs}`, { headers: this.hdrs(c) });
+    if (!cr.ok) return out; // best effort: no address simply means no email chase
+    const custRows = (cr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+
+    const byContact: Record<string, string[]> = {};
+    for (const row of custRows) {
+      const contact = row.customer_primary_contact ? String(row.customer_primary_contact) : '';
+      if (!contact) continue;
+      (byContact[contact] ??= []).push(String(row.name));
+    }
+    const contactNames = Object.keys(byContact);
+    if (contactNames.length === 0) return out;
+
+    const contQs = new URLSearchParams({
+      fields: '["name","email_id"]',
+      filters: JSON.stringify([['name', 'in', contactNames]]),
+      limit_page_length: String(contactNames.length),
+    });
+    const kr = await httpJson(`${c.baseUrl}/api/resource/Contact?${contQs}`, { headers: this.hdrs(c) });
+    if (!kr.ok) return out;
+    for (const row of (kr.body as { data?: Array<Record<string, unknown>> })?.data ?? []) {
+      const email = row.email_id ? String(row.email_id).trim() : '';
+      if (!email) continue;
+      for (const customer of byContact[String(row.name)] ?? []) out[customer] = email;
+    }
+    return out;
+  },
   // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
   // the upsert lives in the DB (upsert_external_ar_record).
   async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
@@ -283,6 +331,17 @@ const erpnext = {
       // really asking them anything.
       contact_email: d.contact_email ? String(d.contact_email) : null,
     })).filter((x) => x.invoice_external_ref && x.customer_external_ref);
+
+    // Fill the gaps from the customer's primary contact. The invoice's own
+    // field wins where it is set — it is the more specific answer to "who
+    // should hear about THIS invoice".
+    const missing = records.filter((r) => !r.contact_email).map((r) => r.customer_external_ref);
+    if (missing.length > 0) {
+      const emails = await this.customerEmails(c, missing);
+      for (const r of records) {
+        if (!r.contact_email) r.contact_email = emails[r.customer_external_ref] ?? null;
+      }
+    }
     return { ok: true, records };
   },
   async search(c: Ctx, query: string): Promise<AdapterResult> {
