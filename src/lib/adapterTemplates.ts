@@ -95,6 +95,8 @@ export interface AdapterOpResponse {
 
 export interface AdapterOpBinding {
   method: 'GET' | 'POST';
+  /** headers for THIS operation only — see AdapterActionBinding.headers */
+  headers?: Record<string, string>;
   /** supports {query}, {ref}, and any declared {var} */
   path_template: string;
   /** query-string params; values support the same placeholders */
@@ -122,6 +124,14 @@ export interface AdapterOpBinding {
  */
 export interface AdapterActionBinding {
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /**
+   * Headers for THIS operation only. LinkedIn forced it: X-RestLi-Method
+   * changes per operation (FINDER, DELETE, PARTIAL_UPDATE), which a
+   * template-level extra_headers cannot express. Values render like any other
+   * template string; auth headers always win, so a binding can never overwrite
+   * Authorization.
+   */
+  headers?: Record<string, string>;
   /** supports any declared param name (e.g. {external_ref}) and {var} */
   path_template: string;
   query_params?: Record<string, string>;
@@ -302,6 +312,10 @@ export function validateAdapterDefinition(
     const phs = opPlaceholders(op);
     if (kind === 'search' && !phs.includes('query')) errors.push(`${name} is a search operation — its path, query params, or body must use {query} so the search words reach the API.`);
     if (kind === 'get' && !phs.includes('ref')) errors.push(`${name} fetches one record — its path, query params, or body must use {ref} (the record id).`);
+    // A list op takes no arguments by definition — it is "what is recent".
+    if (kind === 'list' && (phs.includes('query') || phs.includes('ref'))) {
+      errors.push(`${name} lists recent records and takes no arguments, so it must not use {query} or {ref}.`);
+    }
     for (const ph of phs) {
       if (!isFrameworkPlaceholder(ph) && !declaredVars.has(ph)) errors.push(`${name} uses {${ph}} but no variable "${ph}" is declared.`);
     }

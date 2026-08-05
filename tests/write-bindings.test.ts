@@ -28,6 +28,7 @@ const VARS: Record<string, Record<string, string>> = {
   'Meta (Facebook & Instagram)': { page_id: '1234567890' },
   'Google Ads': { customer_id: '9876543210', login_customer_id: '' },
   'Google Search Console': { site_url: 'sc-domain%3Aomnexasol.com' },
+  'LinkedIn (Company Page)': { organization_id: '5515715' },
 };
 
 // Plausible values per param name, so every binding renders with real input.
@@ -185,6 +186,69 @@ if (!adminTokenAvailable()) {
       expect(sm.url).toBe(
         `https://searchconsole.googleapis.com/webmasters/v3/sites/sc-domain%3Aomnexasol.com/sitemaps/${encodeURIComponent(VALUE.sitemap_url)}`,
       );
+    });
+
+    it('ONE publish_post capability renders whichever system the connector is', async () => {
+      // action_definitions is UNIQUE on (scope, tenant_id, category, action_key),
+      // so publish_post is a single row for the whole social category — it
+      // cannot be duplicated per vendor. The binding therefore has to resolve
+      // from the CONNECTOR's template. Until it did, this row was hardwired to
+      // whichever template was linked first, and a LinkedIn connector would have
+      // rendered Meta's URL and posted to graph.facebook.com. This is the test
+      // for that, and it is the reason the framework change was necessary rather
+      // than tidy.
+      const tpls = await runQuery<{ name: string; base_url_template: string; binding: Record<string, unknown> }>(
+        `select t.name, t.definition->>'base_url_template' as base_url_template,
+                t.definition->'actions'->'publish_post' as binding
+           from adapter_templates t
+          where t.scope = 'platform' and t.category = 'social'
+            and t.definition->'actions' ? 'publish_post'
+          order by t.name`,
+      );
+      expect(tpls.map((t) => t.name)).toEqual(['LinkedIn (Company Page)', 'Meta (Facebook & Instagram)']);
+
+      const rendered = tpls.map((t) =>
+        renderAction(t.base_url_template, t.binding as never, VARS[t.name] ?? {}, { body: VALUE.body }));
+      for (const r of rendered) expect(r.ok).toBe(true);
+
+      // Same capability, same approval, same governed row — different hosts.
+      const [li, meta] = rendered;
+      expect(li.url).toBe('https://api.linkedin.com/rest/posts');
+      expect(meta.url).toBe('https://graph.facebook.com/v21.0/1234567890/feed');
+      expect(new URL(li.url!).host).not.toBe(new URL(meta.url!).host);
+
+      // LinkedIn's required envelope. A wrong author URN, a missing distribution
+      // block, or lifecycleState set to anything but PUBLISHED each produce a
+      // 400 naming a field rather than the cause.
+      expect(JSON.parse(li.body!)).toEqual({
+        author: 'urn:li:organization:5515715',
+        commentary: VALUE.body,
+        visibility: 'PUBLIC',
+        distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
+        lifecycleState: 'PUBLISHED',
+        isReshareDisabledByAuthor: false,
+      });
+      // PUBLISHED, not DRAFT — the human has already approved by this point. If
+      // this ever said DRAFT, approving would produce nothing anyone can see and
+      // nothing would report a failure.
+      expect(JSON.parse(li.body!).lifecycleState).toBe('PUBLISHED');
+    });
+
+    it('LinkedIn sends the per-operation header its API requires', async () => {
+      // X-RestLi-Method changes with the operation, which a template-level
+      // header cannot express. Without it LinkedIn's finder and delete reject
+      // the call, and the error does not name the missing header.
+      const li = await runQuery<{ finder: string; del: string; version: string }>(
+        `select t.definition->'ops'->'list_posts'->'headers'->>'X-RestLi-Method' as finder,
+                t.definition->'actions'->'delete_post'->'headers'->>'X-RestLi-Method' as del,
+                t.definition->'auth'->'extra_headers'->>'Linkedin-Version' as version
+           from adapter_templates t where t.name = 'LinkedIn (Company Page)'`,
+      );
+      expect(li[0].finder).toBe('FINDER');
+      expect(li[0].del).toBe('DELETE');
+      // A malformed version is rejected by every LinkedIn endpoint, and the
+      // error does not say which header is at fault.
+      expect(li[0].version).toMatch(/^20\d{2}(0[1-9]|1[0-2])$/);
     });
 
     it('a money param is named amount_cents, or every money gate is inert', async () => {

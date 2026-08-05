@@ -43,9 +43,68 @@ const RESPONSES: Record<string, Record<string, unknown>> = {
       responseAggregationType: 'byPage',
     },
   },
+  'LinkedIn (Company Page)': {
+    // {paging, elements:[…]}; the post id is a URN and commentary is the text.
+    list_posts: {
+      paging: { start: 0, count: 25, links: [] },
+      elements: [
+        {
+          id: 'urn:li:share:6856921137721544704',
+          author: 'urn:li:organization:5515715',
+          commentary: 'ISO 9001 in practice: what an auditor actually asks for',
+          lifecycleState: 'PUBLISHED',
+          visibility: 'PUBLIC',
+          createdAt: 1785400000000,
+        },
+      ],
+    },
+    get_post: {
+      id: 'urn:li:share:6856921137721544704',
+      author: 'urn:li:organization:5515715',
+      commentary: 'ISO 9001 in practice: what an auditor actually asks for',
+      lifecycleState: 'PUBLISHED',
+      visibility: 'PUBLIC',
+      createdAt: 1785400000000,
+    },
+  },
+  'TikTok (read-only)': {
+    // {data:{videos:[…], cursor, has_more}} — the array is TWO levels down.
+    list_posts: {
+      data: {
+        videos: [
+          {
+            id: '7301234567890123456',
+            title: 'Ant season prep in 40 seconds',
+            video_description: 'What to do before the first swarm',
+            create_time: 1785300000,
+            share_url: 'https://www.tiktok.com/@omnexasol/video/7301234567890123456',
+            view_count: 12400, like_count: 830, comment_count: 41, share_count: 12,
+          },
+        ],
+        cursor: 1785300000000,
+        has_more: false,
+      },
+      error: { code: 'ok', message: '', log_id: 'x' },
+    },
+    get_post: {
+      data: {
+        videos: [
+          {
+            id: '7301234567890123456',
+            title: 'Ant season prep in 40 seconds',
+            video_description: 'What to do before the first swarm',
+            create_time: 1785300000,
+            share_url: 'https://www.tiktok.com/@omnexasol/video/7301234567890123456',
+            view_count: 12400, like_count: 830, comment_count: 41, share_count: 12,
+          },
+        ],
+      },
+      error: { code: 'ok', message: '', log_id: 'x' },
+    },
+  },
   'Meta (Facebook & Instagram)': {
     // Collections are {data:[…]}; a single node is the object itself.
-    search_posts: {
+    list_posts: {
       data: [
         {
           id: '1234567890_9876543210',
@@ -66,7 +125,7 @@ const RESPONSES: Record<string, Record<string, unknown>> = {
       likes: { summary: { total_count: 41 } },
       comments: { summary: { total_count: 7 } },
     },
-    search_comments: {
+    list_comments: {
       data: [
         {
           id: '1234567890_5555',
@@ -110,10 +169,10 @@ if (!adminTokenAvailable()) {
       templates = await runQuery(
         `select name, category, definition from adapter_templates
           where scope = 'platform' and status = 'published'
-            and name in ('Google Search Console', 'Meta (Facebook & Instagram)')
+            and name in ('Google Search Console', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)')
           order by name`,
       );
-      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'Meta (Facebook & Instagram)']);
+      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)']);
     });
 
     it('pass the framework validator the wizard runs', async () => {

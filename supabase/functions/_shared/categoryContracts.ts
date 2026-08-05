@@ -49,7 +49,15 @@ export const CATEGORY_LABELS: Record<SystemCategory, string> = {
 export interface CategoryOp {
   op: string;
   object: string;          // canonical object the op returns
-  kind: 'search' | 'get';  // search takes {query}, get takes {external_ref}
+  /**
+   * search — free-text lookup; the request MUST carry {query}
+   * get    — one record by id; the request MUST carry {ref}
+   * list   — "what is recent", no arguments. Exists because Meta, LinkedIn and
+   *          TikTok all decline to search an account's OWN posts: you read the
+   *          latest N. Calling that a search and feeding {query} to a parameter
+   *          the vendor ignores returns 200 and silently drops what was asked.
+   */
+  kind: 'search' | 'get' | 'list';  // search takes {query}, get takes {external_ref}
   label: string;           // plain language
 }
 
@@ -97,8 +105,10 @@ export const CATEGORY_OPS: Record<SystemCategory, CategoryOp[]> = {
     { op: 'get_account_performance', object: 'performance', kind: 'get', label: 'Fetch spend and conversion totals' },
   ],
   social: [
+    { op: 'list_posts', object: 'post', kind: 'list', label: 'Read the most recent posts' },
     { op: 'search_posts', object: 'post', kind: 'search', label: 'Find published posts' },
     { op: 'get_post', object: 'post', kind: 'get', label: 'Fetch one post and its engagement' },
+    { op: 'list_comments', object: 'comment', kind: 'list', label: 'Read recent comments and mentions' },
     { op: 'search_comments', object: 'comment', kind: 'search', label: 'Find comments and mentions' },
   ],
   web_analytics: [

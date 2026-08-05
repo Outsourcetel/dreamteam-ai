@@ -127,6 +127,10 @@ interface Ctx {
   // Set for the DreamTeam self-connector so its self-management executors
   // know which tenant they are building machinery for.
   tenantId?: string;
+  // The template THIS connector was built from. Action bindings resolve through
+  // it, so one governed action_definition ("publish a post") can be served by
+  // whichever social system the caller actually chose.
+  templateId?: string;
 }
 
 const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -1253,7 +1257,14 @@ async function runTemplateOp(
 
   const auth = await templateAuthHeaders(t);
   if (!auth.ok) return { ok: false, error: auth.error, detail: auth.detail };
-  const headers = { ...auth.headers, ...(body ? { 'Content-Type': 'application/json' } : {}) };
+  // Per-operation headers, merged BEFORE auth so a binding can never overwrite
+  // Authorization. An empty render drops the header rather than sending blank.
+  const opHeaders: Record<string, string> = {};
+  for (const [h, tplStr] of Object.entries(binding.headers ?? {})) {
+    const hv = renderTemplate(tplStr, values).out.trim();
+    if (hv) opHeaders[h] = hv;
+  }
+  const headers = { ...opHeaders, ...auth.headers, ...(body ? { 'Content-Type': 'application/json' } : {}) };
 
   const qs = qp.toString();
   const url = `${base.out.replace(/\/+$/, '')}${path.out}${qs ? (path.out.includes('?') ? '&' : '?') + qs : ''}`;
@@ -1972,8 +1983,16 @@ async function renderRegisteredAction(
   admin: SupabaseClient, def: ActionDefRow, ctx: Ctx, values: Record<string, string>,
 ): Promise<ActionRenderOutcome> {
   if (def.provider === 'template') {
-    if (!def.template_id) return { ok: false, error: 'template_not_linked' };
-    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', def.template_id).maybeSingle();
+    // THE CONNECTOR'S template, not the action row's. action_definitions is
+    // unique on (scope, tenant_id, category, action_key), so "publish a post"
+    // is ONE row for the whole social category — which system it goes to is a
+    // property of the connector the caller picked. Reading def.template_id here
+    // would hardwire it to whichever template happened to be linked first and
+    // send a LinkedIn post to Meta's URL. def.template_id remains the fallback
+    // and still satisfies the provider='template' NOT NULL check.
+    const templateId = ctx.templateId ?? def.template_id;
+    if (!templateId) return { ok: false, error: 'template_not_linked' };
+    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', templateId).maybeSingle();
     const adef = tpl?.definition as AdapterDefinition | undefined;
     const binding: AdapterActionBinding | undefined = adef?.actions?.[def.action_key];
     if (!binding) return { ok: false, error: 'action_not_bound', detail: `The linked template has no action binding for "${def.action_key}".` };
@@ -2006,8 +2025,16 @@ async function runRegisteredAction(
   admin: SupabaseClient, def: ActionDefRow, ctx: Ctx, values: Record<string, string>,
 ): Promise<ActionRunResult & { url?: string }> {
   if (def.provider === 'template') {
-    if (!def.template_id) return { ok: false, error: 'template_not_linked' };
-    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', def.template_id).maybeSingle();
+    // THE CONNECTOR'S template, not the action row's. action_definitions is
+    // unique on (scope, tenant_id, category, action_key), so "publish a post"
+    // is ONE row for the whole social category — which system it goes to is a
+    // property of the connector the caller picked. Reading def.template_id here
+    // would hardwire it to whichever template happened to be linked first and
+    // send a LinkedIn post to Meta's URL. def.template_id remains the fallback
+    // and still satisfies the provider='template' NOT NULL check.
+    const templateId = ctx.templateId ?? def.template_id;
+    if (!templateId) return { ok: false, error: 'template_not_linked' };
+    const { data: tpl } = await admin.from('adapter_templates').select('definition').eq('id', templateId).maybeSingle();
     const adef = tpl?.definition as AdapterDefinition | undefined;
     const binding: AdapterActionBinding | undefined = adef?.actions?.[def.action_key];
     if (!binding) return { ok: false, error: 'action_not_bound' };
@@ -2016,7 +2043,12 @@ async function runRegisteredAction(
     if (!rendered.ok) return { ok: false, error: rendered.error ?? 'var_missing', detail: `Missing variable(s): ${(rendered.missing ?? []).join(', ')}` };
     const auth = await templateAuthHeaders({ def: adef!, vars, secret: ctx.secret });
     if (!auth.ok) return { ok: false, error: auth.error, detail: auth.detail };
-    const headers = { ...auth.headers, ...(rendered.body ? { 'Content-Type': 'application/json' } : {}) };
+    const actionHeaders: Record<string, string> = {};
+    for (const [h, tplStr] of Object.entries(binding.headers ?? {})) {
+      const hv = renderTemplate(tplStr, { ...vars, ...values }).out.trim();
+      if (hv) actionHeaders[h] = hv;
+    }
+    const headers = { ...actionHeaders, ...auth.headers, ...(rendered.body ? { 'Content-Type': 'application/json' } : {}) };
     const res = await httpJson(rendered.url!, { method: rendered.method, headers, body: rendered.body });
     if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body, url: rendered.url };
     return {
@@ -5545,7 +5577,7 @@ const PROVIDER_OP_TRANSLATORS: Record<string, Record<string, OpTranslator>> = {
  *   2. fallback: search-kind ops → the generic search endpoint,
  *      get-kind ops → the generic record endpoint
  */
-function genericRestOp(c: Ctx, opDef: { op: string; kind: 'search' | 'get' }, p: OpParams): Promise<AdapterResult> | null {
+function genericRestOp(c: Ctx, opDef: { op: string; kind: 'search' | 'get' | 'list' }, p: OpParams): Promise<AdapterResult> | null {
   const eps = genericRest.endpoints(c) as Record<string, Record<string, string>> & { category_ops?: Record<string, Record<string, string>> };
   const bound = (eps.category_ops ?? {})[opDef.op];
   if (bound) {
@@ -5794,6 +5826,7 @@ serve(async (req) => {
       connectorId,
       admin,
       tenantId,
+      templateId: connector.template_id ?? undefined,
     };
 
     // ── template provider: resolve the declarative adapter (DATA → adapter) ──
