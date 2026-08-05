@@ -325,6 +325,64 @@ const erpnext = {
         ? 'primary contacts exist but none has an email address' : undefined,
     };
   },
+  // ── The other three watchable sources ───────────────────────────────────
+  // `opportunities`, `support_tickets` and `commercial_agreements` hold no rows
+  // in ANY tenant, which is why mig 606 refused to create watchers against
+  // them. They are empty because NOTHING INGESTS THEM: renewal_invoices fills
+  // from syncFinancials below, and there was no equivalent for these.
+  //
+  // ⚠ These will return zero today. Probed against the live ERP before
+  // writing: Opportunity, Issue and Contract all answer 200 with {"data":[]}.
+  // The wiring was missing AND the upstream is empty; this closes the first.
+  async syncOpportunities(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+    const qs = new URLSearchParams({
+      fields: '["name","title","customer_name","party_name","opportunity_amount","status","expected_closing","contact_person"]',
+      order_by: 'modified desc',
+      limit_page_length: '100',
+    });
+    const r = await httpJson(`${c.baseUrl}/api/resource/Opportunity?${qs}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return {
+      ok: true,
+      records: rows.map((d) => ({
+        external_ref: String(d.name ?? ''),
+        name: String(d.title ?? d.name ?? ''),
+        company_name: String(d.customer_name ?? d.party_name ?? ''),
+        customer_external_ref: String(d.party_name ?? d.customer_name ?? ''),
+        // ERPNext money is a float in the ERP's currency; the platform stores
+        // minor units, so a rounding slip here becomes a wrong pipeline value.
+        amount_cents: d.opportunity_amount == null ? 0 : Math.round(Number(d.opportunity_amount) * 100),
+        stage: String(d.status ?? ''),
+        close_date: d.expected_closing ? String(d.expected_closing) : null,
+        owner: d.contact_person ? String(d.contact_person) : null,
+      })).filter((x) => x.external_ref),
+    };
+  },
+
+  async syncTickets(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+    const qs = new URLSearchParams({
+      fields: '["name","subject","description","status","priority","customer","raised_by"]',
+      order_by: 'modified desc',
+      limit_page_length: '100',
+    });
+    const r = await httpJson(`${c.baseUrl}/api/resource/Issue?${qs}`, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return {
+      ok: true,
+      records: rows.map((d) => ({
+        external_ref: String(d.name ?? ''),
+        subject: String(d.subject ?? ''),
+        body: d.description ? String(d.description) : null,
+        status: String(d.status ?? ''),
+        priority: String(d.priority ?? ''),
+        customer_external_ref: d.customer ? String(d.customer) : null,
+        customer_name: d.customer ? String(d.customer) : null,
+      })).filter((x) => x.external_ref),
+    };
+  },
+
   // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
   // the upsert lives in the DB (upsert_external_ar_record).
   async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>>; contacts?: Record<string, unknown> }> {
@@ -6317,6 +6375,72 @@ serve(async (req) => {
     // idempotent RPC, so the EXISTING dunning / at-risk / staleness machinery
     // runs on real ERP data. Unlike category_op (read-through, persisted:false),
     // this deliberately PERSISTS into the AR tables the platform already owns.
+    // ── sync_business_records — opportunities and support tickets ──────────
+    // Same shape as sync_financials below: the adapter READS, the DB upserts.
+    // One action for both because they come from one system and a caller that
+    // has to know which of two endpoints to poll will eventually poll neither.
+    if (action === 'sync_business_records') {
+      const started = Date.now();
+      const wanted = typeof payload.kinds === 'string' ? [payload.kinds]
+        : Array.isArray(payload.kinds) ? (payload.kinds as string[])
+        : ['opportunities', 'tickets'];
+      const out: Record<string, unknown> = {};
+      const errors: string[] = [];
+
+      if (wanted.includes('opportunities') && typeof adapter.syncOpportunities === 'function') {
+        const sr = await adapter.syncOpportunities(ctx);
+        if (!sr.ok) errors.push(`opportunities: ${sr.error}`);
+        else {
+          const rows = (sr.records ?? []) as Array<Record<string, unknown>>;
+          let n = 0;
+          for (const rec of rows) {
+            const { error: e } = await admin.rpc('upsert_external_opportunity', {
+              p_tenant_id: tenantId, p_provider: connector.provider,
+              p_external_ref: rec.external_ref ?? null, p_name: rec.name ?? null,
+              p_company_name: rec.company_name ?? null, p_stage: rec.stage ?? null,
+              p_amount_cents: rec.amount_cents ?? 0, p_close_date: rec.close_date ?? null,
+              p_owner: rec.owner ?? null, p_customer_external_ref: rec.customer_external_ref ?? null,
+            });
+            if (e) errors.push(`opp ${rec.external_ref}: ${e.message}`.slice(0, 160)); else n += 1;
+          }
+          out.opportunities = { fetched: rows.length, upserted: n };
+        }
+      }
+
+      if (wanted.includes('tickets') && typeof adapter.syncTickets === 'function') {
+        const sr = await adapter.syncTickets(ctx);
+        if (!sr.ok) errors.push(`tickets: ${sr.error}`);
+        else {
+          const rows = (sr.records ?? []) as Array<Record<string, unknown>>;
+          let n = 0;
+          for (const rec of rows) {
+            const { error: e } = await admin.rpc('upsert_external_ticket', {
+              p_tenant_id: tenantId, p_provider: connector.provider,
+              p_external_ref: rec.external_ref ?? null, p_subject: rec.subject ?? null,
+              p_body: rec.body ?? null, p_status: rec.status ?? null, p_priority: rec.priority ?? null,
+              p_customer_external_ref: rec.customer_external_ref ?? null,
+              p_customer_name: rec.customer_name ?? null,
+            });
+            if (e) errors.push(`ticket ${rec.external_ref}: ${e.message}`.slice(0, 160)); else n += 1;
+          }
+          out.tickets = { fetched: rows.length, upserted: n };
+        }
+      }
+
+      if (Object.keys(out).length === 0) {
+        return json({ ok: false, error: 'sync_not_supported',
+          detail: `${connector.provider} has no opportunity or ticket sync adapter.` }, 200);
+      }
+
+      const ms = Date.now() - started;
+      const health = await recordHealth(errors.length === 0, errors[0] ?? null);
+      await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
+      await audit('connector_sync',
+        `Business-record sync from ${connector.provider} — ${JSON.stringify(out)} in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
+        { hub_action: 'sync_business_records', result: out, errors: errors.slice(0, 5), latency_ms: ms, health });
+      return json({ ok: errors.length === 0, ...out, errors: errors.slice(0, 5), latency_ms: ms, health });
+    }
+
     if (action === 'sync_financials') {
       if (typeof adapter.syncFinancials !== 'function') {
         return json({ ok: false, error: 'sync_not_supported', detail: `${connector.provider} has no financial sync adapter.` }, 200);
