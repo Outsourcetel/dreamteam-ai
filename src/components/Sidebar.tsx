@@ -222,6 +222,11 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // way: by someone trying to do the thing and finding no door.
         // ADMIN tier already, via navAccess ADMIN_PAGES.
         { id: 'users', label: 'People & Access', icon: '◎', page: 'users' },
+        // Organisation sits next to People & Access because the two answer
+        // adjacent questions: who is in this workspace, and where do they sit.
+        // Without the second, every approval landed in one shared queue with
+        // assigned_user_id NULL on all 318 pending items (migs 587/588).
+        { id: 'organisation', label: 'Organisation', icon: '◫', page: 'organisation' },
         { id: 'settings', label: 'Settings', icon: '◈', page: 'settings' },
       ],
     },

@@ -90,7 +90,8 @@ export type TenantPage =
 
   // ── Admin ─────────────────────────────────────────
   | 'settings'
-  | 'users';
+  | 'users'
+  | 'organisation';
 
 export type EndUserPage = 'eu_chat';
 

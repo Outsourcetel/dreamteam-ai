@@ -29,6 +29,7 @@ function BrandingLoader() {
   return null;
 }
 import UserManagementPage from './pages/tenant/UserManagementPage';
+import OrganisationPage from './pages/tenant/OrganisationPage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import LiveConnectorsPage from './pages/tenant/systems/LiveConnectorsPage';
 import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
@@ -71,6 +72,7 @@ const PAGE_TO_URL: Record<Page, string> = {
   platform_revenue:             '/platform/revenue',
   dashboard:              '/dashboard',
   users:                  '/users',
+  organisation:                 '/organisation',
   settings:               '/settings',
   eu_chat:                '/chat',
   // Entities
@@ -397,6 +399,8 @@ function AppShell() {
         return <EndUserChatPage {...commonProps} />;
       case 'users':
         return <UserManagementPage {...commonProps} />;
+      case 'organisation':
+        return <OrganisationPage />;
       // ── Entity pages ──────────────────────────────────────────
       // ── Customers (ONE hub over the journey — founder restructure
       // 2026-07-22; old URLs deep-link to tabs; Support points to its hub) ──
