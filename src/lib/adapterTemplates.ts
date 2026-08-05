@@ -138,7 +138,18 @@ export interface AdapterActionBinding {
   /** JSON body; string values anywhere in it support placeholders */
   body_template?: Record<string, unknown>;
   /** optional: where to find a confirming id/status in the response, for the receipt */
-  response?: { id_path?: string; status_path?: string };
+  response?: {
+    id_path?: string;
+    status_path?: string;
+    /**
+     * For APIs that report FAILURE inside a 200. TikTok returns every Content
+     * Posting result as HTTP 200 with the real outcome in error.code ("ok", or
+     * "spam_risk_too_many_posts"…). Without this the executor keys off the HTTP
+     * status alone and records a rejected post as a successful one — approval
+     * closed, audit row green, nothing posted.
+     */
+    success_when?: { path: string; equals: string };
+  };
 }
 
 export interface AdapterDefinition {

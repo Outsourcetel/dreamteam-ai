@@ -2065,6 +2065,21 @@ async function runRegisteredAction(
     // since 035 and never read until now — which is why a successful publish
     // could only say "HTTP 200", with nothing connecting the approval to the
     // post that actually appeared.
+    // A 200 is not always a success. Where the binding declares it, the
+    // vendor's own verdict is the verdict — checked BEFORE the id is read, so a
+    // failed call can never produce a confirming receipt.
+    const sw = binding.response?.success_when;
+    if (sw) {
+      const verdict = walkPath(res.body, sw.path);
+      const got = verdict.found && verdict.value != null ? String(verdict.value) : '';
+      if (got !== sw.equals) {
+        return {
+          ok: false, status: res.status, raw: res.body, url: rendered.url,
+          error: 'vendor_reported_failure',
+          detail: `The API returned HTTP ${res.status}, but reported failure in its body: ${sw.path} is "${got || '(absent)'}", expected "${sw.equals}". Nothing was created.`,
+        };
+      }
+    }
     const idPath = binding.response?.id_path;
     const walked = idPath ? walkPath(res.body, idPath) : { found: false } as const;
     const resultRef = walked.found && walked.value != null ? scalarOrJson(walked.value, 200) : null;

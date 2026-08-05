@@ -30,6 +30,7 @@ const VARS: Record<string, Record<string, string>> = {
   'Google Search Console': { site_url: 'sc-domain%3Aomnexasol.com' },
   'LinkedIn (Company Page)': { organization_id: '5515715' },
   'Instagram (Business)': { ig_user_id: '17841400000000000' },
+  TikTok: {},
 };
 
 // Plausible values per param name, so every binding renders with real input.
@@ -46,6 +47,9 @@ const VALUE: Record<string, string> = {
   image_url: 'https://omnexasol.com/media/ant-season.jpg',
   caption: 'Ant season is here — booking now',
   creation_id: '17890000000000000',
+  video_url: 'https://omnexasol.com/media/ant-season.mp4',
+  title: 'Ant season prep in 40 seconds',
+  privacy_level: 'PUBLIC_TO_EVERYONE',
   reason: 'wasting budget on non-buyers',
   amount_cents: '50000',
   duration_days: '7',
@@ -317,6 +321,79 @@ if (!adminTokenAvailable()) {
       // gate neither — and then the publish step gates nothing either.
       expect(by.create_media_draft, 'preparing is gated, so the employee cannot work').toBe(false);
       expect(by.publish_media, 'publishing is ungated — it can post to the public alone').toBe(true);
+    });
+
+    it("TikTok's two routes are different endpoints, classified oppositely", async () => {
+      const tpl = (await runQuery<{ base_url_template: string; actions: Record<string, never> }>(
+        `select t.definition->>'base_url_template' as base_url_template,
+                t.definition->'actions' as actions
+           from adapter_templates t where t.name = 'TikTok'`,
+      ))[0];
+
+      const draft = renderAction(tpl.base_url_template, tpl.actions.upload_video_draft, {}, {
+        video_url: VALUE.video_url,
+      });
+      const post = renderAction(tpl.base_url_template, tpl.actions.publish_video, {}, {
+        video_url: VALUE.video_url, title: VALUE.title, privacy_level: VALUE.privacy_level,
+      });
+      expect(draft.ok).toBe(true);
+      expect(post.ok).toBe(true);
+
+      // The SAFE route must hit the inbox. It is ungated precisely because it
+      // lands somewhere private; pointed at the direct-post path it would be an
+      // unattended public post.
+      expect(draft.url).toBe('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/');
+      expect(post.url).toBe('https://open.tiktokapis.com/v2/post/publish/video/init/');
+      expect(draft.url).not.toBe(post.url);
+
+      // PULL_FROM_URL, never FILE_UPLOAD — the latter needs a chunked upload no
+      // single binding can perform. It would render, TikTok would hand back an
+      // upload_url, and nothing would ever be sent to it: success, no video.
+      expect(JSON.parse(draft.body!).source_info.source).toBe('PULL_FROM_URL');
+      expect(JSON.parse(post.body!).source_info.source).toBe('PULL_FROM_URL');
+      expect(`${draft.body}${post.body}`).not.toContain('FILE_UPLOAD');
+
+      // The caption and audience only exist on the gated route — the draft route
+      // deliberately carries neither, because the human writes them in the app.
+      expect(JSON.parse(post.body!).post_info).toEqual({
+        title: VALUE.title,
+        privacy_level: VALUE.privacy_level,
+        disable_comment: false, disable_duet: false, disable_stitch: false,
+      });
+      expect(JSON.parse(draft.body!).post_info).toBeUndefined();
+    });
+
+    it('a write that fails inside an HTTP 200 is not recorded as a success', async () => {
+      // TikTok answers 200 to a refusal and puts the verdict in error.code.
+      // Keying off the HTTP status alone would close the approval, write a green
+      // audit row, and post nothing — the worst shape a write can have. The
+      // binding declares the vendor's own verdict; this checks the declaration
+      // is present AND that the check it drives actually discriminates.
+      const rows2 = await runQuery<{ action_key: string; path: string; equals: string }>(
+        `select k as action_key,
+                t.definition->'actions'->k->'response'->'success_when'->>'path' as path,
+                t.definition->'actions'->k->'response'->'success_when'->>'equals' as equals
+           from adapter_templates t, lateral jsonb_object_keys(t.definition->'actions') k
+          where t.name = 'TikTok'`,
+      );
+      expect(rows2.length).toBe(2);
+      for (const r of rows2) {
+        expect(r.path, `${r.action_key} trusts the HTTP status`).toBe('error.code');
+        expect(r.equals).toBe('ok');
+      }
+
+      // The executor's rule, exercised against both real TikTok shapes. If this
+      // ever passed for the refusal, the guard would be decorative.
+      const verdict = (body: unknown, sw: { path: string; equals: string }) => {
+        const w = walkPath(body, sw.path);
+        return (w.found && w.value != null ? String(w.value) : '') === sw.equals;
+      };
+      const sw = { path: 'error.code', equals: 'ok' };
+      expect(verdict({ data: { publish_id: 'v_pub_1' }, error: { code: 'ok' } }, sw)).toBe(true);
+      expect(verdict({ data: {}, error: { code: 'spam_risk_too_many_posts' } }, sw)).toBe(false);
+      // And an absent verdict is a failure, not a pass — a truncated or
+      // unexpected body must never read as success.
+      expect(verdict({ data: {} }, sw)).toBe(false);
     });
 
     it('a money param is named amount_cents, or every money gate is inert', async () => {

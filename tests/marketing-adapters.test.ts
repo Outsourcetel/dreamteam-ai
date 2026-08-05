@@ -112,7 +112,7 @@ const RESPONSES: Record<string, Record<string, unknown>> = {
       createdAt: 1785400000000,
     },
   },
-  'TikTok (read-only)': {
+  'TikTok': {
     // {data:{videos:[…], cursor, has_more}} — the array is TWO levels down.
     list_posts: {
       data: {
@@ -214,10 +214,10 @@ if (!adminTokenAvailable()) {
       templates = await runQuery(
         `select name, category, definition from adapter_templates
           where scope = 'platform' and status = 'published'
-            and name in ('Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)')
+            and name in ('Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok')
           order by name`,
       );
-      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok (read-only)']);
+      expect(templates.map((t) => t.name)).toEqual(['Google Search Console', 'Instagram (Business)', 'LinkedIn (Company Page)', 'Meta (Facebook & Instagram)', 'TikTok']);
     });
 
     it('pass the framework validator the wizard runs', async () => {
