@@ -1380,7 +1380,7 @@ serve(async (req) => {
         }
         const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
         if (budgetBlocked(budgetErr, budget)) { await deferPlan(o.id); continue; }
-        const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
+        const { data: deBudget, error: deBudgetErr } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
         if (budgetBlocked(deBudgetErr, deBudget)) { await deferPlan(o.id); continue; }
         try {
           const steps = await planObjective(admin, o);
@@ -1420,7 +1420,7 @@ serve(async (req) => {
         }
         const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: o.tenant_id });
         if (budgetBlocked(budgetErr, budget)) { await deferWake(); continue; }
-        const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
+        const { data: deBudget, error: deBudgetErr } = await admin.rpc('check_de_budget', { p_de_id: o.de_id });
         if (budgetBlocked(deBudgetErr, deBudget)) { await deferWake(); continue; }
         try {
           // Real claim (mig 180): the UPDATE re-checks next_wake_at <= now(),
@@ -1482,7 +1482,7 @@ serve(async (req) => {
           results.push({ id: it.id, status: 'failed', summary: 'ai_budget_exceeded' }); continue;
         }
         // Wave-4 per-DE monthly ceiling (mig 163) on top of the tenant budget.
-        const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: it.de_id });
+        const { data: deBudget, error: deBudgetErr } = await admin.rpc('check_de_budget', { p_de_id: it.de_id });
         if (budgetBlocked(deBudgetErr, deBudget)) {
           await admin.rpc('complete_de_work_item', { p_id: it.id, p_status: 'failed', p_error: 'de_budget_exceeded', p_retry_delay_seconds: 3600 });
           results.push({ id: it.id, status: 'failed', summary: 'de_budget_exceeded' }); continue;

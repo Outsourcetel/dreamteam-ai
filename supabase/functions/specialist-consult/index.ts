@@ -664,9 +664,9 @@ async function runResolveInquiry(
 
   // LLM answer step — dormant-honest, same gate as consult.
   const resolveHasLLM = await hasLLMProvider(admin);
-  const { data: resolveBudgetCheck } = resolveHasLLM
+  const { data: resolveBudgetCheck, error: resolveBudgetCheckErr } = resolveHasLLM
     ? await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId })
-    : { data: null };
+    : { data: null, error: null };
   const answerStatus = !resolveHasLLM ? 'llm_not_configured' : (budgetBlocked(resolveBudgetCheckErr, resolveBudgetCheck)) ? 'ai_budget_exceeded' : 'answered';
   let answerText: string | null = null;
   if (answerStatus === 'answered') {

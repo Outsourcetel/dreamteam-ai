@@ -145,7 +145,7 @@ serve(async (req) => {
       // Also honor the SUPERVISOR's own per-DE budget — routing is paid AI work
       // charged to it (audit: was tenant-only, so an over-ceiling supervisor still
       // paid for every routing call).
-      const { data: deBudget } = await admin.rpc('check_de_budget', { p_de_id: supervisor_de_id });
+      const { data: deBudget, error: deBudgetErr } = await admin.rpc('check_de_budget', { p_de_id: supervisor_de_id });
       if (budgetBlocked(deBudgetErr, deBudget)) return json({ error: 'de_budget_exceeded' }, 429);
 
       const roster = [

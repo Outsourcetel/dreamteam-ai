@@ -56,7 +56,7 @@ serve(async (req: Request) => {
     if (resolvedTenant !== tenant_id) return json({ error: "forbidden" }, 403);
 
     // ── AI budget gate before any model spend ──
-    const { data: budget } = await admin.rpc("check_tenant_ai_budget", { p_tenant_id: tenant_id });
+    const { data: budget, error: budgetErr } = await admin.rpc("check_tenant_ai_budget", { p_tenant_id: tenant_id });
     if (budgetBlocked(budgetErr, budget)) return json({ error: "ai_budget_exceeded" }, 429);
 
     // ── Workforce Assistant DE for this tenant ──
