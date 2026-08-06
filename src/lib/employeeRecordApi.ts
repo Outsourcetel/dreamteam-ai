@@ -83,7 +83,6 @@ export async function getAgenticRunMessages(runId: string): Promise<AgenticMessa
 export interface RoleContext {
   department: string | null;
   category: string | null;
-  is_specialist: boolean;
   domains: string[];              // system categories it's granted (crm, helpdesk, erp_financials…)
   archetype_key: string | null;
   archetype_name: string | null;

@@ -425,18 +425,16 @@ export interface ScopeSubject {
   name: string;
 }
 
-/** All scopeable subjects in the tenant: Digital Employees + Specialists. */
+/** All scopeable subjects in the tenant: the active Digital Employees. The
+ *  separate specialist list went with the role — a specialist was always a
+ *  digital_employees row (migrations 208/211) and every remaining one is
+ *  retired, so it only ever produced duplicates of the same ids. */
 export async function listScopeSubjects(): Promise<ScopeSubject[]> {
   const tid = await requireTenantId();
-  const [des, specs] = await Promise.all([
-    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).eq('status', 'active').order('created_at'),
-    supabase.from('digital_employees').select('id, name').eq('tenant_id', tid).eq('is_specialist', true).order('created_at'),
-  ]);
+  const des = await supabase.from('digital_employees')
+    .select('id, name').eq('tenant_id', tid).eq('status', 'active').order('created_at');
   if (des.error) raise('listScopeSubjects', des.error);
-  const out: ScopeSubject[] = (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.name }));
-  // specialist_profiles may not exist on older workspaces — non-fatal
-  if (!specs.error) out.push(...(specs.data ?? []).map(s => ({ kind: 'specialist' as const, id: s.id, name: s.name })));
-  return out;
+  return (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.name }));
 }
 
 /** Current scopes per doc, keyed by doc_id. Docs with no entry are tenant-wide. */

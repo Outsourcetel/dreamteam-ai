@@ -6,7 +6,7 @@ import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealt
 import { getDeWorkItems, getDeObjectives, saveObjective, countDeOutputs, getObjectiveWakes, type WorkItemRow, type ObjectiveRow, type ObjectiveWakeRow } from '../../lib/deWorkbenchApi';
 import { getWorkforceBoard, listMissions, type WorkforceBoardRow } from '../../lib/missionApi';
 import { fmtWhen } from '../../components/WorkforceBoard';
-import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/specialistApi';
+import { listDEActivity, type DEActivityRow, type InquiryDecisionKind } from '../../lib/deActivityApi';
 import {
   getDePerformanceMetrics, getDeInquiryMetrics, getDeCostMetricsRanged, getDeCsatMetrics, getDeActionMetrics,
   getOutcomeMetering, getDeWorkMetrics, getDeContractMetrics,
@@ -79,7 +79,7 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // 'development' dissolved into 'performance' (targets beside actuals). The
 // old keys survive only as ?tab= aliases below — never as tabs.
 type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
-  | 'profile' | 'trust' | 'governance' | 'specialist';
+  | 'profile' | 'trust' | 'governance';
 const FILE_TABS: { key: FileTab; label: string }[] = [
   { key: 'today', label: 'Work' },
   { key: 'operating', label: 'How I operate' },
@@ -1140,7 +1140,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
   const [tab, setTab] = useState<FileTab>(() => {
     const raw = new URLSearchParams(location.search).get('tab');
     const t = raw ? (TAB_ALIASES[raw] ?? raw) : null;
-    return t && (FILE_TABS.some(x => x.key === t) || t === 'specialist') ? (t as FileTab) : 'today';
+    return t && FILE_TABS.some(x => x.key === t) ? (t as FileTab) : 'today';
   });
   // Tab clicks mirror into ?tab= with replace (no back-button tab history).
   // Same-tick navigate + URLSync's pathname-only reconciliation means the
@@ -1189,8 +1189,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
   const name = de.persona_name ?? de.name;
   const healthMeta = health ? DE_HEALTH_LABELS[health.state] : null;
-  // A ?tab=specialist deep link on a non-specialist falls back to the default.
-  const activeTab: FileTab = tab === 'specialist' && !de.is_specialist ? 'today' : tab;
+  const activeTab: FileTab = tab;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
@@ -1242,7 +1241,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
       )}
 
       <TabBar
-        tabs={de.is_specialist ? [...FILE_TABS, { key: 'specialist' as FileTab, label: 'Specialist Tools' }] : FILE_TABS}
+        tabs={FILE_TABS}
         active={activeTab} onSelect={selectTab} />
 
       {activeTab === 'today' && <WorkTab de={de} setPage={setPage} />}
@@ -1252,7 +1251,7 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
       {activeTab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
-      {['profile', 'trust', 'governance', 'specialist'].includes(activeTab) && (
+      {['profile', 'trust', 'governance'].includes(activeTab) && (
         <DeProfileSections de={de} section={activeTab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
       )}
     </div>

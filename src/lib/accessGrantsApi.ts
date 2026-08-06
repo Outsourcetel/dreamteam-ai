@@ -99,26 +99,17 @@ export async function listAccessSubjects(): Promise<AccessSubject[]> {
   // Exclude retired/archived — an access matrix full of dead seed DEs buries
   // the real ones (and invites granting to a retired employee by mistake).
   // Matches the canonical "is this DE alive" filter the cron dispatchers use.
-  const [des, specs] = await Promise.all([
-    supabase.from('digital_employees').select('id, name, category, status')
-      .eq('tenant_id', tid).eq('is_specialist', false)
-      .not('lifecycle_status', 'in', '("retired","archived")').order('created_at'),
-    supabase.from('digital_employees').select('id, name, key:specialist_key, status')
-      .eq('tenant_id', tid).eq('is_specialist', true)
-      .not('lifecycle_status', 'in', '("retired","archived")').order('created_at'),
-  ]);
+  // One roster. The specialist split went with the role (migrations 208/211
+  // absorbed specialists into digital_employees; the retired rows are excluded
+  // by the same lifecycle filter as any other retired employee).
+  const des = await supabase.from('digital_employees').select('id, name, category, status')
+    .eq('tenant_id', tid)
+    .not('lifecycle_status', 'in', '("retired","archived")').order('created_at');
   if (des.error) raise('listAccessSubjects.des', des.error);
-  if (specs.error) raise('listAccessSubjects.specs', specs.error);
-  return [
-    ...(des.data ?? []).map((d) => ({
-      kind: 'de' as const, id: d.id as string, name: d.name as string,
-      detail: `Digital Employee · ${d.category}`,
-    })),
-    ...(specs.data ?? []).map((s) => ({
-      kind: 'specialist' as const, id: s.id as string, name: s.name as string,
-      detail: `Specialist · ${s.key}`,
-    })),
-  ];
+  return (des.data ?? []).map((d) => ({
+    kind: 'de' as const, id: d.id as string, name: d.name as string,
+    detail: `Digital Employee · ${d.category}`,
+  }));
 }
 
 /** Recent access denials from the audit chain (access_control /

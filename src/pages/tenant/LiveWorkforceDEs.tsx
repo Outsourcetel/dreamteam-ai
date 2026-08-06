@@ -25,7 +25,6 @@ import type { PlaybookDefinition } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton } from '../../components/LiveDataStates';
 import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
-import SpecialistLive from './SpecialistLive';
 import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
   getKpiMetricsForDe, createKpiMetric, recordKpiReading, slugifyKey,
@@ -206,8 +205,6 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
             titleExtra={de.persona_name ? <span className="text-xs text-dt-muted">— {de.name}</span> : undefined}
             chips={
               <>
-                {/* Wave 4: absorbed specialists live in the one roster now. */}
-                {de.is_specialist && <Chip tone="accent">specialist</Chip>}
                 <Chip tone={de.status === 'active' ? 'ok' : 'neutral'}>{de.status}</Chip>
                 {health[de.id] && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
@@ -1177,11 +1174,9 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
 // ranked Primary/Secondary chooser; the rank UI (set_de_specialist) appears
 // only once a second specialist exists. Granting is MANUAL only — auto-grant
 // at hire is founder decision #2, still open, and is NOT implemented here.
-interface ConsultableRow { target_de_id: string; name: string; is_specialist: boolean; rank: number | null; grant_kind: string }
+interface ConsultableRow { target_de_id: string; name: string; grant_kind: string }
 
 function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
-  const [specialists, setSpecialists] = useState<Array<{ id: string; name: string; key: string; status: string }>>([]);
-  const [assigned, setAssigned] = useState<Record<number, string>>({});
   const [consultable, setConsultable] = useState<ConsultableRow[]>([]);
   const [asRequester, setAsRequester] = useState<DEConsultationGrant[] | null>(null);
   const [asTarget, setAsTarget] = useState<DEConsultationGrant[]>([]);
@@ -1196,18 +1191,12 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
 
   const load = useCallback(async () => {
     try {
-      const [{ data: sps }, { data: rankRows }, { data: cons }, grants, des, cats] = await Promise.all([
-        supabase.from('digital_employees').select('id, name, key:specialist_key, status').eq('is_specialist', true).order('created_at'),
-        supabase.rpc('list_de_specialists', { p_de_id: de.id }),
+      const [{ data: cons }, grants, des, cats] = await Promise.all([
         supabase.rpc('list_consultable_for_de', { p_de_id: de.id }),
         listDeConsultationGrants(de.id),
         listDigitalEmployees(),
         supabase.from('system_categories').select('key').order('key'),
       ]);
-      setSpecialists((sps ?? []) as Array<{ id: string; name: string; key: string; status: string }>);
-      const map: Record<number, string> = {};
-      for (const r of (rankRows ?? []) as Array<{ rank: number; specialist_id: string }>) map[r.rank] = r.specialist_id;
-      setAssigned(map);
       // supabase.rpc on a json-returning function may hand back the array
       // directly or a JSON string depending on the client — normalise both.
       const consList = typeof cons === 'string' ? JSON.parse(cons) : cons;
@@ -1225,36 +1214,9 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // The one specialist, when there is exactly one — the toggle path.
-  const soleSpecialist = specialists.length === 1 && specialists[0].id !== de.id ? specialists[0] : null;
-  const soleGrant = soleSpecialist ? (asRequester ?? []).find(g => g.target_de_id === soleSpecialist.id) : undefined;
-  const soleOn = !!soleGrant?.active;
-
-  const toggleSpecialistHelp = async () => {
-    if (!soleSpecialist || busy) return;
-    setBusy(true); setErr(null);
-    try {
-      if (soleGrant) await setDeConsultationGrantActive(soleGrant.id, !soleGrant.active);
-      // Category is audit-only on this table (de-work treats a grant as
-      // membership) — 'other' is the honest catch-all for a whole-specialist grant.
-      else await createDeConsultationGrant(de.id, soleSpecialist.id, 'other');
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not update the grant.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const setRank = async (rank: 1 | 2, specialistId: string) => {
-    setBusy(true); setErr(null);
-    const { error: rErr } = await supabase.rpc('set_de_specialist', {
-      p_de_id: de.id, p_rank: rank, p_specialist_id: specialistId || null,
-    });
-    if (rErr) setErr(rErr.message);
-    await load();
-    setBusy(false);
-  };
+  // The specialist toggle and the ranked primary/secondary consult desks went
+  // with the role. Help is granted colleague-to-colleague below, which is what
+  // every live grant now means anyway.
 
   const addGrant = async () => {
     if (!targetId || !category) { setErr('Choose a colleague and a category.'); return; }
@@ -1295,49 +1257,6 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
         <>
-          {/* One specialist → one switch. The ranked chooser only made sense
-              with a bench to rank; every live tenant has a bench of one. */}
-          {soleSpecialist && (
-            <label className="flex items-center gap-2.5 rounded-xl border border-dt-border bg-dt-inset px-4 py-3 mb-3 cursor-pointer">
-              <input type="checkbox" checked={soleOn} disabled={busy}
-                onChange={() => void toggleSpecialistHelp()} className="accent-teal-500" />
-              <span className="text-sm text-dt-body">
-                May ask {soleSpecialist.name}{soleSpecialist.status !== 'active' ? ' (paused)' : ''} for help
-              </span>
-              <span className="text-[10px] text-dt-muted ml-auto">writes the enforced grant table</span>
-            </label>
-          )}
-
-          {/* Two or more specialists → the ranked consult desks come back. */}
-          {specialists.length >= 2 && (
-            <div className="mb-3">
-              <p className="text-[11px] text-dt-muted mb-2">
-                With more than one specialist on the bench, {name} consults its primary first and falls
-                back to the secondary if the primary is paused.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {([1, 2] as const).map(rank => (
-                  <div key={rank}>
-                    <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{rank === 1 ? 'Primary' : 'Secondary'}</p>
-                    <select
-                      value={assigned[rank] ?? ''}
-                      disabled={busy}
-                      onChange={e => void setRank(rank, e.target.value)}
-                      className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                    >
-                      <option value="">— none —</option>
-                      {specialists.map(sp => (
-                        <option key={sp.id} value={sp.id}>
-                          {sp.name}{sp.status !== 'active' ? ' (paused)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* The grants themselves — the CRUD moved here from Governance. */}
           <p className="text-xs text-dt-support mb-1">Help granted:</p>
           {asRequester.length === 0 ? (
@@ -1384,14 +1303,9 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
               <div className="flex flex-wrap gap-1.5">
                 {consultable.map(c => (
                   <span key={c.target_de_id}
-                    className={`text-[11px] px-2 py-1 rounded-lg border ${
-                      c.is_specialist
-                        ? 'bg-violet-500/10 border-violet-500/30 text-violet-200'
-                        : 'bg-dt-panel border-dt-border-strong text-dt-support'}`}>
+                    className="text-[11px] px-2 py-1 rounded-lg border bg-dt-panel border-dt-border-strong text-dt-support">
                     {c.name}
-                    <span className="text-dt-muted ml-1">
-                      {c.is_specialist ? `specialist${c.rank ? ` · ${c.rank === 1 ? 'primary' : 'backup'}` : ''}` : 'peer'}
-                    </span>
+                    <span className="text-dt-muted ml-1">peer</span>
                   </span>
                 ))}
               </div>
@@ -1426,8 +1340,6 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
 // requester by KIND (employee / playbook / person), not by name — shown
 // honestly rather than guessed.
 function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
-  type ConsultRow = { id: string; question: string; status: string; confidence: number | null; requested_by: string; specialist_de_id: string | null; created_at: string };
-  const [consults, setConsults] = useState<ConsultRow[] | null>(null);
   const [tasks, setTasks] = useState<{ inbound: DETaskRequest[]; outbound: DETaskRequest[] } | null>(null);
   const [nameById, setNameById] = useState<Record<string, string>>({});
 
@@ -1435,26 +1347,20 @@ function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
     let cancelled = false;
     (async () => {
       try {
-        let q = supabase.from('spec_consultations')
-          .select('id, question, status, confidence, requested_by, specialist_de_id, created_at')
-          .order('created_at', { ascending: false }).limit(8);
-        // A specialist's file shows the consultations IT answered; any other
-        // employee shows the workspace's recent consultations (the log does
-        // not record which DE asked — only that a DE, playbook, or person did).
-        if (de.is_specialist) q = q.eq('specialist_de_id', de.id);
-        const [{ data: cons }, t, des] = await Promise.all([
-          q, listDeTaskRequests(de.id), listDigitalEmployees(),
+        // The specialist consultation log went with the role; what remains is
+        // delegation — one employee handing a tracked sub-task to another.
+        const [t, des] = await Promise.all([
+          listDeTaskRequests(de.id), listDigitalEmployees(),
         ]);
         if (cancelled) return;
-        setConsults((cons ?? []) as ConsultRow[]);
         setTasks(t);
         setNameById(Object.fromEntries(des.map(d => [d.id, d.persona_name || d.name])));
       } catch {
-        if (!cancelled) { setConsults([]); setTasks({ inbound: [], outbound: [] }); }
+        if (!cancelled) setTasks({ inbound: [], outbound: [] });
       }
     })();
     return () => { cancelled = true; };
-  }, [de.id, de.is_specialist]);
+  }, [de.id]);
 
   const who = (id: string | null) => id ? (nameById[id] || 'a colleague') : 'You';
   const REQUESTER_LABEL: Record<string, string> = { de: 'an employee', playbook: 'a playbook', human: 'a person' };
@@ -1470,30 +1376,12 @@ function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
       <p className="text-[10px] text-dt-faint mb-2">
         Who asked for help and what came of it. Setup lives on Profile &amp; Capabilities.
       </p>
-      {consults === null ? (
+      {tasks === null ? (
         <p className="text-[11px] text-dt-muted">Loading…</p>
       ) : (
         <>
-          {consults.length === 0 ? (
-            <p className="text-[11px] text-dt-muted mb-2">
-              {de.is_specialist ? 'No consultations answered by this specialist yet.' : 'No consultations recorded in this workspace yet.'}
-            </p>
-          ) : (
-            <div className="space-y-1 mb-2">
-              {!de.is_specialist && (
-                <p className="text-[10px] text-dt-faint">Workspace-wide — the log records who asked by kind, not by name.</p>
-              )}
-              {consults.map(c => (
-                <div key={c.id} className="rounded-lg bg-dt-inset px-3 py-1.5 text-[11px] text-dt-support flex items-center gap-2">
-                  <span className="flex-1 truncate">{c.question}</span>
-                  <span className="text-dt-faint whitespace-nowrap">
-                    asked by {REQUESTER_LABEL[c.requested_by] ?? c.requested_by}
-                    {c.specialist_de_id ? ` → ${who(c.specialist_de_id)}` : ''} · {c.status}
-                    {c.confidence != null ? ` · ${c.confidence}%` : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
+          {allTasks.length === 0 && (
+            <p className="text-[11px] text-dt-muted mb-2">No delegations recorded for this employee yet.</p>
           )}
           {allTasks.length > 0 && (
             <div className="space-y-1">
@@ -4318,7 +4206,7 @@ function DeAmendmentBlock({ de }: { de: DigitalEmployee }) {
  *  employee page. Keys mirror its tab keys. (docs/31 steps 7-8: the old
  *  'capabilities' section merged into 'profile'; 'development' dissolved
  *  into the Performance tab, its panels exported above.) */
-export type DeProfileSectionKey = 'profile' | 'trust' | 'governance' | 'specialist';
+export type DeProfileSectionKey = 'profile' | 'trust' | 'governance';
 
 export function DeProfileSections({ de, section, setPage, onUpdated }: {
   de: DigitalEmployee; section: DeProfileSectionKey; setPage: (p: Page) => void; onUpdated: (d: DigitalEmployee) => void;
@@ -4365,14 +4253,6 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
         {/* Incidents moved to the Record tab — they are the record. */}
       </div>
     );
-  }
-  if (section === 'specialist') {
-    if (!de.is_specialist) return null;
-    return de.specialist_key
-      ? <SpecialistLive specialistKey={de.specialist_key} setPage={setPage} />
-      : <div className="rounded-2xl border border-dt-border bg-dt-card p-6 text-sm text-dt-support">
-          This specialist has no linked toolset key.
-        </div>;
   }
   return null;
 }

@@ -798,16 +798,8 @@ export async function decideHumanTask(
       console.error('onboarding signoff hook:', err);
     }
   }
-  // Hook #3 (additive, guarded — migration 024): if this task gates a
-  // Scribe write-back, execute (approve) or reject it server-side.
-  if (task.related_table === 'scribe_requests') {
-    try {
-      const { resolveScribeRequest } = await import('./specialistApi');
-      await resolveScribeRequest(task.id, decision);
-    } catch (err) {
-      console.error('scribe resolution hook:', err);
-    }
-  }
+  // The Scribe write-back hook (migration 024) went with the specialist role —
+  // scribe_requests held 0 rows and the desk that created them is gone.
   // Hook (EXEC 0.3, migration 215): if this task gates an account write-back
   // (log activity / set next step / change status), apply the frozen,
   // server-composed write on approve; leave the record untouched on reject.

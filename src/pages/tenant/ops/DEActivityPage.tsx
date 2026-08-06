@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageHeader } from '../../../components/ui';
 import { CustomerApiError } from '../../../lib/customerApi';
 import {
-  listDEActivity, simulateInquiry, DEActivityRow, EvidenceStep, InquiryDecisionKind,
-} from '../../../lib/specialistApi';
+  listDEActivity, DEActivityRow, EvidenceStep, InquiryDecisionKind,
+} from '../../../lib/deActivityApi';
 import { getActionExecution, ActionExecutionRow } from '../../../lib/connectorApi';
 import { CATEGORY_LABELS, SystemCategory } from '../../../lib/categoryContracts';
 import type { Page } from '../../../types';
@@ -194,11 +194,6 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
   const [category, setCategory] = useState<string>('all');
   const [search, setSearch] = useState('');
 
-  // Simulator (collapsed by default so it no longer dominates)
-  const [showSim, setShowSim] = useState(false);
-  const [simInquiry, setSimInquiry] = useState('');
-  const [simulating, setSimulating] = useState(false);
-
   const load = useCallback(async (silent = false, lim = limit) => {
     if (!silent) setLoading(true);
     setError(null);
@@ -219,20 +214,9 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, [load]);
 
-  const runSimulation = async () => {
-    if (!simInquiry.trim() || simulating) return;
-    setSimulating(true);
-    setError(null);
-    try {
-      await simulateInquiry(simInquiry.trim());
-      setSimInquiry('');
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSimulating(false);
-    }
-  };
+  // The inquiry simulator ran through the specialist consult endpoint and went
+  // with it. It had already stopped working: it resolved an ACTIVE specialist,
+  // and every specialist row is retired.
 
   // Distinct filter options, derived from what's actually loaded.
   const subjects = useMemo(() => {
@@ -292,12 +276,6 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
           title="DE at Work"
           subtitle="Live evidence and reasoning as your Digital Employees notice, evaluate, and act on work — filter, don't scroll."
         />
-        <button
-          onClick={() => setShowSim(s => !s)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-purple-500 hover:text-purple-300 transition-colors whitespace-nowrap"
-        >
-          {showSim ? 'Hide simulator' : 'Simulate an inquiry'}
-        </button>
       </div>
 
       {/* Tier-1 surfacing: what the whole workforce is worth (mig 193
@@ -313,30 +291,6 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
       <div className="mb-5">
         <WorkforceBoard setPage={setPage} />
       </div>
-
-      {showSim && (
-        <div className="mb-5 rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
-          <p className="text-xs text-dt-support mb-2">
-            Runs the exact same evidence + triage pipeline right now, so you can watch the mechanism without waiting for a real item.
-            Always tagged as a simulation — never mixed with real triage. Real automatic triage runs every 5 minutes via the dispatch cron.
-          </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <input
-              value={simInquiry}
-              onChange={(e) => setSimInquiry(e.target.value)}
-              placeholder='e.g. "My API key stopped working after the update"'
-              className="flex-1 min-w-[280px] text-sm bg-dt-card border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-            />
-            <button
-              onClick={runSimulation}
-              disabled={!simInquiry.trim() || simulating}
-              className="text-sm px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white transition-colors whitespace-nowrap"
-            >
-              {simulating ? 'Running…' : 'Run simulation'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Attention strip — clickable bucket counts */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">

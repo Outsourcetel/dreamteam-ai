@@ -461,45 +461,13 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } },
 ];
 
-// Consult-an-SME (T1.1): ask a specialist DE via the governed specialist-consult
-// endpoint. Single-hop by construction (specialist-consult makes ONE llm call,
-// no nested consult); the target answers under its OWN model/guardrails/grants.
-// Ported from agentic-step-execute so a DE can now consult mid-WORK, not only
-// inside a playbook step. run_id carries the work-item id for provenance.
-async function callConsultSpecialist(
-  tenantId: string, specialistKey: string, question: string, runId: string | null,
-): Promise<string> {
-  try {
-    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/specialist-consult`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      },
-      body: JSON.stringify({
-        action: 'consult', tenant_id: tenantId, profile_key: specialistKey,
-        question, requested_by: 'de', run_id: runId,
-      }),
-    });
-    const d = await res.json().catch(() => ({} as Record<string, unknown>));
-    if (d.error === 'llm_not_configured') return "The specialist could not produce a written answer — no reasoning provider is configured. Retrieval ran, but there's no answer to rely on.";
-    if (d.error === 'ai_budget_exceeded') return 'The specialist could not answer — this workspace has reached its monthly AI usage limit.';
-    if (d.error === 'profile_not_found') return `No specialist with key "${specialistKey}" exists in this workspace — re-check the available specialist keys before consulting again.`;
-    if (d.error === 'profile_paused') return `The "${specialistKey}" specialist is paused and cannot be consulted right now.`;
-    if (d.error) return `The specialist consult failed: ${String(d.error).slice(0, 160)}`;
-    if (d.blocked) return `The specialist's draft answer was withheld by a safety guardrail ("${String(d.rule ?? '')}") and escalated to a human. Proceed without relying on it.`;
-    const cites = Array.isArray(d.citations) && d.citations.length
-      ? ` Sources: ${(d.citations as unknown[]).slice(0, 5).map(String).join('; ')}.` : '';
-    const esc = d.needs_escalation
-      ? ' NOTE: the specialist flagged LOW confidence and escalated this to a human — treat its answer as provisional, not settled.' : '';
-    return `Specialist answer (confidence ${d.confidence ?? '?'}%): ${String(d.answer ?? '').slice(0, 1500)}${cites}${esc}`;
-  } catch (e) {
-    return `Could not reach the specialist: ${String(e).slice(0, 160)}`;
-  }
-}
+// Consult-an-SME went with the specialist role. Specialists were absorbed into
+// digital_employees (migrations 208/211) and every remaining is_specialist row
+// is disabled, so this tool could never be offered. A DE that needs a colleague
+// now either delegates (delegate_to_colleague, below) or is consulted inside
+// the evidence pipeline's own DE-to-DE step, which targets any ACTIVE DE.
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, allowedSpecialistKeys?: Set<string>, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -710,20 +678,6 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       return { result: r.ok
         ? { queued: true, task_id: r.task_id, status: r.status, note: 'Browser operation created — it is pending human approval; a connected browser worker will run it and its outcome will be recorded. Do NOT retry; move on or mark_done.' }
         : { error: r.error ?? 'could not create operation' } };
-    }
-    case 'consult_specialist': {
-      // The Set is the real gate — specialist-consult has NO per-asker check,
-      // so a DE could otherwise consult any specialist by key. Deny on an
-      // empty OR undefined Set (fail-safe). The tool is only offered when the
-      // DE has ≥1 active grant, so a legitimate call always carries a Set.
-      const key = String(input.specialist_key ?? '').trim();
-      const q = String(input.question ?? '').trim();
-      if (!key || !q) return { result: { error: 'Provide both specialist_key and question.' } };
-      if (!allowedSpecialistKeys?.has(key)) {
-        return { result: { error: `Not permitted to consult "${key}". Only the specialists listed in your consult_specialist tool are available.` } };
-      }
-      const reply = await callConsultSpecialist(tenantId, key, q, workItemId ?? null);
-      return { result: { specialist: key, reply } };
     }
     case 'delegate_to_colleague': {
       // The Map is the gate (built from active outbound grants); request_de_task
@@ -1033,39 +987,6 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
   // Generic escalation ruleset (mig 262) — loaded once, evaluated per action.
   const escRuleset = await loadEscalationRuleset(admin, tenantId, deId).catch(() => ({} as EscRuleset));
-  // Consult-an-SME (T1.1): offer a consult_specialist tool ONLY for specialists
-  // this DE has an active consultation grant to (mig 111). A grant is treated as
-  // MEMBERSHIP ("may consult this specialist about anything it knows"), not
-  // per-category scoping — de_consultation_grants.category is kept for audit but
-  // not branched on (System A never enforces it; the target's own sources /
-  // guardrails / model bound the blast radius). Every consult is recorded in
-  // spec_consultations + audit_events (kind='specialist_consult').
-  const consultTools: typeof TOOLS = [];
-  let allowedSpecialistKeys: Set<string> | undefined;
-  {
-    const { data: grantRows } = await admin.from('de_consultation_grants')
-      .select('target_de_id').eq('tenant_id', tenantId).eq('requester_de_id', deId).eq('active', true);
-    const targetIds = [...new Set(((grantRows ?? []) as Array<{ target_de_id: string }>).map((g) => g.target_de_id).filter(Boolean))];
-    if (targetIds.length > 0) {
-      const { data: specRows } = await admin.from('digital_employees')
-        .select('specialist_key, name, persona_name')
-        .in('id', targetIds).eq('is_specialist', true).eq('status', 'active').not('specialist_key', 'is', null);
-      const specs = (specRows ?? []) as Array<{ specialist_key: string; name?: string; persona_name?: string }>;
-      const keys = [...new Set(specs.map((s) => s.specialist_key).filter(Boolean))];
-      if (keys.length > 0) {
-        allowedSpecialistKeys = new Set(keys);
-        const desks = specs.map((s) => `${s.specialist_key} (${s.persona_name || s.name || s.specialist_key})`).join(', ');
-        consultTools.push({
-          name: 'consult_specialist',
-          description: `Ask a specialist colleague when this task needs expertise outside your own. Available: ${desks}. They answer from their own knowledge under their own guardrails — weigh the answer, do not treat it as gospel. Use only when you genuinely need their expertise.`,
-          input_schema: { type: 'object', properties: {
-            specialist_key: { type: 'string', enum: keys },
-            question: { type: 'string', description: 'a specific, self-contained question for the specialist' },
-          }, required: ['specialist_key', 'question'] },
-        });
-      }
-    }
-  }
   // Cross-DE delegation (T1.2): a DE may hand a sub-task to a colleague it has
   // an active OUTBOUND consultation grant to (mig 111). request_de_task opens a
   // real tracked case on the receiver, who works it under ITS OWN governance —
@@ -1073,13 +994,13 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // while working a task that was itself delegated (objectiveKind==='de_task') —
   // the single-hop pre-filter, backstopped in SQL.
   //
-  // SCOPE CONTAINMENT (docs/31 decision #2, 2026-07-28): the specialist
-  // auto-grant backfill makes every DE hold a grant to its tenant's Technical
-  // Specialist. de_consultation_grants is the shared collaboration allow-list,
-  // so without a filter those grants would silently make specialists
-  // DELEGATION targets too. Decision: consult is the specialist interface
-  // (consult_specialist above); delegation is DE-to-DE work handoff and stays
-  // as it was — specialists are excluded here as targets. This Map is also the
+  // SCOPE CONTAINMENT (docs/31 decision #2, 2026-07-28, kept after the
+  // specialist role was retired): the old specialist auto-grant backfill left
+  // every DE holding a grant to its tenant's Technical Specialist, and
+  // de_consultation_grants is the shared collaboration allow-list — so without
+  // a filter those stale grants would silently make retired specialists
+  // DELEGATION targets. The specialist consult interface is gone; delegation
+  // is DE-to-DE work handoff and stays as it was. This Map is also the
   // execution gate for the delegate_to_colleague handler, so exclusion at
   // build time covers both offer and execution. Mirrored in SQL inside
   // request_de_task (same decision, same wording).
@@ -1092,7 +1013,10 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     if (tIds.length > 0) {
       const { data: colRows } = await admin.from('digital_employees')
         .select('id, name, persona_name, department').in('id', tIds)
-        .eq('is_specialist', false)   // specialists are consulted, never delegated to (is_specialist is NOT NULL)
+        // The is_specialist exclusion that used to sit here is gone with the
+        // column. It is not needed: all 16 retired specialist rows carry
+        // lifecycle_status='retired', so the filter below already excludes
+        // them — verified before removing, not assumed.
         .not('lifecycle_status', 'in', '(paused,retired,archived)');
       const cols = (colRows ?? []) as Array<{ id: string; name?: string; persona_name?: string; department?: string }>;
       if (cols.length > 0) {
@@ -1231,7 +1155,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       });
     }
   }
-  const tools = [...TOOLS, ...consultTools, ...delegateTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
+  const tools = [...TOOLS, ...delegateTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
   const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
 
@@ -1280,7 +1204,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, allowedSpecialistKeys, delegationTargets, entityName, contactsFor);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, delegationTargets, entityName, contactsFor);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
