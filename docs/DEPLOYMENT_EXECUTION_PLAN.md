@@ -1,5 +1,12 @@
 # Outsourcetel Go-Live: Deployment Execution Plan
 
+> **⚠ SUPERSEDED 2026-08-06 — the `/embed` iframe steps below no longer apply.**
+> `/embed`, `EmbedPage`, `EmbedWidget` and `src/lib/embedTokenApi.ts` are gone. The
+> widget called `de_answer_headless`, an RPC that was never created, so it always
+> errored. **The live embed is `<script src="/widget.js">` → `widget-ask` edge
+> function** (the snippet in Settings → Support widget). Skip the `/embed` and
+> embed-token items; the rest of this plan is the record as executed on 2026-07-19.
+
 **Date**: 2026-07-19  
 **Status**: 🟢 ALL CODE READY — EXECUTING NOW  
 **Team**: Me (senior engineers, CTO, PMO)

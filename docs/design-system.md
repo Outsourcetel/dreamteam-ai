@@ -136,10 +136,12 @@ border-slate · 7 StatCard files · 8 Modal files); they only go down from there
   interaction affordances, not surfaces or text; they ride the navy remap and
   read correctly in both surface families. If a `dt-control` token lands later,
   convert them all in one scripted pass.
-- **EmbedWidget light-theme branch** (`src/components/EmbedWidget.tsx`) — the
-  chat widget renders on CUSTOMERS' websites, where `theme: 'light'` uses
-  `bg-slate-100`/`border-slate-200` as the light neutral ramp on purpose. The
-  app shell never renders this branch.
+- ~~**EmbedWidget light-theme branch**~~ — REMOVED 2026-08-06 along with
+  `src/components/EmbedWidget.tsx` and the `/embed` route (it called an RPC that
+  was never created). The customer-facing widget is `public/widget.js`, which is
+  outside the app's token system entirely and carries its own styles; the
+  light-neutral exemption that used to be recorded here no longer applies to any
+  file under `src/`.
 
 **Hover/neutral vocabulary** (match the primitives, never invent):
 secondary-button hover border = `hover:border-dt-muted`; neutral status chip =

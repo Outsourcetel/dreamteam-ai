@@ -1,4 +1,26 @@
 # 48-Hour Work Analysis & Live Deployment Status
+
+> **⚠ CORRECTED 2026-08-06 — two things recorded here as shipped were never wired.**
+>
+> **The `/embed` iframe.** `/embed`, `EmbedPage`, `EmbedWidget` and
+> `embedTokenApi.ts` are gone. The widget called `de_answer_headless`, **an RPC that
+> was never created**, so it always returned *"Failed to send message"* — and
+> nothing pointed at it, because the snippet customers are given is
+> `<script src="/widget.js">` → the **`widget-ask`** edge function. `embed_tokens`
+> and its 3 RPCs survive with no callers and zero rows.
+>
+> **The bespoke amendment UI.** `amendmentApi.ts` and its three widgets called six
+> RPCs (`request_amendment`, `list_pending_amendments`, `get_amendment_detail`,
+> `approve_amendment`, `reject_amendment`, `get_amendment_history`) that **were
+> never created**, so the section rendered permanently empty. Amendments themselves
+> work and always did, by a different route: `entity-amend` proposes → raises a
+> **human task** → a person decides it in the ordinary approval queue via
+> `decide_human_task` → `trg_sync_entity_amendment` applies or rejects it. The
+> widgets were removed rather than rebuilt, because six new RPCs would have
+> approved amendments *without* `decide_human_task`, bypassing approval authority.
+>
+> The rest of this analysis stands as the record of 2026-07-20.
+
 **Period**: 2026-07-18 (Saturday) → 2026-07-20 (Monday)  
 **Commits**: 70 commits in 48 hours  
 **Focus**: Week 2-3 Sophie support agent + Amendment journeys (conversational improvements)

@@ -1,5 +1,12 @@
 # Outsourcetel Go-Live: Final Readiness Report
 
+> **⚠ SUPERSEDED 2026-08-06 — the `/embed` public route below no longer exists.**
+> It was removed along with `EmbedPage` and `EmbedWidget`: the widget called
+> `de_answer_headless`, an RPC that was never created, so the iframe flow described
+> here never actually worked end to end. **The live embed is
+> `<script src="/widget.js">` → `widget-ask` edge function.** Ignore the `/embed`
+> and token-in-query-param steps; the rest is the record as assessed on 2026-07-19.
+
 **Date**: 2026-07-19  
 **Status**: 🟢 ALL BLOCKERS REMOVED — READY FOR PRODUCTION  
 **Timeline**: Deploy Week 1, Go-Live Week 1-2

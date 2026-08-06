@@ -324,14 +324,34 @@ Returns: `{ metrics: [...], schemas: [...], configs: [...] }`
 - Query all de_config instances
 - Return as importable bundle
 
-## Amendment Framework (6 functions — already exist)
+## Amendment Framework — ⚠ DO NOT BUILD THESE (corrected 2026-08-06)
 
-- request_amendment(entity_kind, entity_id, problem, trigger, context)
-- list_pending_amendments(entity_kind, entity_id?, status?)
-- get_amendment_detail(amendment_id)
-- approve_amendment(amendment_id)
-- reject_amendment(amendment_id, reason?)
-- get_amendment_history(entity_kind, entity_id)
+This section used to read *"6 functions — already exist"*. **They never existed.**
+A frontend (`amendmentApi.ts` + three widgets) was written against them and shipped
+rendered on the employee file; it failed silently — the list call caught the error
+and returned `[]`, so the section was permanently empty and the wizard could not
+submit. The widgets were removed on 2026-08-06; the six names below are kept only
+so nobody re-derives them from an old grep:
+
+- ~~request_amendment~~ · ~~list_pending_amendments~~ · ~~get_amendment_detail~~
+- ~~approve_amendment~~ · ~~reject_amendment~~ · ~~get_amendment_history~~
+
+**⚠⚠ Do not create them. Amendments already work, by a different and better route:**
+
+1. `entity-amend` (edge fn) proposes → writes `workforce_entity_amendments`
+   → **raises a `human_tasks` row**
+2. a person decides it in the ordinary approval queue via **`decide_human_task`**
+3. trigger `trg_sync_entity_amendment` → `sync_entity_amendment_decision` applies
+   or rejects the amendment from that decision
+
+Playbook amendments use the twin of this (`decidePlaybookAmendment` →
+`decide_human_task`, falling back to `apply_playbook_amendment` /
+`reject_playbook_amendment`).
+
+Building the six would give a **second approval path that bypasses
+`decide_human_task`** — which is where approval authority (`has_approval_authority`),
+the pending-only guard and the audit event live. That is a governance hole, not a
+feature.
 
 ## Validation & Hooks
 

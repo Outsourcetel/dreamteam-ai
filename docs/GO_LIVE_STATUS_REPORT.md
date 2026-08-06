@@ -1,5 +1,11 @@
 # Go-Live Status Report
 
+> **⚠ SUPERSEDED 2026-08-06 — the `/embed` route and `embedTokenApi.ts` below are gone.**
+> The embed widget called `de_answer_headless`, an RPC that was never created, so it
+> could not answer anything; nothing was ever pointed at it. **The live embed is
+> `<script src="/widget.js">` → `widget-ask`.** The rest of this report stands as
+> the record of 2026-07-19.
+
 **Date**: 2026-07-19 23:20 UTC  
 **Status**: ✅ **PRODUCTION READY — ALL BLOCKERS COMPLETE**  
 **Next Action**: Execute deployment sequence (migration → edge functions → frontend)

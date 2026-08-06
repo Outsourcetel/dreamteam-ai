@@ -94,6 +94,22 @@ Note the inconsistency this creates *inside one tab*: on Performance, `get_de_cs
 
 `PendingAmendmentsWidget` and `AmendmentWizard` are mounted live at `src/pages/tenant/LiveWorkforceDEs.tsx:3687-3689`. `src/lib/amendmentApi.ts` wraps every call in try/catch returning `null`/`[]`, so **the panel renders empty forever and reports nothing**. This is not a permission finding — it fell out of the exhaustive enumeration — but it is a dead surface in the Employee File that the docs/31 §Q12 reshuffle should either delete or build. (Note: `apply_entity_amendment` / `reject_entity_amendment` / `apply_playbook_amendment` / `reject_playbook_amendment` **do** exist — this looks like a UI wired to a naming convention that was never shipped.)
 
+> ✅ **RESOLVED 2026-08-06 — panel deleted, RPCs deliberately NOT built.**
+> This finding was correct, and the closing parenthesis above was the key to it:
+> the UI was wired to a naming convention that was never shipped, while the real
+> functions existed under different names. (One correction: it is **six** RPCs,
+> not five — `get_amendment_history` was also absent.)
+>
+> `amendmentApi.ts`, `AmendmentWizard`, `PendingAmendmentsWidget` and
+> `AmendmentReviewCard` are removed. The six were **not** built, because
+> amendments already work end to end: `entity-amend` proposes → raises a
+> **`human_tasks` row** → a person decides it in the ordinary approval queue via
+> **`decide_human_task`** → `trg_sync_entity_amendment` applies or rejects it.
+> Building the six would have created a second approval path that bypasses
+> `decide_human_task`, where `has_approval_authority`, the pending-only guard and
+> the audit event live — a governance hole, on the day approval limits went live.
+> See `BACKEND_RPC_REQUIREMENTS.md` §Amendment Framework.
+
 ---
 
 ## Ranked gap list — ready for the Wave-2 migration session
@@ -119,7 +135,7 @@ Ranked by (exposure × sensitivity × how many surfaces one fix repairs).
 | **P2-15** | RLS: `de_decision_trace`, `de_exceptions`, `de_memory`, `de_objectives`, `de_training_progress`, `eval_judgments`, `role_certifications` are tenant-gated but have **no** `can_access_de` policy (§5) | Add `_de_scope` policies mirroring the ones already on `de_work_items` / `de_conversations` / `de_missions` | M |
 | **P3-16** | 10 functions hold PUBLIC EXECUTE in `proacl` even where they fail closed | Housekeeping sweep: strip PUBLIC, grant `authenticated`/`service_role` explicitly | S |
 | **P3-17** | `request_trust_promotion`, `submit_evidence_feedback` — DE-scoped but no role gate | Decision: keep as member-level proposals, or raise to manager+ | XS + decision |
-| **P3-18** | 5 amendment RPCs do not exist; panel is dead and silent | Delete the panel, or build the RPCs | S |
+| **P3-18** | ✅ **RESOLVED 2026-08-06** — panel deleted (see note under §amendment RPCs) | ~~Delete the panel, or build the RPCs~~ | S |
 | **P3-19** | `create_de_team_mission` does not walk `target_spec` for DE scoping (documented in its own header, and in docs/30) | Known, pre-existing; carry forward | M |
 
 ---

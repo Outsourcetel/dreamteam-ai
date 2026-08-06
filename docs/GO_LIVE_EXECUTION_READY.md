@@ -1,5 +1,12 @@
 # GO-LIVE EXECUTION READY
 
+> **⚠ SUPERSEDED 2026-08-06 — the `/embed` route below no longer exists.**
+> Do not run the `curl -I .../embed?...` check; it will 404 by design. `/embed`,
+> `EmbedPage` and `EmbedWidget` were removed because the widget called
+> `de_answer_headless`, an RPC that was never created. **The live embed is
+> `<script src="/widget.js">` → `widget-ask`**, and the correct smoke test is to
+> load that snippet and send a message. Everything else here stands as written.
+
 **Date**: 2026-07-19  
 **Status**: ✅ ALL CODE COMPLETE AND COMMITTED  
 **Next**: EXECUTE DEPLOYMENT SEQUENCE

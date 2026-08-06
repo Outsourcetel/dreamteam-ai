@@ -1,5 +1,17 @@
 # Outsourcetel Go-Live: Blockers & Wiring Guide
 
+> **⚠ SUPERSEDED 2026-08-06 — the `/embed` iframe described below no longer exists.**
+>
+> The `/embed` route, `EmbedPage` and `EmbedWidget` were removed. That widget called
+> an RPC (`de_answer_headless`) that was never created, so every question it sent
+> returned *"Failed to send message"*. Nothing was ever pointed at it.
+>
+> **The live embed is `<script src="/widget.js">`** — the snippet shown in
+> Settings → Support widget — which talks to the `widget-ask` edge function
+> (streaming, guardrailed). That is the path customers have always actually been
+> given. Ignore the `/embed`, iframe and embed-token steps below; the rest of this
+> guide stands as written.
+
 ## Status: Phase 5 Complete ✅ — Wiring Phase (IN PROGRESS)
 
 All frontend components built. Needs backend RPC wiring + configuration.

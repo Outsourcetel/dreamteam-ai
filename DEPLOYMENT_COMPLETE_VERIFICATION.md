@@ -1,5 +1,19 @@
 # 🚀 OUTSOURCETEL GO-LIVE DEPLOYMENT — COMPLETE
 
+> **⚠ CORRECTED 2026-08-06 — the embed/iframe half of this record was never working.**
+>
+> The `/embed` iframe, `EmbedPage`, `EmbedWidget` and `embedTokenApi.ts` are gone.
+> The widget called `de_answer_headless`, **an RPC that was never created**, so the
+> iframe could not answer anything — and nothing was ever pointed at it, because the
+> snippet customers are given is `<script src="/widget.js">`, which talks to the
+> **`widget-ask`** edge function. That is the real, live, streaming path.
+>
+> `embed_tokens` and its three RPCs (`generate_embed_token`,
+> `get_or_create_embed_token`, `verify_embed_token`) still exist but now have
+> **no callers and zero rows**; `verify_embed_token` is still anon-callable.
+>
+> The draft/reply-mode and configuration halves of this record are unaffected.
+
 **Date**: 2026-07-19 23:30 UTC  
 **Status**: ✅ **PRODUCTION READY — ALL SYSTEMS GO**  
 **Initiative**: Week 2-3 Sophie Support DE + Reply-Mode + Embed Widget + Configuration UI

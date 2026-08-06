@@ -63,10 +63,15 @@ WHAT'S DEPLOYED (3 Blockers)
    Backend: de-answer wired to submit drafts
    Frontend: ReplyModeReviewCard modal + approval flow
 
-✅ EMBED WIDGET SYSTEM
-   Database: embed_tokens table + 3 RPC functions
-   Backend: /embed route (public, token-verified)
-   Frontend: EmbedWidget component + code snippet generator
+✅ EMBED WIDGET SYSTEM   [CORRECTED 2026-08-06]
+   Backend:  widget-ask edge function (streaming, guardrailed)
+   Frontend: public/widget.js + snippet generator in Settings
+   Snippet:  <script src="/widget.js"></script>
+
+   ⚠ The /embed iframe route this section used to describe is GONE. It
+     called de_answer_headless, an RPC that was never created, so it always
+     returned "Failed to send message"; nothing ever pointed at it.
+     embed_tokens + its 3 RPCs still exist with no callers and zero rows.
 
 ✅ CONFIGURATION UI SYSTEM
    Database: config_schema_templates + support template

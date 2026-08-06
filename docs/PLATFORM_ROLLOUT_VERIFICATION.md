@@ -44,36 +44,38 @@
 
 ### ✅ FEATURE 2: Embed Widget (Customer Website)
 
-**Database Level** (Global):
-- [ ] `embed_tokens` table exists (migration 20260720)
-- [ ] RLS policies enforce tenant isolation
-- [ ] 3 RPC functions created:
-  - [ ] `generate_embed_token()`
-  - [ ] `get_or_create_embed_token()`
-  - [ ] `verify_embed_token()`
+> **⚠ CORRECTED 2026-08-06 — the iframe checklist below was never satisfiable.**
+>
+> It lists `de_answer_headless()` as a verification item. **That RPC was never
+> created.** The `/embed` iframe therefore could not answer a single question — it
+> returned *"Failed to send message"* — and the ticks against "iframe loads at
+> /embed" and "Chat works in iframe" could not have reflected a working flow.
+>
+> `/embed`, `EmbedPage.tsx` and `EmbedWidget.tsx` have been removed;
+> `embedTokenApi.ts` was already gone. The `embed_tokens` table and its three RPCs
+> still exist but have **no callers and zero rows**.
+>
+> The checklist below is replaced by the real one.
 
-**Backend Level** (Global):
-- [ ] `/embed` route deployed (public, no auth required)
-- [ ] JWT token verification working
-- [ ] `de_answer_headless()` RPC accessible from iframe
-
-**Frontend Level** (Global):
-- [ ] `EmbedPage.tsx` deployed
-- [ ] `EmbedWidget.tsx` component deployed
-- [ ] `embedTokenApi.ts` available to all tenants
-- [ ] `EmbedCodeDisplay.tsx` component deployed
-- [ ] /embed route accessible
+**The live embed — what to actually verify** (Global):
+- [ ] `public/widget.js` is served
+- [ ] The snippet in Settings → Support widget reads `<script src="/widget.js"></script>`
+- [ ] `widget-ask` edge function is deployed and responds
+- [ ] A message sent from the snippet returns a streamed answer
+- [ ] Guardrails apply to the answer (see `_shared/answerGuardrails`)
+- [ ] Tenant isolation: the widget key resolves to exactly one tenant
 
 **Per-Tenant Verification**:
 
 | Tenant | TCP | PWC | Acme | Outsourcetel | New Tenant |
 |--------|-----|-----|------|--------------|-----------|
-| Can generate token | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Can get embed code | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Embed code snippet works | ✓ | ✓ | ✓ | ✓ | ✓ |
-| iframe loads at /embed | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Chat works in iframe | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Can get embed snippet | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `widget.js` loads | — | — | — | — | — |
+| Chat answers via `widget-ask` | — | — | — | — | — |
 | Tenant isolation (no cross-tenant data) | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+*(“—” = not re-verified since the 2026-08-06 correction. Previous ticks described
+the iframe path, which never worked; they are not carried over.)*
 
 ---
 
