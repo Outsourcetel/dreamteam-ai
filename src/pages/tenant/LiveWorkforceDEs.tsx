@@ -1165,15 +1165,12 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
 }
 
 // ── Colleagues & help (docs/31 Q6) — ONE panel writing the ENFORCED table.
-// de_consultation_grants is what the runtime actually reads: de-work offers
-// the consult_specialist tool ONLY when this DE holds an active grant (a
-// grant is membership; its category is audit-only — de-work never branches
-// on it). The old Specialists panel wrote de_specialist_assignments, a table
-// no runtime path reads — it is gone. While the tenant has exactly ONE
-// specialist (every live tenant today), a single on/off toggle replaces the
-// ranked Primary/Secondary chooser; the rank UI (set_de_specialist) appears
-// only once a second specialist exists. Granting is MANUAL only — auto-grant
-// at hire is founder decision #2, still open, and is NOT implemented here.
+// de_consultation_grants is what the runtime actually reads. A grant is
+// membership; its category is audit-only — nothing branches on it. The
+// specialist half of this panel (the on/off toggle and the ranked
+// Primary/Secondary chooser) went with the role; what remains is
+// colleague-to-colleague, which is what every grant now means. Granting is
+// MANUAL only — auto-grant at hire is founder decision #2, still open.
 interface ConsultableRow { target_de_id: string; name: string; grant_kind: string }
 
 function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {

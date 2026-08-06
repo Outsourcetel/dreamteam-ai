@@ -170,7 +170,7 @@ const fmtMoney = (cents: number) => '$' + Math.round(cents / 100).toLocaleString
 
 const PRIMITIVES = [
   'check_account', 'generate_invoice', 'human_approval', 'guardrail_check',
-  'connector_action', 'update_record', 'log_activity', 'consult_specialist',
+  'connector_action', 'update_record', 'log_activity',
   'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
   'custom_step',
   'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
@@ -184,7 +184,6 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   connector_action: 'Connector action',
   update_record: 'Update record',
   log_activity: 'Log activity',
-  consult_specialist: 'Consult specialist',
   instruction: 'Instruction',
   decision: 'Decision',
   checklist: 'Checklist',
@@ -205,14 +204,14 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 // the HTTP executor and is allowed to sit after a human gate.
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
-  'wait', 'sub_playbook', 'consult_specialist', 'agentic_step', 'custom_step', 'start_onboarding',
+  'wait', 'sub_playbook', 'agentic_step', 'custom_step', 'start_onboarding',
   'emit_event', 'check_knowledge', 'read_reference',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
 const BRANCH_ALLOWED = new Set([
   'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
-  'connector_action', 'guardrail_check', 'consult_specialist',
+  'connector_action', 'guardrail_check',
   'check_knowledge', 'read_reference',
 ]);
 const DECISION_OPERATORS = ['equals', 'not_equals', 'contains', 'greater_than', 'less_than', 'exists'] as const;
@@ -409,23 +408,6 @@ function validateSteps(steps: unknown): ValidationError[] {
         });
         break;
       }
-      case 'consult_specialist': {
-        // Profile existence/active is TENANT RUNTIME STATE, not definition
-        // shape — checked at execution time (honest skip), warn-only here.
-        if (typeof p.profile_key !== 'string' || !p.profile_key.trim()) {
-          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist needs a profile_key (e.g. "technical").' });
-        }
-        if (typeof p.question_template !== 'string' || !p.question_template.trim()) {
-          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist needs a question_template.' });
-        }
-        if (p.min_confidence !== undefined && (typeof p.min_confidence !== 'number' || p.min_confidence < 0 || p.min_confidence > 100)) {
-          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist.min_confidence must be 0-100.' });
-        }
-        if (p.on_low !== undefined && p.on_low !== 'escalate' && p.on_low !== 'continue') {
-          errs.push({ index: i, code: 'bad_params', message: 'consult_specialist.on_low must be "escalate" or "continue".' });
-        }
-        break;
-      }
       case 'instruction': {
         if (typeof p.title !== 'string' || !p.title.trim()) {
           errs.push({ index: i, code: 'bad_params', message: 'An instruction step needs a title.' });
@@ -552,7 +534,7 @@ function validateSteps(steps: unknown): ValidationError[] {
       if (s?.key && !POST_GATE_ALLOWED.has(s.key)) {
         errs.push({
           index: approvalIdx + 1 + off, code: 'post_gate_primitive',
-          message: `"${s.key}" cannot follow human_approval — post-gate steps are limited to guardrail_check, connector_action, update_record, log_activity, instruction, decision, checklist, wait, sub_playbook, consult_specialist, complete (this keeps the resume path server-authoritative).`,
+          message: `"${s.key}" cannot follow human_approval — post-gate steps are limited to guardrail_check, connector_action, update_record, log_activity, instruction, decision, checklist, wait, sub_playbook, complete (this keeps the resume path server-authoritative).`,
         });
       }
     });
@@ -707,7 +689,6 @@ function buildProcedureDoc(name: string, sopText: string | null, steps: DefStep[
     else if (s.key === 'check_knowledge') what = `Look up: ${String(p.query_template ?? '')}`;
     else if (s.key === 'check_account') what = 'Load the customer account.';
     else if (s.key === 'checklist') what = `Confirm: ${((p.items as string[]) ?? []).join('; ')}`;
-    else if (s.key === 'consult_specialist') what = `Consult a specialist: ${String(p.question_template ?? '')}`;
     else if (s.key === 'custom_step' || s.key === 'agentic_step') what = `The employee handles this using judgment and tools: ${String(p.instructions ?? p.goal_template ?? '')}`;
     else if (s.key === 'complete') return;
     else what = s.label || s.key;
@@ -1639,132 +1620,6 @@ async function executeDefinitionSteps(
         }
 
         // ────────────────────────────────────────────────
-        case 'consult_specialist': {
-          if (run.preview) {
-            step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would consult "${String(params.profile_key ?? 'technical')}" (not actually called; instructions_context has ${(ctx.instructions_context ?? []).length} item(s) accumulated so far)`;
-            await stepAudit(i); await saveRun(admin, run);
-            continue;
-          }
-          // Server-side consult via the specialist-consult function
-          // (service path). HONEST DEGRADATION: missing/paused profile or
-          // dormant LLM → step recorded skipped; on_low='escalate' creates
-          // an escalation task either way — the run never silently loses
-          // a low-confidence signal.
-          //
-          // profile_key 'auto' (migration 122): resolve through the
-          // playbook's assigned DE — its PRIMARY specialist if active,
-          // else its secondary, else honest-skip with an explanation
-          // (and the usual on_low escalation).
-          let profileKey = String(params.profile_key ?? 'technical');
-          const minConfidence = typeof params.min_confidence === 'number' ? params.min_confidence : 60;
-          const onLow = params.on_low === 'continue' ? 'continue' : 'escalate';
-          if (profileKey === 'auto') {
-            const { data: defRow } = await admin.from('playbook_definitions')
-              .select('de_id').eq('id', run.definition_id).maybeSingle();
-            const autoDeId = (defRow as { de_id?: string } | null)?.de_id ?? null;
-            const { data: resolvedKey } = autoDeId
-              ? await admin.rpc('resolve_de_specialist_internal', { p_tenant_id: tenantId, p_de_id: autoDeId })
-              : { data: null };
-            if (typeof resolvedKey === 'string' && resolvedKey) {
-              profileKey = resolvedKey;
-            } else {
-              step.status = 'skipped'; step.at = now();
-              step.detail = autoDeId
-                ? 'skipped: profile_key "auto" but this playbook\'s employee has no active primary/secondary specialist assigned — assign one on the DE profile'
-                : 'skipped: profile_key "auto" but this playbook has no assigned employee to resolve a specialist from';
-              if (onLow === 'escalate') {
-                await admin.from('human_tasks').insert({
-                  tenant_id: tenantId, type: 'escalation', source: 'de',
-                  title: `Specialist consult needs a human — ${acct()}`,
-                  detail: `Playbook step "Consult specialist" (auto): ${step.detail}`,
-                  related_table: 'playbook_runs', related_id: run.id,
-                });
-                step.detail += '; escalation task created';
-              }
-              await stepAudit(i); await saveRun(admin, run);
-              continue;
-            }
-          }
-          const questionText = renderTemplate(String(params.question_template ?? ''), ctx, run.id, run.steps).trim()
-            || `Specialist review for ${acct()}`;
-
-          const escalateTask = async (why: string) => {
-            await admin.from('human_tasks').insert({
-              tenant_id: tenantId, type: 'escalation', source: 'de',
-              title: `Specialist consult needs a human — ${acct()}`,
-              detail: `Playbook step "Consult specialist" (${profileKey}): ${why}. Question: ${questionText.slice(0, 300)}`,
-              related_table: 'playbook_runs', related_id: run.id,
-            });
-          };
-
-          let consultRes: Record<string, unknown> | null = null;
-          try {
-            const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/specialist-consult`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-              },
-              body: JSON.stringify({
-                action: 'consult', tenant_id: tenantId, profile_key: profileKey,
-                question: questionText, requested_by: 'playbook', run_id: run.id,
-                // PB2.0: the run's accumulated reference material now
-                // actually reaches the specialist (this field was parsed
-                // but unused server-side until now).
-                context: { account_name: ctx.account_name ?? null, documents: collectRunContextDocs(ctx) || null },
-              }),
-            });
-            consultRes = await r.json().catch(() => null);
-          } catch (e) {
-            consultRes = { error: `consult call failed: ${String(e).slice(0, 120)}` };
-          }
-
-          const errKey = String(consultRes?.error ?? '');
-          if (errKey === 'llm_not_configured') {
-            step.status = 'skipped'; step.at = now();
-            step.detail = 'skipped: specialist brain not activated (ANTHROPIC_API_KEY) — retrieval recorded in the consultation log';
-            if (onLow === 'escalate') {
-              await escalateTask('specialist brain not activated — routed to a human instead');
-              step.detail += '; escalation task created';
-            }
-          } else if (errKey === 'profile_not_found' || errKey === 'profile_paused') {
-            step.status = 'skipped'; step.at = now();
-            step.detail = `skipped: specialist profile "${profileKey}" ${errKey === 'profile_paused' ? 'is paused' : 'is not installed'} for this workspace`;
-            if (onLow === 'escalate') {
-              await escalateTask(`profile ${errKey === 'profile_paused' ? 'paused' : 'missing'}`);
-              step.detail += '; escalation task created';
-            }
-          } else if (errKey) {
-            step.status = 'skipped'; step.at = now();
-            step.detail = `skipped: consult failed (${errKey.slice(0, 120)})`;
-          } else {
-            const confidence = Number(consultRes?.confidence ?? 0);
-            const low = confidence < minConfidence || !!consultRes?.needs_escalation;
-            step.status = 'done'; step.at = now();
-            step.detail = `Specialist (${profileKey}) answered — confidence ${confidence}%${low ? ` (below floor ${minConfidence}%)` : ''}`;
-            if (low && onLow === 'escalate') {
-              await escalateTask(`confidence ${confidence}% below the ${minConfidence}% floor`);
-              step.detail += '; escalation task created';
-            }
-            ctx.last_consultation_id = consultRes?.consultation_id ?? null;
-          }
-          await stepAudit(i, {
-            profile_key: profileKey,
-            consultation_id: (consultRes?.consultation_id as string | null) ?? null,
-            min_confidence: minConfidence, on_low: onLow,
-          });
-          await saveRun(admin, run);
-          continue; // audit appended above
-        }
-
-        // ────────────────────────────────────────────────
-        // instruction — a no-op that PRESENTS content to a human and
-        // accumulates its body into the run's instructions_context so
-        // later ai/consult steps in the SAME run see it. DORMANT-HONEST:
-        // the accumulated text is only actually consumed by an LLM once
-        // consult_specialist's brain is activated (ANTHROPIC_API_KEY);
-        // until then it is recorded here but not read by anything.
         case 'instruction': {
           const title = String(params.title ?? 'Instruction');
           const bodyMd = String(params.body_md ?? '');
