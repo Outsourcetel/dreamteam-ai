@@ -79,15 +79,6 @@ const SettingsPage = ({
   const [googleSet, setGoogleSet] = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [keyStatus, setKeyStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  // ⚠ Resend is NOT like the four above. Those are this workspace's own keys
-  // (saveTenantLlmKey); this one is PLATFORM-WIDE — one row, every workspace,
-  // and only a platform admin may write it. Kept in separate state with its
-  // own save so a per-workspace save can never carry it along by accident.
-  const [resendKey, setResendKey] = useState('');
-  const [resendSet, setResendSet] = useState(false);
-  const [resendSaving, setResendSaving] = useState(false);
-  const [resendStatus, setResendStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [resendError, setResendError] = useState<string | null>(null);
   // Whose key this workspace runs on (mig 541). 'platform' = we provide it and
   // bill for tokens; 'byo' = this workspace supplies its own and calls refuse
   // without it, rather than quietly borrowing the platform's.
@@ -150,13 +141,6 @@ const SettingsPage = ({
         setOpenaiSet(has('OPENAI_API_KEY'));
         setGoogleSet(has('GOOGLE_AI_KEY'));
       });
-      // ⚠ Platform-scoped, so it is a DIFFERENT question with a different
-      // answer — asked separately rather than folded into the per-workspace
-      // status above. Only ever reports whether a key EXISTS; the value is
-      // never returned to the browser by any of these paths.
-      if (isDTUser) {
-        hasPlatformConfigKey('RESEND_API_KEY').then(setResendSet).catch(() => setResendSet(false));
-      }
     }
     if (activeTab === 'widget' && tenant?.id) {
       Promise.all([fetchWidgetKeys(tenant.id), fetchEndUserSessions(tenant.id)]).then(([ks, ss]) => {
@@ -178,38 +162,7 @@ const SettingsPage = ({
         setBudgetEdits(edits);
       });
     }
-    // isDTUser gates the platform-wide Resend lookup above. Without it here,
-    // a flag that resolves after the first render never triggers the fetch and
-    // the field would claim "not set" for a key that exists.
-  }, [activeTab, isDTUser]);
-
-  /** Platform-wide email provider key. Deliberately NOT part of handleSaveKeys:
-   *  that one writes this workspace's own LLM keys, and folding a global
-   *  credential into it would let a per-workspace save change every
-   *  workspace's email sender without saying so. */
-  const handleSaveResendKey = async () => {
-    const value = resendKey.trim();
-    if (!value) return;
-    // A shape check, not a validity check — only Resend can say whether a key
-    // works. This just catches the common paste error (a wrong key, a Stripe
-    // key, half a key) before it replaces a working one.
-    if (!value.startsWith('re_') || value.length < 20) {
-      setResendStatus('error');
-      setResendError('That does not look like a Resend key — they begin "re_". Nothing was saved.');
-      return;
-    }
-    setResendSaving(true); setResendError(null);
-    const ok = await savePlatformConfig({ RESEND_API_KEY: value });
-    setResendSaving(false);
-    if (ok) {
-      setResendStatus('saved');
-      setResendSet(true);
-      setResendKey('');   // never leave a secret sitting in component state
-    } else {
-      setResendStatus('error');
-      setResendError('Save failed — this key is platform-wide, so it needs a platform administrator.');
-    }
-  };
+  }, [activeTab]);
 
   const handleSaveGeneral = async () => {
     if (!tenant?.id) { setSaveStatus('error'); return; }
@@ -711,64 +664,6 @@ const SettingsPage = ({
               {keyStatus === 'saved' && <span className="text-xs text-emerald-400">Keys saved — edge functions will use them immediately</span>}
               {keyStatus === 'error' && <span className="text-xs text-red-400">Save failed</span>}
             </div>
-
-            {/* ── Email sending — PLATFORM-WIDE, platform admins only ────────
-                Everything above this line is THIS workspace's own key. This one
-                is a single global credential shared by all sixteen workspaces,
-                so it sits behind its own rule, its own save button and its own
-                warning. Rotating it here is the whole reason it exists: the key
-                previously had to be edited by hand in the database vault. */}
-            {isDTUser && (
-              <div className="mt-8 pt-6 border-t border-dt-border">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-dt-support">
-                    Resend API Key — outbound email
-                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 font-normal">
-                      PLATFORM-WIDE
-                    </span>
-                  </label>
-                  {resendSet
-                    ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
-                    : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — email sending is dormant</span>}
-                </div>
-                <p className="text-xs text-dt-support mb-2">
-                  Unlike the keys above, this is <strong>one credential for every workspace</strong>. Replacing it
-                  changes who sends email for all of them at once. Saving a new key here replaces the old one
-                  immediately — but it does <strong>not</strong> revoke the old one, so delete that in Resend
-                  afterwards or it keeps working.
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={resendKey}
-                    onChange={e => { setResendKey(e.target.value); setResendStatus('idle'); setResendError(null); }}
-                    placeholder={resendSet ? 'Enter new key to replace existing…' : 're_…'}
-                    className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                  <button
-                    onClick={handleSaveResendKey}
-                    disabled={resendSaving || !resendKey.trim()}
-                    className="px-5 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
-                    style={{ backgroundColor: accentColor }}
-                  >
-                    {resendSaving ? 'Saving…' : 'Replace key'}
-                  </button>
-                </div>
-                <p className="text-xs text-dt-faint mt-1">
-                  Get a key at resend.com → API Keys. Stored encrypted; it is never shown again after saving,
-                  here or anywhere else.
-                </p>
-                {resendStatus === 'saved' && (
-                  <p className="text-xs text-emerald-400 mt-2">
-                    Saved — sending uses it immediately. <strong>Now delete the previous key in Resend</strong>;
-                    until you do, it still works.
-                  </p>
-                )}
-                {resendStatus === 'error' && resendError && (
-                  <p className="text-xs text-rose-300 mt-2">{resendError}</p>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">

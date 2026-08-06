@@ -11,6 +11,7 @@ import {
   fetchPlatformConnectorHealth, fetchPlatformTenantOverview,
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
+import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
 import PlatformTeamPage from './PlatformTeamPage';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
@@ -641,7 +642,21 @@ const PlatformConsolePage = ({
   }
 
   if (page === 'platform_security') {
-    return <MfaEnrollmentPanel />;
+    // The Resend key sits above MFA because it is the one thing on this page
+    // somebody arrives wanting to CHANGE, usually in a hurry — a leaked key is
+    // rotated under time pressure. MFA enrolment is a once-ever task.
+    // ⚠ px-6 pt-6, NOT p-6: MfaEnrollmentPanel's own root is already `p-6`, so
+    // a padded wrapper would double its inset. The panel below carries no
+    // bottom margin for the same reason — the MFA panel's own top padding is
+    // the gap between them.
+    return (
+      <div className="flex-1">
+        <div className="px-6 pt-6">
+          <PlatformEmailKeyPanel />
+        </div>
+        <MfaEnrollmentPanel />
+      </div>
+    );
   }
 
   return (
