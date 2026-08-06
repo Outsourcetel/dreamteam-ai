@@ -3,7 +3,7 @@ import {
   loadOrgTree, createUnit, renameUnit, setUnitActive, addMember, setMemberRole, removeMember,
   listAssignablePeople, listAssignmentRules, saveRule, setRuleActive, deleteRule,
   reassignUnowned, loadOwnerLoad, ALLOWED_CHILDREN, KIND_LABEL,
-  listDigitalEmployees, setDeOrgUnit,
+  listPlaceableDigitalEmployees, setDeOrgUnit,
   listApprovalAuthority, saveApprovalAuthority, deleteApprovalAuthority, AUTHORITY_CATEGORIES,
 } from '../../lib/orgApi';
 import type {
@@ -349,7 +349,7 @@ export default function OrganisationPage() {
     try {
       const [t, p, r, l, a, d] = await Promise.all([
         loadOrgTree(), listAssignablePeople(), listAssignmentRules(), loadOwnerLoad(),
-        listApprovalAuthority(), listDigitalEmployees(),
+        listApprovalAuthority(), listPlaceableDigitalEmployees(),
       ]);
       setTree(t); setPeople(p); setRules(r); setLoad(l); setAuthority(a); setDes(d);
     } catch (e) {

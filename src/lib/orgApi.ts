@@ -173,17 +173,23 @@ export async function listAssignablePeople(): Promise<AssignablePerson[]> {
   return (data ?? []) as AssignablePerson[];
 }
 
-/** Digital employees available to place — the whole active roster, so one can
- *  be moved into a department it is not in yet. */
-export async function listDigitalEmployees(): Promise<OrgDigitalEmployee[]> {
+/** Digital employees available to place in a department — the ROSTER, not the
+ *  switchboard. This used to filter status='active', which meant an employee
+ *  that was merely idle could never be put into the org chart at all; 40 of
+ *  them were. Being switched off is not the same as having left, so only
+ *  retired and archived are excluded. Named distinctly from
+ *  digitalEmployeesApi.listDigitalEmployees on purpose: two functions with one
+ *  name were answering two different questions, which is how the same workspace
+ *  reported two different headcounts. */
+export async function listPlaceableDigitalEmployees(): Promise<OrgDigitalEmployee[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('digital_employees')
-    .select('id, name, display_title, trust_level, status, org_unit_id')
+    .select('id, name, display_title, trust_level, status, org_unit_id, lifecycle_status')
     .eq('tenant_id', tid)
-    .eq('status', 'active')
+    .not('lifecycle_status', 'in', '("retired","archived")')
     .order('name', { ascending: true });
-  if (error) raise('listDigitalEmployees', error);
+  if (error) raise('listPlaceableDigitalEmployees', error);
   return ((data ?? []) as Record<string, unknown>[]).map((d) => ({
     de_id: d.id as string,
     name: d.name as string,
