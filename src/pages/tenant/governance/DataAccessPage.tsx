@@ -9,9 +9,16 @@ import {
   setAccessGrant, revokeAccessGrant, effectiveGrant,
 } from '../../../lib/accessGrantsApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
-import {
-  McpAllowlistEntry, listMcpAllowlist, addMcpAllowlistHost, removeMcpAllowlistHost, normalizeMcpHost,
-} from '../../../lib/mcpAllowlistApi';
+// The MCP allowlist is EDITED on Systems & Actions → MCP servers, next to the
+// servers it governs. This page keeps the security SIGNAL — open vs restricted,
+// and any connected server the list would refuse — and reads it through the
+// same module that page uses. There was a second module (mcpAllowlistApi) and a
+// second editor here writing the same `mcp_server_allowlist` table; one control
+// with two editors is how the two sides drift apart.
+import { listMcpAllowedHosts, normalizeHost } from '../../../lib/mcpApi';
+import type { McpAllowedHost } from '../../../lib/mcpApi';
+import { Button } from '../../../design/primitives';
+import type { Page } from '../../../types';
 
 // ============================================================
 // GOVERNANCE — Data Access (migration 029).
@@ -46,7 +53,7 @@ const SENSITIVE: Set<SystemCategory> = new Set([
   'erp_financials', 'billing', 'payroll_hcm', 'ads', 'social',
 ]);
 
-export default function DataAccessPage() {
+export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void }) {
   const [subjects, setSubjects] = useState<AccessSubject[]>([]);
   const [grants, setGrants] = useState<AccessGrant[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -55,12 +62,9 @@ export default function DataAccessPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [lastChange, setLastChange] = useState<string | null>(null);
-  // MCP server allowlist — opt-in: no rows = open, any row = strict.
-  const [mcpAllow, setMcpAllow] = useState<McpAllowlistEntry[]>([]);
-  const [mcpHostInput, setMcpHostInput] = useState('');
-  const [mcpNoteInput, setMcpNoteInput] = useState('');
-  const [mcpBusy, setMcpBusy] = useState(false);
-  const [mcpError, setMcpError] = useState<string | null>(null);
+  // MCP server allowlist — opt-in: no rows = open, any row = strict. READ ONLY
+  // here; the editor lives with the servers on Systems & Actions → MCP servers.
+  const [mcpAllow, setMcpAllow] = useState<McpAllowedHost[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,7 +74,7 @@ export default function DataAccessPage() {
         listAccessSubjects(), listAccessGrants(),
         listConnectors().catch(() => [] as Connector[]),
         listRecentDenials().catch(() => [] as AccessDenialEvent[]),
-        listMcpAllowlist().catch(() => [] as McpAllowlistEntry[]),
+        listMcpAllowedHosts().catch(() => [] as McpAllowedHost[]),
       ]);
       setSubjects(subs); setGrants(grs); setConnectors(conns); setDenials(dens);
       setMcpAllow(mcpHosts);
@@ -128,48 +132,16 @@ export default function DataAccessPage() {
     } finally { setSavingCell(null); }
   };
 
-  // ── MCP allowlist ──
-  // Adding the first host, or removing the last, switches the whole workspace
-  // between open and strict. Neither happens without saying so first.
-  const addMcpHost = async () => {
-    const clean = normalizeMcpHost(mcpHostInput);
-    if (!clean) { setMcpError('Enter the server hostname, for example mcp.example.com'); return; }
-    if (mcpAllow.some(e => e.host === clean)) { setMcpError(`${clean} is already allowed.`); return; }
-    if (mcpAllow.length === 0 && !window.confirm(
-      `Restrict this workspace to listed MCP servers only?\n\n`
-      + `Right now any public MCP server may be connected. Adding "${clean}" switches to strict mode: `
-      + `from then on ONLY servers on this list can be connected or called — including any already connected.`)) return;
-    setMcpBusy(true); setMcpError(null);
-    try {
-      await addMcpAllowlistHost(clean, mcpNoteInput);
-      setMcpHostInput(''); setMcpNoteInput('');
-      setLastChange(`${clean} added to the MCP server allowlist.`);
-      await load();
-    } catch (err) {
-      setMcpError(err instanceof Error ? err.message : String(err));
-    } finally { setMcpBusy(false); }
-  };
-
-  const removeMcpHost = async (entry: McpAllowlistEntry) => {
-    const isLast = mcpAllow.length === 1;
-    if (!window.confirm(isLast
-      ? `Remove "${entry.host}" — the last entry?\n\nThis returns the workspace to OPEN: any public MCP server could then be connected. Private and loopback addresses stay blocked either way.`
-      : `Remove "${entry.host}"? Servers on that host can no longer be connected or called.`)) return;
-    setMcpBusy(true); setMcpError(null);
-    try {
-      await removeMcpAllowlistHost(entry.id);
-      setLastChange(`${entry.host} removed from the MCP server allowlist.`);
-      await load();
-    } catch (err) {
-      setMcpError(err instanceof Error ? err.message : String(err));
-    } finally { setMcpBusy(false); }
-  };
+  // The add/remove handlers that used to sit here moved to the MCP servers page
+  // (Systems & Actions), which already had its own copy writing the same table.
+  // Two editors for one control is how the two sides end up disagreeing about
+  // whether a workspace is open or restricted.
 
   // In strict mode, an already-connected MCP server whose host is NOT listed is
   // silently refused server-side — surface it rather than let it fail quietly.
   const blockedMcpConnectors = mcpAllow.length === 0 ? [] : connectors.filter(c => {
     if (c.provider !== 'mcp') return false;
-    const host = normalizeMcpHost(String((c.config as Record<string, unknown> | null)?.mcp_url ?? c.base_url ?? ''));
+    const host = normalizeHost(String((c.config as Record<string, unknown> | null)?.mcp_url ?? c.base_url ?? ''));
     return !!host && !mcpAllow.some(e => e.host === host);
   });
 
@@ -377,12 +349,10 @@ export default function DataAccessPage() {
           approval gate — anything not explicitly read-only needs a human.
         </p>
 
-        {mcpError && <p className="text-[11px] text-red-300 mb-2">{mcpError}</p>}
-
         {mcpAllow.length === 0 ? (
           <p className="text-[11px] text-dt-muted mb-3">
             No servers listed, so <span className="text-amber-300">any public MCP server may be connected</span>.
-            Add one below to switch this workspace to strict mode, where only the servers you list are allowed.
+            Listing one switches this workspace to strict mode, where only the servers you list are allowed.
           </p>
         ) : (
           <div className="space-y-1.5 mb-3">
@@ -391,8 +361,6 @@ export default function DataAccessPage() {
                 <span className="text-xs text-white font-mono">{e.host}</span>
                 {e.note && <span className="text-[11px] text-dt-muted truncate">{e.note}</span>}
                 <span className="text-[10px] text-dt-faint ml-auto whitespace-nowrap">{fmtDate(e.created_at)}</span>
-                <button disabled={mcpBusy} onClick={() => void removeMcpHost(e)}
-                  className="text-[11px] text-red-400 hover:text-red-300 disabled:opacity-50">Remove</button>
               </div>
             ))}
           </div>
@@ -405,26 +373,17 @@ export default function DataAccessPage() {
           </p>
         )}
 
-        <div className="flex gap-2 flex-wrap items-end">
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-[11px] text-dt-support mb-1">Server hostname</label>
-            <input value={mcpHostInput} onChange={e => setMcpHostInput(e.target.value)} placeholder="mcp.example.com"
-              className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-[11px] text-dt-support mb-1">Note (optional)</label>
-            <input value={mcpNoteInput} onChange={e => setMcpNoteInput(e.target.value)} placeholder="what this server is for"
-              className="w-full bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          </div>
-          <button disabled={mcpBusy || !mcpHostInput.trim()} onClick={() => void addMcpHost()}
-            className="px-3 py-2 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
-            {mcpBusy ? 'Saving…' : 'Allow this server'}
-          </button>
+        {/* One editor, next to the servers it governs. This page states the
+            position; the MCP servers page is where it changes. */}
+        <div className="flex items-center gap-3 flex-wrap pt-1">
+          <Button size="sm" kind="secondary" onClick={() => setPage('systems_mcp')}>
+            Manage MCP servers →
+          </Button>
+          <span className="text-[10px] text-dt-faint">
+            Adding or removing a host happens on Systems &amp; Actions → MCP servers, alongside the
+            servers themselves. Only a workspace owner or admin can change it.
+          </span>
         </div>
-        <p className="text-[10px] text-dt-faint mt-2">
-          Paste a hostname or a full URL — only the host is stored, because that is what the rule matches on.
-          Only a workspace owner or admin can change this list.
-        </p>
       </div>
 
       {/* Honest limits */}

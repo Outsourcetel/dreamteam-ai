@@ -278,7 +278,9 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Allowlist({ hosts, onChanged }: { hosts: McpAllowedHost[]; onChanged: () => void }) {
+function Allowlist({ hosts, onChanged, setPage }: {
+  hosts: McpAllowedHost[]; onChanged: () => void; setPage: (p: Page) => void;
+}) {
   const [host, setHost] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -341,6 +343,20 @@ function Allowlist({ hosts, onChanged }: { hosts: McpAllowedHost[]; onChanged: (
         </div>
       </div>
       {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+
+      {/* The other half of the picture. This list decides which SERVERS may be
+          reached at all; Governance → Data access decides which employees may
+          use what they expose. Governance shows this list read-only and points
+          back here, so there is one editor and no dead end either way. */}
+      <div className="mt-4 flex items-center gap-3 flex-wrap border-t border-dt-border pt-3">
+        <Button kind="secondary" size="sm" onClick={() => setPage('gov_data_access')}>
+          Data access permissions →
+        </Button>
+        <span className="text-[10px] text-dt-faint">
+          This list is about which servers are reachable. Which employee may use their tools is
+          set under Governance → Data access.
+        </span>
+      </div>
     </PanelCard>
   );
 }
@@ -385,7 +401,7 @@ const McpServersPage = ({ setPage, embedded }: { setPage: (p: Page) => void; emb
             />
           </div>
 
-          <Allowlist hosts={hosts} onChanged={() => void refresh()} />
+          <Allowlist hosts={hosts} onChanged={() => void refresh()} setPage={setPage} />
 
           {servers.length === 0 ? (
             <EmptyState icon="🔗" headline="No MCP servers connected">

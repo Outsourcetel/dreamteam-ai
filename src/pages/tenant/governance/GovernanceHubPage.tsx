@@ -57,7 +57,7 @@ const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => 
       {tab === 'gov_compliance' && <CompliancePage setPage={setPage} />}
       {tab === 'gov_audit' && <AuditTrailPage setPage={setPage} />}
       {tab === 'gov_security' && <SecurityAccessPage />}
-      {tab === 'gov_data_access' && <DataAccessPage />}
+      {tab === 'gov_data_access' && <DataAccessPage setPage={setPage} />}
       {tab === 'gov_identity_inventory' && <IdentityInventoryPage />}
       {tab === 'gov_trust' && <TrustArchitecturePage />}
     </InHubContext.Provider>
