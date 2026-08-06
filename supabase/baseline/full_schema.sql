@@ -418,7 +418,10 @@ begin
   update renewal_invoices
      set cadence_stage = greatest(coalesce(cadence_stage, 0), v_stage),
          updated_at    = now()
-   where id = v_invoice;
+   where id = v_invoice
+     -- ⚠ The invoice id comes out of a TEXT field. Without this the row is
+     -- chosen entirely by attacker-shaped data and can belong to any tenant.
+     and tenant_id = new.tenant_id;
 
   return null;
 exception when others then
@@ -4256,8 +4259,15 @@ CREATE OR REPLACE FUNCTION public.close_escalations_for_finished_goal()
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+DECLARE
+  v_prev text;
 BEGIN
   IF NEW.status IN ('achieved', 'abandoned') AND NEW.status IS DISTINCT FROM OLD.status THEN
+    -- ⚠ Capture whatever was already there. Restoring it (rather than forcing
+    -- 'off') is what keeps this safe to call from inside an outer sanctioned
+    -- operation — see the migration header.
+    v_prev := coalesce(current_setting('app.allow_task_decision', true), '');
+
     PERFORM set_config('app.allow_task_decision', 'on', true);  -- mig 487 sanctioned path
     UPDATE human_tasks
        SET status = 'rejected',
@@ -4270,9 +4280,14 @@ BEGIN
      WHERE related_table = 'de_objectives'
        AND related_id = NEW.id
        AND status = 'pending';
+
+    -- Re-arm. An exception between the two would abort the transaction and
+    -- take the setting with it, so there is no path that leaves it 'on'.
+    PERFORM set_config('app.allow_task_decision', v_prev, true);
   END IF;
   RETURN NEW;
-END $function$;
+END
+$function$;
 
 CREATE OR REPLACE FUNCTION public.close_opportunity_lost(p_opp uuid, p_reason text)
  RETURNS jsonb
