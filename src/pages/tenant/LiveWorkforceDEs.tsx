@@ -3,8 +3,6 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
 import type { Page } from '../../types';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
-import { AmendmentWizard } from '../../components/AmendmentWizard';
-import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget';
 import { fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
 import { setAutonomyDial, getApprovalEvidence } from '../../lib/autonomyApi';
@@ -4183,38 +4181,20 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
   );
 }
 
-/** W4-E: the judged amendment flow, restored for LIVE employees. Plain-
- *  language problem → entity-amend proposes against the golden set → a
- *  human review card decides. Nothing auto-applies. */
-function DeAmendmentBlock({ de }: { de: DigitalEmployee }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-      <div className="flex items-center gap-2 flex-wrap mb-1">
-        <h3 className="text-base font-semibold text-white">Improve this employee</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">judged proposal · human-approved</span>
-        <button onClick={() => setOpen(true)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors">
-          ✨ Suggest improvement
-        </button>
-      </div>
-      <p className="text-[11px] text-dt-muted mb-3">
-        Describe what is not working in plain language. The proposal is tested against this employee's golden exam
-        before it reaches you — and nothing changes until you approve it below.
-      </p>
-      <PendingAmendmentsWidget entity_kind="de" entity_id={de.id} />
-      {open && (
-        <AmendmentWizard
-          entity_kind="de"
-          entity_id={de.id}
-          entity_name={de.persona_name ?? de.name}
-          onClose={() => setOpen(false)}
-          onSuccess={() => setOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
+// The "Improve this employee" block lived here and has been removed.
+//
+// It was a SECOND way to decide an amendment, built on six RPCs that were
+// never created — so it silently showed an empty list forever and its wizard
+// could not submit. The real flow was never this: `entity-amend` proposes,
+// writes `workforce_entity_amendments`, and raises a HUMAN TASK; a person
+// decides it in the ordinary approval queue through `decide_human_task`; and
+// `trg_sync_entity_amendment` applies or rejects the amendment from that
+// decision. That path is live and has already carried amendments through.
+//
+// ⚠ Rebuilding the six RPCs would have been worse than leaving it broken:
+// they would have approved amendments WITHOUT `decide_human_task`, which is
+// where approval authority, the pending-only guard and the audit event live.
+// A bypass around the approval gate is not a feature.
 
 /** The merged profile sections consumed by EmployeeFilePage — the single
  *  employee page. Keys mirror its tab keys. (docs/31 steps 7-8: the old
@@ -4232,11 +4212,6 @@ export function DeProfileSections({ de, section, setPage, onUpdated }: {
     // delegated tasks) closing the section.
     return (
       <div className="space-y-6">
-        {/* W4-E (docs/16): the golden-gated amendment flow was demo-only —
-            live DEs lost it in the live/demo split. Restored on the live
-            Employee File: describe the problem → judged proposal → human
-            review card. */}
-        <DeAmendmentBlock de={de} />
         <DeIdentityPanel de={de} onUpdated={onUpdated} />
         <DeVoicePanel de={de} onUpdated={onUpdated} />
         <DeAvailabilityPanel de={de} onUpdated={onUpdated} />

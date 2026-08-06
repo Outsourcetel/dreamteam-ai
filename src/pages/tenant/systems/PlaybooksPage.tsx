@@ -4,8 +4,6 @@ import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import LivePlaybookBuilder from './LivePlaybookBuilder';
-import { AmendmentWizard } from '../../../components/AmendmentWizard';
-import { PendingAmendmentsWidget } from '../../../components/PendingAmendmentsWidget';
 
 // ============================================================
 // Playbooks — versioned draft → eval → publish lifecycle.

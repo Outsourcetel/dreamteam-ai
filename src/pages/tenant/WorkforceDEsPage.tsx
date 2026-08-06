@@ -3,9 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import type { Page } from '../../types'
 import { type Person } from '../../data/people'
 import LiveWorkforceDEs from './LiveWorkforceDEs'
-import { AmendmentWizard } from '../../components/AmendmentWizard'
 import { DeEscalationPanel } from './LiveWorkforceDEs'
-import { PendingAmendmentsWidget } from '../../components/PendingAmendmentsWidget'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -343,18 +341,6 @@ function TabProfile({ de, companyId, onSuggestImprovement }: { de: DEProfile; co
             </div>
           </div>
         </div>
-
-        {/* Pending Amendments Widget */}
-        <PendingAmendmentsWidget
-          entity_kind="de"
-          entity_id={de.id}
-          onAmendmentsChange={(count) => {
-            if (count === 0) {
-              // Reload if amendments were cleared
-              window.location.reload()
-            }
-          }}
-        />
 
         {/* Customer-defined metrics intentionally NOT rendered here: this is
             the demo-era page and companyId ('tcp'/'pwc') is not a tenant
@@ -1063,9 +1049,6 @@ function TabAudit({ de }: { de: DEProfile }) {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Pending Amendments */}
-      <PendingAmendmentsWidget entity_kind="de" entity_id={de.id} />
-
       {/* Audit Log */}
       <div className="bg-dt-card border border-dt-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
