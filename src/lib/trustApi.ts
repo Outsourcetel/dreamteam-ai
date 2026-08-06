@@ -13,7 +13,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { raise, requireTenantId, listTenantRows } from './liveShared';
-import { getSessionTenantId } from './customerApi';
+import { getSessionTenantId, isMissingTableError } from './customerApi';
 
 export type TrustCategory = 'invoice_auto_send' | 'answer_dock' | 'answer_widget';
 
@@ -370,4 +370,103 @@ export async function listTrustHistory(limit = 20): Promise<TrustHistoryEvent[]>
       action_category: (r.detail.action_category as string) ?? null,
       created_at: r.created_at,
     }));
+}
+
+// ── Workforce-level trust (migrations 621/622) + the stop button (624/625) ──
+//
+// Everything here is ORG-level and job-agnostic: each number means the same for
+// a Support, Finance or Marketing employee because it is computed from the
+// SHAPE of the work — was a human needed, did they change it, how long did they
+// look — never from what the work was about.
+
+export interface WorkforceTrustMetrics {
+  window_days: number;
+  as_of: string;
+  /** ⚠ Read these FIRST. Below the minimum sample a rate comes back null and
+   *  the UI must say "not enough yet" rather than print a number nobody should
+   *  act on. Two flags because two denominators: decisions about work divide by
+   *  everything the gate ruled on; what the workforce DID divides by what was
+   *  actually performed. */
+  min_actions_for_a_rate: number;
+  min_decisions_for_a_rate: number;
+  enough_considered: boolean;
+  enough_performed: boolean;
+  enough_decisions: boolean;
+
+  actions_considered: number;
+  actions_performed: number;
+  actions_autonomous: number;
+  autonomy_rate: number | null;
+
+  decisions: number;
+  decisions_unchanged: number;
+  decisions_edited: number;
+  decisions_rejected: number;
+  acceptance_rate: number | null;
+  edit_rate: number | null;
+  reject_rate: number | null;
+
+  median_seconds_to_decide: number | null;
+  decided_under_a_minute: number;
+  /** Enough decisions, all made in under a minute — the approval is a formality. */
+  rubber_stamp_risk: boolean;
+
+  guardrail_blocks: number;
+  guardrail_block_rate: number | null;
+  human_gated: number;
+  failures: number;
+
+  interventions: number;
+  intervention_rate: number | null;
+  /** ⚠ FALSE means no reversal has EVER been performed here. A 0% intervention
+   *  rate then means "never used", not "nothing went wrong" — say so. */
+  intervention_ever_recorded: boolean;
+
+  incidents: number;
+  incident_rate_per_100_actions: number | null;
+
+  employees_active: number;
+  employees_with_a_rule: number;
+  rule_coverage_rate: number | null;
+}
+
+export async function getWorkforceTrustMetrics(days = 30): Promise<WorkforceTrustMetrics> {
+  const { data, error } = await supabase.rpc('get_workforce_trust_metrics', {
+    p_tenant_id: null, p_days: days,
+  });
+  if (error) raise('getWorkforceTrustMetrics', error);
+  return data as WorkforceTrustMetrics;
+}
+
+export interface WorkforcePosture {
+  autonomy_paused: boolean;
+  paused_at: string | null;
+  paused_reason: string | null;
+  breaker_enabled: boolean;
+  breaker_tripped_at: string | null;
+  breaker_tripped_why: string | null;
+}
+
+/** No row means never paused and guarded by default — absent is the normal,
+ *  protected state (migration 625), not missing configuration. */
+export async function getWorkforcePosture(): Promise<WorkforcePosture> {
+  const { data, error } = await supabase
+    .from('workforce_trust_posture')
+    .select('autonomy_paused, paused_at, paused_reason, breaker_enabled, breaker_tripped_at, breaker_tripped_why')
+    .maybeSingle();
+  if (error && !isMissingTableError(error)) raise('getWorkforcePosture', error);
+  return (data as WorkforcePosture | null) ?? {
+    autonomy_paused: false, paused_at: null, paused_reason: null,
+    breaker_enabled: true, breaker_tripped_at: null, breaker_tripped_why: null,
+  };
+}
+
+export async function pauseWorkforceAutonomy(reason: string): Promise<void> {
+  const { error } = await supabase.rpc('pause_workforce_autonomy', { p_reason: reason });
+  if (error) raise('pauseWorkforceAutonomy', error);
+}
+
+export async function resumeWorkforceAutonomy(note: string | null = null): Promise<void> {
+  const { error } = await supabase.rpc('resume_workforce_autonomy', { p_note: note });
+  if (error) raise('resumeWorkforceAutonomy', error);
 }

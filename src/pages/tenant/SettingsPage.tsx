@@ -23,6 +23,7 @@ import { INDUSTRY_NAMES as INDUSTRIES } from '../../lib/industries';
 import CommsSettingsCard from '../../components/CommsSettingsCard';
 import AISessionPanel from '../../components/AISessionPanel';
 import WorkforceTrustDefaults from '../../components/WorkforceTrustDefaults';
+import WorkforceTrustPanel from '../../components/WorkforceTrustPanel';
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -956,7 +957,16 @@ const userHash = crypto
           and tenant-wide promotion history finally have a Settings home —
           they used to be editable only from inside one arbitrary employee's
           file. Per-employee trust stays on each employee's file. */}
-      {activeTab === 'trust' && <WorkforceTrustDefaults setPage={setPage} />}
+      {activeTab === 'trust' && (
+        <div className="space-y-4">
+          {/* Org-level first: the stop button and the workforce-wide measures.
+              Neither mentions a job function. */}
+          <WorkforceTrustPanel />
+          {/* Then what is still genuinely workspace-level and true: ladder
+              policies owned by no employee, and the promotion history. */}
+          <WorkforceTrustDefaults setPage={setPage} />
+        </div>
+      )}
 
       {/* Security & Access moved here from the Governance hub (founder call).
           It was the ONE governance surface that is pure administration — API
