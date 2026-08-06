@@ -669,9 +669,23 @@ export const clearTenantLlmKey = async (tenantId: string, providerKey: string): 
   return error ? error.message : null;
 };
 
+/** Which account pays for a workspace's model calls. Platform staff only.
+ *
+ *  ⚠ WAS a direct `from('tenants').update(...)`, which never worked for ANYONE:
+ *  `tenants` has RLS with only a SELECT policy, so the write matched zero rows —
+ *  and PostgREST reports zero rows as SUCCESS, not an error. It returned null
+ *  (meaning "no error"), the caller believed it, and nothing changed. Migration
+ *  633 added the RPC; the capability check lives inside it. */
 export const setTenantLlmKeyMode = async (tenantId: string, mode: LlmKeyMode): Promise<string | null> => {
-  const { error } = await supabase.from('tenants').update({ llm_key_mode: mode }).eq('id', tenantId);
-  return error ? error.message : null;
+  const { data, error } = await supabase.rpc('set_tenant_llm_key_mode', {
+    p_tenant_id: tenantId, p_mode: mode,
+  });
+  if (error) return error.message;
+  // A Postgres error resolves rather than throws on .rpc(); an ok:false body is
+  // the other way this can fail quietly.
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (r && r.ok === false) return r.error ?? 'Could not change which account pays.';
+  return null;
 };
 
 // =====================================================

@@ -7,7 +7,7 @@
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
 -- Contents: 9 extensions · 0 enums · 284 tables ·
--- 1319 constraints · 393 indexes · 765 functions ·
+-- 1319 constraints · 393 indexes · 766 functions ·
 -- 277 triggers · 379 policies · explicit REVOKEs for the closed perimeter.
 --
 -- WHAT THIS DOES NOT COVER, so nobody mistakes it for a full backup:
@@ -26723,6 +26723,52 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'provider_key', p_provider_key);
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.set_tenant_llm_key_mode(p_tenant_id uuid, p_mode text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_prev text;
+  v_name text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  -- The gate. Deliberately the SAME capability as set_tenant_plan: both decide
+  -- what a customer is charged for.
+  if not resolve_platform_capability(auth.uid(), 'tenants.manage') then
+    raise exception 'only DreamTeam AI staff may change which account pays for a workspace';
+  end if;
+  if p_mode is null or p_mode not in ('platform', 'byo') then
+    raise exception 'mode must be platform or byo';
+  end if;
+
+  select llm_key_mode, name into v_prev, v_name from tenants where id = p_tenant_id;
+  if v_name is null then
+    raise exception 'workspace not found';
+  end if;
+
+  if v_prev is not distinct from p_mode then
+    return jsonb_build_object('ok', true, 'tenant_id', p_tenant_id, 'llm_key_mode', p_mode, 'changed', false);
+  end if;
+
+  update tenants set llm_key_mode = p_mode, updated_at = now() where id = p_tenant_id;
+
+  perform append_audit_event(p_tenant_id, 'DreamTeam AI', 'platform',
+    format('Billing for AI usage changed from "%s" to "%s". %s',
+           v_prev, p_mode,
+           case when p_mode = 'byo'
+                then 'This workspace now pays its own provider account, and may set its own token budget.'
+                else 'DreamTeam AI now pays for this workspace''s usage, and its token budget is set by its plan.' end),
+    'config_change',
+    jsonb_build_object('kind', 'llm_key_mode_changed', 'from', v_prev, 'to', p_mode));
+
+  return jsonb_build_object('ok', true, 'tenant_id', p_tenant_id, 'llm_key_mode', p_mode, 'changed', true);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_tenant_monthly_budget(p_tenant_id uuid, p_budget integer)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -26735,6 +26781,7 @@ declare
   v_caller_tenant uuid;
   v_role text;
   v_is_active boolean;
+  v_mode text;
   v_is_platform boolean := resolve_platform_capability(auth.uid(), 'tenants.manage');
 begin
   if auth.uid() is null then
@@ -26756,6 +26803,13 @@ begin
     end if;
     if not v_is_active then
       raise exception 'account is deactivated';
+    end if;
+
+    -- ⚠ WHOSE MONEY. This is the whole migration. Everything else in this
+    -- function is unchanged from before.
+    select llm_key_mode into v_mode from tenants where id = p_tenant_id;
+    if coalesce(v_mode, 'platform') <> 'byo' then
+      raise exception 'this workspace runs on DreamTeam AI''s provider account, so its token budget is set by your plan — connect your own provider key to control it yourself, or contact us to change it';
     end if;
 
     -- Self-serve (non-platform-admin) callers are capped. A platform

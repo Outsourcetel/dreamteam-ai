@@ -230,13 +230,10 @@ const SettingsPage = ({
     setTimeout(() => setKeyStatus('idle'), 4000);
   };
 
-  const handleKeyModeChange = async (mode: LlmKeyMode) => {
-    if (!tenant?.id) return;
-    const previous = keyMode;
-    setKeyMode(mode);
-    const err = await setTenantLlmKeyMode(tenant.id, mode);
-    if (err) { setKeyMode(previous); setKeyStatus('error'); setKeyError(err); }
-  };
+  // handleKeyModeChange removed with the radio buttons it served. It called
+  // setTenantLlmKeyMode → a direct UPDATE on `tenants`, which RLS answers with
+  // zero rows and no error, so it reported success and changed nothing. Which
+  // account pays is set from the platform console.
 
   const handleSaveBudget = async (tenantId: string) => {
     const val = parseInt(budgetEdits[tenantId] || '0', 10);
@@ -527,29 +524,43 @@ const SettingsPage = ({
               Usage and spend are on the Usage &amp; Budgets tab.
             </p>
 
-            {/* Whose account the calls are billed to. Stated plainly, because it
-                decides who holds the relationship with the model provider. */}
+            {/* ⚠ THIS USED TO BE TWO RADIO BUTTONS, AND THEY DID NOTHING.
+                They wrote `tenants.llm_key_mode` with a direct table update,
+                and `tenants` has RLS on with only a SELECT policy — so the
+                write matched zero rows. PostgREST reports that as SUCCESS, not
+                an error, so the dot moved, nothing was saved, no error showed,
+                and it snapped back on reload. Proven with `set local role
+                authenticated`: rows_updated=0, mode unchanged, no exception.
+
+                The database was right and the UI was wrong: which account pays
+                is a commercial term, not a workspace preference. It is set from
+                the platform console. Shown here read-only, because a customer
+                still needs to know which it is — it changes what happens when a
+                key is missing. */}
             <div className="mb-5 rounded-xl border border-dt-border-strong bg-dt-panel/60 p-3.5">
-              <p className="text-xs font-medium text-dt-support mb-2">Which account pays for this workspace's AI?</p>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input type="radio" name="llm_key_mode" className="mt-0.5" checked={keyMode === 'platform'}
-                    onChange={() => void handleKeyModeChange('platform')} />
-                  <span className="text-xs text-dt-support">
-                    <strong className="text-dt-body">We provide it.</strong> This workspace uses our keys when it has
-                    none of its own, and we bill for what it uses.
-                  </span>
-                </label>
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input type="radio" name="llm_key_mode" className="mt-0.5" checked={keyMode === 'byo'}
-                    onChange={() => void handleKeyModeChange('byo')} />
-                  <span className="text-xs text-dt-support">
-                    <strong className="text-dt-body">This workspace brings its own.</strong> Calls are billed to its
-                    own provider account. If a key is missing, work <em>stops with a clear message</em> rather than
-                    quietly falling back to ours.
-                  </span>
-                </label>
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <p className="text-xs font-medium text-dt-support">Which account pays for this workspace's AI?</p>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/50 text-dt-muted whitespace-nowrap">
+                  set by your plan
+                </span>
               </div>
+              {keyMode === 'byo' ? (
+                <p className="text-xs text-dt-support">
+                  <strong className="text-dt-body">This workspace brings its own.</strong> Calls are billed to its own
+                  provider account, using the keys below. If a key is missing, work <em>stops with a clear message</em>
+                  rather than quietly falling back to ours.
+                </p>
+              ) : (
+                <p className="text-xs text-dt-support">
+                  <strong className="text-dt-body">We provide it.</strong> This workspace runs on DreamTeam AI's
+                  provider account and we bill for what it uses. You can still add your own keys below — they take
+                  precedence for this workspace as soon as they are saved.
+                </p>
+              )}
+              <p className="text-[11px] text-dt-faint mt-1.5">
+                To change which account pays, contact DreamTeam AI — it affects billing, so it is not a
+                self-serve setting.
+              </p>
               {keyMode === 'byo' && !anthropicSet && (
                 <p className="text-xs text-amber-300 mt-2.5">
                   No Anthropic key is set for this workspace, so its Digital Employees cannot answer. Add one below.
@@ -718,25 +729,43 @@ const SettingsPage = ({
                           <div className="text-sm text-white font-medium">{t.name}</div>
                           <div className="text-xs text-dt-muted mt-0.5">{t.plan} · {t.status}</div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <input
-                            type="number"
-                            value={budgetEdits[t.id] ?? ''}
-                            onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
-                            className="w-28 bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
-                            min={0}
-                            step={10000}
-                          />
-                          <span className="text-xs text-dt-muted">tokens/mo</span>
-                          <button
-                            onClick={() => handleSaveBudget(t.id)}
-                            disabled={budgetSaving === t.id}
-                            className="px-3 py-1.5 text-xs text-white rounded-lg disabled:opacity-40 transition-all"
-                            style={{ backgroundColor: accentColor }}
-                          >
-                            {budgetSaving === t.id ? '…' : 'Save'}
-                          </button>
-                        </div>
+                        {/* ⚠ WHOSE MONEY. A workspace on OUR provider account
+                            must not be able to raise the ceiling on spending we
+                            pay for — that is a suggestion, not a limit. Mig 632
+                            enforces it in set_tenant_monthly_budget; this only
+                            stops the UI offering a control the server refuses,
+                            which is the failure the key-mode radio had for
+                            months. Where the workspace brings its own key, it is
+                            their bill and the editor stays. */}
+                        {(isDTUser || t.llm_key_mode === 'byo') ? (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <input
+                              type="number"
+                              value={budgetEdits[t.id] ?? ''}
+                              onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
+                              className="w-28 bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
+                              min={0}
+                              step={10000}
+                            />
+                            <span className="text-xs text-dt-muted">tokens/mo</span>
+                            <button
+                              onClick={() => handleSaveBudget(t.id)}
+                              disabled={budgetSaving === t.id}
+                              className="px-3 py-1.5 text-xs text-white rounded-lg disabled:opacity-40 transition-all"
+                              style={{ backgroundColor: accentColor }}
+                            >
+                              {budgetSaving === t.id ? '…' : 'Save'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                            <span className="text-sm text-white font-mono">{fmt(budget)}</span>
+                            <span className="text-xs text-dt-muted">tokens/mo</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/50 text-dt-muted whitespace-nowrap">
+                              set by your plan
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex justify-between text-xs text-dt-muted mb-1.5">
                         <span>{fmt(used)} used</span>
@@ -748,8 +777,16 @@ const SettingsPage = ({
                           style={{ width: `${pct}%`, backgroundColor: barColor }}
                         />
                       </div>
+                      {/* ⚠ Do not tell someone to do a thing the server will
+                          refuse. On our provider account they cannot raise the
+                          limit, so "increase budget" is advice that ends in an
+                          error message. */}
                       {pct >= 90 && (
-                        <p className="text-xs text-red-400 mt-1.5">Near limit — DEs will stop responding soon. Increase budget or wait for monthly reset.</p>
+                        (isDTUser || t.llm_key_mode === 'byo') ? (
+                          <p className="text-xs text-red-400 mt-1.5">Near limit — DEs will stop responding soon. Increase budget or wait for monthly reset.</p>
+                        ) : (
+                          <p className="text-xs text-red-400 mt-1.5">Near limit — DEs will stop responding soon. Contact DreamTeam AI to raise it, or wait for the monthly reset.</p>
+                        )
                       )}
                       {budgetError[t.id] && (
                         <p className="text-xs text-red-400 mt-1.5">{budgetError[t.id]}</p>

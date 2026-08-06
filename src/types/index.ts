@@ -154,4 +154,9 @@ export interface Tenant {
   parentTenantId?: string | null;
   allowSelfServeSubtenants?: boolean;
   trialEndsAt?: string | null;
+  /** Which provider account this workspace's model calls are billed to.
+   *  'platform' = ours (its token budget is set by its plan, platform-side);
+   *  'byo' = its own keys, its own bill, and it may set its own budget.
+   *  Set only from the platform console via set_tenant_llm_key_mode (mig 633). */
+  llmKeyMode?: 'platform' | 'byo';
 }

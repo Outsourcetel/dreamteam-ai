@@ -8,7 +8,7 @@ import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, setTenantStatus, setTenantPlan, deleteTenant, requestSubtenant, fetchTenants,
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
-  fetchPlatformConnectorHealth, fetchPlatformTenantOverview,
+  fetchPlatformConnectorHealth, fetchPlatformTenantOverview, setTenantLlmKeyMode,
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
@@ -33,6 +33,10 @@ const dbTenantToTenant = (t: DBTenant): Tenant => ({
   parentTenantId: t.parent_tenant_id ?? null,
   allowSelfServeSubtenants: !!t.allow_self_serve_subtenants,
   trialEndsAt: t.trial_ends_at ?? null,
+  // ⚠ Without this the console's "AI billed to" selector reads undefined and
+  // shows "We pay" for every workspace, including ones that are actually byo —
+  // a control that displays the wrong current state is worse than no control.
+  llmKeyMode: ((t as any).llm_key_mode ?? 'platform') as 'platform' | 'byo',
 });
 
 const PlatformConsolePage = ({
@@ -462,6 +466,28 @@ const PlatformConsolePage = ({
                     Trial ends {new Date(selectedTenant.trialEndsAt).toLocaleDateString()} — auto-suspends if not upgraded by then.
                   </div>
                 )}
+              </div>
+
+              {/* Who pays for this workspace's AI. Beside Plan because it is the
+                  same kind of decision, and because until mig 633 there was no
+                  working way to set it anywhere — the tenant-side radio wrote
+                  through RLS that allows SELECT only and silently changed
+                  nothing. */}
+              <div className="bg-dt-panel rounded-xl p-4">
+                <div className="flex items-center justify-between gap-4 mb-1">
+                  <div className="text-sm font-medium text-white">AI billed to</div>
+                  <KeyModeSelector
+                    tenant={selectedTenant}
+                    onChanged={(mode) => setSelectedTenant({ ...selectedTenant, llmKeyMode: mode })}
+                  />
+                </div>
+                <div className="text-xs text-dt-support">
+                  <strong className="text-dt-body">We pay</strong> — model calls run on DreamTeam AI's provider
+                  account and this workspace's token budget is set by its plan, here.{' '}
+                  <strong className="text-dt-body">They pay</strong> — the workspace uses its own provider keys,
+                  is billed directly by the provider, and may set its own token budget. Work stops with a clear
+                  message if their key is missing, rather than falling back to ours.
+                </div>
               </div>
 
               <div className="flex gap-3">
@@ -1438,6 +1464,54 @@ const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan:
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
         <option value="enterprise">Enterprise</option>
+      </select>
+      {saving && <span className="text-xs text-dt-muted">Saving…</span>}
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
+  );
+};
+
+/** Which account pays for a workspace's AI — a commercial term, so it lives
+ *  next to the plan and not in the customer's own settings.
+ *
+ *  ⚠ This control used to exist on the tenant's Settings → AI Engine tab as two
+ *  radio buttons that silently did nothing (RLS on `tenants` allows SELECT
+ *  only, and a zero-row UPDATE reports success). It was removed from there and
+ *  rebuilt here on `set_tenant_llm_key_mode` (mig 633), which is gated on the
+ *  same `tenants.manage` capability as the plan selector beside it.
+ *
+ *  ⚠ It is not cosmetic: in 'byo' the workspace pays its own provider account
+ *  and may set its own token budget; in 'platform' we pay and the budget is
+ *  ours to set (mig 632). Flipping this moves that control. */
+const KeyModeSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged?: (mode: 'platform' | 'byo') => void }) => {
+  const [mode, setMode] = useState<'platform' | 'byo'>(tenant.llmKeyMode ?? 'platform');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = async (next: 'platform' | 'byo') => {
+    if (next === mode) return;
+    const previous = mode;
+    setMode(next);
+    setSaving(true);
+    setError('');
+    const err = await setTenantLlmKeyMode(tenant.id, next);
+    setSaving(false);
+    // Snap back on failure. The old tenant-side control did the opposite — it
+    // kept the new value on screen while the database kept the old one.
+    if (err) { setMode(previous); setError(err); return; }
+    onChanged?.(next);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={mode}
+        onChange={(e) => void handleChange(e.target.value as 'platform' | 'byo')}
+        disabled={saving}
+        className="bg-dt-card border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+      >
+        <option value="platform">We pay</option>
+        <option value="byo">They pay (own key)</option>
       </select>
       {saving && <span className="text-xs text-dt-muted">Saving…</span>}
       {error && <span className="text-xs text-red-400">{error}</span>}
