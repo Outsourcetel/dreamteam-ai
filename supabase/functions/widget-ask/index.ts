@@ -39,6 +39,8 @@ import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
+import { checkAnswerGuardrails, loadBlockingRules, matchBlockingRule, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -70,78 +72,10 @@ async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ── Keyword-overlap retrieval (last-resort fallback only) ──
-const STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
-  'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
-  'why', 'when', 'where', 'please', 'need', 'want', 'help', 'about', 'it', 'this', 'that',
-]);
-function tokenize(s: string): string[] {
-  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOPWORDS.has(w));
-}
 interface KDoc { id: string; title: string; content: string; tags: string[] }
-function rankDocs(question: string, docs: KDoc[]): KDoc[] {
-  const qTokens = [...new Set(tokenize(question))];
-  if (qTokens.length === 0) return docs.slice(0, 3);
-  return docs.map((d) => {
-    const title = tokenize(d.title), body = tokenize(d.content);
-    const tags = (d.tags || []).flatMap((t) => tokenize(t));
-    let score = 0;
-    for (const q of qTokens) {
-      if (title.includes(q)) score += 3;
-      if (tags.includes(q)) score += 2;
-      score += Math.min(3, body.filter((w) => w === q).length);
-    }
-    return { d, score };
-  }).filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map((s) => s.d);
-}
 
 // ── Guardrail check (blocks + escalates; the DE's rules, not the channel's) ──
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
-
-// Pure matcher — shared by the JSON path, the streaming flush loop, and the
-// final re-check so all three apply IDENTICAL blocking logic.
-function matchBlockingRule(blocking: GuardrailRule[], answer: string): GuardrailRule | null {
-  // Shared matcher (_shared/guardrailMatch.ts) — see the note there on why the
-  // per-'|'-fragment loop this replaces enforced broader rules than were written.
-  return findBlockingMatch(blocking, answer)?.rule ?? null;
-}
-
-// deno-lint-ignore no-explicit-any
-// Returns the blocking rule set, or NULL when the resolver itself failed (so
-// callers can fail CLOSED — we can't prove an answer was screened).
-async function loadBlockingRules(admin: any, tenantId: string, deId: string | null): Promise<GuardrailRule[] | null> {
-  try {
-    const { data: rules } = await admin.rpc('guardrail_rules_for_de', {
-      p_tenant_id: tenantId, p_de_id: deId, p_rule_types: ['blocked_phrase', 'blocked_topic'],
-    });
-    if (!Array.isArray(rules)) return null;   // screening didn't run → fail closed
-    return (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
-  } catch (e) {
-    // Production-readiness audit: was fail-OPEN (returned [] → answer released).
-    // Now fail-CLOSED (null → caller withholds + escalates); incident still logged.
-    console.error('guardrail check failed (fail-closed → escalating):', e);
-    try {
-      await admin.from('de_incidents').insert({
-        tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
-        title: 'Guardrail check FAILED — widget answer withheld and escalated (fail-closed)',
-        detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'widget-ask' },
-        source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
-      });
-    } catch { /* best-effort */ }
-    return null;
-  }
-}
-
-// Fail-CLOSED sentinel: resolver error/unavailable → treat as blocked → escalate.
-const GUARDRAIL_RESOLVER_ERROR: GuardrailRule = { id: '__resolver_error__', rule: 'answer screening unavailable', rule_type: 'resolver_error', pattern: null, applies_to: 'answer' };
-
-// deno-lint-ignore no-explicit-any
-async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
-  const blocking = await loadBlockingRules(admin, tenantId, deId);
-  if (blocking === null) return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → block + escalate
-  return matchBlockingRule(blocking, answer);
-}
 
 const GUARDRAIL_BLOCK_MESSAGE = "I can't help with that — it's outside my guardrails. I've passed it to a human on the team.";
 
@@ -154,27 +88,6 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
 }
 
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; language: string | null; customer_state?: unknown }
-function parseModelJson(raw: string): DEAnswer {
-  let text = raw.trim();
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) text = fence[1].trim();
-  const start = text.indexOf('{'), end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    try {
-      const p = JSON.parse(text.slice(start, end + 1));
-      return {
-        answer: typeof p.answer === 'string' ? p.answer : raw.trim(),
-        confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
-        sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
-        needs_escalation: !!p.needs_escalation,
-        language: typeof p.language === 'string' && p.language.trim() ? p.language.trim() : null,
-        // Passed through raw; validated + clamped by parseCustomerState.
-        customer_state: p.customer_state,
-      };
-    } catch { /* fall through */ }
-  }
-  return { answer: raw.trim(), confidence: 50, sources: [], needs_escalation: false, language: null };
-}
 
 // Cheap heuristic: does the query look non-English? (char script + a few
 // common function words). Used only to decide whether to spend a tiny
@@ -486,7 +399,7 @@ serve(async (req) => {
     } catch (e) { console.error('grounded confidence gate:', e); }   // fail-open to self-report
     // deno-lint-ignore no-explicit-any
     const screenAnswer = async (ans: string, deId: string | null): Promise<GuardrailRule | null> => {
-      const regexHit = await checkAnswerGuardrails(admin, tenantId, ans, deId);
+      const regexHit = await checkAnswerGuardrails(admin, tenantId, ans, deId, 'widget-ask');
       if (regexHit) return regexHit;
       if (!semGate.enabled) return null;
       const rules = await loadBlockingRulesForJudge(admin, tenantId, deId);
@@ -764,7 +677,7 @@ serve(async (req) => {
     // judge has to clear BEFORE the first byte, which only the buffered finalizeCore
     // path can guarantee. !semGate.enabled forces those tenants to buffer.
     const streamRules = (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && !gcActive)
-      ? await loadBlockingRules(admin, tenantId, subjectDeId) : [];
+      ? await loadBlockingRules(admin, tenantId, subjectDeId, 'widget-ask:stream') : [];
     // If screening rules can't load, do NOT stream unscreened — fall through to the
     // buffered path, whose checkAnswerGuardrails fails closed (blocks + escalates).
     if (body.stream === true && replyMode === 'auto' && !escalationRuleHit && anthropicKey && !semGate.enabled && !gcActive && streamRules !== null) {
@@ -921,7 +834,7 @@ Write the answer as plain text — NOT as JSON; prior assistant turns are shown 
               // Never cache an answer shaped by a caller's identity memory (it
               // could carry their private data into the tenant-wide cache).
               if (qEmbedding && !isFollowUp && !identityMemoryContext && conf >= cacheQualityBar && !escalationRuleHit && !needsEsc) {
-                const blockedBy = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId);
+                const blockedBy = await checkAnswerGuardrails(admin, tenantId, answerText, subjectDeId, 'widget-ask');
                 if (!blockedBy) {
                   await admin.from('answer_cache').insert({
                     tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,
@@ -987,7 +900,7 @@ Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titl
     }
     const data = await res.json();
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
-    const parsed = parseModelJson(raw);
+    const parsed = parseAnswerEnvelope(raw);
     const customerState = parseCustomerState(parsed.customer_state);
 
     // §5 GROUNDED CONFIDENCE on the PUBLIC channel. Same contract as de-answer:
@@ -1032,7 +945,7 @@ Always output JSON: {"answer": string, "confidence": 0-100, "sources": [doc titl
     // Never cache a follow-up: its answer was shaped by turns the next asker
     // will not have (same reasoning as the cache read above).
     if (qEmbedding && !isFollowUp && !identityMemoryContext && parsed.confidence >= cacheQualityBar && !escalationRuleHit && !parsed.needs_escalation) {
-      const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId);
+      const blockedBy = await checkAnswerGuardrails(admin, tenantId, parsed.answer, subjectDeId, 'widget-ask');
       if (!blockedBy) {
         await admin.from('answer_cache').insert({
           tenant_id: tenantId, account_id: null, de_id: subjectDeId, question,

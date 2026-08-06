@@ -34,6 +34,8 @@ import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { adjudicateRegexHit, type AdjHit } from '../_shared/guardrailAdjudicator.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
+import { checkAnswerGuardrails, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -81,45 +83,7 @@ const MAX_CONTEXT_CHARS = 6000;
 // for its topical neighbors.
 const CACHE_MAX_DISTANCE = 0.05;
 
-// ── Simple keyword-overlap retrieval (last-resort fallback only, when
-// hybrid_match_knowledge returns nothing at all — e.g. truly empty KB) ──
-const STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
-  'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
-  'why', 'when', 'where', 'please', 'need', 'want', 'help', 'about', 'it', 'this', 'that',
-]);
-
-function tokenize(s: string): string[] {
-  return (s || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOPWORDS.has(w));
-}
-
 interface KDoc { id: string; title: string; content: string; tags: string[]; visibility?: string }
-
-function rankDocs(question: string, docs: KDoc[]): KDoc[] {
-  const qTokens = [...new Set(tokenize(question))];
-  if (qTokens.length === 0) return docs.slice(0, 3);
-  const scored = docs.map((d) => {
-    const title = tokenize(d.title);
-    const body = tokenize(d.content);
-    const tags = (d.tags || []).flatMap((t) => tokenize(t));
-    let score = 0;
-    for (const q of qTokens) {
-      if (title.includes(q)) score += 3;
-      if (tags.includes(q)) score += 2;
-      score += Math.min(3, body.filter((w) => w === q).length);
-    }
-    return { d, score };
-  });
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((s) => s.d);
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // THE "I HAVE NO DOCUMENTS" RECOVERY PATH
@@ -322,51 +286,6 @@ function noDocsRecovery(attempt: number): RecoveryHint {
 // (blocked_phrase / blocked_topic) that match the ANSWER text block it.
 interface GuardrailRule { id: string; rule: string; rule_type: string; pattern: string | null; applies_to: string }
 
-// Fail-CLOSED sentinel: if the guardrail resolver itself errors (or returns no
-// rule set) we cannot PROVE the answer was screened, so we treat it as blocked
-// and route to a human rather than release an unscreened reply during a transient
-// DB blip (production-readiness audit — the old behavior failed open).
-const GUARDRAIL_RESOLVER_ERROR: GuardrailRule = { id: '__resolver_error__', rule: 'answer screening unavailable', rule_type: 'resolver_error', pattern: null, applies_to: 'answer' };
-
-// deno-lint-ignore no-explicit-any
-async function checkAnswerGuardrails(admin: any, tenantId: string, answer: string, deId: string | null): Promise<GuardrailRule | null> {
-  try {
-    // Scope-aware (Wave 2a): the resolver returns workspace rules plus any
-    // department/employee-scoped rules for this DE. A null DE → workspace only.
-    const { data: rules } = await admin
-      .rpc('guardrail_rules_for_de', {
-        p_tenant_id: tenantId,
-        p_de_id: deId,
-        p_rule_types: ['blocked_phrase', 'blocked_topic'],
-      });
-    if (!Array.isArray(rules)) return GUARDRAIL_RESOLVER_ERROR;   // screening didn't run → fail closed
-    const blocking = (rules as Array<GuardrailRule & { severity?: string }>).filter((r) => r.severity === 'blocking');
-    // Shared matcher (_shared/guardrailMatch.ts): the WHOLE pattern is one
-    // regex, so a rule author's grouping survives. The old per-'|'-fragment
-    // loop shredded `what is your (pin|cvv|ssn)` into bare `ssn` and blocked
-    // any answer that merely mentioned one.
-    // Carry the matched TEXT alongside the rule: the adjudicator cannot judge
-    // a hit it cannot see, and the audit record needs the exact trigger. A
-    // widened copy — every downstream consumer reads only .id/.rule/.rule_type.
-    const m = findBlockingMatch(blocking as GuardrailRule[], answer);
-    return m ? { ...m.rule, matched_text: m.matched } : null;
-  } catch (e) {
-    // Wave-1 (truth audit 2026-07-22): fail-open stays (availability), but it
-    // is no longer SILENT — a durable incident lands on the employee's record
-    // so a broken guardrail resolver can't hide.
-    console.error('guardrail check failed (fail-closed → escalating):', e);
-    try {
-      await admin.from('de_incidents').insert({
-        tenant_id: tenantId, de_id: deId, kind: 'guardrail_block', severity: 'critical',
-        title: 'Guardrail check FAILED — answer withheld and escalated (fail-closed)',
-        detail: { error: String((e as Error)?.message ?? e).slice(0, 400), path: 'de-answer' },
-        source_table: 'guardrail_rules', source_id: null, occurred_at: new Date().toISOString(),
-      });
-    } catch { /* best-effort */ }
-    return GUARDRAIL_RESOLVER_ERROR;   // can't prove screening ran → route to a human
-  }
-}
-
 // GI-8: the full answer screen = deterministic regex FIRST (cheap, always runs),
 // then the semantic judge (augments, never replaces) only when regex is clean and
 // the tenant has the flag on. Fail-closed: a rules-fetch failure routes to a human.
@@ -378,7 +297,7 @@ async function screenAnswer(
   // unrelated answers.
   ctx: { question: string; actor: string; conversationId: string | null; replay: boolean; onClear?: () => void },
 ): Promise<GuardrailRule | null> {
-  const regexHit = await checkAnswerGuardrails(admin, tenantId, answer, deId);
+  const regexHit = await checkAnswerGuardrails(admin, tenantId, answer, deId, 'de-answer');
   if (regexHit) {
     // GI-10: the deterministic filter has recall but no precision. Ask whether
     // this answer ENACTS the prohibited act or DESCRIBES the control against
@@ -444,131 +363,6 @@ async function preSendAudit(admin: any, tenantId: string, deId: string | null, q
 
 // ── Robust JSON parse of model output ──
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; customer_state?: unknown }
-
-// Salvage the "answer" string field from MALFORMED or TRUNCATED JSON —
-// manual scan with escape handling, tolerating a missing closing quote
-// (the max_tokens-truncation case). Returns clean prose or null.
-function extractAnswerField(text: string): string | null {
-  const m = text.match(/"answer"\s*:\s*"/);
-  if (!m || m.index === undefined) return null;
-  const start = m.index + m[0].length;
-
-  // Find the REAL end of the answer string.
-  //
-  // The model sometimes writes an unescaped double quote inside the answer —
-  // e.g. `sets the run to "waiting_human" until someone decides`. That makes
-  // the envelope invalid JSON, which is why we are in the salvage path at all,
-  // and stopping at the FIRST unescaped quote cut the answer off exactly where
-  // the quoted term began. That is the mid-sentence truncation seen in
-  // production: a 423-character answer ending "...sets the run to", while the
-  // same question answered in full elsewhere. It had nothing to do with
-  // max_tokens — the answer was ~110 tokens against a 1536 ceiling.
-  //
-  // The closing quote is the last one sitting in a JSON structural position:
-  // followed only by whitespace and then a comma, a closing brace, or the end
-  // of the text. Inner quotes never satisfy that. If none does, the envelope
-  // really was cut off mid-string and we take what is there, as before.
-  let limit = text.length;
-  for (let k = text.length - 1; k > start; k--) {
-    if (text[k] !== '"') continue;
-    const rest = text.slice(k + 1).replace(/^\s+/, '');
-    if (rest === '' || rest[0] === ',' || rest[0] === '}') { limit = k; break; }
-  }
-
-  let i = start;
-  let out = '';
-  while (i < limit) {
-    const c = text[i];
-    if (c === '\\') {
-      const n = text[i + 1];
-      if (n === 'n') out += '\n';
-      else if (n === 't') out += '\t';
-      else if (n === '"') out += '"';
-      else if (n === '\\') out += '\\';
-      else if (n === 'u') {
-        const cp = parseInt(text.slice(i + 2, i + 6), 16);
-        if (!Number.isNaN(cp)) out += String.fromCharCode(cp);
-        i += 4;
-      } else out += n ?? '';
-      i += 2;
-    } else { out += c; i += 1; }
-    // NOTE: no break on '"'. The closing quote is already excluded by `limit`
-    // above, so any quote reached here is one the model left unescaped INSIDE
-    // the answer — it is content, and breaking on it is exactly what truncated
-    // answers mid-sentence.
-  }
-  const trimmed = out.trim();
-  // A salvaged string with no letters or digits is not an answer, it is
-  // wreckage. The old floor was `length >= 3`, which let a bare "..." through
-  // — and it did: four cert-exam answers to "How do I create a new Digital
-  // Employee?" came back as literally three dots, carrying a self-reported
-  // confidence of 98. A customer would have been shown an ellipsis by a
-  // employee that believed it had answered well.
-  if (!/[a-z0-9]/i.test(trimmed)) return null;
-  return trimmed.length >= 3 ? trimmed : null;
-}
-
-function parseModelJson(raw: string, depth = 0): DEAnswer {
-  let text = raw.trim();
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) text = fence[1].trim();
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    try {
-      const p = JSON.parse(text.slice(start, end + 1));
-      let answer = typeof p.answer === 'string' ? p.answer : raw.trim();
-      // Nested envelope (model quoted its own JSON): unwrap ONE level.
-      if (depth === 0 && answer.trimStart().startsWith('{') && answer.includes('"answer"')) {
-        answer = parseModelJson(answer, 1).answer;
-      }
-      // A well-formed envelope can still carry a non-answer. Four cert-exam
-      // answers to "How do I create a new Digital Employee?" came back as
-      // literally "..." inside PERFECTLY VALID JSON, with a self-reported
-      // confidence of 98 — so the model was sure it had answered, and the
-      // parser had no reason to disagree. An empty or punctuation-only answer
-      // is a failed generation, not a poor one: escalate rather than deliver,
-      // and never let it carry a confidence that says otherwise.
-      const degenerate = !/[a-z0-9]/i.test(answer);
-      return {
-        answer: degenerate ? '' : answer,
-        confidence: degenerate ? 0 : Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
-        sources: Array.isArray(p.sources) ? p.sources.map(String) : [],
-        needs_escalation: degenerate || !!p.needs_escalation,
-        // Passed through raw; validated + clamped by parseCustomerState. A
-        // model that omits it yields nulls, and null signals never match.
-        customer_state: p.customer_state,
-      };
-    } catch { /* fall through to salvage */ }
-  }
-  // Malformed/TRUNCATED JSON (e.g. max_tokens cut the envelope mid-string,
-  // the replay-path bug that leaked raw JSON to the judge): salvage the
-  // answer text + whatever scalar fields survive, never return the wreckage.
-  const salvaged = extractAnswerField(text);
-  if (salvaged) {
-    const conf = text.match(/"confidence"\s*:\s*(\d{1,3})/);
-    return {
-      answer: salvaged,
-      confidence: conf ? Math.max(0, Math.min(100, parseInt(conf[1], 10))) : 50,
-      sources: [],
-      needs_escalation: /"needs_escalation"\s*:\s*true/.test(text),
-    };
-  }
-  // Nothing parseable and nothing salvageable. Returning raw.trim() here meant
-  // handing the caller whatever wreckage the model produced — malformed JSON,
-  // an empty string, an ellipsis — as if it were an answer, with
-  // needs_escalation FALSE, i.e. safe to send. A generation we could not read
-  // is not a low-quality answer, it is no answer: escalate it to a human
-  // rather than deliver it.
-  const bare = raw.trim();
-  const usable = /[a-z0-9]/i.test(bare) && bare.length >= 12 && !bare.includes('"answer"');
-  return {
-    answer: usable ? bare : '',
-    confidence: 0,
-    sources: [],
-    needs_escalation: !usable,
-  };
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -1101,7 +895,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     const res = await llmMessages(admin, {
       model,
       // 1024 truncated long JSON envelopes mid-string (the replay-path
-      // parse leak); parseModelJson now salvages truncation too, but not
+      // parse leak); parseAnswerEnvelope salvages truncation too, but not
       // truncating in the first place is the real fix.
       max_tokens: 1536,
       ...(replayTemperature !== undefined ? { temperature: replayTemperature } : {}),
@@ -1117,7 +911,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // Claude 5 models can emit a 'thinking' block before the text block —
     // take the first block that is actually text (see widget-ask, DE-A2).
     const raw: string = (data.content ?? []).find((b: { type?: string }) => b.type === 'text')?.text ?? '';
-    const parsed = parseModelJson(raw);
+    const parsed = parseAnswerEnvelope(raw);
 
     // The model ran out of room. stop_reason was never read here, so a reply
     // the model was still writing when it hit the ceiling was delivered as a

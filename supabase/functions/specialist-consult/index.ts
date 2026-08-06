@@ -61,6 +61,7 @@ import { resolveDeModel } from '../_shared/deModel.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { rankDocs } from '../_shared/answerEnvelope.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -77,33 +78,7 @@ const MODEL = 'claude-sonnet-5';
 const MAX_CONTEXT_CHARS = 7000;
 const ESCALATION_FLOOR = 60;
 
-// ── Keyword fallback (last-resort only — see hybrid_match_knowledge, migration 046) ──
-const STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'to', 'of', 'in',
-  'on', 'for', 'with', 'my', 'i', 'me', 'can', 'you', 'your', 'do', 'does', 'how', 'what',
-  'why', 'when', 'where', 'please', 'need', 'want', 'help', 'about', 'it', 'this', 'that',
-]);
-function tokenize(s: string): string[] {
-  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
-    .filter((w) => w.length > 2 && !STOPWORDS.has(w));
-}
-
 interface KDoc { id: string; title: string; content: string; tags: string[] }
-function rankDocs(question: string, docs: KDoc[]): KDoc[] {
-  const qTokens = [...new Set(tokenize(question))];
-  if (qTokens.length === 0) return docs.slice(0, 3);
-  return docs.map((d) => {
-    const title = tokenize(d.title), body = tokenize(d.content);
-    const tags = (d.tags || []).flatMap((t) => tokenize(t));
-    let score = 0;
-    for (const q of qTokens) {
-      if (title.includes(q)) score += 3;
-      if (tags.includes(q)) score += 2;
-      score += Math.min(3, body.filter((w) => w === q).length);
-    }
-    return { d, score };
-  }).filter((s) => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map((s) => s.d);
-}
 
 
 async function audit(
@@ -141,25 +116,6 @@ async function touchWatch(admin: SupabaseClient, tenantId: string, connectorId: 
 }
 
 interface ParsedAnswer { answer: string; confidence: number; citations: string[]; needs_escalation: boolean }
-function parseModelJson(raw: string): ParsedAnswer {
-  let text = raw.trim();
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) text = fence[1].trim();
-  const start = text.indexOf('{'), end = text.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    try {
-      const p = JSON.parse(text.slice(start, end + 1));
-      return {
-        answer: typeof p.answer === 'string' ? p.answer : raw.trim(),
-        confidence: Math.max(0, Math.min(100, Math.round(Number(p.confidence)) || 0)),
-        citations: Array.isArray(p.citations) ? p.citations.map(String)
-          : Array.isArray(p.sources) ? p.sources.map(String) : [],
-        needs_escalation: !!p.needs_escalation,
-      };
-    } catch { /* fall through */ }
-  }
-  return { answer: raw.trim(), confidence: 50, citations: [], needs_escalation: false };
-}
 
 interface RetrievedSource {
   source_id: string;
