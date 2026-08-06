@@ -90,6 +90,7 @@ import { contentHash } from '../_shared/contentHash.ts';
 import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARDRAIL_JUDGE_ERROR } from '../_shared/guardrailJudge.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { rpcLoud } from '../_shared/rpcSafety.ts';
+import { stripHtmlInline as stripHtml, chunkText } from '../_shared/textPrep.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -134,7 +135,6 @@ interface Ctx {
 }
 
 const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
-const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
 
 async function httpJson(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
   if (!isSafeExternalUrl(url)) {
@@ -5942,40 +5942,6 @@ function toCanonical(
       raw_fields: i.raw, // pass-through, returned live, NEVER persisted
     };
   });
-}
-
-async function embedText(text: string): Promise<number[] | null> {
-  try {
-    // deno-lint-ignore no-explicit-any
-    const SupabaseAI = (globalThis as any).Supabase?.ai;
-    if (!SupabaseAI) return null;
-    const session = new SupabaseAI.Session('gte-small');
-    const out = await session.run(text.slice(0, 4000), { mean_pool: true, normalize: true });
-    const vec = Array.from(out as Iterable<number>);
-    return vec.length === 384 ? vec : null;
-  } catch { return null; }
-}
-
-// Same chunking policy as ingest-chunks (1500/200).
-function chunkText(text: string): string[] {
-  const clean = (text || '').trim();
-  if (!clean) return [];
-  if (clean.length <= 1500) return [clean];
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < clean.length) {
-    let end = Math.min(start + 1500, clean.length);
-    if (end < clean.length) {
-      const window = clean.slice(start, end);
-      const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('. '), window.lastIndexOf(' '));
-      if (cut > 600) end = start + cut;
-    }
-    const piece = clean.slice(start, end).trim();
-    if (piece) chunks.push(piece);
-    if (end >= clean.length) break;
-    start = Math.max(end - 200, start + 1);
-  }
-  return chunks;
 }
 
 serve(async (req) => {

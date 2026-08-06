@@ -26,6 +26,9 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { parseJsonLoose } from '../_shared/textPrep.ts';
+import { makeCallModelText } from '../_shared/modelCall.ts';
+const callModel = makeCallModelText('playbook-amend', 4096);
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,17 +42,6 @@ const MAX_REPAIR = 2;
 
 const AMEND_PRIMITIVES = `check_account {}, check_knowledge {query_template, on_miss:'continue'|'escalate'}, instruction {title, body_md}, checklist {items:[]}, consult_specialist {profile_key, question_template}, custom_step {instructions} (EXPENSIVE — actions only), complete {} (required last).
 Prefer free instruction steps for guidance; reserve custom_step for genuine actions. Keep 4-9 steps.`;
-
-async function callModel(admin: SupabaseClient, system: string, user: string, maxTokens = 4096): Promise<{ text: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await llmMessages(admin, { model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }, 'playbook-amend');
-  if (!res.ok) return { error: `llm_http_${res.status}: ${(await res.text()).slice(0, 200)}` };
-  const d = await res.json();
-  const text = (d.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join('');
-  return { text, inTok: Number(d.usage?.input_tokens ?? 0), outTok: Number(d.usage?.output_tokens ?? 0) };
-}
-function parseJsonLoose(t: string): Record<string, unknown> | null {
-  const m = t.match(/\{[\s\S]*\}/); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; }
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });

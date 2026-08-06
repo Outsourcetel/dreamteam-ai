@@ -19,6 +19,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { embedText } from '../_shared/knowledgeEmbed.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -30,21 +31,6 @@ function json(body: unknown, status = 200) {
 }
 
 const DEMO_TENANT_ID = 'a0000000-0000-0000-0000-000000000001';
-
-async function embedText(admin: SupabaseClient, text: string): Promise<number[] | null> {
-  try {
-    // deno-lint-ignore no-explicit-any
-    const SupabaseAI = (globalThis as any).Supabase?.ai;
-    if (!SupabaseAI) return null;
-    const session = new SupabaseAI.Session('gte-small');
-    const out = await session.run(text, { mean_pool: true, normalize: true });
-    const vec = Array.from(out as Iterable<number>);
-    return vec.length === 384 ? vec : null;
-  } catch (e) {
-    console.error('gte-small embedding unavailable:', e);
-    return null;
-  }
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -76,7 +62,7 @@ serve(async (req) => {
       if (candErr) { console.error('candidates error for', t.id, candErr.message); continue; }
 
       for (const c of (candidates ?? []) as { evidence_run_id: string; inquiry: string }[]) {
-        const vec = await embedText(admin, c.inquiry);
+        const vec = await embedText(c.inquiry);
         if (!vec) continue;
         const { error: updErr } = await admin
           .from('evidence_runs').update({ inquiry_embedding: vec }).eq('id', c.evidence_run_id);

@@ -28,6 +28,13 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { makeCallModelBlocks } from '../_shared/modelCall.ts';
+// No default tool set here on purpose: TOOLS is declared further down, and a
+// const referenced above its declaration is a temporal-dead-zone error at
+// MODULE INIT — the worker exits before serving anything. Every call site
+// passes its tools explicitly anyway (GOV_TOOLS or TOOLS), so the default was
+// never used.
+const callModel = makeCallModelBlocks('ai-session', 4096);
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -162,23 +169,6 @@ const GOV_TOOLS = [
 ];
 
 interface ContentBlock { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }
-
-async function callModel(
-  admin: SupabaseClient,
-  system: string,
-  messages: Array<{ role: string; content: unknown }>,
-  tools: unknown[] = TOOLS,
-): Promise<{ blocks: ContentBlock[]; stop: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await llmMessages(admin, { model: MODEL, max_tokens: 4096, system, tools, messages }, 'ai-session');
-  if (!res.ok) return { error: `llm_http_${res.status}` };
-  const d = await res.json();
-  return {
-    blocks: (d.content ?? []) as ContentBlock[],
-    stop: String(d.stop_reason ?? ''),
-    inTok: Number(d.usage?.input_tokens ?? 0),
-    outTok: Number(d.usage?.output_tokens ?? 0),
-  };
-}
 
 const textOf = (blocks: ContentBlock[]) =>
   blocks.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('').trim();

@@ -34,6 +34,9 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { parseJsonLoose } from '../_shared/textPrep.ts';
+import { makeCallModelText } from '../_shared/modelCall.ts';
+const callModel = makeCallModelText('playbook-draft', 4096);
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -58,20 +61,6 @@ const COMPILER_PRIMITIVES = `
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'playbook';
-}
-
-async function callModel(admin: SupabaseClient, system: string, user: string, maxTokens = 4096): Promise<{ text: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await llmMessages(admin, { model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }, 'playbook-draft');
-  if (!res.ok) return { error: `llm_http_${res.status}: ${(await res.text()).slice(0, 200)}` };
-  const d = await res.json();
-  const text = (d.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join('');
-  return { text, inTok: Number(d.usage?.input_tokens ?? 0), outTok: Number(d.usage?.output_tokens ?? 0) };
-}
-
-function parseJsonLoose(text: string): Record<string, unknown> | null {
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return null;
-  try { return JSON.parse(m[0]); } catch { return null; }
 }
 
 serve(async (req) => {

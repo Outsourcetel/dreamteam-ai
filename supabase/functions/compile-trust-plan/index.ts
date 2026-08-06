@@ -47,6 +47,8 @@ import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { makeCallModelText } from '../_shared/modelCall.ts';
+const callModel = makeCallModelText('compile-trust-plan', 4096, { temperature: 0 });
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -62,16 +64,6 @@ const MAX_PROPOSALS = 12;
 // ── model I/O (entity-draft pattern: ONLY-JSON instruction + tolerant parse) ──
 
 type Msg = { role: string; content: string };
-async function callModel(admin: SupabaseClient, system: string, messages: Msg[]): Promise<{ text: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await llmMessages(admin, { model: MODEL, max_tokens: 4096, temperature: 0, system, messages }, 'compile-trust-plan');
-  if (!res.ok) return { error: `llm_http_${res.status}: ${(await res.text()).slice(0, 200)}` };
-  const d = await res.json();
-  return {
-    text: (d.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join(''),
-    inTok: Number(d.usage?.input_tokens ?? 0),
-    outTok: Number(d.usage?.output_tokens ?? 0),
-  };
-}
 function parseJson(t: string): Record<string, unknown> | null { const m = t.match(/\{[\s\S]*\}/); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; } }
 
 // ── shapes ───────────────────────────────────────────────────────────────

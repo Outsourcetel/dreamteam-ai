@@ -16,6 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
 import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';
+import { stripHtml } from '../_shared/textPrep.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -26,19 +27,6 @@ const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const MAX_TEXT_CHARS = 500_000;         // cap what we hand back to the ingester
-
-function stripHtml(raw: string): string {
-  return raw
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
 
 function decodeBase64(b64: string): Uint8Array {
   const clean = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64; // tolerate data: URLs

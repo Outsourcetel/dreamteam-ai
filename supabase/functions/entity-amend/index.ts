@@ -20,6 +20,8 @@ import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { makeCallModelText } from '../_shared/modelCall.ts';
+const callModel = makeCallModelText('entity-amend', 2048);
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,12 +31,6 @@ const CORS = {
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const MODEL = 'claude-sonnet-5';
 
-async function callModel(admin: SupabaseClient, system: string, user: string): Promise<{ text: string; inTok: number; outTok: number } | { error: string }> {
-  const res = await llmMessages(admin, { model: MODEL, max_tokens: 2048, system, messages: [{ role: 'user', content: user }] }, 'entity-amend');
-  if (!res.ok) return { error: `llm_http_${res.status}` };
-  const d = await res.json();
-  return { text: (d.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join(''), inTok: Number(d.usage?.input_tokens ?? 0), outTok: Number(d.usage?.output_tokens ?? 0) };
-}
 function parseJson(t: string): Record<string, unknown> | null { const m = t.match(/\{[\s\S]*\}/); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; } }
 
 serve(async (req) => {

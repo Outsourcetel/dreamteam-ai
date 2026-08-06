@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { contentHash } from '../_shared/contentHash.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { chunkText } from '../_shared/textPrep.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,42 +32,6 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
-
-const CHUNK_SIZE = 1500;   // chars
-const CHUNK_OVERLAP = 200; // chars
-
-/** Split on paragraph, then sentence boundaries; ~1500 chars with ~200 overlap. */
-export function chunkText(text: string): string[] {
-  const clean = (text || '').trim();
-  if (!clean) return [];
-  if (clean.length <= CHUNK_SIZE) return [clean];
-
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < clean.length) {
-    let end = Math.min(start + CHUNK_SIZE, clean.length);
-    if (end < clean.length) {
-      const window = clean.slice(start, end);
-      // Prefer paragraph break, then sentence end, then space — searched from the back.
-      const para = window.lastIndexOf('\n\n');
-      const sentence = Math.max(
-        window.lastIndexOf('. '), window.lastIndexOf('.\n'),
-        window.lastIndexOf('! '), window.lastIndexOf('? '),
-      );
-      const space = window.lastIndexOf(' ');
-      const cut = para > CHUNK_SIZE * 0.4 ? para
-        : sentence > CHUNK_SIZE * 0.4 ? sentence + 1
-        : space > CHUNK_SIZE * 0.4 ? space
-        : window.length;
-      end = start + cut;
-    }
-    const piece = clean.slice(start, end).trim();
-    if (piece) chunks.push(piece);
-    if (end >= clean.length) break;
-    start = Math.max(end - CHUNK_OVERLAP, start + 1);
-  }
-  return chunks;
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });

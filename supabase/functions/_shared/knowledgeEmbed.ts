@@ -15,13 +15,19 @@
  * as an error; hybrid_match_knowledge (migration 046) is designed to
  * degrade gracefully to pure lexical ranking when p_query_embedding is null.
  */
+/** gte-small takes 512 tokens; anything beyond roughly this many characters is
+ *  ignored by the model anyway. connector-hub's private copy capped its input
+ *  and this one did not — adopting the cap here, because feeding the model more
+ *  than it reads cannot improve the vector and may cost a runtime error. */
+const MAX_EMBED_CHARS = 4000;
+
 export async function embedText(text: string): Promise<number[] | null> {
   try {
     // deno-lint-ignore no-explicit-any
     const SupabaseAI = (globalThis as any).Supabase?.ai;
     if (!SupabaseAI) return null;
     const session = new SupabaseAI.Session('gte-small');
-    const out = await session.run(text, { mean_pool: true, normalize: true });
+    const out = await session.run(String(text ?? '').slice(0, MAX_EMBED_CHARS), { mean_pool: true, normalize: true });
     const vec = Array.from(out as Iterable<number>);
     return vec.length === 384 ? vec : null;
   } catch (e) {
