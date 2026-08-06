@@ -40702,6 +40702,7 @@ REVOKE ALL ON ROUTINE check_idle_in_transaction_internal() FROM PUBLIC, anon, au
 REVOKE ALL ON ROUTINE check_ip_against_tenant_allowlist(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE check_staleness(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE check_tenant_ai_budget(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE check_workforce_circuit_breaker() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE check_workforce_heartbeat(integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE chunk_doc_text_internal(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE chunk_knowledge_doc_internal(uuid) FROM PUBLIC, anon, authenticated;
@@ -40860,6 +40861,8 @@ REVOKE ALL ON ROUTINE resolve_action_definition_for_category(uuid,text) FROM PUB
 REVOKE ALL ON ROUTINE resolve_case_await(uuid,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_category_access(uuid,text,uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_cleared_ops_alerts(jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE resolve_de_autonomy_chain(uuid,text[],uuid,text,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE resolve_de_autonomy(uuid,text,uuid,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_experience(uuid,text,uuid,text,text,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_invoice_writeback(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_llm_key(uuid,text) FROM PUBLIC, anon, authenticated;
@@ -40886,6 +40889,7 @@ REVOKE ALL ON ROUTINE scim_user_resource_json(uuid) FROM PUBLIC, anon, authentic
 REVOKE ALL ON ROUTINE scim_user_upsert(text,uuid,text,text,text,text,boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE scim_users_list(text,text,text,integer,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE score_frustration_internal(uuid,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE seed_approval_baseline(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE seed_default_grants(text,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE set_connector_secret_sysadmin(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE set_conversation_fact(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
@@ -40916,6 +40920,7 @@ REVOKE ALL ON ROUTINE verify_de_system(uuid,text,text,jsonb,uuid) FROM PUBLIC, a
 REVOKE ALL ON ROUTINE verify_tenant_api_key(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE wake_due_objectives(integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE work_de_development_program_internal() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE workforce_autonomy_paused(uuid) FROM PUBLIC, anon, authenticated;
 
 REVOKE ALL ON TABLE public.agentic_step_messages FROM anon;
 REVOKE ALL ON TABLE public.agentic_step_policies FROM anon;
