@@ -7,8 +7,8 @@
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
 -- Contents: 9 extensions · 0 enums · 284 tables ·
--- 1329 constraints · 393 indexes · 740 functions ·
--- 277 triggers · 375 policies · explicit REVOKEs for the closed perimeter.
+-- 1319 constraints · 393 indexes · 765 functions ·
+-- 277 triggers · 379 policies · explicit REVOKEs for the closed perimeter.
 --
 -- WHAT THIS DOES NOT COVER, so nobody mistakes it for a full backup:
 --   · no table DATA — tenants, users, documents, conversations are all absent
@@ -389,6 +389,41 @@ begin
   );
 
   return jsonb_build_object('ok', true, 'stage', p_to_stage);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.advance_dunning_cadence()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_invoice uuid;
+  v_stage   int;
+begin
+  if new.dedupe_key is null or new.dedupe_key not like 'dunning:%' then
+    return null;
+  end if;
+  if new.decision not in ('executed_after_approval', 'auto_executed') then
+    return null;
+  end if;
+
+  v_invoice := nullif(split_part(new.dedupe_key, ':', 2), '')::uuid;
+  v_stage   := nullif(split_part(new.dedupe_key, ':', 3), '')::int;
+  if v_invoice is null or v_stage is null then return null; end if;
+
+  -- greatest(): a late-executing lower rung must never drag the ladder back
+  -- down and re-open a chase the customer has already had.
+  update renewal_invoices
+     set cadence_stage = greatest(coalesce(cadence_stage, 0), v_stage),
+         updated_at    = now()
+   where id = v_invoice;
+
+  return null;
+exception when others then
+  -- A malformed key must not be able to roll back a real execution.
+  return null;
 end;
 $function$;
 
@@ -868,7 +903,7 @@ declare v_am workforce_entity_amendments; v_cfg jsonb; begin
     -- specialist entities are digital_employees now; charter is jsonb {mission}
     update digital_employees
       set charter = jsonb_set(coalesce(charter, '{}'::jsonb), '{mission}', to_jsonb(coalesce(v_cfg->>'charter', charter->>'mission')))
-      where id = v_am.entity_id and tenant_id = v_am.tenant_id and is_specialist = true;
+      where id = v_am.entity_id and tenant_id = v_am.tenant_id;
   end if;
 
   update workforce_entity_amendments set status = 'applied' where id = p_id;
@@ -969,8 +1004,8 @@ BEGIN
     VALUES (r.tenant_id, r.invoice_id, r.de_id, r.objective_id, 'next_step_set',
             'Next step: ' || (r.composed->>'next_step'), r.composed) RETURNING id INTO v_act;
   ELSIF r.op = 'update_status' THEN
-    SELECT status INTO v_before FROM invoices WHERE id = r.invoice_id AND tenant_id = r.tenant_id;
-    UPDATE invoices SET status = r.composed->>'to_status' WHERE id = r.invoice_id AND tenant_id = r.tenant_id;
+    SELECT status INTO v_before FROM renewal_invoices WHERE id = r.invoice_id AND tenant_id = r.tenant_id;
+    UPDATE renewal_invoices SET status = r.composed->>'to_status', updated_at = now() WHERE id = r.invoice_id AND tenant_id = r.tenant_id;
     INSERT INTO invoice_activities (tenant_id, invoice_id, de_id, objective_id, kind, summary, detail)
     VALUES (r.tenant_id, r.invoice_id, r.de_id, r.objective_id, 'status_changed',
             'Status ' || coalesce(v_before,'?') || ' → ' || (r.composed->>'to_status'),
@@ -1771,6 +1806,50 @@ BEGIN
   RETURN NEW;
 END$function$;
 
+CREATE OR REPLACE FUNCTION public.assert_org_unit_same_tenant()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_unit_tenant uuid;
+begin
+  if new.org_unit_id is null then
+    return new;
+  end if;
+
+  select u.tenant_id into v_unit_tenant from org_units u where u.id = new.org_unit_id;
+  if v_unit_tenant is null then
+    raise exception 'org unit % does not exist', new.org_unit_id;
+  end if;
+
+  if v_unit_tenant is distinct from new.tenant_id then
+    raise exception
+      'cross-tenant placement refused: % belongs to workspace %, but org unit % belongs to workspace %',
+      tg_table_name, new.tenant_id, new.org_unit_id, v_unit_tenant
+      using errcode = 'raise_exception';
+  end if;
+
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.assert_own_tenant(p_tenant_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_mine uuid := auth_tenant_id();
+begin
+  if v_mine is not null and p_tenant_id is distinct from v_mine then
+    raise exception 'that workspace is not yours';
+  end if;
+  return p_tenant_id;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.assess_de_skills_internal(p_tenant_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2027,6 +2106,141 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.assign_human_task(p_task_id uuid, p_force boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_task      human_tasks%rowtype;
+  v_rule      work_assignment_rules%rowtype;
+  v_unit      org_units%rowtype;
+  v_pool      org_units%rowtype;   -- the unit the rotation actually draws from
+  v_cands     uuid[];
+  v_pick      uuid;
+  v_cursor    integer;
+  v_scope     text;
+  v_up_id     uuid;
+begin
+  select * into v_task from human_tasks where id = p_task_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'task_not_found');
+  end if;
+  if auth_tenant_id() is not null and v_task.tenant_id <> auth_tenant_id() then
+    raise exception 'that task is not in this workspace';
+  end if;
+  if v_task.assigned_user_id is not null and not p_force then
+    return jsonb_build_object('ok', true, 'reason', 'already_assigned',
+                              'user_id', v_task.assigned_user_id);
+  end if;
+
+  select * into v_rule
+  from work_assignment_rules r
+  where r.tenant_id = v_task.tenant_id
+    and r.is_active
+    and (r.match_type          is null or r.match_type          = v_task.type)
+    and (r.match_source        is null or r.match_source        = v_task.source)
+    and (r.match_related_table is null or r.match_related_table = v_task.related_table)
+    and (r.match_de_id         is null or r.match_de_id         = v_task.de_id)
+  order by
+    ( (r.match_type is not null)::int + (r.match_source is not null)::int
+    + (r.match_related_table is not null)::int + (r.match_de_id is not null)::int ) desc,
+    r.priority asc, r.created_at asc
+  limit 1;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'no_matching_rule');
+  end if;
+
+  select * into v_unit from org_units where id = v_rule.target_unit_id and is_active;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'target_unit_inactive', 'rule', v_rule.name);
+  end if;
+  v_pool := v_unit;
+
+  -- 1. The unit's own people.
+  select array_agg(m.user_id order by m.user_id) into v_cands
+  from org_unit_members m
+  where m.org_unit_id = v_unit.id and m.is_active
+    and (v_rule.strategy = 'round_robin' or m.role_in_unit = 'lead');
+  v_scope := 'unit';
+
+  -- 2. Asked for a lead, found none — take anyone in the unit.
+  if v_cands is null and v_rule.strategy = 'lead_then_round_robin' then
+    select array_agg(m.user_id order by m.user_id) into v_cands
+    from org_unit_members m where m.org_unit_id = v_unit.id and m.is_active;
+    v_scope := 'unit_any';
+  end if;
+
+  -- 3. Nobody at this level — look at the teams beneath it.
+  if v_cands is null then
+    with recursive sub as (
+      select id from org_units where id = v_unit.id
+      union all
+      select u.id from org_units u join sub s on u.parent_id = s.id where u.is_active
+    )
+    select array_agg(distinct m.user_id order by m.user_id) into v_cands
+    from org_unit_members m
+    where m.org_unit_id in (select id from sub) and m.is_active;
+    v_scope := 'descendants';
+  end if;
+
+  -- 4. Still nobody — walk UP to the NEAREST staffed ancestor. Nearest, not
+  --    "anyone above", so a team's work escalates to its own department before
+  --    it reaches head office.
+  if v_cands is null then
+    with recursive up as (
+      select id, parent_id, 0 as lvl from org_units where id = v_unit.id
+      union all
+      select u.id, u.parent_id, up.lvl + 1 from org_units u join up on u.id = up.parent_id
+      where u.is_active
+    )
+    select up.id into v_up_id
+    from up
+    where up.lvl > 0
+      and exists (select 1 from org_unit_members m where m.org_unit_id = up.id and m.is_active)
+    order by up.lvl asc
+    limit 1;
+
+    if v_up_id is not null then
+      select * into v_pool from org_units where id = v_up_id;
+      select array_agg(m.user_id order by m.user_id) into v_cands
+      from org_unit_members m where m.org_unit_id = v_up_id and m.is_active;
+      v_scope := 'ancestor';
+    end if;
+  end if;
+
+  if v_cands is null or array_length(v_cands, 1) = 0 then
+    return jsonb_build_object('ok', false, 'reason', 'unit_has_no_members',
+                              'rule', v_rule.name, 'unit', v_unit.name);
+  end if;
+
+  update org_units set rr_cursor = rr_cursor + 1
+   where id = v_pool.id
+  returning rr_cursor into v_cursor;
+
+  v_pick := v_cands[ (v_cursor % array_length(v_cands, 1)) + 1 ];
+
+  update human_tasks
+     set assigned_user_id = v_pick,
+         assigned_role    = v_unit.name,
+         assigned_at      = now(),
+         assigned_via     = jsonb_build_object(
+           'rule_id',   v_rule.id,      'rule',      v_rule.name,
+           'unit_id',   v_unit.id,      'unit',      v_unit.name,
+           'unit_kind', v_unit.kind,    'strategy',  v_rule.strategy,
+           'scope',     v_scope,        'pool_unit', v_pool.name,
+           'pool_size', array_length(v_cands, 1)
+         )
+   where id = p_task_id;
+
+  return jsonb_build_object('ok', true, 'user_id', v_pick, 'unit', v_unit.name,
+                            'scope', v_scope, 'rule', v_rule.name,
+                            'pool_size', array_length(v_cands, 1));
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.assign_training_for_de(p_de_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
@@ -2185,14 +2399,14 @@ begin
   --     is supposed to get. Same thresholds audit_tenant_provisioning uses.
   select 'baseline_incomplete'::text, t.name::text,
          format('employees=%s playbooks=%s guardrails=%s onboarding_versions=%s',
-           (select count(*) from digital_employees d where d.tenant_id=t.id and d.lifecycle_status<>'retired' and not d.is_specialist),
+           (select count(*) from digital_employees d where d.tenant_id=t.id and d.lifecycle_status<>'retired'),
            (select count(*) from playbook_definitions p where p.tenant_id=t.id),
            (select count(*) from guardrail_rules g where g.tenant_id=t.id and g.active),
            (select count(*) from onboarding_template_versions v where v.tenant_id=t.id))::text
     from tenants t
    where t.id <> 'a0000000-0000-0000-0000-000000000001'
      and t.name not like '[TEST DEBRIS%'
-     and (  (select count(*) from digital_employees d where d.tenant_id=t.id and d.lifecycle_status<>'retired' and not d.is_specialist) < 2
+     and (  (select count(*) from digital_employees d where d.tenant_id=t.id and d.lifecycle_status<>'retired') < 2
          or (select count(*) from playbook_definitions p where p.tenant_id=t.id) < 2
          or (select count(*) from guardrail_rules g where g.tenant_id=t.id and g.active) < 7
          or (select count(*) from onboarding_template_versions v where v.tenant_id=t.id) < 1)
@@ -2238,15 +2452,15 @@ begin
   if not resolve_platform_capability(auth.uid(), 'tenants.manage') then raise exception 'only a platform team member with tenant management access may audit tenant provisioning'; end if;
   return query
   select t.id, t.name, t.status,
-    (select count(*) from digital_employees d where d.tenant_id = t.id and d.lifecycle_status <> 'retired' and not d.is_specialist),
+    (select count(*) from digital_employees d where d.tenant_id = t.id and d.lifecycle_status <> 'retired'),
     (select count(*) from playbook_definitions p where p.tenant_id = t.id),
     (select count(*) from guardrail_rules g where g.tenant_id = t.id and g.active),
     (select count(*) from onboarding_template_versions v where v.tenant_id = t.id),
-    (select count(*) from digital_employees d where d.tenant_id = t.id and d.is_specialist = true and d.status = 'active'),
+    0,
     (select count(*) from trust_policies tp where tp.tenant_id = t.id),
     (select count(*) from de_autonomy da where da.tenant_id = t.id),
     (select count(*) from connectors c where c.tenant_id = t.id),
-    (select count(*) from digital_employees d where d.tenant_id = t.id and d.lifecycle_status <> 'retired' and not d.is_specialist) >= 2
+    (select count(*) from digital_employees d where d.tenant_id = t.id and d.lifecycle_status <> 'retired') >= 2
       and (select count(*) from playbook_definitions p where p.tenant_id = t.id) >= 2
       and (select count(*) from guardrail_rules g where g.tenant_id = t.id and g.active) >= 7
       and (select count(*) from onboarding_template_versions v where v.tenant_id = t.id) >= 1
@@ -2708,6 +2922,38 @@ AS $function$
        WHERE a.de_id = p_de_id
          AND a.user_id = auth.uid()
          AND a.tenant_id = public.auth_tenant_id()
+    )
+    -- mig 591 + 592: …or that work in a unit you belong to.
+    --
+    -- The seed set (mig 592): a DEPARTMENT or TEAM you are in, or a
+    -- LOCATION/BRANCH you LEAD. Being based at a site is not supervising it —
+    -- everybody is "at" the head office, and 588 placed them all there.
+    -- Without this distinction, root membership meant the whole workforce.
+    --
+    -- DOWNWARD ONLY from that seed. A department reaches its teams; a team
+    -- never reaches back up to the department's other teams.
+    OR EXISTS (
+      WITH RECURSIVE mine AS (
+        SELECT m.org_unit_id AS id
+          FROM public.org_unit_members m
+          JOIN public.org_units su ON su.id = m.org_unit_id
+         WHERE m.user_id = auth.uid()
+           AND m.is_active
+           AND m.tenant_id = public.auth_tenant_id()
+           AND su.is_active
+           AND (su.kind IN ('department', 'team') OR m.role_in_unit = 'lead')
+        UNION
+        SELECT u.id
+          FROM public.org_units u
+          JOIN mine ON u.parent_id = mine.id
+         WHERE u.is_active
+      )
+      SELECT 1
+        FROM public.digital_employees de
+       WHERE de.id = p_de_id
+         AND de.tenant_id = public.auth_tenant_id()
+         AND de.org_unit_id IS NOT NULL
+         AND de.org_unit_id IN (SELECT id FROM mine)
     );
 $function$;
 
@@ -2874,34 +3120,6 @@ AS $function$
   order by e.created_at desc
   limit 1;
 $function$;
-
-CREATE OR REPLACE FUNCTION public.check_approval_sod(p_tenant_id uuid, p_scope text, p_preparer_user uuid, p_approver_user uuid, p_amount_cents bigint DEFAULT NULL::bigint, p_prior_approver uuid DEFAULT NULL::uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE p sod_policies;
-BEGIN
-  SELECT * INTO p FROM sod_policies WHERE tenant_id = p_tenant_id AND scope = p_scope AND active;
-  IF p.id IS NULL THEN
-    RETURN jsonb_build_object('ok', true, 'reason', 'no SoD policy configured for this scope');
-  END IF;
-  -- 1) Preparer ≠ approver.
-  IF p.require_distinct_approver
-     AND p_preparer_user IS NOT NULL AND p_approver_user IS NOT NULL
-     AND p_preparer_user = p_approver_user THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'The approver cannot be the person who prepared this — separation of duties.');
-  END IF;
-  -- 2) Dual control above the threshold — needs a second, DIFFERENT approver.
-  IF p.dual_approval_over_cents IS NOT NULL AND coalesce(p_amount_cents, 0) > p.dual_approval_over_cents THEN
-    IF p_prior_approver IS NULL OR p_prior_approver = p_approver_user THEN
-      RETURN jsonb_build_object('ok', false, 'reason',
-        format('This is over $%s — it requires a second, different approver (dual control).', round(p.dual_approval_over_cents / 100.0)));
-    END IF;
-  END IF;
-  RETURN jsonb_build_object('ok', true, 'reason', 'separation of duties satisfied');
-END; $function$;
 
 CREATE OR REPLACE FUNCTION public.check_de_budget(p_de_id uuid)
  RETURNS jsonb
@@ -3386,6 +3604,98 @@ begin
   end if;
 
   return jsonb_build_object('allowed', v_allowed, 'used', v_used, 'budget', v_budget);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.check_workforce_circuit_breaker()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  r          record;
+  v_since    timestamptz;
+  v_perf     int; v_considered int; v_blocked int; v_incidents int;
+  v_inc_pct  numeric; v_blk_pct numeric;
+  v_why      text;
+  v_tripped  int := 0;
+  v_checked  int := 0;
+begin
+  for r in
+    -- ⚠ TENANTS FIRST, posture second. 624 had this the other way round and so
+    -- guarded only workspaces that already had a row — which was none of them.
+    select
+      t.id                                        as tenant_id,
+      coalesce(p.breaker_enabled, true)           as breaker_enabled,
+      coalesce(p.autonomy_paused, false)          as autonomy_paused,
+      coalesce(p.breaker_window_hours, 24)        as breaker_window_hours,
+      coalesce(p.breaker_min_actions, 10)         as breaker_min_actions,
+      coalesce(p.breaker_incident_pct, 20)        as breaker_incident_pct,
+      coalesce(p.breaker_block_pct, 30)           as breaker_block_pct
+    from tenants t
+    left join workforce_trust_posture p on p.tenant_id = t.id
+    where tenant_is_operational(t.id)
+      and coalesce(p.breaker_enabled, true)      -- a workspace may opt OUT
+      and not coalesce(p.autonomy_paused, false) -- already stopped; nothing to trip
+  loop
+    v_checked := v_checked + 1;
+    v_since := now() - make_interval(hours => r.breaker_window_hours);
+
+    select
+      count(*) filter (where decision in ('auto_executed','executed_after_approval')),
+      count(*) filter (where decision in ('auto_executed','executed_after_approval',
+                                          'human_gated_destructive','human_gated_trust','guardrail_blocked')),
+      count(*) filter (where decision = 'guardrail_blocked')
+    into v_perf, v_considered, v_blocked
+    from action_executions
+    where tenant_id = r.tenant_id and created_at >= v_since;
+
+    select count(*) into v_incidents
+    from de_incidents where tenant_id = r.tenant_id and occurred_at >= v_since;
+
+    v_why := null;
+
+    if v_perf >= r.breaker_min_actions then
+      v_inc_pct := round((v_incidents::numeric / v_perf) * 100, 1);
+      if v_inc_pct >= r.breaker_incident_pct then
+        v_why := format('%s incidents against %s actions in %sh (%s%% — limit %s%%)',
+                        v_incidents, v_perf, r.breaker_window_hours, v_inc_pct, r.breaker_incident_pct);
+      end if;
+    end if;
+
+    if v_why is null and v_considered >= r.breaker_min_actions then
+      v_blk_pct := round((v_blocked::numeric / v_considered) * 100, 1);
+      if v_blk_pct >= r.breaker_block_pct then
+        v_why := format('%s guardrail blocks against %s decisions in %sh (%s%% — limit %s%%)',
+                        v_blocked, v_considered, r.breaker_window_hours, v_blk_pct, r.breaker_block_pct);
+      end if;
+    end if;
+
+    if v_why is not null then
+      -- The row is created HERE if it did not exist — the trip is what makes a
+      -- workspace's posture explicit, not a prerequisite for being guarded.
+      insert into workforce_trust_posture (tenant_id, autonomy_paused, paused_at,
+                                           paused_reason, breaker_tripped_at, breaker_tripped_why)
+      values (r.tenant_id, true, now(), 'Stopped automatically: ' || v_why, now(), v_why)
+      on conflict (tenant_id) do update set
+        autonomy_paused = true, paused_at = now(), paused_by = null,
+        paused_reason = 'Stopped automatically: ' || v_why,
+        breaker_tripped_at = now(), breaker_tripped_why = v_why, updated_at = now();
+
+      perform raise_ops_alert(r.tenant_id, 'workforce_autonomy_breaker',
+        'Workforce autonomy stopped automatically', v_why);
+
+      perform append_audit_event(r.tenant_id, 'Circuit breaker', 'system',
+        format('Workforce autonomy STOPPED automatically — %s', v_why),
+        'config_change',
+        jsonb_build_object('kind', 'workforce_autonomy_breaker', 'why', v_why));
+
+      v_tripped := v_tripped + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object('checked', v_checked, 'tripped', v_tripped);
 end;
 $function$;
 
@@ -5736,67 +6046,6 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.de_grant_specialist_consult()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare
-  v_spec_id uuid;
-  v_n int := 0;
-begin
-  -- Dormancy guard (fix-pass 2026-07-28): no new grants in suspended tenants.
-  -- Plain table read — no auth predicate, identical under user JWT /
-  -- service-role / direct-DB+pg_cron. 'trial' counts as working (see header).
-  if not exists (
-    select 1 from tenants t
-    where t.id = new.tenant_id and t.status in ('active', 'trial')) then
-    return new;
-  end if;
-
-  -- Newest ACTIVE wins (fix-pass 2026-07-28): one deterministic pick shared
-  -- with the specialist-consult key lookups and the 475_ installer check —
-  -- retired/disabled rows are terminal history, and if two actives ever
-  -- coexist the latest install is "the" specialist everywhere.
-  select s.id into v_spec_id
-  from digital_employees s
-  where s.tenant_id = new.tenant_id
-    and s.is_specialist = true
-    and s.specialist_key = 'technical'
-    and s.status = 'active'
-  order by s.created_at desc
-  limit 1;
-
-  if v_spec_id is null or v_spec_id = new.id then
-    return new;
-  end if;
-
-  insert into de_consultation_grants
-    (tenant_id, requester_de_id, target_de_id, category, active, created_by)
-  values
-    (new.tenant_id, new.id, v_spec_id, 'other', true, null)
-  on conflict (tenant_id, requester_de_id, target_de_id, category) do nothing;
-  get diagnostics v_n = row_count;
-
-  if v_n > 0 then
-    perform append_audit_event_internal(
-      new.tenant_id, 'DreamTeam', 'system',
-      format('Consultation access granted — %s may now consult the Technical Specialist (standard at hire, docs/31 decision 2).',
-             coalesce(nullif(new.persona_name, ''), new.name)),
-      'access_control',
-      jsonb_build_object(
-        'kind', 'de_consultation_grant_auto',
-        'requester_de_id', new.id, 'target_de_id', v_spec_id,
-        'category', 'other', 'via', lower(tg_op)));
-  end if;
-
-  return new;
-exception when others then
-  raise warning 'de_grant_specialist_consult skipped for DE %: %', new.id, sqlerrm;
-  return new;
-end $function$;
-
 CREATE OR REPLACE FUNCTION public.de_improvements_entity_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -6094,51 +6343,6 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.de_specialist_grant_workforce()
- RETURNS trigger
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare
-  v_n int := 0;
-begin
-  -- Dormancy guard (fix-pass 2026-07-28): no new grants in suspended tenants.
-  -- Plain table read — no auth predicate, identical in all three contexts.
-  if not exists (
-    select 1 from tenants t
-    where t.id = new.tenant_id and t.status in ('active', 'trial')) then
-    return new;
-  end if;
-
-  insert into de_consultation_grants
-    (tenant_id, requester_de_id, target_de_id, category, active, created_by)
-  select new.tenant_id, d.id, new.id, 'other', true, null
-  from digital_employees d
-  where d.tenant_id = new.tenant_id
-    and d.is_specialist is not true
-    and d.status = 'active'
-    and d.id <> new.id
-  on conflict (tenant_id, requester_de_id, target_de_id, category) do nothing;
-  get diagnostics v_n = row_count;
-
-  if v_n > 0 then
-    perform append_audit_event_internal(
-      new.tenant_id, 'DreamTeam', 'system',
-      format('Technical Specialist activated — consultation access granted to %s active digital employee(s) (docs/31 decision 2).', v_n),
-      'access_control',
-      jsonb_build_object(
-        'kind', 'de_consultation_grant_specialist_activated',
-        'target_de_id', new.id, 'grants_created', v_n,
-        'category', 'other', 'via', lower(tg_op)));
-  end if;
-
-  return new;
-exception when others then
-  raise warning 'de_specialist_grant_workforce skipped for specialist %: %', new.id, sqlerrm;
-  return new;
-end $function$;
-
 CREATE OR REPLACE FUNCTION public.de_stall_sweep_internal(p_stall_hours integer DEFAULT 24, p_wake_budget integer DEFAULT 12)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -6234,6 +6438,20 @@ begin
 
   return jsonb_build_object('ok', true, 'waited_too_long', v_waited, 'wake_spin', v_spin);
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.de_status_allowed(p_lifecycle text, p_status text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select case
+    when p_lifecycle in ('designed','configured','trained','tested','certified')
+      then p_status in ('idle','disabled')
+    when p_lifecycle in ('paused','retired','archived')
+      then p_status = 'disabled'
+    else true
+  end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.de_trust_surface_candidates(p_tenant_id uuid, p_de_id uuid)
@@ -6382,6 +6600,15 @@ declare
   v_spent     bigint;
 begin
   -- 0) DESTRUCTIVE ALWAYS GATES.
+  -- ⚠ THE STOP BUTTON, CHECKED BEFORE ANYTHING ELSE (mig 623). A pause has
+  -- to stop everything, including what would otherwise have been allowed, so
+  -- it sits above the destructive floor rather than beside the trust dial.
+  if public.workforce_autonomy_paused(p_tenant_id) then
+    return jsonb_build_object('decision', 'human_gated_paused',
+      'guardrail_rule_id', null, 'guardrail_rule', null, 'trust_level', null,
+      'reasoning', format('Autonomy is stopped for this whole workspace, so "%s" goes to a person. Nothing runs on its own until someone restarts the workforce.', p_action_label));
+  end if;
+
   if coalesce(p_destructive, true) then
     return jsonb_build_object('decision', 'human_gated_destructive',
       'guardrail_rule_id', null, 'guardrail_rule', null, 'trust_level', null,
@@ -6480,8 +6707,11 @@ begin
   select * into v_autonomy from resolve_de_autonomy_chain(
     p_tenant_id,
     array[
-      nullif(p_action_type, ''),
+      -- ⚠ SPECIFIC FIRST (mig 618). Reversed, the generic key matched
+      -- whenever any row existed and 'action:<category>' was never reached,
+      -- which is why a per-category rule had never once been consulted.
       case when nullif(p_category, '') is not null then 'action:' || p_category end,
+      nullif(p_action_type, ''),
       'action_execute'
     ],
     p_de_id, p_category);
@@ -6960,6 +7190,24 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.delete_account_contact(p_contact_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_tenant uuid := auth_tenant_id(); v_n int;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']) then
+    raise exception 'not_allowed';
+  end if;
+  delete from customer_account_contacts where id = p_contact_id and tenant_id = v_tenant;
+  get diagnostics v_n = row_count;
+  return jsonb_build_object('ok', v_n > 0);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.delete_custom_metric(p_metric_id uuid)
  RETURNS TABLE(success boolean, message text)
  LANGUAGE plpgsql
@@ -7273,6 +7521,40 @@ begin
     jsonb_build_object('kind', 'feature_de_deprovisioned', 'feature_key', p_feature_key, 'de_id', v_de_id)
   );
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.derive_de_autonomy_dials(p_de_id uuid)
+ RETURNS TABLE(action_type text, source_category text, label text, description text, configured boolean, enabled boolean, max_amount_cents bigint, min_confidence integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with de as (
+    select d.id, d.tenant_id from digital_employees d
+    where d.id = p_de_id and d.tenant_id = auth_tenant_id()
+  ),
+  cats as (
+    select distinct g.resource_category as cat
+    from data_access_grants g join de on g.subject_id = de.id
+    where g.subject_kind = 'de' and g.resource_category is not null
+  )
+  select
+    ('action:' || c.cat)::text                         as action_type,
+    c.cat::text                                        as source_category,
+    (coalesce(sc.label, c.cat) || ' actions')::text    as label,
+    sc.description                                     as description,
+    (a.id is not null)                                 as configured,
+    coalesce(a.enabled, false)                         as enabled,
+    a.max_amount_cents,
+    a.min_confidence
+  from cats c
+  cross join de
+  left join system_categories sc on sc.key = c.cat
+  left join de_autonomy a
+    on a.tenant_id = de.tenant_id and a.de_id = de.id
+   and a.action_type = 'action:' || c.cat
+   and a.playbook_id is null
+  order by coalesce(sc.label, c.cat);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.detach_compliance_pack(p_tenant_id uuid, p_pack_key text)
@@ -8176,6 +8458,121 @@ BEGIN
   , timeout_milliseconds := 60000) INTO v_req_id;
   RETURN 'online-eval dispatched, req ' || v_req_id;
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dunning_action_for(p_tenant_id uuid, p_action_key text, p_execution_key text)
+ RETURNS uuid
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select ad.id
+  from action_definitions ad
+  where ad.action_key = p_action_key
+    and ad.status = 'active'
+    and (ad.tenant_id = p_tenant_id or ad.tenant_id is null)
+    -- An empty `execution` means nothing happens when a human approves it.
+    and coalesce(ad.execution->>'execution_key', '') = coalesce(p_execution_key, '')
+    and coalesce(p_execution_key, '') <> ''
+  order by (ad.tenant_id is not null) desc, ad.created_at asc
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dunning_de_for(p_tenant_id uuid)
+ RETURNS uuid
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select de.id
+  from digital_employees de
+  where de.tenant_id = p_tenant_id
+    and de.status = 'active'
+    and (
+      coalesce(de.category, '')   ~* '(financ|billing|account|revenue)'
+      or coalesce(de.department,'') ~* '(financ|billing|account|revenue)'
+      or de.name                  ~* '(financ|billing|account|receivab|collection)'
+    )
+  -- Deterministic: the same employee every day, so the audit trail reads as
+  -- one desk doing the work rather than a rota nobody chose.
+  order by
+    (de.name ~* 'financ') desc,
+    (de.name ~* '(account|receivab)') desc,
+    de.created_at asc
+  limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dunning_email(p_stage integer, p_customer text, p_invoice_ref text, p_days_overdue integer, p_outstanding_cents bigint, p_currency text, p_due_date date, p_from_org text)
+ RETURNS jsonb
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  select case coalesce(p_stage, 1)
+    when 1 then jsonb_build_object(
+      'subject', format('Invoice %s — payment reminder', p_invoice_ref),
+      'body', format(E'Dear %s,\n\nThis is a reminder that invoice %s for %s was due on %s and is showing as unpaid on our records.\n\nIf payment is already on its way, please ignore this message. If not, we would be grateful if you could let us know when we can expect it — or tell us if something about the invoice needs resolving.\n\nThank you,\n%s',
+        p_customer, p_invoice_ref, money_text(p_outstanding_cents, p_currency),
+        to_char(p_due_date, 'FMDD FMMonth YYYY'), p_from_org))
+    when 2 then jsonb_build_object(
+      'subject', format('Invoice %s — now %s days overdue', p_invoice_ref, p_days_overdue),
+      'body', format(E'Dear %s,\n\nWe are following up on invoice %s, which was due on %s and is now %s days past due. %s remains outstanding.\n\nCould you confirm the date on which payment will be made? If there is a problem with the invoice, please tell us so that we can put it right.\n\nThank you,\n%s',
+        p_customer, p_invoice_ref, to_char(p_due_date, 'FMDD FMMonth YYYY'), p_days_overdue,
+        money_text(p_outstanding_cents, p_currency), p_from_org))
+    when 3 then jsonb_build_object(
+      'subject', format('Final notice — invoice %s', p_invoice_ref),
+      'body', format(E'Dear %s,\n\nInvoice %s was due on %s and is now %s days past due. %s remains outstanding, and our earlier reminders have not been answered.\n\nPlease arrange payment within 7 days of this message. If payment is not received we will place the account on hold while the matter is resolved.\n\nIf you believe this notice is in error, please contact us straight away and we will look into it.\n\nRegards,\n%s',
+        p_customer, p_invoice_ref, to_char(p_due_date, 'FMDD FMMonth YYYY'), p_days_overdue,
+        money_text(p_outstanding_cents, p_currency), p_from_org))
+    -- Stage 4 is a credit-hold recommendation put to a human. There is no
+    -- customer-facing message for it, and returning null here is what makes
+    -- accidentally emailing it impossible rather than merely unlikely.
+    else null
+  end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dunning_execution_key(p_provider text, p_action_key text, p_has_recipient boolean)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  select case
+    -- Chosen by RUNG, not by whether an address happens to exist. The
+    -- credit-hold rung's own tone says "Do not contact the customer", and that
+    -- must not become negotiable the day a contact_email turns up.
+    when p_action_key = 'flag_for_collections' then p_provider || '_invoice_comment'
+    when p_provider = 'erpnext' and coalesce(p_has_recipient, false) then 'erpnext_send_invoice_email'
+    when p_provider = 'erpnext' then 'erpnext_invoice_comment'
+    -- Stripe, Xero and QuickBooks already email on their reminder endpoint.
+    when p_action_key = 'send_payment_reminder' then p_provider || '_send_invoice_reminder'
+    -- Anything else has no executor for this provider. Returning null makes
+    -- the sweep report `no_executor` rather than raise an approval nothing can
+    -- carry out.
+    else null
+  end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.dunning_note_text(p_stage integer, p_customer text, p_invoice_ref text, p_days_overdue integer, p_outstanding_cents bigint, p_currency text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+  select case coalesce(p_stage, 1)
+    when 1 then format(
+      'Payment reminder — invoice %s for %s is %s day(s) past due, with %s still outstanding. Likely an oversight. Ask when payment can be expected and whether anything is blocking it. No consequences to be mentioned at this stage.',
+      p_invoice_ref, p_customer, p_days_overdue, money_text(p_outstanding_cents, p_currency))
+    when 2 then format(
+      'Second approach — invoice %s for %s is now %s day(s) past due, with %s still outstanding. Restate the amount and the age, ask for a specific payment date, and copy the account owner. Warm but direct.',
+      p_invoice_ref, p_customer, p_days_overdue, money_text(p_outstanding_cents, p_currency))
+    when 3 then format(
+      'FINAL NOTICE — invoice %s for %s is %s day(s) past due, with %s still outstanding. State the amount, the age, what happens next and by when. No threats and no apology; this is the last message before commercial consequences.',
+      p_invoice_ref, p_customer, p_days_overdue, money_text(p_outstanding_cents, p_currency))
+    else format(
+      'CREDIT HOLD RECOMMENDED — do not contact the customer. %s has %s outstanding on invoice %s, %s day(s) past due, and earlier approaches have not produced payment. Putting the recommendation to a human with the full history.',
+      p_customer, money_text(p_outstanding_cents, p_currency), p_invoice_ref, p_days_overdue)
+  end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.dunning_position(p_tenant_id uuid)
@@ -9262,35 +9659,6 @@ BEGIN
   RETURN NEW;
 END $function$;
 
-CREATE OR REPLACE FUNCTION public.generate_embed_token(p_tenant_id uuid, p_de_id uuid, p_expires_in_hours integer DEFAULT 24)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_token TEXT;
-  v_token_hash TEXT;
-  v_expires_at TIMESTAMP;
-BEGIN
-  PERFORM public._assert_caller_tenant(p_tenant_id);
-  IF auth.uid() IS NOT NULL
-     AND NOT public.auth_has_tenant_role(array['tenant_owner','tenant_admin']) THEN
-    RAISE EXCEPTION 'admin_role_required';
-  END IF;
-  PERFORM 1 FROM digital_employees WHERE id = p_de_id AND tenant_id = p_tenant_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'de_not_in_tenant'; END IF;
-
-  v_token := encode(gen_random_bytes(32), 'hex');
-  v_token_hash := encode(digest(v_token, 'sha256'), 'hex');
-  v_expires_at := now() + make_interval(hours => LEAST(GREATEST(p_expires_in_hours, 1), 24 * 90));
-
-  INSERT INTO embed_tokens (tenant_id, de_id, token_hash, expires_at)
-  VALUES (p_tenant_id, p_de_id, v_token_hash, v_expires_at);
-
-  RETURN json_build_object('token', v_token, 'expires_at', v_expires_at::text);
-END$function$;
-
 CREATE OR REPLACE FUNCTION public.get_agentic_run_messages(p_run_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -9344,6 +9712,10 @@ begin
       where status = 'active'
         and provider <> 'internal'
         and category = v_conn.category
+        -- Matching on category ALONE offered an ERPNext-connected employee
+        -- the Stripe/QuickBooks/Xero tools in the same category. Those could
+        -- only ever fail: there is no such connector to run them against.
+        and (provider is null or provider = v_conn.provider or provider = 'template')
         and (scope = 'platform' or (scope = 'tenant' and tenant_id = p_tenant_id))
     loop
       select resolve_access(p_tenant_id, 'de', p_de_id, v_conn.id, 'write_back') into v_verdict;
@@ -9365,7 +9737,10 @@ begin
         end loop;
 
         -- Connector-unique + charset-safe + length-bounded (Anthropic: ^[a-zA-Z0-9_-]{1,64}$).
-        v_suffix := '__' || left(replace(v_conn.id::text, '-', ''), 6);
+        v_suffix := '__' || left(replace(v_conn.id::text, '-', ''), 6) || left(md5(v_def.id::text), 4);
+        -- Per-DEFINITION, not just per-connector. One action_key can have
+        -- several executors (ERPNext comment vs ERPNext email), and the
+        -- model rejects the ENTIRE call if any two tools share a name.
         v_name := regexp_replace(v_conn.category || '__' || v_def.action_key, '[^a-zA-Z0-9_-]', '_', 'g');
         v_name := left(v_name, 64 - length(v_suffix)) || v_suffix;
 
@@ -9377,6 +9752,11 @@ begin
             'type', 'object', 'properties', v_properties, 'required', v_required
           ),
           'connector_id', v_conn.id,
+          -- The EXACT definition this tool stands for. The name above already
+          -- encodes it (mig 605 suffixes with md5(v_def.id)), but the caller was
+          -- left to re-derive the action from (connector, action_key) — which is
+          -- ambiguous whenever one key has several executors.
+          'action_definition_id', v_def.id,
           'action_key', v_def.action_key,
           'destructive', coalesce((v_def.risk->>'destructive')::boolean, true)
         ));
@@ -10867,7 +11247,7 @@ declare v_tenant uuid; v_de record; v_arch record; v_domains jsonb;
 begin
   v_tenant := public.auth_tenant_id();
   if v_tenant is null then return jsonb_build_object('ok', false, 'error', 'not_permitted'); end if;
-  select id, category, department, is_specialist, specialist_key
+  select id, category, department
     into v_de from digital_employees where id = p_de_id and tenant_id = v_tenant;
   if not found then return jsonb_build_object('ok', false, 'error', 'de_not_found'); end if;
   if not public.can_access_de(p_de_id) then
@@ -10892,7 +11272,7 @@ begin
     'ok', true,
     'department', v_de.department,
     'category', v_de.category,
-    'is_specialist', v_de.is_specialist,
+    
     'domains', v_domains,
     'archetype_key', v_arch.key,
     'archetype_name', v_arch.name,
@@ -11102,7 +11482,7 @@ begin
     case worklist_key
 
       when 'overdue_invoices' then
-        source_table := 'invoices';
+        source_table := 'renewal_invoices + invoices';
         select count(*), coalesce(jsonb_agg(x order by x->>'due_date') filter (where x is not null), '[]'::jsonb)
           into row_count, sample
           from (
@@ -11133,7 +11513,7 @@ begin
           ) s;
 
       when 'unpaid_invoices' then
-        source_table := 'invoices';
+        source_table := 'renewal_invoices + invoices';
         select count(*), coalesce(jsonb_agg(x) filter (where x is not null), '[]'::jsonb)
           into row_count, sample
           from (
@@ -11298,6 +11678,48 @@ AS $function$
         and (p.layer = 'platform' or p.tenant_id = p_tenant_id)));
 $function$;
 
+CREATE OR REPLACE FUNCTION public.get_employee_record(p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant  uuid := auth_tenant_id();
+  v_self    boolean := (p_user_id = auth.uid());
+  v_admin   boolean := auth_has_tenant_role(array['tenant_owner','tenant_admin']);
+  v_profile jsonb;
+  v_private jsonb;
+  v_comp    jsonb;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+
+  select to_jsonb(p) - 'id' into v_profile
+  from profiles p where p.user_id = p_user_id and p.tenant_id = v_tenant;
+  if v_profile is null then raise exception 'no_such_employee_in_this_workspace'; end if;
+
+  if v_self or v_admin then
+    select to_jsonb(pp) into v_private from profile_private pp
+     where pp.user_id = p_user_id and pp.tenant_id = v_tenant;
+    select coalesce(jsonb_agg(to_jsonb(c) order by c.effective_from desc), '[]'::jsonb) into v_comp
+      from profile_compensation c where c.user_id = p_user_id and c.tenant_id = v_tenant;
+  end if;
+
+  return jsonb_build_object(
+    'profile', v_profile,
+    'private', v_private,
+    'compensation', v_comp,
+    -- Say what is missing and why. A blank section that might mean "no data"
+    -- or might mean "not for you" is worse than either answer.
+    'withheld', case when v_self or v_admin then '[]'::jsonb
+                     else jsonb_build_array('private', 'compensation') end,
+    'can_edit_job', auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']),
+    'can_edit_private', (v_self or v_admin),
+    'can_edit_pay', v_admin
+  );
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.get_identity_inventory(p_tenant_id uuid)
  RETURNS TABLE(subject_kind text, subject_id uuid, subject_name text, subject_label text, subject_role text, subject_status text, connector_id uuid, connector_name text, connector_provider text, connector_category text, connector_status text, connector_last_ok_at timestamp with time zone, connector_last_error_at timestamp with time zone, connector_consecutive_failures integer, has_stored_credential boolean, permission text, permission_via text, trust_current_level integer, trust_target_level integer, autonomy_enabled boolean, possible_actions jsonb)
  LANGUAGE plpgsql
@@ -11317,9 +11739,9 @@ begin
 
   return query
   with subjects as (
-    select case when d.is_specialist then 'specialist' else 'de' end as subject_kind, d.id as subject_id, d.name as subject_name,
+    select 'de'::text as subject_kind, d.id as subject_id, d.name as subject_name,
            coalesce(d.persona_name, d.name) as subject_label,
-           case when d.is_specialist then coalesce(d.specialist_key, 'specialist') else coalesce(nullif(d.department, ''), d.category) end as subject_role,
+           coalesce(nullif(d.department, ''), d.category) as subject_role,
            d.status as subject_status
     from digital_employees d where d.tenant_id = p_tenant_id
   ),
@@ -11643,16 +12065,6 @@ AS $function$
 BEGIN
   PERFORM public._assert_caller_tenant(p_tenant_id);
   RETURN QUERY SELECT NULL::TEXT, NULL::TIMESTAMPTZ, NULL::NUMERIC, NULL::JSONB, NULL::TEXT WHERE FALSE;
-END$function$;
-
-CREATE OR REPLACE FUNCTION public.get_or_create_embed_token(p_tenant_id uuid, p_de_id uuid)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  RETURN generate_embed_token(p_tenant_id, p_de_id, 24);
 END$function$;
 
 CREATE OR REPLACE FUNCTION public.get_outcome_metering(p_tenant_id uuid, p_from timestamp with time zone DEFAULT (now() - '30 days'::interval), p_to timestamp with time zone DEFAULT now())
@@ -12510,6 +12922,130 @@ BEGIN
   RETURN v_out;
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.get_workforce_trust_metrics(p_tenant_id uuid DEFAULT NULL::uuid, p_days integer DEFAULT 30)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant uuid := coalesce(p_tenant_id, auth_tenant_id());
+  v_since  timestamptz := now() - make_interval(days => greatest(coalesce(p_days, 30), 1));
+  -- A rate on fewer events than this is noise dressed as a measurement.
+  c_min_actions   constant int := 10;
+  c_min_decisions constant int := 5;
+  v_ran        int;  v_auto     int;  v_gated   int;
+  v_blocked    int;  v_failed   int;  v_reversed int;
+  v_reversed_ever int;
+  v_decided    int;  v_unchanged int; v_edited  int;  v_rejected int;
+  v_median_s   numeric; v_snap int;
+  v_employees  int;  v_with_rule int; v_incidents int;
+  v_considered int;   -- everything the gate ruled on: performed + gated + blocked
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+
+  select
+    count(*) filter (where decision in ('auto_executed','executed_after_approval')),
+    count(*) filter (where decision = 'auto_executed'),
+    count(*) filter (where decision in ('human_gated_destructive','human_gated_trust')),
+    count(*) filter (where decision = 'guardrail_blocked'),
+    count(*) filter (where decision = 'failed'),
+    count(*) filter (where rolled_back_at is not null)
+  into v_ran, v_auto, v_gated, v_blocked, v_failed, v_reversed
+  from action_executions
+  where tenant_id = v_tenant and created_at >= v_since;
+
+  v_considered := v_ran + v_gated + v_blocked;
+
+  select count(*) into v_reversed_ever
+  from action_executions where tenant_id = v_tenant and rolled_back_at is not null;
+
+  select
+    count(*),
+    count(*) filter (where status = 'approved' and decision_edit is null),
+    count(*) filter (where status = 'approved' and decision_edit is not null),
+    count(*) filter (where status = 'rejected'),
+    percentile_cont(0.5) within group (order by extract(epoch from (decided_at - created_at))),
+    count(*) filter (where decided_at - created_at < interval '1 minute')
+  into v_decided, v_unchanged, v_edited, v_rejected, v_median_s, v_snap
+  from human_tasks
+  where tenant_id = v_tenant and status in ('approved','rejected')
+    and decided_at is not null and decided_at >= v_since;
+
+  select count(*) into v_employees
+  from digital_employees where tenant_id = v_tenant and status = 'active';
+
+  select count(distinct de_id) into v_with_rule
+  from de_autonomy where tenant_id = v_tenant and de_id is not null;
+
+  select count(*) into v_incidents
+  from de_incidents where tenant_id = v_tenant and occurred_at >= v_since;
+
+  return jsonb_build_object(
+    'window_days', greatest(coalesce(p_days, 30), 1),
+    'as_of', now(),
+
+    -- ⚠ Sample gates. The UI reads these FIRST and says "not enough yet"
+    -- rather than printing a rate built on three events.
+    'min_actions_for_a_rate', c_min_actions,
+    'min_decisions_for_a_rate', c_min_decisions,
+    -- ⚠ TWO DENOMINATORS, TWO FLAGS. Rates about how work was DECIDED divide by
+    -- everything the gate ruled on (performed + gated + blocked); rates about
+    -- what the workforce DID divide by what was actually performed. Here that
+    -- is 12 vs 4 — one flag would have told the UI the wrong story, and my own
+    -- first assertion in this migration got it wrong for exactly that reason.
+    'enough_considered', (v_considered >= c_min_actions),
+    'enough_performed', (v_ran >= c_min_actions),
+    'enough_decisions', (v_decided >= c_min_decisions),
+
+    'actions_considered', v_considered,
+    'actions_performed', v_ran,
+    'autonomy_rate', case when v_ran >= c_min_actions
+      then round((v_auto::numeric / v_ran) * 100, 1) end,
+    'actions_autonomous', v_auto,
+
+    'decisions', v_decided,
+    'decisions_unchanged', v_unchanged,
+    'decisions_edited', v_edited,
+    'decisions_rejected', v_rejected,
+    'acceptance_rate', case when v_decided >= c_min_decisions
+      then round((v_unchanged::numeric / v_decided) * 100, 1) end,
+    'edit_rate', case when v_decided >= c_min_decisions
+      then round((v_edited::numeric / v_decided) * 100, 1) end,
+    'reject_rate', case when v_decided >= c_min_decisions
+      then round((v_rejected::numeric / v_decided) * 100, 1) end,
+
+    'median_seconds_to_decide', case when v_decided > 0 then round(coalesce(v_median_s, 0)) end,
+    'decided_under_a_minute', v_snap,
+    'rubber_stamp_risk', (v_decided >= c_min_decisions and coalesce(v_median_s, 999999) < 60),
+
+    'guardrail_blocks', v_blocked,
+    'guardrail_block_rate', case when v_considered >= c_min_actions
+      then round((v_blocked::numeric / v_considered) * 100, 1) end,
+    'human_gated', v_gated,
+    'failures', v_failed,
+
+    -- Recorded, never exercised. The flag is what stops a 0% reading as proof.
+    'interventions', v_reversed,
+    'intervention_rate', case when v_ran >= c_min_actions
+      then round((v_reversed::numeric / v_ran) * 100, 1) end,
+    'intervention_ever_recorded', (v_reversed_ever > 0),
+
+    -- ⚠ COUNT, not a rate by default. Incidents are raised by conversations,
+    -- evaluations and gates as well as by actions, so dividing them by actions
+    -- performed produced 700% here. A rate only when the base is real.
+    'incidents', v_incidents,
+    'incident_rate_per_100_actions', case when v_ran >= c_min_actions
+      then round((v_incidents::numeric / v_ran) * 100, 1) end,
+
+    'employees_active', v_employees,
+    'employees_with_a_rule', v_with_rule,
+    'rule_coverage_rate', case when v_employees > 0
+      then round((v_with_rule::numeric / v_employees) * 100, 1) end
+  );
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.governance_decide_proposal(p_proposal_id uuid, p_decision text, p_applied_rule_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -12889,6 +13425,90 @@ begin
   values (v_tenant, v_de_name, 'de', 'handoff_returned',
           'A human handed the conversation back to ' || v_de_name
           || case when coalesce(btrim(p_note), '') <> '' then ' with guidance: ' || left(btrim(p_note), 200) else '' end);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.has_approval_authority(p_user_id uuid, p_tenant_id uuid, p_category text, p_amount_cents bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_declared int;
+  v_role     text;
+  v_best     record;
+begin
+  if p_user_id is null then
+    return jsonb_build_object('allowed', false, 'reason', 'not signed in');
+  end if;
+
+  -- ⚠ THE PERMISSIVE DEFAULT. A workspace that has declared no authority
+  -- behaves exactly as it did before this migration existed. Removing this is
+  -- how you freeze every queue on the platform at once.
+  select count(*) into v_declared
+    from approval_authority where tenant_id = p_tenant_id and is_active;
+  if v_declared = 0 then
+    return jsonb_build_object('allowed', true, 'needs_second', false,
+                              'reason', 'no approval limits are declared in this workspace');
+  end if;
+
+  select role into v_role from profiles where user_id = p_user_id and tenant_id = p_tenant_id;
+
+  with granted as (
+    select a.max_amount_cents, a.second_approver_above_cents
+    from approval_authority a
+    where a.tenant_id = p_tenant_id
+      and a.is_active
+      and (a.category is null or a.category = p_category)
+      and (
+        (a.user_id is not null and a.user_id = p_user_id)
+        or (a.role is not null and a.role = v_role)
+        or (a.org_unit_id is not null and exists (
+             with recursive below as (
+               select a.org_unit_id as id
+               union
+               select u.id from org_units u join below b on u.parent_id = b.id where u.is_active
+             )
+             select 1 from org_unit_members m
+              where m.user_id = p_user_id and m.is_active
+                and m.org_unit_id in (select id from below)
+           ))
+      )
+  )
+  select
+    -- Most permissive wins: an unlimited grant beats any ceiling, a higher
+    -- ceiling beats a lower one. Grants add up rather than fight.
+    bool_or(max_amount_cents is null) as unlimited,
+    max(max_amount_cents)             as ceiling,
+    min(second_approver_above_cents)  as second_above,
+    count(*)                          as n
+  into v_best
+  from granted;
+
+  if coalesce(v_best.n, 0) = 0 then
+    return jsonb_build_object('allowed', false,
+      'reason', format('you hold no approval authority for %s in this workspace',
+                       coalesce(p_category, 'this kind of work')));
+  end if;
+
+  -- Nothing financial attached: holding any matching grant is enough.
+  if p_amount_cents is null then
+    return jsonb_build_object('allowed', true, 'needs_second', false,
+                              'reason', 'within your authority');
+  end if;
+
+  if not coalesce(v_best.unlimited, false) and p_amount_cents > coalesce(v_best.ceiling, 0) then
+    return jsonb_build_object('allowed', false, 'limit_cents', v_best.ceiling,
+      'reason', format('this is %s and your limit for %s is %s',
+                       money_text(p_amount_cents, null),
+                       coalesce(p_category, 'this kind of work'),
+                       money_text(coalesce(v_best.ceiling, 0), null)));
+  end if;
+
+  return jsonb_build_object(
+    'allowed', true, 'reason', 'within your authority',
+    'needs_second', (v_best.second_above is not null and p_amount_cents > v_best.second_above));
 end;
 $function$;
 
@@ -13468,6 +14088,114 @@ BEGIN IF NOT coalesce(public.can_admin_tenant_internal((SELECT tenant_id FROM pu
   RETURN v_n;
 END; $function$;
 
+CREATE OR REPLACE FUNCTION public.install_role_watchers(p_tenant_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  d          record;
+  v_created  int := 0;
+  v_existing int := 0;
+  v_nodata   int := 0;
+  v_norole   int := 0;
+  v_taken    int := 0;
+  v_detail   jsonb := '[]'::jsonb;
+  v_kind     text;
+  v_source   text;
+  v_label    text;
+  v_desc     text;
+  v_config   jsonb;
+  v_rows     bigint;
+begin
+  for d in
+    select de.id, de.name, de.tenant_id
+    from digital_employees de
+    where de.tenant_id = p_tenant_id and de.status = 'active'
+    -- Deterministic, so which employee owns a signal does not depend on the
+    -- order rows happen to come back in.
+    order by de.created_at asc, de.id asc
+  loop
+    if d.name ~* '(account success|customer success)' then
+      v_kind := 'state_condition'; v_source := 'customer_accounts';
+      v_label := 'Account turned at-risk';
+      v_desc  := 'Open a save case when an account is flagged at-risk.';
+      v_config := jsonb_build_object('op','eq','field','status','value','at_risk',
+                    'source','customer_accounts','response_window', jsonb_build_object('unit','days','amount',3));
+
+    elsif d.name ~* 'renewal' then
+      v_kind := 'date_horizon'; v_source := 'customer_accounts';
+      v_label := 'Renewal approaching (90/60/30 day)';
+      v_desc  := 'Open a renewal case as each notice window is reached.';
+      v_config := jsonb_build_object('source','customer_accounts','date_field','renewal_date',
+                    'horizons_days', jsonb_build_array(90,60,30),
+                    'status_filter', jsonb_build_array('active','at_risk'));
+
+    elsif d.name ~* '(support|helpdesk|service desk)' then
+      v_kind := 'state_condition'; v_source := 'de_conversations';
+      v_label := 'Conversation handed to a person and waiting';
+      v_desc  := 'A customer thread was escalated to a human. Pick it up, or prepare what the human needs to close it.';
+      v_config := jsonb_build_object('op','eq','field','status','value','human_owned',
+                    'source','de_conversations','response_window', jsonb_build_object('unit','days','amount',1));
+
+    elsif d.name ~* '(finance|accounting|billing|invoic)' then
+      v_kind := 'date_horizon'; v_source := 'renewal_invoices';
+      v_label := 'Invoice coming due (14/7/1 day)';
+      v_desc  := 'Prepare for an invoice falling due — confirm the balance and that the customer has what they need to pay.';
+      v_config := jsonb_build_object('source','renewal_invoices','date_field','due_date',
+                    'horizons_days', jsonb_build_array(14,7,1),
+                    'status_filter', jsonb_build_array('sent','awaiting_approval','pending_generation'));
+
+    else
+      v_norole := v_norole + 1;
+      v_detail := v_detail || jsonb_build_object('de', d.name, 'skipped', 'no catalogued source for this role');
+      continue;
+    end if;
+
+    -- ⚠ THE SIGNAL, not the employee. Three finance-family roles in one
+    -- workspace must not each watch the same invoices.
+    if exists (
+      select 1 from work_watchers w
+      where w.tenant_id = p_tenant_id and w.active and w.kind = v_kind
+        and coalesce(w.config->>'source','') = v_source and w.label = v_label
+    ) then
+      -- Distinguish "this employee already had it" from "a colleague owns it".
+      if exists (
+        select 1 from work_watchers w
+        where w.de_id = d.id and w.active and w.kind = v_kind
+          and coalesce(w.config->>'source','') = v_source and w.label = v_label
+      ) then
+        v_existing := v_existing + 1;
+      else
+        v_taken := v_taken + 1;
+        v_detail := v_detail || jsonb_build_object('de', d.name, 'skipped', 'a colleague already owns this signal', 'signal', v_label);
+      end if;
+      continue;
+    end if;
+
+    execute format('select count(*) from %I where tenant_id = $1', v_source)
+      into v_rows using p_tenant_id;
+    if v_rows = 0 then
+      v_nodata := v_nodata + 1;
+      v_detail := v_detail || jsonb_build_object('de', d.name, 'skipped', 'source is empty', 'source', v_source);
+      continue;
+    end if;
+
+    insert into work_watchers (tenant_id, de_id, kind, label, description, config, active)
+    values (p_tenant_id, d.id, v_kind, v_label, v_desc, v_config, true);
+    v_created := v_created + 1;
+    v_detail := v_detail || jsonb_build_object('de', d.name, 'created', v_label, 'source', v_source, 'source_rows', v_rows);
+  end loop;
+
+  return jsonb_build_object(
+    'created', v_created, 'already_had_one', v_existing,
+    'skipped_owned_by_a_colleague', v_taken,
+    'skipped_source_empty', v_nodata, 'skipped_no_catalogued_source', v_norole,
+    'detail', v_detail);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.install_standing_watchers(p_mission_id uuid, p_specs jsonb, p_approved_by uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -13564,68 +14292,6 @@ begin
 
   v_pub := publish_onboarding_template(v_tpl_id);
   return jsonb_build_object('template_id', v_tpl_id, 'already_installed', false) || v_pub;
-end;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.install_technical_specialist()
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare v_tenant uuid; v_is_active boolean; v_id uuid;
-begin
-  select tenant_id, coalesce(is_active, true) into v_tenant, v_is_active from profiles where user_id = auth.uid();
-  if v_tenant is null then
-    if coalesce(auth.role(), '') = 'service_role' then raise exception 'service role must use direct inserts with an explicit tenant'; end if;
-    return jsonb_build_object('error', 'no_tenant');
-  end if;
-  if not v_is_active then raise exception 'account is deactivated'; end if;
-
-  -- Role gate (mig 440). Creating a digital employee is a management act.
-  -- Manager+ rather than owner/admin: hiring is looser than the credential
-  -- and unsupervised-reply gates in migs 433/434.
-  if not (is_platform_admin() or auth_has_tenant_role(ARRAY['tenant_owner', 'tenant_admin', 'tenant_manager'])) then
-    raise exception 'insufficient_permission: adding a digital employee requires a manager';
-  end if;
-
-  -- Already-installed = an ACTIVE specialist exists (fix-pass 2026-07-28).
-  -- Retired/disabled specialist rows are terminal history and must NOT block
-  -- a reinstall — the old check (no status filter) locked any tenant with a
-  -- dead twin out of ever having a working specialist again. Newest-first
-  -- for determinism if multiple actives ever exist (no unique index).
-  select id into v_id from digital_employees
-    where tenant_id = v_tenant and is_specialist = true and specialist_key = 'technical'
-      and status = 'active'
-    order by created_at desc limit 1;
-  if v_id is not null then return jsonb_build_object('profile_id', v_id, 'already_installed', true); end if;
-
-  insert into digital_employees (tenant_id, name, persona_name, category, is_specialist, specialist_key, description, charter, lifecycle_status, status)
-  values (v_tenant, 'Technical Specialist', 'Technical Specialist', 'Internal', true, 'technical',
-    'Consulted for API, integration, architecture, and debugging questions that exceed a primary Digital Employee''s depth.',
-    jsonb_build_object('mission', 'You are the Technical Specialist — consulted for deep technical questions. Answer ONLY from configured sources; cite every source; escalate when the sources do not support an answer.'),
-    'active', 'active')
-  returning id into v_id;
-
-  perform append_audit_event(v_tenant, 'You', 'human',
-    'Technical Specialist installed (as a Digital Employee) — charter seeded, sources not yet configured',
-    'config_change', jsonb_build_object('kind', 'specialist_de', 'de_id', v_id, 'specialist_key', 'technical'));
-  return jsonb_build_object('profile_id', v_id, 'already_installed', false);
-end; $function$;
-
-CREATE OR REPLACE FUNCTION public.install_technical_specialist(p_tenant_id uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-begin
-  -- mig 512: retired. Sixteen of these were provisioned across the platform and
-  -- two consultations ever resulted. Delegation between employees covers the
-  -- same need and is actually used. Deliberately a no-op rather than a dropped
-  -- function so existing callers (provisioning, baseline repair) keep working
-  -- and this note stays attached to the reason.
-  return null;
 end;
 $function$;
 
@@ -15041,6 +15707,23 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.list_account_contacts(p_account_id uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id, 'first_name', c.first_name, 'last_name', c.last_name,
+    'email', c.email, 'phone', c.phone, 'mobile', c.mobile, 'title', c.title,
+    'is_primary', c.is_primary,
+    -- Where it came from, so nobody edits a mirrored row expecting it to stick.
+    'source', coalesce(c.source, 'entered by hand')
+  ) order by c.is_primary desc, c.last_name, c.first_name), '[]'::jsonb)
+  from customer_account_contacts c
+  where c.account_id = p_account_id and c.tenant_id = auth_tenant_id();
+$function$;
+
 CREATE OR REPLACE FUNCTION public.list_browser_operator(p_tenant_id uuid, p_limit integer DEFAULT 50)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -15113,24 +15796,17 @@ CREATE OR REPLACE FUNCTION public.list_consultable_for_de(p_de_id uuid)
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-  SELECT coalesce(json_agg(row_to_json(x) ORDER BY x.is_specialist DESC, x.name), '[]'::json)
-  FROM (
-    -- Absorbed specialists this DE is assigned to consult.
-    SELECT d.id AS target_de_id, d.name, true AS is_specialist,
-           a.rank AS rank, 'assignment' AS grant_kind
-      FROM de_specialist_assignments a
-      JOIN digital_employees d ON d.id = a.specialist_de_id
-     WHERE a.de_id = p_de_id AND a.tenant_id = auth_tenant_id()
-       AND public.can_access_de(p_de_id)
-       AND d.lifecycle_status NOT IN ('retired','archived')
-    UNION ALL
-    -- Peer DEs this DE has a consultation grant with.
-    SELECT d.id, d.name, false, NULL::int, 'grant'
-      FROM de_consultation_grants g
-      JOIN digital_employees d ON d.id = g.target_de_id
-     WHERE g.requester_de_id = p_de_id AND g.tenant_id = auth_tenant_id() AND g.active
-       AND public.can_access_de(p_de_id)
-       AND d.lifecycle_status NOT IN ('retired','archived')
+  select coalesce(json_agg(row_to_json(x) order by x.name), '[]'::json)
+  from (
+    select d.id as target_de_id,
+           coalesce(d.persona_name, d.name) as name,
+           'grant'::text as grant_kind
+    from de_consultation_grants g
+    join digital_employees d on d.id = g.target_de_id
+    where g.requester_de_id = p_de_id
+      and g.active
+      and d.status = 'active'
+      and coalesce(d.lifecycle_status, '') not in ('retired', 'archived')
   ) x;
 $function$;
 
@@ -15325,25 +16001,6 @@ AS $function$
                 AND public.can_access_de(d.id))
   ) x;
 $function$;
-
-CREATE OR REPLACE FUNCTION public.list_de_specialists(p_de_id uuid)
- RETURNS TABLE(rank smallint, specialist_id uuid, specialist_key text, specialist_name text, specialist_status text)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare v_tenant uuid;
-begin
-  v_tenant := auth_tenant_id();
-  if v_tenant is null then raise exception 'not a member of any tenant'; end if;
-  return query
-  select a.rank, d.id, coalesce(d.specialist_key, 'specialist'), coalesce(d.persona_name, d.name), d.status
-  from de_specialist_assignments a
-  join digital_employees d on d.id = a.specialist_de_id
-  where a.tenant_id = v_tenant and a.de_id = p_de_id
-    and public.can_access_de(p_de_id)
-  order by a.rank;
-end; $function$;
 
 CREATE OR REPLACE FUNCTION public.list_de_system(p_de_id uuid, p_system_key text, p_limit integer DEFAULT 25)
  RETURNS jsonb
@@ -15611,6 +16268,65 @@ BEGIN
      LIMIT 500;
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.list_org_tree(p_tenant_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform assert_own_tenant(p_tenant_id);
+  return list_org_tree_core(p_tenant_id);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.list_org_tree_core(p_tenant_id uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select coalesce(jsonb_agg(x order by x->>'path'), '[]'::jsonb)
+  from (
+    with recursive t as (
+      select u.id, u.parent_id, u.kind, u.name, u.is_active, 0 as depth, u.name as path
+      from org_units u where u.tenant_id = p_tenant_id and u.parent_id is null
+      union all
+      select u.id, u.parent_id, u.kind, u.name, u.is_active, t.depth + 1, t.path || ' / ' || u.name
+      from org_units u join t on u.parent_id = t.id where u.tenant_id = p_tenant_id
+    )
+    select jsonb_build_object(
+      'id', t.id, 'parent_id', t.parent_id, 'kind', t.kind, 'name', t.name,
+      'is_active', t.is_active, 'depth', t.depth, 'path', t.path,
+      'member_count', (select count(*) from org_unit_members m where m.org_unit_id = t.id and m.is_active),
+      'de_count', (select count(*) from digital_employees d
+                    where d.org_unit_id = t.id and coalesce(d.lifecycle_status, '') not in ('retired', 'archived')),
+      'open_tasks', (select count(*) from human_tasks h
+                      where h.tenant_id = p_tenant_id and h.status = 'pending'
+                        and h.assigned_via->>'unit_id' = t.id::text),
+      'members', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+                 'user_id', m.user_id, 'name', p.full_name, 'role_in_unit', m.role_in_unit,
+                 'job_title', p.job_title, 'is_primary', m.is_primary) order by p.full_name), '[]'::jsonb)
+        from org_unit_members m left join profiles p on p.user_id = m.user_id
+        where m.org_unit_id = t.id and m.is_active
+      ),
+      -- The same department, staffed by whoever does the work. Kept as its own
+      -- list rather than merged into `members`: they belong to the same unit,
+      -- but only people appear in the approval rota, and a single blended list
+      -- would make that distinction invisible at exactly the wrong moment.
+      'digital_employees', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+                 'de_id', d.id, 'name', d.name, 'title', d.display_title,
+                 'trust_level', d.trust_level, 'status', d.status) order by d.name), '[]'::jsonb)
+        from digital_employees d
+        where d.org_unit_id = t.id and coalesce(d.lifecycle_status, '') not in ('retired', 'archived')
+      )
+    ) as x
+    from t
+  ) s;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.list_platform_kb_review_queue()
  RETURNS TABLE(change_id uuid, source_kind text, source_ref text, title text, body text, shipped_at timestamp with time zone, affected jsonb)
  LANGUAGE sql
@@ -15742,7 +16458,7 @@ AS $function$
 $function$;
 
 CREATE OR REPLACE FUNCTION public.list_team_members_full(p_tenant_id uuid)
- RETURNS TABLE(user_id uuid, full_name text, email text, role text, department text, is_active boolean, last_seen_at timestamp with time zone, created_at timestamp with time zone, invited_by text)
+ RETURNS TABLE(user_id uuid, full_name text, email text, role text, department text, org_unit_id uuid, job_title text, employment_status text, is_active boolean, last_seen_at timestamp with time zone, created_at timestamp with time zone, invited_by text)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
@@ -15761,6 +16477,7 @@ begin
 
   return query
     select p.user_id, p.full_name, u.email::text, p.role, p.department,
+      p.org_unit_id, p.job_title, p.employment_status,
       coalesce(p.is_active, true), p.last_seen_at, p.created_at, p.invited_by
     from profiles p
     join auth.users u on u.id = p.user_id
@@ -16148,24 +16865,6 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.match_knowledge_chunks(query_embedding vector, match_tenant_id uuid, match_threshold double precision DEFAULT 0.4, match_count integer DEFAULT 6)
- RETURNS TABLE(id uuid, content text, title text, similarity double precision)
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  RETURN QUERY
-  SELECT kc.id, kc.content, kc.title,
-    (1 - (kc.embedding <=> query_embedding))::float AS similarity
-  FROM knowledge_chunks kc
-  WHERE kc.tenant_id = match_tenant_id
-    AND kc.embedding IS NOT NULL
-    AND (1 - (kc.embedding <=> query_embedding)) > match_threshold
-  ORDER BY kc.embedding <=> query_embedding
-  LIMIT match_count;
-END;
-$function$;
-
 CREATE OR REPLACE FUNCTION public.mcp_host_allowed(p_tenant_id uuid, p_host text)
  RETURNS boolean
  LANGUAGE plpgsql
@@ -16290,6 +16989,26 @@ BEGIN
     'allowed_domains', t.allowed_domains, 'max_steps', t.max_steps,
     'engine', t.engine, 'credential_policy', t.credential_policy));
 END; $function$;
+
+CREATE OR REPLACE FUNCTION public.normalise_de_state()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not de_status_allowed(NEW.lifecycle_status, NEW.status) then
+    -- The STAGE is authoritative; the switch is coerced to a legal value.
+    -- Never the reverse: promoting the stage to justify the switch would walk
+    -- straight past gate_de_certification, which exists to stop exactly that.
+    if NEW.lifecycle_status in ('paused','retired','archived') then
+      NEW.status := 'disabled';
+    else
+      NEW.status := 'idle';
+    end if;
+  end if;
+  return NEW;
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.normalize_email_domain(p_input text)
  RETURNS text
@@ -16537,6 +17256,47 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.org_units_check_parent()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare
+  v_parent_kind text;
+  v_parent_tenant uuid;
+begin
+  if new.parent_id is null then
+    -- A team must live in a department. Everything else may sit at the top:
+    -- a single-site business should not be forced to invent a location.
+    if new.kind = 'team' then
+      raise exception 'org_units: a team must belong to a department (unit "%")', new.name;
+    end if;
+    return new;
+  end if;
+
+  select kind, tenant_id into v_parent_kind, v_parent_tenant from org_units where id = new.parent_id;
+  if not found then
+    raise exception 'org_units: parent % does not exist', new.parent_id;
+  end if;
+  if v_parent_tenant <> new.tenant_id then
+    raise exception 'org_units: a unit cannot report into another tenant''s unit';
+  end if;
+  if new.parent_id = new.id then
+    raise exception 'org_units: a unit cannot report to itself';
+  end if;
+
+  if not (
+       (new.kind = 'location'   and v_parent_kind = 'location')                      -- regions
+    or (new.kind = 'branch'     and v_parent_kind in ('location', 'branch'))
+    or (new.kind = 'department' and v_parent_kind in ('location', 'branch'))
+    or (new.kind = 'team'       and v_parent_kind in ('department', 'team'))         -- sub-teams
+  ) then
+    raise exception 'org_units: a % cannot report to a % (unit "%")', new.kind, v_parent_kind, new.name;
+  end if;
+
+  return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.p_workspace_period_end(p_workspace_id uuid)
  RETURNS date
  LANGUAGE sql
@@ -16590,6 +17350,39 @@ begin
   );
 
   return jsonb_build_object('ok', true, 'stage', 'paused', 'resumes_to', v_de.lifecycle_status);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pause_workforce_autonomy(p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_tenant uuid := auth_tenant_id();
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']) then
+    raise exception 'not_allowed: only an owner, admin or manager may stop the workforce';
+  end if;
+  if coalesce(btrim(p_reason), '') = '' then
+    raise exception 'a reason is required — a stop with no reason cannot be reviewed later';
+  end if;
+
+  insert into workforce_trust_posture (tenant_id, autonomy_paused, paused_at, paused_by, paused_reason, updated_by)
+  values (v_tenant, true, now(), auth.uid(), btrim(p_reason), auth.uid())
+  on conflict (tenant_id) do update set
+    autonomy_paused = true, paused_at = now(), paused_by = auth.uid(),
+    paused_reason = btrim(p_reason), updated_at = now(), updated_by = auth.uid();
+
+  perform append_audit_event(v_tenant,
+    coalesce((select full_name from profiles where user_id = auth.uid()), 'A workspace admin'),
+    'human',
+    format('Workforce autonomy STOPPED — %s', btrim(p_reason)),
+    'config_change',
+    jsonb_build_object('kind', 'workforce_autonomy_paused', 'reason', btrim(p_reason)));
+
+  return jsonb_build_object('ok', true, 'paused', true);
 end;
 $function$;
 
@@ -17478,7 +18271,7 @@ BEGIN
   -- check above, so no null case. Refuses through this function''s own
   -- error envelope rather than raising; see the header.
   IF NOT public.can_access_de(p_de_id) THEN RETURN jsonb_build_object('ok', false, 'error', 'not_responsible_for_de'); END IF;
-  SELECT invoice_number INTO v_inv FROM invoices WHERE id = p_invoice_id AND tenant_id = v_tenant;
+  SELECT coalesce(source_external_ref, id::text) INTO v_inv FROM renewal_invoices WHERE id = p_invoice_id AND tenant_id = v_tenant;
   IF v_inv IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'invoice_not_in_tenant'); END IF;
 
   IF p_op = 'log_activity' THEN
@@ -17926,7 +18719,7 @@ begin
   -- above, which was ALREADY per-DE in the original code.)
   insert into de_autonomy (tenant_id, action_type, source_category, enabled, max_amount_cents, min_confidence)
   values (p_tenant_id, 'action_execute', v_source_cat, false, null, null)
-  on conflict (tenant_id, action_type, coalesce(source_category, ''), coalesce(de_id::text, '')) do nothing;
+  on conflict (tenant_id, action_type, coalesce(de_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(source_category, '')) do nothing;
 
   perform append_audit_event_internal(
     p_tenant_id, 'DreamTeam', 'system',
@@ -17991,6 +18784,10 @@ begin
   -- one into every new workspace contradicted that decision. 'specialist_
   -- seeded' is kept in the payload, always false, so callers do not break.
 
+  -- mig 627: a new workspace gets its approval limits with everything else,
+  -- from the same function that backfilled the existing ones.
+  perform seed_approval_baseline(p_tenant_id);
+
   if v_seeded_guardrails > 0 or v_seeded_template then
     perform append_audit_event_internal(p_tenant_id, 'DreamTeam', 'system',
       format('Workspace baseline provisioned — %s starter guardrail(s)%s. Connectors are the remaining setup step (they need your own system credentials).',
@@ -18019,7 +18816,7 @@ BEGIN
     -- migration gets its missing permission the next time this runs.
     INSERT INTO de_autonomy (tenant_id, action_type, source_category, de_id, enabled, min_confidence, max_amount_cents)
     VALUES (p_tenant_id, 'answer_dock', NULL, v_existing, true, 70, NULL)
-    ON CONFLICT (tenant_id, action_type, coalesce(source_category, ''), coalesce(de_id::text, ''))
+    ON CONFLICT (tenant_id, action_type, coalesce(de_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(source_category, ''))
     DO NOTHING;
     RETURN v_existing;
   END IF;
@@ -18061,7 +18858,7 @@ BEGIN
   -- answer_dock only — this is an internal advisor, never a public widget.
   INSERT INTO de_autonomy (tenant_id, action_type, source_category, de_id, enabled, min_confidence, max_amount_cents)
   VALUES (p_tenant_id, 'answer_dock', NULL, v_id, true, 70, NULL)
-  ON CONFLICT (tenant_id, action_type, coalesce(source_category, ''), coalesce(de_id::text, ''))
+  ON CONFLICT (tenant_id, action_type, coalesce(de_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(source_category, ''))
   DO NOTHING;
 
   RETURN v_id;
@@ -18343,15 +19140,6 @@ BEGIN
   IF v_row IS NULL THEN RETURN jsonb_build_object('ok', false, 'error', 'record_not_found'); END IF;
   RETURN jsonb_build_object('ok', true, 'system_key', p_system_key, 'record', v_row);
 END; $function$;
-
-CREATE OR REPLACE FUNCTION public.read_demo_admin_password()
- RETURNS text
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'vault', 'public'
-AS $function$
-  select decrypted_secret from vault.decrypted_secrets where name = 'demo_admin_password' limit 1;
-$function$;
 
 CREATE OR REPLACE FUNCTION public.reap_stale_computer_use_runtimes()
  RETURNS integer
@@ -19109,14 +19897,11 @@ begin
     frustration_score = coalesce(excluded.frustration_score, evidence_run_decisions.frustration_score)
   returning id into v_row_id;
 
-  -- Experience door (migs 044/045) — logic unchanged; now selects
-  -- specialist_de_id (the pre-212 column name no longer exists, and naming it
-  -- here would trip the token assert below — the mig-428 lesson).
-  select de_id, specialist_de_id, account_ref into v_run from evidence_runs where id = p_evidence_run_id;
+  -- Experience door (migs 044/045). The specialist arm went with the role;
+  -- a run is the work of a digital employee, full stop.
+  select de_id, account_ref into v_run from evidence_runs where id = p_evidence_run_id;
   if v_run.de_id is not null then
     v_subject_kind := 'de'; v_subject_id := v_run.de_id;
-  elsif v_run.specialist_de_id is not null then
-    v_subject_kind := 'specialist'; v_subject_id := v_run.specialist_de_id;
   end if;
   v_ref := coalesce(nullif(p_external_ref, ''), nullif(v_run.account_ref, ''));
 
@@ -20081,7 +20866,7 @@ BEGIN
   -- task-assignment targets, so a DE-requested task refuses them here even
   -- though a grant row exists. Mirrors the de-work delegate-tool exclusion.
   IF p_from_de_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM digital_employees s WHERE s.id = p_to_de_id AND s.is_specialist = true) THEN
+    SELECT 1 FROM digital_employees s WHERE s.id = p_to_de_id AND FALSE) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'not_permitted',
       'detail', 'Specialists are consulted, not delegated to - use a consultation instead.');
   END IF;
@@ -20715,65 +21500,73 @@ AS $function$
   );
 $function$;
 
-CREATE OR REPLACE FUNCTION public.resolve_de_autonomy(p_tenant_id uuid, p_action_type text, p_de_id uuid DEFAULT NULL::uuid, p_source_category text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.resolve_de_autonomy(p_tenant_id uuid, p_action_type text, p_de_id uuid DEFAULT NULL::uuid, p_source_category text DEFAULT NULL::text, p_playbook_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(enabled boolean, max_amount_cents bigint, min_confidence integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'extensions'
 AS $function$
 declare
-  v_row de_autonomy;
+  v_row   de_autonomy;
   v_gated boolean := false;
 begin
-  -- Records gate (mig 258): a gated employee is supervised regardless of
-  -- what the trust dial says — chat drafts to a human, actions block to a
-  -- human. Checked first so every precedence branch below inherits it.
+  -- Records gate (mig 258): a gated employee is supervised whatever the dial
+  -- says. Checked first so every branch below inherits it.
   if p_de_id is not null then
     select g.gated into v_gated from public.de_records_gate(p_tenant_id, p_de_id) g;
   end if;
 
+  -- playbook + employee + category
+  if p_playbook_id is not null and p_de_id is not null and p_source_category is not null then
+    select * into v_row from de_autonomy
+    where tenant_id = p_tenant_id and action_type = p_action_type
+      and de_id = p_de_id and playbook_id = p_playbook_id and source_category = p_source_category
+    limit 1;
+    if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
+  end if;
+
+  -- playbook + employee
+  if p_playbook_id is not null and p_de_id is not null then
+    select * into v_row from de_autonomy
+    where tenant_id = p_tenant_id and action_type = p_action_type
+      and de_id = p_de_id and playbook_id = p_playbook_id and source_category is null
+    limit 1;
+    if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
+  end if;
+
+  -- employee + category
   if p_de_id is not null and p_source_category is not null then
     select * into v_row from de_autonomy
     where tenant_id = p_tenant_id and action_type = p_action_type
-      and de_id = p_de_id and source_category = p_source_category
+      and de_id = p_de_id and playbook_id is null and source_category = p_source_category
     limit 1;
     if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
   end if;
 
+  -- employee
   if p_de_id is not null then
     select * into v_row from de_autonomy
     where tenant_id = p_tenant_id and action_type = p_action_type
-      and de_id = p_de_id and source_category is null
+      and de_id = p_de_id and playbook_id is null and source_category is null
     limit 1;
     if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
   end if;
 
-  if p_source_category is not null then
-    select * into v_row from de_autonomy
-    where tenant_id = p_tenant_id and action_type = p_action_type
-      and de_id is null and source_category = p_source_category
-    limit 1;
-    if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
-  end if;
-
-  select * into v_row from de_autonomy
-  where tenant_id = p_tenant_id and action_type = p_action_type
-    and de_id is null and source_category is null
-  limit 1;
-  if found then return query select (v_row.enabled and not v_gated), v_row.max_amount_cents, v_row.min_confidence; return; end if;
-
+  -- ⚠ NO WORKSPACE TIER. The two branches that used to read de_id IS NULL rows
+  -- are gone on purpose: a default that applies to every employee is exactly
+  -- what the founder ruled out. Reaching here means this employee has no rule
+  -- for this action, and the answer to that is no.
   return query select false, null::bigint, null::integer;
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.resolve_de_autonomy_chain(p_tenant_id uuid, p_keys text[], p_de_id uuid DEFAULT NULL::uuid, p_source_category text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.resolve_de_autonomy_chain(p_tenant_id uuid, p_keys text[], p_de_id uuid DEFAULT NULL::uuid, p_source_category text DEFAULT NULL::text, p_playbook_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(enabled boolean, max_amount_cents bigint, min_confidence integer)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'extensions'
 AS $function$
-declare
-  v_key text;
+declare v_key text;
 begin
   foreach v_key in array coalesce(p_keys, array[]::text[]) loop
     if v_key is null or v_key = '' then continue; end if;
@@ -20781,12 +21574,15 @@ begin
       select 1 from de_autonomy a
       where a.tenant_id = p_tenant_id
         and a.action_type = v_key
+        and a.de_id is not distinct from p_de_id
+        and (p_playbook_id is null or a.playbook_id is not distinct from p_playbook_id
+             or a.playbook_id is null)
     ) then
-      return query select * from resolve_de_autonomy(p_tenant_id, v_key, p_de_id, p_source_category);
+      return query select * from resolve_de_autonomy(p_tenant_id, v_key, p_de_id, p_source_category, p_playbook_id);
       return;
     end if;
   end loop;
-  -- No key has a reachable dial row: deny, one explicit row — never empty.
+  -- No key has a rule for this employee: deny, one explicit row — never empty.
   return query select false, null::bigint, null::integer;
 end;
 $function$;
@@ -20851,19 +21647,6 @@ begin
   select coalesce(model_id, 'claude-sonnet-5') into v_model from digital_employees where id = p_de_id;
   return coalesce(v_model, 'claude-sonnet-5');
 end;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.resolve_de_specialist_internal(p_tenant_id uuid, p_de_id uuid)
- RETURNS text
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  select d.specialist_key
-  from de_specialist_assignments a
-  join digital_employees d on d.id = a.specialist_de_id
-  where a.tenant_id = p_tenant_id and a.de_id = p_de_id and d.status = 'active'
-  order by a.rank limit 1;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.resolve_exception(p_exception_id uuid, p_decision text, p_final_treatment text, p_approver uuid, p_approver_name text)
@@ -20949,6 +21732,30 @@ begin
   ) e;
 
   return jsonb_build_object('allowed', true, 'rows', v_rows);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.resolve_external_account(p_tenant_id uuid, p_provider text, p_customer_external_ref text, p_customer_name text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_id uuid;
+begin
+  if coalesce(btrim(p_customer_external_ref), '') = '' then
+    return null;
+  end if;
+
+  insert into customer_accounts (tenant_id, name, external_ref, source_provider, source_external_ref)
+  values (p_tenant_id,
+          coalesce(nullif(btrim(p_customer_name), ''), p_customer_external_ref),
+          p_customer_external_ref, p_provider, p_customer_external_ref)
+  on conflict (tenant_id, source_provider, source_external_ref) where source_external_ref is not null
+  do update set name = excluded.name, updated_at = now()
+  returning id into v_id;
+
+  return v_id;
 end;
 $function$;
 
@@ -21486,15 +22293,6 @@ AS $function$
   limit 1;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.resolve_specialist_de(p_ref uuid)
- RETURNS uuid
- LANGUAGE sql
- STABLE
- SET search_path TO 'public'
-AS $function$
-  SELECT id FROM digital_employees WHERE id = p_ref AND is_specialist;
-$function$;
-
 CREATE OR REPLACE FUNCTION public.resolve_work_item_framing(p_tenant_id uuid, p_category text)
  RETURNS text
  LANGUAGE sql
@@ -21735,7 +22533,7 @@ begin
 
   select full_name into v_actor_name from profiles where user_id = auth.uid();
 
-  update digital_employees set lifecycle_status = v_back_to, status = 'active', updated_at = now()
+  update digital_employees set lifecycle_status = v_back_to, status = case when v_back_to in ('designed','configured','trained','tested','certified') then 'idle' else 'active' end, updated_at = now()
   where id = p_de_id;
 
   insert into de_lifecycle_events (tenant_id, de_id, from_stage, to_stage, actor_id, actor_label, note)
@@ -22034,6 +22832,36 @@ begin
     set status = 'completed', current_step = jsonb_array_length(v_steps) - 1, steps = v_steps, waiting_task_id = null, context = v_ctx
     where id = v_run.id;
   return jsonb_build_object('resumed', true, 'run_id', v_run.id, 'status', 'completed');
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.resume_workforce_autonomy(p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_tenant uuid := auth_tenant_id();
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin']) then
+    raise exception 'not_allowed: only an owner or admin may restart the workforce';
+  end if;
+
+  update workforce_trust_posture set
+    autonomy_paused = false, paused_at = null, paused_by = null, paused_reason = null,
+    breaker_tripped_at = null, breaker_tripped_why = null,
+    updated_at = now(), updated_by = auth.uid()
+  where tenant_id = v_tenant;
+
+  perform append_audit_event(v_tenant,
+    coalesce((select full_name from profiles where user_id = auth.uid()), 'A workspace admin'),
+    'human',
+    format('Workforce autonomy RESTARTED%s', case when coalesce(btrim(p_note),'') <> '' then ' — ' || btrim(p_note) else '' end),
+    'config_change',
+    jsonb_build_object('kind', 'workforce_autonomy_resumed', 'note', nullif(btrim(p_note), '')));
+
+  return jsonb_build_object('ok', true, 'paused', false);
 end;
 $function$;
 
@@ -22586,6 +23414,180 @@ begin
   end if;
 
   return jsonb_build_object('unguarded', v_count, 'functions', coalesce(v_names, ''));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.run_dunning_sweep(p_tenant_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 200)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t          record;
+  inv        record;
+  v_de       uuid;
+  v_ad       uuid;
+  v_provider text;
+  v_exec     text;
+  v_dedupe   text;
+  v_note     text;
+  v_mail     jsonb;
+  v_emails   boolean;
+  v_org      text;
+  v_params   jsonb;
+  v_gate     jsonb;
+  v_decision text;
+  v_content  text;
+  v_detail_txt text;
+  v_raised   int := 0;
+  v_skipped  int := 0;
+  v_noexec   int := 0;
+  v_nodesk   int := 0;
+  v_emailed  int := 0;
+  v_noaddr   int := 0;
+  v_tenants  int := 0;
+  v_detail   jsonb := '[]'::jsonb;
+begin
+  for t in
+    select tn.id, tn.slug, tn.name from tenants tn
+    where (p_tenant_id is null or tn.id = p_tenant_id)
+      and tenant_is_operational(tn.id)
+  loop
+    v_de := dunning_de_for(t.id);
+    if v_de is null then
+      v_nodesk := v_nodesk + 1;
+      continue;
+    end if;
+    v_tenants := v_tenants + 1;
+    v_org := coalesce(nullif(t.name, ''), 'Accounts Receivable');
+
+    for inv in
+      select d.*, ri.source_provider, ri.source_currency, ri.due_date, ri.contact_email
+      from dunning_position(t.id) d
+      join renewal_invoices ri on ri.id = d.invoice_id
+      where d.actionable
+      order by d.days_overdue desc
+      limit p_limit
+    loop
+      v_provider := coalesce(nullif(inv.source_provider, ''), 'erpnext');
+      v_dedupe   := format('dunning:%s:%s', inv.invoice_id, inv.due_stage);
+
+      if exists (
+        select 1 from action_executions ae
+        where ae.tenant_id = t.id and ae.dedupe_key = v_dedupe and ae.decision <> 'failed'
+      ) then
+        v_skipped := v_skipped + 1;
+        continue;
+      end if;
+
+      v_exec := dunning_execution_key(v_provider, inv.action_key,
+                                      nullif(btrim(coalesce(inv.contact_email,'')), '') is not null);
+      v_ad   := dunning_action_for(t.id, inv.action_key, v_exec);
+      if v_ad is null then
+        v_noexec := v_noexec + 1;
+        v_detail := v_detail || jsonb_build_object(
+          'tenant', t.slug, 'invoice', inv.invoice_ref, 'skipped', 'no_executor',
+          'wanted', inv.action_key, 'provider', v_provider, 'execution_key', v_exec);
+        continue;
+      end if;
+
+      v_emails := (v_exec = 'erpnext_send_invoice_email'
+                   or v_exec like '%_send_invoice_reminder');
+      v_note   := dunning_note_text(inv.due_stage, inv.customer, inv.invoice_ref,
+                                    inv.days_overdue, inv.outstanding_cents, inv.source_currency);
+      v_mail   := dunning_email(inv.due_stage, inv.customer, inv.invoice_ref, inv.days_overdue,
+                                inv.outstanding_cents, inv.source_currency, inv.due_date, v_org);
+
+      -- The internal note and the customer email are built from the same facts
+      -- but are never the same string. The note tells a colleague how to pitch
+      -- it; the email is what a customer reads.
+      if v_emails and v_mail is not null then
+        v_params := jsonb_build_object(
+          'external_ref', inv.invoice_ref,
+          'recipient',    inv.contact_email,
+          'subject',      v_mail->>'subject',
+          'body',         v_mail->>'body',
+          'invoice_id',   inv.invoice_id, 'stage', inv.due_stage,
+          'days_overdue', inv.days_overdue, 'outstanding_cents', inv.outstanding_cents);
+        v_content := v_mail->>'body';
+        v_detail_txt := format(E'%s\n\nThis EMAILS THE CUSTOMER at %s.\n\nSubject: %s\n\n%s',
+                          inv.why, inv.contact_email, v_mail->>'subject', v_mail->>'body');
+        v_emailed := v_emailed + 1;
+      else
+        -- No address, or a rung that must not reach the customer.
+        v_params := jsonb_build_object(
+          'external_ref', inv.invoice_ref, 'note', v_note,
+          'invoice_id',   inv.invoice_id, 'stage', inv.due_stage,
+          'days_overdue', inv.days_overdue, 'outstanding_cents', inv.outstanding_cents,
+          'tone', inv.tone);
+        v_content := v_note;
+        if inv.action_key <> 'flag_for_collections'
+           and nullif(btrim(coalesce(inv.contact_email,'')), '') is null then
+          v_noaddr := v_noaddr + 1;
+          v_detail_txt := format(E'%s\n\n⚠ THE CUSTOMER WILL NOT SEE THIS. No email address is recorded on invoice %s, so this writes an internal note in ERPNext instead of chasing anyone. Add a contact email to the invoice and re-run to send a real reminder.\n\nWhat will be written:\n%s',
+                            inv.why, inv.invoice_ref, v_note);
+        else
+          v_detail_txt := format(E'%s\n\nInternal note only — the customer is not contacted at this stage.\n\nWhat will be written:\n%s',
+                            inv.why, v_note);
+        end if;
+      end if;
+
+      v_gate := decide_action_execution(
+        t.id,
+        format('%s — %s', inv.rung_label, inv.customer),
+        'erp_financials',
+        coalesce(inv.requires_approval, true),
+        v_de,
+        inv.outstanding_cents,
+        inv.action_key,
+        -- Guardrails scan the CONTENT, so they must see the words that will
+        -- actually leave the building, not a summary of them.
+        v_content
+      );
+      v_decision := coalesce(v_gate->>'decision', 'human_gated_destructive');
+
+      perform record_action_execution(
+        p_tenant_id            => t.id,
+        p_action_definition_id => v_ad,
+        p_connector_id         => null,
+        p_subject_kind         => 'de',
+        p_subject_id           => v_de,
+        p_mode                 => 'execute',
+        p_params               => v_params,
+        p_decision      => v_decision,
+        p_destructive   => coalesce(inv.requires_approval, true),
+        p_idempotent    => false,
+        p_dedupe_key    => v_dedupe,
+        p_request_summary => format('%s for %s — invoice %s, %s day(s) overdue.%s',
+                              inv.rung_label, inv.customer, inv.invoice_ref, inv.days_overdue,
+                              case when v_emails and v_mail is not null
+                                   then ' Emails the customer.' else ' Internal note only.' end),
+        p_receipt   => null,
+        p_result    => null,
+        p_task_title  => format('%s%s: %s — %s, %s days overdue',
+                           case when v_emails and v_mail is not null then 'Email ' else '' end,
+                           inv.rung_label, inv.customer, inv.invoice_ref, inv.days_overdue),
+        p_task_detail => v_detail_txt,
+        p_create_task => true,
+        p_origin_kind => 'dunning_sweep',
+        p_origin_id   => inv.invoice_id
+      );
+
+      v_raised := v_raised + 1;
+    end loop;
+  end loop;
+
+  return jsonb_build_object(
+    'tenants_swept',      v_tenants,
+    'raised',             v_raised,
+    'emails_drafted',     v_emailed,
+    'notes_only_no_address', v_noaddr,
+    'already_proposed',   v_skipped,
+    'no_executor',        v_noexec,
+    'tenants_without_a_finance_employee', v_nodesk,
+    'detail',             v_detail
+  );
 end;
 $function$;
 
@@ -23938,30 +24940,6 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.search_knowledge(p_tenant_id uuid, p_query text, p_limit integer DEFAULT 5)
- RETURNS TABLE(id uuid, title text, body text, similarity double precision)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-begin
-  perform public._assert_caller_tenant(p_tenant_id);
-  return query
-  select ka.id, ka.title, ka.body,
-    ts_rank(
-      to_tsvector('english', coalesce(ka.title,'') || ' ' || coalesce(ka.body,'')),
-      plainto_tsquery('english', p_query)
-    )::float as similarity
-  from knowledge_articles ka
-  where ka.tenant_id = p_tenant_id
-    and ka.status = 'published'
-    and to_tsvector('english', coalesce(ka.title,'') || ' ' || coalesce(ka.body,''))
-        @@ plainto_tsquery('english', p_query)
-  order by similarity desc
-  limit p_limit;
-end;
-$function$;
-
 CREATE OR REPLACE FUNCTION public.search_knowledge(p_tenant_id uuid, p_query text, p_audience text DEFAULT NULL::text, p_limit integer DEFAULT 5)
  RETURNS TABLE(id uuid, title text, summary text, body text, audience text, category text, tags text[], rank real)
  LANGUAGE sql
@@ -24030,6 +25008,90 @@ BEGIN
    LIMIT greatest(1, least(200, coalesce(p_limit, 50)))
   OFFSET greatest(0, coalesce(p_offset, 0));
 END $function$;
+
+CREATE OR REPLACE FUNCTION public.seed_approval_baseline(p_tenant_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_existing  int;
+  v_has_owner boolean;
+  v_seeded    int;
+begin
+  if p_tenant_id is null then return 0; end if;
+
+  -- Idempotent, and deliberately blunt: if a workspace has declared ANY
+  -- authority we leave it entirely alone. Re-running must never duplicate a
+  -- grant, and must never resurrect one somebody deactivated on purpose.
+  select count(*) into v_existing from approval_authority where tenant_id = p_tenant_id;
+  if v_existing > 0 then return 0; end if;
+
+  select exists (
+    select 1 from profiles
+     where tenant_id = p_tenant_id and role = 'tenant_owner' and is_active
+  ) into v_has_owner;
+
+  -- 1. The escape hatch by RANK — survives the person leaving. Seeded even
+  --    where no owner exists yet, so a promotion needs no follow-up config.
+  insert into approval_authority
+    (tenant_id, role, category, max_amount_cents, second_approver_above_cents, note)
+  values
+    (p_tenant_id, 'tenant_owner', null, null, null,
+     'Owner — final authority, any work, any amount. This row is what stops a '
+     'category nobody wrote a rule for from freezing the queue. Do not delete it.');
+
+  -- 2. The same authority pinned to each owner PERSONALLY, so changing a role
+  --    cannot lock the workspace out.
+  insert into approval_authority
+    (tenant_id, user_id, category, max_amount_cents, second_approver_above_cents, note)
+  select p_tenant_id, p.user_id, null, null, null,
+         'The owner personally — the same authority pinned to the person rather '
+         'than the role, so changing a role cannot lock the workspace out.'
+  from profiles p
+  where p.tenant_id = p_tenant_id and p.role = 'tenant_owner' and p.is_active;
+
+  -- 3. Admin — DERIVED. See the header: a ceiling is only a control if
+  --    somebody exists above it.
+  if v_has_owner then
+    insert into approval_authority
+      (tenant_id, role, category, max_amount_cents, second_approver_above_cents, note)
+    values
+      (p_tenant_id, 'tenant_admin', null, 25000000, 10000000,
+       'Admin — any kind of work up to $250,000. Over $100,000 a second person '
+       'must also approve; the owner can always be that second person.');
+  else
+    insert into approval_authority
+      (tenant_id, role, category, max_amount_cents, second_approver_above_cents, note)
+    values
+      (p_tenant_id, 'tenant_admin', null, null, null,
+       'Admin — final authority in this workspace, because it has no owner. '
+       'Capping the most senior person, with nobody above them to escalate to, '
+       'would freeze work rather than govern it. Narrow this once an owner exists.');
+  end if;
+
+  -- 4. Manager — routine amounts only.
+  insert into approval_authority
+    (tenant_id, role, category, max_amount_cents, second_approver_above_cents, note)
+  values
+    (p_tenant_id, 'tenant_manager', null, 2500000, null,
+     'Manager — any kind of work up to $25,000, so routine items only.');
+
+  -- 5. Everyone else — the support queue, and nothing carrying money. A zero
+  --    ceiling is not a formality: with an amount attached the check refuses,
+  --    so priced work rises to a manager instead of being waved through.
+  insert into approval_authority
+    (tenant_id, role, category, max_amount_cents, second_approver_above_cents, note)
+  select p_tenant_id, 'tenant_user', c, 0, null,
+         'Support staff — may clear ' || c || ', but nothing carrying money; '
+         'anything with an amount goes to a manager.'
+  from unnest(array['helpdesk','escalation','inquiry_review','checklist','knowledge_revision']) as c;
+
+  select count(*) into v_seeded from approval_authority where tenant_id = p_tenant_id;
+  return v_seeded;
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.seed_de_trust_policy(p_de_id uuid, p_capability_key text, p_display_name text DEFAULT NULL::text)
  RETURNS jsonb
@@ -24226,6 +25288,71 @@ begin
       'resource_kind', p_resource_kind, 'resource_id', p_resource_id, 'resource_category', p_resource_category, 'resource_label', v_resource_label, 'before', v_before, 'after', p_permission));
   return jsonb_build_object('ok', true, 'grant_id', v_grant_id, 'before', v_before, 'after', p_permission);
 end; $function$;
+
+CREATE OR REPLACE FUNCTION public.set_account_contact(p_account_id uuid, p_first_name text, p_last_name text, p_email text, p_title text DEFAULT NULL::text, p_phone text DEFAULT NULL::text, p_mobile text DEFAULT NULL::text, p_is_primary boolean DEFAULT false, p_contact_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_email  text := nullif(btrim(lower(p_email)), '');
+  v_id     uuid;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']) then
+    raise exception 'not_allowed: only an owner, admin or manager may record a customer contact';
+  end if;
+  if not exists (select 1 from customer_accounts where id = p_account_id and tenant_id = v_tenant) then
+    raise exception 'that account is not in this workspace';
+  end if;
+  if coalesce(btrim(p_first_name),'') = '' and coalesce(btrim(p_last_name),'') = '' then
+    raise exception 'a contact needs at least a name';
+  end if;
+  -- A contact with no email cannot be an identity key, and end_user_ref is
+  -- NOT NULL. Refuse rather than invent one.
+  if v_email is null then
+    raise exception 'a contact needs an email address — it is how the customer is recognised';
+  end if;
+
+  if coalesce(p_is_primary, false) then
+    update customer_account_contacts
+       set is_primary = false, updated_at = now()
+     where tenant_id = v_tenant and account_id = p_account_id and is_primary
+       and (p_contact_id is null or id <> p_contact_id);
+  end if;
+
+  if p_contact_id is not null then
+    update customer_account_contacts set
+      first_name = nullif(btrim(p_first_name),''), last_name = nullif(btrim(p_last_name),''),
+      email = v_email, end_user_ref = v_email, title = nullif(btrim(p_title),''),
+      phone = nullif(btrim(p_phone),''), mobile = nullif(btrim(p_mobile),''),
+      is_primary = coalesce(p_is_primary, false), updated_at = now()
+    where id = p_contact_id and tenant_id = v_tenant
+    returning id into v_id;
+    if v_id is null then raise exception 'no such contact in this workspace'; end if;
+  else
+    insert into customer_account_contacts
+      (tenant_id, account_id, end_user_ref, first_name, last_name, email, title, phone, mobile, is_primary)
+    values (v_tenant, p_account_id, v_email,
+            nullif(btrim(p_first_name),''), nullif(btrim(p_last_name),''),
+            v_email, nullif(btrim(p_title),''),
+            nullif(btrim(p_phone),''), nullif(btrim(p_mobile),''), coalesce(p_is_primary, false))
+    on conflict (tenant_id, lower(btrim(end_user_ref)))
+    do update set
+      account_id = excluded.account_id,
+      first_name = excluded.first_name, last_name = excluded.last_name,
+      title = coalesce(excluded.title, customer_account_contacts.title),
+      phone = coalesce(excluded.phone, customer_account_contacts.phone),
+      mobile = coalesce(excluded.mobile, customer_account_contacts.mobile),
+      is_primary = excluded.is_primary, updated_at = now()
+    returning id into v_id;
+  end if;
+
+  return jsonb_build_object('ok', true, 'contact_id', v_id);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_connector_ingest_config(p_connector_id uuid, p_config jsonb)
  RETURNS void
@@ -24699,6 +25826,36 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 END; $function$;
 
+CREATE OR REPLACE FUNCTION public.set_de_org_unit(p_de_id uuid, p_org_unit_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']) then
+    raise exception 'not_allowed: only an owner, admin or manager may move an employee between departments';
+  end if;
+  if not exists (select 1 from digital_employees where id = p_de_id and tenant_id = v_tenant) then
+    raise exception 'no_such_employee_in_this_workspace';
+  end if;
+  if p_org_unit_id is not null and not exists (
+    select 1 from org_units where id = p_org_unit_id and tenant_id = v_tenant and is_active
+  ) then
+    raise exception 'that is not a department in this workspace';
+  end if;
+
+  -- department follows via trg_sync_de_department.
+  update digital_employees set org_unit_id = p_org_unit_id, updated_at = now() where id = p_de_id;
+
+  return jsonb_build_object('ok', true,
+    'department', coalesce((select name from org_units where id = p_org_unit_id), ''));
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_de_skill_proficiency(p_de_id uuid, p_skill_key text, p_proficiency integer, p_note text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -24751,46 +25908,6 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'skill_key', p_skill_key, 'proficiency', p_proficiency);
 END$function$;
-
-CREATE OR REPLACE FUNCTION public.set_de_specialist(p_de_id uuid, p_rank smallint, p_specialist_id uuid DEFAULT NULL::uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare v_tenant uuid; v_de digital_employees; v_sp digital_employees;
-begin
-  if p_rank not in (1, 2) then raise exception 'rank must be 1 (primary) or 2 (secondary)'; end if;
-  v_tenant := auth_tenant_id();
-  if v_tenant is null then raise exception 'not a member of any tenant'; end if;
-  if not auth_has_tenant_role(array['tenant_owner', 'tenant_admin']) then raise exception 'only workspace owners/admins can assign specialists'; end if;
-
-  select * into v_de from digital_employees where id = p_de_id and tenant_id = v_tenant;
-  if v_de.id is null then raise exception 'employee not found in this workspace'; end if;
-
-  if p_specialist_id is null then
-    delete from de_specialist_assignments where tenant_id = v_tenant and de_id = p_de_id and rank = p_rank;
-    perform append_audit_event_internal(v_tenant, 'You', 'human',
-      format('%s''s %s specialist cleared', v_de.name, case when p_rank = 1 then 'primary' else 'secondary' end),
-      'config_change', jsonb_build_object('kind', 'de_specialist_cleared', 'de_id', p_de_id, 'rank', p_rank));
-    return jsonb_build_object('ok', true, 'cleared', true);
-  end if;
-
-  select * into v_sp from digital_employees where id = p_specialist_id and tenant_id = v_tenant and is_specialist = true;
-  if v_sp.id is null then raise exception 'specialist not found in this workspace'; end if;
-
-  delete from de_specialist_assignments where tenant_id = v_tenant and de_id = p_de_id and specialist_de_id = p_specialist_id and rank <> p_rank;
-
-  insert into de_specialist_assignments (tenant_id, de_id, specialist_de_id, rank, created_by)
-  values (v_tenant, p_de_id, p_specialist_id, p_rank, auth.uid())
-  on conflict (tenant_id, de_id, rank)
-  do update set specialist_de_id = excluded.specialist_de_id, created_by = excluded.created_by, created_at = now();
-
-  perform append_audit_event_internal(v_tenant, 'You', 'human',
-    format('%s assigned as %s''s %s specialist', coalesce(v_sp.persona_name, v_sp.name), v_de.name, case when p_rank = 1 then 'primary' else 'secondary' end),
-    'config_change', jsonb_build_object('kind', 'de_specialist_assigned', 'de_id', p_de_id, 'specialist_de_id', p_specialist_id, 'rank', p_rank));
-  return jsonb_build_object('ok', true, 'specialist', coalesce(v_sp.persona_name, v_sp.name), 'rank', p_rank);
-end; $function$;
 
 CREATE OR REPLACE FUNCTION public.set_de_supervisor(p_de_id uuid, p_enable boolean)
  RETURNS void
@@ -24912,6 +26029,58 @@ begin
   exception when others then null; end;
   return jsonb_build_object('ok', true, 'visibility', v_after, 'subjects', v_count);
 end; $function$;
+
+CREATE OR REPLACE FUNCTION public.set_employee_compensation(p_user_id uuid, p_amount_cents bigint, p_currency text, p_pay_frequency text, p_effective_from date, p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_id     uuid;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  -- Owners and admins only. Deliberately NOT self: being able to read your own
+  -- pay is reasonable, being able to set it is not.
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin']) then
+    raise exception 'not_allowed: only an owner or admin may set pay';
+  end if;
+  if not exists (select 1 from profiles where user_id = p_user_id and tenant_id = v_tenant) then
+    raise exception 'no_such_employee_in_this_workspace';
+  end if;
+  if p_amount_cents is null or p_amount_cents < 0 then
+    raise exception 'amount must be zero or more';
+  end if;
+
+  -- Close the previous open record the day before this one starts, rather than
+  -- overwriting it. What somebody used to be paid is the record you need when
+  -- a pay question arrives, and it is gone forever if a raise is an UPDATE.
+  update profile_compensation
+     set effective_to = p_effective_from - 1
+   where tenant_id = v_tenant and user_id = p_user_id and effective_to is null
+     and effective_from < p_effective_from;
+
+  insert into profile_compensation
+    (user_id, tenant_id, amount_cents, currency, pay_frequency, effective_from, note, created_by)
+  values
+    (p_user_id, v_tenant, p_amount_cents, coalesce(nullif(p_currency,''), 'USD'),
+     coalesce(nullif(p_pay_frequency,''), 'annual'), p_effective_from, nullif(btrim(p_note),''), auth.uid())
+  returning id into v_id;
+
+  -- Pay changes are the kind of thing that must be answerable later.
+  perform append_audit_event(
+    v_tenant,
+    coalesce((select full_name from profiles where user_id = auth.uid()), 'An administrator'),
+    'human',
+    format('Set pay for %s', coalesce((select full_name from profiles where user_id = p_user_id), 'an employee')),
+    'access_control',
+    jsonb_build_object('kind','compensation_set','subject_user_id',p_user_id,
+                       'effective_from',p_effective_from,'record_id',v_id));
+
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_improvement_publish_scope(p_improvement_id uuid, p_scope text)
  RETURNS void
@@ -25281,42 +26450,6 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'restricted', p_restricted, 'explicit_grants', v_reachable);
 END $function$;
-
-CREATE OR REPLACE FUNCTION public.set_specialist_source_secret(p_source_id uuid, p_secret text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare v_existing uuid;
-begin
-  if coalesce(auth.role(), '') <> 'service_role' and not exists (
-    select 1 from specialist_sources s
-    join digital_employees d on d.id = s.specialist_de_id
-    join profiles p on p.tenant_id = d.tenant_id
-    where s.id = p_source_id and p.user_id = auth.uid() and coalesce(p.is_active, true) = true
-  ) then
-    raise exception 'not a member of this source''s tenant';
-  end if;
-
-  -- Role gate (mig 434). Inside the non-service branch on purpose: a gate
-  -- applied unconditionally would break provisioning and connector flows
-  -- that run as the service role. Storing a customer credential is an act
-  -- of workspace accountability, so owner/admin — same as mig 433.
-  if coalesce(auth.role(), '') <> 'service_role'
-     and not (is_platform_admin() or public.auth_has_tenant_role(ARRAY['tenant_owner', 'tenant_admin'])) then
-    raise exception 'insufficient_permission: storing a source credential requires an owner or admin';
-  end if;
-
-  select secret_id into v_existing from specialist_source_secrets where source_id = p_source_id;
-  if v_existing is not null then
-    perform vault.update_secret(v_existing, p_secret);
-    update specialist_source_secrets set updated_at = now() where source_id = p_source_id;
-  else
-    insert into specialist_source_secrets (source_id, secret_id, updated_at)
-    values (p_source_id, vault.create_secret(p_secret, 'specialist_source_secret:' || p_source_id, 'Set via set_specialist_source_secret'), now());
-  end if;
-end; $function$;
 
 CREATE OR REPLACE FUNCTION public.set_support_conversation_state(p_conversation_id uuid, p_status text DEFAULT NULL::text, p_priority text DEFAULT NULL::text)
  RETURNS void
@@ -26492,7 +27625,7 @@ begin
   -- MAJORITY: 149 of 203 live evidence runs carry no de_id. The plain form
   -- would refuse feedback on ~73% of runs for a scoped user while the
   -- readers still show them. Exact negation of the mig-386 predicate.
-  -- specialist_de_id is intentionally NOT tested: the run is the work of
+  -- The subject is intentionally NOT tested: the run is the work of
   -- de_id, and being consulted does not transfer ownership of the verdict.
   if v_run.de_id is not null and not public.can_access_de(v_run.de_id) then
     return jsonb_build_object('ok', false, 'error', 'not_responsible_for_de');
@@ -26648,6 +27781,39 @@ begin
      where id = NEW.related_id and status = 'pending_approval';
   end if;
   return NEW;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.sync_de_department()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  -- Same shape as sync_profile_department (mig 599), including the lesson that
+  -- cost that migration a revision: `BEFORE INSERT OR UPDATE OF col` still
+  -- fires on EVERY insert, so a new employee arriving with a department NAME
+  -- and no unit must be RESOLVED, not blanked.
+  if tg_op = 'INSERT'
+     and new.org_unit_id is null
+     and coalesce(btrim(new.department), '') <> '' then
+    select u.id into new.org_unit_id
+    from org_units u
+    where u.tenant_id = new.tenant_id
+      and u.kind in ('department', 'team')
+      and lower(btrim(u.name)) = lower(btrim(new.department))
+      and u.is_active
+    limit 1;
+  end if;
+
+  if new.org_unit_id is not null then
+    select u.name into new.department from org_units u where u.id = new.org_unit_id;
+  elsif tg_op = 'UPDATE' then
+    new.department := '';
+  end if;
+
+  return new;
 end;
 $function$;
 
@@ -26851,6 +28017,96 @@ begin
   end if;
   return NEW;
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.sync_primary_unit_membership()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if tg_op = 'UPDATE' and new.org_unit_id is not distinct from old.org_unit_id then
+    return new;
+  end if;
+
+  -- Retire the previous primary. Memberships somebody added by hand are
+  -- is_primary = false and are none of this trigger's business.
+  delete from org_unit_members m
+   where m.user_id = new.user_id and m.is_primary
+     and (new.org_unit_id is null or m.org_unit_id <> new.org_unit_id);
+
+  if new.org_unit_id is not null and new.user_id is not null then
+    insert into org_unit_members (tenant_id, org_unit_id, user_id, role_in_unit, is_active, is_primary)
+    values (new.tenant_id, new.org_unit_id, new.user_id, 'member', true, true)
+    on conflict (org_unit_id, user_id)
+      -- Already a member by hand: promote that row rather than duplicating it,
+      -- and do NOT demote a lead to a member on the way past.
+      do update set is_primary = true, is_active = true;
+  end if;
+
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.sync_profile_department()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  -- INSERT: the invite carries a NAME. Bind it to the real unit if one exists.
+  if tg_op = 'INSERT'
+     and new.org_unit_id is null
+     and coalesce(btrim(new.department), '') <> '' then
+    select u.id into new.org_unit_id
+    from org_units u
+    where u.tenant_id = new.tenant_id
+      and u.kind in ('department', 'team')
+      and lower(btrim(u.name)) = lower(btrim(new.department))
+      and u.is_active
+    limit 1;
+  end if;
+
+  if new.org_unit_id is not null then
+    select u.name into new.department from org_units u where u.id = new.org_unit_id;
+  elsif tg_op = 'UPDATE' then
+    -- Explicitly moved out of a unit. Blank it, so the last department someone
+    -- was in does not sit there looking current.
+    new.department := '';
+  end if;
+  -- INSERT with no matching unit: keep whatever the inviter typed.
+
+  return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.task_approval_facts(p_task_id uuid)
+ RETURNS TABLE(category text, amount_cents bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select
+    -- An action approval is classified by the action's own category
+    -- (erp_financials, helpdesk, ads…); everything else by its task type
+    -- (escalation, review_gate, checklist…). The two vocabularies do not
+    -- overlap, so one column holds both without ambiguity.
+    coalesce(ad.category, h.type),
+    -- ⚠ `amount_cents` is the param name the platform's money gates already
+    -- read; `outstanding_cents` is what the dunning sweep carries. Reading
+    -- only one would leave a whole class of money silently unpriced.
+    coalesce(
+      nullif(ae.params->>'amount_cents', '')::bigint,
+      nullif(ae.params->>'outstanding_cents', '')::bigint
+    )
+  from human_tasks h
+  left join action_executions ae
+    on ae.id = h.related_id and h.related_table = 'action_executions'
+  left join action_definitions ad on ad.id = ae.action_definition_id
+  where h.id = p_task_id
+  limit 1;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.tenant_ancestors(p_tenant_id uuid)
@@ -27063,6 +28319,22 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.trg_assign_human_task()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform assign_human_task(new.id);
+  return null;
+exception when others then
+  -- Routing must never be able to stop an approval from being raised. A task
+  -- nobody owns is a problem; a task that was never created is a worse one.
+  return null;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.trg_provision_onboarding_architect()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -27205,7 +28477,7 @@ begin
     nullif(v_s->>'min_confidence', '')::integer,
     p_actor
   )
-  on conflict (tenant_id, action_type, coalesce(source_category, ''), coalesce(de_id::text, '')) do update set
+  on conflict (tenant_id, action_type, coalesce(de_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(source_category, '')) do update set
     enabled          = excluded.enabled,
     max_amount_cents = excluded.max_amount_cents,
     min_confidence   = excluded.min_confidence,
@@ -27419,6 +28691,127 @@ BEGIN
   FROM customer_metrics cm WHERE cm.metric_id = p_metric_id;
 END$function$;
 
+CREATE OR REPLACE FUNCTION public.update_employee_private(p_user_id uuid, p_patch jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_ok     boolean;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  v_ok := (p_user_id = auth.uid()) or auth_has_tenant_role(array['tenant_owner','tenant_admin']);
+  if not v_ok then
+    raise exception 'not_allowed: personal details are visible to the person and to owners and admins only';
+  end if;
+  if not exists (select 1 from profiles where user_id = p_user_id and tenant_id = v_tenant) then
+    raise exception 'no_such_employee_in_this_workspace';
+  end if;
+
+  insert into profile_private as pp (user_id, tenant_id) values (p_user_id, v_tenant)
+  on conflict (user_id) do nothing;
+
+  update profile_private pp set
+    date_of_birth   = case when p_patch ? 'date_of_birth'   then nullif(p_patch->>'date_of_birth','')::date else pp.date_of_birth end,
+    personal_email  = case when p_patch ? 'personal_email'  then nullif(p_patch->>'personal_email','')  else pp.personal_email end,
+    personal_phone  = case when p_patch ? 'personal_phone'  then nullif(p_patch->>'personal_phone','')  else pp.personal_phone end,
+    address_line1   = case when p_patch ? 'address_line1'   then nullif(p_patch->>'address_line1','')   else pp.address_line1 end,
+    address_line2   = case when p_patch ? 'address_line2'   then nullif(p_patch->>'address_line2','')   else pp.address_line2 end,
+    city            = case when p_patch ? 'city'            then nullif(p_patch->>'city','')            else pp.city end,
+    state_region    = case when p_patch ? 'state_region'    then nullif(p_patch->>'state_region','')    else pp.state_region end,
+    postal_code     = case when p_patch ? 'postal_code'     then nullif(p_patch->>'postal_code','')     else pp.postal_code end,
+    country         = case when p_patch ? 'country'         then nullif(p_patch->>'country','')         else pp.country end,
+    emergency_contact_name         = case when p_patch ? 'emergency_contact_name'         then nullif(p_patch->>'emergency_contact_name','')         else pp.emergency_contact_name end,
+    emergency_contact_relationship = case when p_patch ? 'emergency_contact_relationship' then nullif(p_patch->>'emergency_contact_relationship','') else pp.emergency_contact_relationship end,
+    emergency_contact_phone        = case when p_patch ? 'emergency_contact_phone'        then nullif(p_patch->>'emergency_contact_phone','')        else pp.emergency_contact_phone end,
+    updated_at = now()
+  where pp.user_id = p_user_id and pp.tenant_id = v_tenant;
+
+  return jsonb_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.update_employee_profile(p_user_id uuid, p_patch jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_tenant  uuid := auth_tenant_id();
+  v_is_hr   boolean := auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']);
+  v_is_self boolean := (p_user_id = auth.uid());
+  v_key     text;
+  -- What the person may change about themselves: how to reach them and how
+  -- they are addressed. Not their job, their manager or their start date.
+  v_self_ok text[] := array['preferred_name','pronouns','work_phone','mobile_phone','time_zone','locale'];
+  v_hr_ok   text[] := array['employee_number','first_name','middle_name','last_name','preferred_name',
+                            'pronouns','work_email','work_phone','mobile_phone','job_title',
+                            'employment_type','employment_status','hire_date','end_date',
+                            'org_unit_id','reports_to_user_id','work_location','time_zone','locale'];
+  v_allowed text[];
+  v_applied text[] := '{}';
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not exists (select 1 from profiles where user_id = p_user_id and tenant_id = v_tenant) then
+    raise exception 'no_such_employee_in_this_workspace';
+  end if;
+  if not (v_is_hr or v_is_self) then
+    raise exception 'not_allowed: only an owner, admin or manager may edit someone else''s record';
+  end if;
+
+  v_allowed := case when v_is_hr then v_hr_ok else v_self_ok end;
+
+  for v_key in select jsonb_object_keys(p_patch) loop
+    if not (v_key = any(v_allowed)) then
+      -- Named explicitly rather than skipped. Silently dropping a field the
+      -- caller asked to change is how a UI reports success on a write that
+      -- never happened.
+      raise exception 'field_not_editable: %', v_key;
+    end if;
+    v_applied := v_applied || v_key;
+  end loop;
+
+  if array_length(v_applied, 1) is null then
+    return jsonb_build_object('ok', true, 'changed', 0);
+  end if;
+
+  -- A manager cannot report to themselves; a cycle here would hang any org
+  -- chart that walks the line.
+  if p_patch ? 'reports_to_user_id'
+     and nullif(p_patch->>'reports_to_user_id','')::uuid = p_user_id then
+    raise exception 'a person cannot report to themselves';
+  end if;
+
+  update profiles p set
+    employee_number    = case when p_patch ? 'employee_number'    then nullif(p_patch->>'employee_number','')    else p.employee_number end,
+    first_name         = case when p_patch ? 'first_name'         then nullif(p_patch->>'first_name','')         else p.first_name end,
+    middle_name        = case when p_patch ? 'middle_name'        then nullif(p_patch->>'middle_name','')        else p.middle_name end,
+    last_name          = case when p_patch ? 'last_name'          then nullif(p_patch->>'last_name','')          else p.last_name end,
+    preferred_name     = case when p_patch ? 'preferred_name'     then nullif(p_patch->>'preferred_name','')     else p.preferred_name end,
+    pronouns           = case when p_patch ? 'pronouns'           then nullif(p_patch->>'pronouns','')           else p.pronouns end,
+    work_email         = case when p_patch ? 'work_email'         then nullif(p_patch->>'work_email','')         else p.work_email end,
+    work_phone         = case when p_patch ? 'work_phone'         then nullif(p_patch->>'work_phone','')         else p.work_phone end,
+    mobile_phone       = case when p_patch ? 'mobile_phone'       then nullif(p_patch->>'mobile_phone','')       else p.mobile_phone end,
+    job_title          = case when p_patch ? 'job_title'          then nullif(p_patch->>'job_title','')          else p.job_title end,
+    employment_type    = case when p_patch ? 'employment_type'    then nullif(p_patch->>'employment_type','')    else p.employment_type end,
+    employment_status  = case when p_patch ? 'employment_status'  then nullif(p_patch->>'employment_status','')  else p.employment_status end,
+    hire_date          = case when p_patch ? 'hire_date'          then nullif(p_patch->>'hire_date','')::date    else p.hire_date end,
+    end_date           = case when p_patch ? 'end_date'           then nullif(p_patch->>'end_date','')::date     else p.end_date end,
+    org_unit_id        = case when p_patch ? 'org_unit_id'        then nullif(p_patch->>'org_unit_id','')::uuid  else p.org_unit_id end,
+    reports_to_user_id = case when p_patch ? 'reports_to_user_id' then nullif(p_patch->>'reports_to_user_id','')::uuid else p.reports_to_user_id end,
+    work_location      = case when p_patch ? 'work_location'      then nullif(p_patch->>'work_location','')      else p.work_location end,
+    time_zone          = case when p_patch ? 'time_zone'          then nullif(p_patch->>'time_zone','')          else p.time_zone end,
+    locale             = case when p_patch ? 'locale'             then nullif(p_patch->>'locale','')             else p.locale end,
+    updated_at         = now()
+  where p.user_id = p_user_id and p.tenant_id = v_tenant;
+
+  return jsonb_build_object('ok', true, 'changed', array_length(v_applied, 1), 'fields', to_jsonb(v_applied));
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.update_onboarding_item(p_project_id uuid, p_key text, p_status text DEFAULT NULL::text, p_assignee text DEFAULT NULL::text, p_note text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -27546,7 +28939,7 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.update_team_member_department(p_target_user_id uuid, p_department text)
+CREATE OR REPLACE FUNCTION public.update_team_member_department(p_target_user_id uuid, p_org_unit_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -27554,7 +28947,7 @@ CREATE OR REPLACE FUNCTION public.update_team_member_department(p_target_user_id
 AS $function$
 declare
   v_caller_tenant uuid;
-  v_caller_role text;
+  v_caller_role   text;
   v_target_tenant uuid;
 begin
   if auth.uid() is null then
@@ -27572,9 +28965,20 @@ begin
     raise exception 'that person is not a member of this workspace';
   end if;
 
-  update profiles set department = p_department where user_id = p_target_user_id;
+  -- A unit from another workspace would place someone in an org chart their
+  -- employer cannot see.
+  if p_org_unit_id is not null and not exists (
+    select 1 from org_units u
+    where u.id = p_org_unit_id and u.tenant_id = v_caller_tenant and u.is_active
+  ) then
+    raise exception 'that is not a department in this workspace';
+  end if;
 
-  return jsonb_build_object('ok', true);
+  -- department is maintained by trigger from org_unit_id.
+  update profiles set org_unit_id = p_org_unit_id where user_id = p_target_user_id;
+
+  return jsonb_build_object('ok', true,
+    'department', coalesce((select name from org_units where id = p_org_unit_id), ''));
 end;
 $function$;
 
@@ -27996,7 +29400,7 @@ begin
 end;
 $procedure$;
 
-CREATE OR REPLACE FUNCTION public.upsert_external_ar_record(p_tenant_id uuid, p_provider text, p_customer_external_ref text, p_customer_name text, p_invoice_external_ref text, p_amount_cents bigint, p_due_date date, p_status text, p_currency text, p_outstanding_cents bigint DEFAULT NULL::bigint)
+CREATE OR REPLACE FUNCTION public.upsert_external_ar_record(p_tenant_id uuid, p_provider text, p_customer_external_ref text, p_customer_name text, p_invoice_external_ref text, p_amount_cents bigint, p_due_date date, p_status text, p_currency text, p_outstanding_cents bigint DEFAULT NULL::bigint, p_contact_email text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -28025,12 +29429,13 @@ begin
 
   insert into renewal_invoices (tenant_id, account_id, amount_cents, status, due_date, cadence_stage,
                                 source_provider, source_external_ref, source_currency,
-                                outstanding_cents, payments_reconciled_at)
+                                outstanding_cents, payments_reconciled_at, contact_email)
   values (p_tenant_id, v_account_id, coalesce(p_amount_cents, 0), v_status, p_due_date, 0,
           p_provider, p_invoice_external_ref, p_currency,
           p_outstanding_cents,
           -- Only stamp "we know the balance" when the source actually said so.
-          case when p_outstanding_cents is not null then now() end)
+          case when p_outstanding_cents is not null then now() end,
+          nullif(btrim(p_contact_email), ''))
   on conflict (tenant_id, source_provider, source_external_ref) where source_external_ref is not null
   do update set account_id = excluded.account_id, amount_cents = excluded.amount_cents,
                 status = excluded.status, due_date = excluded.due_date,
@@ -28042,11 +29447,205 @@ begin
                 payments_reconciled_at = case
                   when excluded.outstanding_cents is not null then now()
                   else renewal_invoices.payments_reconciled_at end,
+                -- Same rule for the addressee: a sync that did not mention it
+                -- must not silently downgrade the next chase from an email to
+                -- an internal note.
+                contact_email = coalesce(excluded.contact_email, renewal_invoices.contact_email),
                 updated_at = now()
   returning id into v_invoice_id;
 
   return jsonb_build_object('account_id', v_account_id, 'invoice_id', v_invoice_id,
-                            'outstanding_known', p_outstanding_cents is not null);
+                            'outstanding_known', p_outstanding_cents is not null,
+                            'can_email', nullif(btrim(coalesce(p_contact_email,'')), '') is not null);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.upsert_external_contact(p_tenant_id uuid, p_provider text, p_external_ref text, p_first_name text, p_last_name text, p_email text, p_phone text DEFAULT NULL::text, p_mobile text DEFAULT NULL::text, p_title text DEFAULT NULL::text, p_customer_external_ref text DEFAULT NULL::text, p_customer_name text DEFAULT NULL::text, p_is_primary boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_account uuid;
+  v_email   text := nullif(btrim(lower(p_email)), '');
+  v_ref     text;
+  v_id      uuid;
+begin
+  if p_tenant_id is null or coalesce(p_provider,'') = '' or coalesce(p_external_ref,'') = '' then
+    raise exception 'tenant, provider and external ref are all required';
+  end if;
+
+  -- The identity key. Email where the record has one, because that is what a
+  -- person presents; otherwise the source reference, which is stable and
+  -- unique but not guessable by someone who is not that customer.
+  v_ref := coalesce(v_email, p_provider || ':' || p_external_ref);
+
+  v_account := resolve_external_account(p_tenant_id, p_provider, p_customer_external_ref, p_customer_name);
+
+  -- account_id is NOT NULL, and rightly so: a contact nobody is the contact FOR
+  -- answers nothing. The question an employee asks is "who holds THIS
+  -- relationship". Refuse loudly rather than file an orphan the DE will later
+  -- fail to find.
+  if v_account is null then
+    return jsonb_build_object('ok', false, 'error', 'no_account',
+      'detail', format('contact %s names no customer this workspace knows (%s)',
+                       p_external_ref, coalesce(p_customer_external_ref, 'none given')));
+  end if;
+
+  -- Clear the old primary BEFORE claiming it: (account_id) WHERE is_primary is
+  -- UNIQUE, so setting a second one in the same statement fails outright.
+  if coalesce(p_is_primary, false) and v_account is not null then
+    update customer_account_contacts
+       set is_primary = false, updated_at = now()
+     where tenant_id = p_tenant_id and account_id = v_account and is_primary
+       and coalesce(external_ref,'') is distinct from p_external_ref;
+  end if;
+
+  insert into customer_account_contacts
+    (tenant_id, account_id, end_user_ref, first_name, last_name, email, phone, mobile, title,
+     is_primary, source, external_ref)
+  values
+    (p_tenant_id, v_account, v_ref,
+     nullif(btrim(p_first_name),''), nullif(btrim(p_last_name),''),
+     v_email, nullif(btrim(p_phone),''), nullif(btrim(p_mobile),''),
+     nullif(btrim(p_title),''), coalesce(p_is_primary, false), p_provider, p_external_ref)
+  on conflict (tenant_id, source, external_ref) where external_ref is not null
+  do update set
+    account_id   = coalesce(excluded.account_id, customer_account_contacts.account_id),
+    end_user_ref = excluded.end_user_ref,
+    first_name   = excluded.first_name,
+    last_name    = excluded.last_name,
+    -- A sync that omits a field must not ERASE one we already hold: the same
+    -- rule the invoice ingest needed for contact_email (mig 595).
+    email        = coalesce(excluded.email,  customer_account_contacts.email),
+    phone        = coalesce(excluded.phone,  customer_account_contacts.phone),
+    mobile       = coalesce(excluded.mobile, customer_account_contacts.mobile),
+    title        = coalesce(excluded.title,  customer_account_contacts.title),
+    is_primary   = excluded.is_primary,
+    updated_at   = now()
+  returning id into v_id;
+
+  return jsonb_build_object('contact_id', v_id, 'account_id', v_account, 'identity_key', v_ref);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.upsert_external_opportunity(p_tenant_id uuid, p_provider text, p_external_ref text, p_name text, p_company_name text, p_stage text, p_amount_cents bigint, p_close_date date, p_owner text, p_customer_external_ref text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_account uuid;
+  v_stage   text;
+  v_id      uuid;
+begin
+  if p_tenant_id is null or coalesce(p_provider,'') = '' or coalesce(p_external_ref,'') = '' then
+    raise exception 'tenant, provider and external ref are all required';
+  end if;
+
+  -- The pipeline board reads a closed vocabulary. Anything unrecognised lands
+  -- at the top of the funnel rather than as a stage the UI cannot render.
+  v_stage := case lower(coalesce(p_stage, ''))
+    when 'open' then 'prospect'
+    when 'quotation' then 'proposal'
+    when 'converted' then 'won'
+    when 'closed' then 'won'
+    when 'lost' then 'lost'
+    when 'replied' then 'qualified'
+    else case when lower(coalesce(p_stage,'')) in
+      ('prospect','qualified','proposal','negotiation','won','lost')
+      then lower(p_stage) else 'prospect' end
+  end;
+
+  v_account := resolve_external_account(p_tenant_id, p_provider, p_customer_external_ref, p_company_name);
+
+  insert into opportunities (tenant_id, account_id, name, company_name, stage, amount_cents,
+                             close_date, owner, source, external_ref)
+  values (p_tenant_id, v_account,
+          coalesce(nullif(btrim(p_name),''), p_external_ref),
+          nullif(btrim(p_company_name),''), v_stage, coalesce(p_amount_cents, 0),
+          p_close_date, nullif(btrim(p_owner),''), p_provider, p_external_ref)
+  on conflict (tenant_id, source, external_ref) where external_ref is not null
+  do update set
+    account_id   = coalesce(excluded.account_id, opportunities.account_id),
+    name         = excluded.name,
+    company_name = coalesce(excluded.company_name, opportunities.company_name),
+    stage        = excluded.stage,
+    amount_cents = excluded.amount_cents,
+    close_date   = excluded.close_date,
+    owner        = coalesce(excluded.owner, opportunities.owner),
+    updated_at   = now()
+  returning id into v_id;
+
+  return jsonb_build_object('opportunity_id', v_id, 'account_id', v_account, 'stage', v_stage);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.upsert_external_ticket(p_tenant_id uuid, p_provider text, p_external_ref text, p_subject text, p_body text, p_status text, p_priority text, p_customer_external_ref text DEFAULT NULL::text, p_customer_name text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_account  uuid;
+  v_status   text;
+  v_priority text;
+  v_id       uuid;
+begin
+  if p_tenant_id is null or coalesce(p_provider,'') = '' or coalesce(p_external_ref,'') = '' then
+    raise exception 'tenant, provider and external ref are all required';
+  end if;
+
+  -- CHECK constraints, not preferences: status must be one of four and priority
+  -- one of p1..p4. A passthrough would fail on the first real row.
+  v_status := case lower(coalesce(p_status,''))
+    when 'open' then 'open'
+    when 'replied' then 'pending'
+    when 'on hold' then 'pending'
+    when 'pending' then 'pending'
+    when 'resolved' then 'resolved'
+    when 'closed' then 'resolved'
+    when 'escalated' then 'escalated'
+    else 'open' end;
+
+  v_priority := case lower(coalesce(p_priority,''))
+    when 'urgent' then 'p1'
+    when 'critical' then 'p1'
+    when 'high' then 'p2'
+    when 'medium' then 'p3'
+    when 'low' then 'p4'
+    else case when lower(coalesce(p_priority,'')) in ('p1','p2','p3','p4')
+      then lower(p_priority) else 'p3' end
+  end;
+
+  v_account := resolve_external_account(p_tenant_id, p_provider, p_customer_external_ref, p_customer_name);
+
+  insert into support_tickets (tenant_id, account_id, subject, body, status, priority,
+                               assignee, source, external_ref, resolved_at)
+  values (p_tenant_id, v_account,
+          left(coalesce(nullif(btrim(p_subject),''), p_external_ref), 300),
+          p_body, v_status, v_priority,
+          -- Arrived from a system of record, so a person owns it until a
+          -- digital employee is explicitly given it.
+          'human', p_provider, p_external_ref,
+          case when v_status = 'resolved' then now() end)
+  on conflict (tenant_id, source, external_ref) where external_ref is not null
+  do update set
+    account_id  = coalesce(excluded.account_id, support_tickets.account_id),
+    subject     = excluded.subject,
+    body        = coalesce(excluded.body, support_tickets.body),
+    status      = excluded.status,
+    priority    = excluded.priority,
+    resolved_at = case when excluded.status = 'resolved'
+                       then coalesce(support_tickets.resolved_at, now()) else null end,
+    updated_at  = now()
+  returning id into v_id;
+
+  return jsonb_build_object('ticket_id', v_id, 'account_id', v_account,
+                            'status', v_status, 'priority', v_priority);
 end;
 $function$;
 
@@ -28764,36 +30363,6 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'matched', v_matched, 'diffs', v_diffs, 'actual', v_actual);
 END; $function$;
 
-CREATE OR REPLACE FUNCTION public.verify_embed_token(p_token text, p_tenant_id uuid, p_de_id uuid)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_token_hash TEXT;
-BEGIN
-  v_token_hash := encode(digest(p_token, 'sha256'), 'hex');
-
-  -- Verify token exists, is valid, and matches tenant+DE
-  PERFORM 1 FROM embed_tokens
-  WHERE token_hash = v_token_hash
-    AND tenant_id = p_tenant_id
-    AND de_id = p_de_id
-    AND expires_at > now();
-
-  IF FOUND THEN
-    -- Update used_at timestamp
-    UPDATE embed_tokens
-    SET used_at = now()
-    WHERE token_hash = v_token_hash;
-
-    RETURN json_build_object('valid', true);
-  ELSE
-    RETURN json_build_object('valid', false);
-  END IF;
-END;
-$function$;
-
 CREATE OR REPLACE FUNCTION public.verify_extraction_result(p_id uuid, p_corrections jsonb DEFAULT NULL::jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -29118,6 +30687,15 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.workforce_autonomy_paused(p_tenant_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select coalesce((select autonomy_paused from workforce_trust_posture where tenant_id = p_tenant_id), false);
+$function$;
+
 
 -- ── Sequences ───────────────────────────────────────────────────────────────
 CREATE SEQUENCE IF NOT EXISTS public.knowledge_conflict_probe_queue_id_seq AS bigint INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1;
@@ -29176,6 +30754,23 @@ CREATE TABLE IF NOT EXISTS public.customer_accounts (
   CONSTRAINT customer_accounts_status_check CHECK ((status = ANY (ARRAY['active'::text, 'at_risk'::text, 'churned'::text]))),
   CONSTRAINT customer_accounts_pkey PRIMARY KEY (id)
 );
+CREATE TABLE IF NOT EXISTS public.org_units (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "parent_id" uuid,
+  "kind" text NOT NULL,
+  "name" text NOT NULL,
+  "code" text,
+  "timezone" text,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "rr_cursor" integer DEFAULT 0 NOT NULL,
+  "created_by" uuid,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT org_units_kind_check CHECK ((kind = ANY (ARRAY['location'::text, 'branch'::text, 'department'::text, 'team'::text]))),
+  CONSTRAINT org_units_pkey PRIMARY KEY (id),
+  CONSTRAINT org_units_tenant_id_parent_id_kind_name_key UNIQUE (tenant_id, parent_id, kind, name)
+);
 CREATE TABLE IF NOT EXISTS public.digital_employees (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -29224,18 +30819,18 @@ CREATE TABLE IF NOT EXISTS public.digital_employees (
   "is_workforce_assistant" boolean DEFAULT false,
   "is_product_expert" boolean DEFAULT false,
   "charter" jsonb DEFAULT '{}'::jsonb,
-  "is_specialist" boolean DEFAULT false NOT NULL,
-  "specialist_key" text,
   "archetype_key" text,
   "exam_archetype_keys" text[] DEFAULT '{}'::text[] NOT NULL,
   "is_supervisor" boolean DEFAULT false NOT NULL,
   "voice" text,
   "context_turns" integer DEFAULT 8 NOT NULL,
+  "org_unit_id" uuid,
   CONSTRAINT digital_employees_category_check CHECK ((category = ANY (ARRAY['Customer'::text, 'Internal'::text]))),
   CONSTRAINT digital_employees_confidence_threshold_check CHECK (((confidence_threshold >= 0) AND (confidence_threshold <= 100))),
   CONSTRAINT digital_employees_external_reply_mode_check CHECK ((external_reply_mode = ANY (ARRAY['draft'::text, 'auto'::text]))),
   CONSTRAINT digital_employees_lifecycle_status_check CHECK ((lifecycle_status = ANY (ARRAY['designed'::text, 'configured'::text, 'trained'::text, 'tested'::text, 'certified'::text, 'published'::text, 'assigned'::text, 'active'::text, 'improving'::text, 'paused'::text, 'retired'::text, 'archived'::text]))),
   CONSTRAINT digital_employees_status_check CHECK ((status = ANY (ARRAY['active'::text, 'idle'::text, 'disabled'::text]))),
+  CONSTRAINT digital_employees_status_matches_lifecycle CHECK (de_status_allowed(lifecycle_status, status)),
   CONSTRAINT digital_employees_trust_level_check CHECK ((trust_level = ANY (ARRAY['supervised'::text, 'established'::text, 'trusted'::text, 'autonomous'::text]))),
   CONSTRAINT digital_employees_pkey PRIMARY KEY (id)
 );
@@ -29449,6 +31044,10 @@ CREATE TABLE IF NOT EXISTS public.human_tasks (
   "decision_edit" jsonb,
   "disposition" text,
   "resolved_work_item_id" uuid,
+  "assigned_at" timestamp with time zone,
+  "assigned_via" jsonb,
+  "first_approver_id" uuid,
+  "first_approved_at" timestamp with time zone,
   CONSTRAINT human_tasks_decision_edit_shape_check CHECK (((decision_edit IS NULL) OR ((decision_edit ? 'before'::text) AND (decision_edit ? 'after'::text)))),
   CONSTRAINT human_tasks_decision_other_needs_note_check CHECK (((decision_reason_code IS DISTINCT FROM 'other'::text) OR (COALESCE(btrim(decision_note), ''::text) <> ''::text))),
   CONSTRAINT human_tasks_decision_reason_code_check CHECK (((decision_reason_code IS NULL) OR (decision_reason_code = ANY (ARRAY['wrong_facts'::text, 'wrong_tone'::text, 'missing_context'::text, 'incomplete'::text, 'not_permitted'::text, 'customer_specific'::text, 'other'::text])))),
@@ -29827,6 +31426,23 @@ CREATE TABLE IF NOT EXISTS public.answer_cache (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT answer_cache_confidence_check CHECK (((confidence >= 0) AND (confidence <= 100))),
   CONSTRAINT answer_cache_pkey PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS public.approval_authority (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "org_unit_id" uuid,
+  "role" text,
+  "user_id" uuid,
+  "category" text,
+  "max_amount_cents" bigint,
+  "second_approver_above_cents" bigint,
+  "note" text,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "created_by" uuid,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT approval_authority_has_a_holder CHECK (((org_unit_id IS NOT NULL) OR (role IS NOT NULL) OR (user_id IS NOT NULL))),
+  CONSTRAINT approval_authority_pkey PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS public.audit_chain_anomalies (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -30227,7 +31843,6 @@ CREATE TABLE IF NOT EXISTS public.connector_objects (
 );
 CREATE TABLE IF NOT EXISTS public.connector_secrets (
   "connector_id" uuid NOT NULL,
-  "secret" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   "secret_id" uuid,
@@ -30392,6 +32007,8 @@ CREATE TABLE IF NOT EXISTS public.customer_account_contacts (
   "notes" text,
   "attributes" jsonb DEFAULT '{}'::jsonb NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "source" text,
+  "external_ref" text,
   CONSTRAINT customer_account_contacts_role_check CHECK (((role IS NULL) OR (role = ANY (ARRAY['decision_maker'::text, 'economic_buyer'::text, 'billing'::text, 'technical'::text, 'exec_sponsor'::text, 'day_to_day'::text, 'procurement'::text, 'legal'::text, 'other'::text])))),
   CONSTRAINT customer_account_contacts_pkey PRIMARY KEY (id)
 );
@@ -30438,6 +32055,7 @@ CREATE TABLE IF NOT EXISTS public.de_autonomy (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   "source_category" text,
   "de_id" uuid,
+  "playbook_id" uuid,
   CONSTRAINT de_autonomy_action_type_check CHECK (((action_type ~ '^[a-z0-9_:.-]+$'::text) AND (length(action_type) <= 120))),
   CONSTRAINT de_autonomy_min_confidence_check CHECK (((min_confidence IS NULL) OR ((min_confidence >= 0) AND (min_confidence <= 100)))),
   CONSTRAINT de_autonomy_pkey PRIMARY KEY (id)
@@ -30740,7 +32358,6 @@ CREATE TABLE IF NOT EXISTS public.evidence_runs (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "completed_at" timestamp with time zone,
   "inquiry_embedding" vector(384),
-  "specialist_de_id" uuid,
   "kind" text DEFAULT 'answer'::text NOT NULL,
   "work_category" text,
   CONSTRAINT evidence_runs_answer_status_check CHECK ((answer_status = ANY (ARRAY['llm_not_configured'::text, 'answered'::text, 'blocked'::text, 'error'::text]))),
@@ -31304,18 +32921,6 @@ CREATE TABLE IF NOT EXISTS public.de_skills (
   CONSTRAINT de_skills_pkey PRIMARY KEY (id),
   CONSTRAINT de_skills_tenant_id_de_id_skill_key_key UNIQUE (tenant_id, de_id, skill_key)
 );
-CREATE TABLE IF NOT EXISTS public.de_specialist_assignments (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "de_id" uuid NOT NULL,
-  "rank" smallint NOT NULL,
-  "created_by" uuid,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "specialist_de_id" uuid NOT NULL,
-  CONSTRAINT de_specialist_assignments_rank_check CHECK ((rank = ANY (ARRAY[1, 2]))),
-  CONSTRAINT de_specialist_assignments_pkey PRIMARY KEY (id),
-  CONSTRAINT de_specialist_assignments_tenant_id_de_id_rank_key UNIQUE (tenant_id, de_id, rank)
-);
 CREATE TABLE IF NOT EXISTS public.de_spend_ledger (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -31505,17 +33110,6 @@ CREATE TABLE IF NOT EXISTS public.dunning_rungs (
   CONSTRAINT dunning_rungs_stage_check CHECK ((stage > 0)),
   CONSTRAINT dunning_rungs_pkey PRIMARY KEY (id),
   CONSTRAINT dunning_rungs_ladder_id_stage_key UNIQUE (ladder_id, stage)
-);
-CREATE TABLE IF NOT EXISTS public.embed_tokens (
-  "token_id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "de_id" uuid NOT NULL,
-  "token_hash" text NOT NULL,
-  "created_at" timestamp without time zone DEFAULT now() NOT NULL,
-  "expires_at" timestamp without time zone NOT NULL,
-  "used_at" timestamp without time zone,
-  CONSTRAINT embed_tokens_pkey PRIMARY KEY (token_id),
-  CONSTRAINT embed_tokens_token_hash_key UNIQUE (token_hash)
 );
 CREATE TABLE IF NOT EXISTS public.end_user_sessions (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -31859,18 +33453,6 @@ CREATE TABLE IF NOT EXISTS public.inbox_watch_state (
   CONSTRAINT inbox_watch_state_pkey PRIMARY KEY (id),
   CONSTRAINT inbox_watch_state_tenant_id_connector_id_key UNIQUE (tenant_id, connector_id)
 );
-CREATE TABLE IF NOT EXISTS public.invoice_activities (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "invoice_id" uuid NOT NULL,
-  "de_id" uuid,
-  "objective_id" uuid,
-  "kind" text NOT NULL,
-  "summary" text NOT NULL,
-  "detail" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT invoice_activities_pkey PRIMARY KEY (id)
-);
 CREATE TABLE IF NOT EXISTS public.renewal_invoices (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -31886,8 +33468,21 @@ CREATE TABLE IF NOT EXISTS public.renewal_invoices (
   "source_currency" text,
   "outstanding_cents" bigint,
   "payments_reconciled_at" timestamp with time zone,
+  "contact_email" text,
   CONSTRAINT renewal_invoices_status_check CHECK ((status = ANY (ARRAY['pending_generation'::text, 'awaiting_approval'::text, 'sent'::text, 'paid'::text, 'overdue'::text]))),
   CONSTRAINT renewal_invoices_pkey PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS public.invoice_activities (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "invoice_id" uuid NOT NULL,
+  "de_id" uuid,
+  "objective_id" uuid,
+  "kind" text NOT NULL,
+  "summary" text NOT NULL,
+  "detail" jsonb DEFAULT '{}'::jsonb NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT invoice_activities_pkey PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS public.invoice_payments (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -32226,27 +33821,6 @@ CREATE TABLE IF NOT EXISTS public.mcp_server_allowlist (
   CONSTRAINT mcp_server_allowlist_pkey PRIMARY KEY (id),
   CONSTRAINT mcp_server_allowlist_tenant_id_host_key UNIQUE (tenant_id, host)
 );
-CREATE TABLE IF NOT EXISTS public.media_assets (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "kind" text NOT NULL,
-  "title" text NOT NULL,
-  "storage_path" text NOT NULL,
-  "mime" text DEFAULT ''::text NOT NULL,
-  "size_bytes" bigint DEFAULT 0 NOT NULL,
-  "tags" text[] DEFAULT '{}'::text[] NOT NULL,
-  "sort_order" integer DEFAULT 0 NOT NULL,
-  "quality_flags" jsonb DEFAULT '[]'::jsonb NOT NULL,
-  "extracted" boolean DEFAULT false NOT NULL,
-  "knowledge_doc_id" uuid,
-  "created_by" uuid,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "definition_id" uuid,
-  "specialist_de_id" uuid,
-  CONSTRAINT media_assets_kind_check CHECK ((kind = ANY (ARRAY['document'::text, 'image'::text, 'video'::text]))),
-  CONSTRAINT media_assets_pkey PRIMARY KEY (id)
-);
 CREATE TABLE IF NOT EXISTS public.messages (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "conversation_id" uuid NOT NULL,
@@ -32388,6 +33962,20 @@ CREATE TABLE IF NOT EXISTS public.ops_alerts (
   "resolved_at" timestamp with time zone,
   CONSTRAINT ops_alerts_pkey PRIMARY KEY (id)
 );
+CREATE TABLE IF NOT EXISTS public.org_unit_members (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "org_unit_id" uuid NOT NULL,
+  "user_id" uuid NOT NULL,
+  "role_in_unit" text DEFAULT 'member'::text NOT NULL,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "is_primary" boolean DEFAULT false NOT NULL,
+  CONSTRAINT org_unit_members_is_a_person CHECK ((user_id IS NOT NULL)) NOT VALID,
+  CONSTRAINT org_unit_members_role_in_unit_check CHECK ((role_in_unit = ANY (ARRAY['member'::text, 'lead'::text]))),
+  CONSTRAINT org_unit_members_pkey PRIMARY KEY (id),
+  CONSTRAINT org_unit_members_org_unit_id_user_id_key UNIQUE (org_unit_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS public.otel_spans (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -32466,6 +34054,27 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   "updated_at" timestamp with time zone DEFAULT now(),
   "department" text DEFAULT ''::text NOT NULL,
   "invited_by" text,
+  "employee_number" text,
+  "first_name" text,
+  "middle_name" text,
+  "last_name" text,
+  "preferred_name" text,
+  "pronouns" text,
+  "work_email" text,
+  "work_phone" text,
+  "mobile_phone" text,
+  "job_title" text,
+  "employment_type" text,
+  "employment_status" text,
+  "hire_date" date,
+  "end_date" date,
+  "org_unit_id" uuid,
+  "reports_to_user_id" uuid,
+  "work_location" text,
+  "time_zone" text,
+  "locale" text,
+  CONSTRAINT profiles_employment_status_check CHECK (((employment_status IS NULL) OR (employment_status = ANY (ARRAY['active'::text, 'on_leave'::text, 'notice_period'::text, 'terminated'::text])))),
+  CONSTRAINT profiles_employment_type_check CHECK (((employment_type IS NULL) OR (employment_type = ANY (ARRAY['full_time'::text, 'part_time'::text, 'contractor'::text, 'intern'::text, 'temporary'::text])))),
   CONSTRAINT profiles_layer_check CHECK ((layer = ANY (ARRAY['platform'::text, 'tenant'::text]))),
   CONSTRAINT profiles_role_check CHECK ((role = ANY (ARRAY['dt_super_admin'::text, 'dt_god_access'::text, 'dt_support'::text, 'dt_billing'::text, 'tenant_owner'::text, 'tenant_admin'::text, 'tenant_manager'::text, 'tenant_user'::text, 'platform_super_admin'::text, 'platform_support'::text, 'platform_billing'::text, 'agent'::text, 'analyst'::text, 'viewer'::text, 'read_only'::text, 'knowledge_manager'::text, 'approver'::text]))),
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
@@ -32739,6 +34348,39 @@ CREATE TABLE IF NOT EXISTS public.posting_draft_lines (
   CONSTRAINT posting_draft_lines_pkey PRIMARY KEY (id),
   CONSTRAINT posting_draft_lines_draft_id_line_no_key UNIQUE (draft_id, line_no)
 );
+CREATE TABLE IF NOT EXISTS public.profile_compensation (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "user_id" uuid NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "amount_cents" bigint NOT NULL,
+  "currency" text DEFAULT 'USD'::text NOT NULL,
+  "pay_frequency" text DEFAULT 'annual'::text NOT NULL,
+  "effective_from" date NOT NULL,
+  "effective_to" date,
+  "note" text,
+  "created_by" uuid,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT profile_compensation_pay_frequency_check CHECK ((pay_frequency = ANY (ARRAY['hourly'::text, 'weekly'::text, 'biweekly'::text, 'semimonthly'::text, 'monthly'::text, 'annual'::text]))),
+  CONSTRAINT profile_compensation_pkey PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS public.profile_private (
+  "user_id" uuid NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "date_of_birth" date,
+  "personal_email" text,
+  "personal_phone" text,
+  "address_line1" text,
+  "address_line2" text,
+  "city" text,
+  "state_region" text,
+  "postal_code" text,
+  "country" text,
+  "emergency_contact_name" text,
+  "emergency_contact_relationship" text,
+  "emergency_contact_phone" text,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT profile_private_pkey PRIMARY KEY (user_id)
+);
 CREATE TABLE IF NOT EXISTS public.rate_limit_counters (
   "bucket_key" text NOT NULL,
   "window_start" timestamp with time zone NOT NULL,
@@ -32821,47 +34463,6 @@ CREATE TABLE IF NOT EXISTS public.scim_user_links (
   CONSTRAINT scim_user_links_user_name_check CHECK ((btrim(user_name) <> ''::text)),
   CONSTRAINT scim_user_links_pkey PRIMARY KEY (id)
 );
-CREATE TABLE IF NOT EXISTS public.spec_consultations (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "requested_by" text DEFAULT 'human'::text NOT NULL,
-  "run_id" uuid,
-  "question" text NOT NULL,
-  "answer" text,
-  "confidence" integer,
-  "sources_used" jsonb DEFAULT '[]'::jsonb NOT NULL,
-  "status" text DEFAULT 'answered'::text NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "depth" integer DEFAULT 0 NOT NULL,
-  "path" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
-  "specialist_de_id" uuid NOT NULL,
-  CONSTRAINT spec_consultations_confidence_check CHECK (((confidence >= 0) AND (confidence <= 100))),
-  CONSTRAINT spec_consultations_requested_by_check CHECK ((requested_by = ANY (ARRAY['human'::text, 'de'::text, 'playbook'::text]))),
-  CONSTRAINT spec_consultations_status_check CHECK ((status = ANY (ARRAY['answered'::text, 'blocked_llm'::text, 'blocked_budget'::text, 'escalated'::text, 'error'::text]))),
-  CONSTRAINT spec_consultations_pkey PRIMARY KEY (id)
-);
-CREATE TABLE IF NOT EXISTS public.scribe_requests (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "consultation_id" uuid NOT NULL,
-  "connector_id" uuid NOT NULL,
-  "action_key" text NOT NULL,
-  "external_ref" text NOT NULL,
-  "payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "payload_source" text DEFAULT 'consultation_citation'::text NOT NULL,
-  "status" text DEFAULT 'pending_approval'::text NOT NULL,
-  "task_id" uuid,
-  "executed_at" timestamp with time zone,
-  "result" jsonb,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "action_definition_id" uuid,
-  "specialist_de_id" uuid NOT NULL,
-  CONSTRAINT scribe_requests_action_key_check CHECK ((action_key = ANY (ARRAY['add_internal_note'::text, 'update_status'::text, 'reply_to_ticket'::text, 'create_test_record'::text]))),
-  CONSTRAINT scribe_requests_payload_source_check CHECK ((payload_source = 'consultation_citation'::text)),
-  CONSTRAINT scribe_requests_status_check CHECK ((status = ANY (ARRAY['pending_approval'::text, 'approved'::text, 'executed'::text, 'rejected'::text, 'failed'::text]))),
-  CONSTRAINT scribe_requests_pkey PRIMARY KEY (id)
-);
 CREATE TABLE IF NOT EXISTS public.semantic_guardrail_cache (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -32919,35 +34520,8 @@ CREATE TABLE IF NOT EXISTS public.skill_categories (
   "sort_order" integer DEFAULT 100 NOT NULL,
   CONSTRAINT skill_categories_pkey PRIMARY KEY (id)
 );
-CREATE TABLE IF NOT EXISTS public.sod_policies (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "scope" text DEFAULT 'accounting'::text NOT NULL,
-  "require_distinct_approver" boolean DEFAULT true NOT NULL,
-  "dual_approval_over_cents" bigint,
-  "active" boolean DEFAULT true NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT sod_policies_pkey PRIMARY KEY (id),
-  CONSTRAINT sod_policies_tenant_id_scope_key UNIQUE (tenant_id, scope)
-);
-CREATE TABLE IF NOT EXISTS public.specialist_sources (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "source_type" text NOT NULL,
-  "access_mode" text NOT NULL,
-  "label" text DEFAULT ''::text NOT NULL,
-  "config" jsonb DEFAULT '{}'::jsonb NOT NULL,
-  "enabled" boolean DEFAULT true NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "specialist_de_id" uuid NOT NULL,
-  CONSTRAINT specialist_sources_access_mode_check CHECK ((access_mode = ANY (ARRAY['ingest'::text, 'fetch_only'::text, 'reference'::text]))),
-  CONSTRAINT specialist_sources_mode_matrix CHECK ((((source_type = 'knowledge'::text) AND (access_mode = 'ingest'::text)) OR ((source_type = 'connector'::text) AND (access_mode = ANY (ARRAY['ingest'::text, 'fetch_only'::text]))) OR ((source_type = 'mcp_server'::text) AND (access_mode = ANY (ARRAY['fetch_only'::text, 'reference'::text]))) OR ((source_type = 'link'::text) AND (access_mode = 'reference'::text)) OR ((source_type = 'media'::text) AND (access_mode = 'ingest'::text)))),
-  CONSTRAINT specialist_sources_source_type_check CHECK ((source_type = ANY (ARRAY['knowledge'::text, 'connector'::text, 'mcp_server'::text, 'link'::text, 'media'::text]))),
-  CONSTRAINT specialist_sources_pkey PRIMARY KEY (id)
-);
 CREATE TABLE IF NOT EXISTS public.specialist_source_secrets (
   "source_id" uuid NOT NULL,
-  "secret" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   "secret_id" uuid,
@@ -33489,6 +35063,24 @@ CREATE TABLE IF NOT EXISTS public.widget_key_secrets (
   "rotated_at" timestamp with time zone,
   CONSTRAINT widget_key_secrets_pkey PRIMARY KEY (widget_key_id)
 );
+CREATE TABLE IF NOT EXISTS public.work_assignment_rules (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "name" text NOT NULL,
+  "priority" integer DEFAULT 100 NOT NULL,
+  "match_type" text,
+  "match_source" text,
+  "match_related_table" text,
+  "match_de_id" uuid,
+  "target_unit_id" uuid NOT NULL,
+  "strategy" text DEFAULT 'round_robin'::text NOT NULL,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "created_by" uuid,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT work_assignment_rules_strategy_check CHECK ((strategy = ANY (ARRAY['round_robin'::text, 'lead'::text, 'lead_then_round_robin'::text]))),
+  CONSTRAINT work_assignment_rules_pkey PRIMARY KEY (id)
+);
 CREATE TABLE IF NOT EXISTS public.work_item_claims (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -33653,6 +35245,23 @@ CREATE TABLE IF NOT EXISTS public.workforce_team_members (
   CONSTRAINT workforce_team_members_team_id_de_id_key UNIQUE (team_id, de_id),
   CONSTRAINT workforce_team_members_team_id_fallback_rank_key UNIQUE (team_id, fallback_rank)
 );
+CREATE TABLE IF NOT EXISTS public.workforce_trust_posture (
+  "tenant_id" uuid NOT NULL,
+  "autonomy_paused" boolean DEFAULT false NOT NULL,
+  "paused_at" timestamp with time zone,
+  "paused_by" uuid,
+  "paused_reason" text,
+  "breaker_enabled" boolean DEFAULT true NOT NULL,
+  "breaker_window_hours" integer DEFAULT 24 NOT NULL,
+  "breaker_min_actions" integer DEFAULT 10 NOT NULL,
+  "breaker_incident_pct" numeric DEFAULT 20 NOT NULL,
+  "breaker_block_pct" numeric DEFAULT 30 NOT NULL,
+  "breaker_tripped_at" timestamp with time zone,
+  "breaker_tripped_why" text,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_by" uuid,
+  CONSTRAINT workforce_trust_posture_pkey PRIMARY KEY (tenant_id)
+);
 CREATE TABLE IF NOT EXISTS public.workspaces (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -33674,6 +35283,12 @@ CREATE TABLE IF NOT EXISTS public.workspaces (
 DO $$ BEGIN ALTER TABLE public.tenants ADD CONSTRAINT tenants_parent_tenant_id_fkey FOREIGN KEY (parent_tenant_id) REFERENCES tenants(id);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.customer_accounts ADD CONSTRAINT customer_accounts_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.org_units ADD CONSTRAINT org_units_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES org_units(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.org_units ADD CONSTRAINT org_units_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.digital_employees ADD CONSTRAINT digital_employees_org_unit_id_fkey FOREIGN KEY (org_unit_id) REFERENCES org_units(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.digital_employees ADD CONSTRAINT digital_employees_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -33820,6 +35435,10 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.answer_cache ADD CONSTRAINT answer_cache_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.answer_cache ADD CONSTRAINT answer_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.approval_authority ADD CONSTRAINT approval_authority_org_unit_id_fkey FOREIGN KEY (org_unit_id) REFERENCES org_units(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.approval_authority ADD CONSTRAINT approval_authority_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.audit_chain_anomalies ADD CONSTRAINT audit_chain_anomalies_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -33979,6 +35598,8 @@ DO $$ BEGIN ALTER TABLE public.de_assignments ADD CONSTRAINT de_assignments_tena
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_autonomy ADD CONSTRAINT de_autonomy_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.de_autonomy ADD CONSTRAINT de_autonomy_playbook_id_fkey FOREIGN KEY (playbook_id) REFERENCES playbook_definitions(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_autonomy ADD CONSTRAINT de_autonomy_source_category_fkey FOREIGN KEY (source_category) REFERENCES system_categories(key);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_autonomy ADD CONSTRAINT de_autonomy_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
@@ -34068,8 +35689,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_exceptions ADD CONSTRAINT de_exceptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_exceptions ADD CONSTRAINT de_exceptions_work_item_id_fkey FOREIGN KEY (work_item_id) REFERENCES de_work_items(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.evidence_runs ADD CONSTRAINT evidence_runs_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.evidence_runs ADD CONSTRAINT evidence_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34227,12 +35846,6 @@ DO $$ BEGIN ALTER TABLE public.de_skills ADD CONSTRAINT de_skills_skill_key_fkey
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_skills ADD CONSTRAINT de_skills_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.de_specialist_assignments ADD CONSTRAINT de_specialist_assignments_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.de_specialist_assignments ADD CONSTRAINT de_specialist_assignments_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.de_specialist_assignments ADD CONSTRAINT de_specialist_assignments_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_spend_ledger ADD CONSTRAINT de_spend_ledger_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_spend_ledger ADD CONSTRAINT de_spend_ledger_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
@@ -34284,10 +35897,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.dunning_ladders ADD CONSTRAINT dunning_ladders_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.dunning_rungs ADD CONSTRAINT dunning_rungs_ladder_id_fkey FOREIGN KEY (ladder_id) REFERENCES dunning_ladders(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.embed_tokens ADD CONSTRAINT embed_tokens_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.embed_tokens ADD CONSTRAINT embed_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.end_user_sessions ADD CONSTRAINT end_user_sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34369,17 +35978,17 @@ DO $$ BEGIN ALTER TABLE public.inbox_watch_state ADD CONSTRAINT inbox_watch_stat
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.inbox_watch_state ADD CONSTRAINT inbox_watch_state_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.renewal_invoices ADD CONSTRAINT renewal_invoices_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.renewal_invoices ADD CONSTRAINT renewal_invoices_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_activities ADD CONSTRAINT invoice_activities_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.invoice_activities ADD CONSTRAINT invoice_activities_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
+DO $$ BEGIN ALTER TABLE public.invoice_activities ADD CONSTRAINT invoice_activities_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES renewal_invoices(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_activities ADD CONSTRAINT invoice_activities_objective_id_fkey FOREIGN KEY (objective_id) REFERENCES de_objectives(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_activities ADD CONSTRAINT invoice_activities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.renewal_invoices ADD CONSTRAINT renewal_invoices_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.renewal_invoices ADD CONSTRAINT renewal_invoices_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_payments ADD CONSTRAINT invoice_payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES renewal_invoices(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34389,7 +35998,7 @@ DO $$ BEGIN ALTER TABLE public.invoice_writeback_requests ADD CONSTRAINT invoice
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_writeback_requests ADD CONSTRAINT invoice_writeback_requests_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.invoice_writeback_requests ADD CONSTRAINT invoice_writeback_requests_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE;
+DO $$ BEGIN ALTER TABLE public.invoice_writeback_requests ADD CONSTRAINT invoice_writeback_requests_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES renewal_invoices(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.invoice_writeback_requests ADD CONSTRAINT invoice_writeback_requests_objective_id_fkey FOREIGN KEY (objective_id) REFERENCES de_objectives(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34481,14 +36090,6 @@ DO $$ BEGIN ALTER TABLE public.kpi_metric_catalog ADD CONSTRAINT kpi_metric_cata
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.mcp_server_allowlist ADD CONSTRAINT mcp_server_allowlist_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.media_assets ADD CONSTRAINT media_assets_definition_id_fkey FOREIGN KEY (definition_id) REFERENCES playbook_definitions(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.media_assets ADD CONSTRAINT media_assets_knowledge_doc_id_fkey FOREIGN KEY (knowledge_doc_id) REFERENCES knowledge_docs(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.media_assets ADD CONSTRAINT media_assets_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.media_assets ADD CONSTRAINT media_assets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.messages ADD CONSTRAINT messages_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.messages ADD CONSTRAINT messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE;
@@ -34535,6 +36136,10 @@ DO $$ BEGIN ALTER TABLE public.opportunity_writeback_requests ADD CONSTRAINT opp
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.opportunity_writeback_requests ADD CONSTRAINT opportunity_writeback_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.org_unit_members ADD CONSTRAINT org_unit_members_org_unit_id_fkey FOREIGN KEY (org_unit_id) REFERENCES org_units(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.org_unit_members ADD CONSTRAINT org_unit_members_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.otel_spans ADD CONSTRAINT otel_spans_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.outbound_drafts ADD CONSTRAINT outbound_drafts_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
@@ -34548,6 +36153,8 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.payment_promises ADD CONSTRAINT payment_promises_recorded_by_de_fkey FOREIGN KEY (recorded_by_de) REFERENCES digital_employees(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.payment_promises ADD CONSTRAINT payment_promises_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.profiles ADD CONSTRAINT profiles_org_unit_id_fkey FOREIGN KEY (org_unit_id) REFERENCES org_units(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.profiles ADD CONSTRAINT profiles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34615,6 +36222,10 @@ DO $$ BEGIN ALTER TABLE public.posting_drafts ADD CONSTRAINT posting_drafts_tena
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.posting_draft_lines ADD CONSTRAINT posting_draft_lines_draft_id_fkey FOREIGN KEY (draft_id) REFERENCES posting_drafts(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.profile_compensation ADD CONSTRAINT profile_compensation_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.profile_private ADD CONSTRAINT profile_private_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.role_certifications ADD CONSTRAINT role_certifications_archetype_key_fkey FOREIGN KEY (archetype_key) REFERENCES role_archetypes(key) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.role_certifications ADD CONSTRAINT role_certifications_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
@@ -34633,22 +36244,6 @@ DO $$ BEGIN ALTER TABLE public.scim_user_links ADD CONSTRAINT scim_user_links_pr
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.scim_user_links ADD CONSTRAINT scim_user_links_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.spec_consultations ADD CONSTRAINT spec_consultations_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.spec_consultations ADD CONSTRAINT spec_consultations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_action_definition_id_fkey FOREIGN KEY (action_definition_id) REFERENCES action_definitions(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_connector_id_fkey FOREIGN KEY (connector_id) REFERENCES connectors(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_consultation_id_fkey FOREIGN KEY (consultation_id) REFERENCES spec_consultations(id) ON DELETE RESTRICT;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_task_id_fkey FOREIGN KEY (task_id) REFERENCES human_tasks(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.scribe_requests ADD CONSTRAINT scribe_requests_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.semantic_guardrail_cache ADD CONSTRAINT semantic_guardrail_cache_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.semantic_guardrail_shadow_log ADD CONSTRAINT semantic_guardrail_shadow_log_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
@@ -34658,12 +36253,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.sim_runs ADD CONSTRAINT sim_runs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.skill_categories ADD CONSTRAINT skill_categories_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.sod_policies ADD CONSTRAINT sod_policies_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.specialist_sources ADD CONSTRAINT specialist_sources_specialist_de_id_fkey FOREIGN KEY (specialist_de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.specialist_source_secrets ADD CONSTRAINT specialist_source_secrets_source_id_fkey FOREIGN KEY (source_id) REFERENCES specialist_sources(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.sso_attribute_role_map ADD CONSTRAINT sso_attribute_role_map_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -34777,6 +36366,10 @@ DO $$ BEGIN ALTER TABLE public.widget_key_secrets ADD CONSTRAINT widget_key_secr
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.widget_key_secrets ADD CONSTRAINT widget_key_secrets_widget_key_id_fkey FOREIGN KEY (widget_key_id) REFERENCES widget_keys(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.work_assignment_rules ADD CONSTRAINT work_assignment_rules_target_unit_id_fkey FOREIGN KEY (target_unit_id) REFERENCES org_units(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.work_assignment_rules ADD CONSTRAINT work_assignment_rules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.work_item_claims ADD CONSTRAINT work_item_claims_connector_id_fkey FOREIGN KEY (connector_id) REFERENCES connectors(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.work_item_claims ADD CONSTRAINT work_item_claims_evidence_run_decision_id_fkey FOREIGN KEY (evidence_run_decision_id) REFERENCES evidence_run_decisions(id) ON DELETE SET NULL;
@@ -34829,6 +36422,8 @@ DO $$ BEGIN ALTER TABLE public.workforce_team_members ADD CONSTRAINT workforce_t
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.workforce_team_members ADD CONSTRAINT workforce_team_members_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.workforce_trust_posture ADD CONSTRAINT workforce_trust_posture_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.workspaces ADD CONSTRAINT workspaces_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
@@ -34837,9 +36432,14 @@ CREATE INDEX IF NOT EXISTS idx_tenants_parent_tenant_id ON public.tenants USING 
 CREATE INDEX IF NOT EXISTS customer_accounts_external_ref_idx ON public.customer_accounts USING btree (tenant_id, external_ref);
 CREATE UNIQUE INDEX IF NOT EXISTS customer_accounts_source_key ON public.customer_accounts USING btree (tenant_id, source_provider, source_external_ref) WHERE (source_external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS customer_accounts_tenant_idx ON public.customer_accounts USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_org_units_parent ON public.org_units USING btree (parent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_org_units_root_unique ON public.org_units USING btree (tenant_id, kind, name) WHERE (parent_id IS NULL);
+CREATE INDEX IF NOT EXISTS idx_org_units_tenant ON public.org_units USING btree (tenant_id) WHERE is_active;
 CREATE INDEX IF NOT EXISTS de_tenant_category_idx ON public.digital_employees USING btree (tenant_id, category);
 CREATE INDEX IF NOT EXISTS de_tenant_idx ON public.digital_employees USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS de_tenant_status_idx ON public.digital_employees USING btree (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_de_org_unit ON public.digital_employees USING btree (org_unit_id) WHERE (org_unit_id IS NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_workforce_assistant_per_tenant ON public.digital_employees USING btree (tenant_id) WHERE is_workforce_assistant;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_de_one_supervisor_per_tenant ON public.digital_employees USING btree (tenant_id) WHERE is_supervisor;
 CREATE INDEX IF NOT EXISTS de_missions_lookup_idx ON public.de_missions USING btree (tenant_id, de_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS de_objectives_lookup_idx ON public.de_objectives USING btree (tenant_id, de_id, status, priority);
@@ -34857,6 +36457,7 @@ CREATE INDEX IF NOT EXISTS human_tasks_de_idx ON public.human_tasks USING btree 
 CREATE INDEX IF NOT EXISTS human_tasks_decision_reason_idx ON public.human_tasks USING btree (tenant_id, decision_reason_code) WHERE (decision_reason_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS human_tasks_related_idx ON public.human_tasks USING btree (related_table, related_id) WHERE (related_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS human_tasks_tenant_idx ON public.human_tasks USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_human_tasks_assignee ON public.human_tasks USING btree (tenant_id, assigned_user_id, status) WHERE (status = 'pending'::text);
 CREATE INDEX IF NOT EXISTS action_executions_dedupe_idx ON public.action_executions USING btree (action_definition_id, dedupe_key) WHERE (dedupe_key IS NOT NULL);
 CREATE INDEX IF NOT EXISTS action_executions_origin_idx ON public.action_executions USING btree (origin_kind, origin_id) WHERE (origin_id IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS action_executions_resolves_once ON public.action_executions USING btree (resolves_task_id) WHERE ((resolves_task_id IS NOT NULL) AND (decision <> 'failed'::text));
@@ -34890,6 +36491,7 @@ CREATE INDEX IF NOT EXISTS idx_amendment_metrics_entity ON public.amendment_metr
 CREATE INDEX IF NOT EXISTS idx_amendment_metrics_tenant_amendment ON public.amendment_metrics USING btree (tenant_id, amendment_id);
 CREATE INDEX IF NOT EXISTS answer_cache_embedding_idx ON public.answer_cache USING hnsw (question_embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS answer_cache_tenant_idx ON public.answer_cache USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_approval_authority_tenant ON public.approval_authority USING btree (tenant_id) WHERE is_active;
 CREATE INDEX IF NOT EXISTS audit_events_created_idx ON public.audit_events USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS audit_events_prev_hash_idx ON public.audit_events USING btree (tenant_id, prev_hash);
 CREATE INDEX IF NOT EXISTS audit_events_tenant_idx ON public.audit_events USING btree (tenant_id);
@@ -34931,14 +36533,15 @@ CREATE INDEX IF NOT EXISTS customer_account_contacts_account_idx ON public.custo
 CREATE INDEX IF NOT EXISTS customer_account_contacts_email_idx ON public.customer_account_contacts USING btree (tenant_id, lower(email)) WHERE (email IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS customer_account_contacts_primary_uniq ON public.customer_account_contacts USING btree (account_id) WHERE is_primary;
 CREATE UNIQUE INDEX IF NOT EXISTS customer_account_contacts_ref_uidx ON public.customer_account_contacts USING btree (tenant_id, lower(btrim(end_user_ref)));
+CREATE UNIQUE INDEX IF NOT EXISTS customer_account_contacts_source_ref_uniq ON public.customer_account_contacts USING btree (tenant_id, source, external_ref) WHERE (external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS data_access_grants_subject_idx ON public.data_access_grants USING btree (tenant_id, subject_kind, subject_id);
 CREATE UNIQUE INDEX IF NOT EXISTS data_access_grants_subject_resource_uq ON public.data_access_grants USING btree (tenant_id, subject_kind, subject_id, resource_kind, COALESCE((resource_id)::text, resource_category));
 CREATE INDEX IF NOT EXISTS data_access_grants_tenant_idx ON public.data_access_grants USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS de_assignments_de_idx ON public.de_assignments USING btree (de_id);
 CREATE INDEX IF NOT EXISTS de_assignments_tenant_idx ON public.de_assignments USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS de_assignments_user_idx ON public.de_assignments USING btree (user_id, de_id);
-CREATE UNIQUE INDEX IF NOT EXISTS de_autonomy_tenant_action_category_de_uq ON public.de_autonomy USING btree (tenant_id, action_type, COALESCE(source_category, ''::text), COALESCE((de_id)::text, ''::text));
 CREATE INDEX IF NOT EXISTS de_autonomy_tenant_idx ON public.de_autonomy USING btree (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_de_autonomy_one_rule_per_scope ON public.de_autonomy USING btree (tenant_id, action_type, COALESCE(de_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(source_category, ''::text));
 CREATE INDEX IF NOT EXISTS idx_de_case_events_due ON public.de_case_events USING btree (fire_at) WHERE (status = 'pending'::text);
 CREATE INDEX IF NOT EXISTS idx_de_case_events_obj ON public.de_case_events USING btree (objective_id, status);
 CREATE INDEX IF NOT EXISTS de_certifications_de_idx ON public.de_certifications USING btree (tenant_id, de_id);
@@ -34954,7 +36557,6 @@ CREATE INDEX IF NOT EXISTS idx_de_config_audit_tenant ON public.de_config_audit_
 CREATE INDEX IF NOT EXISTS de_decision_trace_run_idx ON public.de_decision_trace USING btree (tenant_id, run_kind, run_ref, seq);
 CREATE INDEX IF NOT EXISTS de_delegation_tokens_de_idx ON public.de_delegation_tokens USING btree (tenant_id, de_id, issued_at DESC);
 CREATE INDEX IF NOT EXISTS idx_de_deliverables_de ON public.de_deliverables USING btree (tenant_id, de_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_deployment_stages_de ON public.de_deployment_stages USING btree (de_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_stages_stage ON public.de_deployment_stages USING btree (stage);
 CREATE UNIQUE INDEX IF NOT EXISTS de_development_items_open_detected_uq ON public.de_development_items USING btree (tenant_id, de_id, item_type) WHERE ((source = 'detected'::text) AND (status = ANY (ARRAY['proposed'::text, 'in_progress'::text])));
 CREATE UNIQUE INDEX IF NOT EXISTS de_escalation_rules_de_id_key ON public.de_escalation_rules USING btree (de_id);
@@ -34968,7 +36570,6 @@ CREATE INDEX IF NOT EXISTS evidence_runs_kind_idx ON public.evidence_runs USING 
 CREATE INDEX IF NOT EXISTS evidence_runs_tenant_de_created_idx ON public.evidence_runs USING btree (tenant_id, de_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS evidence_runs_tenant_idx ON public.evidence_runs USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_evidence_runs_inquiry_embedding ON public.evidence_runs USING hnsw (inquiry_embedding vector_cosine_ops) WHERE (inquiry_embedding IS NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_evidence_runs_specialist_de ON public.evidence_runs USING btree (specialist_de_id);
 CREATE INDEX IF NOT EXISTS de_experience_subject_idx ON public.de_experience USING btree (tenant_id, subject_kind, subject_id, category, external_ref);
 CREATE INDEX IF NOT EXISTS de_experience_tenant_idx ON public.de_experience USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_kdocs_never_cited ON public.knowledge_docs USING btree (tenant_id, updated_at) WHERE (is_current AND (citation_count = 0));
@@ -35028,7 +36629,6 @@ CREATE INDEX IF NOT EXISTS idx_role_assignments_de ON public.de_role_assignments
 CREATE INDEX IF NOT EXISTS idx_role_assignments_role ON public.de_role_assignments USING btree (role_name);
 CREATE INDEX IF NOT EXISTS de_skills_de_idx ON public.de_skills USING btree (tenant_id, de_id);
 CREATE UNIQUE INDEX IF NOT EXISTS de_skills_de_skill_key ON public.de_skills USING btree (de_id, skill_key);
-CREATE INDEX IF NOT EXISTS idx_assignments_specialist_de ON public.de_specialist_assignments USING btree (specialist_de_id);
 CREATE INDEX IF NOT EXISTS idx_de_system_verifications_de ON public.de_system_verifications USING btree (de_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_de_task_requests_tenant ON public.de_task_requests USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_de_task_requests_to ON public.de_task_requests USING btree (to_de_id, status);
@@ -35046,8 +36646,6 @@ CREATE INDEX IF NOT EXISTS idx_draft_responses_expires_at ON public.draft_respon
 CREATE INDEX IF NOT EXISTS idx_draft_responses_tenant_status ON public.draft_responses USING btree (tenant_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS dunning_ladders_one_active_per_tenant ON public.dunning_ladders USING btree (COALESCE(tenant_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE active;
 CREATE INDEX IF NOT EXISTS dunning_rungs_ladder_idx ON public.dunning_rungs USING btree (ladder_id, after_days_overdue);
-CREATE INDEX IF NOT EXISTS idx_embed_tokens_expires_at ON public.embed_tokens USING btree (expires_at);
-CREATE INDEX IF NOT EXISTS idx_embed_tokens_tenant_de ON public.embed_tokens USING btree (tenant_id, de_id);
 CREATE INDEX IF NOT EXISTS end_user_sessions_account_idx ON public.end_user_sessions USING btree (tenant_id, account_external_ref);
 CREATE UNIQUE INDEX IF NOT EXISTS end_user_sessions_identity_idx ON public.end_user_sessions USING btree (tenant_id, COALESCE(account_external_ref, ''::text), COALESCE(end_user_ref, ''::text));
 CREATE INDEX IF NOT EXISTS end_user_sessions_tenant_idx ON public.end_user_sessions USING btree (tenant_id);
@@ -35071,10 +36669,10 @@ CREATE INDEX IF NOT EXISTS grounded_confidence_shadow_tenant_idx ON public.groun
 CREATE INDEX IF NOT EXISTS guardrail_adjudications_rule_idx ON public.guardrail_adjudications USING btree (tenant_id, rule_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS guardrail_adjudications_tenant_idx ON public.guardrail_adjudications USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS inbox_watch_state_tenant_idx ON public.inbox_watch_state USING btree (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_invoice_activities_inv ON public.invoice_activities USING btree (invoice_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS renewal_invoices_account_idx ON public.renewal_invoices USING btree (account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS renewal_invoices_source_key ON public.renewal_invoices USING btree (tenant_id, source_provider, source_external_ref) WHERE (source_external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS renewal_invoices_tenant_idx ON public.renewal_invoices USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_activities_inv ON public.invoice_activities USING btree (invoice_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS invoice_payments_invoice_idx ON public.invoice_payments USING btree (invoice_id);
 CREATE UNIQUE INDEX IF NOT EXISTS invoice_payments_source_ref_uniq ON public.invoice_payments USING btree (tenant_id, source, external_ref) WHERE (external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_invoice_writeback_task ON public.invoice_writeback_requests USING btree (task_id) WHERE (task_id IS NOT NULL);
@@ -35113,9 +36711,6 @@ CREATE INDEX IF NOT EXISTS knowledge_ingestion_items_job_idx ON public.knowledge
 CREATE INDEX IF NOT EXISTS knowledge_group_members_user_idx ON public.knowledge_principal_group_members USING btree (user_id, tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS kpi_metric_catalog_global_key ON public.kpi_metric_catalog USING btree (metric_key) WHERE (tenant_id IS NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS kpi_metric_catalog_tenant_key ON public.kpi_metric_catalog USING btree (tenant_id, metric_key) WHERE (tenant_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_media_assets_de ON public.media_assets USING btree (specialist_de_id);
-CREATE INDEX IF NOT EXISTS media_assets_definition_idx ON public.media_assets USING btree (definition_id) WHERE (definition_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS media_assets_tenant_idx ON public.media_assets USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS notifications_created_at ON public.notifications USING btree (created_at DESC);
 CREATE INDEX IF NOT EXISTS notifications_tenant_status ON public.notifications USING btree (tenant_id, status);
 CREATE INDEX IF NOT EXISTS oauth_states_created_idx ON public.oauth_connect_states USING btree (created_at);
@@ -35125,14 +36720,20 @@ CREATE INDEX IF NOT EXISTS idx_onboarding_projects_account ON public.onboarding_
 CREATE INDEX IF NOT EXISTS idx_onboarding_projects_tenant ON public.onboarding_projects USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_opportunities_account ON public.opportunities USING btree (account_id);
 CREATE INDEX IF NOT EXISTS idx_opportunities_tenant_stage ON public.opportunities USING btree (tenant_id, stage);
+CREATE UNIQUE INDEX IF NOT EXISTS opportunities_source_ref_uniq ON public.opportunities USING btree (tenant_id, source, external_ref) WHERE (external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_opportunity_activities_opp ON public.opportunity_activities USING btree (opportunity_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_opp_writeback_task ON public.opportunity_writeback_requests USING btree (task_id) WHERE (task_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_ops_alerts_open ON public.ops_alerts USING btree (kind) WHERE (resolved_at IS NULL);
 CREATE INDEX IF NOT EXISTS ops_alerts_kind_tenant_period_idx ON public.ops_alerts USING btree (kind, ((detail ->> 'tenant_id'::text)), ((detail ->> 'period'::text)));
+CREATE INDEX IF NOT EXISTS idx_org_unit_members_unit ON public.org_unit_members USING btree (org_unit_id) WHERE is_active;
+CREATE INDEX IF NOT EXISTS idx_org_unit_members_user ON public.org_unit_members USING btree (user_id);
 CREATE INDEX IF NOT EXISTS otel_spans_tenant_idx ON public.otel_spans USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS otel_spans_unexported_idx ON public.otel_spans USING btree (created_at) WHERE (exported = false);
 CREATE INDEX IF NOT EXISTS outbound_drafts_tenant_idx ON public.outbound_drafts USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS payment_promises_open_idx ON public.payment_promises USING btree (tenant_id, invoice_id) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_employee_number ON public.profiles USING btree (tenant_id, employee_number) WHERE (employee_number IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_profiles_org_unit ON public.profiles USING btree (org_unit_id) WHERE (org_unit_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_profiles_reports_to ON public.profiles USING btree (reports_to_user_id) WHERE (reports_to_user_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_platform_access_events_session ON public.platform_access_events USING btree (session_key);
 CREATE INDEX IF NOT EXISTS idx_platform_access_events_tenant ON public.platform_access_events USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_platform_capability_grants_user ON public.platform_capability_grants USING btree (user_id);
@@ -35153,6 +36754,7 @@ CREATE INDEX IF NOT EXISTS playbook_trigger_fires_tenant_idx ON public.playbook_
 CREATE INDEX IF NOT EXISTS playbook_versions_def_idx ON public.playbook_versions USING btree (definition_id);
 CREATE INDEX IF NOT EXISTS posting_drafts_tenant_status_idx ON public.posting_drafts USING btree (tenant_id, status);
 CREATE INDEX IF NOT EXISTS posting_draft_lines_draft_idx ON public.posting_draft_lines USING btree (draft_id);
+CREATE INDEX IF NOT EXISTS idx_profile_comp_user ON public.profile_compensation USING btree (tenant_id, user_id, effective_from DESC);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON public.rate_limit_counters USING btree (window_start);
 CREATE INDEX IF NOT EXISTS idx_remote_access_write_log_session ON public.remote_access_write_log USING btree (session_key);
 CREATE INDEX IF NOT EXISTS idx_remote_access_write_log_tenant ON public.remote_access_write_log USING btree (tenant_id, created_at DESC);
@@ -35162,15 +36764,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS scim_user_links_profile_key ON public.scim_use
 CREATE UNIQUE INDEX IF NOT EXISTS scim_user_links_tenant_external_key ON public.scim_user_links USING btree (tenant_id, external_id) WHERE (external_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS scim_user_links_tenant_live_idx ON public.scim_user_links USING btree (tenant_id) WHERE (deleted_at IS NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS scim_user_links_tenant_username_key ON public.scim_user_links USING btree (tenant_id, lower(user_name));
-CREATE INDEX IF NOT EXISTS spec_consultations_tenant_idx ON public.spec_consultations USING btree (tenant_id);
-CREATE INDEX IF NOT EXISTS scribe_requests_action_definition_idx ON public.scribe_requests USING btree (action_definition_id) WHERE (action_definition_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS scribe_requests_task_idx ON public.scribe_requests USING btree (task_id) WHERE (task_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS scribe_requests_tenant_idx ON public.scribe_requests USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS semantic_guardrail_shadow_tenant_idx ON public.semantic_guardrail_shadow_log USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS sim_runs_de_idx ON public.sim_runs USING btree (tenant_id, de_id, started_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS skill_categories_global_key ON public.skill_categories USING btree (key) WHERE (tenant_id IS NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS skill_categories_tenant_key ON public.skill_categories USING btree (tenant_id, key) WHERE (tenant_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_specialist_sources_de ON public.specialist_sources USING btree (specialist_de_id);
 CREATE UNIQUE INDEX IF NOT EXISTS sso_attribute_role_map_unique ON public.sso_attribute_role_map USING btree (tenant_id, lower(btrim(attribute_name)), lower(btrim(attribute_value)));
 CREATE UNIQUE INDEX IF NOT EXISTS staleness_escalations_open_uq ON public.staleness_escalations USING btree (tenant_id, target_kind, target_id, tier) WHERE (resolved_at IS NULL);
 CREATE INDEX IF NOT EXISTS staleness_escalations_target_idx ON public.staleness_escalations USING btree (target_kind, target_id);
@@ -35185,31 +36782,29 @@ CREATE INDEX IF NOT EXISTS idx_tenant_activity_log_tenant ON public.tenant_activ
 CREATE INDEX IF NOT EXISTS idx_tenant_ancestry_ancestor ON public.tenant_ancestry USING btree (ancestor_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_ancestry_tenant ON public.tenant_ancestry USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS tenant_api_keys_tenant_idx ON public.tenant_api_keys USING btree (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_billing_config_tenant ON public.tenant_billing_config USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_cost_tracking_status ON public.tenant_cost_tracking USING btree (status);
-CREATE INDEX IF NOT EXISTS idx_cost_tracking_tenant_month ON public.tenant_cost_tracking USING btree (tenant_id, billing_month);
 CREATE INDEX IF NOT EXISTS idx_tenant_deletion_receipts_tenant ON public.tenant_deletion_receipts USING btree (tenant_id, deleted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_deletion_requests_open ON public.tenant_deletion_requests USING btree (status, eligible_at) WHERE (status = 'pending'::text);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_deletion_requests_one_open ON public.tenant_deletion_requests USING btree (tenant_id) WHERE (status = 'pending'::text);
 CREATE UNIQUE INDEX IF NOT EXISTS tenant_domains_tenant_domain_uq ON public.tenant_domains USING btree (tenant_id, domain);
 CREATE UNIQUE INDEX IF NOT EXISTS tenant_domains_verified_uq ON public.tenant_domains USING btree (domain) WHERE (status = 'verified'::text);
 CREATE INDEX IF NOT EXISTS tenant_entity_fields_tenant_idx ON public.tenant_entity_fields USING btree (tenant_id, "position");
-CREATE INDEX IF NOT EXISTS idx_tenant_toggles_tenant ON public.tenant_feature_toggles USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS tenant_ip_allowlist_entries_tenant_idx ON public.tenant_ip_allowlist_entries USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS tenant_pipeline_stages_tenant_idx ON public.tenant_pipeline_stages USING btree (tenant_id, "position");
 CREATE INDEX IF NOT EXISTS idx_tenant_provisioning_requests_parent ON public.tenant_provisioning_requests USING btree (proposed_parent_tenant_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_provisioning_requests_status ON public.tenant_provisioning_requests USING btree (status);
-CREATE INDEX IF NOT EXISTS idx_usage_metrics_tenant_month ON public.tenant_usage_metrics USING btree (tenant_id, month_year);
 CREATE UNIQUE INDEX IF NOT EXISTS trust_policies_tenant_category_action_de_uq ON public.trust_policies USING btree (tenant_id, action_category, COALESCE(source_category, ''::text), COALESCE((de_id)::text, ''::text));
 CREATE INDEX IF NOT EXISTS trust_policies_tenant_idx ON public.trust_policies USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS usage_metrics_tenant_idx ON public.usage_metrics USING btree (tenant_id, day);
 CREATE INDEX IF NOT EXISTS widget_keys_hash_idx ON public.widget_keys USING btree (key_hash) WHERE active;
 CREATE INDEX IF NOT EXISTS widget_keys_tenant_idx ON public.widget_keys USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_war_tenant ON public.work_assignment_rules USING btree (tenant_id) WHERE is_active;
 CREATE INDEX IF NOT EXISTS work_item_claims_tenant_owner_idx ON public.work_item_claims USING btree (tenant_id, owner_subject_kind, owner_subject_id);
 CREATE INDEX IF NOT EXISTS work_item_framing_category_idx ON public.work_item_framing USING btree (category);
 CREATE UNIQUE INDEX IF NOT EXISTS work_item_framing_scope_tenant_category_uq ON public.work_item_framing USING btree (scope, COALESCE((tenant_id)::text, ''::text), category);
 CREATE INDEX IF NOT EXISTS work_item_framing_tenant_idx ON public.work_item_framing USING btree (tenant_id) WHERE (tenant_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_work_watchers_active ON public.work_watchers USING btree (tenant_id, active) WHERE active;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_watchers_one_owner_per_signal ON public.work_watchers USING btree (tenant_id, kind, COALESCE((config ->> 'source'::text), ''::text), label) WHERE active;
 CREATE INDEX IF NOT EXISTS work_watchers_mission_idx ON public.work_watchers USING btree (mission_id) WHERE (mission_id IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS work_watchers_mission_label_uidx ON public.work_watchers USING btree (mission_id, label) WHERE (mission_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_workforce_conversations_de ON public.workforce_conversations USING btree (de_id);
@@ -35676,6 +37271,9 @@ DECLARE
   v_tenant uuid := auth_tenant_id();
   v_task   human_tasks;
   v_row    human_tasks;
+  v_cat    text;
+  v_amt    bigint;
+  v_auth   jsonb;
 BEGIN
   perform set_config('app.allow_task_decision', 'on', true);   -- mig 486: sanctioned decision path
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
@@ -35696,6 +37294,36 @@ BEGIN
   -- visible to them. A bare guard here would be stricter than the table.
   IF v_task.de_id IS NOT NULL AND NOT public.can_access_de(v_task.de_id) THEN
     RAISE EXCEPTION 'not_responsible_for_de: this employee is not in your reporting line';
+  END IF;
+
+  -- ── mig 593: AUTHORITY ──────────────────────────────────
+  -- Everything above answers "may you SEE this?". Nothing has ever asked
+  -- "are you entitled to SIGN it?" — a PKR 45,000 credit hold and a five
+  -- pound refund passed the identical test, and 238 of 320 pending items
+  -- name no employee at all, so the scoping clause never even bit.
+  --
+  -- REJECTIONS ARE DELIBERATELY NOT GATED. Declining is the conservative
+  -- direction, and a rule that stops someone saying "no" is not an
+  -- authority model, it is a way of forcing things through.
+  IF p_decision = 'approved' THEN
+    SELECT category, amount_cents INTO v_cat, v_amt FROM task_approval_facts(p_task_id);
+    v_auth := has_approval_authority(auth.uid(), v_tenant, v_cat, v_amt);
+
+    IF NOT coalesce((v_auth->>'allowed')::boolean, true) THEN
+      RAISE EXCEPTION 'not_authorised_to_approve: %', v_auth->>'reason';
+    END IF;
+
+    -- A second pair of eyes. The first approval is RECORDED and the task
+    -- stays pending; it completes when a DIFFERENT person approves.
+    -- Recording rather than refusing is what stops the first approver
+    -- having to remember they already looked at it.
+    IF coalesce((v_auth->>'needs_second')::boolean, false)
+       AND (v_task.first_approver_id IS NULL OR v_task.first_approver_id = auth.uid()) THEN
+      UPDATE human_tasks
+         SET first_approver_id = auth.uid(), first_approved_at = now(), updated_at = now()
+       WHERE id = p_task_id AND status = 'pending';
+      RETURN NULL;   -- contract: NULL means the caller MUST skip its hooks
+    END IF;
   END IF;
 
   -- ⚠ The pending-only clause is the double-approval guard the caller depends
@@ -36267,41 +37895,46 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.set_de_autonomy(p_action_type text, p_enabled boolean, p_max_amount_cents bigint DEFAULT NULL::bigint, p_min_confidence integer DEFAULT NULL::integer, p_de_id uuid DEFAULT NULL::uuid, p_source_category text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.set_de_autonomy(p_action_type text, p_enabled boolean, p_max_amount_cents bigint, p_min_confidence integer, p_de_id uuid, p_source_category text, p_playbook_id uuid DEFAULT NULL::uuid)
  RETURNS de_autonomy
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public', 'extensions'
+ SET search_path TO 'public'
 AS $function$
 declare
-  v_tenant uuid;
-  v_role   text;
-  v_is_active boolean;
-  v_user   uuid := auth.uid();
+  v_tenant uuid := auth_tenant_id();
   v_row    de_autonomy;
 begin
-  select tenant_id, role, coalesce(is_active, true) into v_tenant, v_role, v_is_active from profiles where user_id = v_user;
-  if v_tenant is null then
-    raise exception 'not a member of any tenant';
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin','tenant_manager']) then
+    raise exception 'not_allowed: only an owner, admin or manager may change what an employee may do on its own';
   end if;
-  if not v_is_active then
-    raise exception 'account is deactivated';
+  -- ⚠ An employee is REQUIRED. A NULL de_id used to mean "workspace default,
+  -- applies to everybody", which migration 618 removed.
+  if p_de_id is null then
+    raise exception 'a rule must name the employee it governs — workspace-wide defaults were removed in migration 618';
   end if;
-  if v_role not in ('tenant_owner', 'tenant_admin') then
-    raise exception 'only workspace owners/admins can change the trust dial';
+  if not exists (select 1 from digital_employees where id = p_de_id and tenant_id = v_tenant) then
+    raise exception 'that employee is not in this workspace';
   end if;
-  if p_de_id is not null and not exists (select 1 from digital_employees where id = p_de_id and tenant_id = v_tenant) then
-    raise exception 'employee not found in this workspace';
+  if p_playbook_id is not null
+     and not exists (select 1 from playbook_definitions where id = p_playbook_id and tenant_id = v_tenant) then
+    raise exception 'that playbook is not in this workspace';
   end if;
 
-  insert into de_autonomy (tenant_id, action_type, source_category, de_id, enabled, max_amount_cents, min_confidence, updated_by)
-  values (v_tenant, p_action_type, p_source_category, p_de_id, p_enabled, p_max_amount_cents, p_min_confidence, v_user)
-  on conflict (tenant_id, action_type, coalesce(source_category, ''), coalesce(de_id::text, '')) do update set
-    enabled          = excluded.enabled,
-    max_amount_cents = excluded.max_amount_cents,
-    min_confidence   = excluded.min_confidence,
-    updated_by       = excluded.updated_by,
-    updated_at       = now()
+  insert into de_autonomy (tenant_id, action_type, enabled, max_amount_cents, min_confidence,
+                           de_id, source_category, playbook_id, updated_by, updated_at)
+  values (v_tenant, p_action_type, coalesce(p_enabled, false), p_max_amount_cents, p_min_confidence,
+          p_de_id, nullif(btrim(p_source_category), ''), p_playbook_id, auth.uid(), now())
+  on conflict (tenant_id, action_type,
+               coalesce(de_id, '00000000-0000-0000-0000-000000000000'::uuid),
+               coalesce(playbook_id, '00000000-0000-0000-0000-000000000000'::uuid),
+               coalesce(source_category, ''))
+  do update set enabled = excluded.enabled,
+                max_amount_cents = excluded.max_amount_cents,
+                min_confidence = excluded.min_confidence,
+                updated_by = excluded.updated_by,
+                updated_at = now()
   returning * into v_row;
 
   return v_row;
@@ -36811,7 +38444,14 @@ begin
     jsonb_build_object(
       'key', 'eval_pass_rate', 'label', 'Evaluation pass rate',
       'actual', v_eval_rate, 'required', v_min_rate,
-      'met', (v_eval_total >= v_min_samples and v_eval_rate >= v_min_rate),
+      -- Mirror of the human_approval_rate criterion two entries below, which
+      -- already reads `v_min_h_n = 0 or (...)`. A policy that sets
+      -- min_eval_samples = 0 is saying this employee is not examined on
+      -- answering — Finance DE and Account Success DE execute actions, they do
+      -- not staff an answer desk. Without this, zero samples produced a zero
+      -- rate which failed a 0.9 bar FOREVER: an employee excused from the exam
+      -- was permanently marked as having failed it.
+      'met', (v_min_samples = 0 or (v_eval_total >= v_min_samples and v_eval_rate >= v_min_rate)),
       'detail', format('%s of %s answered questions passed in the last %s days%s', v_eval_passed, v_eval_total, v_window,
         case when v_eval_skipped > 0
              then format(' (%s never put to the employee — e.g. the AI budget ran out mid-run — and excluded rather than counted wrong)', v_eval_skipped)
@@ -37200,22 +38840,24 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.customer_accounts;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.customer_accounts FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.customer_accounts;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.customer_accounts FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS org_units_updated_at ON public.org_units;
+CREATE TRIGGER org_units_updated_at BEFORE UPDATE ON public.org_units FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS trg_org_units_check_parent ON public.org_units;
+CREATE TRIGGER trg_org_units_check_parent BEFORE INSERT OR UPDATE ON public.org_units FOR EACH ROW EXECUTE FUNCTION org_units_check_parent();
 DROP TRIGGER IF EXISTS digital_employees_updated_at ON public.digital_employees;
 CREATE TRIGGER digital_employees_updated_at BEFORE UPDATE ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_alert_cert_regression ON public.digital_employees;
 CREATE TRIGGER trg_alert_cert_regression AFTER UPDATE OF persona_name, description, model_provider, model_id, escalation_model_id, escalation_threshold, confidence_threshold, required_approval, task_type, external_reply_mode, capabilities, responsibilities, channels, knowledge_sources, skills, model_config, attributes ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION alert_cert_regression();
-DROP TRIGGER IF EXISTS trg_de_auto_consult_grant_ins ON public.digital_employees;
-CREATE TRIGGER trg_de_auto_consult_grant_ins AFTER INSERT ON public.digital_employees FOR EACH ROW WHEN ((new.is_specialist IS NOT TRUE)) EXECUTE FUNCTION de_grant_specialist_consult();
-DROP TRIGGER IF EXISTS trg_de_auto_consult_grant_upd ON public.digital_employees;
-CREATE TRIGGER trg_de_auto_consult_grant_upd AFTER UPDATE OF status ON public.digital_employees FOR EACH ROW WHEN (((new.is_specialist IS NOT TRUE) AND (new.status = 'active'::text) AND (old.status IS DISTINCT FROM 'active'::text))) EXECUTE FUNCTION de_grant_specialist_consult();
+DROP TRIGGER IF EXISTS trg_de_org_unit_tenant ON public.digital_employees;
+CREATE TRIGGER trg_de_org_unit_tenant BEFORE INSERT OR UPDATE OF org_unit_id ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION assert_org_unit_same_tenant();
 DROP TRIGGER IF EXISTS trg_gate_de_certification ON public.digital_employees;
 CREATE TRIGGER trg_gate_de_certification BEFORE UPDATE OF lifecycle_status ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION gate_de_certification();
+DROP TRIGGER IF EXISTS trg_normalise_de_state ON public.digital_employees;
+CREATE TRIGGER trg_normalise_de_state BEFORE INSERT ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION normalise_de_state();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.digital_employees;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_spec_auto_consult_grant_ins ON public.digital_employees;
-CREATE TRIGGER trg_spec_auto_consult_grant_ins AFTER INSERT ON public.digital_employees FOR EACH ROW WHEN (((new.is_specialist IS TRUE) AND (new.specialist_key = 'technical'::text) AND (new.status = 'active'::text))) EXECUTE FUNCTION de_specialist_grant_workforce();
-DROP TRIGGER IF EXISTS trg_spec_auto_consult_grant_upd ON public.digital_employees;
-CREATE TRIGGER trg_spec_auto_consult_grant_upd AFTER UPDATE OF status ON public.digital_employees FOR EACH ROW WHEN (((new.is_specialist IS TRUE) AND (new.specialist_key = 'technical'::text) AND (new.status = 'active'::text) AND (old.status IS DISTINCT FROM 'active'::text))) EXECUTE FUNCTION de_specialist_grant_workforce();
+DROP TRIGGER IF EXISTS trg_sync_de_department ON public.digital_employees;
+CREATE TRIGGER trg_sync_de_department BEFORE INSERT OR UPDATE OF org_unit_id ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION sync_de_department();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.digital_employees;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.digital_employees FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS trg_close_escalations_for_finished_goal ON public.de_objectives;
@@ -37246,6 +38888,8 @@ DROP TRIGGER IF EXISTS human_tasks_updated_at ON public.human_tasks;
 CREATE TRIGGER human_tasks_updated_at BEFORE UPDATE ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_guard_human_task_decision ON public.human_tasks;
 CREATE TRIGGER trg_guard_human_task_decision BEFORE DELETE OR UPDATE ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION guard_human_task_decision();
+DROP TRIGGER IF EXISTS trg_human_tasks_assign ON public.human_tasks;
+CREATE TRIGGER trg_human_tasks_assign AFTER INSERT ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION trg_assign_human_task();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.human_tasks;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_sync_amendment ON public.human_tasks;
@@ -37262,6 +38906,8 @@ DROP TRIGGER IF EXISTS trg_sync_outbound_draft ON public.human_tasks;
 CREATE TRIGGER trg_sync_outbound_draft AFTER UPDATE OF status ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION sync_outbound_draft_status();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.human_tasks;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS trg_advance_dunning_cadence ON public.action_executions;
+CREATE TRIGGER trg_advance_dunning_cadence AFTER INSERT ON public.action_executions FOR EACH ROW EXECUTE FUNCTION advance_dunning_cadence();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.action_executions;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.action_executions FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.action_executions;
@@ -37306,6 +38952,8 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.answer_cache;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.answer_cache FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.answer_cache;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.answer_cache FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS approval_authority_updated_at ON public.approval_authority;
+CREATE TRIGGER approval_authority_updated_at BEFORE UPDATE ON public.approval_authority FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS audit_events_no_update_delete ON public.audit_events;
 CREATE TRIGGER audit_events_no_update_delete BEFORE DELETE OR UPDATE ON public.audit_events FOR EACH ROW EXECUTE FUNCTION audit_events_immutable();
 DROP TRIGGER IF EXISTS trust_guardrail_block ON public.audit_events;
@@ -37566,12 +39214,6 @@ DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.knowledge_doc_scopes;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.knowledge_doc_scopes FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS knowledge_ingestion_rollup_trg ON public.knowledge_ingestion_items;
 CREATE TRIGGER knowledge_ingestion_rollup_trg AFTER INSERT OR DELETE OR UPDATE OF status ON public.knowledge_ingestion_items FOR EACH ROW EXECUTE FUNCTION knowledge_ingestion_rollup();
-DROP TRIGGER IF EXISTS media_assets_updated_at ON public.media_assets;
-CREATE TRIGGER media_assets_updated_at BEFORE UPDATE ON public.media_assets FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.media_assets;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.media_assets FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.media_assets;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.media_assets FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.messages;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.messages FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.messages;
@@ -37610,8 +39252,14 @@ DROP TRIGGER IF EXISTS profiles_updated_at ON public.profiles;
 CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_guard_demo_tenant ON public.profiles;
 CREATE TRIGGER trg_guard_demo_tenant BEFORE INSERT OR UPDATE OF tenant_id ON public.profiles FOR EACH ROW EXECUTE FUNCTION guard_against_demo_tenant_assignment();
+DROP TRIGGER IF EXISTS trg_profiles_org_unit_tenant ON public.profiles;
+CREATE TRIGGER trg_profiles_org_unit_tenant BEFORE INSERT OR UPDATE OF org_unit_id ON public.profiles FOR EACH ROW EXECUTE FUNCTION assert_org_unit_same_tenant();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.profiles;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
+DROP TRIGGER IF EXISTS trg_sync_primary_unit_membership ON public.profiles;
+CREATE TRIGGER trg_sync_primary_unit_membership AFTER INSERT OR UPDATE OF org_unit_id ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_primary_unit_membership();
+DROP TRIGGER IF EXISTS trg_sync_profile_department ON public.profiles;
+CREATE TRIGGER trg_sync_profile_department BEFORE INSERT OR UPDATE OF org_unit_id ON public.profiles FOR EACH ROW EXECUTE FUNCTION sync_profile_department();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.profiles;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS platform_capability_grants_updated_at ON public.platform_capability_grants;
@@ -37644,22 +39292,12 @@ DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.playbook_trigger_fires;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.playbook_trigger_fires FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS trg_posting_draft_gate ON public.posting_drafts;
 CREATE TRIGGER trg_posting_draft_gate BEFORE UPDATE ON public.posting_drafts FOR EACH ROW EXECUTE FUNCTION posting_draft_gate();
+DROP TRIGGER IF EXISTS profile_private_updated_at ON public.profile_private;
+CREATE TRIGGER profile_private_updated_at BEFORE UPDATE ON public.profile_private FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_badge_from_role_cert ON public.role_certifications;
 CREATE TRIGGER trg_badge_from_role_cert AFTER INSERT OR UPDATE OF status, config_fingerprint ON public.role_certifications FOR EACH ROW EXECUTE FUNCTION trg_recompute_trust_badge();
 DROP TRIGGER IF EXISTS scim_user_links_tenant_guard ON public.scim_user_links;
 CREATE TRIGGER scim_user_links_tenant_guard BEFORE INSERT OR UPDATE OF tenant_id, profile_id, user_id ON public.scim_user_links FOR EACH ROW EXECUTE FUNCTION scim_link_matches_profile();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.spec_consultations;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.spec_consultations FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.spec_consultations;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.spec_consultations FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
-DROP TRIGGER IF EXISTS scribe_requests_updated_at ON public.scribe_requests;
-CREATE TRIGGER scribe_requests_updated_at BEFORE UPDATE ON public.scribe_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.scribe_requests;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.scribe_requests FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.scribe_requests;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.scribe_requests FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
-DROP TRIGGER IF EXISTS specialist_sources_updated_at ON public.specialist_sources;
-CREATE TRIGGER specialist_sources_updated_at BEFORE UPDATE ON public.specialist_sources FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS specialist_source_secrets_updated_at ON public.specialist_source_secrets;
 CREATE TRIGGER specialist_source_secrets_updated_at BEFORE UPDATE ON public.specialist_source_secrets FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS sso_attribute_role_map_updated_at ON public.sso_attribute_role_map;
@@ -37718,6 +39356,8 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.widget_keys;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.widget_keys FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.widget_keys;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.widget_keys FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS work_assignment_rules_updated_at ON public.work_assignment_rules;
+CREATE TRIGGER work_assignment_rules_updated_at BEFORE UPDATE ON public.work_assignment_rules FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.work_item_framing;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.work_item_framing FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.work_item_framing;
@@ -37741,7 +39381,6 @@ CREATE TRIGGER workspaces_updated_at BEFORE UPDATE ON public.workspaces FOR EACH
 -- On a multi-tenant database RLS is not hardening applied later: a table
 -- restored without it is a cross-tenant data leak on the first query.
 ALTER TABLE public.work_watchers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_watcher_matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
@@ -37762,8 +39401,8 @@ ALTER TABLE public.tenant_comms_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_deliverables ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.renewal_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_archetypes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.renewal_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.voice_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_missions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardrail_rule_adjudicable ENABLE ROW LEVEL SECURITY;
@@ -37793,7 +39432,6 @@ ALTER TABLE public.de_system_verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.health_score_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.onboarding_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.onboarding_projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.specialist_sources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.specialist_source_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.data_access_grants ENABLE ROW LEVEL SECURITY;
@@ -37804,10 +39442,12 @@ ALTER TABLE public.invoice_writeback_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_doc_scopes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.evidence_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_playbook_charter ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.org_units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commercial_catalog_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.action_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_item_framing ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.scribe_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.work_assignment_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.org_unit_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.action_executions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staleness_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_ancestry ENABLE ROW LEVEL SECURITY;
@@ -37830,6 +39470,7 @@ ALTER TABLE public.de_consultation_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_lifecycle_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approval_authority ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.oauth_connect_states ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connector_ingest_candidates ENABLE ROW LEVEL SECURITY;
@@ -37856,10 +39497,13 @@ ALTER TABLE public.de_exceptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_decision_trace ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sim_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_training_modules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profile_private ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_outcome_pricing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_spend_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.billable_outcomes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_kb_changes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profile_compensation ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_principal_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_principal_group_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_doc_usage_daily ENABLE ROW LEVEL SECURITY;
@@ -37867,12 +39511,11 @@ ALTER TABLE public.definition_of_done_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.otel_spans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_delegation_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.outbound_drafts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.sod_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_studies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_amendments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.draft_responses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.workforce_trust_posture ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.config_schema_instances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.embed_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_feature_toggles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_billing_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.computer_use_tasks ENABLE ROW LEVEL SECURITY;
@@ -37902,6 +39545,7 @@ ALTER TABLE public.scim_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scim_user_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_ingestion_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.digital_employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dispatch_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trust_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_accounts ENABLE ROW LEVEL SECURITY;
@@ -37909,7 +39553,6 @@ ALTER TABLE public.knowledge_articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_case_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bank_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.agent_actions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.digital_employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.account_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_evidence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
@@ -37937,8 +39580,6 @@ ALTER TABLE public.connector_objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_learning_edits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eval_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.opportunities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.media_assets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.spec_consultations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_revision_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inbox_watch_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staleness_escalations ENABLE ROW LEVEL SECURITY;
@@ -37964,7 +39605,6 @@ ALTER TABLE public.de_learned_behavior_clusters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_performance_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_item_claims ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.continuity_writeback_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.de_specialist_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workforce_baselines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_definitions ENABLE ROW LEVEL SECURITY;
@@ -38009,8 +39649,8 @@ ALTER TABLE public.de_improvements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_development_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.human_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_objective_wakes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.evidence_run_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_account_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.evidence_run_decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posting_drafts ENABLE ROW LEVEL SECURITY;
@@ -38037,6 +39677,10 @@ CREATE POLICY customer_accounts_tenant_write ON public.customer_accounts FOR ALL
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = customer_accounts.tenant_id) AND COALESCE(p.is_active, true) AND (p.role <> 'read_only'::text))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM profiles p
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = customer_accounts.tenant_id) AND COALESCE(p.is_active, true) AND (p.role <> 'read_only'::text)))));
+DROP POLICY IF EXISTS org_units_tenant_read ON public.org_units;
+CREATE POLICY org_units_tenant_read ON public.org_units FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS org_units_tenant_write ON public.org_units;
+CREATE POLICY org_units_tenant_write ON public.org_units FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text, 'tenant_manager'::text])));
 DROP POLICY IF EXISTS de_scope_select ON public.digital_employees;
 CREATE POLICY de_scope_select ON public.digital_employees AS RESTRICTIVE FOR SELECT USING (can_access_de(id));
 DROP POLICY IF EXISTS de_tenant_admin_update ON public.digital_employees;
@@ -38159,6 +39803,10 @@ CREATE POLICY analytics_query_defs_read ON public.analytics_query_defs FOR SELEC
   WHERE ((p.user_id = auth.uid()) AND (p.layer = 'platform'::text))))));
 DROP POLICY IF EXISTS answer_cache_tenant_isolation ON public.answer_cache;
 CREATE POLICY answer_cache_tenant_isolation ON public.answer_cache FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS approval_authority_read ON public.approval_authority;
+CREATE POLICY approval_authority_read ON public.approval_authority FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS approval_authority_write ON public.approval_authority;
+CREATE POLICY approval_authority_write ON public.approval_authority FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text])));
 DROP POLICY IF EXISTS audit_events_tenant_select ON public.audit_events;
 CREATE POLICY audit_events_tenant_select ON public.audit_events FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS fin_accounts_ins ON public.fin_accounts;
@@ -38501,8 +40149,6 @@ DROP POLICY IF EXISTS "read global and own skills" ON public.skill_catalog;
 CREATE POLICY "read global and own skills" ON public.skill_catalog FOR SELECT USING (((tenant_id IS NULL) OR (tenant_id = auth_tenant_id())));
 DROP POLICY IF EXISTS de_skills_tenant_select ON public.de_skills;
 CREATE POLICY de_skills_tenant_select ON public.de_skills FOR SELECT TO authenticated USING ((tenant_id = auth_tenant_id()));
-DROP POLICY IF EXISTS de_specialist_assignments_tenant_select ON public.de_specialist_assignments;
-CREATE POLICY de_specialist_assignments_tenant_select ON public.de_specialist_assignments FOR SELECT TO authenticated USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS de_spend_ledger_tenant_read ON public.de_spend_ledger;
 CREATE POLICY de_spend_ledger_tenant_read ON public.de_spend_ledger FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS de_system_verifications_tenant_read ON public.de_system_verifications;
@@ -38603,8 +40249,6 @@ DROP POLICY IF EXISTS health_score_config_tenant_isolation ON public.health_scor
 CREATE POLICY health_score_config_tenant_isolation ON public.health_score_config FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS inbox_watch_state_tenant_select ON public.inbox_watch_state;
 CREATE POLICY inbox_watch_state_tenant_select ON public.inbox_watch_state FOR SELECT USING ((tenant_id = auth_tenant_id()));
-DROP POLICY IF EXISTS invoice_activities_tenant_read ON public.invoice_activities;
-CREATE POLICY invoice_activities_tenant_read ON public.invoice_activities FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS renewal_invoices_tenant_read ON public.renewal_invoices;
 CREATE POLICY renewal_invoices_tenant_read ON public.renewal_invoices FOR SELECT USING ((tenant_id IN ( SELECT profiles.tenant_id
    FROM profiles
@@ -38615,6 +40259,8 @@ CREATE POLICY renewal_invoices_tenant_write ON public.renewal_invoices FOR ALL U
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = renewal_invoices.tenant_id) AND COALESCE(p.is_active, true) AND (p.role <> 'read_only'::text))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM profiles p
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = renewal_invoices.tenant_id) AND COALESCE(p.is_active, true) AND (p.role <> 'read_only'::text)))));
+DROP POLICY IF EXISTS invoice_activities_tenant_read ON public.invoice_activities;
+CREATE POLICY invoice_activities_tenant_read ON public.invoice_activities FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS invoice_payments_tenant_read ON public.invoice_payments;
 CREATE POLICY invoice_payments_tenant_read ON public.invoice_payments FOR SELECT USING ((tenant_id IN ( SELECT p.tenant_id
    FROM profiles p
@@ -38697,8 +40343,6 @@ CREATE POLICY mcp_allowlist_write ON public.mcp_server_allowlist FOR ALL USING (
   WHERE ((p.user_id = auth.uid()) AND (p.role = ANY (ARRAY['tenant_owner'::text, 'tenant_admin'::text])))))) WITH CHECK ((tenant_id IN ( SELECT p.tenant_id
    FROM profiles p
   WHERE ((p.user_id = auth.uid()) AND (p.role = ANY (ARRAY['tenant_owner'::text, 'tenant_admin'::text]))))));
-DROP POLICY IF EXISTS media_assets_tenant_isolation ON public.media_assets;
-CREATE POLICY media_assets_tenant_isolation ON public.media_assets FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS "Tenant agents insert messages" ON public.messages;
 CREATE POLICY "Tenant agents insert messages" ON public.messages FOR INSERT WITH CHECK (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_admin'::text, 'tenant_manager'::text, 'agent'::text])));
 DROP POLICY IF EXISTS "Tenant members view messages" ON public.messages;
@@ -38739,6 +40383,10 @@ DROP POLICY IF EXISTS opp_writeback_tenant_read ON public.opportunity_writeback_
 CREATE POLICY opp_writeback_tenant_read ON public.opportunity_writeback_requests FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS "Platform admins can view ops alerts" ON public.ops_alerts;
 CREATE POLICY "Platform admins can view ops alerts" ON public.ops_alerts FOR SELECT USING (is_platform_admin());
+DROP POLICY IF EXISTS org_unit_members_tenant_read ON public.org_unit_members;
+CREATE POLICY org_unit_members_tenant_read ON public.org_unit_members FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS org_unit_members_tenant_write ON public.org_unit_members;
+CREATE POLICY org_unit_members_tenant_write ON public.org_unit_members FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text, 'tenant_manager'::text])));
 DROP POLICY IF EXISTS otel_spans_read ON public.otel_spans;
 CREATE POLICY otel_spans_read ON public.otel_spans FOR SELECT USING (((tenant_id IN ( SELECT p.tenant_id
    FROM profiles p
@@ -38820,6 +40468,10 @@ CREATE POLICY posting_draft_lines_tenant_read ON public.posting_draft_lines FOR 
   WHERE (d.tenant_id IN ( SELECT p.tenant_id
            FROM profiles p
           WHERE (p.user_id = auth.uid()))))));
+DROP POLICY IF EXISTS profile_compensation_read ON public.profile_compensation;
+CREATE POLICY profile_compensation_read ON public.profile_compensation FOR SELECT USING (((tenant_id = auth_tenant_id()) AND ((user_id = auth.uid()) OR auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text]))));
+DROP POLICY IF EXISTS profile_private_read ON public.profile_private;
+CREATE POLICY profile_private_read ON public.profile_private FOR SELECT USING (((tenant_id = auth_tenant_id()) AND ((user_id = auth.uid()) OR auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text]))));
 DROP POLICY IF EXISTS remote_access_write_log_select ON public.remote_access_write_log;
 CREATE POLICY remote_access_write_log_select ON public.remote_access_write_log FOR SELECT USING (resolve_platform_capability(auth.uid(), 'remote_access.audit'::text));
 DROP POLICY IF EXISTS role_certifications_de_scope ON public.role_certifications;
@@ -38832,10 +40484,6 @@ CREATE POLICY role_certifications_read ON public.role_certifications FOR SELECT 
   WHERE (p.user_id = auth.uid()))) OR (EXISTS ( SELECT 1
    FROM profiles p
   WHERE ((p.user_id = auth.uid()) AND (p.layer = 'platform'::text))))));
-DROP POLICY IF EXISTS spec_consultations_tenant_select ON public.spec_consultations;
-CREATE POLICY spec_consultations_tenant_select ON public.spec_consultations FOR SELECT USING ((tenant_id = auth_tenant_id()));
-DROP POLICY IF EXISTS scribe_requests_tenant_select ON public.scribe_requests;
-CREATE POLICY scribe_requests_tenant_select ON public.scribe_requests FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS semantic_guardrail_shadow_tenant_read ON public.semantic_guardrail_shadow_log;
 CREATE POLICY semantic_guardrail_shadow_tenant_read ON public.semantic_guardrail_shadow_log FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS sim_runs_read ON public.sim_runs;
@@ -38846,18 +40494,6 @@ CREATE POLICY sim_runs_read ON public.sim_runs FOR SELECT USING (((tenant_id IN 
   WHERE ((p.user_id = auth.uid()) AND (p.layer = 'platform'::text))))));
 DROP POLICY IF EXISTS "read global and own skill categories" ON public.skill_categories;
 CREATE POLICY "read global and own skill categories" ON public.skill_categories FOR SELECT USING (((tenant_id IS NULL) OR (tenant_id = auth_tenant_id())));
-DROP POLICY IF EXISTS sod_policies_admin_write ON public.sod_policies;
-CREATE POLICY sod_policies_admin_write ON public.sod_policies FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text]))) WITH CHECK (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text])));
-DROP POLICY IF EXISTS sod_policies_tenant_read ON public.sod_policies;
-CREATE POLICY sod_policies_tenant_read ON public.sod_policies FOR SELECT USING ((tenant_id = auth_tenant_id()));
-DROP POLICY IF EXISTS specialist_sources_tenant_isolation ON public.specialist_sources;
-CREATE POLICY specialist_sources_tenant_isolation ON public.specialist_sources FOR ALL USING ((specialist_de_id IN ( SELECT d.id
-   FROM (digital_employees d
-     JOIN profiles p ON ((p.tenant_id = d.tenant_id)))
-  WHERE (p.user_id = auth.uid())))) WITH CHECK ((specialist_de_id IN ( SELECT d.id
-   FROM (digital_employees d
-     JOIN profiles p ON ((p.tenant_id = d.tenant_id)))
-  WHERE (p.user_id = auth.uid()))));
 DROP POLICY IF EXISTS sso_attribute_role_map_read ON public.sso_attribute_role_map;
 CREATE POLICY sso_attribute_role_map_read ON public.sso_attribute_role_map FOR SELECT USING (((tenant_id = auth_tenant_id()) OR is_platform_admin()));
 DROP POLICY IF EXISTS sso_attribute_role_map_write ON public.sso_attribute_role_map;
@@ -38984,6 +40620,10 @@ DROP POLICY IF EXISTS widget_keys_de_scope ON public.widget_keys;
 CREATE POLICY widget_keys_de_scope ON public.widget_keys AS RESTRICTIVE FOR ALL USING (((de_id IS NULL) OR can_access_de(de_id))) WITH CHECK (((de_id IS NULL) OR can_access_de(de_id)));
 DROP POLICY IF EXISTS widget_keys_tenant_isolation ON public.widget_keys;
 CREATE POLICY widget_keys_tenant_isolation ON public.widget_keys FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS war_tenant_read ON public.work_assignment_rules;
+CREATE POLICY war_tenant_read ON public.work_assignment_rules FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS war_tenant_write ON public.work_assignment_rules;
+CREATE POLICY war_tenant_write ON public.work_assignment_rules FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text])));
 DROP POLICY IF EXISTS work_item_claims_tenant_select ON public.work_item_claims;
 CREATE POLICY work_item_claims_tenant_select ON public.work_item_claims FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS work_item_framing_read ON public.work_item_framing;
@@ -39024,6 +40664,8 @@ DROP POLICY IF EXISTS workforce_teams_tenant_select ON public.workforce_teams;
 CREATE POLICY workforce_teams_tenant_select ON public.workforce_teams FOR SELECT TO authenticated USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS workforce_team_members_tenant_select ON public.workforce_team_members;
 CREATE POLICY workforce_team_members_tenant_select ON public.workforce_team_members FOR SELECT TO authenticated USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS workforce_trust_posture_read ON public.workforce_trust_posture;
+CREATE POLICY workforce_trust_posture_read ON public.workforce_trust_posture FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS workspaces_tenant_read ON public.workspaces;
 CREATE POLICY workspaces_tenant_read ON public.workspaces FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS workspaces_tenant_write ON public.workspaces;
@@ -39081,10 +40723,8 @@ REVOKE ALL ON ROUTINE create_improvement_review(uuid) FROM PUBLIC, anon, authent
 REVOKE ALL ON ROUTINE create_outbound_draft(uuid,uuid,text,text,text,text,text,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_development_items_attempts_guard() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_governance_sweep_internal() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE de_grant_specialist_consult() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_improvements_entity_guard() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_records_gate(uuid,uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE de_specialist_grant_workforce() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_stall_sweep_internal(integer,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_trust_surface_candidates(uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE decide_inquiry_triage(uuid,text,integer,uuid) FROM PUBLIC, anon, authenticated;
@@ -39160,7 +40800,6 @@ REVOKE ALL ON ROUTINE log_remote_access_write() FROM PUBLIC, anon, authenticated
 REVOKE ALL ON ROUTINE log_tenant_activity() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE mark_outbound_delivery(uuid,text,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE mark_training_progress(uuid,text,text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE match_knowledge_chunks(vector,uuid,double precision,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE next_approved_browser_task() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE normalized_content_hash_internal(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE onboarding_check_complete(uuid) FROM PUBLIC, anon, authenticated;
@@ -39186,7 +40825,6 @@ REVOKE ALL ON ROUTINE prune_otel_spans() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE publish_platform_shelf_doc(uuid,text,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE raise_ops_alert(text,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE rate_limit_hit(text,integer,integer) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE read_demo_admin_password() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE reap_stale_computer_use_runtimes() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE reap_stale_ingestion_items() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE reap_stale_running_work(integer) FROM PUBLIC, anon, authenticated;
@@ -39222,9 +40860,6 @@ REVOKE ALL ON ROUTINE resolve_action_definition_for_category(uuid,text) FROM PUB
 REVOKE ALL ON ROUTINE resolve_case_await(uuid,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_category_access(uuid,text,uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_cleared_ops_alerts(jsonb) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE resolve_de_autonomy_chain(uuid,text[],uuid,text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE resolve_de_autonomy(uuid,text,uuid,text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE resolve_de_specialist_internal(uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_experience(uuid,text,uuid,text,text,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_invoice_writeback(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_llm_key(uuid,text) FROM PUBLIC, anon, authenticated;
@@ -39271,7 +40906,6 @@ REVOKE ALL ON ROUTINE trust_apply_level(uuid,text,integer,uuid,text,uuid) FROM P
 REVOKE ALL ON ROUTINE trust_demote(uuid,text,text,jsonb,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE trust_evidence_for(trust_policies) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_de_skill(uuid,uuid,text,integer,integer,numeric,text,integer) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE upsert_external_ar_record(uuid,text,text,text,text,bigint,date,text,text,bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_inbox_watch_state(uuid,uuid,text,timestamp with time zone) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE validate_trust_ladder(jsonb,boolean,boolean,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE verified_domain_tenant(text) FROM PUBLIC, anon, authenticated;
