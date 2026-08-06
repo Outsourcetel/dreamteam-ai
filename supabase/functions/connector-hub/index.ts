@@ -2029,6 +2029,7 @@ interface ActionDefRow {
 
 async function resolveActionDefinition(
   admin: SupabaseClient, tenantId: string, connectorCategory: string, actionKey: string, connectorProvider?: string,
+  actionDefinitionId?: string | null,
 ): Promise<{ ok: true; def: ActionDefRow } | { ok: false; error: string; detail?: string }> {
   // Tenant-scope row wins over platform-scope for the same category+key.
   const { data: rows } = await admin.from('action_definitions')
@@ -2036,6 +2037,42 @@ async function resolveActionDefinition(
     .eq('category', connectorCategory).eq('action_key', actionKey).eq('status', 'active')
     .or(`scope.eq.platform,tenant_id.eq.${tenantId}`);
   const list = (rows ?? []) as ActionDefRow[];
+
+  // ⚠ EXACT MATCH FIRST. One action_key can have several executors that do
+  // materially different things — ERPNext's send_payment_reminder is an
+  // internal invoice comment under one definition and an EMAIL TO THE CUSTOMER
+  // under another. The caller knows which tool it chose (the DE tool list
+  // carries action_definition_id since migration 614), so honour it.
+  if (actionDefinitionId) {
+    const exact = list.find((r) => r.id === actionDefinitionId);
+    if (exact) return { ok: true, def: exact };
+    return {
+      ok: false,
+      error: 'action_definition_not_found',
+      detail: `The requested action definition is not registered, active, or not visible to this workspace.`,
+    };
+  }
+
+  // ⚠ AMBIGUOUS AND UNSPECIFIED: refuse rather than guess. This used to fall
+  // through to list.find(), i.e. the FIRST ROW OF AN UNORDERED QUERY — so
+  // which executor ran was arbitrary and could change after any row reorder.
+  // It happened to land on the comment executor 12 times running; the day it
+  // stopped, an employee meaning to leave an internal note would have emailed
+  // a customer instead. A loud refusal is the only safe default here.
+  const candidates = list.filter((r) =>
+    (r.scope === 'tenant' && r.tenant_id === tenantId) ||
+    (r.scope === 'platform' && (!connectorProvider || r.provider === connectorProvider)));
+  if (candidates.length > 1) {
+    const opts = candidates
+      .map((r) => `${(r.execution as { execution_key?: string } | null)?.execution_key ?? r.id} (${r.label ?? ''})`)
+      .join('; ');
+    return {
+      ok: false,
+      error: 'action_ambiguous',
+      detail: `"${actionKey}" has ${candidates.length} registered executors and the caller did not say which: ${opts}. Pass action_definition_id.`,
+    };
+  }
+
   const tenantRow = list.find((r) => r.scope === 'tenant' && r.tenant_id === tenantId);
   // A category can now have MANY providers registered (helpdesk = zendesk +
   // freshdesk + …), so pick the platform row whose provider matches THIS
@@ -6782,7 +6819,8 @@ serve(async (req) => {
       if (!actionKey) return json({ error: 'action_key_required' }, 400);
       const category = String(connector.category ?? 'other');
 
-      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""),
+        typeof payload.action_definition_id === 'string' ? payload.action_definition_id : null);
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
       if (def.provider === 'internal') {
@@ -6839,7 +6877,8 @@ serve(async (req) => {
       // params, never the rendered/executed external request.
       const entityRef = typeof payload.entity_ref === 'string' && payload.entity_ref.trim() ? payload.entity_ref.trim().slice(0, 200) : null;
 
-      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""));
+      const resolved = await resolveActionDefinition(admin, tenantId, category, actionKey, String(connector.provider ?? ""),
+        typeof payload.action_definition_id === 'string' ? payload.action_definition_id : null);
       if (!resolved.ok) return json({ ok: false, error: resolved.error, detail: resolved.detail }, 200);
       const def = resolved.def;
       if (def.provider === 'internal') {

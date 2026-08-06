@@ -467,7 +467,7 @@ const TOOLS = [
 // now either delegates (delegate_to_colleague, below) or is consulted inside
 // the evidence pipeline's own DE-to-DE step, which targets any ACTIVE DE.
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -499,7 +499,7 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
-        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, params: input,
+        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, action_definition_id: act.action_definition_id ?? null, params: input,
           origin_kind: workItemId ? 'de_work_item' : null, origin_id: workItemId ?? null,
           // Experience door b (docs/31 Q1): what this action is ABOUT — ledger
           // only; connector-hub never puts it in the external request. A
@@ -983,8 +983,12 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // Per-DE registry actions (grants-aware) join the tool set; execution is
   // gated server-side, so offering them grants no ungoverned reach.
   const { data: actionRows } = await admin.rpc('get_agentic_tools_for_de', { p_tenant_id: tenantId, p_de_id: deId });
-  const actionTools = (actionRows ?? []) as Array<{ name: string; description: string; input_schema: unknown; connector_id?: string; action_key?: string }>;
-  const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key! }]));
+  const actionTools = (actionRows ?? []) as Array<{ name: string; description: string; input_schema: unknown; connector_id?: string; action_key?: string; action_definition_id?: string }>;
+  // action_definition_id (mig 614) pins WHICH executor the model picked. One
+  // action_key can have several that behave very differently — ERPNext's
+  // send_payment_reminder is an internal note under one and an email to the
+  // customer under another — and connector-hub now refuses to guess.
+  const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key!, action_definition_id: t.action_definition_id ?? null }]));
   // Generic escalation ruleset (mig 262) — loaded once, evaluated per action.
   const escRuleset = await loadEscalationRuleset(admin, tenantId, deId).catch(() => ({} as EscRuleset));
   // Cross-DE delegation (T1.2): a DE may hand a sub-task to a colleague it has
