@@ -1,30 +1,28 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listAutonomy, setAutonomyDial, AUTONOMY_ACTION_META } from '../lib/autonomyApi';
-import type { DEAutonomy, AutonomyActionType } from '../lib/autonomyApi';
+import { AUTONOMY_ACTION_META } from '../lib/autonomyApi';
+import type { AutonomyActionType } from '../lib/autonomyApi';
 import { listTrustPolicies, listTrustHistory, trustLevelName } from '../lib/trustApi';
 import type { TrustPolicy, TrustHistoryEvent } from '../lib/trustApi';
 import { Chip, EmptyState } from '../design/primitives';
+import type { Page } from '../types';
 
 // ════════════════════════════════════════════════════════════════════
-// Workforce trust defaults — the Settings home (docs/31 Q7, founder ask
-// 2026-07-27). Workspace-default dial rows (de_id NULL) used to be
-// editable only from inside one arbitrary employee's file; they live
-// here now, next to the tenant-wide promotion history. Per-employee
-// trust stays on each employee's file — nothing per-DE is shown here.
+// Workforce trust — the Settings home.
 //
-// Reads are the existing idioms: de_autonomy via the RLS-governed
-// listAutonomy() read, trust_policies via listTrustPolicies(), history
-// from the immutable audit trail. Writes go through the same
-// set_de_autonomy RPC every dial uses (deId = null → workspace-wide).
-// Tab access is owner/admin (navAccess SETTINGS_TAB_ACCESS.trust),
-// matching the database gate on workspace-wide trust writes.
+// ⚠ THIS PAGE NO LONGER EDITS DIALS. It used to hold three workspace-wide
+// dials (invoice_auto_send, answer_dock, answer_widget) that applied to every
+// employee — a fixed list, one of them invoice-specific, describing a Support
+// or Marketing employee in billing terms whatever its actual job.
+//
+// Migration 618 removed the workspace tier outright: every rule now names the
+// employee it governs, the dial set is DERIVED from the systems each employee
+// can actually reach, and set_de_autonomy REFUSES a write with no employee. So
+// the old editor could not save anything even if it were kept.
+//
+// What remains here is genuinely workspace-level and still true: ladder
+// policies owned by no employee, and the tenant-wide promotion history.
+// Per-employee rules live on Workforce → the employee → Trust & Autonomy.
 // ════════════════════════════════════════════════════════════════════
-
-/** The three engine-recognized dials every workspace has, shown even before
- *  a row exists so a default can be set without hunting for an entry point. */
-const CANONICAL_KEYS: AutonomyActionType[] = ['invoice_auto_send', 'answer_dock', 'answer_widget'];
-
-interface DialDraft { enabled: boolean; amount: string; confidence: string }
 
 function labelFor(key: string): string {
   const meta = AUTONOMY_ACTION_META[key as AutonomyActionType];
@@ -36,44 +34,20 @@ function labelFor(key: string): string {
   return key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
-/** Which numeric field a key's enforcement reads (mirrors the server's
- *  measured flags: answer channels read a confidence floor; everything
- *  else on the dial reads an amount cap). Display/edit routing only. */
-const usesConfidence = (key: string) => key === 'answer_dock' || key === 'answer_widget';
-
-export default function WorkforceTrustDefaults() {
-  const [rows, setRows] = useState<DEAutonomy[] | null>(null);
+export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page) => void } = {}) {
   const [policies, setPolicies] = useState<TrustPolicy[] | null>(null);
   const [history, setHistory] = useState<TrustHistoryEvent[] | null>(null);
-  const [dialError, setDialError] = useState<string | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, DialDraft>>({});
-  const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [savedKey, setSavedKey] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     // Each block loads independently — a failure renders as its own honest
     // error + absence, never as an empty-but-fine claim.
-    try {
-      const all = await listAutonomy();
-      const workspace = all.filter(a => a.de_id === null && a.source_category === null);
-      setRows(workspace);
-      const byKey = Object.fromEntries(workspace.map(a => [a.action_type as string, a]));
-      const keys = Array.from(new Set<string>([...CANONICAL_KEYS, ...workspace.map(a => a.action_type as string)]));
-      setDrafts(Object.fromEntries(keys.map(k => {
-        const a = byKey[k];
-        return [k, {
-          enabled: a?.enabled ?? false,
-          amount: a?.max_amount_cents != null ? String(Math.round(a.max_amount_cents / 100)) : '',
-          confidence: a?.min_confidence != null ? String(a.min_confidence) : '',
-        }];
-      })));
-      setDialError(null);
-    } catch (err) {
-      setRows(null);
-      setDialError((err as Error)?.message || 'Failed to load the workspace dials.');
-    }
+    //
+    // The workspace-dial read that used to open this function is gone with the
+    // editor: migration 618 deleted the workspace tier, so listAutonomy() would
+    // now always return an empty set here and the panel would render an empty
+    // table that looked merely unconfigured rather than deliberately removed.
     try {
       setPolicies((await listTrustPolicies()).filter(p => p.de_id === null));
       setPolicyError(null);
@@ -92,108 +66,41 @@ export default function WorkforceTrustDefaults() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const save = async (key: string) => {
-    const d = drafts[key];
-    if (!d) return;
-    setSavingKey(key);
-    setDialError(null);
-    try {
-      await setAutonomyDial(key, labelFor(key), {
-        enabled: d.enabled,
-        max_amount_cents: !usesConfidence(key) && d.amount.trim() !== ''
-          ? Math.max(0, Math.round(Number(d.amount) || 0)) * 100 : null,
-        min_confidence: usesConfidence(key) && d.confidence.trim() !== ''
-          ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
-      }, null);
-      await refresh();
-      setSavedKey(key);
-      setTimeout(() => setSavedKey(k => (k === key ? null : k)), 2500);
-    } catch (err) {
-      setDialError((err as Error)?.message || 'Failed to save.');
-    } finally {
-      setSavingKey(null);
-    }
-  };
-
-  const workspaceKeys = rows === null
-    ? []
-    : Array.from(new Set<string>([...CANONICAL_KEYS, ...rows.map(a => a.action_type as string)]));
-  const rowByKey = Object.fromEntries((rows ?? []).map(a => [a.action_type as string, a]));
+  // The save handler that lived here wrote a rule with de_id = null. Since
+  // migration 618 that is a hard error ("a rule must name the employee it
+  // governs"), so keeping it would have meant a button that throws.
 
   return (
     <div className="max-w-3xl space-y-4">
+      {/* ⚠ THE WORKSPACE DIAL EDITOR THAT USED TO BE HERE IS GONE.
+          Migration 618 removed the workspace tier entirely and
+          set_de_autonomy now REFUSES a write that names no employee, so this
+          editor could not save anything — it would throw on every click.
+
+          It was also the surface the founder called out: a fixed list of
+          three dials, one of them invoice-specific, describing every
+          employee in billing-and-answering terms whatever its actual job. */}
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
-          <h2 className="text-sm font-semibold text-white">Workforce trust defaults</h2>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">workspace-wide</span>
+          <h2 className="text-sm font-semibold text-white">What each employee may do on its own</h2>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per employee</span>
         </div>
-        <p className="text-xs text-dt-muted mb-1">
-          These dials are the shared defaults — an employee without a personal override follows them.
-          <span className="text-dt-support"> Per-employee trust lives on each employee's file</span> (Workforce →
-          the employee → Trust &amp; Autonomy); nothing per-employee is edited here.
+        <p className="text-xs text-dt-muted mb-2">
+          There are no workspace-wide dials any more. Every rule names the employee it governs,
+          because a Finance employee reaching nine systems and a Growth employee reaching two
+          should not be held to one blanket setting.
         </p>
-        <p className="text-[11px] text-dt-muted mb-4">
-          Autonomy narrows within guardrails — a default here never overrides a guardrail, a destructive
-          gate or a spend cap. Every change lands on the immutable audit trail.
+        <p className="text-xs text-dt-support mb-3">
+          Open <strong>Workforce → the employee → Trust &amp; Autonomy</strong>. Each employee shows one
+          dial per system it can actually reach, and a rule can be narrowed further to a single
+          playbook. Where no rule is set the employee does nothing automatically — it prepares the
+          work and a person decides.
         </p>
-
-        {dialError && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{dialError}</div>}
-
-        {rows === null ? (
-          !dialError && <p className="text-xs text-dt-muted">Loading workspace dials…</p>
-        ) : (
-          <div className="space-y-3">
-            {workspaceKeys.map(key => {
-              const d = drafts[key] ?? { enabled: false, amount: '', confidence: '' };
-              const existing = rowByKey[key];
-              const meta = AUTONOMY_ACTION_META[key as AutonomyActionType];
-              return (
-                <div key={key} className="rounded-xl border border-dt-border bg-dt-inset p-4">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm text-dt-body font-medium">{labelFor(key)}</span>
-                        {!existing && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted"
-                            title="No workspace row exists yet — saving creates one.">
-                            not set
-                          </span>
-                        )}
-                      </div>
-                      {meta && <p className="text-[11px] text-dt-muted mt-1">{meta.description}</p>}
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer flex-shrink-0">
-                      <input type="checkbox" checked={d.enabled}
-                        onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...d, enabled: e.target.checked } }))}
-                        className="accent-indigo-500" />
-                      <span className="text-xs text-dt-support">{d.enabled ? 'Enabled' : 'Off'}</span>
-                    </label>
-                  </div>
-                  <div className="mt-3 flex items-center gap-3 flex-wrap">
-                    {usesConfidence(key) ? (
-                      <label className="flex items-center gap-2 text-xs text-dt-support">
-                        Min confidence %
-                        <input type="number" min={0} max={100} value={d.confidence} placeholder="e.g. 75"
-                          onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...d, confidence: e.target.value } }))}
-                          className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
-                      </label>
-                    ) : (
-                      <label className="flex items-center gap-2 text-xs text-dt-support">
-                        Max amount $
-                        <input type="number" min={0} value={d.amount} placeholder="e.g. 5000"
-                          onChange={e => setDrafts(prev => ({ ...prev, [key]: { ...d, amount: e.target.value } }))}
-                          className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
-                      </label>
-                    )}
-                    <button onClick={() => void save(key)} disabled={savingKey !== null}
-                      className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all">
-                      {savingKey === key ? 'Saving…' : savedKey === key ? 'Saved ✓' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {setPage && (
+          <button onClick={() => setPage('workforce_des')}
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-border text-dt-support transition-colors">
+            Open the workforce →
+          </button>
         )}
       </div>
 

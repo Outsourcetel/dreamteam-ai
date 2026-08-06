@@ -956,7 +956,7 @@ const userHash = crypto
           and tenant-wide promotion history finally have a Settings home —
           they used to be editable only from inside one arbitrary employee's
           file. Per-employee trust stays on each employee's file. */}
-      {activeTab === 'trust' && <WorkforceTrustDefaults />}
+      {activeTab === 'trust' && <WorkforceTrustDefaults setPage={setPage} />}
 
       {/* Security & Access moved here from the Governance hub (founder call).
           It was the ONE governance surface that is pure administration — API

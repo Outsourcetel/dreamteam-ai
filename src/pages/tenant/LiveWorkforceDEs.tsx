@@ -34,6 +34,7 @@ import {
 import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, EscalationSignal } from '../../lib/roleConfigApi';
 import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
+import DEActionDials from '../../components/de/DEActionDials';
 import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, Modal, INPUT_CLS } from '../../design/primitives';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
@@ -3861,9 +3862,19 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
       // changes nothing at runtime — the resolver returns at the first
       // action_type that has any row, and 'action_execute' rows exist in every
       // provisioned tenant. Same distinction the surface makes when reading.
+      // ⚠ USED TO WRITE 'action_execute' HERE, deliberately: the resolver
+      // returned at the first action_type with any row, workspace
+      // 'action_execute' rows existed everywhere, and so a category-shaped key
+      // would have shown ON in this UI while changing nothing at runtime.
+      // Migration 618 reversed the ladder (specific key asked FIRST) and
+      // deleted the workspace rows, so the specific key is now the one that
+      // decides — and writing the generic one here would be overridden by the
+      // per-category dial on the employee's Trust & Autonomy tab. One key, one
+      // answer.
       const isWriteback = entry.capability_key.startsWith('writeback:');
+      const writebackCategory = isWriteback ? entry.capability_key.slice('writeback:'.length) : null;
       const row = await setAutonomyDial(
-        isWriteback ? 'action_execute' : entry.capability_key,
+        writebackCategory ? `action:${writebackCategory}` : entry.capability_key,
         label,
         {
           enabled: d.enabled,
@@ -3873,7 +3884,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
             ? Math.max(0, Math.min(100, Math.round(Number(d.confidence) || 0))) : null,
         },
         de.id,
-        isWriteback ? entry.capability_key.slice('writeback:'.length) : null,
+        writebackCategory,
       );
       // Label it as an override when it exceeds the earned ladder level.
       const earned = entry.policy ? earnedLadderSettings(entry.policy, entry.policy.current_level) : null;
@@ -3966,6 +3977,12 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
 
       {/* Lifecycle — the governance gate (DE-B4) */}
       <DeLifecyclePanel de={de} onUpdated={onUpdated} />
+
+      {/* What this employee may do on its own, one dial per system it can
+          actually reach (migs 618/619). Sits above the earned-trust ladder
+          because it is the rule that decides; the ladder below is the evidence
+          that argues for changing it. */}
+      <DEActionDials deId={de.id} canEdit={canOverride} />
 
       {/* Certification — moved in from the Workbench (docs/31 step 8): a
           failed or stale exam is what mechanically clamps autonomy through

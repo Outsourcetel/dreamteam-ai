@@ -214,3 +214,69 @@ export async function getApprovalEvidence(): Promise<ApprovalEvidence> {
   const total = gates.length;
   return { total, approved, approvedPct: total > 0 ? Math.round((approved / total) * 100) : 0 };
 }
+
+// ── Per-employee action dials (migrations 618/619) ────────────────
+//
+// The dial set is DERIVED from the system categories this employee actually
+// holds a grant to, never a fixed list: a Finance employee reaching nine
+// categories gets nine, a Growth employee reaching two gets two. A dial for
+// work an employee cannot do is noise; a missing dial is an ungoverned action.
+//
+// `configured: false` means NO RULE EXISTS, and since 618 removed the
+// workspace tier that means the employee does nothing automatically for that
+// category. Unset is not "inherit" any more — it is "no".
+
+export interface DerivedDial {
+  action_type: string;        // 'action:<category>' — the key enforcement asks for
+  source_category: string;
+  label: string;              // from system_categories, e.g. "ERP / Financials actions"
+  description: string | null;
+  configured: boolean;
+  enabled: boolean;
+  max_amount_cents: number | null;
+  min_confidence: number | null;
+}
+
+/** The dials this employee should have, each carrying its rule if one exists. */
+export async function deriveDeAutonomyDials(deId: string): Promise<DerivedDial[]> {
+  const { data, error } = await supabase.rpc('derive_de_autonomy_dials', { p_de_id: deId });
+  if (error) raise('deriveDeAutonomyDials', error);
+  return (data ?? []) as DerivedDial[];
+}
+
+/** A rule for one employee, optionally narrowed to a single playbook.
+ *  A playbook rule OVERRIDES the employee's own rule while that playbook runs
+ *  and is ignored everywhere else. */
+export async function setDeActionDial(
+  deId: string,
+  dial: { action_type: string; source_category: string; label: string },
+  updates: { enabled: boolean; max_amount_cents?: number | null; min_confidence?: number | null },
+  playbookId: string | null = null,
+): Promise<DEAutonomy> {
+  const { data, error } = await supabase.rpc('set_de_autonomy', {
+    p_action_type: dial.action_type,
+    p_enabled: updates.enabled,
+    p_max_amount_cents: updates.max_amount_cents ?? null,
+    p_min_confidence: updates.min_confidence ?? null,
+    p_de_id: deId,
+    p_source_category: dial.source_category,
+    p_playbook_id: playbookId,
+  });
+  if (error) raise('setDeActionDial', error);
+  const row = data as DEAutonomy;
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `${dial.label} ${row.enabled ? 'allowed on its own' : 'set to always ask'} for this employee${
+      playbookId ? ' (this playbook only)' : ''
+    }${row.enabled && row.max_amount_cents !== null
+      ? ` — up to $${Math.round(row.max_amount_cents / 100).toLocaleString()}` : ''}`,
+    detail: {
+      autonomy_id: row.id, action_type: dial.action_type, de_id: deId,
+      playbook_id: playbookId, source_category: dial.source_category,
+      enabled: row.enabled, max_amount_cents: row.max_amount_cents,
+      min_confidence: row.min_confidence,
+      composition: 'autonomy_narrows_within_guardrails',
+    },
+  });
+  return row;
+}
