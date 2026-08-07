@@ -152,6 +152,26 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   onboarding_architect: ADMIN,
   settings: ADMIN,
   users: ADMIN,
+  // ⚠ YOUR OWN RECORD — everyone, deliberately, including read_only.
+  //
+  // This was MISSING, and default-DENY meant the Sidebar filtered "My Profile"
+  // out for every tenant role. The entry existed in the Sidebar and the route
+  // existed in App.tsx; only this line was absent, so nobody could reach the
+  // page whose whole purpose was that "a workspace owner could not find their
+  // own" details.
+  //
+  // ALL_TENANT is safe because the SERVER already draws the line, per person
+  // rather than per role, and drew it before this page existed:
+  //   get_employee_record      self OR admin      — read your own record
+  //   update_employee_private  self OR admin      — your own personal details
+  //   update_employee_profile  self, but only contact + how you are addressed;
+  //                            job fields need owner/admin/manager
+  //   set_employee_compensation  owner/admin ONLY — its own comment says it:
+  //                            "being able to read your own pay is reasonable,
+  //                             being able to set it is not"
+  // So a read_only account opening this page sees its own record and can fix
+  // its own phone number. It cannot see anyone else's, and cannot set pay.
+  my_profile: ALL_TENANT,
 };
 
 /**
