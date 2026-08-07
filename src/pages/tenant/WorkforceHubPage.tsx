@@ -1,7 +1,12 @@
 import type { Page } from '../../types';
 import { InHubContext } from '../../components/ui';
 import { TabBar } from '../../design/primitives';
-import WorkforceDEsPage from './WorkforceDEsPage';
+// Straight to the live roster. WorkforceDEsPage.tsx was a two-line wrapper
+// around this, sitting on top of 1,346 lines of demo-era components — a
+// 17-tab DE profile, an org view, a human profile — that NOTHING rendered.
+// Deleted 2026-08-07. An imported component is not a rendered one, and a
+// redesign aimed at that file would have changed a page no user can reach.
+import LiveWorkforceDEs from './LiveWorkforceDEs';
 import DEActivityPage from './ops/DEActivityPage';
 import { PerformancePage } from './intelligence/IntelligencePages';
 import ProvingGroundPage from './intelligence/ProvingGroundPage';
@@ -34,7 +39,7 @@ const WorkforceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
       </div>
     </div>
     <InHubContext.Provider value={true}>
-      {tab === 'workforce_des' && <WorkforceDEsPage setPage={setPage} />}
+      {tab === 'workforce_des' && <LiveWorkforceDEs setPage={setPage} />}
       {tab === 'ops_de_activity' && <DEActivityPage setPage={setPage} />}
       {tab === 'outcomes' && <OutcomeStatement setPage={setPage} />}
       {tab === 'intelligence_performance' && <PerformancePage setPage={setPage} />}
